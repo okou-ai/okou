@@ -1023,6 +1023,12 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
     ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
+  // The icon-only button names itself on hover like its header neighbours.
+  await userEvent
+    .setup()
+    .hover(within(header).getByLabelText("Create Project"));
+  await expect(screen.findByText("Create Project")).resolves.toBeVisible();
+
   click(within(header).getByLabelText("Create Project"));
   await expect(
     screen.findByRole("textbox", { name: "Project name" }),

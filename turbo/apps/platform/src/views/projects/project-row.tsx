@@ -18,6 +18,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
@@ -524,22 +528,34 @@ export function ProjectCreateButton({ touch = false }: { touch?: boolean }) {
   if (!enabled) {
     return null;
   }
+  const label = t(($) => {
+    return $.projects.create;
+  });
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      size={touch ? "icon" : "icon-sm"}
-      iconSize={touch ? "lg" : "md"}
-      className={cn("shrink-0", touch && "min-h-11 min-w-11")}
-      data-project-create=""
-      aria-label={t(($) => {
-        return $.projects.create;
-      })}
-      onClick={() => {
-        return open();
-      }}
-    >
-      <FolderPlus />
-    </Button>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size={touch ? "icon" : "icon-sm"}
+              iconSize={touch ? "lg" : "md"}
+              className={cn("shrink-0", touch && "min-h-11 min-w-11")}
+              data-project-create=""
+              aria-label={label}
+              onClick={() => {
+                return open();
+              }}
+            >
+              <FolderPlus />
+            </Button>
+          }
+        />
+        <TooltipContent side="bottom">
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
