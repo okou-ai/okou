@@ -1644,8 +1644,7 @@
       "sending": "正在发送…",
       "sent": "已发送到新聊天",
       "unavailable": "这条建议已不可用，建议列表已刷新。",
-      "undoFeedback": "撤销",
-      "useSuggestion": "使用建议"
+      "undoFeedback": "撤销"
     },
     "attachments": {
       "attach": "添加附件",
