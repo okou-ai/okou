@@ -66,7 +66,7 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
-    let mut server = common::ControlledHttpServer::start().await?;
+    let mut server = common::ControlledHttpServer::start_without_recording().await?;
     // Hold more than 16 MiB, but less than 32 MiB, behind the first HTTP response.
     let event = JsonFieldTemplate::new(
         &json!({
