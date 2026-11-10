@@ -57,10 +57,17 @@ final class SidebarMenuTests: XCTestCase {
     ChatListFilterMenu.dismantleUIView(button, coordinator: ())
     XCTAssertTrue(pan.isEnabled)
 
-    button.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
+    let replacement = SidebarMenuButton(sidebar: sidebar)
+    defer { replacement.endMenuPresentations() }
+    replacement.menu = UIMenu(children: [UIAction(title: "Chats") { _ in }])
+    replacement.showsMenuAsPrimaryAction = true
+    let replacementInteraction = try XCTUnwrap(replacement.contextMenuInteraction)
+    replacement.contextMenuInteraction(
+      replacementInteraction, willDisplayMenuFor: configuration, animator: nil)
     animator.complete()
     XCTAssertFalse(pan.isEnabled)
-    button.contextMenuInteraction(interaction, willEndFor: configuration, animator: nil)
+    replacement.contextMenuInteraction(
+      replacementInteraction, willEndFor: configuration, animator: nil)
     XCTAssertTrue(pan.isEnabled)
   }
 }
