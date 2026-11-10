@@ -30,7 +30,13 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createBddApi,
+  type ApiTestUser,
+  type ApiTestUserOptions,
+} from "./helpers/api-bdd";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -86,8 +92,10 @@ interface EntitledChatActor {
   };
 }
 
-async function entitledChatActor(): Promise<EntitledChatActor> {
-  const actor = bdd.user();
+async function entitledChatActor(
+  options: ApiTestUserOptions = {},
+): Promise<EntitledChatActor> {
+  const actor = bdd.user(options);
   const storage = chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
@@ -1018,6 +1026,87 @@ describe("CHAT-02: completed chat callback", () => {
       expect(followupPrompts[0]).not.toContain(value);
     }
   }, 90_000);
+
+  it.each([
+    { audience: "staff", staff: true, enabled: true },
+    { audience: "staff who opted out", staff: true, enabled: false },
+    { audience: "external members", staff: false, enabled: false },
+    {
+      audience: "external members opting in",
+      staff: false,
+      enabled: false,
+      override: true,
+    },
+  ])(
+    "gates workflow and email follow-ups for $audience",
+    async ({ staff, enabled, override }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor(
+        staff ? { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" } : {},
+      );
+      if ((staff && !enabled) || override) {
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.ChatActionFollowups]: override ?? false,
+        });
+      }
+      const followupSystemPrompts: string[] = [];
+      const workflow = {
+        prompt: "Save this reconciliation as a workflow",
+        kind: "workflow",
+      };
+      const email = {
+        prompt: "After I send it, notify me when they reply",
+        kind: "email",
+      };
+      const talk = { prompt: "Check the reconciliation totals", kind: "talk" };
+      chatCallbacks.mockVertexCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes("recommended follow-up messages")
+        ) {
+          followupSystemPrompts.push(body.messages[0].content);
+          return JSON.stringify([
+            { ...workflow, generationType: "website" },
+            { prompt: "Save another workflow", kind: "workflow" },
+            { ...email, generationType: "image" },
+            { prompt: "Track another reply", kind: "email" },
+            talk,
+          ]);
+        }
+        return "Reconciliation summary";
+      });
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt:
+          "Reconcile these invoices and draft an email asking about the discrepancies",
+      });
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      chatCallbacks.mockChatOutputEvents([
+        assistantEvent(
+          0,
+          "Reconciliation complete. The email is ready for you to review and send.",
+        ),
+      ]);
+      await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+      await flushWaitUntilForTest();
+      expect(followupSystemPrompts).toHaveLength(1);
+      expect(followupSystemPrompts[0]?.includes('"kind":"workflow"')).toBe(
+        enabled,
+      );
+      expect(followupSystemPrompts[0]?.includes('"kind":"email"')).toBe(
+        enabled,
+      );
+      const events = await chat.listThreadEvents(actor, run.threadId);
+      const [recommendation] = recommendedFollowupEvents(
+        events.events,
+        run.runId,
+      );
+      expect(recommendation).toBeDefined();
+      expect(
+        resolveChatEventRecommendedFollowups({
+          content: recommendation?.content ?? null,
+        }),
+      ).toStrictEqual(enabled ? [workflow, email, talk] : [talk]);
+    },
+  );
 
   it("accepts a retried recommended follow-up send as a duplicate", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

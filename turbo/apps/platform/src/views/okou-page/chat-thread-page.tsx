@@ -74,6 +74,7 @@ import {
   Loader2,
   Play,
   MessageCircle,
+  Mail,
   SmilePlus,
   Package,
   Route,
@@ -3718,6 +3719,12 @@ function RecommendedFollowupIcon({
 }: {
   followup: RecommendedFollowup;
 }) {
+  if (followup.kind === "workflow") {
+    return <Route size={16} />;
+  }
+  if (followup.kind === "email") {
+    return <Mail size={16} />;
+  }
   if (followup.kind !== "generate") {
     return <MessageCircle size={16} />;
   }
@@ -3848,14 +3855,14 @@ function RecommendedFollowupList({
               className={cn(
                 "text-muted-foreground transition-colors group-hover:text-foreground",
                 // A quick reply drops the 28px response rail, but keeps the
-                // icon for `generate`: mispicking one there costs a real
-                // generation rather than another message. `h-6` is one line
-                // box, so the glyph centres on the first line of a wrapped
-                // suggestion instead of on the whole text block.
+                // icons for generation and setup requests so their intent
+                // stays visible. `h-6` is one line box, so the glyph centres
+                // on the first line of a wrapped suggestion instead of on
+                // the whole text block.
                 showFollowupCards
                   ? "inline-flex h-6 shrink-0 items-center justify-center"
                   : CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS,
-                showFollowupCards && followup.kind !== "generate" && "hidden",
+                showFollowupCards && followup.kind === "talk" && "hidden",
               )}
             >
               <RecommendedFollowupIcon followup={followup} />
