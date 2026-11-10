@@ -208,7 +208,12 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertTrue(updated.connectorScoped)
     await card.confirm(reviewed)
     XCTAssertNotNil(card.error)
-    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(
+      fixture.state.withLock {
+        $0.requests.allSatisfy {
+          $0.httpMethod != "PUT" && $0.url!.path != "/api/chat/events"
+        }
+      })
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
   }
 

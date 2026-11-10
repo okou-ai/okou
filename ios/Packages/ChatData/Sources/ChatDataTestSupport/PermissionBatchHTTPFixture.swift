@@ -106,6 +106,11 @@ public final class PermissionBatchHTTPFixture: Sendable {
         if path == "/api/agents/\(Self.agentID)" {
           return Self.response(["agentId": Self.agentID, "displayName": "Mail assistant"])
         }
+        if path == threadPath + "/activity-summary", request.httpMethod == "POST" {
+          struct Demand: Decodable { let runId: String }
+          let demand = try JSONDecoder().decode(Demand.self, from: chatRequestBody(request))
+          return Self.response(["runId": demand.runId, "status": "ineligible", "messages": []])
+        }
         if path == threadPath + "/metadata" {
           return Self.response([
             "id": Self.threadID, "agentId": value.threadAgentID,

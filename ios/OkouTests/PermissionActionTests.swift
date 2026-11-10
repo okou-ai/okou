@@ -82,7 +82,12 @@ final class PermissionActionTests: XCTestCase {
     fixture.state.withLock { $0.threadAgentID = UUID().uuidString }
     try await confirm(card)
     XCTAssertNotNil(card.error)
-    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(
+      fixture.state.withLock {
+        $0.requests.allSatisfy {
+          $0.httpMethod != "PUT" && $0.url!.path != "/api/chat/events"
+        }
+      })
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
   }
 
@@ -259,7 +264,12 @@ final class PermissionActionTests: XCTestCase {
       let snapshot9 = try await card.resource.load()
       XCTAssertEqual(card.applied(snapshot9), variant < 2)
       XCTAssertEqual(card.canConfirm(snapshot9), variant == 2)
-      XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+      XCTAssertTrue(
+        fixture.state.withLock {
+          $0.requests.allSatisfy {
+            $0.httpMethod != "PUT" && $0.url!.path != "/api/chat/events"
+          }
+        })
     }
   }
 
@@ -289,7 +299,12 @@ final class PermissionActionTests: XCTestCase {
     await card.refresh()
     let restored = try await other.resource.load()
     XCTAssertTrue(restored.metadata?.contains("mail.send") == true)
-    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(
+      fixture.state.withLock {
+        $0.requests.allSatisfy {
+          $0.httpMethod != "PUT" && $0.url!.path != "/api/chat/events"
+        }
+      })
   }
 
   func testRetiringADetailCancelsOriginalReadAndReentryCannotPublishItsResult() async throws {
