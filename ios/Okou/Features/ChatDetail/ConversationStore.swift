@@ -260,7 +260,7 @@ final class ConversationStore {
       && pending.isEmpty
       && modelSelection?.isBusy != true
       && !isLoading && !isSending && !isStopping && !isLoadingEarlier
-      && !isRecoveringFailure && !permissionActions.isBusy
+      && !isRecoveringFailure && !permissionActions.isBusy && !approvals.isMailBusy
       && history?.executionState.isActive != true
   }
 

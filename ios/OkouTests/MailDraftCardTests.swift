@@ -11,10 +11,12 @@ final class MailDraftCardTests: XCTestCase {
   func testRowReuseSharesTheReadWithoutSendingOrDiscarding() async throws {
     let entered = expectation(description: "Draft HTTP read started")
     let gate = ModelResponseGate()
+    let response = Mutex(MailCardHTTPFixture.draft())
     let fixture = MailCardHTTPFixture { _ in
+      let result = response.withLock { $0 }
       entered.fulfill()
       await gate.wait()
-      return MailCardHTTPFixture.draft()
+      return result
     }
     let registry = ApprovalCardRegistry(
       client: fixture.http.client, didFail: { _ in }, didContinue: {})
@@ -35,8 +37,12 @@ final class MailDraftCardTests: XCTestCase {
     let draft = try await shared.value
     XCTAssertEqual(draft?.subject, "Fixture email")
     _ = await first.result
-    let remounted = try await registry.mailDraft("draft").stateStore.get(card.value).value
-    XCTAssertEqual(remounted, draft)
+    response.withLock {
+      $0 = ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Provider offline"}}"#)
+    }
+    let remounted = registry.mailDraft("draft")
+    let retained = try await remounted.stateStore.get(remounted.value).value
+    XCTAssertEqual(retained, draft)
     XCTAssertTrue(fixture.requests.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
   }
 
@@ -244,6 +250,42 @@ final class MailDraftCardTests: XCTestCase {
     await future.discard()
     let result = await original.result
     XCTAssertThrowsError(try result.get())
+  }
+
+  func testConversationCannotBeEvictedWhileItsConfirmedMailWriteIsPending() async throws {
+    let entered = expectation(description: "Conversation mail write started")
+    let gate = ModelResponseGate()
+    let fixture = ConversationHistoryFixture(
+      count: 0,
+      additional: { request in
+        guard request.url?.path.hasPrefix("/api/mail/drafts/") == true else {
+          throw URLError(.unsupportedURL)
+        }
+        if request.httpMethod == "POST" {
+          entered.fulfill()
+          await gate.wait()
+          return MailCardHTTPFixture.draft(status: "sent")
+        }
+        return MailCardHTTPFixture.draft()
+      })
+    let conversation = fixture.conversation()
+    let card = conversation.approvals.mailDraft("draft")
+    _ = try await card.stateStore.get(card.value).value
+    XCTAssertTrue(conversation.canRelease)
+    let send = Task { await card.send() }
+    addTeardownBlock { @MainActor in
+      gate.open()
+      conversation.close()
+      send.cancel()
+      await send.value
+    }
+    await fulfillment(of: [entered], timeout: 3)
+    XCTAssertFalse(conversation.canRelease)
+    gate.open()
+    await send.value
+    let confirmed = try await card.stateStore.get(card.value).value
+    XCTAssertEqual(confirmed?.status, .sent)
+    XCTAssertTrue(conversation.canRelease)
   }
 
   func testRegistryRetirementCancelsTheConfirmedMutationIO() async throws {

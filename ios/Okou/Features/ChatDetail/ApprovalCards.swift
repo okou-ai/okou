@@ -22,6 +22,8 @@ final class ApprovalCardRegistry {
     self.didContinue = didContinue
   }
 
+  var isMailBusy: Bool { mailDrafts.values.contains { $0.isWorking } }
+
   func mailDraft(_ id: String) -> MailDraftCardStore {
     if let store = mailDrafts[id] { return store }
     let store = MailDraftCardStore(id: id, client: client, didFail: didFail)
