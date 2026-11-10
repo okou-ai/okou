@@ -249,15 +249,12 @@ function expectDisableNotice(
   }
   const markdown = notification.payload.markdown;
   expect(markdown).toContain(
-    `“${scenario.workflowName.replaceAll("-", "\\-")}”`,
+    `“${scenario.workflowName.replaceAll("-", String.raw`\-`)}”`,
   );
   expect(markdown).toContain(
     "automatically disabled after 3 consecutive execution failures.",
   );
-  expect(markdown).toContain("It will no longer run on its previous schedule.");
-  expect(markdown).toContain(
-    "Review recent failures and re-enable it after addressing the problem.",
-  );
+  expect(markdown).toContain("Review the automation for its current status.");
   expect(markdown).toContain(`Disabled at: ${disabledAt}`);
   expect(
     [notification.title, notification.summary, markdown].join("\n"),
@@ -390,8 +387,8 @@ describe("recurring automation auto-disable bell notifications", () => {
       await expectPreRunRejections(scenario, automation, failure);
       expect(automation.enabled).toBeTruthy();
       expect(automation.nextRunAt).not.toBeNull();
-      expect(await inbox(scenario.actor)).toStrictEqual([]);
-      expect(await unreadCount(scenario.actor)).toBe(0);
+      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+      await expect(unreadCount(scenario.actor)).resolves.toBe(0);
       if (failure === 1) {
         await muteThread(scenario, automation);
       }
@@ -411,7 +408,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       scenario,
       disabledAt,
     );
-    expect(await unreadCount(scenario.actor)).toBe(1);
+    await expect(unreadCount(scenario.actor)).resolves.toBe(1);
 
     // A disabled automation is a no-op on the real cron, not another delivery.
     await executeCron();
@@ -422,7 +419,7 @@ describe("recurring automation auto-disable bell notifications", () => {
     ).toStrictEqual([notice.id]);
     const peer = workflows.user({ orgId: scenario.actor.orgId });
     await notificationSwitches(peer, true);
-    expect(await inbox(peer)).toStrictEqual([]);
+    await expect(inbox(peer)).resolves.toStrictEqual([]);
     await accept(
       notificationsClient().get({
         headers: authHeaders(peer),
@@ -437,7 +434,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       }),
       [404],
     );
-    expect(await unreadCount(scenario.actor)).toBe(1);
+    await expect(unreadCount(scenario.actor)).resolves.toBe(1);
     await accept(
       notificationsClient().markRead({
         headers: authHeaders(scenario.actor),
@@ -445,7 +442,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       }),
       [200],
     );
-    expect(await unreadCount(scenario.actor)).toBe(0);
+    await expect(unreadCount(scenario.actor)).resolves.toBe(0);
     expect((await readAutomation(scenario)).enabled).toBeFalsy();
   });
 
@@ -459,15 +456,15 @@ describe("recurring automation auto-disable bell notifications", () => {
     for (const failure of [1, 2]) {
       await completeFailedOccurrence(scenario, { mute: failure === 1 });
       expect((await readAutomation(scenario)).enabled).toBeTruthy();
-      expect(await inbox(scenario.actor)).toStrictEqual([]);
+      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
     }
     await completeFailedOccurrence(scenario, { creditError: true });
     expect((await readAutomation(scenario)).enabled).toBeTruthy();
-    expect(await inbox(scenario.actor)).toStrictEqual([]);
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
 
     const threshold = await completeFailedOccurrence(scenario);
     const disabledAt = new Date(now()).toISOString();
-    expect(await readAutomation(scenario)).toMatchObject({
+    await expect(readAutomation(scenario)).resolves.toMatchObject({
       enabled: false,
       nextRunAt: null,
     });
@@ -507,7 +504,9 @@ describe("recurring automation auto-disable bell notifications", () => {
     for (const failure of [1, 2, 3]) {
       await completeFailedOccurrence(scenario);
       expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
-      expect(await inbox(scenario.actor)).toHaveLength(failure < 3 ? 1 : 2);
+      await expect(inbox(scenario.actor)).resolves.toHaveLength(
+        failure < 3 ? 1 : 2,
+      );
     }
     const secondCycle = await inbox(scenario.actor);
     const secondNotice = secondCycle.find((item) => {
@@ -523,7 +522,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       scenario,
       new Date(now()).toISOString(),
     );
-    expect(await unreadCount(scenario.actor)).toBe(2);
+    await expect(unreadCount(scenario.actor)).resolves.toBe(2);
   });
 
   it.each([
@@ -552,8 +551,8 @@ describe("recurring automation auto-disable bell notifications", () => {
         );
         await notificationSwitches(scenario.actor, writerEnabled);
       }
-      expect(await inbox(scenario.actor)).toStrictEqual([]);
-      expect(await unreadCount(scenario.actor)).toBe(0);
+      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+      await expect(unreadCount(scenario.actor)).resolves.toBe(0);
 
       await notificationSwitches(scenario.actor, true);
       await accept(
@@ -567,7 +566,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       await expectPreRunRejections(scenario, resumed, 4);
       expect(resumed.enabled).toBeTruthy();
       expect(resumed.nextRunAt).not.toBeNull();
-      expect(await inbox(scenario.actor)).toStrictEqual([]);
+      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
       const stopped = await accept(
         automationsClient().disable({
           headers: authHeaders(scenario.actor),
@@ -577,8 +576,8 @@ describe("recurring automation auto-disable bell notifications", () => {
       );
       expect(stopped.body).toMatchObject({ enabled: false, nextRunAt: null });
       await executeCron();
-      expect(await inbox(scenario.actor)).toStrictEqual([]);
-      expect(await unreadCount(scenario.actor)).toBe(0);
+      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+      await expect(unreadCount(scenario.actor)).resolves.toBe(0);
     },
   );
 });

@@ -39,19 +39,15 @@ export function automationDisabledNotificationInsertSql(
   const title = "Scheduled automation automatically disabled";
   const summary = `“${notification.automationName}” was automatically disabled after consecutive execution failures.`;
   const introduction = `“${name}” was automatically disabled after `;
-  const disabledAt = `\n\nDisabled at: ${notification.disabledAt}`;
+  // Keep Markdown state-neutral; readers localize impact from recoveryScheduled.
+  const details = ` consecutive execution failures.\n\nReview the automation for its current status.\n\nDisabled at: ${notification.disabledAt}`;
   return sql`INSERT INTO ${userNotifications}
       (user_id, title, summary, payload, delivery_key)
     SELECT notification_transition.owner_user_id,
       ${title}, ${summary},
       jsonb_build_object(
         'type', 'rich_text',
-        'markdown', ${introduction} || notification_transition.consecutive_failures::text ||
-          ' consecutive execution failures. ' ||
-          CASE WHEN notification_transition.next_run_at IS NOT NULL
-            THEN 'The system has scheduled a recovery attempt. Review the automation for its current status.'
-            ELSE 'It will no longer run on its previous schedule. Review recent failures and re-enable it after addressing the problem.'
-          END || ${disabledAt},
+        'markdown', ${introduction} || notification_transition.consecutive_failures::text || ${details},
         'automationDisabled', jsonb_build_object(
           'automationId', notification_transition.id,
           'workflowId', notification_transition.workflow_id,
