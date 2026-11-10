@@ -1,8 +1,39 @@
 import SwiftUI
+import Synchronization
 import XCTest
 
 @MainActor
 final class NativeTestWaitTests: XCTestCase {
+  func testLateBusinessResultCannotContinueAfterTheWaiterTimesOut() async {
+    let message = "A business result arriving after timeout cannot satisfy the wait"
+    let lateResult = Mutex(false)
+    XCTExpectFailure(
+      "Verify that a missed business deadline stops dependent actions",
+      issueMatcher: { @Sendable issue in
+        let description = issue.compactDescription
+        guard description.contains(message)
+          || (description.contains("Exceeded timeout")
+            && description.contains("NativeTestWaitTests.swift"))
+        else { return false }
+        // Deliver the result only after XCTest has recorded the missed deadline.
+        lateResult.withLock { $0 = true }
+        return true
+      })
+    var reachedDependentAction = false
+    var caughtFailure = false
+    do {
+      try await waitForBusinessResult(timeout: 0, message: message) {
+        lateResult.withLock { $0 }
+      }
+      reachedDependentAction = true
+    } catch {
+      caughtFailure = true
+    }
+    XCTAssertTrue(lateResult.withLock { $0 })
+    XCTAssertTrue(caughtFailure)
+    XCTAssertFalse(reachedDependentAction)
+  }
+
   func testTimedOutPrerequisiteDoesNotContinueToDependentActions() async {
     let message = "Intentional prerequisite timeout"
     XCTExpectFailure(
