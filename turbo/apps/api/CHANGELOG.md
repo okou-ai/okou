@@ -10,6 +10,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.56.0](https://github.com/okou-ai/okou/compare/api-v2.55.7...api-v2.56.0) (2026-11-10)
+
+
+### Features
+
+* **email:** register new senders through confirmed replies ([#46356](https://github.com/okou-ai/okou/issues/46356)) ([0c64db3](https://github.com/okou-ai/okou/commit/0c64db344440e3507b033e9478b5944451575d3d))
+
+
+### Bug Fixes
+
+* **api:** admit useful delegable suggestions ([#46378](https://github.com/okou-ai/okou/issues/46378)) ([bd8efe4](https://github.com/okou-ai/okou/commit/bd8efe4f4182fc3498bc80e1cf4a72bb1a26136f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.24.14
+
 ## [2.55.7](https://github.com/okou-ai/okou/compare/api-v2.55.6...api-v2.55.7) (2026-11-10)
 
 

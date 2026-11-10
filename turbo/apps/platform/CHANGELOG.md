@@ -13,6 +13,14 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1111.1](https://github.com/okou-ai/okou/compare/app-v0.1111.0...app-v0.1111.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **app:** remove redundant suggestion options label ([#46383](https://github.com/okou-ai/okou/issues/46383)) ([4170362](https://github.com/okou-ai/okou/commit/4170362335123a7fc260b4a5853274fe0e978490))
+* **app:** replace the history entry when navigating to the open url ([#46384](https://github.com/okou-ai/okou/issues/46384)) ([909d488](https://github.com/okou-ai/okou/commit/909d488e9492e6f2799cfdc3cb5a978cf7befde7))
+
 ## [0.1111.0](https://github.com/okou-ai/okou/compare/app-v0.1110.0...app-v0.1111.0) (2026-11-10)
 
 

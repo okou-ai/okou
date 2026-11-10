@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.60](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.59...runner-rs-v0.244.60) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** use one cursor for usage batch admission ([#46371](https://github.com/okou-ai/okou/issues/46371)) ([6ebaed8](https://github.com/okou-ai/okou/commit/6ebaed8cb2cb8d42e3a2d7ecf40b0f7fec1626e9))
+
 ## [0.244.59](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.58...runner-rs-v0.244.59) (2026-11-10)
 
 ### Release Dependencies
