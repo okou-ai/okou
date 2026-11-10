@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1109.0](https://github.com/okou-ai/okou/compare/app-v0.1108.0...app-v0.1109.0) (2026-11-10)
+
+
+### Features
+
+* **browser:** add opt-in viewer fps overlay ([#46281](https://github.com/okou-ai/okou/issues/46281)) ([5de167e](https://github.com/okou-ai/okou/commit/5de167e7e5510cb136d8d32a12539ae6d749f40c))
+
 ## [0.1108.0](https://github.com/okou-ai/okou/compare/app-v0.1107.0...app-v0.1108.0) (2026-11-10)
 
 
