@@ -6,12 +6,16 @@ only_rules:
   - unused_closure_parameter
   - invalid_swiftlint_command
   - superfluous_disable_command
+  - unhandled_throwing_task
+  - discarded_notification_center_observer
+  - private_swiftui_state
   - okou_render_effects
   - okou_stable_graph
   - okou_private_atoms
   - okou_accessor_escape
   - okou_native_requests
   - okou_resource_failures
+  - okou_test_synchronization
 
 included:
   - Okou
