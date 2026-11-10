@@ -33,6 +33,7 @@ const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
 mod admission_deferral;
 mod claim_observation;
+mod compression;
 mod finalizing_source;
 mod parallel_claim;
 mod preferred_claim_retry;
@@ -4271,7 +4272,7 @@ async fn api_provider_claim_accepts_shared_current_response_fixture() {
     );
     assert_eq!(
         claim_timing.response_attribution().content_encoding(),
-        "absent"
+        "absent_or_decoded"
     );
     let context = claimed.context();
 
