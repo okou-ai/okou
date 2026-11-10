@@ -317,11 +317,13 @@ final class FailureRecoveryTests: XCTestCase {
         of: "\"subscriptionResetCredits\":2", with: "\"subscriptionResetCredits\":0")
     }
     await conversation.refreshFailureAccounts()
-    XCTAssertNil(conversation.failureState(failure).resetAccountID)
+    let emptyCredits = await conversation.readFailureState(failure)
+    XCTAssertNil(emptyCredits.resetAccountID)
     fixture.state.value.withLock { $0.accountStatus = 503 }
     await conversation.recoverFailure(failure.id, resetUsage: true)
     XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty && $0.resetKeys.isEmpty })
-    XCTAssertNotNil(conversation.failureState(failure).accountError)
+    let failedRead = await conversation.readFailureState(failure)
+    XCTAssertNotNil(failedRead.accountError)
   }
 
   func testSharedAccountRefreshCanSupersedeCardReadWithoutLeavingItLoading() async throws {
@@ -372,8 +374,9 @@ final class FailureRecoveryTests: XCTestCase {
     // Both callers now await the same current read after replacement.
     await cardRead.value
     _ = await settingsRead.value
-    XCTAssertEqual(conversation.failureState(failure).accountLabel, "new-active@example.invalid")
-    XCTAssertFalse(conversation.failureState(failure).isBusy)
+    let recovered = await conversation.readFailureState(failure)
+    XCTAssertEqual(recovered.accountLabel, "new-active@example.invalid")
+    XCTAssertFalse(recovered.isBusy)
   }
 
   func testNewInputWhileResetIsInFlightRemovesOldActionsAndNeverContinues() async throws {
@@ -567,7 +570,8 @@ final class FailureRecoveryTests: XCTestCase {
         models.close()
       }
       let failure = try XCTUnwrap(conversation.messages.last?.failure)
-      XCTAssertEqual(conversation.failureState(failure).resetAccountID, ModelHTTPFixtures.accountID)
+      let ready = await conversation.readFailureState(failure)
+      XCTAssertEqual(ready.resetAccountID, ModelHTTPFixtures.accountID)
       fixture.state.value.withLock { $0.resetOutcome = outcome }
       await conversation.recoverFailure(failure.id, resetUsage: true)
       XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
@@ -591,8 +595,9 @@ final class FailureRecoveryTests: XCTestCase {
       models.close()
     }
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
-    XCTAssertEqual(conversation.failureState(failure).accountLabel, "sample@example.invalid")
-    XCTAssertEqual(conversation.failureState(failure).resetDetails.count, 1)
+    let ready = await conversation.readFailureState(failure)
+    XCTAssertEqual(ready.accountLabel, "sample@example.invalid")
+    XCTAssertEqual(ready.resetDetails.count, 1)
     fixture.state.value.withLock { $0.model = "claude-model" }
     await conversation.modelSelection?.refresh()
     XCTAssertNil(conversation.failureState(failure).accountLabel)
@@ -667,17 +672,19 @@ final class FailureRecoveryTests: XCTestCase {
       models.close()
     }
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
-    XCTAssertTrue(try XCTUnwrap(conversation.failureState(failure).billing).canManageBilling)
+    let initial = await conversation.readFailureState(failure)
+    XCTAssertTrue(try XCTUnwrap(initial.billing).canManageBilling)
     fixture.state.value.withLock {
       $0.billingAdmin = false
       $0.canBuyCredits = false
     }
     await conversation.refreshFailureAccounts()
-    let billing = try XCTUnwrap(conversation.failureState(failure).billing)
+    let member = await conversation.readFailureState(failure)
+    let billing = try XCTUnwrap(member.billing)
     XCTAssertFalse(billing.canManageBilling)
     XCTAssertFalse(billing.canBuyCredits)
     XCTAssertTrue(
-      AssistantFailureCopy.content(conversation.failureState(failure)).description.contains("admin")
+      AssistantFailureCopy.content(member).description.contains("admin")
     )
     await conversation.recoverFailure(failure.id)
     XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
@@ -686,13 +693,181 @@ final class FailureRecoveryTests: XCTestCase {
       $0.canBuyCredits = true
     }
     await conversation.refreshFailureAccounts()
-    XCTAssertEqual(
-      AssistantFailureCopy.content(conversation.failureState(failure)).title, "Credits available")
+    let funded = await conversation.readFailureState(failure)
+    XCTAssertEqual(AssistantFailureCopy.content(funded).title, "Credits available")
     conversation.draft = "A new input"
     await conversation.send()
     let historical = conversation.failureState(failure)
     XCTAssertFalse(historical.isCurrent)
     XCTAssertFalse(AssistantFailureCopy.content(historical).description.contains("Checking"))
+  }
+
+  func testOldFailureAccountSuccessCannotAuthorizeTheNextFailure() async throws {
+    let fixture = FailureRecoveryFixture(reason: "usage_limit", error: "Usage limit")
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    let oldGate = ModelResponseGate()
+    let newGate = ModelResponseGate()
+    let oldStarted = expectation(description: "Old failure account response captured")
+    let newStarted = expectation(description: "New failure account response captured")
+    fixture.state.value.withLock {
+      $0.accountGate = oldGate
+      $0.accountRequested = { oldStarted.fulfill() }
+    }
+    let refreshing = Task { await conversation.refreshFailureAccounts() }
+    addTeardownBlock {
+      refreshing.cancel()
+      oldGate.open()
+      newGate.open()
+      await refreshing.value
+    }
+    await fulfillment(of: [oldStarted], timeout: 3)
+    let oldContext = try XCTUnwrap(conversation.failureContext)
+    let oldRead = try oldContext.store.get(XCTUnwrap(oldContext.accounts))
+    fixture.state.value.withLock {
+      $0.accountGate = newGate
+      $0.accountRequested = { newStarted.fulfill() }
+      $0.accountStatus = 403
+      $0.rows.append(
+        FailureRecoveryFixture.row(
+          4, type: "input.prompt",
+          payload:
+            #"{"userMessage":{"version":1,"parts":[{"type":"text","text":"Another request"}]}}"#))
+      $0.rows.append(
+        FailureRecoveryFixture.row(
+          5, type: "run.failed", payload: #"{"error":"Usage limit","failureReason":"usage_limit"}"#)
+      )
+      $0.lastID = FailureRecoveryFixture.id(5)
+    }
+    await conversation.refresh()
+    await fulfillment(of: [newStarted], timeout: 3)
+    oldGate.open()
+    _ = await oldRead.result
+    newGate.open()
+    await refreshing.value
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    XCTAssertEqual(failure.id, FailureRecoveryFixture.id(5))
+    let state = await conversation.readFailureState(failure)
+    XCTAssertNotNil(state.accountError)
+    XCTAssertNil(state.resetAccountID)
+    XCTAssertNil(state.accountLabel)
+    XCTAssertTrue(fixture.state.value.withLock { $0.resetKeys.isEmpty && $0.sends.isEmpty })
+  }
+
+  func testReadRetryAfterConfirmedResetDoesNotSpendAgainOrContinueAutomatically() async throws {
+    let fixture = FailureRecoveryFixture(reason: "usage_limit", error: "Usage limit")
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    fixture.state.value.withLock { $0.accountStatusAfterReset = 503 }
+    await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
+    XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
+    fixture.state.value.withLock {
+      $0.accountStatus = 200
+      $0.accountStatusAfterReset = nil
+    }
+    await conversation.refreshFailureAccounts()
+    XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
+    XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
+    await conversation.recoverFailure(FailureRecoveryFixture.failureID, resetUsage: true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.resetKeys.count }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.sends.count }, 1)
+    XCTAssertTrue(conversation.messages.contains { $0.role == .user && $0.text == "continue" })
+  }
+
+  func testRetiringBillingContextCancelsOriginalHTTPAndPreventsFutureReads() async throws {
+    let fixture = FailureRecoveryFixture(reason: "insufficient_credits", error: "No credits")
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    let owner = UUID()
+    conversation.setDetailVisible(true, owner: owner)
+    let gate = ModelResponseGate()
+    let began = expectation(description: "Billing HTTP began")
+    let cancelled = expectation(description: "Billing HTTP cancelled at its original transport")
+    fixture.state.value.withLock {
+      $0.billingGate = gate
+      $0.billingRequested = { began.fulfill() }
+      $0.billingCancelled = { cancelled.fulfill() }
+    }
+    let read = Task { await conversation.refreshFailureAccounts() }
+    addTeardownBlock {
+      read.cancel()
+      gate.open()
+      await read.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    let retired = try XCTUnwrap(conversation.failureContext)
+    conversation.setDetailVisible(false, owner: owner)
+    await fulfillment(of: [cancelled], timeout: 3)
+    gate.open()
+    await read.value
+    XCTAssertThrowsError(try retired.retry()) { XCTAssertTrue($0 is CancellationError) }
+    XCTAssertThrowsError(try retired.store.get(XCTUnwrap(retired.billing)))
+    await conversation.refreshFailureAccounts()
+    await conversation.recoverFailure(FailureRecoveryFixture.failureID)
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    let state = await conversation.readFailureState(failure)
+    XCTAssertFalse(state.isCurrent)
+    XCTAssertNil(state.billing)
+    XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
+  }
+
+  func testAccountReadFailureDoesNotBecomeBillingAuthorityAndRetriesStayReadOnly() async throws {
+    for status in [401, 403, 426] {
+      let fixture = FailureRecoveryFixture(reason: "usage_limit", error: "Usage limit")
+      let (conversation, models) = await fixture.conversation()
+      defer {
+        conversation.close()
+        models.close()
+      }
+      let failure = try XCTUnwrap(conversation.messages.last?.failure)
+      fixture.state.value.withLock { $0.accountStatus = status }
+      await conversation.refreshFailureAccounts()
+      let unavailable = await conversation.readFailureState(failure)
+      XCTAssertNotNil(unavailable.accountError)
+      XCTAssertNil(unavailable.resetAccountID)
+      XCTAssertNil(unavailable.billingError)
+      XCTAssertNil(unavailable.billing)
+      fixture.state.value.withLock { $0.accountStatus = 200 }
+      await conversation.refreshFailureAccounts()
+      let recovered = await conversation.readFailureState(failure)
+      XCTAssertEqual(recovered.resetAccountID, ModelHTTPFixtures.accountID)
+      XCTAssertTrue(fixture.state.value.withLock { $0.resetKeys.isEmpty && $0.sends.isEmpty })
+    }
+  }
+
+  func testBillingFailureRevokesCapabilitiesUntilItsOwnReadSucceeds() async throws {
+    let fixture = FailureRecoveryFixture(reason: "insufficient_credits", error: "No credits")
+    let (conversation, models) = await fixture.conversation()
+    defer {
+      conversation.close()
+      models.close()
+    }
+    let failure = try XCTUnwrap(conversation.messages.last?.failure)
+    fixture.state.value.withLock { $0.billingStatus = 403 }
+    await conversation.refreshFailureAccounts()
+    let unavailable = await conversation.readFailureState(failure)
+    XCTAssertNil(unavailable.billing)
+    XCTAssertNotNil(unavailable.billingError)
+    XCTAssertNil(unavailable.accountError)
+    fixture.state.value.withLock {
+      $0.billingStatus = 200
+      $0.billingAdmin = false
+    }
+    await conversation.refreshFailureAccounts()
+    let recovered = await conversation.readFailureState(failure)
+    XCTAssertFalse(try XCTUnwrap(recovered.billing).canManageBilling)
+    XCTAssertNil(recovered.billingError)
+    XCTAssertTrue(fixture.state.value.withLock { $0.resetKeys.isEmpty && $0.sends.isEmpty })
   }
 
 }
