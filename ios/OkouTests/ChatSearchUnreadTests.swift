@@ -680,16 +680,16 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { store.close() }
     await store.refreshNavigation()
     await store.refresh()
-    store.list.onlyUnread = true
+    store.sidebar.selectFilter(.unread)
     let agent = SearchUnreadFixture.agent
     XCTAssertEqual(
-      store.list.threads(agentID: agent, archived: false).map(\.id), [SearchUnreadFixture.id(5)])
+      store.sidebar.recentSearchThreads.map(\.id), [SearchUnreadFixture.id(5)])
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
     await store.list.markAgentRead(agent)
     XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, agent)
-    XCTAssertTrue(store.list.threads(agentID: agent, archived: false).isEmpty)
+    XCTAssertTrue(store.sidebar.recentSearchThreads.isEmpty)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)

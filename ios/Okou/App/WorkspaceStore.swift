@@ -99,6 +99,8 @@ final class WorkspaceStore {
     client: client, resources: resources, sync: sync,
     didFail: { [weak self] in self?.handle($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
+  @ObservationIgnored lazy var sidebar = ChatSidebarStore(
+    store: resources.store, threads: list.threadsValue, projects: projects.projectsValue)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -201,6 +203,7 @@ final class WorkspaceStore {
 
   private func prepareDefaultDraft(from agents: [AgentRecord]) {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    sidebar.selectAgent(selectedAgentID)
     let id = agents.first(where: \.isDefaultAgent)?.agentId
     if let id { activateDefaultDraft(agentID: id) }
   }
@@ -209,7 +212,9 @@ final class WorkspaceStore {
     list.agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
   }
 
-  private(set) var selectedConversation: ConversationStore?
+  private(set) var selectedConversation: ConversationStore? {
+    didSet { sidebar.selectAgent(selectedAgentID) }
+  }
 
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }
@@ -250,6 +255,7 @@ final class WorkspaceStore {
     modelStore.close()
     composerWorkflows.close()
     newModelSelection.close()
+    sidebar.close()
     list.close()
     projects.close()
     resources.close()

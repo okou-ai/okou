@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -7,13 +8,31 @@ import Observation
 /// Navigation data and list presentation for one workspace.
 @MainActor @Observable
 final class ThreadListStore {
-  private(set) var threads: [ChatThread] = []
+  // The confirmed baseline also serves persistence and business decisions. The graph
+  // stores it once; request loading/errors remain with their existing read owner.
+  @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
+  @ObservationIgnored let threadsValue: Computed<[ChatThread]>
+  @ObservationIgnored private var threadsSubscription: Subscription?
+  private(set) var threads: [ChatThread] {
+    get {
+      access(keyPath: \.threads)
+      // Only a synchronous local atom is read here, never external I/O.
+      do { return try resources.store.get(threadsValue) } catch {
+        preconditionFailure("Cannot read confirmed threads: \(error)")
+      }
+    }
+    set {
+      guard !closed, threads != newValue else { return }
+      do { try resources.store.set(confirmedThreads, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed threads: \(error)")
+      }
+    }
+  }
   private(set) var agents: [AgentRecord] = []
   private(set) var unreadAgentIDs: Set<String> = []
   var hasUnreadThreads: Bool {
     threads.contains { !$0.isMuted && $0.indicator == .unread }
   }
-  var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
   private(set) var navigationError: String?
@@ -77,6 +96,14 @@ final class ThreadListStore {
     self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
+    let confirmed = confirmedThreads
+    threadsValue = Computed { get in try get(confirmed) }
+    do {
+      threadsSubscription = try resources.store.watch(threadsValue) { [weak self] in
+        guard let self else { return }
+        withMutation(keyPath: \.threads) {}
+      }
+    } catch { preconditionFailure("Cannot observe confirmed threads: \(error)") }
   }
 
   func restoreCached() async {
@@ -323,10 +350,6 @@ final class ThreadListStore {
   func threads(agentID: String?, archived: Bool) -> [ChatThread] {
     threads.filter {
       guard $0.agentID == agentID else { return false }
-      if onlyUnread {
-        // PWA's unread list includes archived chats and retains active-indicator precedence.
-        return !$0.isMuted && $0.indicator == .unread
-      }
       return $0.isArchived == archived
     }
   }
@@ -624,6 +647,7 @@ final class ThreadListStore {
 
   func close() {
     closed = true
+    stopObservingThreads()
     cancelRefresh()
     navigationTask?.cancel()
     for task in updateTasks.values { task.cancel() }
@@ -657,4 +681,13 @@ final class ThreadListStore {
     blocked = (failure as? APIClientError)?.statusCode == 426
     didFail(failure)
   }
+
+  private func stopObservingThreads() {
+    do { try threadsSubscription?.cancel() } catch {
+      preconditionFailure("Cannot release confirmed threads: \(error)")
+    }
+    threadsSubscription = nil
+  }
+
+  isolated deinit { stopObservingThreads() }
 }

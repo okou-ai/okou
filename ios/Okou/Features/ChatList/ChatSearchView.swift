@@ -10,14 +10,13 @@ import SwiftUI
 /// Agent chat with `/name` in the draft; an artifact opens in the app's preview.
 struct ChatSearchView: View {
   let workspace: WorkspaceStore
-  var showsArchived = false
   let didOpen: () -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void
 
   var body: some View {
     StoreProvider(workspace.search.stateStore) {
       ChatSearchContent(
-        workspace: workspace, showsArchived: showsArchived, didOpen: didOpen,
+        workspace: workspace, didOpen: didOpen,
         openWorkflow: openWorkflow
       )
       .id(ObjectIdentifier(workspace.search))
@@ -41,7 +40,6 @@ private struct ChatSearchContent: View {
   }
 
   @Bindable var workspace: WorkspaceStore
-  var showsArchived = false
   let didOpen: () -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void
   @LoadableValue private var messageResults: Loadable<[ChatSearchResult]>
@@ -49,11 +47,10 @@ private struct ChatSearchContent: View {
   @LoadableValue private var artifactResults: Loadable<[ChatSearchArtifact]>
 
   init(
-    workspace: WorkspaceStore, showsArchived: Bool, didOpen: @escaping () -> Void,
+    workspace: WorkspaceStore, didOpen: @escaping () -> Void,
     openWorkflow: @escaping (ChatSearchWorkflow) -> Void
   ) {
     self.workspace = workspace
-    self.showsArchived = showsArchived
     self.didOpen = didOpen
     self.openWorkflow = openWorkflow
     _messageResults = LoadableValue(task: workspace.search.messagesValue)
@@ -78,7 +75,7 @@ private struct ChatSearchContent: View {
 
   private var titleThreads: [ChatThread] {
     search.keyword.isEmpty
-      ? workspace.list.threads(agentID: workspace.selectedAgentID, archived: showsArchived)
+      ? workspace.sidebar.recentSearchThreads
       : workspace.list.threads
   }
 

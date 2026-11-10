@@ -22,8 +22,6 @@ struct ChatSidebarView: View {
   @State private var membershipThread: ChatThread?
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
-  @State private var showArchived = false
-  @State private var showMuted = false
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -42,32 +40,16 @@ struct ChatSidebarView: View {
 
   /// A section shows a status column only when one of its own chats has a status emoji;
   /// a section without any keeps its titles flush.
-  private func usesStatusColumn(_ threads: [ChatThread]) -> Bool {
-    threads.contains { $0.titleParts.emoji != nil }
+  private func usesStatusColumn(_ threads: [ChatListContents.Row]) -> Bool {
+    threads.contains { $0.thread.titleParts.emoji != nil }
   }
 
-  private var contents: ChatListContents {
-    ChatListContents(
-      projects: store.projects.projects, threads: store.list.threads,
-      agentID: store.selectedAgentID, onlyUnread: store.list.onlyUnread,
-      archived: showArchived, muted: showMuted)
-  }
+  private var contents: ChatListContents { store.sidebar.contents }
 
-  private var visibleThreads: [ChatThread] { contents.threads }
+  private var visibleThreads: [ChatListContents.Row] { contents.threads }
 
   private var threadFilter: Binding<ChatListFilter> {
-    Binding(
-      get: {
-        if store.list.onlyUnread { return .unread }
-        if showMuted { return .muted }
-        if showArchived { return .archived }
-        return .recent
-      },
-      set: {
-        store.list.onlyUnread = $0 == .unread
-        showArchived = $0 == .archived
-        showMuted = $0 == .muted
-      })
+    Binding(get: { store.sidebar.filter }, set: { store.sidebar.selectFilter($0) })
   }
 
   var body: some View {
@@ -162,7 +144,7 @@ struct ChatSidebarView: View {
       )
     ) {
       ChatSearchView(
-        workspace: store, showsArchived: showArchived, didOpen: close,
+        workspace: store, didOpen: close,
         openWorkflow: { workflow in
           store.search.dismiss()
           newChat()
@@ -274,7 +256,8 @@ struct ChatSidebarView: View {
             id: \.element.id
           ) { index, thread in
             threadRow(
-              thread, waveIndex: index, showsStatusColumn: usesStatusColumn(group.threads),
+              thread.thread, marker: thread.marker, waveIndex: index,
+              showsStatusColumn: usesStatusColumn(group.threads),
               indentation: OkouSpace.xxl)
           }
           if group.threads.count > store.projects.limit(for: group.id) {
@@ -288,7 +271,9 @@ struct ChatSidebarView: View {
         }
       }
       ForEach(Array(contents.threads.enumerated()), id: \.element.id) { index, thread in
-        threadRow(thread, waveIndex: index, showsStatusColumn: usesStatusColumn(contents.threads))
+        threadRow(
+          thread.thread, marker: thread.marker, waveIndex: index,
+          showsStatusColumn: usesStatusColumn(contents.threads))
       }
     }
   }
@@ -307,7 +292,7 @@ struct ChatSidebarView: View {
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
         Spacer(minLength: 0)
         if !expanded {
-          OkouChatTrailingMark(trailing: projectTrailing(group.threads))
+          OkouChatTrailingMark(trailing: trailing(group.marker))
         }
       }
       .frame(minHeight: OkouControl.listRow)
@@ -364,7 +349,7 @@ struct ChatSidebarView: View {
   }
 
   private func threadRow(
-    _ thread: ChatThread, waveIndex: Int,
+    _ thread: ChatThread, marker: ChatListContents.Marker, waveIndex: Int,
     showsStatusColumn: Bool = false, indentation: CGFloat = 0
   ) -> some View {
     Button {
@@ -372,7 +357,7 @@ struct ChatSidebarView: View {
       close()
     } label: {
       let parts = thread.titleParts
-      let trailing = chatTrailing(thread, waveIndex: waveIndex)
+      let trailing = trailing(marker, waveIndex: waveIndex)
       if showsStatusColumn {
         // Every row in the section fills the column, so titles share one left edge.
         OkouChatRowLabel(parts.text, trailing: trailing) {
@@ -420,19 +405,13 @@ struct ChatSidebarView: View {
 
   }
 
-  private func chatTrailing(_ thread: ChatThread, waveIndex: Int) -> OkouChatTrailing {
-    if thread.indicator == .active {
-      return .running(phase: Double(waveIndex) / OkouMotion.runningWaveRows)
+  private func trailing(_ marker: ChatListContents.Marker, waveIndex: Int = 0) -> OkouChatTrailing {
+    switch marker {
+    case .running: .running(phase: Double(waveIndex) / OkouMotion.runningWaveRows)
+    case .unread: .unread
+    case .pinned: .pinned
+    case .none: .none
     }
-    if !thread.isMuted && thread.indicator == .unread { return .unread }
-    if thread.pinnedAt != nil { return .pinned }
-    return .none
-  }
-
-  private func projectTrailing(_ threads: [ChatThread]) -> OkouChatTrailing {
-    if threads.contains(where: { $0.indicator == .active }) { return .running(phase: 0) }
-    if threads.contains(where: { !$0.isMuted && $0.indicator == .unread }) { return .unread }
-    return .none
   }
 
   /// The chat filter, top right. On the default Chats it is a glass circle; any other filter

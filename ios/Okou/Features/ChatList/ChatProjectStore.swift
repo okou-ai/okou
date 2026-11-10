@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import Foundation
 import Observation
@@ -5,7 +6,26 @@ import Observation
 /// Confirmed Project names, membership operations and native list disclosure for one workspace.
 @MainActor @Observable
 final class ChatProjectStore {
-  private(set) var projects: [ChatProject] = []
+  // The confirmed baseline also serves persistence and business decisions. The graph
+  // stores it once; request loading/errors remain with their existing read owner.
+  @ObservationIgnored private let confirmedProjects = CCState.State<[ChatProject]>([])
+  @ObservationIgnored let projectsValue: Computed<[ChatProject]>
+  @ObservationIgnored private var projectsSubscription: Subscription?
+  private(set) var projects: [ChatProject] {
+    get {
+      access(keyPath: \.projects)
+      // Only a synchronous local atom is read here, never external I/O.
+      do { return try resources.store.get(projectsValue) } catch {
+        preconditionFailure("Cannot read confirmed projects: \(error)")
+      }
+    }
+    set {
+      guard !closed, projects != newValue else { return }
+      do { try resources.store.set(confirmedProjects, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed projects: \(error)")
+      }
+    }
+  }
   private(set) var hasLoaded = false
   private(set) var active = false
   private(set) var readError: String?
@@ -40,6 +60,14 @@ final class ChatProjectStore {
     self.defaults = defaults
     self.didFail = didFail
     self.didChangeMembership = didChangeMembership
+    let confirmed = confirmedProjects
+    projectsValue = Computed { get in try get(confirmed) }
+    do {
+      projectsSubscription = try resources.store.watch(projectsValue) { [weak self] in
+        guard let self else { return }
+        withMutation(keyPath: \.projects) {}
+      }
+    } catch { preconditionFailure("Cannot observe confirmed projects: \(error)") }
   }
 
   func restore(userID: String, workspaceID: String, apiURL: URL) async {
@@ -234,7 +262,17 @@ final class ChatProjectStore {
 
   func close() {
     closed = true
+    stopObservingProjects()
     refreshTask?.cancel()
     for task in tasks.values { task.cancel() }
   }
+
+  private func stopObservingProjects() {
+    do { try projectsSubscription?.cancel() } catch {
+      preconditionFailure("Cannot release confirmed projects: \(error)")
+    }
+    projectsSubscription = nil
+  }
+
+  isolated deinit { stopObservingProjects() }
 }
