@@ -87,7 +87,8 @@ async def test_partitions_preserve_final_usage_and_trailing_event(
         assert emitted == chunk
         assert isinstance(emitted, bytes)
         forwarded.extend(emitted)
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     assert response_stream(flow)(b"") == b""
     completion = mitm_addon.response(flow)
     if completion is not None:
@@ -234,7 +235,8 @@ async def test_long_lived_stream_has_no_lifetime_event_cap(real_flow, tmp_path):
         body = b"".join(model_sse_update("anthropic", index * 100 + n) for n in range(1, 101))
         wire = encode_model_sse(body, "gzip")
         assert response_stream(flow)(wire) == wire
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     wire = encode_model_sse(model_sse_terminal("anthropic", 2001), "gzip")
     assert response_stream(flow)(wire) == wire
     await mitm_addon.responseinspection(flow)

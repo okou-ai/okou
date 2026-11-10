@@ -147,7 +147,8 @@ async def test_wire_partitions_preserve_lexical_state_counts_and_identities(
             assert emitted == chunk
             assert isinstance(emitted, bytes)
             forwarded.extend(emitted)
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         assert forwarded == wire
         assert metadata_keys.X_JSON_STATE not in flow.metadata
         assert response_stream(flow)(b"") == b""
@@ -179,7 +180,8 @@ async def test_document_budget_survives_parser_decoder_and_wire_boundaries(
         for part in parts:
             wire = _encode(part, encoding)
             assert response_stream(flow)(wire) == wire
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         if extra_space:
             # Permanent parser failure must stop the decoder before this corrupt member.
             corrupt = _encode(b"", encoding)

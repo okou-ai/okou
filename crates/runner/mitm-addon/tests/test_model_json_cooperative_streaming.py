@@ -109,7 +109,8 @@ async def test_partitions_preserve_usage_and_lexical_state(
         assert emitted == chunk
         assert isinstance(emitted, bytes)
         forwarded.extend(emitted)
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     assert forwarded == wire
     assert response_stream(flow)(b"") == b""
     assert mitm_addon.response(flow) is None
