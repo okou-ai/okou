@@ -3393,43 +3393,6 @@
         }
       }
     },
-    "Back to chat": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Zurück zum Chat" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Volver al chat" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Retour à la discussion" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट पर वापस जाएं" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kembali ke chat" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Torna alla chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットに戻る" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅으로 돌아가기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Voltar para a conversa" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "返回聊天" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "返回聊天" }
-        }
-      }
-    },
     "Build a website for my business": {
       "extractionState": "stale",
       "localizations": {
