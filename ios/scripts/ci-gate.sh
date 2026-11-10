@@ -19,12 +19,20 @@ case "${IOS_NEEDED:-}:${LINT_RESULT:-}" in
     ;;
 esac
 
+case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PREVIEW_RESULT:-}" in
+  pull_request:true:success | workflow_dispatch:true:success | merge_group:true:skipped | push:true:skipped | *:false:skipped) ;;
+  *)
+    echo "::error::Unexpected staging device build: event=$EVENT_NAME, needed=${IOS_NEEDED:-missing}, preview=${PREVIEW_RESULT:-missing}"
+    exit 1
+    ;;
+esac
+
 case "${EVENT_NAME:?EVENT_NAME is required}:${IOS_NEEDED:-}:${PACKAGES_RESULT:-}:${BUILD_RESULT:-}:${ARCHIVE_RESULT:-}:${PUBLISH_RESULT:-}" in
   merge_group:true:success:success:success:success)
     echo 'Swift package tests, simulator tests or exact-input evidence, device archive, and immutable publication passed.'
     ;;
   pull_request:true:success:success:skipped:skipped | workflow_dispatch:true:success:success:skipped:skipped)
-    echo 'Swift package tests, iOS app build and simulator tests passed.'
+    echo 'Swift package tests, iOS app build, simulator tests, and staging device artifacts passed.'
     ;;
   push:true:skipped:skipped:skipped:skipped)
     echo 'Main consumes canonical archives; native build and tests are intentionally absent.'

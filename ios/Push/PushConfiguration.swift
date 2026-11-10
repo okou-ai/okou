@@ -7,10 +7,10 @@ import Foundation
 /// no AppIdentifierPrefix, and promotion must not rewrite its runtime settings.
 enum PushConfiguration {
   static func keychain(bundle: Bundle = .main) -> Clerk.Options.KeychainConfig {
-    .init(
+    let group = bundle.object(forInfoDictionaryKey: "ClerkKeychainAccessGroup") as? String
+    return .init(
       service: "ai.okou.ios",
-      accessGroup: bundle.object(
-        forInfoDictionaryKey: "ClerkKeychainAccessGroup") as? String)
+      accessGroup: group?.isEmpty == false ? group : nil)
   }
 
   static func directory(bundle: Bundle = .main) -> URL? {

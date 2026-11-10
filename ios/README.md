@@ -319,6 +319,32 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
+### PR staging device builds
+
+Selected iOS PRs and manual `ios.yml` runs also build an optimized, unsigned
+device IPA in parallel with simulator validation. The required iOS gate checks
+this job. Download `ios-staging-<checkout-sha>-<attempt>` from the run's artifacts
+or its summary; it contains `Okou-Staging.ipa`, the device archive, and a manifest
+with both the PR head and actual checkout SHA, environment, version, and SHA-256
+checksums. Artifacts expire after seven days. These QA archives are separate from
+the canonical merge-group archives consumed by production publication.
+
+The project's `Staging` configuration uses `Config/Staging.xcconfig` for the shared staging API, the deployed Web Worker
+preview, and the same Clerk TEST instance as Web. CI supplies the public
+`CLERK_PUBLISHABLE_KEY_PREVIEW` repository variable. No signing, App Store Connect,
+BrowserStack, or Preview Protection credentials are embedded in these artifacts;
+production Sentry reporting is disabled. BrowserStack re-signs the IPA for its
+devices; installation on a personal iPhone requires separate development or
+Ad Hoc signing. Provider re-signing does not validate production shared Keychain,
+App Groups, or APNs behavior.
+
+For an authorized native staging session, supply `OKOU_PREVIEW_API_BYPASS` in
+the app process environment at launch. Debug/staging builds install a one-hour
+secure cookie restricted to the staging or PR API host and `/api/` paths. It is
+not sent to Clerk or attachment hosts. Production Release builds exclude this
+bootstrap. Obtain the runtime credential through the authorized staging QA path;
+do not store it in CI variables, launch receipts shared with others, or the IPA.
+
 For a slow compile-phase Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic
 timing, first output and command-banner milestones, process-name/CPU/memory
