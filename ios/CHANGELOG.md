@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/okou-ai/okou/compare/ios-v0.31.6...ios-v0.32.0) (2026-11-10)
+
+
+### Features
+
+* **app:** keep connector account selection internal ([#46315](https://github.com/okou-ai/okou/issues/46315)) ([ffa08a3](https://github.com/okou-ai/okou/commit/ffa08a3ffa9ada48ff12bf01a82549577a889aa6))
+
+
+### Bug Fixes
+
+* **ios:** complete computer access authorization cards ([#46297](https://github.com/okou-ai/okou/issues/46297)) ([10193ca](https://github.com/okou-ai/okou/commit/10193cafd27dcf463de9fb27cde359b2fc239d88))
+
 ## [0.31.6](https://github.com/okou-ai/okou/compare/ios-v0.31.5...ios-v0.31.6) (2026-11-10)
 
 
