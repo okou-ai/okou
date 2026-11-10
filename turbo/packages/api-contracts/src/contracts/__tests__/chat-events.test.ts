@@ -306,6 +306,8 @@ describe("ChatEvent revocation rules", () => {
 
 describe("output.followups content", () => {
   const followups = [
+    { prompt: "Save this process as a workflow", kind: "workflow" as const },
+    { prompt: "Notify me when they reply", kind: "email" as const },
     {
       prompt: "Generate a launch page",
       kind: "generate" as const,

@@ -26,7 +26,11 @@ import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { serializeError } from "@okouai/core/log-utils";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -1492,6 +1496,7 @@ const insertRunLifecycleMarker$ = command(
 
 async function generateRecommendedFollowupsForCompletedRun(
   args: {
+    readonly actionFollowupsEnabled: boolean;
     readonly followupContext: readonly ChatCompletionContextMessage[];
     readonly threadId: string;
   },
@@ -1501,6 +1506,7 @@ async function generateRecommendedFollowupsForCompletedRun(
   const suggestions = await generateChatThreadRecommendedFollowupsFromContext(
     {
       messages: args.followupContext,
+      actionFollowupsEnabled: args.actionFollowupsEnabled,
       threadId: args.threadId,
     },
     signal,
@@ -1854,8 +1860,18 @@ const runCompletedChatCallbackSideEffects$ = command(
 
     const followupsStep = (async () => {
       signal.throwIfAborted();
+      const features = await set(
+        loadUserFeatureSwitchContext$,
+        args.chatThread.orgId,
+        args.chatThread.userId,
+        signal,
+      );
       const followups = await generateRecommendedFollowupsForCompletedRun(
         {
+          actionFollowupsEnabled: isFeatureEnabled(
+            FeatureSwitchKey.ChatActionFollowups,
+            features,
+          ),
           followupContext: args.followupContext,
           threadId: args.chatThread.chatThreadId,
         },

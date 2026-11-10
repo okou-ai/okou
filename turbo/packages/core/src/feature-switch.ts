@@ -157,6 +157,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatActionFollowups]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Workflow and email follow-ups",
+    description:
+      "Recommend reusable workflows and email reply reminders with dedicated chat icons.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
