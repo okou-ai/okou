@@ -832,7 +832,10 @@ class TestRegistryBuiltinCatalogValidation:
 
         _assert_cache_firewall_is_invalid(tmp_path, mitm_ctx, firewall)
 
-    def test_world_writable_runner_catalog_cache_fails_closed(self, tmp_path, mitm_ctx):
+    @pytest.mark.parametrize("cache_mode", [0o620, 0o602], ids=["group-writable", "other-writable"])
+    def test_untrusted_write_permissions_runner_catalog_cache_fails_closed(
+        self, tmp_path, mitm_ctx, cache_mode
+    ):
         firewall = cache_firewall("fallback", "https://cache.example.com")
 
         _assert_cache_firewall_is_invalid(
@@ -840,29 +843,7 @@ class TestRegistryBuiltinCatalogValidation:
             mitm_ctx,
             firewall,
             expected_message="catalog cache unavailable: cache_untrusted",
-            cache_mode=0o666,
-        )
-
-    def test_world_writable_runner_catalog_cache_reports_untrusted(self, tmp_path, mitm_ctx):
-        registry_path = tmp_path / "registry.json"
-        cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
-        write_catalog_cache(
-            cache_path,
-            digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            version="catalog-a",
-            firewalls={"fallback": cache_firewall("fallback", "https://cache.example.com")},
-        )
-        cache_path.chmod(0o666)
-        write_multi_sandbox_registry(
-            registry_path,
-            {"10.200.0.1": builtin_sandbox("run-fallback", "fallback")},
-        )
-
-        _assert_invalid_builtin_sandbox_with_cache(
-            registry_path=registry_path,
-            cache_path=cache_path,
-            mitm_ctx=mitm_ctx,
-            expected_message="catalog cache unavailable: cache_untrusted",
+            cache_mode=cache_mode,
         )
 
     def test_malformed_aws_sigv4_runner_catalog_cache_fails_closed(self, tmp_path, mitm_ctx):
