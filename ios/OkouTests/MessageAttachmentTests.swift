@@ -66,13 +66,12 @@ final class MessageAttachmentTests: XCTestCase {
     }
     denied.withLock { $0 = false }
     viewer.open(file)
-    let loaded = try await previewFile(in: viewer)
-    let url = loaded.url
+    let url = try await previewURL(in: viewer)
     XCTAssertEqual(try Data(contentsOf: url), Data("local-file".utf8))
     viewer.dismiss()
     XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     viewer.open(file)
-    let second = try await previewFile(in: viewer).url
+    let second = try await previewURL(in: viewer)
     viewer.close()
     XCTAssertNil(viewer.preview)
     XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
@@ -261,6 +260,10 @@ final class MessageAttachmentTests: XCTestCase {
     let preview = try XCTUnwrap(viewer.preview)
     let result = try await preview.store.get(preview.file).value
     return try XCTUnwrap(result)
+  }
+
+  private func previewURL(in viewer: MessageAttachmentStore) async throws -> URL {
+    try await previewFile(in: viewer).url
   }
 
   private func own(_ task: Task<ChatAttachmentFile?, Error>) -> Task<ChatAttachmentFile?, Error> {
