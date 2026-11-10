@@ -415,6 +415,35 @@ function webhookHeaders(
 }
 
 describe("POST /api/webhooks/google-calendar", () => {
+  it("rejects notifications with missing required headers", async () => {
+    await expect(postGoogleCalendarWebhook({})).resolves.toStrictEqual({
+      status: 400,
+      body: { error: "Missing Google Calendar webhook headers" },
+    });
+  });
+
+  it.each([
+    { name: "numeric", channelId: "123456" },
+    { name: "oversized", channelId: "1".repeat(1024) },
+    {
+      name: "malformed UUID-like",
+      channelId: "11111111-1111-4111-8111-11111111111g",
+    },
+  ])("rejects $name channel IDs with a bad request", async ({ channelId }) => {
+    const response = await postGoogleCalendarWebhook(
+      webhookHeaders({
+        channelId,
+        channelToken: "untrusted-token",
+        resourceId: "untrusted-resource",
+      }),
+    );
+
+    expect(response).toStrictEqual({
+      status: 400,
+      body: { error: "Invalid Google Calendar webhook channel ID" },
+    });
+  });
+
   it("short-circuits before Calendar event reads when no consumer remains", async () => {
     const recorder = configureGoogleCalendarApiMock({});
     server.use(
@@ -1572,7 +1601,23 @@ describe("POST /api/webhooks/google-calendar", () => {
     expect(idleAfterSecond.body.job).toBeNull();
   });
 
-  it("rejects webhook notifications with the wrong channel token", async () => {
+  it.each([
+    {
+      name: "an unknown channel ID",
+      header: "x-goog-channel-id",
+      value: "11111111-1111-4111-8111-111111111111",
+    },
+    {
+      name: "the wrong channel token",
+      header: "x-goog-channel-token",
+      value: "wrong-token",
+    },
+    {
+      name: "the wrong resource ID",
+      header: "x-goog-resource-id",
+      value: "wrong-resource",
+    },
+  ])("rejects webhook notifications with $name", async ({ header, value }) => {
     const recorder = configureGoogleCalendarApiMock({});
 
     const scenario = await setupFixture();
@@ -1597,7 +1642,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     }
 
     const response = await postGoogleCalendarWebhook(
-      webhookHeaders(watch, { "x-goog-channel-token": "wrong-token" }),
+      webhookHeaders(watch, { [header]: value }),
     );
 
     expect(response.status).toBe(401);

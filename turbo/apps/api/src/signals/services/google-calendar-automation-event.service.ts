@@ -12,7 +12,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import type { infer as zInfer } from "zod";
+import { uuid, type infer as zInfer } from "zod";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -439,13 +439,23 @@ function decodeCalendarWebhookHeaders(headers: Headers):
   | GoogleCalendarWebhookNotification
   | {
       readonly kind: "bad_request";
+      readonly message: string;
     } {
   const channelId = headers.get("x-goog-channel-id");
   const channelToken = headers.get("x-goog-channel-token");
   const resourceId = headers.get("x-goog-resource-id");
   const resourceState = headers.get("x-goog-resource-state");
   if (!channelId || !channelToken || !resourceId || !resourceState) {
-    return { kind: "bad_request" };
+    return {
+      kind: "bad_request",
+      message: "Missing Google Calendar webhook headers",
+    };
+  }
+  if (channelId.length !== 36 || !uuid().safeParse(channelId).success) {
+    return {
+      kind: "bad_request",
+      message: "Invalid Google Calendar webhook channel ID",
+    };
   }
   return {
     channelId,
@@ -1225,10 +1235,7 @@ export const dispatchGoogleCalendarWebhook$ = command(
   ): Promise<GoogleCalendarWebhookResult> => {
     const notification = decodeCalendarWebhookHeaders(args.headers);
     if ("kind" in notification) {
-      return {
-        kind: "bad_request",
-        message: "Missing Google Calendar webhook headers",
-      };
+      return notification;
     }
 
     const sourceTiming = new AutomationEventSourceTiming(
