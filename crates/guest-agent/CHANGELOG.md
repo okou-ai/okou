@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.60](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.59...guest-agent-v0.109.60) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-agent:** centralize codex notification commits ([#46266](https://github.com/okou-ai/okou/issues/46266)) ([e14ac1b](https://github.com/okou-ai/okou/commit/e14ac1b0c60b80b4e8ef5aeeeccb4b04ab54c69c))
+
 ## [0.109.59](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.58...guest-agent-v0.109.59) (2026-11-10)
 
 ## [0.109.58](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.57...guest-agent-v0.109.58) (2026-11-09)

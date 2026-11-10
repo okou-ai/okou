@@ -93,6 +93,10 @@
   --color-chart-gold: #eda100;
   --color-chart-red: #e34948;
 
+  /* Browser image-update diagnostic, intentionally stable across themes. */
+  --color-browser-fps-foreground: #8fff8c;
+  --color-browser-fps-background: #000000;
+
   /* Artifact-type icon foregrounds, shared by type choices, selected labels,
      and their menus. These glyph colors retain contrast on light and dark
      surfaces; they are not body-text colors. */

@@ -31,13 +31,22 @@ fn upload_params(path: &Path, size: usize, overwrite: bool) -> Value {
 }
 
 async fn response(guest: impl tokio::io::AsyncRead + Unpin) -> (Value, Vec<u8>) {
+    let mut data = Vec::new();
+    // Keep ownership of each frame for callers that collect the complete response.
+    let outcome = response_with_data(guest, |bytes| data.extend(bytes)).await;
+    (outcome, data)
+}
+
+async fn response_with_data(
+    guest: impl tokio::io::AsyncRead + Unpin,
+    mut on_data: impl FnMut(Vec<u8>),
+) -> Value {
     tokio::time::timeout(Duration::from_secs(30), async {
         let mut reader = Reader::responses(guest);
         let mut outcome = Value::Null;
-        let mut data = Vec::new();
         while let Some(frame) = reader.next().await.unwrap() {
             match frame {
-                Frame::Data(bytes) => data.extend(bytes),
+                Frame::Data(bytes) => on_data(bytes),
                 Frame::End => {}
                 Frame::Control(Response::Result { data }) => {
                     outcome = serde_json::from_str(data.get()).unwrap()
@@ -45,7 +54,7 @@ async fn response(guest: impl tokio::io::AsyncRead + Unpin) -> (Value, Vec<u8>) 
                 Frame::Control(other) => outcome = serde_json::to_value(other).unwrap(),
             }
         }
-        (outcome, data)
+        outcome
     })
     .await
     .unwrap()
@@ -200,7 +209,13 @@ pub(crate) async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bo
 }
 
 pub(crate) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
-    response(
+    let mut data = Vec::new();
+    let outcome = download_with_data(h, path, |bytes| data.extend(bytes)).await;
+    (outcome, data)
+}
+
+async fn download_with_data(h: &Harness, path: &Path, on_data: impl FnMut(Vec<u8>)) -> Value {
+    response_with_data(
         open(
             h,
             "download",
@@ -208,8 +223,23 @@ pub(crate) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
             900_000,
         )
         .await,
+        on_data,
     )
     .await
+}
+
+fn assert_file_bytes(path: &Path, expected: &[u8]) {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut buffer = [0; 64 * 1024];
+    for chunk in expected.chunks(buffer.len()) {
+        let actual = &mut buffer[..chunk.len()];
+        file.read_exact(actual).unwrap();
+        assert_eq!(&*actual, chunk, "uploaded file bytes changed");
+    }
+    let eof = file.read_exact(&mut [0]).unwrap_err();
+    assert_eq!(eof.kind(), std::io::ErrorKind::UnexpectedEof);
 }
 
 async fn roundtrip(mode: &'static str) {
@@ -229,15 +259,29 @@ async fn roundtrip(mode: &'static str) {
         assert_eq!(outcome["effects"], "completed");
         assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
         assert!(outcome["residue"].is_null());
-        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_file_bytes(&path, &bytes);
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
         );
-        let (outcome, received) = download(&h, &path).await;
+        let mut received = 0;
+        let outcome = download_with_data(&h, &path, |chunk| {
+            let end = received + chunk.len();
+            assert_eq!(
+                chunk.as_slice(),
+                &bytes[received..end],
+                "downloaded bytes changed"
+            );
+            received = end;
+        })
+        .await;
         assert_eq!(outcome["type"], "completed", "{outcome}");
         assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(&bytes)));
-        assert_eq!(received, bytes);
+        assert_eq!(
+            received,
+            bytes.len(),
+            "download ended before all expected bytes"
+        );
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
     wait_for(|| h.observed.reservations.load(Ordering::SeqCst) == 0).await;

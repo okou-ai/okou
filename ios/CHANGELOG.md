@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.5](https://github.com/okou-ai/okou/compare/ios-v0.31.4...ios-v0.31.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* discard whitespace-only web and ios drafts ([#46256](https://github.com/okou-ai/okou/issues/46256)) ([3b76330](https://github.com/okou-ai/okou/commit/3b763302427a8b0b75990dc31f07d466b80b4e83))
+* **ios:** align chat action menus ([#46243](https://github.com/okou-ai/okou/issues/46243)) ([e50c434](https://github.com/okou-ai/okou/commit/e50c434e6044b5fc109feb1e1995cd71a6afb05f))
+* **ios:** retry realtime subscriptions and clarify sync failures ([#46263](https://github.com/okou-ai/okou/issues/46263)) ([cc196f6](https://github.com/okou-ai/okou/commit/cc196f6d15024a8667b365612bfb8bdd014e6267))
+
 ## [0.31.4](https://github.com/okou-ai/okou/compare/ios-v0.31.3...ios-v0.31.4) (2026-11-10)
 
 

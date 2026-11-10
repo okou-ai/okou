@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1109.0](https://github.com/okou-ai/okou/compare/app-v0.1108.0...app-v0.1109.0) (2026-11-10)
+
+
+### Features
+
+* **browser:** add opt-in viewer fps overlay ([#46281](https://github.com/okou-ai/okou/issues/46281)) ([5de167e](https://github.com/okou-ai/okou/commit/5de167e7e5510cb136d8d32a12539ae6d749f40c))
+
+## [0.1108.0](https://github.com/okou-ai/okou/compare/app-v0.1107.0...app-v0.1108.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** open learning chat from debug settings ([#46265](https://github.com/okou-ai/okou/issues/46265)) ([0120b3c](https://github.com/okou-ai/okou/commit/0120b3cfa837ad38a96f0dba2189b966d5c6d6fa))
+* track hosted site banner state on copy link ([#46255](https://github.com/okou-ai/okou/issues/46255)) ([1769258](https://github.com/okou-ai/okou/commit/1769258343e2649772511696575cb0b1bebffc58))
+
+
+### Bug Fixes
+
+* **app:** align mobile chat header action order and styling ([#46273](https://github.com/okou-ai/okou/issues/46273)) ([a0dcb44](https://github.com/okou-ai/okou/commit/a0dcb44ccff515bb27f1089bc3b9762de6389504))
+* **app:** resolve hosted site settings from the owner site identity ([#46267](https://github.com/okou-ai/okou/issues/46267)) ([eff7ecc](https://github.com/okou-ai/okou/commit/eff7ecc8d7248b6a9c2c413891810a896a2310fa))
+* discard whitespace-only web and ios drafts ([#46256](https://github.com/okou-ai/okou/issues/46256)) ([3b76330](https://github.com/okou-ai/okou/commit/3b763302427a8b0b75990dc31f07d466b80b4e83))
+
 ## [0.1107.0](https://github.com/okou-ai/okou/compare/app-v0.1106.1...app-v0.1107.0) (2026-11-10)
 
 

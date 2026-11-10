@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.244.56](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.55...runner-rs-v0.244.56) (2026-11-10)
+
+## [0.244.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.54...runner-rs-v0.244.55) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize response terminal continuation dispatch ([#46279](https://github.com/okou-ai/okou/issues/46279)) ([301db5f](https://github.com/okou-ai/okou/commit/301db5f3193bbd556cae0adf0e40b6673e6f3363))
+
 ## [0.244.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.53...runner-rs-v0.244.54) (2026-11-10)
 
 ### Release Dependencies
