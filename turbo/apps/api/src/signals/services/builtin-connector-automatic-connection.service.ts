@@ -175,14 +175,16 @@ function automaticDefaultAccountConflict() {
   };
 }
 
-function automaticReconnectOwnerCondition(
-  input: AutomaticConnectionPublication,
-) {
+function automaticReconnectCondition(input: AutomaticConnectionPublication) {
   return and(
     automaticConnectionOwnerCondition(input),
     input.account.intent === "reconnect"
       ? eq(connectors.id, input.account.connectionId)
       : sql`false`,
+    // Optional public discovery cannot erase OAuth accepted in parallel.
+    input.preserveOAuth
+      ? sql`${connectors.automaticAuthType} IS DISTINCT FROM 'oauth'`
+      : undefined,
   );
 }
 
@@ -206,7 +208,7 @@ export const publishAutomaticConnection$ = command(
     const sibling = db
       .$with("automatic_sibling_account", { id: connectors.id })
       .as(automaticSiblingAccountInsert(input, sql`${preferred}`));
-    const reconnectOwner = automaticReconnectOwnerCondition(input);
+    const reconnectCondition = automaticReconnectCondition(input);
     const snapshot = db.$with("automatic_account_snapshot").as(
       db
         .select({
@@ -216,7 +218,7 @@ export const publishAutomaticConnection$ = command(
             .as("row_version"),
         })
         .from(connectors)
-        .where(reconnectOwner)
+        .where(reconnectCondition)
         .limit(1),
     );
     const connection =
@@ -227,11 +229,7 @@ export const publishAutomaticConnection$ = command(
               .set({ ...metadata, updatedAt: sql`clock_timestamp()` })
               .where(
                 and(
-                  reconnectOwner,
-                  // A public result cannot erase OAuth accepted while discovery ran.
-                  input.preserveOAuth
-                    ? sql`${connectors.automaticAuthType} IS DISTINCT FROM 'oauth'`
-                    : undefined,
+                  reconnectCondition,
                   // Two references keep this read CTE materialized: both the ID
                   // and tuple version belong to the statement's original row.
                   inArray(

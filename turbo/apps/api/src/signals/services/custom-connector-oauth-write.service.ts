@@ -17,6 +17,7 @@ import {
   eq,
   exists,
   getTableColumns,
+  ne,
   notExists,
   SQL,
   sql,
@@ -339,7 +340,7 @@ export function automaticNoAuthPublicationSql(
       where: and(
         write.where,
         // Optional public discovery cannot erase OAuth committed in parallel.
-        preserveOAuth ? sql`${connectors.authMethod} <> 'oauth'` : undefined,
+        preserveOAuth ? ne(connectors.authMethod, "oauth") : undefined,
         admitted,
         sql`${connectors.id} IN (SELECT id FROM no_auth_account_snapshot)`,
         sql`${connectors}.xmin::text = (SELECT row_version FROM no_auth_account_snapshot)`,
