@@ -33,6 +33,8 @@ enum OkouRadius {
 enum OkouControl {
   /// Minimum interactive area; small artwork may sit inside this area.
   static let minimumTarget: CGFloat = 44
+  /// One-line chat composer; its actions retain the full minimum target.
+  static let composerCompactHeight: CGFloat = 44
   static let largeHeight: CGFloat = 52
   static let pageInset: CGFloat = 24
   static let readableWidth: CGFloat = 440

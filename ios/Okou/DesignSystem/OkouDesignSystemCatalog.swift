@@ -92,21 +92,26 @@
               .buttonStyle(.plain)
               .accessibilityLabel("New chat")
             }
-            HStack(spacing: OkouSpace.xs) {
+            OkouComposerSurface {
+              Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } leading: {
               Button {
               } label: {
                 OkouToolbarIcon("plus")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
               }
               .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
-              Text("Ask Okou").font(.okou(.body)).foregroundStyle(OkouColor.mutedForeground)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } trailing: {
               Button {
               } label: {
                 OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
               }
               .buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
               .accessibilityLabel("Send message")
-            }.padding(OkouSpace.six).glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
+              .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              .contentShape(Circle())
+            }
           }
           section("Chat rows") {
             // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,

@@ -520,7 +520,7 @@ struct ChatSidebarView: View {
       .accessibilityIdentifier("new-chat")
     }
     .buttonStyle(.plain)
-    .frame(height: ChatComposerView.compactHeight)
+    .frame(height: OkouControl.minimumTarget + OkouSpace.md)
     .padding(.horizontal, rowInset)
     .padding(.top, OkouSpace.sm)
   }
