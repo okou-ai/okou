@@ -12,6 +12,7 @@ import type { BrowserRecoveryResult } from "./recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
 import type { TabStripMotion } from "./tab-strip.ts";
 import type { CaptureQualitySignals } from "./capture-quality.ts";
+import type { FrameRateSignals } from "./frame-rate.ts";
 import type {
   NavigationReceipt,
   ViewerCaptureOptions,
@@ -126,6 +127,7 @@ export interface BrowserSignals {
   readonly proxyType$: Computed<"text" | "password">;
   readonly capture$: Computed<ViewerCaptureOptions>;
   readonly quality: CaptureQualitySignals;
+  readonly frameRate: FrameRateSignals;
   readonly transport$: Computed<ViewerTransport>;
   readonly windowSizeSync$: Computed<WindowSizeSync>;
   readonly display$: Computed<DisplayState>;

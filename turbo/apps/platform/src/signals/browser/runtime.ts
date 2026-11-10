@@ -1,4 +1,11 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   createDeferredPromise,
@@ -34,6 +41,7 @@ import { createBrowserController } from "./viewer/controller.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
 import { createCaptureQualitySignals } from "./capture-quality.ts";
+import { createFrameRateSignals } from "./frame-rate.ts";
 import {
   createViewerRecovery,
   sameRecoveryBinding,
@@ -158,6 +166,33 @@ function createNodeRef<E extends HTMLElement>(
   return { mounted$, mount$, ref$: onRef(mount$) };
 }
 
+function createFrameRateSource(
+  installed$: State<NativeLease | null>,
+  model: ReturnType<typeof createViewerSignals>,
+  navigationScope$: Computed<object | null>,
+  authority$: Computed<boolean>,
+  paused$: Computed<boolean>,
+) {
+  return computed((get) => {
+    const lease = get(installed$);
+    const selection = get(navigationScope$);
+    return {
+      owner: lease?.identity ?? null,
+      targetId: get(model.selectedTabId$),
+      selection,
+      capture: get(model.capture$),
+      canvas: lease?.identity.nodes.canvas.node ?? null,
+      active:
+        lease !== null &&
+        selection !== null &&
+        get(authority$) &&
+        !get(paused$) &&
+        get(model.snapshot$).status === "streaming" &&
+        !get(model.imageRecovery$),
+    };
+  });
+}
+
 function createRuntimeState(
   connection$: Computed<Promise<BrowserConnection | null>>,
 ) {
@@ -239,6 +274,15 @@ function createRuntimeState(
   const paused$ = computed((get) => {
     return get(documentHidden$) || !get(inViewport$);
   });
+  const frameRate = createFrameRateSignals(
+    createFrameRateSource(
+      installed$,
+      model,
+      remoteNavigationScope$,
+      authority$,
+      paused$,
+    ),
+  );
   return {
     connection$,
     model,
@@ -267,6 +311,7 @@ function createRuntimeState(
     authority$,
     pending$,
     paused$,
+    frameRate,
   };
 }
 type RuntimeState = ReturnType<typeof createRuntimeState>;
@@ -288,6 +333,7 @@ function createFrameObservations(
     if (get(context.installed$)?.identity !== identity) {
       return;
     }
+    set(context.frameRate.recordPaint$, identity, targetId);
     // Frames of the same selected scope do not invalidate React on each paint.
     if (get(presentedTarget$) !== targetId) {
       set(context.presentedFrame$, { identity, targetId });
@@ -1627,6 +1673,7 @@ function createLayoutSync(
   const { installed$ } = context;
   return command(({ get, set }, motion?: TabStripMotion | null) => {
     set(syncTabs$, motion);
+    set(context.frameRate.syncPosition$);
     const lease = get(installed$);
     if (lease) {
       set(
@@ -1746,6 +1793,7 @@ export function createBrowserRuntime(
       model.capture$,
       configurationActions.changeCapture$,
     ),
+    frameRate: context.frameRate,
     transport$: model.transport$,
     windowSizeSync$: model.windowSizeSync$,
     clipboardRecovery$: graph.native.recovery$,
