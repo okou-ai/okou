@@ -5883,6 +5883,7 @@
         "learning": {
           "description": "Prüfe die letzten Aktivitäten und aktualisiere deinen persönlichen Speicher einmalig. Dein nächtlicher Zeitplan bleibt unverändert.",
           "notInstalled": "Aktiviere Lernen zuerst in den Einstellungen.",
+          "openChat": "Gespräch öffnen",
           "queued": "Lernen wurde eingereiht.",
           "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
           "run": "Lernen starten",

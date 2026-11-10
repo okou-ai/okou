@@ -163,6 +163,10 @@ test("runs the current default agent's official Learning while its nightly sched
   });
   click(run);
   await screen.findByText("Learning queued.");
+  expect(screen.getByText("Open chat")).toHaveAttribute(
+    "href",
+    `/chats/${THREAD_ID}`,
+  );
   expect(run).toBeDisabled();
 });
 
