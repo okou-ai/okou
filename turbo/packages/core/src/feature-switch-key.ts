@@ -40,7 +40,6 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   BrowserSharedOwner = "browserSharedOwner",
-  BrowserViewerFps = "browserViewerFps",
   AgentSuggestion = "agentSuggestion",
   ProactiveLearning = "proactiveLearning",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",

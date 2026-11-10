@@ -231,14 +231,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.BrowserViewerFps]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Browser FPS",
-    description:
-      "Show an optional frame-rate counter and history in the Browser viewer",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",

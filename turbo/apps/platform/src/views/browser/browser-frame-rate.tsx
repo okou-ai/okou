@@ -19,12 +19,8 @@ export function BrowserFrameRateMenu({
   readonly signals: FrameRateSignals;
 }) {
   const { t } = useTranslation();
-  const available = useGet(signals.available$);
   const enabled = useGet(signals.enabled$);
   const change = useSet(signals.changeEnabled$);
-  if (!available) {
-    return null;
-  }
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>

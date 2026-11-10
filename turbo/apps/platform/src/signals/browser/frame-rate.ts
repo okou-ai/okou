@@ -6,9 +6,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { monotonicNow } from "../../lib/time.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { onRef, setLoop } from "../utils.ts";
 import { localPoint } from "./input/geometry.ts";
@@ -211,18 +209,15 @@ function createSamplingRef(
 
 /** Accepted paints stay private; only the owner-paced sample reaches React. */
 export function createFrameRateSignals(source$: Computed<FrameRateSource>) {
-  const selected$ = state(false);
+  const enabledState$ = state(false);
   const collection$ = state<Collection | null>(null);
   const sample$ = state<Sample | null>(null);
-  const available$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.BrowserViewerFps];
-  });
   const enabled$ = computed((get) => {
-    return get(available$) && get(selected$);
+    return get(enabledState$);
   });
   const changeEnabled$ = command(({ get, set }, enabled: boolean) => {
-    if (get(selected$) !== enabled) {
-      set(selected$, enabled);
+    if (get(enabledState$) !== enabled) {
+      set(enabledState$, enabled);
       set(collection$, null);
       set(sample$, null);
     }
@@ -281,7 +276,6 @@ export function createFrameRateSignals(source$: Computed<FrameRateSource>) {
     position.mount$,
   );
   return {
-    available$,
     enabled$,
     changeEnabled$,
     snapshot$,

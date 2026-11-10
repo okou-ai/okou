@@ -21,7 +21,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
-async function viewer(available = true) {
+async function viewer() {
   let elapsed = 0;
   mockMonotonicNow(() => {
     return elapsed;
@@ -80,7 +80,6 @@ async function viewer(available = true) {
     context,
     path: `/browsers/${threadId}`,
     featureSwitches: {
-      [FeatureSwitchKey.BrowserViewerFps]: available,
       [FeatureSwitchKey.BrowserSharedOwner]: true,
     },
   });
@@ -192,17 +191,6 @@ test("FPS is default Off and selected through a left-opening radio submenu", asy
   await waitFor(() => {
     expect(screen.getByLabelText("Browser settings")).toHaveFocus();
   });
-});
-
-test("Unavailable feature has no FPS setting", async () => {
-  await viewer(false);
-  click(screen.getByLabelText("Browser settings"));
-  await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem").some((candidate) => {
-      return candidate.textContent?.trim() === "FPS";
-    }),
-  ).toBeFalsy();
 });
 
 test("FPS can be enabled with keyboard menu navigation", async () => {
