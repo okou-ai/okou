@@ -47,10 +47,8 @@ interface ShareButtonProps {
 
 function HostedSiteBannerSetting({
   session,
-  surface,
 }: {
   readonly session: HostedSiteShareSession;
-  readonly surface: "dialog" | "sidebar";
 }) {
   const { t } = useTranslation();
   const owner = useLoadable(session.visibility$);
@@ -106,11 +104,6 @@ function HostedSiteBannerSetting({
               checked={current?.showBanner === true}
               disabled={saving || banner.state !== "hasData"}
               onCheckedChange={(value) => {
-                captureArtifactAction({
-                  action: "banner_visibility_change",
-                  surface,
-                  show_banner: value,
-                });
                 detach(change(value, signal), Reason.DomCallback);
               }}
             />
@@ -421,12 +414,14 @@ function CustomizeUrlRow({
 
 function HostedSiteShareActions({
   session,
+  surface,
   link,
   address,
   customizable,
   loadFailed,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly surface: "dialog" | "sidebar";
   readonly link: string | null;
   readonly address: string | null;
   readonly customizable: boolean;
@@ -438,10 +433,24 @@ function HostedSiteShareActions({
   const copiedUrl = useGet(session.copiedUrl$);
   const edit = useSet(session.edit$);
   const copy = useSet(session.copy$);
+  const banner = useLoadable(session.banner$);
   const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
   if (!signal) {
     return null;
   }
+  const copyLink = () => {
+    // Analytics must not prevent the user's copy operation from starting.
+    detach(copy(signal), Reason.DomCallback);
+    captureArtifactAction({
+      action: "banner_share",
+      surface,
+      target: "hosted_site",
+      show_banner:
+        banner.state === "hasData" && banner.data
+          ? banner.data.showBanner
+          : "unknown",
+    });
+  };
   const loadFailedStatus = loadFailed && (
     <div className="mt-3 flex items-center justify-between gap-2">
       <span role="status" className="text-xs text-muted-foreground">
@@ -468,9 +477,7 @@ function HostedSiteShareActions({
           className="mt-1.5 w-full"
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
-          onCopy={() => {
-            detach(copy(signal), Reason.DomCallback);
-          }}
+          onCopy={copyLink}
         />
       </>
     );
@@ -501,9 +508,7 @@ function HostedSiteShareActions({
           className="ml-auto"
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
-          onCopy={() => {
-            detach(copy(signal), Reason.DomCallback);
-          }}
+          onCopy={copyLink}
         />
       </div>
     </>
@@ -512,11 +517,13 @@ function HostedSiteShareActions({
 
 function HostedSiteShareUrl({
   session,
+  surface,
   saving,
   saveFailed,
   onSave,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly surface: "dialog" | "sidebar";
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
@@ -550,6 +557,7 @@ function HostedSiteShareUrl({
       ) : (
         <HostedSiteShareActions
           session={session}
+          surface={surface}
           link={link.state === "hasData" ? link.data : null}
           address={
             details.state === "hasData" && details.data
@@ -661,11 +669,13 @@ function HostedSiteSharePopover({
 
 function HostedSiteShareSessionMenu({
   session,
+  surface,
   permissions,
   banner,
   ...props
 }: ShareButtonProps & {
   readonly session: HostedSiteShareSession;
+  readonly surface: "dialog" | "sidebar";
   readonly permissions: ReactNode;
   readonly banner: ReactNode;
 }) {
@@ -693,6 +703,7 @@ function HostedSiteShareSessionMenu({
         >
           <HostedSiteShareUrl
             session={session}
+            surface={surface}
             saving={saving.state === "loading"}
             saveFailed={saving.state === "hasError"}
             onSave={() => {
@@ -727,10 +738,9 @@ export function HostedSiteShareMenu({
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
           session={session}
+          surface={surface}
           permissions={<HostedSitePermissions session={session} />}
-          banner={
-            <HostedSiteBannerSetting session={session} surface={surface} />
-          }
+          banner={<HostedSiteBannerSetting session={session} />}
           {...props}
         />
       ) : props.readyOnly ? null : (

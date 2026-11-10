@@ -2015,31 +2015,20 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     firewall_action = flow_metadata.firewall_action(flow.metadata)
 
     connector_diagnostics.maybe_replace_response(flow, original_url=original_url)
+    pending_work: Awaitable[None] | None
     if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        pending_work = data_router.register_response(flow)
+    else:
+        pending_work = codex_model_catalog_cache.finalize_response(flow)
+        if pending_work is None:
+            # Preserve network latency's sampling point before newly deferred parsing.
+            response_streaming.start_buffered_response_inspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                pending_work = responseinspection(flow)
+    if pending_work is not None:
         return _finish_response_after_terminal_work(
             flow,
-            data_router.register_response(flow),
-            run_id=run_id,
-            latency_ms=latency_ms,
-            original_url=original_url,
-            firewall_action=firewall_action,
-        )
-    validation = codex_model_catalog_cache.finalize_response(flow)
-    if validation is not None:
-        return _finish_response_after_terminal_work(
-            flow,
-            validation,
-            run_id=run_id,
-            latency_ms=latency_ms,
-            original_url=original_url,
-            firewall_action=firewall_action,
-        )
-    # Preserve network latency's sampling point before newly deferred parsing.
-    response_streaming.start_buffered_response_inspection(flow)
-    if response_streaming.has_pending_response_inspection(flow):
-        return _finish_response_after_terminal_work(
-            flow,
-            responseinspection(flow),
+            pending_work,
             run_id=run_id,
             latency_ms=latency_ms,
             original_url=original_url,

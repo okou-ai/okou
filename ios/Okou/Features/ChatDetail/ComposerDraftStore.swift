@@ -257,8 +257,12 @@ final class ComposerDraftStore {
       persisted.removeAll { $0.id == file.id }
       persisted.append(ComposerDraft.DraftAttachment(attachment: file, url: url))
     }
+    let whitespaceOnly = result.parts.allSatisfy {
+      guard $0["type"]?.string == "text", let text = $0["text"]?.string else { return false }
+      return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     return ComposerDraft(
-      document: result.parts.isEmpty ? nil : result,
+      document: result.parts.isEmpty || (whitespaceOnly && persisted.isEmpty) ? nil : result,
       attachments: persisted.isEmpty ? nil : persisted)
   }
 

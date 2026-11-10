@@ -5864,6 +5864,7 @@
         "learning": {
           "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
           "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
+          "openChat": "Buka percakapan",
           "queued": "Pembelajaran masuk antrean.",
           "requestFailed": "Permintaan belum dapat dikonfirmasi.",
           "run": "Jalankan pembelajaran",

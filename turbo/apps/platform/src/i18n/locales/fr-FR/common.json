@@ -5948,6 +5948,7 @@
         "learning": {
           "description": "Examinez l’activité récente et actualisez votre mémoire personnelle une fois. Votre programmation nocturne reste inchangée.",
           "notInstalled": "Activez l’apprentissage dans les préférences avant de le lancer ici.",
+          "openChat": "Ouvrir la conversation",
           "queued": "Apprentissage en attente.",
           "requestFailed": "La demande n’a pas pu être confirmée.",
           "run": "Lancer l’apprentissage",

@@ -1,6 +1,70 @@
 import ChatDomain
 import SwiftUI
 
+extension View {
+  func chatProjectMembershipPicker(workspace: WorkspaceStore, thread: Binding<ChatThread?>)
+    -> some View
+  {
+    modifier(ChatProjectMembershipPicker(workspace: workspace, thread: thread))
+  }
+}
+
+/// Keep the sheet-to-dialog handoff identical in the sidebar and the chat header.
+private struct ChatProjectMembershipPicker: ViewModifier {
+  let workspace: WorkspaceStore
+  @Binding var thread: ChatThread?
+  @State private var creationThreadID: String?
+  @State private var nameRequest: OkouNameDialog.Request?
+  @State private var createTask: Task<Void, Never>?
+
+  func body(content: Content) -> some View {
+    content
+      .sheet(item: $thread, onDismiss: presentNameDialog) { thread in
+        ChatProjectPicker(workspace: workspace, thread: thread) {
+          creationThreadID = thread.id
+          self.thread = nil
+        }
+        .okouSheetBackground()
+      }
+      .background {
+        OkouNameDialog(
+          request: nameRequest,
+          cancel: {
+            nameRequest = nil
+            creationThreadID = nil
+          }, save: createProject
+        ).frame(width: 0, height: 0)
+      }
+      .onDisappear { createTask?.cancel() }
+  }
+
+  private func presentNameDialog() {
+    guard creationThreadID != nil else { return }
+    nameRequest = request(name: "")
+  }
+
+  private func request(name: String, error: String? = nil) -> OkouNameDialog.Request {
+    OkouNameDialog.Request(
+      title: String(localized: "New project"), placeholder: String(localized: "Project name"),
+      name: name, error: error, maximumLength: 120, accessibilityIdentifier: "project-name")
+  }
+
+  private func createProject(_ name: String) {
+    guard let threadID = creationThreadID else { return }
+    nameRequest = nil
+    createTask?.cancel()
+    createTask = Task {
+      let created = await workspace.projects.create(name: name, fromThreadID: threadID)
+      guard !Task.isCancelled else { return }
+      if created != nil {
+        creationThreadID = nil
+      } else {
+        nameRequest = request(name: name, error: workspace.projects.actionError)
+      }
+    }
+  }
+}
+
 /// Membership uses the same native searchable list and dismissal controls as other pickers.
 struct ChatProjectPicker: View {
   let workspace: WorkspaceStore
@@ -52,6 +116,7 @@ struct ChatProjectPicker: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
+    .task { await workspace.projects.activate() }
     .onDisappear { moveTask?.cancel() }
   }
 

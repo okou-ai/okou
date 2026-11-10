@@ -260,6 +260,14 @@
           ChatFeedbackSurface(
             message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
             dismiss: {})
+          NavigationLink {
+            ChatSyncStatusGallery()
+              .toolbar {
+                if let close { OkouCloseToolbarItem(action: close) }
+              }
+          } label: {
+            Text(verbatim: "Chat sync feedback")
+          }
         }
         OkouCatalogSection("Empty states") {
           OkouEmptyState("No results", icon: "search", description: Text("Try another search."))

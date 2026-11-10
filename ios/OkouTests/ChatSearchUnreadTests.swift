@@ -164,7 +164,8 @@ final class ChatSearchUnreadTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
-    let manual = Task { await store.setRead(thread, read: false) }
+    let menu = ChatThreadMenu(workspace: store, threadID: thread.id, moveToProject: { _ in })
+    let manual = Task { await menu.perform(.markUnread) }
     addTeardownBlock {
       manual.cancel()
       gate.open()

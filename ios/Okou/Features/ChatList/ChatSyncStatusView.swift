@@ -13,10 +13,10 @@ struct ChatSyncStatusView: View {
       if let displayed, displayed != dismissed {
         ChatFeedbackSurface(
           message: displayed.label,
-          icon: displayed == .unavailable ? "circle-alert" : "refresh-cw",
-          isWorking: isRetrying || displayed != .unavailable,
-          actionTitle: displayed == .unavailable ? String(localized: "Retry") : nil,
-          actionEnabled: state == .unavailable,
+          icon: "circle-alert",
+          isWorking: isRetrying,
+          actionTitle: String(localized: "Retry"),
+          actionEnabled: state?.isFailure == true,
           actionIdentifier: "chat-sync-retry",
           action: {
             guard !isRetrying else { return }
@@ -30,7 +30,7 @@ struct ChatSyncStatusView: View {
     }
     .task(id: state) {
       if state != dismissed { dismissed = nil }
-      guard let state, state == .unavailable else {
+      guard let state, state.isFailure else {
         displayed = nil
         return
       }

@@ -786,6 +786,11 @@ Reusable views live in `ios/Okou/DesignSystem` even when their names carry `Chat
 `ChatFeedbackSurface`); feature folders keep only views bound to a store, such as
 `ChatFeedbackBanner`.
 
+The Status & feedback page links to **Chat sync feedback** (`ChatSyncStatusGallery`),
+which previews the production retry surfaces for realtime and chat-read failures. In
+Debug builds, `--chat-sync-status` opens this page directly without initializing
+authentication or product services.
+
 The Iconography page's **Native icon calibration** includes native SF Symbol and
 Okou glass actions, list labels, and a real UIKit menu containing both image
 families. SF Symbols are restricted to these Debug comparison specimens; product
