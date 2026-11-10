@@ -197,7 +197,14 @@ final class NotificationTests: XCTestCase {
     XCTAssertFalse(authentication.isLoading)
     XCTAssertEqual(authentication.userID, user)
     XCTAssertTrue(authentication.needsWorkspaceSelection)
-    XCTAssertNotNil(authentication.errorMessage)
+    XCTAssertNil(authentication.errorMessage)
+    let memberships = try XCTUnwrap(authentication.accountResources)
+    do {
+      _ = try await memberships.read()
+      XCTFail("The original membership resource must expose the background read failure")
+    } catch {
+      XCTAssertTrue(error.localizedDescription.contains("Memberships unavailable"))
+    }
     XCTAssertNil(authentication.activeWorkspaceID)
     XCTAssertTrue(fixture.requests.values.withLock { $0.isEmpty })
   }
