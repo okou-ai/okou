@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/okou-ai/okou/compare/ios-v0.34.0...ios-v0.34.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** move chats between projects optimistically ([#46417](https://github.com/okou-ai/okou/issues/46417)) ([949d67f](https://github.com/okou-ai/okou/commit/949d67f7fa44f7b3e72b6f22b7a5ec8597347d75))
+
 ## [0.34.0](https://github.com/okou-ai/okou/compare/ios-v0.33.1...ios-v0.34.0) (2026-11-10)
 
 
