@@ -608,6 +608,7 @@ function createClaimPlatform(
       : undefined;
     return {
       ...emptyEnvironment(),
+      secrets: bypass ? { VERCEL_AUTOMATION_BYPASS_SECRET: bypass } : undefined,
       platformEnvironment: {
         ...runPlatformEnvironment(run),
         ...paidToolPlatformEnvironment({
