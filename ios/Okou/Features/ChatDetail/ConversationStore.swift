@@ -159,7 +159,7 @@ final class ConversationStore {
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
-    client: commands.approvalClient,
+    client: commands.approvalClient, didFail: { [weak self] in self?.report($0) },
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
@@ -762,6 +762,7 @@ final class ConversationStore {
     artifacts.close()
     connectorActions.close()
     permissionActions.close()
+    approvals.closeMailDrafts()
   }
 
   func cancelRefresh() {
