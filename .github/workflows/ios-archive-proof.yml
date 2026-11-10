@@ -17,8 +17,13 @@ jobs:
       - name: Record preview source
         run: |
           mkdir -p "$RUNNER_TEMP/access-preview/output"
-          git rev-parse HEAD HEAD^ > "$RUNNER_TEMP/access-preview/output/source-shas.txt"
+          git rev-parse HEAD HEAD:ios/Okou HEAD:ios/Packages > "$RUNNER_TEMP/access-preview/output/source-shas.txt"
           xcodebuild -version
+      - name: Verify native design resources
+        run: |
+          python3 ios/scripts/sync-design-tokens.py --check
+          python3 ios/scripts/sync-design-assets.py --check
+          python3 ios/scripts/sync-workspace-assets.py --check
       - name: Build unsigned Debug device application
         run: |
           xcodebuild -project ios/Okou.xcodeproj -scheme Okou -configuration Debug \
