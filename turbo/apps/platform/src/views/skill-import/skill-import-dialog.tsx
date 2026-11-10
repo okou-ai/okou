@@ -1,6 +1,6 @@
 // The import skills dialog, mounted once in the app shell and opened from the
 // workflows page and the composer's plus menu.
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -77,7 +77,10 @@ function SkillImportPromptSection() {
           })}
         </SegmentControlItem>
       </SegmentControl>
+      {/* Results keep their last list across refreshes; keying by tool keeps
+            one tool's list from standing in for the other's. */}
       <SkillImportPanel
+        key={provider}
         signals={signals}
         provider={provider}
         providerName={providerName}
@@ -87,13 +90,78 @@ function SkillImportPromptSection() {
   );
 }
 
-function SkillImportDialogContent() {
+/**
+ * The import's results: the list once a skill arrives, or why it could not be
+ * read. A refresh keeps the list it replaces, and the first read waits in the
+ * footer like an empty import, so the centered dialog keeps its height while
+ * the list is reread on every notification.
+ */
+function SkillImportDialogResults() {
+  const signals = useGet(skillImportDialogSignals$);
+  const results = useLastLoadable(signals.imported$);
+  if (
+    results.state !== "hasError" &&
+    (results.state !== "hasData" || results.data.length === 0)
+  ) {
+    return null;
+  }
+  return (
+    <div className="border-t border-border/60 pt-4">
+      <SkillImportResults signals={signals} scroll />
+    </div>
+  );
+}
+
+function SkillImportDialogFooter() {
   const { t } = useTranslation();
   const close = useSet(closeSkillImportDialog$);
   const signals = useGet(skillImportDialogSignals$);
-  const bindDialog = useSet(signals.dialogRef$);
-  const results = useLoadable(signals.imported$);
+  const results = useLastLoadable(signals.imported$);
   const count = results.state === "hasData" ? results.data.length : 0;
+
+  return (
+    <DialogFooter>
+      <div className="mr-auto min-w-0 self-center">
+        {results.state === "hasError" ? null : (
+          <SkillImportStatus count={count} />
+        )}
+      </div>
+      <Button
+        type="button"
+        variant="quiet"
+        onClick={() => {
+          close();
+        }}
+      >
+        {t(($) => {
+          return $.workflows.common.close;
+        })}
+      </Button>
+      <Link
+        pathname={ROUTES.workflows}
+        // Copying the prompt is the primary action until a skill arrives.
+        className={buttonVariants({
+          variant: count > 0 ? "default" : "outline",
+        })}
+        onClick={(event) => {
+          if (shouldHandleLinkClick(event)) {
+            close();
+          }
+        }}
+      >
+        {t(($) => {
+          return $.workflows.skillImport.viewWorkflows;
+        })}
+      </Link>
+    </DialogFooter>
+  );
+}
+
+function SkillImportDialogContent() {
+  const { t } = useTranslation();
+  const provider = useGet(skillImportDialogProvider$);
+  const signals = useGet(skillImportDialogSignals$);
+  const bindDialog = useSet(signals.dialogRef$);
 
   return (
     <DialogContent smMaxWidth={640} showCloseButton={false}>
@@ -113,48 +181,9 @@ function SkillImportDialogContent() {
             the prompt's widest line instead of the dialog's width. */}
       <div ref={bindDialog} className="flex min-w-0 flex-col gap-4">
         <SkillImportPromptSection />
-        {/* Until a skill arrives, the footer says the import is waiting;
-              the list takes the room once there is one. */}
-        {results.state !== "hasData" || count > 0 ? (
-          <div className="border-t border-border/60 pt-4">
-            <SkillImportResults signals={signals} scroll />
-          </div>
-        ) : null}
+        <SkillImportDialogResults key={provider} />
       </div>
-      <DialogFooter>
-        <div className="mr-auto min-w-0 self-center">
-          {results.state === "hasData" ? (
-            <SkillImportStatus count={count} />
-          ) : null}
-        </div>
-        <Button
-          type="button"
-          variant="quiet"
-          onClick={() => {
-            close();
-          }}
-        >
-          {t(($) => {
-            return $.workflows.common.close;
-          })}
-        </Button>
-        <Link
-          pathname={ROUTES.workflows}
-          // Copying the prompt is the primary action until a skill arrives.
-          className={buttonVariants({
-            variant: count > 0 ? "default" : "outline",
-          })}
-          onClick={(event) => {
-            if (shouldHandleLinkClick(event)) {
-              close();
-            }
-          }}
-        >
-          {t(($) => {
-            return $.workflows.skillImport.viewWorkflows;
-          })}
-        </Link>
-      </DialogFooter>
+      <SkillImportDialogFooter key={provider} />
     </DialogContent>
   );
 }

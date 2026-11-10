@@ -2,7 +2,7 @@
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
 import type { ReactNode } from "react";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
@@ -264,7 +264,9 @@ function SkillImportResultsContent({
   readonly scroll?: boolean;
   readonly compact?: boolean;
 }) {
-  const result = useLoadable(signals.imported$);
+  // A refresh keeps the list it replaces, so each arriving skill does not
+  // collapse the list to a loading line and regrow it.
+  const result = useLastLoadable(signals.imported$);
   const { t } = useTranslation();
   if (result.state === "hasError") {
     return (
@@ -478,7 +480,7 @@ export function SkillImportPanel({
   readonly compact?: boolean;
 }) {
   const preparation = useLoadable(signals.session$);
-  const results = useLoadable(signals.imported$);
+  const results = useLastLoadable(signals.imported$);
   const session = preparation.state === "hasData" ? preparation.data : null;
   const prompt = session?.prompt ?? null;
   const { t } = useTranslation();
