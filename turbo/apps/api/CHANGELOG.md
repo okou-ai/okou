@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.55.7](https://github.com/okou-ai/okou/compare/api-v2.55.6...api-v2.55.7) (2026-11-10)
+
+
+### Bug Fixes
+
+* **api:** retain original artifact links in email replies ([#46344](https://github.com/okou-ai/okou/issues/46344)) ([6a3a684](https://github.com/okou-ai/okou/commit/6a3a684ce2af76d050f6a6365f02a569629707f7))
+* **email:** add thread context and message source labels ([#46348](https://github.com/okou-ai/okou/issues/46348)) ([c25e9f1](https://github.com/okou-ai/okou/commit/c25e9f1e62bfa7a1b557ac5bcc770ddbb5821ded))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.47.0
+    * @okouai/core bumped to 8.825.5
+    * @okouai/db bumped to 2.24.13
+    * @okouai/pi-agent-runtime bumped to 1.51.95
+
 ## [2.55.6](https://github.com/okou-ai/okou/compare/api-v2.55.5...api-v2.55.6) (2026-11-10)
 
 

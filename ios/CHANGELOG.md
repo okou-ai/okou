@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.33.0](https://github.com/okou-ai/okou/compare/ios-v0.32.0...ios-v0.33.0) (2026-11-10)
+
+
+### Features
+
+* **ios:** add pr staging device builds and fix project selection ([#46329](https://github.com/okou-ai/okou/issues/46329)) ([9cb770d](https://github.com/okou-ai/okou/commit/9cb770d1ebc1ae457a7ac6c9bec42234230a642c))
+* **ios:** show chat states in the sidebar and push the chat aside ([#46347](https://github.com/okou-ai/okou/issues/46347)) ([dbdeb62](https://github.com/okou-ai/okou/commit/dbdeb62e2ddb9daadb4a3110e4966ab0321d8257))
+
+
+### Bug Fixes
+
+* **ios:** align composer actions with the sidebar footer ([#46341](https://github.com/okou-ai/okou/issues/46341)) ([8d93fb9](https://github.com/okou-ai/okou/commit/8d93fb9e5d4747f03bd6c0e640c297e6b081ba52))
+
 ## [0.32.0](https://github.com/okou-ai/okou/compare/ios-v0.31.6...ios-v0.32.0) (2026-11-10)
 
 
