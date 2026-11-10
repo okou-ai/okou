@@ -7330,14 +7330,15 @@
     },
     "documentTitle": "工作渠道",
     "email": {
+      "connectDescription": "连接你的账户邮箱，或向下方地址发送邮件。",
       "connected": "邮箱已连接",
+      "connectTitle": "通过邮件联系 {{assistantName}}",
       "description": "给 Okou 发邮件，每个邮件会话对应一个独立对话",
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
-      "instructions": "从账户的邮箱地址发送邮件。新邮件开启新对话，邮件内的回复保留上下文。新用户完成注册后，我们会继续处理原始请求。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
       "loadError": "无法加载邮箱连接",
-      "manage": "管理",
       "open": "打开邮件",
+      "options": "邮件选项",
       "resumed": "{{email}} 已连接，原始请求将继续在同一个邮件会话中回复。",
       "title": "邮件",
       "unavailable": "此工作区暂未开放邮件集成"

@@ -7353,14 +7353,15 @@
     },
     "documentTitle": "Funktioniert",
     "email": {
+      "connectDescription": "Verbinde die E-Mail-Adresse deines Kontos oder sende eine Nachricht an die folgende Adresse.",
       "connected": "E-Mail verbunden",
+      "connectTitle": "E-Mail an {{assistantName}}",
       "description": "Sende Okou eine E-Mail und führe jede Unterhaltung in einem eigenen Chat",
       "healthNotice": "Verwende diese Integration nicht für Patientendaten, die unter HIPAA fallen.",
-      "instructions": "Sende eine Nachricht von deiner Konto-E-Mail-Adresse. Neue E-Mails starten neue Chats; Antworten bleiben in derselben Unterhaltung. Wir helfen neuen Nutzern bei der Registrierung und bearbeiten dann ihre Anfrage.",
       "invalidLink": "Dieser Verbindungslink ist ungültig. Sende Okou eine neue E-Mail.",
       "loadError": "Die E-Mail-Verbindung konnte nicht geladen werden",
-      "manage": "Verwalten",
       "open": "E-Mail öffnen",
+      "options": "E-Mail-Optionen",
       "resumed": "{{email}} ist verbunden. Deine ursprüngliche Anfrage wird in derselben E-Mail-Unterhaltung beantwortet.",
       "title": "E-Mail",
       "unavailable": "E-Mail ist für diesen Arbeitsbereich noch nicht verfügbar"

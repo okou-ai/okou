@@ -7430,14 +7430,15 @@
     },
     "documentTitle": "Integrazioni",
     "email": {
+      "connectDescription": "Collega l’indirizzo e-mail del tuo account o invia un messaggio all’indirizzo qui sotto.",
       "connected": "Email collegata",
+      "connectTitle": "Scrivi a {{assistantName}}",
       "description": "Scrivi a Okou e mantieni ogni conversazione nel proprio thread",
       "healthNotice": "Non usare questa integrazione per informazioni sui pazienti soggette a HIPAA.",
-      "instructions": "Invia un messaggio dall’indirizzo email del tuo account. Le nuove email avviano nuove chat; le risposte mantengono la stessa conversazione. Se sei nuovo, ti aiuteremo a registrarti e proseguiremo con la tua richiesta.",
       "invalidLink": "Questo link di collegamento non è valido. Invia una nuova email a Okou.",
       "loadError": "Impossibile caricare il collegamento email",
-      "manage": "Gestisci",
       "open": "Apri email",
+      "options": "Opzioni e-mail",
       "resumed": "{{email}} è collegata. La richiesta originale riceverà una risposta nella stessa conversazione email.",
       "title": "Email",
       "unavailable": "Email non è ancora disponibile per questo spazio di lavoro"

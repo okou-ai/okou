@@ -7430,14 +7430,15 @@
     },
     "documentTitle": "Integrações",
     "email": {
+      "connectDescription": "Conecte o e-mail da sua conta ou envie uma mensagem para o endereço abaixo.",
       "connected": "E-mail conectado",
+      "connectTitle": "Envie um e-mail para {{assistantName}}",
       "description": "Envie um e-mail ao Okou e mantenha cada conversa em seu próprio chat",
       "healthNotice": "Não use esta integração para informações de pacientes reguladas pela HIPAA.",
-      "instructions": "Envie uma mensagem pelo e-mail da sua conta. Novos e-mails iniciam novos chats; respostas mantêm a mesma conversa. Se você for novo, ajudaremos com o cadastro e continuaremos sua solicitação.",
       "invalidLink": "Este link de conexão é inválido. Envie um novo e-mail ao Okou.",
       "loadError": "Não foi possível carregar sua conexão de e-mail",
-      "manage": "Gerenciar",
       "open": "Abrir e-mail",
+      "options": "Opções de e-mail",
       "resumed": "{{email}} está conectado. Sua solicitação original será respondida na mesma conversa por e-mail.",
       "title": "E-mail",
       "unavailable": "O e-mail ainda não está disponível neste espaço de trabalho"
