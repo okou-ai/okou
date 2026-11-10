@@ -39,21 +39,10 @@ final class NativeTestWaitTests: XCTestCase {
     try await eventually(timeout: .zero) { true }
   }
 
-  func testExpiredFrameDeadlineDoesNotContinueToDependentActions() async {
-    XCTExpectFailure(
-      "A presentation deadline must stop the caller even when no frame arrives",
-      issueMatcher: { @Sendable issue in
-        issue.compactDescription.contains("The native host did not present a frame")
-      })
-    var reachedDependentAction = false
-    var caughtFailure = false
-    do {
-      try await hostingPresentationFrame(timeout: .zero)
-      reachedDependentAction = true
-    } catch {
-      caughtFailure = true
-    }
-    XCTAssertTrue(caughtFailure)
-    XCTAssertFalse(reachedDependentAction)
+  func testNativeReadinessCanCompleteWithoutMountingAWindow() async throws {
+    let view = UIView()
+    DispatchQueue.main.async { view.accessibilityIdentifier = "Ready" }
+    try await eventually { view.accessibilityIdentifier == "Ready" }
+    XCTAssertNil(view.window)
   }
 }

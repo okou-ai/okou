@@ -26,7 +26,7 @@ final class ChatComposerFocusTests: XCTestCase {
     input.insertText("继续")
     XCTAssertEqual(conversation.draft, draft + "继续")
 
-    try await hostingPresentationFrame()
+    try await eventually { input.text == draft + "继续" }
     input.selectedRange = NSRange(location: 0, length: 3)
     input.insertText("修改")
     let edited = "修改 🌷\n那 43481 可以先合并。继续"

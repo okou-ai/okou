@@ -124,7 +124,13 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     let gate = ModelResponseGate()
     let started = expectation(description: "First search reached HTTP")
     let reads = Mutex(0)
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/connector-catalog/discovery"
+      else { throw URLError(.unsupportedURL) }
+      let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+      guard query?.first(where: { $0.name == "keyword" })?.value == "slack" else {
+        throw URLError(.unsupportedURL)
+      }
       let count = reads.withLock {
         $0 += 1
         return $0
@@ -199,8 +205,10 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     let gate = ModelResponseGate()
     let started = expectation(description: "Old workspace directory reached HTTP")
     let cancelled = expectation(description: "Old workspace HTTP was cancelled")
-    let oldFixture = ChatHTTPFixture { _ in
-      await withTaskCancellationHandler {
+    let oldFixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/connector-catalog/discovery"
+      else { throw URLError(.unsupportedURL) }
+      return await withTaskCancellationHandler {
         started.fulfill()
         await gate.wait()
         return Self.discovery("Old workspace")
@@ -219,7 +227,11 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     let pending = try own(retired.store.get(retired.catalog))
     await fulfillment(of: [started], timeout: 3)
     old.close()
-    let nextFixture = ChatHTTPFixture { _ in Self.discovery("New workspace") }
+    let nextFixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/connector-catalog/discovery"
+      else { throw URLError(.unsupportedURL) }
+      return Self.discovery("New workspace")
+    }
     let next = makeComposer(nextFixture)
     defer { next.close() }
     next.configure(agentID: "same-agent")

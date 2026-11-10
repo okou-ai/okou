@@ -105,7 +105,9 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     let began = expectation(description: "Account HTTP began")
     let cancelled = expectation(description: "Original HTTP observed cancellation")
     let gate = ModelResponseGate()
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/me/3rd-party-subscriptions"
+      else { throw URLError(.unsupportedURL) }
       began.fulfill()
       return await withTaskCancellationHandler {
         await gate.wait()
@@ -135,7 +137,9 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     let clock = Mutex(Date())
     let response = Mutex(ModelHTTPFixtures.subscriptions)
     let reads = Mutex(0)
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/me/3rd-party-subscriptions"
+      else { throw URLError(.unsupportedURL) }
       reads.withLock { $0 += 1 }
       return ChatHTTPResponse(body: response.withLock { $0 })
     }

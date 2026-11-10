@@ -266,7 +266,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let origin = try await server.start()
     let unavailable = Mutex(true)
     let lookups = Mutex(0)
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let url = request.url, url.path == "/api/web/file-url",
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+          .first(where: { $0.name == "file_id" })?.value == "image"
+      else { throw URLError(.unsupportedURL) }
       lookups.withLock { $0 += 1 }
       if unavailable.withLock({ $0 }) {
         return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Offline\"}}")
@@ -302,7 +306,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let denied = Mutex(false)
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let url = request.url, url.path == "/api/web/file-url",
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+          .first(where: { $0.name == "file_id" })?.value == "image"
+      else { throw URLError(.unsupportedURL) }
       if denied.withLock({ $0 }) {
         return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
       }
