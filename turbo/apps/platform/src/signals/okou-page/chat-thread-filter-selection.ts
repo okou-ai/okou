@@ -59,6 +59,14 @@ export const selectChatThreadFilter$ = command(
   },
 );
 
+// The Chat rail entry always lands on the inbox. It also supersedes a pending
+// filter selection, so that selection cannot open a filtered chat after the
+// rail has navigated away.
+export const showChatThreadInbox$ = command(({ set }) => {
+  set(resetChatThreadFilterSelection$);
+  set(setChatThreadUnreadFilter$, false);
+});
+
 function shouldHandleUnreadOnlyShortcut(event: KeyboardEvent): boolean {
   if (!shouldHandleShortcutPress(event)) {
     return false;
