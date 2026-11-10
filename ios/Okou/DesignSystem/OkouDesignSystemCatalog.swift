@@ -39,6 +39,17 @@
     ]
 
     var body: some View {
+      ScrollViewReader { scroll in
+        catalog
+          .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("--composer-preview") {
+              scroll.scrollTo("composer-preview", anchor: .top)
+            }
+          }
+      }
+    }
+
+    private var catalog: some View {
       ScrollView {
         VStack(alignment: .leading, spacing: OkouSpace.xxxl) {
           OkouWordmark()
@@ -113,6 +124,7 @@
               .contentShape(Circle())
             }
           }
+          .id("composer-preview")
           section("Chat rows") {
             // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
             // and the trailing states.
