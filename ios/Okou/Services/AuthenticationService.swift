@@ -39,15 +39,29 @@ final class AuthenticationService {
   private var isRestoringSession = true
   private var clientRefreshGeneration = 0
   private var clientRefreshTask:
-    (id: UUID, identity: Task<Result<Void, Error>, Never>, task: Task<Void, Never>)?
+    (
+      id: UUID, scope: AccountMembershipResources.Scope?,
+      identity: Task<Result<Void, Error>, Never>, task: Task<Void, Never>
+    )?
   private var resolvedWorkspaceIdentity: WorkspaceIdentity?
   private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
-  private(set) var isLoadingWorkspaces = false
-  private(set) var workspaces: [Workspace] = []
+  private(set) var accountResources: AccountMembershipResources?
   private(set) var errorMessage: String?
-  private var refreshGeneration = 0
-  private var workspacesSessionID: String?
-  private var workspacesUserID: String?
+  private var verifiedAccountScope: AccountMembershipResources.Scope?
+  private var membershipRefresh: (id: UUID, task: Task<Void, Never>)?
+
+  private var accountScope: AccountMembershipResources.Scope? {
+    guard let clerk, let identity = workspaceIdentity else { return nil }
+    return .init(
+      environment: clerk.publishableKey, userID: identity.userID, sessionID: identity.sessionID)
+  }
+
+  private var currentAccountResources: AccountMembershipResources? {
+    guard accountResources?.scope == accountScope else { return nil }
+    return accountResources
+  }
+
+  var workspaces: [Workspace] { currentAccountResources?.confirmed ?? [] }
 
   private struct WorkspaceIdentity: Equatable {
     let sessionID: String
@@ -69,8 +83,7 @@ final class AuthenticationService {
     if isRestoringSession { return true }
     // A refreshed active session can enter its workspace while the switcher's
     // membership list loads. Missing organizations still require resolution.
-    guard let identity = workspaceIdentity,
-      isAuthenticated || identity.status == .pending
+    guard let identity = workspaceIdentity, isAuthenticated, identity.workspaceID != nil
     else { return false }
     return resolvedWorkspaceIdentity != identity && errorMessage == nil
   }
@@ -83,6 +96,7 @@ final class AuthenticationService {
   init(clerk: Clerk, presentationDirectory: URL? = nil) {
     self.clerk = clerk
     self.presentationDirectory = presentationDirectory
+    synchronizeAccountResources()
   }
 
   init(publishableKey: String? = nil) {
@@ -130,7 +144,7 @@ final class AuthenticationService {
   }
 
   func workspacePresentation(_ id: String) -> Workspace? {
-    if workspacesUserID == userID, let workspace = workspaces.first(where: { $0.id == id }) {
+    if let workspace = workspaces.first(where: { $0.id == id }) {
       return workspace
     }
     if presentation?.userID == userID, let workspace = presentation?.workspace(id) {
@@ -161,7 +175,7 @@ final class AuthenticationService {
     }
     guard let presentation, presentation.userID == userID, presentationScopeID == scope
     else { return }
-    if workspacesSessionID == clerk.session?.id, workspacesUserID == userID {
+    if currentAccountResources?.confirmed != nil {
       await presentation.replaceWorkspaces(workspaces, activeID: workspaceID)
     }
     guard presentationScopeID == scope, !Task.isCancelled else { return }
@@ -175,9 +189,7 @@ final class AuthenticationService {
   var presentationWorkspaceID: String? {
     guard isAuthenticated, let identity = workspaceIdentity, let id = identity.workspaceID
     else { return nil }
-    if workspacesSessionID == identity.sessionID, workspacesUserID == identity.userID,
-      !workspaces.contains(where: { $0.id == id })
-    {
+    if currentAccountResources?.confirmed != nil, !workspaces.contains(where: { $0.id == id }) {
       return nil
     }
     return id
@@ -218,6 +230,7 @@ final class AuthenticationService {
       clientRefreshTask?.identity.cancel()
       clientRefreshTask?.task.cancel()
       clientRefreshTask = nil
+      closeAccountResources()
     }
     let events = clerk.auth.events
     await withTaskCancellationHandler {
@@ -234,7 +247,11 @@ final class AuthenticationService {
                 || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
             else { continue }
             // A delayed membership response must not block sign-out or a newer identity.
-            if workspaceIdentity != resolvedWorkspaceIdentity {
+            let previousScope = accountResources?.scope
+            synchronizeAccountResources()
+            if previousScope != accountScope {
+              group.addTask { await self.refresh() }
+            } else if workspaceIdentity != resolvedWorkspaceIdentity, !isSwitchingWorkspace {
               group.addTask { await self.refreshWorkspaces() }
             }
           case .signedOut, .accountDeleted:
@@ -249,18 +266,24 @@ final class AuthenticationService {
       Task { @MainActor [weak self] in
         self?.clientRefreshTask?.identity.cancel()
         self?.clientRefreshTask?.task.cancel()
+        self?.closeAccountResources()
       }
     }
   }
 
   func refresh() async {
     guard clerk != nil, !Task.isCancelled else { return }
+    synchronizeAccountResources()
     _ = beginClientRefresh()
     await clientRefreshTask?.task.value
   }
 
   private func beginClientRefresh() -> Task<Result<Void, Error>, Never> {
-    if let clientRefreshTask { return clientRefreshTask.identity }
+    if let clientRefreshTask, clientRefreshTask.scope == accountScope {
+      return clientRefreshTask.identity
+    }
+    clientRefreshTask?.identity.cancel()
+    clientRefreshTask?.task.cancel()
     let id = UUID()
     let identity = Task { await self.restoreSession() }
     let task = Task {
@@ -268,7 +291,7 @@ final class AuthenticationService {
       guard case .success = await identity.value, !Task.isCancelled else { return }
       await refreshWorkspaces()
     }
-    clientRefreshTask = (id, identity, task)
+    clientRefreshTask = (id, accountScope, identity, task)
     return identity
   }
 
@@ -292,6 +315,8 @@ final class AuthenticationService {
       try await clerk.refreshClient()
       try Task.checkCancellation()
       guard generation == clientRefreshGeneration else { return .failure(CancellationError()) }
+      synchronizeAccountResources()
+      verifiedAccountScope = accountScope
       if isAuthenticated, let identity = workspaceIdentity, identity.workspaceID != nil {
         resolvedWorkspaceIdentity = identity
         isRestoringSession = false
@@ -308,69 +333,76 @@ final class AuthenticationService {
     }
   }
 
+  /// Account ownership is independent of WorkspaceStore and its foreground/background lifetime.
+  /// A later App coordinator may call this on root retirement; workspace teardown must not.
+  func closeAccountResources() {
+    membershipRefresh?.task.cancel()
+    membershipRefresh = nil
+    accountResources?.close()
+    accountResources = nil
+    verifiedAccountScope = nil
+  }
+
+  private func synchronizeAccountResources() {
+    guard accountResources?.scope != accountScope else { return }
+    closeAccountResources()
+    guard let scope = accountScope, let clerk, let user = clerk.user else { return }
+    accountResources = AccountMembershipResources(scope: scope) { page in
+      // SDK membership reads use its authorized session, never cached names or API credentials.
+      guard clerk.session?.id == scope.sessionID, clerk.user?.id == scope.userID else {
+        throw AuthenticationError.workspaceChanged
+      }
+      let response = try await user.getOrganizationMemberships(page: page, pageSize: 100)
+      try Task.checkCancellation()
+      guard clerk.session?.id == scope.sessionID, clerk.user?.id == scope.userID else {
+        throw AuthenticationError.workspaceChanged
+      }
+      return AccountMembershipResources.Page(
+        workspaces: response.data.map {
+          Workspace(
+            id: $0.organization.id, name: $0.organization.name,
+            imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
+        }, totalCount: response.totalCount)
+    }
+  }
+
   func refreshWorkspaces() async {
-    refreshGeneration += 1
-    let generation = refreshGeneration
-    guard let clerk, let user = clerk.user, let session = clerk.session else {
-      await clearWorkspaces()
+    synchronizeAccountResources()
+    guard let resources = currentAccountResources else {
+      if clerk?.session == nil { await clearWorkspaces() }
       return
     }
-    guard let identity = workspaceIdentity else {
-      isLoadingWorkspaces = false
+    if let membershipRefresh {
+      await membershipRefresh.task.value
       return
     }
-    isLoadingWorkspaces = true
-    defer {
-      if generation == refreshGeneration {
-        isLoadingWorkspaces = false
-      }
-    }
-    if workspacesSessionID != session.id || workspacesUserID != user.id {
-      workspaces = []
-      workspacesSessionID = nil
-      workspacesUserID = nil
-    }
-    do {
-      var memberships: [OrganizationMembership] = []
-      var page = 1
-      while true {
-        let response = try await user.getOrganizationMemberships(page: page, pageSize: 100)
+    let id = UUID()
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      defer { if membershipRefresh?.id == id { membershipRefresh = nil } }
+      do {
+        let workspaces = try await resources.read(refresh: true)
         try Task.checkCancellation()
-        guard generation == refreshGeneration,
-          clerk.session?.id == session.id,
-          clerk.user?.id == user.id,
-          workspaceIdentity == identity
-        else { return }
-        memberships.append(contentsOf: response.data)
-        if response.data.isEmpty || memberships.count >= response.totalCount { break }
-        page += 1
+        guard currentAccountResources === resources, verifiedAccountScope == resources.scope else {
+          return
+        }
+        let activeID = clerk?.session?.lastActiveOrganizationId
+        if workspaces.count == 1, let workspace = workspaces.first, activeID != workspace.id {
+          try await switchWorkspace(workspace.id)
+        }
+        try Task.checkCancellation()
+        guard currentAccountResources === resources else { return }
+        resolvedWorkspaceIdentity = workspaceIdentity
+        if presentation != nil { await preparePresentation() }
+      } catch is CancellationError {
+        return
+      } catch {
+        // Read errors remain on the original resource Task. Activation errors stay SDK-owned.
+        return
       }
-      workspaces = memberships.map {
-        Workspace(
-          id: $0.organization.id, name: $0.organization.name,
-          imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
-      }
-      workspacesSessionID = session.id
-      workspacesUserID = user.id
-      errorMessage = nil
-      let activeID = clerk.session?.lastActiveOrganizationId
-      if workspaces.count == 1,
-        let workspace = workspaces.first,
-        activeID != workspace.id
-      {
-        try await switchWorkspace(workspace.id)
-      }
-      guard generation == refreshGeneration,
-        clerk.session?.id == session.id, clerk.user?.id == user.id
-      else { return }
-      resolvedWorkspaceIdentity = workspaceIdentity
-      if presentation != nil { await preparePresentation() }
-    } catch is CancellationError {
-      return
-    } catch {
-      guard generation == refreshGeneration, workspaceIdentity == identity else { return }
-      errorMessage = error.localizedDescription
     }
+    membershipRefresh = (id, task)
+    await task.value
   }
 
   func switchWorkspace(_ workspaceID: String) async throws {
@@ -378,7 +410,7 @@ final class AuthenticationService {
       throw AuthenticationError.signedOut
     }
     // A notification can target another workspace before its switcher list arrives.
-    if workspacesSessionID != session.id || workspacesUserID != userID {
+    if currentAccountResources?.confirmed == nil || verifiedAccountScope != accountScope {
       await refresh()
       try Task.checkCancellation()
       guard clerk.session?.id == session.id, clerk.user?.id == userID else {
@@ -386,7 +418,7 @@ final class AuthenticationService {
       }
     }
     guard !isSwitchingWorkspace else { throw AuthenticationError.workspaceChanged }
-    guard workspacesSessionID == session.id, workspacesUserID == userID,
+    guard verifiedAccountScope == accountScope, currentAccountResources?.confirmed != nil,
       workspaces.contains(where: { $0.id == workspaceID })
     else {
       throw AuthenticationError.workspaceUnavailable
@@ -404,8 +436,8 @@ final class AuthenticationService {
         clerk.session?.id == session.id,
         clerk.user?.id == userID,
         clerk.session?.lastActiveOrganizationId == workspaceID,
-        workspacesSessionID == session.id,
-        workspacesUserID == userID,
+        verifiedAccountScope == accountScope,
+        currentAccountResources?.confirmed != nil,
         workspaces.contains(where: { $0.id == workspaceID })
       else { throw AuthenticationError.workspaceChanged }
       resolvedWorkspaceIdentity = workspaceIdentity
@@ -483,15 +515,11 @@ final class AuthenticationService {
     clientRefreshTask?.identity.cancel()
     clientRefreshTask?.task.cancel()
     clientRefreshTask = nil
-    refreshGeneration += 1
+    closeAccountResources()
     clientRefreshGeneration += 1
     isRestoringSession = false
     resolvedWorkspaceIdentity = nil
     workspaceSwitch = nil
-    workspaces = []
-    workspacesSessionID = nil
-    workspacesUserID = nil
-    isLoadingWorkspaces = false
     await previous?.close(removeFiles: true)
   }
 }

@@ -260,7 +260,10 @@ final class AuthenticationHTTPFixture: Sendable {
       let snapshot = state.withLock { $0 }
       await memberships.enter()
       if snapshot.failMemberships { return failure("Memberships unavailable") }
-      let rows = snapshot.workspaceIDs.map { id in
+      let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+      let offset = Int(query.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0
+      let limit = Int(query.first(where: { $0.name == "limit" })?.value ?? "100") ?? 100
+      let rows = snapshot.workspaceIDs.dropFirst(offset).prefix(limit).map { id in
         var membership = OrganizationMembership.mockWithoutUserData
         membership.id = "membership_" + id
         membership.organization.id = id
@@ -270,7 +273,8 @@ final class AuthenticationHTTPFixture: Sendable {
         return membership
       }
       return try json(
-        ResponseEnvelope(response: MembershipEnvelope(data: rows, totalCount: rows.count)))
+        ResponseEnvelope(
+          response: MembershipEnvelope(data: rows, totalCount: snapshot.workspaceIDs.count)))
     case let path where path.hasSuffix("/touch"):
       await activation.enter()
       if state.withLock({ $0.failActivation }) { return failure("Activation unavailable") }

@@ -1,3 +1,5 @@
+import CCStateSwiftUI
+import ChatData
 import ClerkKit
 import SwiftUI
 
@@ -86,20 +88,75 @@ private struct WorkspaceSignInView: View {
       Text("Continue with one of your workspaces.")
         .font(.okou(.subheadline))
         .foregroundStyle(OkouColor.mutedForeground)
-      if authentication.isLoadingWorkspaces && authentication.workspaces.isEmpty {
-        OkouLoadingRow("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty && authentication.errorMessage == nil {
+      if let resources = authentication.accountResources {
+        StoreProvider(resources.store) {
+          WorkspaceMembershipChoices(
+            authentication: authentication, resources: resources, webURL: webURL,
+            actionError: $actionError)
+        }
+        .id(ObjectIdentifier(resources))
+      }
+      if let error = actionError ?? authentication.errorMessage {
+        OkouLoadErrorRow(message: error) {
+          actionError = nil
+          await authentication.refresh()
+        }
+      }
+      Button("Sign out") { confirmsSignOut = true }
+        .buttonStyle(OkouButtonStyle(isPrimary: false))
+        .signOutConfirmation(isPresented: $confirmsSignOut) {
+          Task {
+            do {
+              try await authentication.signOut()
+            } catch {
+              actionError = error.localizedDescription
+            }
+          }
+        }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct WorkspaceMembershipChoices: View {
+  let authentication: AuthenticationService
+  let resources: AccountMembershipResources
+  let webURL: URL
+  @Binding var actionError: String?
+  @LoadableValue private var memberships: Loadable<[WorkspacePresentation]>
+
+  init(
+    authentication: AuthenticationService, resources: AccountMembershipResources, webURL: URL,
+    actionError: Binding<String?>
+  ) {
+    self.authentication = authentication
+    self.resources = resources
+    self.webURL = webURL
+    _actionError = actionError
+    _memberships = LoadableValue(task: resources.value)
+  }
+
+  var body: some View {
+    switch memberships {
+    case .loading:
+      OkouLoadingRow("Loading workspaces…")
+    case .hasError(let error):
+      OkouLoadErrorRow(message: error.localizedDescription) {
+        await authentication.refreshWorkspaces()
+      }
+    case .hasData(let workspaces):
+      if workspaces.isEmpty {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
           Text("Finish setting up your workspace on the web, then return here.")
             .foregroundStyle(OkouColor.mutedForeground)
           Link("Open Okou on the web", destination: webURL)
             .buttonStyle(OkouButtonStyle(isPrimary: false))
-          Button("Refresh workspaces") { Task { await authentication.refresh() } }
+          Button("Refresh workspaces") { Task { await authentication.refreshWorkspaces() } }
             .buttonStyle(OkouButtonStyle(isPrimary: false))
         }
       } else {
         VStack(spacing: OkouSpace.md) {
-          ForEach(authentication.workspaces) { workspace in
+          ForEach(workspaces) { workspace in
             Button {
               Task {
                 do {
@@ -130,24 +187,6 @@ private struct WorkspaceSignInView: View {
           }
         }
       }
-      if let error = actionError ?? authentication.errorMessage {
-        OkouLoadErrorRow(message: error) {
-          actionError = nil
-          await authentication.refresh()
-        }
-      }
-      Button("Sign out") { confirmsSignOut = true }
-        .buttonStyle(OkouButtonStyle(isPrimary: false))
-        .signOutConfirmation(isPresented: $confirmsSignOut) {
-          Task {
-            do {
-              try await authentication.signOut()
-            } catch {
-              actionError = error.localizedDescription
-            }
-          }
-        }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

@@ -62,7 +62,11 @@ final class AuthenticationScopeTests: XCTestCase {
       }
       await authentication.refresh()
       XCTAssertNil(authentication.scopeID)
-      XCTAssertNotNil(authentication.errorMessage)
+      if activation {
+        XCTAssertNotNil(authentication.errorMessage)
+      } else {
+        await assertMembershipFailure(authentication)
+      }
       provider.state.withLock {
         $0.failMemberships = false
         $0.failActivation = false
@@ -224,8 +228,9 @@ final class AuthenticationScopeTests: XCTestCase {
     await provider.memberships.releaseAll()
     await refresh.task.value
     await overlapping.value
-    let membershipRequests = await provider.memberships.count()
-    XCTAssertEqual(membershipRequests, refresh.request)
+    let resources = try XCTUnwrap(authentication.accountResources)
+    let workspaces = try await resources.read()
+    XCTAssertEqual(workspaces.map(\.id), ["org_one"])
     try await assertToken(authentication)
   }
 
@@ -233,7 +238,7 @@ final class AuthenticationScopeTests: XCTestCase {
     let (_, authentication) = try await session { $0.failMemberships = true }
     await authentication.refresh()
     XCTAssertFalse(authentication.isLoading)
-    XCTAssertNotNil(authentication.errorMessage)
+    await assertMembershipFailure(authentication)
     try await assertToken(authentication)
   }
 
@@ -306,9 +311,14 @@ final class AuthenticationScopeTests: XCTestCase {
     XCTAssertNil(authentication.scopeID)
     XCTAssertEqual(authentication.presentationScopeID, presentation)
     XCTAssertNotNil(authentication.errorMessage)
-    provider.state.withLock { $0.failMemberships = true }
+    // A successful membership read is still not SDK identity verification.
     await authentication.refreshWorkspaces()
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one"])
     XCTAssertNil(authentication.scopeID)
+    do {
+      _ = try await authentication.accessToken(workspaceID: "org_one", scopeID: presentation)
+      XCTFail("Membership success cannot authorize a session whose SDK restoration failed")
+    } catch {}
     provider.identityOverride.withLock { $0 = nil }
     provider.state.withLock { $0.failMemberships = false }
     await authentication.refresh()
@@ -346,7 +356,7 @@ final class AuthenticationScopeTests: XCTestCase {
     try await assertToken(authentication)
   }
 
-  func testCancelledMembershipVerificationCanRetryWithoutReusingItsOldRead() async throws {
+  func testCancelledRefreshWaiterLeavesTheSharedMembershipReadUsable() async throws {
     let (provider, authentication) = try await session()
     await provider.memberships.hold()
     let cancelled = try await refreshUntilRequest(authentication, at: provider.memberships)
@@ -376,6 +386,121 @@ final class AuthenticationScopeTests: XCTestCase {
     XCTAssertTrue(caughtFailure)
     XCTAssertFalse(reachedDependentAction)
     XCTAssertNotNil(authentication.errorMessage)
+  }
+
+  func testPaginatedMembershipsAreCompleteAndOrderedForOverlappingConsumers() async throws {
+    let expected = (0..<205).map { "org_page_\($0)" }
+    let (provider, authentication) = try await session {
+      $0.workspaceIDs = expected
+      $0.activeWorkspaceID = expected[0]
+    }
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let resources = try XCTUnwrap(authentication.accountResources)
+    let first = Task.immediate { try await resources.read() }
+    let second = Task.immediate { try await resources.read() }
+    addTeardownBlock {
+      first.cancel()
+      second.cancel()
+      await provider.memberships.releaseAll()
+      _ = try? await first.value
+      _ = try? await second.value
+    }
+    first.cancel()
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    let workspaces = try await second.value
+    XCTAssertEqual(workspaces.map(\.id), expected)
+    XCTAssertEqual(authentication.workspaces.map(\.id), expected)
+    do {
+      _ = try await first.value
+      XCTFail("The cancelled waiter must detach from the shared read")
+    } catch is CancellationError {}
+    try await authentication.switchWorkspace(expected[204])
+    try await assertToken(authentication)
+  }
+
+  func testFailedMembershipReadStaysFailedUntilExplicitRetry() async throws {
+    let (provider, authentication) = try await session { $0.failMemberships = true }
+    await authentication.refresh()
+    let resources = try XCTUnwrap(authentication.accountResources)
+    await assertMembershipFailure(authentication)
+    provider.state.withLock { $0.failMemberships = false }
+    // Observing the same resource is not permission to retry a failed request.
+    await assertMembershipFailure(authentication)
+    await authentication.refreshWorkspaces()
+    let workspaces = try await resources.read()
+    XCTAssertEqual(workspaces.map(\.id), ["org_one"])
+    try await assertToken(authentication)
+  }
+
+  func testWorkspaceSwitchKeepsPendingAccountReadAndSignOutRetiresIt() async throws {
+    let (provider, authentication) = try await session { $0.workspaceIDs = ["org_one", "org_two"] }
+    await authentication.refresh()
+    let resources = try XCTUnwrap(authentication.accountResources)
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let read = try resources.store.get(resources.value)
+    try await authentication.switchWorkspace("org_two")
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
+    try await assertToken(authentication)
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    let workspaces = try await read.value
+    XCTAssertEqual(workspaces.map(\.id), ["org_one", "org_two"])
+    // The old workspace's read remains usable after the native workspace owner is replaced.
+    let shared = try await resources.read()
+    XCTAssertEqual(shared, workspaces)
+    try await authentication.signOut()
+    do {
+      _ = try await resources.read()
+      XCTFail("A retired account resource must reject future reads")
+    } catch is CancellationError {}
+    XCTAssertNil(resources.confirmed)
+  }
+
+  func testSessionReplacementRetiresOriginalPaginationAndPublishesOnlyTheNewAccount() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    let previous = try XCTUnwrap(authentication.accountResources)
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let original = try previous.store.get(previous.value)
+    provider.state.withLock {
+      $0.sessionID = "sess_replacement_" + UUID().uuidString
+      $0.workspaceIDs = ["org_two"]
+      $0.activeWorkspaceID = "org_two"
+    }
+    try await authentication.clerk?.refreshClient()
+    let replacement = Task.immediate { await authentication.refresh() }
+    addTeardownBlock {
+      replacement.cancel()
+      await provider.memberships.releaseAll()
+      await replacement.value
+    }
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    await replacement.value
+    XCTAssertTrue(original.isCancelled)
+    do {
+      _ = try await original.value
+      XCTFail("Old pagination must be cancelled and cannot publish into its retired owner")
+    } catch {}
+    do {
+      _ = try await previous.read()
+      XCTFail("The previous session's owner must reject new I/O")
+    } catch is CancellationError {}
+    XCTAssertNil(previous.confirmed)
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_two"])
+    try await assertToken(authentication)
+  }
+
+  private func assertMembershipFailure(_ authentication: AuthenticationService) async {
+    do {
+      let resources = try XCTUnwrap(authentication.accountResources)
+      _ = try await resources.read()
+      XCTFail("The original membership Task must retain its error")
+    } catch {}
   }
 
   private func session(_ configure: (inout AuthenticationHTTPFixture.State) -> Void = { _ in })

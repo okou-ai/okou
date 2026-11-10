@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -196,48 +197,15 @@ struct ChatSidebarView: View {
     .frame(minHeight: headerHeight)
   }
 
+  @ViewBuilder
   private var workspaceSwitcher: some View {
-    Menu {
-      // A picker draws the system's check beside the current workspace, and every row
-      // carries its logo, as the web's switcher does.
-      Picker("Workspace", selection: workspaceSelection) {
-        ForEach(authentication.workspaces) { workspace in
-          Label {
-            Text(workspace.name)
-          } icon: {
-            OkouWorkspaceMenuLogos.image(
-              workspaceID: workspace.id, hasImage: workspace.hasImage,
-              cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
-          }
-          .tag(workspace.id)
-        }
+    if let resources = authentication.accountResources {
+      StoreProvider(resources.store) {
+        WorkspaceMembershipMenu(
+          authentication: authentication, resources: resources, workspaceID: workspaceID,
+          accountError: $accountError)
       }
-      .pickerStyle(.inline)
-      .labelsHidden()
-    } label: {
-      let workspace = authentication.workspacePresentation(workspaceID)
-      OkouWorkspaceGlassLogo(
-        workspaceID: workspaceID, name: workspaceName,
-        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false,
-        cachedImage: authentication.presentation?.image("workspace:" + workspaceID),
-        usesSharedImage: true, metadataKnown: workspace != nil
-      )
-      .accessibilityHidden(true)
-    }
-    .buttonStyle(.plain)
-    .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
-    .accessibilityLabel("Workspace: \(workspaceName)")
-  }
-
-  private var workspaceSelection: Binding<String> {
-    Binding {
-      workspaceID
-    } set: { id in
-      Task {
-        do { try await authentication.switchWorkspace(id) } catch {
-          accountError = error.localizedDescription
-        }
-      }
+      .id(ObjectIdentifier(resources))
     }
   }
 
