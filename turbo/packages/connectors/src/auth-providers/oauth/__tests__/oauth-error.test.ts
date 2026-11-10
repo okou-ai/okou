@@ -184,7 +184,7 @@ describe("throwOAuthError", () => {
 });
 
 describe("oauthFailureDiagnostics", () => {
-  it("keeps only typed HTTP status and allowlisted OAuth codes", () => {
+  it("keeps only bounded error metadata without provider-controlled values", () => {
     const secret = "provider-controlled-secret-canary";
     const knownError = new OAuthProviderHttpError(
       secret,
@@ -198,7 +198,18 @@ describe("oauthFailureDiagnostics", () => {
       httpStatus: 400,
       oauthError: "invalid_client",
     });
+    const cause = new SyntaxError(secret, { cause: { [secret]: secret } });
+    cause.name = secret;
+    const unexpected = new TypeError(secret, { cause });
+    unexpected.name = secret;
+    unexpected.stack = secret;
+    expect(oauthFailureDiagnostics(unexpected)).toStrictEqual({
+      failureKind: "unexpected",
+      exceptionClass: "TypeError",
+      causeClass: "SyntaxError",
+    });
     const untrustedErrors = [
+      unexpected,
       new OAuthProviderHttpError(secret, 400, secret, secret, secret),
       new ProviderHttpError(secret, 403),
       new ProviderResponseError(secret),
