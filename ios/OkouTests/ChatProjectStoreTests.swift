@@ -82,17 +82,17 @@ final class ChatProjectStoreTests: XCTestCase {
     let threads = [ordinary, member, archived]
     let normal = ChatListContents(
       projects: projects, threads: threads, agentID: Self.agent,
-      onlyUnread: false, archived: false, muted: false)
+      filter: .recent)
     XCTAssertEqual(normal.threads.map(\.id), [ordinary.id])
     XCTAssertEqual(normal.projects.first?.threads.map(\.id), [member.id])
     let unread = ChatListContents(
       projects: projects, threads: threads, agentID: Self.agent,
-      onlyUnread: true, archived: false, muted: false)
+      filter: .unread)
     XCTAssertEqual(unread.projects.first?.threads.map(\.id), [member.id])
     XCTAssertTrue(unread.threads.isEmpty)
     let archive = ChatListContents(
       projects: projects, threads: threads, agentID: Self.agent,
-      onlyUnread: false, archived: true, muted: false)
+      filter: .archived)
     XCTAssertEqual(archive.projects.first?.threads.map(\.id), [archived.id])
   }
 

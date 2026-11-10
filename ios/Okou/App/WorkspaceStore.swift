@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -25,10 +26,23 @@ final class WorkspaceStore {
   private(set) var threadFeedback: ChatThreadFeedback?
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
+  @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
+  @ObservationIgnored private let selectThread: Command<Void, String?>
   var selectedThreadID: String? {
-    didSet {
+    get {
+      access(keyPath: \.selectedThreadID)
+      do { return try resources.store.get(selectedThread) } catch {
+        preconditionFailure("Cannot read workspace selection: \(error)")
+      }
+    }
+    set {
       let previous = selectedConversation
-      selectedConversation = selectedThreadID.flatMap { conversation(for: $0) }
+      withMutation(keyPath: \.selectedThreadID) {
+        do { try resources.store.set(selectThread, newValue) } catch {
+          preconditionFailure("Cannot update workspace selection: \(error)")
+        }
+      }
+      selectedConversation = newValue.flatMap { conversation(for: $0) }
       previous?.reconcileVisibility()
       selectedConversation?.reconcileVisibility()
     }
@@ -102,6 +116,9 @@ final class WorkspaceStore {
     client: client, resources: resources, sync: sync,
     didFail: { [weak self] in self?.handle($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
+  @ObservationIgnored lazy var sidebar = ChatSidebarStore(
+    store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
+    projects: projects.confirmedValue, selectedThread: selectedThread)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -132,6 +149,11 @@ final class WorkspaceStore {
     },
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
+    let selectedThread = selectedThread
+    selectThread = Command { context, value in
+      guard try context.get(selectedThread) != value else { return }
+      try context.set(selectedThread, value)
+    }
     self.client = client
     resources = WorkspaceResources(client: client, sleep: readRetrySleep)
     self.readRetrySleep = readRetrySleep
@@ -219,6 +241,10 @@ final class WorkspaceStore {
   /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
   /// from its own composer, so leaving a chat marks it at once; others use the API's list.
   func hasDraft(_ threadID: String) -> Bool {
+    // A row tracks the selected owner before consulting the non-observable resident cache.
+    if let conversation = selectedConversation, conversation.thread.id == threadID {
+      return conversation.composer.hasContent
+    }
     if let composer = conversations[threadID]?.composer { return composer.hasContent }
     return draftThreadIDs.contains(threadID)
   }
@@ -252,6 +278,7 @@ final class WorkspaceStore {
 
   func close() {
     closed = true
+    sidebar.close()
     startupGeneration = UUID()
     refreshTask?.cancel()
     creationTask?.cancel()

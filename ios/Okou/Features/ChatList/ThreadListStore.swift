@@ -8,15 +8,47 @@ import Observation
 /// Navigation data and list presentation for one workspace.
 @MainActor @Observable
 final class ThreadListStore {
-  private(set) var threads: [ChatThread] = []
+  @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
+  @ObservationIgnored private let confirmedAgents = CCState.State<[AgentRecord]>([])
+  @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
+  @ObservationIgnored private let replaceAgents: Command<Void, [AgentRecord]>
+  let threadsValue: Computed<[ChatThread]>
+  let agentsValue: Computed<[AgentRecord]>
+
+  private(set) var threads: [ChatThread] {
+    get {
+      access(keyPath: \.threads)
+      return confirmed(threadsValue)
+    }
+    set {
+      guard newValue != confirmed(threadsValue) else { return }
+      withMutation(keyPath: \.threads) {
+        do { try stateStore.set(replaceThreads, newValue) } catch {
+          preconditionFailure("Cannot publish confirmed threads: \(error)")
+        }
+      }
+    }
+  }
   /// Confirmed navigation drives default-Agent decisions and the durable ChatSync baseline.
   /// Current read loading/errors belong exclusively to navigationValue.
-  private(set) var agents: [AgentRecord] = []
+  private(set) var agents: [AgentRecord] {
+    get {
+      access(keyPath: \.agents)
+      return confirmed(agentsValue)
+    }
+    set {
+      guard newValue != confirmed(agentsValue) else { return }
+      withMutation(keyPath: \.agents) {
+        do { try stateStore.set(replaceAgents, newValue) } catch {
+          preconditionFailure("Cannot publish confirmed Agents: \(error)")
+        }
+      }
+    }
+  }
   private(set) var unreadAgentIDs: Set<String> = []
   var hasUnreadThreads: Bool {
     threads.contains { !$0.isMuted && $0.indicator == .unread }
   }
-  var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
   private(set) var actionError: String?
@@ -73,6 +105,12 @@ final class ThreadListStore {
       try await Task.sleep(for: $0)
     }
   ) {
+    let confirmedThreads = confirmedThreads
+    let confirmedAgents = confirmedAgents
+    threadsValue = Computed { try $0(confirmedThreads) }
+    agentsValue = Computed { try $0(confirmedAgents) }
+    replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
+    replaceAgents = Command { context, value in try context.set(confirmedAgents, value) }
     self.client = client
     self.sync = sync
     self.resources = resources
@@ -136,6 +174,13 @@ final class ThreadListStore {
 
   var stateStore: CCState.Store { resources.store }
   var navigationValue: Computed<Task<[AgentRecord], Error>> { resources.navigation }
+
+  private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
+    // These are synchronous local business values, not a network or persistence boundary.
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read confirmed navigation: \(error)")
+    }
+  }
 
   func refreshNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
@@ -335,7 +380,7 @@ final class ThreadListStore {
     }
   }
 
-  func threads(agentID: String?, archived: Bool) -> [ChatThread] {
+  func threads(agentID: String?, archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
     threads.filter {
       guard $0.agentID == agentID else { return false }
       if onlyUnread {
