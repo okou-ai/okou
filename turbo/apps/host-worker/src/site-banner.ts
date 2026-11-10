@@ -81,6 +81,7 @@ export async function withSiteBanner(
       }),
       children: createElement(HostedSiteBannerActions, {
         continueUrl: continueUrl.href,
+        downloadAllowed: presentation.downloadAllowed !== false,
       }),
     }),
     { signal: request.signal },

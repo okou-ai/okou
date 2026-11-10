@@ -1,4 +1,5 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -14,6 +15,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  billingPlanCapabilities,
+  defaultBillingStatus,
+} from "../../../mocks/handlers/api-billing.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   artifact,
@@ -50,6 +55,7 @@ async function openSite({
   sidebar = false,
   shareRows = false,
   refined = false,
+  paywall = false,
 } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -80,6 +86,7 @@ async function openSite({
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
       [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
+      [FeatureSwitchKey.FreePlanArtifactPaywall]: paywall,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -198,6 +205,96 @@ test("published sites customize their address in Share and manually copy the sav
     expect(queryButtonByName("Copied")).toBeDefined();
   });
   expect(clipboard.writes).toStrictEqual(["https://launch-report.okou.app"]);
+});
+
+test("on the free plan, Customize URL and hiding the banner open the plans instead of changing the site", async () => {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+    });
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site);
+  });
+  const updates: string[] = [];
+  context.mocks.api(hostContract.updateSiteUrl, ({ respond }) => {
+    updates.push("url");
+    return respond(200, site);
+  });
+  context.mocks.api(hostContract.updateSiteBanner, ({ respond }) => {
+    updates.push("banner");
+    return respond(200, { siteId, showBanner: false, revision: null });
+  });
+  await openSite({ shareRows: true, paywall: true });
+  await openShare();
+  await waitFor(() => {
+    expect(
+      within(getButtonByName("Customize URL")).getByText("Pro"),
+    ).toBeInTheDocument();
+  });
+  const customize = getButtonByName("Customize URL");
+  click(customize);
+  await screen.findByRole("dialog", { name: "Choose a plan" });
+  expect(screen.queryByLabelText("Website URL")).toBeNull();
+  expect(updates).toStrictEqual([]);
+});
+
+test("on the free plan, turning off the banner opens the plans and keeps it shown", async () => {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+    });
+  });
+  const updates: boolean[] = [];
+  context.mocks.api(hostContract.updateSiteBanner, ({ body, respond }) => {
+    updates.push(body.showBanner);
+    return respond(200, { siteId, showBanner: false, revision: null });
+  });
+  await openSite({ paywall: true });
+  await openShare();
+  const banner = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  await waitFor(() => {
+    expect(banner).toBeEnabled();
+  });
+  click(banner);
+  await screen.findByRole("dialog", { name: "Choose a plan" });
+  expect(updates).toStrictEqual([]);
+});
+
+test("on the free plan, Download opens the plans without fetching the site", async () => {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, {
+      ...defaultBillingStatus(),
+      tier: "limited-free-1",
+      ...billingPlanCapabilities("limited-free-1"),
+    });
+  });
+  const listed: string[] = [];
+  context.mocks.api(hostContract.files, ({ params, respond }) => {
+    listed.push(params.publicSlug);
+    return respond(404, { error: { code: "NOT_FOUND", message: "missing" } });
+  });
+  await openSite({ paywall: true });
+  click(getButtonByName("Download options"));
+  const menu = await screen.findByRole("menu");
+  const download = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.startsWith("Download");
+  });
+  if (!download) {
+    throw new Error("Expected the Download menu item");
+  }
+  await waitFor(() => {
+    expect(within(download).getByText("Pro")).toBeInTheDocument();
+  });
+  click(download);
+  await screen.findByRole("dialog", { name: "Choose a plan" });
+  expect(listed).toStrictEqual([]);
 });
 
 test("invalid and occupied addresses cannot be saved and cancel discards the draft", async () => {

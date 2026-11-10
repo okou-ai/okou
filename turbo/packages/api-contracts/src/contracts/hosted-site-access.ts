@@ -89,6 +89,8 @@ export const hostedSitePresentationSchema = object({
   showBanner: boolean(),
   title: string(),
   siteUrl: url(),
+  // Absent from older API responses, where downloads were always offered.
+  downloadAllowed: boolean().optional(),
 });
 
 export const hostedSiteAccessDecisionSchema = discriminatedUnion("decision", [

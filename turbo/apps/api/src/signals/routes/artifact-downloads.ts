@@ -7,11 +7,18 @@ import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { resolveArtifactDownload$ } from "../services/artifact-downloads.service";
+import {
+  appDownloadPaywalled$,
+  artifactPaywallRequired,
+} from "../services/artifact-paywall.service";
 
 const download$ = authRoute(
   { requiredCapability: "artifact:read" },
   command(async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
+    if (await set(appDownloadPaywalled$, signal)) {
+      return artifactPaywallRequired("Downloading artifacts");
+    }
     const { reference } = get(pathParamsOf(artifactDownloadsContract.download));
     const result = await set(
       resolveArtifactDownload$,
@@ -28,6 +35,9 @@ const files$ = authRoute(
   { requiredCapability: "host:read" },
   command(async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
+    if (await set(appDownloadPaywalled$, signal)) {
+      return artifactPaywallRequired("Downloading artifacts");
+    }
     const { reference } = get(pathParamsOf(artifactDownloadsContract.files));
     const result = await set(
       resolveArtifactDownload$,

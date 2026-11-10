@@ -18,6 +18,7 @@ import {
   isHostedSiteUrl,
 } from "./chat-page/parse-body-blocks.ts";
 import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
+import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 
@@ -224,6 +225,9 @@ export const downloadAttachment$ = command(
     attachment: AttachmentDownload,
     signal: AbortSignal,
   ): Promise<void> => {
+    if (!(await set(passArtifactPaywall$, signal))) {
+      return;
+    }
     const source = await set(attachmentDownloadSource$, attachment.url, signal);
     const { resourceUrl, hosted } = source;
     const siteUrl =
