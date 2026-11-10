@@ -9,6 +9,7 @@ import {
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -29,6 +30,7 @@ import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ClaimExecutionContextRun } from "./claim-execution-context";
+import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorsContext } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
@@ -72,6 +74,14 @@ import {
   createModelProviderEnvironmentSignals,
   paidToolPlatformEnvironment,
 } from "./thread-environment.signals";
+import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
+
+/** Internal to one Claim; never part of its persisted or Runner context. */
+export interface ClaimNetworkPolicyInputs {
+  readonly catalog: ConnectorServerFirewallMetadataCatalog;
+  readonly grants: readonly ResolvedPermissionGrant[];
+  readonly permissionSource: "member" | "agent";
+}
 
 type ClaimInput = {
   readonly run: ClaimExecutionContextRun;
@@ -103,6 +113,28 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
   const identities = createClaimIdentities(input$);
   const { run$, identity$, features$ } = identities;
   const sources = createExecutionConnectorSources(identity$, features$);
+  const networkPolicyInputs$ = computed(
+    async (get): Promise<ClaimNetworkPolicyInputs> => {
+      const [catalog, grants, features] = await Promise.all([
+        get(sources.signals.catalog$),
+        get(sources.signals.permissionGrants$),
+        get(features$),
+      ]);
+      if (!catalog) {
+        throw new Error("Claim builtin targets require a scoped catalog");
+      }
+      return {
+        catalog: catalog.serverFirewalls,
+        grants,
+        permissionSource: isFeatureEnabled(
+          FeatureSwitchKey.ConnectorChatAccountAccess,
+          features,
+        )
+          ? "member"
+          : "agent",
+      };
+    },
+  );
   const global = createGlobalModelContext();
   const preferences$ = createClaimPreferences(run$);
   const disabledTools$ = createClaimDisabledTools(input$);
@@ -144,6 +176,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     environment$,
     storage$,
     connectorTiming$: connectors.timing$,
+    networkPolicyInputs$,
   });
 }
 
@@ -714,6 +747,7 @@ function createClaimPreparedContext(
     readonly connectorTiming$: ReturnType<
       typeof createClaimConnectorContext
     >["timing$"];
+    readonly networkPolicyInputs$: Computed<Promise<ClaimNetworkPolicyInputs>>;
   },
 ) {
   return computed(async (get) => {
@@ -769,6 +803,11 @@ function createClaimPreparedContext(
       secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
       connectorOperationTimings: get(dependencies.connectorTiming$).snapshot(),
+      networkPolicyInputs: prepared.connectorRuntimeTargets.some((target) => {
+        return target.kind === "builtin";
+      })
+        ? await get(dependencies.networkPolicyInputs$)
+        : null,
     };
   });
 }

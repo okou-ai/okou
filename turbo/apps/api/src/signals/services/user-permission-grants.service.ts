@@ -39,7 +39,7 @@ import { notFound } from "../../lib/error";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
-import { monotonicNow, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import {
   defaultFirewallPolicyForPermissionIndex,
   networkPolicyForFirewallPolicy,
@@ -87,7 +87,7 @@ const userPermissionGrantSelection = Object.freeze({
 
 type UserPermissionGrantRow = typeof userPermissionGrants.$inferSelect;
 type StoredPermissionGrantRow = UserPermissionGrantRow;
-type ResolvedPermissionGrant = Pick<
+export type ResolvedPermissionGrant = Pick<
   UserPermissionGrantRow,
   "connectorSlug" | "permission" | "action" | "expiresAt"
 >;
@@ -228,12 +228,6 @@ export function networkPolicyRefreshConnectorSlugs(
   ];
 }
 
-/** Optional content-free capture; absent phases were skipped, not measured as zero. */
-export interface NetworkPolicyRefreshTimingCapture {
-  permissionReadMs?: number;
-  policyBuildMs?: number;
-}
-
 /** Runtime callers supply their captured catalog; the finite read remains
  * awaited by their existing read group and its cancellation boundary. */
 export const readActiveNetworkPolicyRefreshes$ = command(
@@ -244,7 +238,6 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       readonly connectorSlugs: readonly string[];
       readonly snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">;
       readonly memberRules: readonly ResolvedPermissionGrant[] | undefined;
-      readonly timing?: NetworkPolicyRefreshTimingCapture;
     },
     checkedAt: Date = nowDate(),
   ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
@@ -261,10 +254,6 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       return [];
     }
 
-    const permissionReadStartedAt =
-      args.timing && args.memberRules === undefined
-        ? monotonicNow()
-        : undefined;
     const grants =
       args.memberRules ??
       (await get(db$)
@@ -283,41 +272,53 @@ export const readActiveNetworkPolicyRefreshes$ = command(
           asc(userPermissionGrants.connectorSlug),
           asc(userPermissionGrants.permission),
         ));
-    if (args.timing && permissionReadStartedAt !== undefined) {
-      args.timing.permissionReadMs = monotonicNow() - permissionReadStartedAt;
-    }
-    const policyBuildStartedAt = args.timing ? monotonicNow() : undefined;
-    const indexes = await Promise.all(
-      uniqueConnectorSlugs.map(async (connectorSlug) => {
-        return {
-          connectorSlug,
-          index:
-            await snapshot.serverFirewalls.loadPermissionIndex(connectorSlug),
-        };
-      }),
+    return await activeNetworkPolicyRefreshesFromGrants(
+      {
+        catalog: snapshot.serverFirewalls,
+        connectorSlugs: uniqueConnectorSlugs,
+        grants,
+      },
+      checkedAt,
     );
-
-    const refreshes = activeNetworkPolicyRefreshesForPermissionBaselines(
-      indexes.flatMap(({ connectorSlug, index }) => {
-        return index
-          ? [
-              {
-                connectorSlug,
-                permissionNames: [...index.permissionNames],
-                defaultPolicy: defaultFirewallPolicyForPermissionIndex(index),
-              },
-            ]
-          : [];
-      }),
-      grants,
-    );
-    if (args.timing && policyBuildStartedAt !== undefined) {
-      // Index promises are local, but this is elapsed wall time, not isolated CPU.
-      args.timing.policyBuildMs = monotonicNow() - policyBuildStartedAt;
-    }
-    return refreshes;
   },
 );
+
+/** Captured sources can outlive a temporary grant while Claim is prepared. */
+export async function activeNetworkPolicyRefreshesFromGrants(
+  args: {
+    readonly catalog: ConnectorServerFirewallMetadataCatalog;
+    readonly connectorSlugs: readonly string[];
+    readonly grants: readonly ResolvedPermissionGrant[];
+  },
+  checkedAt: Date,
+): Promise<readonly ActiveNetworkPolicyRefresh[]> {
+  const indexes = await Promise.all(
+    networkPolicyRefreshConnectorSlugs(args.catalog, args.connectorSlugs).map(
+      async (connectorSlug) => {
+        return {
+          connectorSlug,
+          index: await args.catalog.loadPermissionIndex(connectorSlug),
+        };
+      },
+    ),
+  );
+  return activeNetworkPolicyRefreshesForPermissionBaselines(
+    indexes.flatMap(({ connectorSlug, index }) => {
+      return index
+        ? [
+            {
+              connectorSlug,
+              permissionNames: [...index.permissionNames],
+              defaultPolicy: defaultFirewallPolicyForPermissionIndex(index),
+            },
+          ]
+        : [];
+    }),
+    args.grants.filter((grant) => {
+      return grant.expiresAt === null || grant.expiresAt > checkedAt;
+    }),
+  );
+}
 
 function activeNetworkPolicyRefreshesForPermissionBaselines(
   baselines: readonly ConnectorPermissionPolicyBaseline[],
