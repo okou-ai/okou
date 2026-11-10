@@ -179,8 +179,7 @@ struct ChatListView: View {
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
   /// beside it with no arrow, and on the right the chat filter. The name leaves once rows
-  /// scroll under the bar; the glass
-  /// buttons stay.
+  /// scroll under the bar; the glass buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher

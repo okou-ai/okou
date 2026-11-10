@@ -225,7 +225,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.alwaysBounceVertical = true
     // The top is the system's soft edge, the progressive blur ChatGPT and Manus draw:
     // strongest at the screen's edge, clearing toward the content, with no colour of its own.
-    // It follows the safe area, so its reach is the status bar band (updateContentInsets).
+    // It follows the system navigation bar's safe area.
     // The bottom has none, as everywhere in the app: messages pass plainly under the
     // composer's glass.
     collection.topEdgeEffect.style = .soft

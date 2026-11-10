@@ -318,59 +318,63 @@ private struct WorkspaceRootView: View {
   }
 
   private var chat: some View {
-    Group {
-      if let conversation = store.selectedConversation {
-        ChatDetailView(
-          conversation: conversation,
-          agents: store.list,
-          didSend: { await notifications.requestAfterSend() },
-          mentionSource: ComposerMentionSource(
-            agentID: conversation.thread.agentID, agents: store.list.agents,
-            threads: store.list.threads),
-          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
-        )
-        .id(conversation.thread.id)
-      } else {
-        newChatHome
-          .frame(minHeight: 0, maxHeight: .infinity)
-          .safeAreaInset(edge: .bottom, spacing: 0) {
-            @Bindable var composer = store.newComposer
-            ChatComposerView(
-              draft: $composer.text, isBusy: store.isCreating,
-              showsProgress: store.isCreating, canStop: false,
-              needsUpgrade: store.needsUpgrade,
-              error: store.error, attachmentURL: store.webURL,
-              attachments: composer.attachments,
-              draftState: composer,
-              submit: {
-                await store.sendNewChat(
-                  sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-                await notifications.requestAfterSend()
-              },
-              refresh: nil,
-              modelSelection: store.newModelSelection,
-              connectorSelection: store.newModelSelection.connectors,
-              mentionSource: ComposerMentionSource(
-                agentID: store.defaultAgentID, agents: store.list.agents,
-                threads: store.list.threads),
-              workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
-              placeholder: String(localized: "Message \(store.currentAgentName)"),
-              project: store.newChatProject,
-              removeProject: store.removeNewChatProject)
-          }
-          .animation(
-            reduceMotion ? nil : .easeInOut(duration: 0.22),
-            value: store.newComposer.voice?.phase)
+    // Keep a SwiftUI layout owner around the native transcript controller so the destination
+    // owns its toolbar and the composer stays inside the navigation and keyboard safe areas.
+    GeometryReader { geometry in
+      Group {
+        if let conversation = store.selectedConversation {
+          ChatDetailView(
+            conversation: conversation,
+            agents: store.list,
+            didSend: { await notifications.requestAfterSend() },
+            mentionSource: ComposerMentionSource(
+              agentID: conversation.thread.agentID, agents: store.list.agents,
+              threads: store.list.threads),
+            onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+          )
+          .id(conversation.thread.id)
+        } else {
+          newChatHome
+            .frame(minHeight: 0, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+              @Bindable var composer = store.newComposer
+              ChatComposerView(
+                draft: $composer.text, isBusy: store.isCreating,
+                showsProgress: store.isCreating, canStop: false,
+                needsUpgrade: store.needsUpgrade,
+                error: store.error, attachmentURL: store.webURL,
+                attachments: composer.attachments,
+                draftState: composer,
+                submit: {
+                  await store.sendNewChat(
+                    sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+                  await notifications.requestAfterSend()
+                },
+                refresh: nil,
+                modelSelection: store.newModelSelection,
+                connectorSelection: store.newModelSelection.connectors,
+                mentionSource: ComposerMentionSource(
+                  agentID: store.defaultAgentID, agents: store.list.agents,
+                  threads: store.list.threads),
+                workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
+                placeholder: String(localized: "Message \(store.currentAgentName)"),
+                project: store.newChatProject,
+                removeProject: store.removeNewChatProject)
+            }
+            .animation(
+              reduceMotion ? nil : .easeInOut(duration: 0.22),
+              value: store.newComposer.voice?.phase)
+        }
       }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
-    .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
-    .overlay {
-      if let submission = store.newChatSubmission, submission.isPresenting {
-        NewChatSubmissionView(submission: submission, webURL: store.webURL)
-          .id(submission.message.id)
-          .background { OkouColor.background.ignoresSafeArea() }
+      .frame(width: geometry.size.width, height: geometry.size.height)
+      .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
+      .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
+      .overlay {
+        if let submission = store.newChatSubmission, submission.isPresenting {
+          NewChatSubmissionView(submission: submission, webURL: store.webURL)
+            .id(submission.message.id)
+            .background { OkouColor.background.ignoresSafeArea() }
+        }
       }
     }
     .background { OkouColor.background.ignoresSafeArea() }
