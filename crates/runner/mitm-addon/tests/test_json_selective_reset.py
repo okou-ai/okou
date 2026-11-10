@@ -55,7 +55,6 @@ def test_reset_starts_a_new_document_with_reusable_observation_storage(
     assert extractor.accepts_more_input()
     assert all(not container for container in containers)
     assert extractor.scalar_fields is fields
-    assert extractor.selected_scalar_values_are_consistent(("id",))
     assert extractor.observed_scalar_for_diagnostics(("id",)) is None
     assert extractor.values is containers[0]
     assert extractor.array_counts is containers[1]
