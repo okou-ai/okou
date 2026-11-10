@@ -13,16 +13,13 @@ final class ChatProjectStore {
   private(set) var expansion: [String: Bool] = [:]
   private(set) var limits: [String: Int] = [:]
   private let service: ChatProjects
-  let stateStore = CCState.Store()
-  private let readRevision = CCState.State(0)
-  private let lifetime = CCState.State(true)
-  private let reload: Command<Void, Void>
-  private let sleep: @Sendable (Duration) async throws -> Void
+  let stateStore: CCState.Store
+  let value: Computed<Task<[ChatProject], Error>>
+  private let resources: WorkspaceResources
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
   private let didDelete: @MainActor (String) -> Void
   private let didChangeMembership: @MainActor () async -> Void
-  private var readTask: Task<[ChatProject], Error>?
   private var persistenceTask: Task<Void, Never>?
   private var persistenceID = UUID()
   private var hasConfirmedSnapshot = false
@@ -35,26 +32,31 @@ final class ChatProjectStore {
   private let defaults: UserDefaults
 
   init(
-    client: APIClient, sync: ChatSync,
+    client: APIClient, resources: WorkspaceResources, sync: ChatSync,
     defaults: UserDefaults = .standard,
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     didFail: @escaping @MainActor (Error) -> Void,
     didDelete: @escaping @MainActor (String) -> Void = { _ in },
     didChangeMembership: @escaping @MainActor () async -> Void
   ) {
     service = ChatProjects(client: client)
-    self.sleep = sleep
+    self.resources = resources
+    stateStore = resources.store
+    value = resources.projectListValue
     self.sync = sync
     self.defaults = defaults
     self.didDelete = didDelete
     self.didFail = didFail
     self.didChangeMembership = didChangeMembership
-    let readRevision = readRevision
-    let lifetime = lifetime
-    reload = Command { context in
-      guard try context.get(lifetime) else { throw CancellationError() }
-      try context.set(readRevision, update: { $0 + 1 })
-    }
+    resources.bindProjects(
+      confirm: { [weak self] result in
+        guard let self, !closed else { throw CancellationError() }
+        await confirmRead(result)
+      },
+      didFail: { [weak self] error in
+        guard let self, !closed else { return }
+        blocked = (error as? APIClientError)?.statusCode == 426
+        didFail(error)
+      })
   }
 
   func restore(userID: String, workspaceID: String, apiURL: URL) async {
@@ -103,47 +105,16 @@ final class ChatProjectStore {
     if let expansionKey { defaults.set(expansion, forKey: expansionKey) }
   }
 
-  /// The original workspace-lived read Task owns phase/error. `projects` is separately
-  /// confirmed for mutation reconciliation, new-chat context and durable restoration.
-  @ObservationIgnored lazy var value = Computed<Task<[ChatProject], Error>> {
-    [weak self] get, options in
-    guard let self, try get(lifetime), !closed else { throw CancellationError() }
-    _ = try get(readRevision)
-    let previous = revision
-    let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self, service, sleep] in
-      guard let self else { throw CancellationError() }
-      do {
-        let result = try await ChatReadRecovery.read("Projects", sleep: sleep, body: service.list)
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        guard !closed, previous == revision else { throw CancellationError() }
-        projects = result
-        hasConfirmedSnapshot = true
-        let knownIDs = Set(result.map(\.id))
-        expansion = expansion.filter { knownIDs.contains($0.key) }
-        limits = limits.filter { knownIDs.contains($0.key) }
-        persistExpansion()
-        await persistConfirmed()
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        return result
-      } catch {
-        if !closed, !Task.isCancelled, !signal.isCancelled {
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
-        }
-        throw error
-      }
-    }
-    readTask = task
-    signal.onCancel { task.cancel() }
-    return task
-  }
-
-  private func invalidateRead() throws {
-    readTask?.cancel()
-    try stateStore.set(reload)
+  /// The original workspace Task confirms a business baseline, not a second read phase.
+  /// This snapshot is used by mutations, new-chat context and durable restoration.
+  private func confirmRead(_ result: [ChatProject]) async {
+    projects = result
+    hasConfirmedSnapshot = true
+    let knownIDs = Set(result.map(\.id))
+    expansion = expansion.filter { knownIDs.contains($0.key) }
+    limits = limits.filter { knownIDs.contains($0.key) }
+    persistExpansion()
+    await persistConfirmed()
   }
 
   private func load() async {
@@ -156,7 +127,7 @@ final class ChatProjectStore {
 
   func refresh() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    do { try invalidateRead() } catch { didFail(error) }
+    do { try resources.refreshProjects() } catch { didFail(error) }
     await load()
   }
 
@@ -252,7 +223,7 @@ final class ChatProjectStore {
     pending.insert(key)
     if readback {
       revision += 1
-      readTask?.cancel()
+      resources.cancelProjectRead()
     }
     var result: Value?
     let task = Task { [weak self] in
@@ -265,7 +236,10 @@ final class ChatProjectStore {
         let value = try await body(id)
         try Task.checkCancellation()
         guard !closed else { return }
-        if readback { revision += 1 }
+        if readback {
+          revision += 1
+          resources.cancelProjectRead()
+        }
         operations[key] = nil
         actionError = nil
         // The operation owns confirmation and persistence even if its UI waiter leaves.
@@ -291,14 +265,11 @@ final class ChatProjectStore {
   func close() {
     guard !closed else { return }
     closed = true
-    readTask?.cancel()
-    readTask = nil
-    do { try stateStore.set(lifetime, false) } catch { didFail(error) }
+    do { try resources.closeProjects() } catch { didFail(error) }
     for task in tasks.values { task.cancel() }
   }
 
   isolated deinit {
-    readTask?.cancel()
     for task in tasks.values { task.cancel() }
   }
 }

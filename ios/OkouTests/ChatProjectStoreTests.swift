@@ -42,6 +42,7 @@ final class ChatProjectStoreTests: XCTestCase {
     }
     let store = ChatProjectStore(
       client: fixture.client,
+      resources: WorkspaceResources(client: fixture.client, sleep: { _ in }),
       sync: ChatSync(client: fixture.client), didFail: { _ in }, didChangeMembership: {})
     defer {
       store.close()
@@ -112,6 +113,7 @@ final class ChatProjectStoreTests: XCTestCase {
       apiBaseURL: fixture.baseURL, userID: "project-reader", workspaceID: "shared-projects")
     let store = ChatProjectStore(
       client: fixture.client,
+      resources: WorkspaceResources(client: fixture.client, sleep: { _ in }),
       sync: ChatSync(client: fixture.client, cache: directory.cache(scope: scope)),
       didFail: { _ in }, didChangeMembership: {})
     defer { store.close() }
@@ -178,6 +180,7 @@ final class ChatProjectStoreTests: XCTestCase {
       apiBaseURL: fixture.baseURL, userID: "project-writer", workspaceID: "rename-projects")
     let store = ChatProjectStore(
       client: fixture.client,
+      resources: WorkspaceResources(client: fixture.client, sleep: { _ in }),
       sync: ChatSync(client: fixture.client, cache: directory.cache(scope: scope)),
       didFail: { _ in }, didChangeMembership: {})
     defer { store.close() }
@@ -252,7 +255,9 @@ final class ChatProjectStoreTests: XCTestCase {
     }
     func makeStore() -> ChatProjectStore {
       ChatProjectStore(
-        client: fixture.client, sync: ChatSync(client: fixture.client), defaults: defaults,
+        client: fixture.client,
+        resources: WorkspaceResources(client: fixture.client, sleep: { _ in }),
+        sync: ChatSync(client: fixture.client), defaults: defaults,
         didFail: { _ in }, didChangeMembership: {})
     }
     let original = makeStore()
@@ -282,7 +287,9 @@ final class ChatProjectStoreTests: XCTestCase {
       }
       return ChatHTTPResponse(
         status: 426,
-        body: #"{"error":{"message":"Update required","code":"CLIENT_UPGRADE_REQUIRED"}}"#)
+        body:
+          #"{"error":{"message":"Update required","code":"IOS_UPDATE_REQUIRED"},"minimumSupportedVersion":"99.0.0"}"#
+      )
     }
     let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { workspace.close() }

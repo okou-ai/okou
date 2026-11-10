@@ -96,7 +96,7 @@ final class WorkspaceStore {
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep)
   @ObservationIgnored lazy var projects = ChatProjectStore(
-    client: client, sync: sync, sleep: readRetrySleep,
+    client: client, resources: resources, sync: sync,
     didFail: { [weak self] in self?.handle($0) },
     didDelete: { [weak self] in self?.projectWasDeleted($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })

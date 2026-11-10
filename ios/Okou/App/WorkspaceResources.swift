@@ -11,7 +11,12 @@ final class WorkspaceResources {
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
+  private let projects: WorkspaceRead<[ChatProject]>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
+  let projectListValue: Computed<Task<[ChatProject], Error>>
+  private let projectLifetime = CCState.State(true)
+  private let reloadProjects: Command<Void, Void>
+  private let retireProjects: Command<Void, Void>
 
   init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
     let service = ChatModelService(client: client)
@@ -25,6 +30,19 @@ final class WorkspaceResources {
     self.catalog = catalog
     self.features = features
     agents = WorkspaceRead("agents", sleep: sleep) { try await client.request("/api/agents") }
+    let projects = WorkspaceRead("Projects", sleep: sleep, read: ChatProjects(client: client).list)
+    self.projects = projects
+    let projectLifetime = projectLifetime
+    projectListValue = Computed { get in
+      guard try get(projectLifetime) else { throw CancellationError() }
+      // Expose the original endpoint Task, without a second async/loading wrapper.
+      return try get(projects.value)
+    }
+    reloadProjects = Command { context in
+      guard try context.get(projectLifetime) else { throw CancellationError() }
+      try context.set(projects.revision, update: { $0 + 1 })
+    }
+    retireProjects = Command { context in try context.set(projectLifetime, false) }
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -59,6 +77,27 @@ final class WorkspaceResources {
     return try store.get(agents.value)
   }
 
+  /// The resource reports phase/error; this sink owns only business confirmation.
+  func bindProjects(
+    confirm: @escaping @MainActor ([ChatProject]) async throws -> Void,
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
+    projects.confirm = confirm
+    projects.didFail = didFail
+  }
+
+  func cancelProjectRead() { projects.cancel() }
+
+  func refreshProjects() throws {
+    projects.cancel()
+    try store.set(reloadProjects)
+  }
+
+  func closeProjects() throws {
+    projects.close()
+    try store.set(retireProjects)
+  }
+
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     let reload = Command<Void, Void> { context in
       if changes.contains(.reconnected) || changes.contains(.modelPreference) {
@@ -81,6 +120,10 @@ final class WorkspaceResources {
     catalog.close()
     features.close()
     agents.close()
+    // This command writes only a local lifetime atom; it cannot perform external I/O.
+    do { try closeProjects() } catch {
+      preconditionFailure("Cannot retire the workspace Project graph: \(error)")
+    }
   }
 }
 
@@ -91,6 +134,8 @@ private final class WorkspaceRead<Value: Sendable> {
   private let operation: String
   private let sleep: @Sendable (Duration) async throws -> Void
   private let read: @MainActor () async throws -> Value
+  var confirm: (@MainActor (Value) async throws -> Void)?
+  var didFail: (@MainActor (Error) -> Void)?
   private var task: Task<Value, Error>?
   private var closed = false
   private var failed = false
@@ -108,16 +153,27 @@ private final class WorkspaceRead<Value: Sendable> {
     guard let self, !closed else { throw CancellationError() }
     _ = try get(revision)
     failed = false
+    let signal = options.signal
     let task = Task.immediate { @MainActor [weak self, operation, sleep, read] in
       do {
-        return try await ChatReadRecovery.read(operation, sleep: sleep, body: read)
+        let result = try await ChatReadRecovery.read(operation, sleep: sleep, body: read)
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        guard let self, !closed else { throw CancellationError() }
+        try await confirm?(result)
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        return result
       } catch {
-        if !Task.isCancelled { self?.failed = true }
+        if let self, !closed, !Task.isCancelled, !signal.isCancelled {
+          failed = true
+          didFail?(error)
+        }
         throw error
       }
     }
     self.task = task
-    options.signal.onCancel { task.cancel() }
+    signal.onCancel { task.cancel() }
     return task
   }
 
@@ -125,10 +181,14 @@ private final class WorkspaceRead<Value: Sendable> {
     if failed { try store.set(revision, update: { $0 + 1 }) }
   }
 
+  func cancel() { task?.cancel() }
+
   func close() {
     closed = true
     task?.cancel()
     task = nil
+    confirm = nil
+    didFail = nil
   }
 
   isolated deinit { task?.cancel() }
