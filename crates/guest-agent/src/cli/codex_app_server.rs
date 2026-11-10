@@ -471,6 +471,11 @@ impl CodexAppServerClient {
         self.notifications.pop_front()
     }
 
+    #[cfg(feature = "test-support")]
+    pub(super) fn buffered_notifications(&self) -> impl Iterator<Item = &ServerNotification> {
+        self.notifications.iter()
+    }
+
     /// Return the bounded stderr tail collected during shutdown or termination.
     ///
     /// The slice is usually empty while the child is still running. Close paths

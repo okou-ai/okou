@@ -344,6 +344,8 @@ async fn run_codex_app_server(
         pi_startup: _,
         workload_containment,
         session_metadata,
+        #[cfg(feature = "test-support")]
+        codex_turn_start_gate,
     } = controls;
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
     let mut ingestor = CliEventIngestor::new_with_session_metadata(
@@ -452,6 +454,19 @@ async fn run_codex_app_server(
         let mut active_input_open = active_input.is_enabled();
         let mut turn_started_observed = false;
         notification_state.allow_historical_usage = can_replay_historical_usage;
+
+        #[cfg(feature = "test-support")]
+        if let Some(gate) = codex_turn_start_gate {
+            let terminal_buffered = client.buffered_notifications().any(|notification| {
+                notification_to_codex_event(notification).is_ok_and(|event| {
+                    event.is_some_and(|event| {
+                        terminal_exit_code(&event, &thread_identity.canonical_id, &turn_id)
+                            == Some(0)
+                    })
+                })
+            });
+            gate.wait(terminal_buffered, heartbeat_monitor).await?;
+        }
 
         let exit_code = loop {
             let event = next_codex_run_event(
