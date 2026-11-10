@@ -287,7 +287,7 @@ private struct WorkspaceRootView: View {
               didSend: { await notifications.requestAfterSend() },
               topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
-                agentID: conversation.thread.agentID, agents: store.list.agents,
+                agentID: conversation.thread.agentID,
                 threads: store.list.threads),
               onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
             )
@@ -404,7 +404,7 @@ private struct WorkspaceRootView: View {
             if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
           })
       )
-      .composerWorkflowOverlay(
+      .composerSuggestionOverlay(
         topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
       )
     }
@@ -492,7 +492,7 @@ private struct WorkspaceRootView: View {
         modelSelection: store.newModelSelection,
         connectorSelection: store.newModelSelection.connectors,
         mentionSource: ComposerMentionSource(
-          agentID: store.defaultAgentID, agents: store.list.agents,
+          agentID: store.defaultAgentID,
           threads: store.list.threads),
         workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
         placeholder: String(localized: "Message \(store.currentAgentName)"),

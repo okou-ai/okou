@@ -143,9 +143,6 @@ struct ChatComposerView: View {
       }
 
       let inputID = attachments.inputID
-      if let editor = draftState?.editor, !editor.mentionSuggestions.isEmpty {
-        ComposerMentionMenu(editor: editor, suggestions: editor.mentionSuggestions)
-      }
       // Retired native editors must leave immediately. Fading a first responder
       // through a draft reset can restart keyboard avoidance during the send flight.
       OkouComposerSurface(isExpanded: expandsInput) {
@@ -242,12 +239,18 @@ struct ChatComposerView: View {
           }
         }
       }
-      .anchorPreference(key: ComposerWorkflowPresentation.self, value: .bounds) { bounds in
-        guard let workflows = draftState?.editor.workflows, workflows.query != nil else {
+      .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
+        guard let editor = draftState?.editor else { return nil }
+        let content: ComposerSuggestionPresentation.Content
+        if editor.workflows.query != nil {
+          content = .workflows(editor.workflows)
+        } else if editor.mentionQuery != nil {
+          content = .chats(editor)
+        } else {
           return nil
         }
-        return ComposerWorkflowPresentation.Presentation(
-          bounds: bounds, suggestions: workflows, isDisabled: isBusy || needsUpgrade)
+        return ComposerSuggestionPresentation.Presentation(
+          bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
       }
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),

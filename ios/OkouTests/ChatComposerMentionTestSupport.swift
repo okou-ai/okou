@@ -118,7 +118,7 @@ final class MentionRequestLog: Sendable { let value = Mutex<[String]>([]) }
 @MainActor
 extension WorkspaceStore {
   var mentionTestSource: ComposerMentionSource {
-    ComposerMentionSource(agentID: selectedAgentID, agents: list.agents, threads: list.threads)
+    ComposerMentionSource(agentID: selectedAgentID, threads: list.threads)
   }
 }
 
@@ -168,6 +168,7 @@ struct MentionComposerHarness: View {
         $0.disablesAnimations = true
       }
     }
+    .composerSuggestionOverlay()
   }
 }
 

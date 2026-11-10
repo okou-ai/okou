@@ -327,8 +327,10 @@ final class ComposerTextView: UITextView {
     var keys = [UIKeyCommand.inputEscape]
     if hasRows {
       keys.insert(contentsOf: [UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow], at: 0)
-      if !workflowsActive
-        || workflowSuggestions.map({ $0.matches.indices.contains($0.selectedIndex) }) == true
+      if workflowsActive
+        ? workflowSuggestions.map({ $0.matches.indices.contains($0.selectedIndex) }) == true
+        : mentionEditor.map({ $0.mentionSuggestions.indices.contains($0.selectedMentionIndex) })
+          == true
       {
         keys += ["\r", "\t"]
       }

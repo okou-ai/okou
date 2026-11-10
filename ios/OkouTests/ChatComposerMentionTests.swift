@@ -142,6 +142,10 @@ final class ChatComposerMentionTests: XCTestCase {
     let editor = workspace.newComposer.editor
     input.insertText("@")
     try await waitForBusinessResult { !editor.mentionSuggestions.isEmpty }
+    // An empty query has no implicit choice: Return still edits the draft.
+    input.insertText("\n")
+    try await waitForBusinessResult { workspace.newChatDraft == "@\n" }
+    input.insertText("@")
     input.setMarkedText("研究", selectedRange: NSRange(location: 2, length: 0))
     try await eventually {
       input.markedTextRange != nil && input.keyCommands?.contains { $0.input == "\r" } != true
@@ -156,6 +160,7 @@ final class ChatComposerMentionTests: XCTestCase {
         $0.referenceID == MentionNavigationFixture.thread(35)
       })
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
+    try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
     try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
     try await mentionKey(UIKeyCommand.inputUpArrow, input: input)
     input.insertText("\n")
