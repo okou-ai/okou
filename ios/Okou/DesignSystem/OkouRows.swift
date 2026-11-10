@@ -125,7 +125,7 @@ struct OkouListHeading: View {
         Spacer(minLength: 0)
         OkouChatTrailingMark(trailing: summary)
         OkouIcon("chevron-down", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.mutedForeground)
+          .foregroundStyle(OkouColor.quietMark)
           .rotationEffect(.degrees(isExpanded ? 0 : -90))
           .accessibilityHidden(true)
       }

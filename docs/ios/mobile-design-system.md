@@ -312,9 +312,11 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   (`OkouValueRow`) — use `OkouColor.trailingValue` (gray-700): visibly lighter than the
   `foreground` label and than supporting text, as Settings draws them, but still AA on
   white. Never the placeholder grey (gray-600): a value is content, not a hint.
-- **A chat row's quiet marks** — the status column's chat glyph, the draft pencil — use
-  `OkouColor.quietMark` (gray-600, 3:1 on the sidebar in both appearances), so they sit
-  behind the titles as the web's faded sidebar glyphs do.
+- **A chat row's quiet marks** — the status column's chat glyph, the draft pencil, a
+  section's fold chevron — use `OkouColor.quietMark` (gray-500), so they sit well behind the
+  titles as the web's faded sidebar glyphs (35–70 % opacity) do. That is under 3:1 on the
+  sidebar, so a mark never carries meaning alone: the pencil has its VoiceOver label ("Draft")
+  and the fold its heading's value.
 - **Section footers** use `okouSectionNote()`: 13 pt `muted-foreground`. A control's
   explanation (Fast mode cost, effort, scope of a switch) goes in the footer under its
   card, never as a row inside it — the system Settings pattern. One footer per card.
@@ -541,7 +543,7 @@ single floating line, and colour is a small accent for status only.
 - **Trailing state** shows one state, in the web's order: an unread dot (8 pt `running` sky
   blue, as on the web; amber is kept for a primary commit) once a run finished or failed since
   the chat was read, with the title in medium weight; a `pencil` for an unsent draft; or
-  nothing. The pencil is 20 pt in `OkouColor.quietMark` (gray-600), as is the status column's
+  nothing. The pencil is 20 pt in `OkouColor.quietMark` (gray-500), as is the status column's
   quiet chat glyph, so a row draws one line weight (a glyph's stroke grows with its size);
   every trailing mark is centred in one 20 pt column so they line up down the list. A chat still in memory takes its
   draft from its own composer, so leaving it with text typed marks it at once; other chats use
