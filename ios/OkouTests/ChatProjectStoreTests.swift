@@ -118,7 +118,7 @@ final class ChatProjectStoreTests: XCTestCase {
     let gate = SidebarResponseGate()
     defer { gate.open() }
     let fixture = SidebarFixture(onHeldProjectRead: { started.fulfill() })
-    fixture.unavailable.withLock { $0 = true }
+    fixture.state.unavailable.withLock { $0 = true }
     let workspace = fixture.workspace()
     defer { workspace.close() }
     await workspace.refreshNavigation()
@@ -132,8 +132,8 @@ final class ChatProjectStoreTests: XCTestCase {
     XCTAssertEqual(
       workspace.sidebar.contents.threads.map(\.id), [SidebarFixture.id(3), SidebarFixture.id(1)])
 
-    fixture.unavailable.withLock { $0 = false }
-    fixture.projectGate.withLock { $0 = gate }
+    fixture.state.unavailable.withLock { $0 = false }
+    fixture.state.projectGate.withLock { $0 = gate }
     let retry = Task { await workspace.projects.refresh() }
     addTeardownBlock { @MainActor in
       workspace.close()
@@ -161,7 +161,7 @@ final class ChatProjectStoreTests: XCTestCase {
     let fixture = SidebarFixture(
       onHeldProjectRead: { started.fulfill() },
       onCancelledProjectRead: { cancelled.fulfill() })
-    fixture.projectGate.withLock { $0 = gate }
+    fixture.state.projectGate.withLock { $0 = gate }
     let workspace = fixture.workspace()
     defer { workspace.close() }
     let read = Task { await workspace.projects.activate() }
@@ -200,18 +200,19 @@ private final class SidebarFixture: Sendable {
   static let empty = "30000000-0000-4000-8000-000000000072"
   static let agent = "30000000-0000-4000-8000-000000000081"
   static let otherAgent = "30000000-0000-4000-8000-000000000082"
-  let unavailable: Mutex<Bool>
+  final class StateBox: Sendable {
+    let unavailable = Mutex(false)
+    let projectGate = Mutex<SidebarResponseGate?>(nil)
+  }
+  let state: StateBox
   let http: ChatHTTPFixture
-  let projectGate: Mutex<SidebarResponseGate?>
 
   init(
     onHeldProjectRead: @escaping @Sendable () -> Void = {},
     onCancelledProjectRead: @escaping @Sendable () -> Void = {}
   ) {
-    let unavailable = Mutex(false)
-    self.unavailable = unavailable
-    let projectGate = Mutex<SidebarResponseGate?>(nil)
-    self.projectGate = projectGate
+    let state = StateBox()
+    self.state = state
     http = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
@@ -222,7 +223,7 @@ private final class SidebarFixture: Sendable {
       case "/api/agents/\(Self.agent)/draft":
         return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
       case "/api/projects":
-        let gate = projectGate.withLock { value in
+        let gate = state.projectGate.withLock { value in
           let gate = value
           value = nil
           return gate
@@ -232,7 +233,7 @@ private final class SidebarFixture: Sendable {
           await gate.wait()
           if Task.isCancelled { onCancelledProjectRead() }
         }
-        if unavailable.withLock({ $0 }) {
+        if state.unavailable.withLock({ $0 }) {
           return ChatHTTPResponse(
             status: 503, body: "{\"error\":{\"message\":\"Project names unavailable\"}}")
         }
