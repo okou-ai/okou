@@ -587,7 +587,6 @@ function AgentSuggestionCard({
   readonly onCustomDirection: (item: Suggestion) => void;
   readonly embedded?: boolean;
 }) {
-  const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const submitFeedback = useSet(
