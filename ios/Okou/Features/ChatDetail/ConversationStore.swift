@@ -159,7 +159,7 @@ final class ConversationStore {
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
-    client: commands.approvalClient,
+    thread: thread, commands: commands, sync: sync, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
@@ -652,6 +652,7 @@ final class ConversationStore {
     if visible {
       detailOwner = owner
       permissionActions.activate(owner: owner)
+      approvals.activate()
       composer.requestSync()
     } else {
       // A previous view can disappear after its replacement has already appeared.
@@ -665,6 +666,7 @@ final class ConversationStore {
       failureRecoveryTask?.cancel()
       if isRecoveringFailure { sendTask?.cancel() }
       permissionActions.deactivate()
+      approvals.deactivate()
     }
     reconcileVisibility()
   }
@@ -762,6 +764,7 @@ final class ConversationStore {
     artifacts.close()
     connectorActions.close()
     permissionActions.close()
+    approvals.close()
   }
 
   func cancelRefresh() {
