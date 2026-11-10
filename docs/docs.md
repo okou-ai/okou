@@ -122,6 +122,8 @@ owning surface.
   SwiftUI bindings, commands, invalidation, cancellation, and native adapters.
 - [Mobile Design System](ios/mobile-design-system.md): native design authority,
   shared Web color roles, mobile tokens, assets, reusable components, and previews.
+- [Native SwiftLint rules](ios/ios-lint.md): graph, render, accessor, transport,
+  and failure boundaries, native allowances, and static-analysis limits.
 - [iOS testing](ios/ios-testing.md): native entry points, package contracts,
   observable assertions, layout synchronization, isolation, and device acceptance.
 - [iOS setup and CI](../ios/README.md): local commands and required checks.

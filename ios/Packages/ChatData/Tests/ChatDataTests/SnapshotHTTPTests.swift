@@ -15,13 +15,14 @@ final class SnapshotHTTPTests: XCTestCase {
     }
     defer { server.stop() }
     let origin = try await server.start()
-    let url = origin.appending(path: "unexpected")
+    let url = origin.appending(path: "api/unexpected")
     let session = URLSession(configuration: .ephemeral)
     defer { session.invalidateAndCancel() }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
+    let client = APIClient(baseURL: origin, clientVersion: "4.5.6", session: session) {
+      "fixture-session"
+    }
     do {
-      _ = try await session.data(for: request)
+      _ = try await client.data("/api/unexpected", method: "POST")
       XCTFail("An unhandled request must fail its transport")
     } catch is URLError {}
     let messages = reports.withLock { $0 }

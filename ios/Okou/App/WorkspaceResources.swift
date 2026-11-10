@@ -12,6 +12,7 @@ final class WorkspaceResources {
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
+  private let invalidateConfiguration: Command<Void, Set<ChatInvalidation>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
@@ -25,6 +26,18 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
+    invalidateConfiguration = Command { context, changes in
+      if changes.contains(.reconnected) || changes.contains(.modelPreference) {
+        try context.set(preference.revision, update: { $0 + 1 })
+      }
+      if changes.contains(.reconnected) || changes.contains(.runModels) {
+        try context.set(available.revision, update: { $0 + 1 })
+        try context.set(catalog.revision, update: { $0 + 1 })
+      }
+      if changes.contains(.reconnected) {
+        try context.set(features.revision, update: { $0 + 1 })
+      }
+    }
     agents = WorkspaceRead("agents", sleep: sleep) { try await client.request("/api/agents") }
     projects = WorkspaceRead("Projects", sleep: sleep, read: ChatProjects(client: client).list)
     let preferenceValue = preference.value
@@ -68,19 +81,7 @@ final class WorkspaceResources {
   }
 
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
-    let reload = Command<Void, Void> { context in
-      if changes.contains(.reconnected) || changes.contains(.modelPreference) {
-        try context.set(self.preference.revision, update: { $0 + 1 })
-      }
-      if changes.contains(.reconnected) || changes.contains(.runModels) {
-        try context.set(self.available.revision, update: { $0 + 1 })
-        try context.set(self.catalog.revision, update: { $0 + 1 })
-      }
-      if changes.contains(.reconnected) {
-        try context.set(self.features.revision, update: { $0 + 1 })
-      }
-    }
-    try store.set(reload)
+    try store.set(invalidateConfiguration, changes)
   }
 
   func close() {

@@ -5,7 +5,7 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ios_root=$(cd "$script_dir/.." && pwd)
 if [[ -z "${SWIFTLINT_BIN:-}" ]]; then
-  SWIFTLINT_BIN=$(command -v swiftlint)
+  SWIFTLINT_BIN=$(bash "$script_dir/install-swiftlint.sh" --path-only)
 fi
 export SWIFTLINT_BIN
 test_root=$(mktemp -d)
@@ -14,6 +14,8 @@ fixture="$test_root/ios"
 mkdir -p "$fixture/scripts" "$fixture/Okou" "$fixture/Push"
 cp "$ios_root/.swiftlint.yml" "$ios_root/.swiftlint-version" "$fixture/"
 cp "$script_dir/lint.sh" "$fixture/scripts/"
+mkdir -p "$fixture/Tools"
+cp -R "$ios_root/Tools/SwiftLint" "$fixture/Tools/"
 
 test_paths=(
   OkouTests

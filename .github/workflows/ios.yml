@@ -121,14 +121,14 @@ jobs:
           python3 ios/scripts/reset-oversized-compilation-cache.test.py
           python3 ios/scripts/install-swiftlint.test.py
 
-  swiftlint:
+  swiftlint-build:
     needs: detect
     if: needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     container:
-      # SwiftLint 0.65.1; keep ios/.swiftlint-version on this release.
-      image: ghcr.io/realm/swiftlint@sha256:f47e083201e47a136cda5ae847595bfe00226c444ca226fa74fa5dc648a9b057
+      # The same toolchain runs the built binary; source and rules are receipt-bound.
+      image: swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
     defaults:
       run:
         shell: bash
@@ -136,6 +136,61 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ios/.tools/swiftlint
+          key: native-swiftlint-linux-6.4.2-${{ hashFiles('ios/.swiftlint-version') }}-${{ hashFiles('ios/Tools/SwiftLint/Rules/*.swift', 'ios/Tools/SwiftLint/build.py') }}
+          restore-keys: |
+            native-swiftlint-linux-6.4.2-${{ hashFiles('ios/.swiftlint-version') }}-
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+      - name: Build the pinned native-rule SwiftLint
+        run: bash ios/scripts/install-swiftlint.sh
+      - name: Check native-rule formatting
+        run: swift-format lint --strict --recursive ios/Tools/SwiftLint/Rules
+      - name: Verify native rules through the real CLI
+        run: python3 ios/Tools/SwiftLint/Tests/rules.test.py
+      - name: Package the verified linter
+        run: |
+          binary=$(bash ios/scripts/install-swiftlint.sh --path-only)
+          tar -czf "$RUNNER_TEMP/native-swiftlint.tar.gz" -C "$(dirname "$binary")" swiftlint receipt.json LICENSE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-swiftlint-${{ github.sha }}
+          path: ${{ runner.temp }}/native-swiftlint.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  swiftlint:
+    needs: [detect, swiftlint-build]
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-swiftlint-${{ github.sha }}
+          path: ${{ runner.temp }}/native-swiftlint
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+      - name: Install the exact-input linter
+        run: |
+          identity=$(python3 ios/Tools/SwiftLint/build.py --identity)
+          destination="ios/.tools/swiftlint/$identity"
+          mkdir -p "$destination"
+          tar -xzf "$RUNNER_TEMP/native-swiftlint/native-swiftlint.tar.gz" -C "$destination"
+          bash ios/scripts/install-swiftlint.sh --path-only
       - name: Verify SwiftLint scope and failure handling
         run: bash ios/scripts/test-lint.sh
       - name: Lint owned Swift sources
