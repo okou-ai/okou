@@ -564,6 +564,8 @@ private struct WorkflowNewChatHost: View {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .composerWorkflowOverlay()
+    // Production replaces the workspace root at its scope boundary.
+    .id(ObjectIdentifier(workspace))
   }
 }
 
