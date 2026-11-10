@@ -63,11 +63,28 @@ function domainIsDisposable(domain: string): boolean {
 }
 
 function matchesBlocklist(email: string, identifier: string): boolean {
-  const pattern = identifier
-    .toLowerCase()
-    .replace(/[.+?^${}()|[\]\\]/gu, String.raw`\$&`)
-    .replaceAll("*", ".*");
-  return new RegExp(`^${pattern}$`, "u").test(email);
+  const pattern = identifier.toLowerCase();
+  const wildcard = pattern.indexOf("*");
+  if (wildcard === -1) {
+    return email === pattern;
+  }
+  if (!email.startsWith(pattern.slice(0, wildcard))) {
+    return false;
+  }
+  // Only * is a wildcard; every other character is compared literally.
+  let remaining = email.slice(wildcard);
+  const parts = pattern.slice(wildcard + 1).split("*");
+  for (const [index, part] of parts.entries()) {
+    const offset =
+      index === parts.length - 1
+        ? remaining.length - part.length
+        : remaining.indexOf(part);
+    if (offset < 0 || !remaining.startsWith(part, offset)) {
+      return false;
+    }
+    remaining = remaining.slice(offset + part.length);
+  }
+  return true;
 }
 
 const signupAddressAllowed$ = command(

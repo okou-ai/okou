@@ -379,28 +379,49 @@ describe("email-native signup", () => {
     });
   });
 
-  it("refuses a Clerk-blocked sender before sending a confirmation or creating an account", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
-    context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
-      { data: [{ identifier: "*@vm0.ai" }], totalCount: 1 },
-    );
-    await incoming({ sender: "yuma@vm0.ai" }).send();
-    expect(sentEmails()).toMatchObject([
-      {
-        to: "yuma@vm0.ai",
-        text: expect.stringContaining("did not pass our security checks"),
-      },
-    ]);
-    expect(sentEmails()[0]!.text).not.toContain("CONFIRM");
-    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
-    expect(
-      context.mocks.clerk.organizations.createOrganization,
-    ).not.toHaveBeenCalled();
-  });
+  it.each(["*@vm0.ai", "YUMA@VM0.AI", "y*ma@vm0.*"])(
+    "refuses a Clerk-blocked sender matching %s before confirming or creating an account",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await incoming({ sender: "yuma@vm0.ai" }).send();
+      expect(sentEmails()).toMatchObject([
+        {
+          to: "yuma@vm0.ai",
+          text: expect.stringContaining("did not pass our security checks"),
+        },
+      ]);
+      expect(sentEmails()[0]!.text).not.toContain("CONFIRM");
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        context.mocks.clerk.organizations.createOrganization,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["*@vm0Xai", "*yuma*yuma@vm0.ai"])(
+    "confirms an allowed sender outside the literal blocklist entry %s",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await pendingSignup();
+      expect(sentEmails()).toMatchObject([
+        { text: expect.stringContaining("\nCONFIRM\n") },
+      ]);
+    },
+  );
 
   it.each(["test@mailinator.com", "test@inbox.mailinator.com"])(
     "refuses disposable address %s before connecting or confirming",
