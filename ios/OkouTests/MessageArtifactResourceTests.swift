@@ -170,12 +170,35 @@ final class MessageArtifactResourceTests: XCTestCase {
     fixture.viewer.retry()
     let preview = try XCTUnwrap(fixture.viewer.preview)
     let content = try await preview.store.get(preview.content).value
-    XCTAssertTrue(fixture.viewer.canNavigateImage(1, content: content))
-    fixture.viewer.navigateImage(1, content: content)
+    XCTAssertTrue(fixture.viewer.canNavigateImage(1, resolution: content.resolution))
+    fixture.viewer.navigateImage(1, resolution: content.resolution)
     let next = try XCTUnwrap(fixture.viewer.preview)
     let nextContent = try await next.store.get(next.content).value
     XCTAssertEqual(nextContent.artifact.id, fixture.artifact("image00002.png").id)
-    XCTAssertTrue(fixture.viewer.canNavigateImage(-1, content: nextContent))
+    XCTAssertTrue(fixture.viewer.canNavigateImage(-1, resolution: nextContent.resolution))
+  }
+
+  func testImageDownloadFailureKeepsCrossMessagePagingAvailable() async throws {
+    let fixture = try await ArtifactReadFixture.make(owner: self)
+    fixture.state.value.withLock { $0.transferStatus = 404 }
+    fixture.viewer.open(
+      fixture.artifact(),
+      imageSources: ["![First](/artifacts/image00001.png)", "![Second](/artifacts/image00002.png)"])
+    let preview = try XCTUnwrap(fixture.viewer.preview)
+    let failed = await (try preview.store.get(preview.content)).result
+    XCTAssertThrowsError(try failed.get()) { error in
+      XCTAssertEqual(MessageArtifactStore.cardStatus(for: error), "No longer available")
+    }
+    let resolution = try await preview.store.get(preview.resolution).value
+    XCTAssertTrue(fixture.viewer.canNavigateImage(1, resolution: resolution))
+    fixture.state.value.withLock { $0.transferStatus = 200 }
+    fixture.viewer.navigateImage(1, resolution: resolution)
+    let next = try XCTUnwrap(fixture.viewer.preview)
+    let content = try await next.store.get(next.content).value
+    XCTAssertEqual(content.artifact.id, fixture.artifact("image00002.png").id)
+    let file = try XCTUnwrap(content.file)
+    XCTAssertNotNil(UIImage(data: try Data(contentsOf: file.url)))
+    XCTAssertTrue(fixture.viewer.canNavigateImage(-1, resolution: content.resolution))
   }
 
   func testFailedCardStaysFailedUntilItsOwnRetryWithoutReloadingOtherCards() async throws {
@@ -444,7 +467,8 @@ private struct ArtifactReadFixture {
     }
     let server = try ChatFileHTTPServer { _ in
       state.value.withLock { $0.transfers += 1 }
-      return .init(headers: ["Content-Type": "image/png"], body: bytes)
+      let status = state.value.withLock { $0.transferStatus }
+      return .init(status: status, headers: ["Content-Type": "image/png"], body: bytes)
     }
     owner.addTeardownBlock { await server.stop() }
     let origin = try await server.start()
@@ -499,6 +523,7 @@ private final class ArtifactReadState: Sendable {
   struct Value: Sendable {
     var name = "From catalog.png"
     var catalogStatus = 200
+    var transferStatus = 200
     var statuses: [String: [Int]] = [:]
     var catalogs = 0
     var references: [String] = []

@@ -84,28 +84,28 @@ final class MessageArtifactStore {
     guard [401, 403].contains(status ?? 0) || (status == 404 && expired) else { return false }
     switch content.artifact.source {
     case .reference, .file, .hostedSite:
-      open(content.artifact, images: content.images, renewedHTMLSignature: true)
+      open(content.artifact, images: content.resolution.images, renewedHTMLSignature: true)
       return true
     case .published: return false
     }
   }
 
-  func navigateImage(_ direction: Int, content: Preview.Content?) {
-    guard let preview, content.map({ $0.presentationID == preview.id }) ?? true else { return }
-    let images = (content?.images ?? preview.images).map(metadata).filter { $0.kind == .image }
-    let artifact = content?.artifact ?? preview.artifact
+  func navigateImage(_ direction: Int, resolution: Preview.Resolution?) {
+    guard let preview, resolution.map({ $0.presentationID == preview.id }) ?? true else { return }
+    let images = (resolution?.images ?? preview.images).map(metadata).filter { $0.kind == .image }
+    let artifact = resolution?.artifact ?? preview.artifact
     guard let index = images.firstIndex(where: { $0.id == artifact.id }),
       images.indices.contains(index + direction)
     else { return }
     open(images[index + direction], images: images)
   }
 
-  func canNavigateImage(_ direction: Int, content: Preview.Content?) -> Bool {
-    guard let preview, content.map({ $0.presentationID == preview.id }) ?? true else {
+  func canNavigateImage(_ direction: Int, resolution: Preview.Resolution?) -> Bool {
+    guard let preview, resolution.map({ $0.presentationID == preview.id }) ?? true else {
       return false
     }
-    let images = (content?.images ?? preview.images).map(metadata).filter { $0.kind == .image }
-    let artifact = content?.artifact ?? preview.artifact
+    let images = (resolution?.images ?? preview.images).map(metadata).filter { $0.kind == .image }
+    let artifact = resolution?.artifact ?? preview.artifact
     guard let index = images.firstIndex(where: { $0.id == artifact.id }) else { return false }
     return images.indices.contains(index + direction)
   }

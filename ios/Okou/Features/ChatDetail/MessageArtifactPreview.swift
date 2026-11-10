@@ -27,6 +27,7 @@ private struct MessageArtifactPreviewContent: View {
   let viewer: MessageArtifactStore
   let preview: MessageArtifactStore.Preview
   let markdown: MessageMarkdownCache
+  @LoadableValue private var resolution: Loadable<MessageArtifactStore.Preview.Resolution>
   @LoadableValue private var value: Loadable<MessageArtifactStore.Preview.Content>
   @LoadableValue private var download: Loadable<ChatAttachmentFile?>
   @LoadableValue private var catalog: Loadable<[ChatArtifact]>
@@ -41,13 +42,14 @@ private struct MessageArtifactPreviewContent: View {
     self.viewer = viewer
     self.preview = preview
     self.markdown = markdown
+    _resolution = LoadableValue(task: preview.resolution)
     _value = LoadableValue(task: preview.content)
     _download = LoadableValue(task: preview.download)
     _catalog = LoadableValue(task: preview.catalog, keepLast: true)
   }
 
   private var artifact: ChatArtifact {
-    let artifact = value.data?.artifact ?? preview.artifact
+    let artifact = value.data?.artifact ?? resolution.data?.artifact ?? preview.artifact
     guard let details = catalog.data?.first(where: { $0.id == artifact.id }) else {
       return artifact
     }
@@ -77,18 +79,19 @@ private struct MessageArtifactPreviewContent: View {
     } actions: {
       if artifact.kind == .image {
         Button {
-          viewer.navigateImage(-1, content: value.data)
+          viewer.navigateImage(-1, resolution: resolution.data)
         } label: {
           OkouToolbarIcon("chevron-left")
         }
-        .disabled(!viewer.canNavigateImage(-1, content: value.data)).accessibilityLabel(
+        .disabled(!viewer.canNavigateImage(-1, resolution: resolution.data)).accessibilityLabel(
           "Previous image")
         Button {
-          viewer.navigateImage(1, content: value.data)
+          viewer.navigateImage(1, resolution: resolution.data)
         } label: {
           OkouToolbarIcon("chevron-right")
         }
-        .disabled(!viewer.canNavigateImage(1, content: value.data)).accessibilityLabel("Next image")
+        .disabled(!viewer.canNavigateImage(1, resolution: resolution.data)).accessibilityLabel(
+          "Next image")
       }
       if let text = value.data?.text {
         Button {

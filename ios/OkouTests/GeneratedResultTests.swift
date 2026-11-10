@@ -61,9 +61,10 @@ final class GeneratedResultTests: XCTestCase {
       XCTAssertEqual(
         try Data(contentsOf: file.url),
         try XCTUnwrap(fixture.files.first { $0.filename == expectedName }).bytes)
-      XCTAssertEqual(viewer.canNavigateImage(-1, content: content), index > 0)
-      XCTAssertEqual(viewer.canNavigateImage(1, content: content), index < images.count - 1)
-      if index < images.count - 1 { viewer.navigateImage(1, content: content) }
+      XCTAssertEqual(viewer.canNavigateImage(-1, resolution: content.resolution), index > 0)
+      XCTAssertEqual(
+        viewer.canNavigateImage(1, resolution: content.resolution), index < images.count - 1)
+      if index < images.count - 1 { viewer.navigateImage(1, resolution: content.resolution) }
     }
     viewer.dismiss()
     for name in ["json000001.json", "csv0000001.csv", "word000001.docx"] {
