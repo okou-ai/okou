@@ -123,41 +123,57 @@ final class ComposerSuggestionNativeTable: UITableView {
 }
 
 private final class SuggestionCell: UITableViewCell {
+  private var item: ComposerSuggestionItem?
   private var activate: () -> Void = {}
 
   func configure(_ item: ComposerSuggestionItem, activate: @escaping () -> Void) {
+    self.item = item
     self.activate = activate
+    // Hosted rows draw their semantic focus layer; UIKit's default selection
+    // otherwise covers it with an opaque system gray on current iOS.
+    selectionStyle = .none
+    backgroundColor = .clear
+    backgroundConfiguration = .clear()
+    automaticallyUpdatesBackgroundConfiguration = false
+    automaticallyUpdatesContentConfiguration = false
+    isAccessibilityElement = true
+    accessibilityTraits = .button
+    accessibilityLabel = item.accessibilityLabel
+    accessibilityHint = item.accessibilityHint
+    accessibilityIdentifier = item.id
+    updateContent()
+  }
+
+  override func setSelected(_ selected: Bool, animated: Bool) {
+    super.setSelected(selected, animated: animated)
+    updateContent()
+  }
+
+  override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+    super.setHighlighted(highlighted, animated: animated)
+    updateContent()
+  }
+
+  private func updateContent() {
+    guard let item else { return }
+    let focused = isSelected || isHighlighted
     contentConfiguration = UIHostingConfiguration {
       OkouSuggestionRow(title: item.title, detail: item.detail, command: item.command)
         .accessibilityHidden(true)
     }
     .margins(.horizontal, OkouSpace.lg)
     .margins(.vertical, OkouSpace.sm)
-    backgroundColor = .clear
-    automaticallyUpdatesBackgroundConfiguration = false
-    isAccessibilityElement = true
-    accessibilityTraits = .button
-    accessibilityLabel = item.accessibilityLabel
-    accessibilityHint = item.accessibilityHint
-    accessibilityIdentifier = item.id
-    // A row can already be selected before its hosted content is configured.
-    setNeedsUpdateConfiguration()
-  }
-
-  override func updateConfiguration(using state: UICellConfigurationState) {
-    super.updateConfiguration(using: state)
-    var background = UIBackgroundConfiguration.clear()
-    background.backgroundColor =
-      state.isSelected || state.isHighlighted ? UIColor(OkouColor.stateSelected) : .clear
-    background.cornerRadius = OkouRadius.control
-    background.backgroundInsets = NSDirectionalEdgeInsets(
-      top: OkouSpace.one, leading: OkouSpace.six,
-      bottom: OkouSpace.one, trailing: OkouSpace.six)
-    backgroundConfiguration = background
+    .background {
+      RoundedRectangle(cornerRadius: OkouRadius.control)
+        .fill(focused ? OkouColor.stateSelected : .clear)
+        .padding(.horizontal, OkouSpace.six)
+        .padding(.vertical, OkouSpace.one)
+    }
   }
 
   override func prepareForReuse() {
     super.prepareForReuse()
+    item = nil
     contentConfiguration = nil
     activate = {}
   }
