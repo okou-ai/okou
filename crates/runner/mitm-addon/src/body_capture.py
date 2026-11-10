@@ -453,58 +453,53 @@ def _add_request_capture_fields(flow: http.HTTPFlow, log_entry: dict) -> None:
     # Request body
     if request_body_suppressed:
         log_entry["request_body_truncated"] = True
+        return
+
+    request_stream_incomplete = False
+    request_stream_truncated = False
+    if request_stream_body is not None:
+        request_stream_incomplete = (
+            flow.metadata.get(metadata_keys.REQUEST_STREAM_COMPLETE) is not True
+        )
+        request_stream_truncated = request_stream_body.truncated
+        raw_request_body = bytes(request_stream_body.buffer)
     else:
-        if request_stream_body is not None:
-            request_stream_incomplete = (
-                flow.metadata.get(metadata_keys.REQUEST_STREAM_COMPLETE) is not True
-            )
-            raw_request_body = bytes(request_stream_body.buffer)
-            request_dependency_headers = request_inspection.body_dependency_headers
-            if request_dependency_headers is None:
-                _set_body_capture_failure(
-                    log_entry,
-                    "request",
-                    raw_request_body,
-                    truncated=request_stream_body.truncated or request_stream_incomplete,
-                )
-            else:
-                req_ct = request_dependency_headers.get("content-type", "")
-                request_body = body_decoding.decode_request_body_for_network_log_capture(
-                    raw_request_body,
-                    request_dependency_headers,
-                    max_output=BODY_CAPTURE_LIMIT + 1,
-                )
-                if request_body is None:
-                    _set_body_capture_failure(
-                        log_entry,
-                        "request",
-                        raw_request_body,
-                        truncated=request_stream_body.truncated or request_stream_incomplete,
-                    )
-                else:
-                    _set_body_fields(
-                        log_entry,
-                        "request",
-                        request_body,
-                        req_ct,
-                        already_truncated=request_stream_incomplete,
-                        truncated_at_limit=request_stream_body.truncated,
-                    )
-        elif flow.request.raw_content:
-            request_dependency_headers = request_inspection.body_dependency_headers
-            if request_dependency_headers is None:
-                _set_body_capture_failure(log_entry, "request", flow.request.raw_content)
-            else:
-                req_ct = request_dependency_headers.get("content-type", "")
-                request_body = body_decoding.decode_request_body_for_network_log_capture(
-                    flow.request.raw_content,
-                    request_dependency_headers,
-                    max_output=BODY_CAPTURE_LIMIT + 1,
-                )
-                if request_body is None:
-                    log_entry["request_body_encoding"] = "binary"
-                else:
-                    _set_body_fields(log_entry, "request", request_body, req_ct)
+        raw_request_body = flow.request.raw_content
+        if not raw_request_body:
+            return
+
+    request_dependency_headers = request_inspection.body_dependency_headers
+    if request_dependency_headers is None:
+        _set_body_capture_failure(
+            log_entry,
+            "request",
+            raw_request_body,
+            truncated=request_stream_truncated or request_stream_incomplete,
+        )
+        return
+
+    req_ct = request_dependency_headers.get("content-type", "")
+    request_body = body_decoding.decode_request_body_for_network_log_capture(
+        raw_request_body,
+        request_dependency_headers,
+        max_output=BODY_CAPTURE_LIMIT + 1,
+    )
+    if request_body is None:
+        _set_body_capture_failure(
+            log_entry,
+            "request",
+            raw_request_body,
+            truncated=request_stream_truncated or request_stream_incomplete,
+        )
+        return
+    _set_body_fields(
+        log_entry,
+        "request",
+        request_body,
+        req_ct,
+        already_truncated=request_stream_incomplete,
+        truncated_at_limit=request_stream_truncated,
+    )
 
 
 def _add_response_capture_fields(
