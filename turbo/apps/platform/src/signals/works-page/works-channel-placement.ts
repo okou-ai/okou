@@ -83,6 +83,10 @@ export const worksConnectedChannels$ = computed((get) => {
 
 export const settleWorksChannelPlacement$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    // Only the grouped layout places channels into sections.
+    if (!(get(featureSwitch$)[FeatureSwitchKey.WorksChannelGroups] ?? false)) {
+      return;
+    }
     const checks: Record<WorksChannel, (() => Promise<boolean>) | null> = {
       slack: async () => {
         return (await get(slackOrgData$)).isConnected;

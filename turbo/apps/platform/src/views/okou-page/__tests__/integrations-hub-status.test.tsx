@@ -563,7 +563,7 @@ test("Works lists connected channels before the remaining channels", async () =>
     configured: true,
   });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { channelGroups: true });
 
   const connected = await screen.findByRole("region", { name: /^Connected/u });
   expect(within(connected).getByText("Slack")).toBeInTheDocument();
@@ -584,9 +584,36 @@ test("Works install buttons show a short label and keep the provider name", asyn
     installUrl: "https://slack.com/oauth/v2/authorize?state=install",
   });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { channelGroups: true });
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   const install = getAction("button", "Install to Slack");
   expect(install).toHaveTextContent(/^Install$/u);
+});
+
+test("Works keeps one standalone card per channel while channel groups are off", async () => {
+  mockSlack(context, {
+    isConnected: false,
+    isInstalled: false,
+    isAdmin: true,
+    installUrl: "https://slack.com/oauth/v2/authorize?state=install",
+  });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: PHONE_HANDLE,
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+
+  await setupIntegrationsPage(context);
+
+  await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getIntegrationCard("Phone")).toHaveTextContent(PHONE_HANDLE);
+  });
+  expect(screen.queryByRole("region", { name: /^Connected/u })).toBeNull();
+  expect(screen.queryByRole("region", { name: /^More channels/u })).toBeNull();
+  expect(getAction("button", "Install to Slack")).toHaveTextContent(
+    /^Install to Slack$/u,
+  );
 });

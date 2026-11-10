@@ -28,7 +28,10 @@ export function EmailCard({ layout }: { layout: IntegrationCardLayout }) {
             })}
           </div>
           <div
-            className={cn("text-sm text-muted-foreground", classes.overflow)}
+            className={cn(
+              "text-sm text-muted-foreground",
+              classes.overflow ?? "truncate",
+            )}
           >
             {t(($) => {
               return $.works.email.description;

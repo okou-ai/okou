@@ -185,6 +185,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
   },
+  [FeatureSwitchKey.WorksChannelGroups]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Grouped works channels",
+    description:
+      "Group the works page into connected channels, shown as rows in one surface, and the remaining channels, shown as compact two-column tiles with short Install buttons.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:

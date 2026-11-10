@@ -71,6 +71,8 @@ import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
 import { WhatsappCard } from "./whatsapp-card.tsx";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   worksChannels$,
   worksConnectedChannels$,
@@ -110,6 +112,7 @@ function ProviderCardActions({
   installTestId,
   connectTestId,
   installLabel,
+  shortInstallLabel,
   moreOptionsLabel,
   disconnectLabel,
   uninstallLabel,
@@ -128,6 +131,7 @@ function ProviderCardActions({
   installTestId: string;
   connectTestId?: string;
   installLabel: string;
+  shortInstallLabel: boolean;
   moreOptionsLabel: string;
   disconnectLabel: string;
   uninstallLabel: string;
@@ -150,15 +154,17 @@ function ProviderCardActions({
           variant="outline"
           size="sm"
           className="h-8 shrink-0 gap-1.5 rounded-lg"
-          aria-label={installLabel}
+          aria-label={shortInstallLabel ? installLabel : undefined}
           onClick={() => {
             return openFreshOAuth(installUrl);
           }}
         >
           <Download size={14} />
-          {t(($) => {
-            return $.works.actions.install;
-          })}
+          {shortInstallLabel
+            ? t(($) => {
+                return $.works.actions.install;
+              })
+            : installLabel}
         </Button>
       )}
       {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
@@ -350,6 +356,7 @@ function SlackCard({
             connectedDetail={slackData?.workspaceName}
             connectedTestId="slack-connected-indicator"
             installTestId="slack-install-button"
+            shortInstallLabel={classes.shortInstallLabel}
             installLabel={t(($) => {
               return $.works.slack.install;
             })}
@@ -469,7 +476,7 @@ function DiscordCardDescription({
   className,
 }: {
   data: DiscordOrgStatus | null;
-  className: string;
+  className: string | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -674,6 +681,7 @@ function TeamsCard({
             connectedTestId="teams-connected-indicator"
             installTestId="teams-install-button"
             connectTestId="teams-connect-button"
+            shortInstallLabel={classes.shortInstallLabel}
             installLabel={t(($) => {
               return $.works.teams.install;
             })}
@@ -784,18 +792,26 @@ function GithubCard({ layout }: { layout: IntegrationCardLayout }) {
             href={githubData.installUrl}
             target="_blank"
             rel="noreferrer"
-            aria-label={t(($) => {
-              return $.works.github.install;
-            })}
+            aria-label={
+              classes.shortInstallLabel
+                ? t(($) => {
+                    return $.works.github.install;
+                  })
+                : undefined
+            }
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "h-8 shrink-0 gap-1.5 rounded-lg",
             )}
           >
             <Download size={14} />
-            {t(($) => {
-              return $.works.actions.install;
-            })}
+            {classes.shortInstallLabel
+              ? t(($) => {
+                  return $.works.actions.install;
+                })
+              : t(($) => {
+                  return $.works.github.install;
+                })}
           </a>
         ) : null}
         {githubData?.isInstalled && !githubData.isConnected ? (
@@ -1053,10 +1069,14 @@ function WorksSectionHeading({
   );
 }
 
-export function WorksPage() {
+function GroupedWorksChannels({
+  channels,
+  displayName,
+}: {
+  channels: readonly WorksChannel[];
+  displayName: string;
+}) {
   const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  const channels = useGet(worksChannels$);
   const connected = useGet(worksConnectedChannels$) ?? [];
   const connectedChannels = channels.filter((channel) => {
     return connected.includes(channel);
@@ -1064,6 +1084,79 @@ export function WorksPage() {
   const otherChannels = channels.filter((channel) => {
     return !connected.includes(channel);
   });
+
+  return (
+    <div className="mx-auto max-w-[900px] flex flex-col gap-6">
+      {connectedChannels.length > 0 ? (
+        <section
+          aria-labelledby="works-connected-channels"
+          className="flex flex-col gap-2"
+        >
+          <WorksSectionHeading
+            id="works-connected-channels"
+            label={t(($) => {
+              return $.works.sections.connected;
+            })}
+            count={connectedChannels.length}
+          />
+          <div
+            className={surfaceVariants({
+              className: "flex flex-col divide-y divide-border overflow-hidden",
+            })}
+          >
+            {connectedChannels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="row"
+                  displayName={displayName}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+      {otherChannels.length > 0 ? (
+        <section
+          aria-labelledby={
+            connectedChannels.length > 0 ? "works-more-channels" : undefined
+          }
+          className="flex flex-col gap-2"
+        >
+          {connectedChannels.length > 0 ? (
+            <WorksSectionHeading
+              id="works-more-channels"
+              label={t(($) => {
+                return $.works.sections.more;
+              })}
+              count={otherChannels.length}
+            />
+          ) : null}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {otherChannels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="tile"
+                  displayName={displayName}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+export function WorksPage() {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  const channels = useGet(worksChannels$);
+  const features = useGet(featureSwitch$);
+  const channelGroups = features[FeatureSwitchKey.WorksChannelGroups] ?? false;
   const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
   const displayName =
     displayNameLoadable.state === "hasData"
@@ -1094,69 +1187,22 @@ export function WorksPage() {
       </header>
 
       <main className="flex-1 overflow-auto px-4 sm:px-6 pt-3 pb-safe-or-8">
-        <div className="mx-auto max-w-[900px] flex flex-col gap-6">
-          {connectedChannels.length > 0 ? (
-            <section
-              aria-labelledby="works-connected-channels"
-              className="flex flex-col gap-2"
-            >
-              <WorksSectionHeading
-                id="works-connected-channels"
-                label={t(($) => {
-                  return $.works.sections.connected;
-                })}
-                count={connectedChannels.length}
-              />
-              <div
-                className={surfaceVariants({
-                  className:
-                    "flex flex-col divide-y divide-border overflow-hidden",
-                })}
-              >
-                {connectedChannels.map((channel) => {
-                  return (
-                    <WorksChannelCard
-                      key={channel}
-                      channel={channel}
-                      layout="row"
-                      displayName={displayName}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
-          {otherChannels.length > 0 ? (
-            <section
-              aria-labelledby={
-                connectedChannels.length > 0 ? "works-more-channels" : undefined
-              }
-              className="flex flex-col gap-2"
-            >
-              {connectedChannels.length > 0 ? (
-                <WorksSectionHeading
-                  id="works-more-channels"
-                  label={t(($) => {
-                    return $.works.sections.more;
-                  })}
-                  count={otherChannels.length}
+        {channelGroups ? (
+          <GroupedWorksChannels channels={channels} displayName={displayName} />
+        ) : (
+          <div className="mx-auto max-w-[900px] flex flex-col gap-4">
+            {channels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="card"
+                  displayName={displayName}
                 />
-              ) : null}
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                {otherChannels.map((channel) => {
-                  return (
-                    <WorksChannelCard
-                      key={channel}
-                      channel={channel}
-                      layout="tile"
-                      displayName={displayName}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </main>
     </div>
   );
