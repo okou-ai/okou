@@ -6,25 +6,15 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
-import { computed, type Computed } from "ccstate";
-import { dataRouterEnvironment } from "./data-router-environment";
-import { runPlatformEnvironment } from "./run-execution-defaults";
+import { computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
-import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
-import { previewAutomationBypass$ } from "../context/hono";
 import { safeSync } from "../utils";
 import { compactRecord } from "./connector-runtime-preparation.service";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
-import {
-  emptyEnvironment,
-  type Environment,
-  mergeEnvironments,
-} from "./run-environment";
+import { emptyEnvironment, type Environment } from "./run-environment";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
-import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 type EnvironmentError = ThreadModelError | ReturnType<typeof badRequestMessage>;
 
@@ -83,125 +73,6 @@ export function createModelProviderEnvironmentSignals(
   });
 }
 
-/** The integration a picked event arrived from, as the sandbox sees it. */
-function currentIntegration(
-  contextType: PickedThreadInputEvent["contextType"],
-  sourceIntegration: string | undefined,
-): string | undefined {
-  switch (contextType) {
-    case "web":
-    case "agent_run": {
-      return "web";
-    }
-    case "feishu": {
-      return sourceIntegration;
-    }
-    case "agentphone": {
-      return sourceIntegration === "whatsapp" ? "whatsapp" : "phone";
-    }
-    case "slack":
-    case "teams":
-    case "telegram":
-    case "wechat":
-    case "discord":
-    case "email": {
-      return contextType;
-    }
-    default: {
-      return undefined;
-    }
-  }
-}
-
-/**
- * Trusted platform entries describing this run to the sandbox: app URL, Agent,
- * thread, integration, model options and the preview automation bypass.
- */
-export function createPlatformEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  threadContext: ThreadContext,
-) {
-  return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [event, selection] = await Promise.all([
-      get(pickedEvent$),
-      get(threadContext.subscriptionSelection$),
-    ]);
-    if (!event) {
-      throw new Error("Platform environment requires a picked event");
-    }
-    if (isEnvironmentError(selection)) {
-      return selection;
-    }
-    const integration = currentIntegration(
-      event.contextType,
-      event.contextType === "feishu"
-        ? (await get(threadContext.feishuContext$))?.platform
-        : event.contextType === "agentphone"
-          ? (await get(threadContext.agentPhoneContext$))?.channel
-          : undefined,
-    );
-    const previewAutomationBypass = get(previewAutomationBypass$);
-    return {
-      ...emptyEnvironment(),
-      platformEnvironment: {
-        ...runPlatformEnvironment({
-          agentId: bootstrap.agentId,
-          chatThreadId: event.chatThreadId,
-        }),
-        ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
-        ...(selection.reasoningEffort
-          ? { OKOU_REASONING_EFFORT: selection.reasoningEffort }
-          : {}),
-        ...(selection.codexServiceTier
-          ? { OKOU_CODEX_SERVICE_TIER: selection.codexServiceTier }
-          : {}),
-        ...(previewAutomationBypass
-          ? { [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass }
-          : {}),
-      },
-    };
-  });
-}
-
-/**
- * Paid-tool switches: the tools the user disabled, and whether a framework's
- * native tools replace managed tools outside Pi, billed to the user's own key
- * or subscription. Web search supports Claude Code and Codex; images use Codex.
- */
-export function createPaidToolEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  threadContext: ThreadContext,
-) {
-  return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [disabledTools, framework, modelProvider, selection] =
-      await Promise.all([
-        get(bootstrap.disabledPaidTools$),
-        get(threadContext.providerFramework$),
-        get(threadContext.modelRoute$),
-        get(threadContext.subscriptionSelection$),
-      ]);
-    if (isEnvironmentError(framework)) {
-      return framework;
-    }
-    if (isEnvironmentError(modelProvider)) {
-      return modelProvider;
-    }
-    if (isEnvironmentError(selection)) {
-      return selection;
-    }
-    return {
-      ...emptyEnvironment(),
-      platformEnvironment: paidToolPlatformEnvironment({
-        disabledTools,
-        framework,
-        modelProviderType: modelProvider?.type ?? null,
-        piExecution: selection.piExecution,
-      }),
-    };
-  });
-}
-
 export function paidToolPlatformEnvironment(args: {
   readonly disabledTools: readonly string[];
   readonly framework: string;
@@ -226,58 +97,4 @@ export function paidToolPlatformEnvironment(args: {
       ? { [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true" }
       : {}),
   };
-}
-
-/**
- * The Run environment before its Okou token: connector and model-provider
- * sources merged in one place. Model-provider secrets and environment entries
- * override connector ones; its firewall is matched first.
- */
-export function createEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  threadContext: ThreadContext,
-) {
-  const connectorEnvironment$ = createConnectorEnvironmentSignals(
-    bootstrap,
-    threadContext,
-  );
-  const modelProviderEnvironment$ = createModelProviderEnvironmentSignals(
-    bootstrap,
-    threadContext,
-  );
-  const paidToolEnvironment$ = createPaidToolEnvironmentSignals(
-    bootstrap,
-    threadContext,
-  );
-  const platformEnvironment$ = createPlatformEnvironmentSignals(
-    bootstrap,
-    pickedEvent$,
-    threadContext,
-  );
-  return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [connector, modelProvider, paidTools, platform] = await Promise.all([
-      get(connectorEnvironment$),
-      get(modelProviderEnvironment$),
-      get(paidToolEnvironment$),
-      get(platformEnvironment$),
-    ]);
-    if (isEnvironmentError(paidTools)) {
-      return paidTools;
-    }
-    if (isEnvironmentError(platform)) {
-      return platform;
-    }
-    if (isEnvironmentError(connector)) {
-      return connector;
-    }
-    if (isEnvironmentError(modelProvider)) {
-      return modelProvider;
-    }
-    const dataRouter = dataRouterEnvironment();
-    return mergeEnvironments(
-      [connector, modelProvider, platform, paidTools, dataRouter],
-      [dataRouter, modelProvider, connector, platform, paidTools],
-    );
-  });
 }

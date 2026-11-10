@@ -134,11 +134,6 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/storage-index.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-index.service.ts",
       "uses": 19,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
@@ -199,22 +194,12 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "uses": 3,
       "dependency": "module:turbo/apps/api/src/signals/services/thread-storage.signals"
     },
     {
       "file": "turbo/apps/api/src/signals/services/thread-storage.signals.ts",
-      "uses": 5,
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/thread-storage.signals.ts",
-      "uses": 7,
+      "uses": 6,
       "dependency": "module:turbo/apps/api/src/signals/services/storage-index.service"
     },
     {

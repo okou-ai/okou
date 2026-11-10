@@ -939,15 +939,15 @@ const storedSkillBundleSchema = contentBundleSchema
   .strict();
 
 /**
- * Compact queue snapshot. Run-owned facts and product defaults are resolved
- * into PreparedExecutionContext at claim, before durable ownership.
+ * Complete API-owned runtime preparation, assembled at Claim before durable
+ * ownership. The stored queue contract below captures only irrecoverable input.
  */
-const storedExecutionContextObjectSchema = object({
+const preparedExecutionContextBaseSchema = object({
   // Exact Official content is selected at admission, never refreshed at claim.
   officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
-  // Every supported admission writer captures the selected Seed references.
+  // Current authorized Seed references selected at Claim.
   seedSkillBundles: array(storedSkillBundleSchema),
-  // Absent on retained contexts and on legacy-only preparation writers.
+  // Current explicitly selected template guidance.
   templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
@@ -964,7 +964,7 @@ const storedExecutionContextObjectSchema = object({
   environment: record(string(), string()).nullable(),
   platformEnvironment: record(string(), string()),
   // API-only references used to reconstruct runner masking values from the
-  // effective stored agent environment. Null means no persistent secret map, and array
+  // effective prepared agent environment. Null means no secret map, and array
   // order/repetition follows secret-map values.
   // This field must not be included in the runner-facing ExecutionContext.
   secretValueEnvironmentKeys: array(string()).nullable(),
@@ -997,8 +997,7 @@ const storedExecutionContextObjectSchema = object({
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
-  // Captured Claim decisions: singleAgent and connectorChatAccountAccess.
-  // Retained contexts may contain additional flags; those are not execution input.
+  // Captured decisions: singleAgent and connectorChatAccountAccess.
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
@@ -1021,19 +1020,13 @@ const storedExecutionContextObjectSchema = object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  // Pi's unique session/model inputs stay captured; its launch marker is derived.
+  // Pi session identity and pinned route reconstructed from the accepted Run.
   piSessionId: uuid().optional(),
   piModelConfig: piModelConfigSchema.optional(),
 });
 
-export const storedExecutionContextSchema =
-  storedExecutionContextObjectSchema.extend({
-    // Captured authorization, separate from the deployment's runtime secret.
-    previewBypassAuthorized: boolean().optional(),
-  });
-
-/** Irrecoverable Claim inputs; reconstructible fields on a full queue row are ignored. */
-export const claimExecutionInputSchema = storedExecutionContextObjectSchema
+/** Queue input. Run facts and current configuration are reconstructed at Claim. */
+export const storedExecutionContextSchema = preparedExecutionContextBaseSchema
   .pick({
     nativeContinuation: true,
     customWorkflowSelection: true,
@@ -1042,32 +1035,22 @@ export const claimExecutionInputSchema = storedExecutionContextObjectSchema
     apiStartTime: true,
   })
   .extend({
-    previewBypassAuthorized: boolean().optional(),
+    // Captured authorization; Claim loads the current deployment secret.
+    previewBypassAuthorized: boolean(),
     platformEnvironment: object({
       OKOU_TOKEN: string().optional(),
       [DISABLED_PAID_TOOLS_ENV_VAR]: string(),
-      VERCEL_AUTOMATION_BYPASS_SECRET: string().optional(),
     }),
-  })
-  // Old API writers and queued rows lack the boolean. Remove this receipt
-  // fallback in #46278 after the new writer's cutover/drain and JSON backfill.
-  .transform((context) => {
-    return {
-      ...context,
-      previewBypassAuthorized:
-        context.previewBypassAuthorized ??
-        !!context.platformEnvironment.VERCEL_AUTOMATION_BYPASS_SECRET,
-    };
   });
 
-/** Complete preparation also serves registration, diagnostics and Claim. */
+/** Complete Claim preparation also supplies diagnostics and the Runner response. */
 const preparedExecutionContextObjectSchema =
-  storedExecutionContextObjectSchema.extend({
+  preparedExecutionContextBaseSchema.extend({
     cliAgentType: string(),
-    // Stable admitted targets, independently of current availability.
+    // Effective authorized targets reconstructed from admitted bindings.
     connectorRuntimeTargets: connectorRuntimeTargetsSchema,
     piLaunchConfig: piLaunchConfigSchema.optional(),
-    // Current preference and product default, or supplied retained inputs.
+    // Current preference and product default.
     userTimezone: string().optional(),
     disallowedTools: array(string()).optional(),
   });
@@ -1089,23 +1072,6 @@ export const claimPreparedExecutionContextSchema =
   claimPreparedExecutionContextObjectSchema.superRefine(
     requireCompletePiFields,
   );
-
-/** Duplicate Run-owned inputs may be resolved after decoding a queued context. */
-export const claimCompatibleStoredExecutionContextSchema =
-  claimPreparedExecutionContextObjectSchema
-    .partial({
-      cliAgentType: true,
-      connectorRuntimeTargets: true,
-      piLaunchConfig: true,
-    })
-    .superRefine((context, refinement) => {
-      if (context.cliAgentType !== undefined) {
-        requireCompletePiFields(context, refinement, [
-          "piSessionId",
-          "piModelConfig",
-        ]);
-      }
-    });
 
 /**
  * Execution context returned when claiming a job.
@@ -1524,9 +1490,6 @@ export type RunnerInstalledVersions = zInfer<
 export type PiLaunchConfig = zInfer<typeof piLaunchConfigSchema>;
 export type PiResourceSnapshot = zInfer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = zInfer<typeof piLaunchPayloadSchema>;
-export type ClaimCompatibleStoredExecutionContext = zInfer<
-  typeof claimCompatibleStoredExecutionContextSchema
->;
 export type NetworkPolicyRefresh = zInfer<typeof networkPolicyRefreshSchema>;
 export type ConnectorRuntimeTarget = zInfer<
   typeof connectorRuntimeTargetSchema

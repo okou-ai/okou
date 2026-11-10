@@ -84,6 +84,41 @@ type ConnectorRuntimeInputSignals = ReturnType<
   typeof createConnectorRuntimeInputSignals
 >;
 
+/** Admission validates policies and fixes diagnostic account bindings without
+ * decrypting credentials or assembling a runtime environment. */
+export function createConnectorAdmissionSignals(
+  bootstrap: Parameters<typeof createConnectorRuntimeInputSignals>[0],
+  threadContext: Parameters<typeof createConnectorRuntimeInputSignals>[1],
+) {
+  const inputs = createConnectorRuntimeInputSignals(
+    bootstrap,
+    threadContext,
+  );
+  return computed(async (get) => {
+    const input = await get(inputs.inputs$);
+    if (isConnectorRuntimeError(input)) {
+      return input;
+    }
+    const permissions = await input.timing.measure(
+      "api_dispatch_prepare_context_build_permission_manifest",
+      "nested",
+      async () => {
+        return await buildPreparedPermissionManifest(input);
+      },
+    );
+    if (isConnectorRuntimeError(permissions)) {
+      return permissions;
+    }
+    return {
+      permissions,
+      runtimeTargets: [
+        ...(permissions?.builtinRuntimeTargets ?? []),
+        ...input.customConnectorContext.targets,
+      ],
+    };
+  });
+}
+
 function createConnectorRuntimeInputSignals(
   execution: Pick<
     AgentRunContextSignals,

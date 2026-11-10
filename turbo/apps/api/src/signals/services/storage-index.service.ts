@@ -7,7 +7,6 @@ import {
   cacheRowsFromProjection,
   type ExecutionStorageCacheRows,
 } from "./execution-storage-cache-read.service";
-import type { ExecutionStorageRequest } from "./execution-storage.service";
 
 export interface StorageLookup {
   readonly orgId: string;
@@ -234,45 +233,6 @@ export function storageBaseIndexFromRows(
     });
   }
   return index;
-}
-
-export function exactStorageVersionsFromIndex(
-  mounts: readonly ExecutionStorageRequest[],
-  index: StorageIndex,
-) {
-  return mounts.map((mount) => {
-    const storage = index.get(
-      storageIndexKey(mount.orgId, mount.userId, mount.name),
-    );
-    const version =
-      storage?.headVersion?.id === mount.versionId
-        ? storage.headVersion
-        : storage?.exactVersions.get(mount.versionId);
-    if (!storage || storage.storageId !== mount.storageId || !version) {
-      throw new Error(
-        `Requested storage version is unavailable: ${mount.storageId}/${mount.versionId}`,
-      );
-    }
-    if (
-      !Number.isSafeInteger(version.archiveSize) ||
-      version.archiveSize < 0 ||
-      !Number.isSafeInteger(version.fileCount) ||
-      version.fileCount < 0 ||
-      !version.s3Key
-    ) {
-      throw new Error("Invalid persisted execution storage version");
-    }
-    return {
-      orgId: mount.orgId,
-      userId: mount.userId,
-      name: mount.name,
-      storageId: mount.storageId,
-      versionId: version.id,
-      s3Key: version.s3Key,
-      archiveSize: version.archiveSize,
-      fileCount: version.fileCount,
-    };
-  });
 }
 
 export function mergeStorageIndexes(

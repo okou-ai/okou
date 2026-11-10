@@ -5,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type claimExecutionInputSchema,
+  type StoredExecutionContext,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
@@ -19,7 +19,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { array, record, string, type infer as zInfer } from "zod";
+import { array, record, string } from "zod";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
@@ -75,7 +75,7 @@ import {
 
 type ClaimInput = {
   readonly run: ClaimExecutionContextRun;
-  readonly context: zInfer<typeof claimExecutionInputSchema>;
+  readonly context: StoredExecutionContext;
 };
 
 const variablesSchema = record(string(), string()).nullable();

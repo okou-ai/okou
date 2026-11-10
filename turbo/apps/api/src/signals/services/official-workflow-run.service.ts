@@ -7,7 +7,6 @@ import type {
   AgentRunOfficialWorkflowBundleDefinitionProvenance,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import type { AcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 
@@ -238,14 +237,4 @@ export function exactMountsMatch(
       return mount.mountPath === definition.mountPath;
     });
   });
-}
-
-export function pinnedOfficialWorkflowBundles(
-  observation: OfficialWorkflowRunObservation | undefined,
-): NonNullable<StoredExecutionContext["officialWorkflowBundles"]> {
-  return (
-    observation?.definitions.map((definition) => {
-      return { ...definition.contentBundle, mountPath: definition.mountPath };
-    }) ?? []
-  );
 }

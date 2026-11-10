@@ -66,9 +66,6 @@ import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
   getSecretKmsClient,
   setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
 } from "../../../lib/secret-kms-client";
 import {
   clearMockNow,
@@ -139,7 +136,6 @@ const context = testContext();
 // test environment stubs as "dev".
 const SANDBOX_OP_LOG_DATASET = "vm0-sandbox-op-log-dev";
 const ASSISTANT_EVENT_ID_NAMESPACE = "bfec4fb6-d5b8-43e4-a72a-9f58f87d7e01";
-const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
@@ -327,55 +323,6 @@ function findFirewallEntry(
 ): ExecutionFirewallEntry | undefined {
   return entries?.find((entry) => {
     return firewallEntryName(entry) === name;
-  });
-}
-
-function useSecretKmsClientForTests(args: {
-  readonly decryptError?: Error;
-  readonly failAfterGenerateDataKeys?: number;
-  readonly onDecrypt?: () => void;
-  readonly onGenerateDataKey?: (callNumber: number) => void;
-}): void {
-  let generateDataKeyCalls = 0;
-  const client: SecretKmsClient = {
-    generateDataKey(
-      request: SecretKmsGenerateDataKeyRequest,
-    ): Promise<SecretKmsDataKey> {
-      generateDataKeyCalls += 1;
-      args.onGenerateDataKey?.(generateDataKeyCalls);
-      if (
-        args.failAfterGenerateDataKeys !== undefined &&
-        generateDataKeyCalls > args.failAfterGenerateDataKeys
-      ) {
-        return Promise.reject(new Error("unexpected data key generation"));
-      }
-      return Promise.resolve({
-        keyId: request.keyId,
-        plaintext: TEST_DATA_KEY,
-        encryptedDataKey: Buffer.from(
-          `encrypted-data-key:${request.keyId}`,
-          "utf8",
-        ),
-      });
-    },
-    decrypt(): Promise<Uint8Array> {
-      args.onDecrypt?.();
-      if (args.decryptError) {
-        return Promise.reject(args.decryptError);
-      }
-      return Promise.resolve(TEST_DATA_KEY);
-    },
-  };
-  setSecretKmsClientForTests(client);
-}
-
-function advanceNowOnFirstGenerateDataKey(timestamp: number): void {
-  useSecretKmsClientForTests({
-    onGenerateDataKey: (callNumber) => {
-      if (callNumber === 1) {
-        mockNow(timestamp);
-      }
-    },
   });
 }
 
@@ -4432,34 +4379,35 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(queue.body.concurrency.active).toBe(0);
       });
 
-      it("timestamps pending launches when the durable row is inserted", async () => {
+      it("timestamps a pending launch when its queued input is consumed", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, run: own } = await publicChatActor(context);
-        await own(async () => {
-          await api.updateUserModelPreference(actor, "claude-fable-5-1");
+        const owned = await publicChatActor(context);
+        await owned.run(async () => {
           const requestStartedAt = Date.UTC(2026, 0, 1, 12, 0, 0);
-          const payloadPreparedAt = requestStartedAt + 6 * 60_000;
+          const insertedAt = requestStartedAt + 6 * 60_000;
           mockNow(requestStartedAt);
-          advanceNowOnFirstGenerateDataKey(payloadPreparedAt);
-
-          const run = await api.createThreadRun(actor, {
-            agentId,
+          const blocker = await api.createThreadRun(owned.actor, {
+            agentId: owned.agentId,
+            prompt: "keep the thread busy before its next input",
+          });
+          const waiting = await owned.sendWaitingChatInput(owned.actor, {
+            agentId: owned.agentId,
+            threadId: blocker.threadId,
             prompt: "pending launch timestamp should reflect durable insert",
           });
+          await flushWaitUntilForTest();
 
+          mockNow(insertedAt);
+          await api.requestCancelRun(owned.actor, blocker.runId, [200]);
+          await flushWaitUntilForTest();
+          const picked = await waiting.launchedRun();
+          const run = await api.readRun(owned.actor, picked.runId);
           expect(run.status).toBe("pending");
           if (!run.createdAt) {
-            throw new Error("Expected created run createdAt");
+            throw new Error("Expected the consumed input's Run createdAt");
           }
-          expect(new Date(run.createdAt).getTime()).toBe(payloadPreparedAt);
-
-          const stored = await api.readRun(actor, run.runId);
-          if (!stored.createdAt) {
-            throw new Error("Expected stored run createdAt");
-          }
-          expect(new Date(stored.createdAt).getTime()).toBe(payloadPreparedAt);
-
-          await api.requestCancelRun(actor, run.runId, [200]);
+          expect(new Date(run.createdAt).getTime()).toBe(insertedAt);
+          await api.requestCancelRun(owned.actor, picked.runId, [200]);
         });
       });
 
