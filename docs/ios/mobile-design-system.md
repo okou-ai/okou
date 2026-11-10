@@ -262,7 +262,10 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   component catalog. Its empty, unfocused surface is at least 44 pt tall
   (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
   action targets. Larger text can grow the surface. Expansion retains the same
-  mounted editor and reserves a bottom row for the actions.
+  mounted editor and reserves a bottom row for the actions. Leading and trailing
+  action targets keep the same horizontal anchors through expansion. The composer
+  uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
+  center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
 - Viewing sheets and immediately applied settings use `OkouCloseButton`. Use Done
   for a completed operation, Save for an explicit commit, and Back within a sheet.
   Do not imply a pending save where selections already apply immediately.
