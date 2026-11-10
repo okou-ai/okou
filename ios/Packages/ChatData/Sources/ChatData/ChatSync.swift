@@ -54,7 +54,9 @@ public actor ChatSync {
 
   public func persistNavigation(_ snapshot: SidebarNavigationSnapshot) async {
     do {
+      try Task.checkCancellation()
       try await cache?.saveNavigation(snapshot)
+    } catch is CancellationError {
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error("Cannot save navigation cache: \(error.localizedDescription, privacy: .public)")

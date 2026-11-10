@@ -165,7 +165,8 @@ final class ChatModelResourceTests: XCTestCase {
     await models.value
     XCTAssertEqual(workspace.currentAgentName, "Shared agent")
     XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
-    XCTAssertNil(workspace.list.navigationError)
+    let agents = try await workspace.list.stateStore.get(workspace.list.navigationValue).value
+    XCTAssertEqual(agents.first?.displayName, "Shared agent")
     var expected = initialRequests
     expected["/api/agents"] = 1
     XCTAssertEqual(requests.withLock { $0 }, expected)
