@@ -64,6 +64,9 @@ export const expandProject$ = command(
     set(setProjectExpansion$, { ...previous, [id]: true });
   },
 );
+export const collapseProject$ = command(({ get, set }, id: string) => {
+  set(setProjectExpansion$, { ...get(expansion$), [id]: false });
+});
 export const toggleProject$ = command(({ get, set }, id: string) => {
   const previous = get(expansion$);
   set(setProjectExpansion$, { ...previous, [id]: !previous[id] });

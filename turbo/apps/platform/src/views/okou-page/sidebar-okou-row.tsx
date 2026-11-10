@@ -16,15 +16,48 @@ import { Link } from "../router/link.tsx";
 const ENTRY_ROW =
   "flex h-8 w-full min-w-0 items-center rounded-lg pr-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
-function WaitingSuggestionCount() {
+const SHORTCUT_HINT =
+  "shrink-0 whitespace-nowrap pl-2 font-sans text-xs text-nav-copy-muted";
+
+function ShortcutHint({
+  label,
+  className,
+}: {
+  label: string;
+  className: string;
+}) {
+  return (
+    <kbd aria-hidden="true" className={cn(SHORTCUT_HINT, className)}>
+      {label}
+    </kbd>
+  );
+}
+
+function RestingShortcutHint({ label }: { label: string | null }) {
+  return label === null ? null : (
+    <ShortcutHint
+      label={label}
+      className="md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/okou-row:opacity-100 group-focus-visible/okou-row:opacity-100"
+    />
+  );
+}
+
+/**
+ * The trailing slot holds the waiting count and the New chat shortcut hint.
+ * They share one slot, like a chat row's resting indicator and its menu: the
+ * count rests there and hover or keyboard focus swaps in the hint, so neither
+ * pushes the other aside.
+ */
+function OkouRowTrailing({ shortcutLabel }: { shortcutLabel: string | null }) {
   const { t } = useTranslation();
   const count = useLastResolved(waitingSuggestionCount$) ?? 0;
   if (count === 0) {
-    return null;
+    return <RestingShortcutHint label={shortcutLabel} />;
   }
   return (
-    <Badge className="shrink-0 text-xs font-medium tabular-nums text-nav-copy-muted">
-      <span aria-hidden="true">{count}</span>
+    <>
+      {/* The label stays outside the swapped badge so hiding the digit on
+          hover or focus keeps the count in the row's accessible name. */}
       <span className="sr-only">
         {t(
           ($) => {
@@ -33,7 +66,23 @@ function WaitingSuggestionCount() {
           { count },
         )}
       </span>
-    </Badge>
+      <Badge
+        aria-hidden="true"
+        className={cn(
+          "shrink-0 text-xs font-medium tabular-nums text-nav-copy-muted",
+          shortcutLabel !== null &&
+            "md:group-hover/okou-row:hidden group-focus-visible/okou-row:hidden",
+        )}
+      >
+        {count}
+      </Badge>
+      {shortcutLabel === null ? null : (
+        <ShortcutHint
+          label={shortcutLabel}
+          className="hidden md:group-hover/okou-row:block group-focus-visible/okou-row:block"
+        />
+      )}
+    </>
   );
 }
 
@@ -54,6 +103,7 @@ export function OkouChatListRow() {
     return null;
   }
   const newChat = GLOBAL_KEYBOARD_SHORTCUTS.newChat;
+  const shortcutLabel = singleAgent ? getShortcutLabel(newChat.binding) : null;
   return (
     <Link
       ref={enabled ? followCount : undefined}
@@ -76,15 +126,11 @@ export function OkouChatListRow() {
             })
           : assistantName}
       </span>
-      {enabled ? <WaitingSuggestionCount /> : null}
-      {singleAgent ? (
-        <kbd
-          aria-hidden="true"
-          className="shrink-0 whitespace-nowrap pl-2 font-sans text-xs text-nav-copy-muted md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/okou-row:opacity-100 group-focus-visible/okou-row:opacity-100"
-        >
-          {getShortcutLabel(newChat.binding)}
-        </kbd>
-      ) : null}
+      {enabled ? (
+        <OkouRowTrailing shortcutLabel={shortcutLabel} />
+      ) : (
+        <RestingShortcutHint label={shortcutLabel} />
+      )}
     </Link>
   );
 }

@@ -53,7 +53,7 @@
           section("Navigation & composer actions") {
             // Every glass control is drawn on the exact 44 pt shape.
             HStack(spacing: OkouSpace.md) {
-              ForEach(["menu", "chevrons-right"], id: \.self) { icon in
+              ForEach(["menu", "list-filter"], id: \.self) { icon in
                 Button {
                 } label: {
                   OkouToolbarIcon(icon)

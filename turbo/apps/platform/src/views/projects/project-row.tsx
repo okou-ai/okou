@@ -18,6 +18,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
@@ -29,9 +33,13 @@ import {
   projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
+  collapseProject$,
+  expandProject$,
   showMoreProjectThreads$,
   toggleProject$,
 } from "../../signals/projects/project-expansion.ts";
+import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
 import type {
   ChatThreadListRow,
   ProjectChatThreadListRow,
@@ -59,14 +67,56 @@ interface ProjectRowProps {
   readonly layout: ProjectRowLayout;
 }
 
+function ProjectFoldMenuItem({
+  project,
+  expanded,
+}: {
+  project: Project;
+  expanded: boolean;
+}) {
+  const { t } = useTranslation();
+  const collapse = useSet(collapseProject$);
+  const expand = useSet(expandProject$);
+  const shortcut = expanded
+    ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
+    : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
+  const label = expanded
+    ? t(($) => {
+        return $.projects.collapse;
+      })
+    : t(($) => {
+        return $.projects.expand;
+      });
+  const Icon = expanded ? Folder : FolderOpen;
+  return (
+    <DropdownMenuItem
+      aria-label={label}
+      aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+      onClick={() => {
+        if (expanded) {
+          collapse(project.id);
+        } else {
+          expand(project.id);
+        }
+      }}
+    >
+      <Icon size={16} />
+      {label}
+      <ChatThreadMenuShortcut shortcut={shortcut.binding} />
+    </DropdownMenuItem>
+  );
+}
+
 function ProjectMenu({
   project,
   touch,
   unread,
+  expanded,
 }: {
   project: Project;
   touch: boolean;
   unread: boolean;
+  expanded: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
@@ -111,7 +161,12 @@ function ProjectMenu({
           <Ellipsis />
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
+      <DropdownMenuContent
+        align="end"
+        finalFocus={dialog ? false : undefined}
+        data-project-menu-content-id={project.id}
+      >
+        <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
           onClick={() => {
             return editor({ projectId: project.id }, project.name);
@@ -144,10 +199,12 @@ function ProjectActions({
   touch,
   layout,
   unread,
+  expanded,
   creating,
   onNewChat,
 }: ProjectRowProps & {
   unread: boolean;
+  expanded: boolean;
   creating: boolean;
   /** Null when the row only carries its menu, as in My Okou's chat list. */
   onNewChat: (() => void) | null;
@@ -181,7 +238,12 @@ function ProjectActions({
           <Plus />
         </Button>
       ) : null}
-      <ProjectMenu project={project} touch={touch} unread={unread} />
+      <ProjectMenu
+        project={project}
+        touch={touch}
+        unread={unread}
+        expanded={expanded}
+      />
     </div>
   );
 }
@@ -405,6 +467,7 @@ export function ProjectRow({
         touch={touch}
         layout={layout}
         unread={showUnread}
+        expanded={expanded}
         creating={creation.state === "loading"}
         onNewChat={singleAgent ? null : newChat}
       />
@@ -465,22 +528,34 @@ export function ProjectCreateButton({ touch = false }: { touch?: boolean }) {
   if (!enabled) {
     return null;
   }
+  const label = t(($) => {
+    return $.projects.create;
+  });
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      size={touch ? "icon" : "icon-sm"}
-      iconSize={touch ? "lg" : "md"}
-      className={cn("shrink-0", touch && "min-h-11 min-w-11")}
-      data-project-create=""
-      aria-label={t(($) => {
-        return $.projects.create;
-      })}
-      onClick={() => {
-        return open();
-      }}
-    >
-      <FolderPlus />
-    </Button>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size={touch ? "icon" : "icon-sm"}
+              iconSize={touch ? "lg" : "md"}
+              className={cn("shrink-0", touch && "min-h-11 min-w-11")}
+              data-project-create=""
+              aria-label={label}
+              onClick={() => {
+                return open();
+              }}
+            >
+              <FolderPlus />
+            </Button>
+          }
+        />
+        <TooltipContent side="bottom">
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

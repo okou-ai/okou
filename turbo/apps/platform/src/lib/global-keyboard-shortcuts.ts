@@ -35,4 +35,12 @@ export const GLOBAL_KEYBOARD_SHORTCUTS = {
     binding: "mod+shift+x",
     ariaKeyShortcuts: "Meta+Shift+X Control+Shift+X",
   },
+  collapseProject: {
+    binding: "mod+shift+arrowleft",
+    ariaKeyShortcuts: "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  },
+  expandProject: {
+    binding: "mod+shift+arrowright",
+    ariaKeyShortcuts: "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  },
 } as const;
