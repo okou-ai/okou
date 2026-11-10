@@ -341,6 +341,7 @@ function ProjectTrigger({
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
+  const expand = useSet(expandProject$);
   const edit = useGet(projectInlineRename$);
   const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
@@ -354,7 +355,8 @@ function ProjectTrigger({
           renaming && "invisible",
         )}
       >
-        {/* The folder folds the Project's chats; the name opens its page. */}
+        {/* The folder folds the Project's chats; the name opens its page and
+            unfolds its chats. */}
         <button
           type="button"
           aria-expanded={expanded}
@@ -380,6 +382,18 @@ function ProjectTrigger({
           options={{ pathParams: { projectId: project.id } }}
           data-project-trigger=""
           aria-current={active ? "page" : undefined}
+          onClick={(event) => {
+            if (
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            expand(project.id);
+          }}
           onDoubleClick={(event) => {
             if (
               event.metaKey ||
