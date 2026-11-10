@@ -28,14 +28,9 @@ enum OkouRadius {
   static let chat: CGFloat = 16
   static let card: CGFloat = 20
   static let sheet: CGFloat = 28
-  /// The chat pushed aside by the open sidebar becomes a card with large, screen-like corners.
-  static let page: CGFloat = 44
 }
 
 enum OkouControl {
-  /// The open sidebar's share of the screen's width. The rest is a strip of the chat, dimmed,
-  /// that returns to it when tapped, as chat and mail apps leave one.
-  static let sidebarShare: CGFloat = 0.85
   /// Minimum interactive area; small artwork may sit inside this area.
   static let minimumTarget: CGFloat = 44
   /// One-line chat composer; its actions retain the full minimum target.
@@ -154,8 +149,6 @@ enum OkouMotion {
   static let greetingWordBlur: CGFloat = 8
   /// One dictation level sample; the waveform scrolls one bar per sample.
   static let waveformSample: TimeInterval = 0.05
-  /// How far left the sidebar starts as it slides in, as a share of its width.
-  static let sidebarParallax: CGFloat = 0.25
   /// A skeleton's shimmer: one sweep of the light across the group, the band's width as a
   /// share of the group's, how much it lifts the grey, and its slant.
   static let shimmer: Double = 1.6
@@ -181,13 +174,6 @@ enum OkouMotion {
 
 /// Shadows are reserved for surfaces that float over content.
 enum OkouElevation {
-  /// The chat pushed aside by the open sidebar, as ChatGPT leaves it: a card lightly frosted
-  /// (the thinnest material at this opacity, so its messages still show through the frost),
-  /// edged by a very faint hairline (`border` at this opacity) and a soft shadow.
-  static let sidebarFrost: Double = 0.6
-  static let sidebarEdgeLineOpacity: Double = 0.5
-  static let sidebarEdgeRadius: CGFloat = 16
-  static let sidebarEdgeOpacity: Double = 0.12
   /// Suggestion panels above the composer (slash workflows, @mentions).
   static let floatingRadius: CGFloat = 16
   static let floatingY: CGFloat = 6

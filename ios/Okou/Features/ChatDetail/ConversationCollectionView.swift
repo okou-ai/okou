@@ -104,7 +104,6 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let anchor: ConversationScrollAnchor
   let scroll: ConversationCollectionScroll
   let followsBottom: Bool
-  var sidebar: SidebarInteraction?
   var sendTransition: ConversationSendTransition?
   var isLoadingHistory = false
   let phaseChanged: (ScrollPhase) -> Void
@@ -136,7 +135,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
 
 @MainActor
 final class ConversationCollectionController<Content: View>: UIViewController,
-  UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling, SidebarScrollParticipant
+  UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
   private var keyboardTap: KeyboardDismissTap?
@@ -319,7 +318,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     addChild(loading)
     view.addSubview(loading.view)
     loading.didMove(toParent: self)
-    source.sidebar?.attach(self)
     registerForTraitChanges([
       UITraitPreferredContentSizeCategory.self, UITraitLayoutDirection.self,
       UITraitLegibilityWeight.self, UITraitDisplayScale.self,
@@ -558,18 +556,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func update(_ source: ConversationCollectionView<Content>) {
-    let sidebarChanged = self.source.sidebar !== source.sidebar
-    if sidebarChanged, isViewLoaded { self.source.sidebar?.detach(self) }
     self.source = source
     if isViewLoaded {
-      if sidebarChanged { source.sidebar?.attach(self) }
       updateContentInsets()
       prepareRowsIfNeeded()
     }
   }
 
-  /// The header and composer heights are content insets, not safe area, so the soft top edge
-  /// blurs only the status bar band; under the header's glass controls the text stays sharp.
+  /// UIKit owns the navigation bar's safe area; the composer reserves its own content inset.
   private func updateContentInsets() {
     let insets = UIEdgeInsets(
       top: source.contentInsets.top, left: source.contentInsets.leading,
@@ -583,7 +577,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func stop() {
-    source.sidebar?.detach(self)
     stopped = true
     clearPrefetchedContent()
     markdownLookahead?.cancel()
@@ -603,30 +596,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     if source.scroll.owner === self { source.scroll.owner = nil }
     source.anchor.isPresentedMarker = nil
     collection?.delegate = nil
-  }
-
-  func setSidebarActive(_ active: Bool) {
-    guard isViewLoaded else { return }
-    let enabled = !active
-    guard collection.isUserInteractionEnabled != enabled else { return }
-    let wasScrolling = isScrolling || source.sendTransition?.isActive == true
-    // Cancel this touch's transcript pan and block new transcript touches. Keep
-    // isScrollEnabled unchanged: UIHostingConfiguration needs its scroll-container
-    // layout semantics even when the sidebar is covering a newly mounted detail.
-    // Ancestor SwiftUI responder/relationship recognizers must keep running.
-    collection.isUserInteractionEnabled = enabled
-    collection.panGestureRecognizer.isEnabled = enabled
-    if active {
-      source.sendTransition?.cancel()
-      collection.stopScrollingAndZooming()
-      // A newly mounted detail must still restore its saved position while the
-      // sidebar is open. Only interrupted motion relinquishes its correction.
-      if wasScrolling {
-        source.phaseChanged(.interacting)
-        source.anchor.cancel()
-        scrollingEnded()
-      }
-    }
   }
 
   private func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {

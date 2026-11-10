@@ -191,7 +191,7 @@ struct ChatComposerView: View {
             connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
           )
           .disabled(isBusy || needsUpgrade)
-          // The model control lives in the header beside the menu (ChatWorkspaceHeader).
+          // The model control lives in the system navigation bar (ChatWorkspaceToolbar).
         }
       } trailing: {
         HStack(spacing: OkouSpace.xs) {

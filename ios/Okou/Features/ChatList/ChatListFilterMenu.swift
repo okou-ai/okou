@@ -24,21 +24,20 @@ enum ChatListFilter: CaseIterable {
   }
 }
 
-/// UIKit owns the lifted button and keeps the sidebar still until it returns to its source.
+/// UIKit owns the menu button and its presentation lifecycle.
 struct ChatListFilterMenu: UIViewRepresentable {
-  let sidebar: SidebarInteraction
   let store: WorkspaceStore
   @Binding var selection: ChatListFilter
 
-  func makeUIView(context: Context) -> SidebarMenuButton {
-    let button = SidebarMenuButton(sidebar: sidebar)
+  func makeUIView(context: Context) -> UIButton {
+    let button = UIButton(type: .system)
     button.showsMenuAsPrimaryAction = true
     button.accessibilityIdentifier = "chat-list-filter"
     button.accessibilityLabel = String(localized: "Chat list")
     return button
   }
 
-  func updateUIView(_ button: SidebarMenuButton, context: Context) {
+  func updateUIView(_ button: UIButton, context: Context) {
     let filter = selection
     var configuration = UIButton.Configuration.glass()
     configuration.cornerStyle = .capsule
@@ -91,15 +90,11 @@ struct ChatListFilterMenu: UIViewRepresentable {
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }
   }
 
-  func sizeThatFits(_ proposal: ProposedViewSize, uiView: SidebarMenuButton, context: Context)
+  func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context)
     -> CGSize?
   {
     CGSize(
       width: max(OkouControl.minimumTarget, uiView.intrinsicContentSize.width),
       height: OkouControl.minimumTarget)
-  }
-
-  static func dismantleUIView(_ button: SidebarMenuButton, coordinator: ()) {
-    button.endMenuPresentations()
   }
 }

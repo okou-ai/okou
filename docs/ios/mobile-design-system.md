@@ -114,9 +114,9 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                         |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample)                                                                                |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
-| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
+| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error. Never on scroll or typing                                                                                                                                                                               |
 
 An icon inside a `Label` is decorative: its text names the action. Icon-only
 buttons require an explicit accessible label. Errors appear next to the owning
@@ -192,9 +192,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   drew a ~35 pt circle inside its 44 pt frame and looked smaller than the UIKit glass
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`.
   Paired controls in one bar are the same size.
-  The sidebar filter uses `ChatListFilterMenu` with that native configuration so
-  `SidebarMenuButton` can suspend page swipes through the menu's dismissal
-  animation, until UIKit has returned the lifted button to its source.
+  The chat-list filter uses `ChatListFilterMenu` with that native configuration;
+  UIKit owns the menu presentation and dismissal.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
   draft, mic then send (`.glassProminent`, `primary`) once there is content, and stop
   (`interrupt`) alone while a run is active and the draft is empty.
@@ -277,13 +276,13 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   own content (the sidebar's chat filter is its glass control); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
-- **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
-  left swipe anywhere in the sidebar closes it, as does a tap on the chat's strip beside it;
-  a swipe is never the only way back. Content that scrolls
-  sideways (a code block or a table) keeps the finger, and from there the chat still opens
-  the sidebar from its leading edge (`SidebarGesturePolicy`).
-  A page swipe never also taps the row under it. Chat rows keep their actions on the
-  right swipe — Mark as read/unread, Archive — so they never compete with closing.
+- **Chat navigation uses the system stack.** The chat list is the root; startup
+  presents the existing new-chat page through the initial navigation path, without
+  an entrance animation or a list flash. The system back button, back gesture,
+  keyboard coordination, and interactive cancellation own the transition. Selecting
+  a chat, creating one, or opening a system entry presents one chat destination,
+  rather than accumulating previous conversations on the stack. Chat row actions
+  retain their right swipe; sideways message content retains its own scrolling.
 - **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
   appearances and say what kind of change it is: `neutral` (brand dark grey) for moving a
   chat, `readState` (the unread dot's sky blue) for read state. Never amber or the warning
@@ -397,11 +396,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   at the top, the edge must hide it:
   - The chat transcript uses the system's `.soft` top edge, the progressive blur ChatGPT
     and Manus draw: strongest at the screen's edge, clearing toward the content, with no
-    colour of its own. Its reach follows the safe area. The header and composer heights are
-    `contentInset`s, so the top edge blurs only the status bar band and text under the
-    header's glass controls stays sharp. Putting the header in the safe area (as the
-    redesign once did) blurs the whole header, a band far too tall. Its bottom edge is
-    hidden (`bottomEdgeEffect.isHidden`).
+    colour of its own. Its reach follows the system navigation bar's safe area;
+    the composer height is a `contentInset`. Its bottom edge is hidden
+    (`bottomEdgeEffect.isHidden`).
   - Never draw an edge blur by hand. A `UIVisualEffectView` has one radius for the whole
     band, so masking it to fade reads as a hard, opaque strip, and every blur style tints
     a dark page grey. Only the system edge effect blurs progressively.
@@ -461,23 +458,15 @@ single floating line, and colour is a small accent for status only.
 
 ### Navigation and lists
 
-- **The sidebar takes 85 % of the width** (`OkouControl.sidebarShare`) and pushes the chat
-  aside, as ChatGPT does. The chat becomes a card: corners grow to `OkouRadius.page` (44 pt,
-  continuous) as the list opens, edged by a very faint hairline (`border` at
-  `sidebarEdgeLineOpacity` 50 %) and a soft shadow (`sidebarEdgeRadius` 16 pt,
-  `sidebarEdgeOpacity` 12 %) drawn by a card-shaped fill behind it. Its strip is frosted by the
-  thinnest material at 60 % (`OkouElevation.sidebarFrost`) — light, and the messages still show
-  through — laid on top of the chat rather than blurring it: a `.blur` on the chat re-renders
-  the transcript, which re-read its safe area and jumped when the list closed, and the system
-  materials have no strength setting of their own. A tap anywhere on the strip returns to the
-  chat ("Close sidebar" for VoiceOver), so leaving the list never depends on knowing the swipe.
-  The list drifts in from a quarter of its width to the left (`OkouMotion.sidebarParallax`)
-  as the chat slides over it.
-- **Sidebar layout**: the workspace switcher top left and the chat filter (Lucide
+- **The chat list fills its own navigation page.** It is the root of the system
+  `NavigationStack`; the new-chat page is the initial destination. The chat toolbar
+  keeps the system back button, the model capsule, and chat actions. No custom
+  page pan, parallax, displaced chat card, or menu gesture lock is needed.
+- **Chat-list layout**: the workspace switcher top left and the chat filter (Lucide
   `list-filter`) top right, both 44 pt glass controls. The filter is a circle on the
   default Chats and a capsule naming any other filter ("Unread"), so a filtered list never
-  reads as missing chats. There is no back button: the chat's strip beside the list, a left
-  swipe and VoiceOver's escape gesture all return to the chat. The switcher is the workspace's
+  reads as missing chats. The list has no back button because it is the navigation root.
+  The switcher is the workspace's
   logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
   `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
   name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's

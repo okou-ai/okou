@@ -6,8 +6,6 @@ struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let agents: ThreadListStore?
   var didSend: (@MainActor () async -> Void)? = nil
-  let topContentInset: CGFloat
-  let sidebar: SidebarInteraction?
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
   private var thread: ChatThread { conversation.thread }
@@ -25,15 +23,12 @@ struct ChatDetailView: View {
   init(
     conversation: ConversationStore, agents: ThreadListStore? = nil,
     didSend: (@MainActor () async -> Void)? = nil,
-    topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
+    mentionSource: ComposerMentionSource? = nil,
     onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.agents = agents
     self.didSend = didSend
-    self.topContentInset = topContentInset
-    self.sidebar = sidebar
     self.mentionSource = mentionSource
     self.onFirstMessagePresented = onFirstMessagePresented
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
@@ -186,10 +181,10 @@ struct ChatDetailView: View {
       rows: rows, markdown: conversation.messageMarkdown, renderContext: renderContext,
       measurements: conversation.measurements,
       contentInsets: EdgeInsets(
-        top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
+        top: 0, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
-      followsBottom: scrolling.followsBottom, sidebar: sidebar,
+      followsBottom: scrolling.followsBottom,
       sendTransition: scrolling.sendTransition,
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,

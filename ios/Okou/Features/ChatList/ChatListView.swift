@@ -2,15 +2,14 @@ import ChatData
 import ChatDomain
 import SwiftUI
 
-struct ChatSidebarView: View {
+struct ChatListView: View {
   @Bindable var store: WorkspaceStore
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
-  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
-  let close: () -> Void
+  let openChat: () -> Void
   let newChat: () -> Void
 
   private struct ProjectEditor {
@@ -124,15 +123,13 @@ struct ChatSidebarView: View {
     // the glass buttons.
     .safeAreaBar(edge: .top, spacing: OkouSpace.md) {
       VStack(spacing: 0) {
-        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
-    // VoiceOver's escape gesture returns to the chat, as the left swipe does.
-    .accessibilityAction(.escape, close)
     .background(OkouColor.sidebar)
     .task { await store.projects.activate() }
+    .task { await store.refreshNavigation() }
     .onDisappear { projectAction?.cancel() }
     .background {
       OkouNameDialog(
@@ -169,7 +166,7 @@ struct ChatSidebarView: View {
       )
     ) {
       ChatSearchView(
-        workspace: store, showsArchived: showArchived, didOpen: close,
+        workspace: store, showsArchived: showArchived, didOpen: openChat,
         openWorkflow: { workflow in
           store.search.dismiss()
           newChat()
@@ -181,8 +178,8 @@ struct ChatSidebarView: View {
   }
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
-  /// beside it with no arrow, and on the right the chat filter. A left swipe returns to the
-  /// chat the sidebar covers. The name leaves once rows scroll under the bar; the glass
+  /// beside it with no arrow, and on the right the chat filter. The name leaves once rows
+  /// scroll under the bar; the glass
   /// buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
@@ -374,7 +371,7 @@ struct ChatSidebarView: View {
     .contextMenu {
       Button("New chat", okouSymbol: "square-pen") {
         store.startNewChat(projectID: project.id)
-        close()
+        openChat()
       }
       .disabled(store.isCreating || store.needsUpgrade)
       Button("Rename", okouSymbol: "pencil") { showEditor(editor(project: project)) }
@@ -421,7 +418,7 @@ struct ChatSidebarView: View {
   ) -> some View {
     Button {
       store.selectChat(thread.id)
-      close()
+      openChat()
     } label: {
       let parts = thread.titleParts
       let isWorking = thread.indicator == .active
@@ -461,7 +458,7 @@ struct ChatSidebarView: View {
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 }))
     }
     .menuOrder(.fixed)
-    // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
+    // Keep the existing row actions on the right swipe.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
@@ -491,7 +488,7 @@ struct ChatSidebarView: View {
   /// The chat filter, top right. On the default Chats it is a glass circle; any other filter
   /// names itself in a capsule, so a filtered list never reads as missing chats.
   private var threadFilterMenu: some View {
-    ChatListFilterMenu(sidebar: sidebar, store: store, selection: threadFilter)
+    ChatListFilterMenu(store: store, selection: threadFilter)
       .frame(height: OkouControl.minimumTarget)
       .fixedSize(horizontal: true, vertical: false)
   }
