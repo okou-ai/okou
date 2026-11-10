@@ -21,7 +21,7 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import AdmZip from "adm-zip";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -3173,6 +3173,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     bytes: Buffer,
     format: "docx" | "pptx" = "pptx",
     slidesEnabled = format === "pptx",
+    signal = context.signal,
   ) {
     const filename = format === "docx" ? "bilingual.docx" : "deck.pptx";
     const contentType =
@@ -3261,6 +3262,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const client = setupApp({
       context,
       routes: chatThreadsArtifactsSyncRoutes,
+      signal,
     })(artifactGoogleDriveContract);
     const files = setupApp({ context, routes: webFileUrlRoutes })(
       webFilesContract,
@@ -4138,6 +4140,225 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expect(readback.trashedFileIds).toHaveLength(0);
     await fixture.finish();
   }, 120_000);
+
+  it("retains bounded folder lookup failure diagnostics without private provider content", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    const secret = "private-folder-credential-and-provider-content";
+    // The single redaction check exercises the shared reason allowlist through the upload route.
+    const output = context.mocks.console.log;
+    onTestFinished(context.mocks.console.capture());
+    const scenarios = [
+      {
+        name: "allowlisted and private reasons",
+        status: 403,
+        body: JSON.stringify({
+          error: {
+            message: secret,
+            errors: [
+              { reason: "insufficientPermissions", location: secret },
+              { reason: "domainPolicy" },
+              { reason: "dailyLimitExceeded" },
+              { reason: "rateLimitExceeded" },
+              { reason: "userRateLimitExceeded" },
+              { reason: "insufficientPermissions" },
+              { reason: secret },
+              {},
+            ],
+            details: [
+              {
+                reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                metadata: {
+                  account: `${secret}@example.test`,
+                  url: `https://drive.google.com/${secret}?access_token=${secret}`,
+                },
+              },
+            ],
+          },
+        }),
+        reasons: [
+          "insufficientPermissions",
+          "domainPolicy",
+          "dailyLimitExceeded",
+          "rateLimitExceeded",
+          "userRateLimitExceeded",
+          "unrecognized",
+          "unavailable",
+          "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+        ],
+      },
+      { name: "empty body", status: 403, body: "", reasons: ["unavailable"] },
+      {
+        name: "invalid JSON",
+        status: 403,
+        body: `<html>${secret}</html>`,
+        reasons: ["unavailable"],
+      },
+      {
+        name: "missing reasons",
+        status: 403,
+        body: JSON.stringify({ error: { message: secret } }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "invalid reason type",
+        status: 403,
+        body: JSON.stringify({ error: { details: [{ reason: { secret } }] } }),
+        reasons: ["unrecognized"],
+      },
+      {
+        name: "invalid envelope",
+        status: 503,
+        body: JSON.stringify({ error: { errors: secret } }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "oversized body",
+        status: 429,
+        body: JSON.stringify({
+          error: {
+            message: secret.repeat(1024),
+            errors: [{ reason: "rateLimitExceeded" }],
+          },
+        }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "rejected refreshed token",
+        status: 403,
+        body: JSON.stringify({
+          error: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+        }),
+        reasons: ["ACCESS_TOKEN_SCOPE_INSUFFICIENT"],
+        afterRefresh: true,
+      },
+    ] as const;
+    for (const scenario of scenarios) {
+      const afterRefresh = "afterRefresh" in scenario;
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "drive-folder-refreshed" },
+      });
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+      });
+      const lookup = mockGoogleDriveFilesList((request) => {
+        if (
+          afterRefresh &&
+          request.headers.get("authorization") !==
+            "Bearer drive-folder-refreshed"
+        ) {
+          return { status: 401 };
+        }
+        return { status: scenario.status, body: scenario.body };
+      });
+      const before = output.mock.calls.length;
+      await expect(fixture.upload("original")).rejects.toThrow(
+        "Unknown response status 500",
+      );
+      const calls = output.mock.calls.slice(before);
+      const records = calls.filter(([message]) => {
+        return (
+          typeof message === "string" &&
+          message.endsWith("Google Drive folder lookup failed")
+        );
+      });
+      expect(records, scenario.name).toStrictEqual([
+        [
+          expect.stringContaining("[WARN]"),
+          {
+            phase: "folder_lookup",
+            providerStatus: scenario.status,
+            providerReasons: scenario.reasons,
+            attempt: afterRefresh ? "after_refresh" : "initial",
+          },
+        ],
+      ]);
+      expect(JSON.stringify(calls), scenario.name).not.toContain(secret);
+      expect(oauth.refreshBodies, scenario.name).toHaveLength(
+        afterRefresh ? 1 : 0,
+      );
+      expect(lookup.queries, scenario.name).toHaveLength(afterRefresh ? 2 : 1);
+      expect(upload.metadata, scenario.name).toHaveLength(0);
+      expect(upload.bodies, scenario.name).toHaveLength(0);
+    }
+  }, 120_000);
+
+  it.each(["stalled", "unreadable"] as const)(
+    "folder lookup diagnostics preserve the response for a %s provider stream",
+    async (scenario) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+      });
+      const lookup = mockGoogleDriveFilesList(() => {
+        return {
+          status: 403,
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              if (scenario === "unreadable") {
+                controller.error(new Error("private-provider-message"));
+              } else {
+                controller.enqueue(new TextEncoder().encode('{"error":'));
+              }
+            },
+          }),
+        };
+      });
+      await expect(fixture.upload("original")).rejects.toThrow(
+        "Unknown response status 500",
+      );
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(lookup.queries).toHaveLength(1);
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    10_000,
+  );
+
+  it("folder lookup diagnostics preserve request-owner cancellation", async () => {
+    const owner = new AbortController();
+    onTestFinished(() => {
+      owner.abort();
+    });
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+      false,
+      owner.signal,
+    );
+    const oauth = mockGoogleDriveConnectorOAuth();
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "report",
+    });
+    mockGoogleDriveFilesList(() => {
+      return {
+        status: 403,
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new TextEncoder().encode('{"error":'));
+            owner.abort();
+          },
+        }),
+      };
+    });
+    context.mocks.sentry.captureException.mockClear();
+    await expect(fixture.upload("original")).rejects.toThrow(
+      "Unknown response status 500",
+    );
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    expect(oauth.refreshBodies).toHaveLength(0);
+    expect(upload.metadata).toHaveLength(0);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
 
   it.each([
     {

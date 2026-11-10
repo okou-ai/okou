@@ -1145,11 +1145,15 @@ type DriveTokenResult<T> =
   | { readonly type: "ok"; readonly value: T }
   | { readonly type: "unauthorized" };
 
-async function findDriveFolder(args: {
-  readonly accessToken: string;
-  readonly parentFolderId: string | null;
-  readonly name: string;
-}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema> | null>> {
+async function findDriveFolder(
+  args: {
+    readonly accessToken: string;
+    readonly parentFolderId: string | null;
+    readonly name: string;
+    readonly attempt: "initial" | "after_refresh";
+  },
+  signal: AbortSignal,
+): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema> | null>> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set(
     "q",
@@ -1188,6 +1192,12 @@ async function findDriveFolder(args: {
     return { type: "unauthorized" };
   }
   if (!response.ok) {
+    log.warn("Google Drive folder lookup failed", {
+      phase: "folder_lookup",
+      providerStatus: response.status,
+      providerReasons: await readDriveErrorReasons(response, signal),
+      attempt: args.attempt,
+    });
     throw badRequestMessage(
       `Google Drive folder lookup failed with HTTP ${String(response.status)}`,
     );
@@ -1246,12 +1256,16 @@ async function createDriveFolder(args: {
   };
 }
 
-async function ensureDriveFolder(args: {
-  readonly accessToken: string;
-  readonly parentFolderId: string | null;
-  readonly name: string;
-}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
-  const existing = await findDriveFolder(args);
+async function ensureDriveFolder(
+  args: {
+    readonly accessToken: string;
+    readonly parentFolderId: string | null;
+    readonly name: string;
+    readonly attempt: "initial" | "after_refresh";
+  },
+  signal: AbortSignal,
+): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
+  const existing = await findDriveFolder(args, signal);
   if (existing.type === "unauthorized") {
     return existing;
   }
@@ -1261,20 +1275,28 @@ async function ensureDriveFolder(args: {
   return await createDriveFolder(args);
 }
 
-async function ensureArtifactFolder(args: {
-  readonly accessToken: string;
-  readonly threadId: string | null;
-}): Promise<DriveTokenResult<string>> {
+async function ensureArtifactFolder(
+  args: {
+    readonly accessToken: string;
+    readonly threadId: string | null;
+    readonly attempt: "initial" | "after_refresh";
+  },
+  signal: AbortSignal,
+): Promise<DriveTokenResult<string>> {
   let parentFolderId: string | null = null;
   const names = args.threadId
     ? ["Okou Artifacts", `chat-${args.threadId}`]
     : ["Okou Artifacts"];
   for (const name of names) {
-    const folder = await ensureDriveFolder({
-      accessToken: args.accessToken,
-      parentFolderId,
-      name,
-    });
+    const folder = await ensureDriveFolder(
+      {
+        accessToken: args.accessToken,
+        parentFolderId,
+        name,
+        attempt: args.attempt,
+      },
+      signal,
+    );
     if (folder.type === "unauthorized") {
       return folder;
     }
@@ -1402,22 +1424,30 @@ async function uploadDriveFile(args: {
   })();
 }
 
-async function uploadArtifactWithToken(args: {
-  readonly pendingTextStyles?: boolean;
-  readonly accessToken: string;
-  readonly threadId: string | null;
-  readonly runId: string | null;
-  readonly fileId: string;
-  readonly artifactId?: string;
-  readonly filename: string;
-  readonly contentType: string;
-  readonly targetMimeType?: string | undefined;
-  readonly file: Buffer;
-}): Promise<DriveTokenResult<Response>> {
-  const folder = await ensureArtifactFolder({
-    accessToken: args.accessToken,
-    threadId: args.threadId,
-  });
+async function uploadArtifactWithToken(
+  args: {
+    readonly pendingTextStyles?: boolean;
+    readonly accessToken: string;
+    readonly threadId: string | null;
+    readonly runId: string | null;
+    readonly fileId: string;
+    readonly artifactId?: string;
+    readonly filename: string;
+    readonly contentType: string;
+    readonly targetMimeType?: string | undefined;
+    readonly file: Buffer;
+    readonly attempt: "initial" | "after_refresh";
+  },
+  signal: AbortSignal,
+): Promise<DriveTokenResult<Response>> {
+  const folder = await ensureArtifactFolder(
+    {
+      accessToken: args.accessToken,
+      threadId: args.threadId,
+      attempt: args.attempt,
+    },
+    signal,
+  );
   if (folder.type === "unauthorized") {
     return folder;
   }
@@ -1601,7 +1631,7 @@ type SlidesTargetResolution =
   | { readonly kind: "target"; readonly mimeType: string | undefined }
   | { readonly kind: "rejected"; readonly response: BadRequestResponse };
 
-async function readWorkspaceImportErrorReasons(
+async function readDriveErrorReasons(
   response: Response,
   signal: AbortSignal,
 ): Promise<readonly string[]> {
@@ -1690,7 +1720,7 @@ async function findWorkspaceImport(
   if (!response.ok) {
     log.warn("Google Drive previous conversion lookup failed", {
       providerStatus: response.status,
-      providerReasons: await readWorkspaceImportErrorReasons(response, signal),
+      providerReasons: await readDriveErrorReasons(response, signal),
       attempt: args.attempt,
     });
     return { type: "unavailable", httpStatus: response.status };
@@ -1831,20 +1861,27 @@ const uploadArtifactRefreshingToken$ = command(
     },
     signal: AbortSignal,
   ): Promise<DriveUploadAttempt> => {
-    const upload = async (accessToken: string) => {
-      return await uploadArtifactWithToken({
-        accessToken,
-        ...params.source,
-        filename: params.content.filename,
-        contentType: params.content.contentType,
-        targetMimeType: params.targetMimeType,
-        pendingTextStyles: !!params.content.textStyles?.length,
-        file: params.content.file,
-      });
+    const upload = async (
+      accessToken: string,
+      attempt: "initial" | "after_refresh",
+    ) => {
+      return await uploadArtifactWithToken(
+        {
+          accessToken,
+          ...params.source,
+          filename: params.content.filename,
+          contentType: params.content.contentType,
+          targetMimeType: params.targetMimeType,
+          pendingTextStyles: !!params.content.textStyles?.length,
+          file: params.content.file,
+          attempt,
+        },
+        signal,
+      );
     };
 
     const accessToken = params.tokens.accessToken;
-    const result = await upload(accessToken);
+    const result = await upload(accessToken, "initial");
     signal.throwIfAborted();
     if (result.type !== "unauthorized") {
       return { accessToken, result };
@@ -1864,7 +1901,7 @@ const uploadArtifactRefreshingToken$ = command(
     if (refreshed.type !== "ok") {
       return { accessToken, result };
     }
-    const retried = await upload(refreshed.accessToken);
+    const retried = await upload(refreshed.accessToken, "after_refresh");
     signal.throwIfAborted();
     return { accessToken: refreshed.accessToken, result: retried };
   },
