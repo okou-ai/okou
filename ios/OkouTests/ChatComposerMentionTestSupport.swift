@@ -107,7 +107,7 @@ final class MentionNavigationFixture: Sendable {
     let store = WorkspaceStore(client: http.client, webURL: http.baseURL)
     await store.refreshNavigation()
     await store.list.refresh()
-    XCTAssertNil(store.list.navigationError)
+    _ = try await store.list.stateStore.get(store.list.navigationValue).value
     XCTAssertNil(store.list.error)
     return store
   }

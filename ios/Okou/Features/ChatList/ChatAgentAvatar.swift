@@ -1,3 +1,5 @@
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -8,7 +10,32 @@ struct ChatAgentAvatar: View {
   var size: CGFloat = OkouAvatarSize.message
 
   var body: some View {
-    let agent = agents?.agents.first(where: { $0.agentId == agentID })
+    if let agents {
+      StoreProvider(agents.stateStore) {
+        ChatAgentAvatarContent(agents: agents, agentID: agentID, size: size)
+          .id(ObjectIdentifier(agents))
+      }
+    } else {
+      OkouAgentAvatar(avatarURL: nil, name: "Agent", isDefault: false, size: size)
+    }
+  }
+}
+
+private struct ChatAgentAvatarContent: View {
+  let agents: ThreadListStore
+  let agentID: String
+  let size: CGFloat
+  @ResolvedValue private var current: [AgentRecord]?
+
+  init(agents: ThreadListStore, agentID: String, size: CGFloat) {
+    self.agents = agents
+    self.agentID = agentID
+    self.size = size
+    _current = ResolvedValue(task: agents.navigationValue)
+  }
+
+  var body: some View {
+    let agent = (current ?? agents.agents).first(where: { $0.agentId == agentID })
     OkouAgentAvatar(
       avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Agent",
       isDefault: agent?.isDefaultAgent ?? false, size: size)

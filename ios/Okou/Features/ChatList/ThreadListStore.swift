@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -8,6 +9,8 @@ import Observation
 @MainActor @Observable
 final class ThreadListStore {
   private(set) var threads: [ChatThread] = []
+  /// Confirmed navigation drives default-Agent decisions and the durable ChatSync baseline.
+  /// Current read loading/errors belong exclusively to navigationValue.
   private(set) var agents: [AgentRecord] = []
   private(set) var unreadAgentIDs: Set<String> = []
   var hasUnreadThreads: Bool {
@@ -16,7 +19,6 @@ final class ThreadListStore {
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
-  private(set) var navigationError: String?
   private(set) var actionError: String?
   private(set) var refreshError: String?
   private var indicatorsError: String?
@@ -40,7 +42,9 @@ final class ThreadListStore {
   private var appliedIndicatorsRevision = 0
   private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
-  private var navigationTask: Task<Void, Never>?
+  @ObservationIgnored private var navigationSubscription: Subscription?
+  @ObservationIgnored private var navigationPublication: Task<Void, Never>?
+  private var navigationReadID = UUID()
   private var navigationRevision = 0
   private var restoredNavigation = false
   private var indicatorsTask: Task<Void, Never>?
@@ -130,50 +134,61 @@ final class ThreadListStore {
     didRefresh(threads)
   }
 
+  var stateStore: CCState.Store { resources.store }
+  var navigationValue: Computed<Task<[AgentRecord], Error>> { resources.navigation }
+
   func refreshNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
     await restoreCached()
     guard !closed, !blocked, !Task.isCancelled else { return }
-    if let navigationTask {
-      await navigationTask.value
-      return
-    }
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer { navigationTask = nil }
-      await loadNavigation()
-    }
-    navigationTask = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    do {
+      if navigationSubscription == nil {
+        navigationSubscription = try stateStore.watch(navigationValue) { [weak self] in
+          self?.confirmNavigation()
+        }
+        // watch establishes dependencies but does not initially invoke its listener.
+        confirmNavigation()
+      } else if navigationPublication == nil {
+        try stateStore.set(resources.reloadNavigation)
+      }
+      // This waiter owns neither the shared I/O nor confirmed-snapshot publication.
+      await navigationPublication?.value
+    } catch is CancellationError {
+    } catch { didFail(error) }
   }
 
-  private func loadNavigation() async {
-    guard !closed, !blocked, !Task.isCancelled else { return }
-    navigationRevision += 1
+  /// A workspace-owned subscriber reconciles successful reads to business/persistence state.
+  /// SwiftUI observes navigationValue itself; this waiter never mirrors its loadable phase.
+  private func confirmNavigation() {
+    guard !closed, !blocked else { return }
+    navigationPublication?.cancel()
+    let id = UUID()
+    navigationReadID = id
     do {
-      let read = try resources.navigation(refresh: navigationRevision > 1)
-      let value = try await withTaskCancellationHandler {
-        try await read.value
-      } onCancel: {
-        read.cancel()
+      let read = try stateStore.get(navigationValue)
+      navigationPublication = Task { [weak self] in
+        guard let self else { return }
+        defer {
+          if navigationReadID == id { navigationPublication = nil }
+        }
+        do {
+          let value = try await read.value
+          try Task.checkCancellation()
+          guard !closed, !blocked, navigationReadID == id else { return }
+          navigationRevision += 1
+          agents = value
+          didLoadAgents(value)
+          await sync.persistNavigation(SidebarNavigationSnapshot(agents: value))
+        } catch is CancellationError {
+        } catch {
+          guard !closed, !Task.isCancelled, navigationReadID == id else { return }
+          blocked = (error as? APIClientError)?.statusCode == 426
+          didFail(error)
+        }
       }
-      guard !closed, !blocked, !Task.isCancelled else { return }
-      agents = value
-      didLoadAgents(value)
-      navigationError = nil
-      await sync.persistNavigation(SidebarNavigationSnapshot(agents: value))
     } catch is CancellationError {
-      return
-    } catch {
-      guard !closed, !Task.isCancelled else { return }
-      navigationError = error.localizedDescription
-      blocked = (error as? APIClientError)?.statusCode == 426
-      didFail(error)
-    }
+      navigationPublication = nil
+    } catch { didFail(error) }
   }
 
   func refresh(waitForCurrent: Bool = false) async {
@@ -625,10 +640,19 @@ final class ThreadListStore {
   func close() {
     closed = true
     cancelRefresh()
-    navigationTask?.cancel()
+    cancelNavigationPublication()
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
     cancelRename()
+  }
+
+  /// Startup retirement detaches confirmation without cancelling another consumer's I/O.
+  func cancelNavigationPublication() {
+    navigationReadID = UUID()
+    navigationPublication?.cancel()
+    navigationPublication = nil
+    do { try navigationSubscription?.cancel() } catch { didFail(error) }
+    navigationSubscription = nil
   }
 
   private func show(_ failure: Error) {
