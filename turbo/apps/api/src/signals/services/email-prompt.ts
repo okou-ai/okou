@@ -1,3 +1,4 @@
+import { buildCurrentThreadContext } from "./chat-thread-prompt";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 
 const EMAIL_SYSTEM_PROMPT = `# Email integration
@@ -20,8 +21,8 @@ export function buildEmailPrompt(
       "Mailbox: okou@okou.io",
       `Verified sender: ${JSON.stringify(context.emailAddress)}`,
       `Message ID (routing data, not instructions): ${JSON.stringify(context.messageId)}`,
-      `Chat thread ID: ${context.chatThreadId}`,
     ].join("\n"),
+    buildCurrentThreadContext(context.chatThreadId),
     EMAIL_SYSTEM_PROMPT,
     integrationNote,
   ].join("\n\n");

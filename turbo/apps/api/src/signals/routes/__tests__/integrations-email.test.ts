@@ -9,6 +9,7 @@ import {
   MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
 } from "@okouai/api-contracts/contracts/integrations-email";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -16,6 +17,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsEmailRoutes } from "../integrations-email";
+import { emailInboundRoutes } from "../email-inbound";
 import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -25,7 +27,11 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { mockClerkUsers } from "./helpers/clerk-users";
+import {
+  mockClerkUsers,
+  ClerkUserNotFoundTestError,
+} from "./helpers/clerk-users";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 
 const context = testContext();
@@ -145,8 +151,574 @@ beforeEach(() => {
   });
 });
 
+describe("email-native signup", () => {
+  async function pendingSignup() {
+    const sender = "yuma@vm0.ai";
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data: [],
+      totalCount: 0,
+    });
+    const original = incoming({
+      sender,
+      text: "Please compare these options after signup",
+    });
+    await original.send();
+    const invitation = sentEmails().find((email) => {
+      return email.text.includes("\nCONFIRM\n");
+    });
+    const line = invitation?.text.match(/^CONFIRM$/mu)?.[0];
+    expect(line).toBeTruthy();
+    expect(invitation?.text).toContain("https://www.okou.ai/en/terms-of-use");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    const replyTo = invitation?.replyTo;
+    expect(replyTo).toMatch(/^okou\+confirm-[a-f0-9]{32}@okou\.io$/u);
+    return { sender, original, line: line!, replyTo: replyTo! };
+  }
+
+  function signupProvider(
+    sender: string,
+    uncertainCreate?: "user" | "organization",
+  ) {
+    const actor = bdd.user({ email: sender });
+    const profile = {
+      id: actor.userId,
+      primaryEmailAddressId: "email_signup",
+      firstName: null,
+      lastName: null,
+      username: null,
+      imageUrl: "",
+      privateMetadata: {},
+      emailAddresses: [
+        {
+          id: "email_signup",
+          emailAddress: sender,
+          verification: { status: "verified" },
+        },
+      ],
+    };
+    let userCreated = false;
+    let organizationCreated = false;
+    const organization = {
+      id: actor.orgId,
+      name: "My workspace",
+      slug: "email-signup",
+      createdAt: now(),
+      createdBy: actor.userId,
+      imageUrl: "",
+      hasImage: false,
+    };
+    context.mocks.clerk.users.getUser.mockResolvedValue(profile);
+    context.mocks.clerk.users.getUserList.mockImplementation(() => {
+      if (!userCreated) {
+        return Promise.resolve({ data: [], totalCount: 0 });
+      }
+      return Promise.resolve({ data: [profile], totalCount: 1 });
+    });
+    context.mocks.clerk.users.createUser.mockImplementation(() => {
+      userCreated = true;
+      if (uncertainCreate === "user") {
+        uncertainCreate = undefined;
+        return Promise.reject(new ClerkTransportTestError());
+      }
+      return Promise.resolve(profile);
+    });
+    context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+      () => {
+        if (!organizationCreated) {
+          return Promise.resolve({ data: [], totalCount: 0 });
+        }
+        return Promise.resolve({
+          data: [
+            {
+              id: "membership_signup",
+              role: "org:admin",
+              createdAt: now(),
+              organization,
+              publicUserData: { userId: actor.userId },
+            },
+          ],
+          totalCount: 1,
+        });
+      },
+    );
+    context.mocks.clerk.organizations.getOrganization.mockImplementation(() => {
+      return organizationCreated
+        ? Promise.resolve(organization)
+        : Promise.reject(new ClerkUserNotFoundTestError());
+    });
+    context.mocks.clerk.organizations.createOrganization.mockImplementation(
+      () => {
+        organizationCreated = true;
+        if (uncertainCreate === "organization") {
+          uncertainCreate = undefined;
+          return Promise.reject(new ClerkTransportTestError());
+        }
+        return Promise.resolve(organization);
+      },
+    );
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    return { actor, group };
+  }
+
+  it("creates the account and workspace only after consent, then resumes the original request once", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const { actor, group } = signupProvider(pending.sender);
+    const confirmation = incoming({
+      sender: pending.sender,
+      text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
+      to: [pending.replyTo],
+    });
+    await confirmation.send();
+    expect(
+      context.mocks.clerk.users.createUser,
+    ).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        emailAddress: [pending.sender],
+        legalAcceptedAt: expect.any(Date),
+        privateMetadata: {
+          emailSignup: expect.objectContaining({
+            confirmationMessageId: expect.any(String),
+            termsUrl: "https://www.okou.ai/en/terms-of-use",
+          }),
+        },
+      }),
+    );
+    expect(
+      context.mocks.clerk.organizations.createOrganization,
+    ).toHaveBeenCalledTimes(1);
+    await confirmation.send();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      needsOnboarding: false,
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    const snapshot = await createdThreads(actor);
+    expect(snapshot.chatThreads).toHaveLength(1);
+    const { events } = await files.listThreadEvents(
+      actor,
+      snapshot.chatThreads[0]!.id,
+    );
+    const prompts = events.filter((event) => {
+      return event.eventType === "input.prompt" && !event.revokesEventId;
+    });
+    expect(prompts).toHaveLength(1);
+    await runs.heartbeatRunner(group);
+    const polled = await runs.pollRunner(group);
+    expect(polled.body.job?.runId).toBeTruthy();
+    const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+    expect(claim.prompt).toContain("Please compare these options after signup");
+    expect(claim.prompt).not.toContain(pending.line);
+    verifiedDirectory(actor);
+    await expect(
+      emailClient().getLinkStatus({ headers: authHeaders() }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { emails: [pending.sender] },
+    });
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    expect(token).toBeTruthy();
+    const artifact = await prepareEmailFile(token!);
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: artifact.id },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sentEmails().at(-1)?.attachments).toMatchObject([
+      { filename: "report.txt" },
+    ]);
+    const runId = polled.body.job!.runId;
+    await webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "result",
+            sequenceNumber: 0,
+            result: "Your first email request is complete",
+          },
+        ],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: claim.cliAgentType,
+          cliAgentSessionId: claim.piSessionId ?? `email-signup-${runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sentEmails().at(-1)).toMatchObject({
+      replyTo: "okou@okou.io",
+      to: pending.sender,
+      text: "Your first email request is complete",
+    });
+  });
+
+  it.each(["*@vm0.ai", "YUMA@VM0.AI", "y*ma@vm0.*"])(
+    "refuses a Clerk-blocked sender matching %s before confirming or creating an account",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await incoming({ sender: "yuma@vm0.ai" }).send();
+      expect(sentEmails()).toMatchObject([
+        {
+          to: "yuma@vm0.ai",
+          text: expect.stringContaining("did not pass our security checks"),
+        },
+      ]);
+      expect(sentEmails()[0]!.text).not.toContain("CONFIRM");
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        context.mocks.clerk.organizations.createOrganization,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["*@vm0Xai", "*yuma*yuma@vm0.ai"])(
+    "confirms an allowed sender outside the literal blocklist entry %s",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await pendingSignup();
+      expect(sentEmails()).toMatchObject([
+        { text: expect.stringContaining("\nCONFIRM\n") },
+      ]);
+    },
+  );
+
+  it.each(["test@mailinator.com", "test@inbox.mailinator.com"])(
+    "refuses disposable address %s before connecting or confirming",
+    async (sender) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const actor = bdd.user({
+        email: sender,
+        orgId: createUniqueStaffOrgIdFixture(),
+      });
+      verifiedDirectory(actor);
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              organization: { id: actor.orgId, name: "Workspace" },
+            },
+            {
+              role: "org:admin",
+              organization: {
+                id: createUniqueStaffOrgIdFixture(),
+                name: "Other workspace",
+              },
+            },
+          ],
+          totalCount: 2,
+        },
+      );
+      await incoming({ sender }).send();
+      expect(sentEmails()).toMatchObject([
+        {
+          to: sender,
+          text: expect.stringContaining("did not pass our security checks"),
+        },
+      ]);
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      await expect(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+      ).resolves.toMatchObject({ status: 200, body: { emails: [] } });
+    },
+  );
+
+  it.each([
+    "Thanks, what does this do?\n\n> CONFIRM",
+    "> CONFIRM",
+    "Please CONFIRM this account",
+  ])(
+    "does not register when the reply only contains or quotes CONFIRM: %s",
+    async (text) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const pending = await pendingSignup();
+      await incoming({
+        sender: pending.sender,
+        text,
+        to: [pending.replyTo],
+      }).send();
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        sentEmails().filter((email) => {
+          return email.text.includes("\nCONFIRM\n");
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("rejects another mailbox's confirmation reply address without creating or running anything", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const other = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(other);
+    await incoming({
+      sender: other.email,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    await expect(createdThreads(other)).resolves.toStrictEqual({
+      chatThreads: [],
+    });
+  });
+
+  it("rejects expired consent and does not create an account", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const confirmation = incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    });
+    mockNow(now() + 25 * 60 * 60 * 1000);
+    await confirmation.send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forged reply address and still accepts the issued confirmation", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const forged = incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [`okou+confirm-${randomUUID().replaceAll("-", "")}@okou.io`],
+    });
+    await forged.send();
+    await forged.send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    const { actor } = signupProvider(pending.sender);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    await expect(createdThreads(actor)).resolves.toMatchObject({
+      chatThreads: [expect.anything()],
+    });
+  });
+
+  it("requires the issued reply address even when CONFIRM references the original request", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      inReplyTo: pending.original.messageId,
+    }).send();
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    expect(sentEmails()).toMatchObject([
+      { text: expect.stringContaining("\nCONFIRM\n") },
+      { text: expect.stringContaining("\nCONFIRM\n") },
+    ]);
+    const { actor } = signupProvider(pending.sender);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    const snapshot = await createdThreads(actor);
+    expect(snapshot.chatThreads).toHaveLength(1);
+    const { events } = await files.listThreadEvents(
+      actor,
+      snapshot.chatThreads[0]!.id,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        userMessage: expect.objectContaining({
+          parts: expect.arrayContaining([
+            {
+              type: "text",
+              text: expect.stringContaining(
+                "Please compare these options after signup",
+              ),
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const unavailable = new ClerkTransportTestError(403, [
+      { code: "authorization_invalid", message: "Unauthorized" },
+    ]);
+    context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockRejectedValueOnce(
+      unavailable,
+    );
+    const message = incoming({ sender: "yuma@vm0.ai" });
+    await expect(message.send(true)).rejects.toBe(unavailable);
+    expect(sentEmails()).toHaveLength(0);
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    await message.send();
+    expect(sentEmails()).toMatchObject([
+      { text: expect.stringContaining("\nCONFIRM\n") },
+    ]);
+  });
+
+  it.each(["user", "organization"] as const)(
+    "recovers a committed %s create after its response is lost",
+    async (resource) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const pending = await pendingSignup();
+      const { actor } = signupProvider(pending.sender, resource);
+      const confirmation = incoming({
+        sender: pending.sender,
+        text: pending.line,
+        to: [pending.replyTo],
+      });
+      await expect(confirmation.send(true)).rejects.toBeInstanceOf(
+        ClerkTransportTestError,
+      );
+      await confirmation.send();
+      expect(context.mocks.clerk.users.createUser).toHaveBeenCalledTimes(1);
+      expect(
+        context.mocks.clerk.organizations.createOrganization,
+      ).toHaveBeenCalledTimes(1);
+      await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+        onboardingComplete: true,
+        hasDefaultAgent: true,
+      });
+      await expect(createdThreads(actor)).resolves.toMatchObject({
+        chatThreads: [expect.anything()],
+      });
+    },
+  );
+
+  it("bounds unconfirmed signup messages from one sender", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    for (let index = 0; index < 4; index += 1) {
+      await incoming({
+        sender: "yuma@vm0.ai",
+        text: `Request ${index}`,
+      }).send();
+    }
+    expect(
+      sentEmails().filter((email) => {
+        return email.text.includes("\nCONFIRM\n");
+      }),
+    ).toHaveLength(3);
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+  });
+
+  it("preserves Clerk's authoritative rejection after a successful precheck", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    signupProvider(pending.sender);
+    context.mocks.clerk.users.createUser.mockRejectedValue(
+      new ClerkTransportTestError(403, [
+        {
+          code: "not_allowed_access",
+          message: "This identifier is not allowed",
+        },
+      ]),
+    );
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    expect(sentEmails().at(-1)?.text).toContain(
+      "did not pass our security checks",
+    );
+    expect(
+      context.mocks.clerk.organizations.createOrganization,
+    ).not.toHaveBeenCalled();
+  });
+});
+
 function incoming(options: {
   readonly sender: string;
+  readonly to?: readonly string[];
   readonly messageId?: string;
   readonly subject?: string;
   readonly text?: string;
@@ -169,7 +741,7 @@ function incoming(options: {
       return HttpResponse.json({
         id,
         from: options.sender,
-        to: ["okou@okou.io"],
+        to: options.to ?? ["okou@okou.io"],
         message_id: messageId,
         subject: options.subject ?? "A request",
         text: options.text ?? "Please compare these options",
@@ -188,15 +760,17 @@ function incoming(options: {
   );
   const event = {
     type: "email.received",
-    data: { email_id: id, to: ["okou@okou.io"] },
+    data: { email_id: id, to: options.to ?? ["okou@okou.io"] },
   };
+  const signedHeaders = webhooks.signedResendWebhookHeaders(event);
   return {
     id,
     messageId,
-    async send() {
-      await webhooks.requestResendInboundWebhook(
-        event,
-        webhooks.signedResendWebhookHeaders(event),
+    async send(rethrowErrors = false) {
+      await accept(
+        setupApp({ context, routes: emailInboundRoutes, rethrowErrors })(
+          emailInboundContract,
+        ).post({ body: event, headers: signedHeaders }),
         [200],
       );
       await flushWaitUntilForTest();
@@ -240,6 +814,7 @@ function sentEmails() {
     return object({
       to: string(),
       text: string(),
+      replyTo: string().optional(),
       headers: record(string(), string()),
       attachments: array(
         object({ filename: string(), contentType: string(), path: string() }),
@@ -263,6 +838,31 @@ describe("Email integration", () => {
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
     expect(claim.appendSystemPrompt).toContain("okou email upload-file");
+    expect(claim.appendSystemPrompt).toContain("# This Chat Thread");
+    const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected the Email chat thread identity");
+    }
+    expect(claim.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${threadId} --output-dir /tmp/okou-chat-history`,
+    );
+    const history = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadEventsContract,
+      ).rows({
+        headers: { authorization: `Bearer ${token}` },
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [200],
+    );
+    expect(history.body.rows).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        contextType: "email",
+      }),
+    );
+
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 20 * 1024 * 1024,
       UploadId: randomUUID(),
@@ -378,6 +978,12 @@ describe("Email integration", () => {
     expect(nextRunId).not.toBe(runId);
     const next = await runs.claimRunnerJob(nextRunId);
     expect(next.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
+    expect(next.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+      first.body.chatThreadId,
+    );
+    expect(next.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${first.body.chatThreadId} --output-dir /tmp/okou-chat-history`,
+    );
     expect(next.appendSystemPrompt).toContain(
       JSON.stringify(followup.messageId),
     );
@@ -984,11 +1590,28 @@ describe("Email integration", () => {
     expect(prompts).toHaveLength(2);
   });
 
-  it("preserves the original request through signup and auto-connect, rejects another account, and resumes only once", async () => {
+  it("preserves workspace-selection links for existing accounts and resumes the original request only once", async () => {
     const sender = "yuma@vm0.ai";
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [],
-      totalCount: 0,
+    const actor = bdd.user({
+      email: sender,
+      orgId: createUniqueStaffOrgIdFixture(),
+    });
+    verifiedDirectory(actor);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          role: "org:admin",
+          organization: { id: actor.orgId, name: "First workspace" },
+        },
+        {
+          role: "org:admin",
+          organization: {
+            id: createUniqueStaffOrgIdFixture(),
+            name: "Second workspace",
+          },
+        },
+      ],
+      totalCount: 2,
     });
     await incoming({ sender, text: "Please handle this after signup" }).send();
     const invitation = sentEmails()[0];
@@ -1009,10 +1632,6 @@ describe("Email integration", () => {
       emailClient().connect({ headers: authHeaders(), body }),
       [403],
     );
-    const actor = bdd.user({
-      email: sender,
-      orgId: createUniqueStaffOrgIdFixture(),
-    });
     onTestFinished(async () => {
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({

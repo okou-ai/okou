@@ -211,6 +211,9 @@ importers:
       croner:
         specifier: ^9.1.0
         version: 9.1.0
+      disposable-email-domains-js:
+        specifier: 1.26.0
+        version: 1.26.0
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@electric-sql/pglite@0.5.14)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
@@ -6377,6 +6380,9 @@ packages:
   direction@2.0.1:
     resolution: {integrity: sha512-9S6m9Sukh1cZNknO1CWAr2QAWsbKLafQiyM5gZ7VgXHeuaoUwffKN4q6NC4A/Mf9iiPlOXQEKW/Mv/mh9/3YFA==}
     hasBin: true
+
+  disposable-email-domains-js@1.26.0:
+    resolution: {integrity: sha512-pSqALZAiuw6HDC1HqhhtvShRnniUNObQ6kzwa5N280XbyxxCPBZnQQ7fO6Uk/CNTi4cAaKE1UZl3Mc30Zfj4UA==}
 
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
@@ -14545,6 +14551,8 @@ snapshots:
   dijkstrajs@1.0.3: {}
 
   direction@2.0.1: {}
+
+  disposable-email-domains-js@1.26.0: {}
 
   doctrine@2.1.0:
     dependencies:

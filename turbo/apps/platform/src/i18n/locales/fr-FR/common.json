@@ -1671,8 +1671,7 @@
       "sending": "Envoi…",
       "sent": "Envoyé dans une nouvelle discussion",
       "unavailable": "Cette suggestion n’est plus disponible. Les suggestions ont été actualisées.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Utiliser la suggestion"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Joindre",

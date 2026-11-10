@@ -307,12 +307,18 @@ final class ComposerVoiceInputTests: XCTestCase {
     input.insertText(" new notes")
     await voice.finish()
     XCTAssertEqual(composer.text, "Before old after new notes")
+    XCTAssertEqual(voice.phase, .saved)
     XCTAssertNotNil(voice.error)
     fixture.state.value.withLock { $0.quotaAllowed = false }
+    // Explicit insertion needs a focused editor; an unfocused selection means append.
+    // Recreate focus loss so this does not depend on recording-phase render timing.
+    input.resignFirstResponder()
+    try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 7, length: 3)
     await voice.finish()
     XCTAssertEqual(composer.text, "Before spoken words after new notes")
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 1)
   }
 
   private func temporaryRoot() -> URL {

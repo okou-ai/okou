@@ -1,7 +1,9 @@
+import type { MouseEvent } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import { shouldHandleLinkClick } from "../../views/router/link-click.ts";
 import { projects$ } from "./projects.ts";
-import { expandProject$ } from "./project-expansion.ts";
+import { expandProject$, toggleProject$ } from "./project-expansion.ts";
 import { showChatSidebar$ } from "../okou-page/nav.ts";
 import { command, computed } from "ccstate";
 import { pathParams$ } from "../route.ts";
@@ -29,3 +31,31 @@ export const locateProject$ = command(({ get, set }, projectId: string) => {
   set(expandProject$, projectId);
   set(showChatSidebar$);
 });
+
+/**
+ * A click on a Project's name in the chat list. Elsewhere, the link opens the
+ * Project's page and the click unfolds its chats. On that page the click folds
+ * or unfolds them instead and cancels the link: navigating to the open page
+ * again would reload it, rerunning the page's setup.
+ */
+export const clickProjectName$ = command(
+  ({ get, set }, projectId: string, event: MouseEvent<HTMLAnchorElement>) => {
+    // A new tab, window or modified click keeps the browser's behaviour.
+    if (!shouldHandleLinkClick(event)) {
+      return;
+    }
+    const open = get(selectedProjectId$) === projectId;
+    if (open) {
+      event.preventDefault();
+    }
+    // The second click of a rename double-click leaves the fold alone.
+    if (event.detail > 1) {
+      return;
+    }
+    if (open) {
+      set(toggleProject$, projectId);
+    } else {
+      set(expandProject$, projectId);
+    }
+  },
+);

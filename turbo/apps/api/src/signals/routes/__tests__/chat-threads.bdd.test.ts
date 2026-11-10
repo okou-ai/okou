@@ -1,5 +1,6 @@
 import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { HttpResponse } from "msw";
+import { getRequestListener } from "@hono/node-server";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
@@ -4142,6 +4143,66 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await fixture.finish();
   }, 120_000);
 
+  function useNodeAdapterGlobals() {
+    const originalRequest = globalThis.Request;
+    const originalResponse = globalThis.Response;
+    onTestFinished(() => {
+      Object.defineProperty(globalThis, "Request", { value: originalRequest });
+      Object.defineProperty(globalThis, "Response", {
+        value: originalResponse,
+      });
+    });
+    // Match the Vercel entry's default lightweight Request/Response globals.
+    getRequestListener(
+      createApp({
+        signal: context.signal,
+        routes: chatThreadsArtifactsSyncRoutes,
+      }).fetch,
+    );
+  }
+
+  it.each([
+    { endpoint: "legacy", providerStatus: 200, afterRefresh: false },
+    { endpoint: "explicit mode", providerStatus: 201, afterRefresh: false },
+    { endpoint: "explicit mode", providerStatus: 200, afterRefresh: true },
+  ] as const)(
+    "drive upload returns HTTP $providerStatus success with node adapter globals through the $endpoint route (after refresh: $afterRefresh)",
+    async ({ endpoint, providerStatus, afterRefresh }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      useNodeAdapterGlobals();
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+      });
+      const file = {
+        id: "drive-upload-success",
+        name: "bilingual.docx",
+        webViewLink:
+          "https://drive.google.com/file/d/drive-upload-success/view",
+      };
+      let attempts = 0;
+      const upload = mockGoogleDriveArtifactUpload(file, {
+        contentResponse: () => {
+          attempts += 1;
+          return afterRefresh && attempts === 1
+            ? HttpResponse.json({ error: { code: 401 } }, { status: 401 })
+            : HttpResponse.json(file, { status: providerStatus });
+        },
+      });
+      const response =
+        endpoint === "legacy"
+          ? await fixture.uploadLegacy()
+          : await fixture.upload("original");
+      expect(response.status).toBe(200);
+      expect(response.body).toStrictEqual(file);
+      expect(upload.bodies).toHaveLength(afterRefresh ? 2 : 1);
+      expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
+    },
+    10_000,
+  );
+
   it.each(["legacy", "explicit mode"] as const)(
     "drive upload returns the controlled folder lookup error through the %s route",
     async (endpoint) => {
@@ -4215,6 +4276,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       docsImportFixture(),
       "docx",
     );
+    useNodeAdapterGlobals();
     const oauth = mockGoogleDriveConnectorOAuth();
     const upload = mockGoogleDriveArtifactUpload(
       { id: "unexpected", name: "report" },
@@ -4242,16 +4304,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     { phase: "session", providerStatus: 400, afterRefresh: false },
     { phase: "session", providerStatus: 403, afterRefresh: false },
     { phase: "session", providerStatus: 403, afterRefresh: true },
+    { phase: "session", providerStatus: 401, afterRefresh: true },
     { phase: "content", providerStatus: 400, afterRefresh: false },
     { phase: "content", providerStatus: 503, afterRefresh: false },
     { phase: "content", providerStatus: 403, afterRefresh: true },
   ] as const)(
-    "drive upload returns a controlled error for $phase HTTP $providerStatus (after refresh: $afterRefresh)",
+    "drive upload returns a controlled error for $phase HTTP $providerStatus with node adapter globals (after refresh: $afterRefresh)",
     async ({ phase, providerStatus, afterRefresh }) => {
       const fixture = await publicOfficeConversionSource(
         docsImportFixture(),
         "docx",
       );
+      useNodeAdapterGlobals();
       const oauth = mockGoogleDriveConnectorOAuth({
         refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
       });
@@ -4294,6 +4358,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         docsImportFixture(),
         "docx",
       );
+      useNodeAdapterGlobals();
       const oauth = mockGoogleDriveConnectorOAuth();
       const upload = mockGoogleDriveArtifactUpload(
         { id: "unexpected", name: "report" },

@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Mail } from "lucide-react";
 import { BrandSlack, cn } from "@okouai/ui";
 import type { UserMessageRenderPart } from "../../signals/chat-page/chat-event.ts";
 import { WhatsappMark } from "./components/whatsapp-mark.tsx";
@@ -91,6 +91,11 @@ function sourceMessageLabel(
   kind: ExternalSourceKind,
 ): string {
   switch (kind) {
+    case "email": {
+      return t(($) => {
+        return $.works.email.title;
+      });
+    }
     case "whatsapp": {
       return t(($) => {
         return $.works.whatsapp.name;
@@ -156,6 +161,8 @@ function SourceMessageIcon({
         <WhatsappMark size={15} className="shrink-0" />
       ) : sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "email" ? (
+        <Mail size={15} aria-hidden="true" className="shrink-0" />
       ) : sourceKind === "discord" ? (
         <DiscordMark size={15} />
       ) : (
