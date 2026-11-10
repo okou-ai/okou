@@ -22,7 +22,7 @@
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "composer-layout-\(UUID().uuidString)", isDirectory: true)
       let draft = ComposerDraftStore(
-        target: .agent("layout-preview"), commands: ChatCommands(client: client),
+        target: .agent("layout-preview"), commands: ChatCommands(client: client, sync: ChatSync(client: client)),
         storage: ChatDraftStorage(scope: scope, directory: directory), didFail: { _ in })
       draft.setForeground(true)
       _composer = State(initialValue: draft)
