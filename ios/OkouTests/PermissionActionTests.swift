@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Synchronization
 import XCTest
 
 @testable import Okou
@@ -30,24 +31,21 @@ final class PermissionActionTests: XCTestCase {
     conversation.setDetailVisible(true, owner: owner)
     let action = try descriptor(fixture)
     let card = conversation.permissionActions.card(action)
-    await card.loadIfNeeded()
-    XCTAssertTrue(card.hasPermission)
-    XCTAssertFalse(card.applied)
-    assertPermissionReadCounts(fixture, count: 1)
+    let initial = try await card.resource.load()
+    XCTAssertTrue(initial.metadata?.contains(card.action.permission) == true)
+    XCTAssertFalse(card.applied(initial))
 
     fixture.state.withLock { $0.grants = PermissionHTTPFixture.grant() }
     // Reused rows and ordinary history updates retain the current visit's result.
-    await conversation.permissionActions.card(action).loadIfNeeded()
+    _ = try await conversation.permissionActions.card(action).resource.load()
     await conversation.refresh()
-    await card.loadIfNeeded()
-    XCTAssertFalse(card.applied)
-    assertPermissionReadCounts(fixture, count: 1)
+    let cached = try await card.resource.load()
+    XCTAssertFalse(card.applied(cached))
 
     conversation.setDetailVisible(false, owner: owner)
     conversation.setDetailVisible(true, owner: UUID())
-    await card.loadIfNeeded()
-    XCTAssertTrue(card.applied)
-    assertPermissionReadCounts(fixture, count: 2)
+    let revalidated = try await card.resource.load()
+    XCTAssertTrue(card.applied(revalidated))
   }
 
   func testReusingARowDoesNotCancelItsPageOwnedPermissionRead() async throws {
@@ -66,15 +64,15 @@ final class PermissionActionTests: XCTestCase {
     }
     conversation.setDetailVisible(true, owner: UUID())
     let card = conversation.permissionActions.card(try descriptor(fixture))
-    let row = Task { await card.loadIfNeeded() }
+    let row = Task { try await card.resource.load() }
     await fulfillment(of: [started], timeout: 3)
     row.cancel()
-    let reused = Task { await card.loadIfNeeded() }
+    let reused = Task { try await card.resource.load() }
     gate.open()
-    await row.value
-    await reused.value
-    XCTAssertTrue(card.hasPermission)
-    assertPermissionReadCounts(fixture, count: 1)
+    _ = try? await row.value
+    _ = try await reused.value
+    let snapshot5 = try await card.resource.load()
+    XCTAssertTrue(snapshot5.metadata?.contains(card.action.permission) == true)
   }
 
   func testConfirmRevalidatesTheConversationAfterLoadingTheCard() async throws {
@@ -104,15 +102,18 @@ final class PermissionActionTests: XCTestCase {
     }
     let operation = Task { await card.confirm() }
     await fulfillment(of: [started], timeout: 3)
+    let reviewed = try await card.resource.load()
     conversation.close()
     gate.open()
     await operation.value
     // Canceling an HTTP request cannot roll back a write the server already accepted.
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
-    XCTAssertFalse(card.canConfirm)
+    XCTAssertFalse(card.canConfirm(reviewed))
     let (reopened, refreshed) = try await setup(fixture)
     defer { reopened.close() }
-    XCTAssertEqual(refreshed.applied, fixture.state.withLock { $0.grants != "[]" })
+    let reopenedSnapshot = try await refreshed.resource.load()
+    XCTAssertEqual(
+      refreshed.applied(reopenedSnapshot), fixture.state.withLock { $0.grants != "[]" })
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
   }
 
@@ -123,7 +124,8 @@ final class PermissionActionTests: XCTestCase {
     card.duration = .week
     await card.confirm()
     XCTAssertNil(card.error)
-    XCTAssertTrue(card.applied)
+    let snapshot6 = try await card.resource.load()
+    XCTAssertTrue(card.applied(snapshot6))
     let refreshed = try await ChatPermissions(client: fixture.http.client).load(card.action)
     XCTAssertEqual(refreshed.grants.first?.action, .allow)
     await card.confirm()
@@ -166,7 +168,8 @@ final class PermissionActionTests: XCTestCase {
     defer { conversation.close() }
     await card.confirm()
     XCTAssertNotNil(card.error)
-    XCTAssertTrue(card.applied)
+    let snapshot7 = try await card.resource.load()
+    XCTAssertTrue(card.applied(snapshot7))
     XCTAssertTrue(card.needsContinuation)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     await card.confirm()
@@ -183,12 +186,14 @@ final class PermissionActionTests: XCTestCase {
     let (conversation, card) = try await setup(fixture, action: "deny")
     await card.confirm()
     XCTAssertNotNil(card.error)
-    XCTAssertFalse(card.applied)
+    let snapshot8 = try await card.resource.load()
+    XCTAssertFalse(card.applied(snapshot8))
     await card.confirm()
     XCTAssertNil(card.error)
     let saved = try await ChatPermissions(client: fixture.http.client).load(card.action)
     XCTAssertEqual(saved.grants.first?.action, .deny)
     XCTAssertNil(saved.grants.first?.expiresAt)
+    let reviewed = try await card.resource.load()
     conversation.close()
     let requests = fixture.state.withLock { $0.requests.count }
     await card.confirm()
@@ -211,10 +216,114 @@ final class PermissionActionTests: XCTestCase {
       let (conversation, card) = try await setup(fixture)
       defer { conversation.close() }
       await card.refresh()
-      XCTAssertEqual(card.applied, variant < 2)
-      XCTAssertEqual(card.canConfirm, variant == 2)
+      let snapshot9 = try await card.resource.load()
+      XCTAssertEqual(card.applied(snapshot9), variant < 2)
+      XCTAssertEqual(card.canConfirm(snapshot9), variant == 2)
       XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
     }
+  }
+
+  func testNormalizedReadsShareFailuresAndOnlyExplicitRefreshRetries() async throws {
+    let fixture = PermissionHTTPFixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    let other = conversation.permissionActions.card(try descriptor(fixture, action: "deny"))
+    fixture.state.withLock { $0.metadataStatus = 403 }
+    // Different write intent shares the same previously loaded connector read.
+    let cached = try await other.resource.load()
+    XCTAssertTrue(cached.metadata?.contains("mail.send") == true)
+    await other.refresh()
+    for resource in [card.resource, other.resource] {
+      do {
+        _ = try await resource.load()
+        XCTFail("The shared permission failure must remain visible")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.statusCode, 403)
+      }
+    }
+    fixture.state.withLock { $0.metadataStatus = 200 }
+    do {
+      _ = try await card.resource.load()
+      XCTFail("Observing a failed read must not retry it")
+    } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 403) }
+    await card.refresh()
+    let restored = try await other.resource.load()
+    XCTAssertTrue(restored.metadata?.contains("mail.send") == true)
+    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+  }
+
+  func testRetiringADetailCancelsOriginalReadAndReentryCannotPublishItsResult() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Original permission HTTP read started")
+    let cancelled = expectation(description: "Original permission HTTP read cancelled")
+    let fixtureReadStarted = Mutex(false)
+    let fixture = PermissionHTTPFixture { request in
+      if request.url!.path == "/api/agents/\(PermissionHTTPFixture.agentID)" {
+        if !fixtureReadStarted.withLock({ value in
+          let previous = value
+          value = true
+          return previous
+        }) {
+          started.fulfill()
+          await gate.wait()
+          if Task.isCancelled { cancelled.fulfill() }
+        }
+      }
+    }
+    let conversation = makeConversation(fixture)
+    defer {
+      gate.open()
+      conversation.close()
+    }
+    let owner = UUID()
+    conversation.setDetailVisible(true, owner: owner)
+    let card = conversation.permissionActions.card(try descriptor(fixture))
+    let original = Task { try await card.resource.load() }
+    await fulfillment(of: [started], timeout: 3)
+    conversation.setDetailVisible(false, owner: owner)
+    await fulfillment(of: [cancelled], timeout: 3)
+    do {
+      _ = try await original.value
+      XCTFail("A retired visit must reject its original result")
+    } catch {
+      XCTAssertTrue(error is CancellationError || (error as? URLError)?.code == .cancelled)
+    }
+    // Release the controlled server before acquiring the next visit's read.
+    gate.open()
+    fixture.state.withLock { $0.grants = PermissionHTTPFixture.grant() }
+    conversation.setDetailVisible(true, owner: UUID())
+    let current = try await card.resource.load()
+    XCTAssertTrue(card.applied(current))
+    conversation.close()
+    do {
+      _ = try await card.resource.load()
+      XCTFail("Closing must prevent future reads, even through a retained resource")
+    } catch { XCTAssertTrue(error is CancellationError) }
+  }
+
+  func testReadInvalidationAndDetailReentryKeepUncertainContinuationIdentity() async throws {
+    var state = PermissionHTTPFixture.State()
+    state.loseResumeResponseOnce = true
+    let fixture = PermissionHTTPFixture(initial: state)
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    await card.confirm()
+    XCTAssertTrue(card.needsContinuation)
+    XCTAssertTrue(conversation.permissionActions.isBusy)
+    card.resource.invalidate()
+    await card.refresh()
+    conversation.permissionActions.deactivate()
+    conversation.permissionActions.activate(owner: UUID())
+    let refreshed = try await card.resource.load()
+    XCTAssertTrue(card.applied(refreshed))
+    XCTAssertTrue(card.needsContinuation)
+    await card.confirm()
+    XCTAssertFalse(card.needsContinuation)
+    XCTAssertFalse(conversation.permissionActions.isBusy)
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
+    let requests = fixture.state.withLock { $0.requests }
+    XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 1)
+    XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
   }
 
   private func setup(
@@ -224,6 +333,7 @@ final class PermissionActionTests: XCTestCase {
   {
     let conversation = makeConversation(fixture)
     await conversation.refresh()
+    conversation.setDetailVisible(true, owner: UUID())
     let card = conversation.permissionActions.card(
       try descriptor(fixture, action: action, callback: callback))
     await card.refresh()
@@ -244,17 +354,4 @@ final class PermissionActionTests: XCTestCase {
         url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
   }
 
-  private func assertPermissionReadCounts(
-    _ fixture: PermissionHTTPFixture, count: Int, file: StaticString = #filePath, line: UInt = #line
-  ) {
-    let requests = fixture.state.withLock { $0.requests }
-    for path in [
-      "/api/feature-switches",
-      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
-      "/api/connector-catalog/gmail/permissions",
-    ] {
-      XCTAssertEqual(
-        requests.filter { $0.url!.path == path }.count, count, path, file: file, line: line)
-    }
-  }
 }

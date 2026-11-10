@@ -1,10 +1,52 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
 struct PermissionActionCard: View {
-  @Bindable var store: PermissionActionStore
+  let store: PermissionActionStore
   let loadsState: Bool
+
+  var body: some View {
+    StoreProvider(store.resource.store) {
+      PermissionActionCardContent(store: store, loadsState: loadsState)
+    }
+  }
+}
+
+private struct PermissionActionCardContent: View {
+  @Bindable var store: PermissionActionStore
   @State private var showsDetails = false
+  @LoadableValue private var page: Loadable<ChatPermissionSnapshot>
+
+  init(store: PermissionActionStore, loadsState: Bool) {
+    self.store = store
+    _page = LoadableValue(task: loadsState ? store.resource.value : store.resource.unrequested)
+  }
+
+  private var snapshot: ChatPermissionSnapshot? {
+    if case .hasData(let value) = page { return value }
+    return nil
+  }
+  private var isLoading: Bool {
+    if case .loading = page { return true }
+    return false
+  }
+  private var error: String? {
+    if case .hasError(let error) = page, !(error is CancellationError) {
+      return ChatRequestFailure.message(for: error)
+    }
+    return store.error
+  }
+  private var metadata: ChatPermissionMetadata? { snapshot?.metadata }
+  private var hasPermission: Bool { metadata?.contains(store.action.permission) == true }
+  private var applied: Bool { snapshot.map(store.applied) == true }
+  private var grant: ChatPermissionRule? {
+    snapshot?.grants.last {
+      $0.connectorSlug == store.action.connectorSlug && $0.permission == store.action.permission
+        && $0.action == store.action.action
+    }
+  }
+  private var canConfirm: Bool { snapshot.map(store.canConfirm) == true }
 
   private var permission: String {
     store.action.permission == "__unknown__"
@@ -12,32 +54,32 @@ struct PermissionActionCard: View {
   }
   private var status: String {
     if store.isSaving { return String(localized: "Saving permission…") }
-    if store.isLoading || (store.snapshot == nil && store.error == nil) {
+    if isLoading || (snapshot == nil && error == nil) {
       return String(localized: "Checking permission…")
     }
-    if store.error != nil { return String(localized: "Open details to check permission") }
-    if store.snapshot != nil && !store.hasPermission {
+    if error != nil { return String(localized: "Open details to check permission") }
+    if snapshot != nil && !hasPermission {
       return String(localized: "Permission unavailable")
     }
     if store.needsContinuation {
       return String(localized: "Permission saved · Continuation needed")
     }
-    if store.applied {
-      if let expiry = store.grant?.expiresAt, expiry > .now {
+    if applied {
+      if let expiry = grant?.expiresAt, expiry > .now {
         let date = expiry.formatted(.dateTime.month(.abbreviated).day().hour().minute())
         return String(localized: "Expires \(date)")
       }
       return store.action.action == .allow
         ? String(localized: "Allowed · No expiration") : String(localized: "Denied")
     }
-    if store.grant?.expiresAt.map({ $0 <= .now }) == true {
+    if grant?.expiresAt.map({ $0 <= .now }) == true {
       return String(localized: "Previous permission expired")
     }
     return String(localized: "Waiting for your confirmation")
   }
 
   var body: some View {
-    let connectorLabel = store.metadata?.label ?? store.action.connectorSlug
+    let connectorLabel = metadata?.label ?? store.action.connectorSlug
     ChatActionCard {
       ChatCardHeader(
         title: String(localized: "\(connectorLabel) permissions"),
@@ -49,16 +91,16 @@ struct PermissionActionCard: View {
           Text("Deny \(permission)")
         }
         Text(
-          store.snapshot?.connectorScoped == true
+          snapshot?.connectorScoped == true
             ? status
             : String(
               localized:
-                "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
+                "For \(snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
         )
         .lineLimit(1, reservesSpace: true)
       }
     } actions: {
-      if store.applied && !store.needsContinuation && store.error == nil && !store.isLoading
+      if applied && !store.needsContinuation && error == nil && !isLoading
         && !store.isSaving
       {
         HStack(spacing: OkouSpace.sm) {
@@ -83,7 +125,7 @@ struct PermissionActionCard: View {
         } label: {
           if store.needsContinuation {
             Text("Review continuation")
-          } else if store.error != nil {
+          } else if error != nil {
             Text("View details")
           } else {
             Text("Review permission")
@@ -96,20 +138,58 @@ struct PermissionActionCard: View {
     .sheet(isPresented: $showsDetails) {
       PermissionActionDetails(store: store).okouSheetBackground()
     }
-    .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
   }
 }
 
 struct PermissionActionDetails: View {
+  let store: PermissionActionStore
+
+  var body: some View {
+    StoreProvider(store.resource.store) { PermissionActionDetailsContent(store: store) }
+  }
+}
+
+private struct PermissionActionDetailsContent: View {
   @Bindable var store: PermissionActionStore
   @Environment(\.dismiss) private var dismiss
   @State private var confirmingContinuation = false
+  @LoadableValue private var page: Loadable<ChatPermissionSnapshot>
+
+  init(store: PermissionActionStore) {
+    self.store = store
+    _page = LoadableValue(task: store.resource.value)
+  }
+
+  private var snapshot: ChatPermissionSnapshot? {
+    if case .hasData(let value) = page { return value }
+    return nil
+  }
+  private var isLoading: Bool {
+    if case .loading = page { return true }
+    return false
+  }
+  private var error: String? {
+    if case .hasError(let error) = page, !(error is CancellationError) {
+      return ChatRequestFailure.message(for: error)
+    }
+    return store.error
+  }
+  private var metadata: ChatPermissionMetadata? { snapshot?.metadata }
+  private var hasPermission: Bool { metadata?.contains(store.action.permission) == true }
+  private var applied: Bool { snapshot.map(store.applied) == true }
+  private var grant: ChatPermissionRule? {
+    snapshot?.grants.last {
+      $0.connectorSlug == store.action.connectorSlug && $0.permission == store.action.permission
+        && $0.action == store.action.action
+    }
+  }
+  private var canConfirm: Bool { snapshot.map(store.canConfirm) == true }
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
-          if store.snapshot != nil || store.error != nil {
+          if snapshot != nil || error != nil {
             requestSummary
             confirmation
           }
@@ -118,7 +198,7 @@ struct PermissionActionDetails: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
       .overlay {
-        if store.snapshot == nil && store.error == nil {
+        if snapshot == nil && error == nil {
           ChatSettingsLoadingView(title: "Checking permission…")
         }
       }
@@ -127,6 +207,7 @@ struct PermissionActionDetails: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
+    .task { await store.refresh() }
   }
 
   private var requestSummary: some View {
@@ -137,9 +218,9 @@ struct PermissionActionDetails: View {
             .foregroundStyle(OkouColor.mutedForeground)
         }
         VStack(alignment: .leading, spacing: OkouSpace.xs) {
-          Text(store.metadata?.label ?? store.action.connectorSlug)
+          Text(metadata?.label ?? store.action.connectorSlug)
             .font(.okou(.headline)).foregroundStyle(OkouColor.foreground)
-          Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
+          Text("Requested by \(snapshot?.agentName ?? String(localized: "this Agent"))")
             .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
@@ -151,13 +232,13 @@ struct PermissionActionDetails: View {
         )
         .font(.okou(.subheadline, design: .monospaced)).foregroundStyle(OkouColor.mutedForeground)
         .textSelection(.enabled)
-        if let description = store.metadata?.permissions.first(where: {
+        if let description = metadata?.permissions.first(where: {
           $0.name == store.action.permission
         })?.description {
           Text(description).textSelection(.enabled)
         }
         Text(
-          store.snapshot?.connectorScoped == true
+          snapshot?.connectorScoped == true
             ? "These permissions apply to this connector across your chats and accounts."
             : "These permissions apply to your account for this Agent."
         )
@@ -176,24 +257,24 @@ struct PermissionActionDetails: View {
   }
 
   @ViewBuilder private var confirmation: some View {
-    if let error = store.error {
+    if let error = error {
       // A failed read is quiet, with its retry beside it.
-      if store.snapshot == nil && !store.isLoading {
+      if snapshot == nil && !isLoading {
         OkouLoadErrorRow(message: error, actionTitle: "Retry loading") { await store.refresh() }
       } else {
         OkouLoadErrorRow(message: error)
       }
     }
-    if store.snapshot != nil && !store.hasPermission && !store.isLoading {
+    if snapshot != nil && !hasPermission && !isLoading {
       Text("This permission is no longer available.")
     }
-    if store.applied && !store.isSaving {
+    if applied && !store.isSaving {
       VStack(alignment: .leading, spacing: OkouSpace.xs) {
         Label(
           store.action.action == .allow
             ? String(localized: "Allowed") : String(localized: "Denied"),
           okouSymbol: "circle-check")
-        if let expiry = store.grant?.expiresAt, expiry > .now {
+        if let expiry = grant?.expiresAt, expiry > .now {
           Text("Expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
             .okouSectionNote()
         } else if store.action.action == .allow {
@@ -201,7 +282,7 @@ struct PermissionActionDetails: View {
         }
       }
     }
-    if store.hasPermission && (!store.applied || store.needsContinuation || store.isSaving) {
+    if hasPermission && (!applied || store.needsContinuation || store.isSaving) {
       if store.action.action == .allow
         && (store.isSaving ? !confirmingContinuation : !store.needsContinuation)
       {
@@ -215,7 +296,7 @@ struct PermissionActionDetails: View {
             Text("Always").tag(ChatPermissionAction.Duration.always)
           }
           .okouValuePicker().labelsHidden()
-          .disabled(store.isSaving || store.isLoading)
+          .disabled(store.isSaving || isLoading)
           .accessibilityIdentifier("permission-duration")
         }
         .font(.okou(.body))
@@ -231,7 +312,7 @@ struct PermissionActionDetails: View {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }
         .buttonStyle(OkouButtonStyle(isPrimary: true))
-        .disabled(!store.canConfirm)
+        .disabled(!canConfirm)
         .accessibilityIdentifier("permission-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")

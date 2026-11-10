@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -6,6 +7,7 @@ import Observation
 /// Stable permission resources live with their conversation, independently of reused rows and sheets.
 @MainActor
 final class PermissionActionRegistry {
+  let store = CCState.Store()
   private let commands: ChatCommands
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
@@ -26,13 +28,23 @@ final class PermissionActionRegistry {
   }
 
   var isBusy: Bool {
-    cards.values.contains { $0.isSaving } || batches.values.contains { $0.isSaving }
+    cards.values.contains { $0.isSaving || $0.hasUnconfirmedOperation }
+      || batches.values.contains { $0.isSaving || $0.hasUnconfirmedOperation }
   }
 
   func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
     if let existing = batches[action] { return existing }
+    let resource =
+      batches.values.first {
+        $0.action.agentID.lowercased() == action.agentID.lowercased()
+          && Set($0.action.items) == Set(action.items)
+      }?.resource
+      ?? PermissionReadResource(
+        store: store, read: { [commands] in try await commands.batchPermissions.load(action) },
+        didFail: didFail)
     let card = PermissionBatchStore(
-      action: action, commands: commands, sync: sync, didFail: didFail, didContinue: didContinue)
+      action: action, resource: resource, commands: commands, sync: sync,
+      didFail: didFail, didContinue: didContinue)
     if closed {
       card.close()
     } else if owner != nil {
@@ -44,8 +56,16 @@ final class PermissionActionRegistry {
 
   func card(_ action: ChatPermissionAction) -> PermissionActionStore {
     if let existing = cards[action] { return existing }
+    let resource =
+      cards.values.first {
+        $0.action.agentID.lowercased() == action.agentID.lowercased()
+          && $0.action.connectorSlug == action.connectorSlug
+      }?.resource
+      ?? PermissionReadResource(
+        store: store, read: { [commands] in try await commands.permissions.load(action) },
+        didFail: didFail)
     let card = PermissionActionStore(
-      action: action, commands: commands, sync: sync,
+      action: action, resource: resource, commands: commands, sync: sync,
       didFail: didFail, didContinue: didContinue)
     if closed {
       card.close()
@@ -80,12 +100,13 @@ final class PermissionActionRegistry {
 final class PermissionActionStore {
   let action: ChatPermissionAction
   var duration: ChatPermissionAction.Duration
-  private(set) var snapshot: ChatPermissionSnapshot?
+  let resource: PermissionReadResource<ChatPermissionSnapshot>
   private(set) var isActive = false
-  private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var error: String?
   private(set) var needsContinuation = false
+  // Conversation eviction must not discard an uncertain write/continuation identity.
+  private(set) var hasUnconfirmedOperation = false
   private let commands: ChatCommands
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
@@ -93,17 +114,17 @@ final class PermissionActionStore {
   private let clientEventID = UUID().uuidString.lowercased()
   private let sortEventID = UUID().uuidString.lowercased()
   private var operation: Task<Void, Never>?
-  private var read: Task<Void, Never>?
-  private var requested = false
   private var generation = UUID()
   private var closed = false
 
   init(
-    action: ChatPermissionAction, commands: ChatCommands, sync: ChatSync,
+    action: ChatPermissionAction, resource: PermissionReadResource<ChatPermissionSnapshot>,
+    commands: ChatCommands, sync: ChatSync,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.action = action
+    self.resource = resource
     duration = action.duration
     self.commands = commands
     self.sync = sync
@@ -111,72 +132,44 @@ final class PermissionActionStore {
     self.didContinue = didContinue
   }
 
-  var metadata: ChatPermissionMetadata? { snapshot?.metadata }
-  var hasPermission: Bool { metadata?.contains(action.permission) == true }
-  var applied: Bool {
-    guard let snapshot, let metadata else { return false }
-    return metadata.policy(for: action.permission, grants: snapshot.grants, at: .now).rawValue
+  func canConfirm(_ snapshot: ChatPermissionSnapshot) -> Bool {
+    !closed && isActive && !isSaving && snapshot.metadata?.contains(action.permission) == true
+      && (!applied(snapshot) || needsContinuation)
+  }
+
+  func applied(_ snapshot: ChatPermissionSnapshot) -> Bool {
+    snapshot.metadata?.policy(for: action.permission, grants: snapshot.grants, at: .now).rawValue
       == action.action.rawValue
-  }
-  var grant: ChatPermissionRule? {
-    snapshot?.grants.last {
-      $0.connectorSlug == action.connectorSlug && $0.permission == action.permission
-        && $0.action == action.action
-    }
-  }
-  var canConfirm: Bool {
-    !closed && !isLoading && !isSaving && hasPermission && (!applied || needsContinuation)
   }
 
   func activate() {
     guard !closed else { return }
     isActive = true
-  }
-
-  func loadIfNeeded() async {
-    guard isActive, !requested, !Task.isCancelled else { return }
-    requested = true
-    await refresh()
+    resource.activate()
   }
 
   func refresh() async {
-    guard !closed, operation == nil, !Task.isCancelled else { return }
-    if let read {
-      await read.value
-      return
-    }
-    isLoading = true
+    guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
     let generation = generation
-    // A reused row can stop awaiting this read without canceling the page-owned request.
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if self.generation == generation {
-          isLoading = false
-          read = nil
-        }
-      }
-      do {
-        let value = try await commands.permissions.load(action)
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        snapshot = value
-        error = nil
-        if !applied { needsContinuation = false }
-      } catch is CancellationError {
-      } catch {
-        guard !closed, self.generation == generation else { return }
-        snapshot = nil
-        self.error = ChatRequestFailure.message(for: error)
-        didFail(error)
-      }
+    resource.invalidate()
+    if case .success(let current) = await readResult(), !closed, self.generation == generation {
+      error = nil
+      if !applied(current) { needsContinuation = false }
+      if applied(current) && !needsContinuation { hasUnconfirmedOperation = false }
     }
-    read = task
-    await task.value
+  }
+
+  /// Reads never retry a write or discard its conversation-lifetime continuation identity.
+  private func readResult() async -> Result<ChatPermissionSnapshot, Error> {
+    do { return .success(try await resource.load()) } catch { return .failure(error) }
   }
 
   func confirm() async {
-    guard canConfirm, operation == nil, !Task.isCancelled else { return }
+    guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
+    let visit = generation
+    guard case .success(let reviewed) = await readResult(),
+      generation == visit, !Task.isCancelled, operation == nil, canConfirm(reviewed)
+    else { return }
     isSaving = true
     error = nil
     let generation = generation
@@ -186,6 +179,7 @@ final class PermissionActionStore {
         if self.generation == generation {
           isSaving = false
           operation = nil
+          resource.invalidate()
         }
       }
       do {
@@ -194,18 +188,22 @@ final class PermissionActionStore {
         let current = try await commands.permissions.load(action)
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
-        snapshot = current
-        guard hasPermission else {
+        guard current.metadata?.contains(action.permission) == true else {
           throw ChatError.invalidContract("This permission is no longer available.")
         }
-        if !applied {
+        if !applied(current) {
           needsContinuation = action.callbackPrompt != nil
+          hasUnconfirmedOperation = true
           _ = try await commands.permissions.apply(action, duration: duration)
+          try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
         }
         // An already-applied request never resumes automatically after opening or refreshing.
         if needsContinuation, let prompt = action.callbackPrompt {
           try await commands.permissions.validateContext(action)
           let history = try await sync.history(threadID: action.threadID)
+          try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
           if !history.persistedEventIDs.contains(clientEventID) {
             let thread = ChatThread(
               id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
@@ -215,24 +213,19 @@ final class PermissionActionStore {
               chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
           }
           try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
           needsContinuation = false
           await didContinue()
+          try Task.checkCancellation()
+          guard !closed, self.generation == generation else { return }
         }
-        let updated = try await commands.permissions.load(action)
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        snapshot = updated
+        hasUnconfirmedOperation = false
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation else { return }
         self.error = ChatRequestFailure.message(for: error)
         didFail(error)
-        // Read back an uncertain write without repeating it or sending a callback.
-        if let updated = try? await commands.permissions.load(action),
-          !closed, self.generation == generation
-        {
-          snapshot = updated
-        }
+        // The resource reload in defer reads back without repeating the write or callback.
       }
     }
     operation = task
@@ -241,18 +234,16 @@ final class PermissionActionStore {
 
   func deactivate() {
     isActive = false
-    requested = false
     generation = UUID()
-    read?.cancel()
-    read = nil
+    resource.deactivate()
     operation?.cancel()
     operation = nil
-    isLoading = false
     isSaving = false
   }
 
   func close() {
     closed = true
     deactivate()
+    resource.close()
   }
 }
