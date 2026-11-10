@@ -90,10 +90,7 @@ export function createConnectorAdmissionSignals(
   bootstrap: Parameters<typeof createConnectorRuntimeInputSignals>[0],
   threadContext: Parameters<typeof createConnectorRuntimeInputSignals>[1],
 ) {
-  const inputs = createConnectorRuntimeInputSignals(
-    bootstrap,
-    threadContext,
-  );
+  const inputs = createConnectorRuntimeInputSignals(bootstrap, threadContext);
   return computed(async (get) => {
     const input = await get(inputs.inputs$);
     if (isConnectorRuntimeError(input)) {
