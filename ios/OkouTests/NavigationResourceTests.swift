@@ -8,6 +8,87 @@ import XCTest
 
 @MainActor
 final class NavigationResourceTests: XCTestCase {
+  func testProjectLoadingAndFailureKeepCachedProjectsAndIndependentChatsUsable() async throws {
+    let phase = Mutex(0)
+    let hold = Mutex(false)
+    let started = expectation(description: "Project request pending independently of chats")
+    let gate = NavigationResponseGate()
+    let projectID = "50000000-0000-4000-8000-000000000071"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/projects":
+        let current = phase.withLock { $0 }
+        let shouldHold = hold.withLock {
+          let pending = $0
+          $0 = false
+          return pending
+        }
+        if shouldHold {
+          started.fulfill()
+          await gate.wait()
+        }
+        if current == 1 {
+          return ChatHTTPResponse(
+            status: 503, body: #"{"error":{"message":"Projects unavailable"}}"#)
+        }
+        return ChatHTTPResponse(
+          body: """
+            {"projects":[{"id":"\(projectID)","name":"\(current == 0 ? "Cached" : "Fresh")","createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z"}]}
+            """)
+      case "/api/agents": return navigationAgents(name: "Independent assistant")
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"\(navigationPinned)","agentId":"\(navigationAgent)","title":"Independent chat","projectId":"\(projectID)","createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z","sortAt":"2026-11-09T01:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+            """)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = CacheTestDirectory(owner: self)
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "navigation-user", workspaceID: "project-recovery")
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: directory.cache(scope: scope),
+      readRetrySleep: { _ in })
+    defer { store.close() }
+    await store.projects.activate()
+    phase.withLock { $0 = 1 }
+    hold.withLock { $0 = true }
+    let refresh = Task { await store.projects.refresh() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      refresh.cancel()
+      gate.open()
+      await refresh.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    await store.refreshNavigation()
+    await store.list.refresh()
+    XCTAssertEqual(store.currentAgentName, "Independent assistant")
+    XCTAssertEqual(store.list.threads.first?.title, "Independent chat")
+    XCTAssertEqual(store.projects.projects.first?.name, "Cached")
+    gate.open()
+    await refresh.value
+    let failed = try store.projects.stateStore.get(store.projects.value)
+    do {
+      _ = try await failed.value
+      XCTFail("The original Project resource must retain its error")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 503) }
+    XCTAssertEqual(store.projects.projects.first?.name, "Cached")
+    phase.withLock { $0 = 2 }
+    await store.projects.refresh()
+    let recovered = try await store.projects.stateStore.get(store.projects.value).value
+    XCTAssertEqual(recovered.first?.name, "Fresh")
+    let reader = directory.cache(scope: scope)
+    let persisted = try await reader.loadProjects()
+    XCTAssertEqual(persisted, recovered)
+    await reader.close()
+  }
+
   func testNavigationFailureRetainsCachedAgentsAndRetryPersistsFreshData()
     async throws
   {

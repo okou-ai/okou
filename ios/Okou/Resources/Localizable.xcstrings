@@ -11459,6 +11459,46 @@
         }
       }
     },
+    "Loading projects…": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Projekte werden geladen…" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Loading projects…" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Cargando proyectos…" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Chargement des projets…" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "प्रोजेक्ट लोड हो रहे हैं…" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Memuat proyek…" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Caricamento progetti…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "プロジェクトを読み込み中…" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "프로젝트 불러오는 중…" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Carregando projetos…" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在加载项目…" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在載入專案…" }
+        }
+      }
+    },
     "Loading workflows…": {
       "localizations": {
         "de": {

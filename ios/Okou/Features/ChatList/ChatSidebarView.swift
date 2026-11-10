@@ -72,6 +72,10 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
+      ChatProjectReadStatus(projects: store.projects)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      threadSection
       if store.list.isLoading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
@@ -85,7 +89,6 @@ struct ChatSidebarView: View {
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else {
-        threadSection
         if visibleThreads.isEmpty && contents.projects.isEmpty && store.list.error == nil
           && store.error == nil
         {
@@ -125,7 +128,6 @@ struct ChatSidebarView: View {
     // VoiceOver's escape gesture returns to the chat, as the left swipe does.
     .accessibilityAction(.escape, close)
     .background(OkouColor.sidebar)
-    .task { await store.projects.activate() }
     .onDisappear { projectAction?.cancel() }
     .background {
       OkouNameDialog(
@@ -145,9 +147,7 @@ struct ChatSidebarView: View {
       Button("Delete project", role: .destructive) {
         projectAction?.cancel()
         projectAction = Task {
-          if await store.projects.delete(project.id), store.newChatProjectID == project.id {
-            store.removeNewChatProject()
-          }
+          await store.deleteProject(project.id)
         }
       }
     } message: { _ in
@@ -244,13 +244,6 @@ struct ChatSidebarView: View {
   private var threadSection: some View {
     let contents = contents
     return Section {
-      if let error = store.projects.readError {
-        OkouBanner(Text(error), icon: "folder", tone: .problem) {
-          Button("Retry") { Task { await store.projects.refresh() } }
-        }
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-      }
       if let error = store.projects.actionError {
         OkouBanner(
           Text(error), icon: "circle-alert", tone: .problem,

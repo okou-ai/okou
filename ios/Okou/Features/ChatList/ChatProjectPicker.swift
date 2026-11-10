@@ -78,6 +78,7 @@ struct ChatProjectPicker: View {
   var body: some View {
     NavigationStack {
       List {
+        ChatProjectReadStatus(projects: workspace.projects)
         ForEach(
           workspace.projects.projects.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
@@ -116,7 +117,6 @@ struct ChatProjectPicker: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
-    .task { await workspace.projects.activate() }
     .onDisappear { moveTask?.cancel() }
   }
 

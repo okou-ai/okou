@@ -96,8 +96,9 @@ final class WorkspaceStore {
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep)
   @ObservationIgnored lazy var projects = ChatProjectStore(
-    client: client, resources: resources, sync: sync,
+    client: client, sync: sync, sleep: readRetrySleep,
     didFail: { [weak self] in self?.handle($0) },
+    didDelete: { [weak self] in self?.projectWasDeleted($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
@@ -665,6 +666,17 @@ final class WorkspaceStore {
   }
 
   func removeNewChatProject() { newChatProjectID = nil }
+
+  @discardableResult
+  func deleteProject(_ id: String) async -> Bool {
+    guard !closed, !needsUpgrade else { return false }
+    return await projects.delete(id)
+  }
+
+  private func projectWasDeleted(_ id: String) {
+    guard !closed else { return }
+    if newChatProjectID == id { removeNewChatProject() }
+  }
 
   var canOpenNewChatFromSystem: Bool {
     isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed

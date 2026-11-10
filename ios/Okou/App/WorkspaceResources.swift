@@ -11,7 +11,6 @@ final class WorkspaceResources {
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
-  private let projects: WorkspaceRead<[ChatProject]>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
@@ -26,7 +25,6 @@ final class WorkspaceResources {
     self.catalog = catalog
     self.features = features
     agents = WorkspaceRead("agents", sleep: sleep) { try await client.request("/api/agents") }
-    projects = WorkspaceRead("Projects", sleep: sleep, read: ChatProjects(client: client).list)
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -61,12 +59,6 @@ final class WorkspaceResources {
     return try store.get(agents.value)
   }
 
-  func projectList(refresh: Bool) throws -> Task<[ChatProject], Error> {
-    if refresh { try store.set(projects.revision, update: { $0 + 1 }) }
-    try projects.retryFailed(in: store)
-    return try store.get(projects.value)
-  }
-
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     let reload = Command<Void, Void> { context in
       if changes.contains(.reconnected) || changes.contains(.modelPreference) {
@@ -89,7 +81,6 @@ final class WorkspaceResources {
     catalog.close()
     features.close()
     agents.close()
-    projects.close()
   }
 }
 
