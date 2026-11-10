@@ -1394,6 +1394,15 @@ describe("Email multi-account connections", () => {
       await expect(connectedEmails()).resolves.toStrictEqual(
         expect.arrayContaining(addresses),
       );
+      const source = provider === "gmail" ? "gmail" : "outlook";
+      const connected = await accept(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+        [200],
+      );
+      expect(connected.body.emailSources).toStrictEqual({
+        [actor.email]: source,
+        [secondEmail]: source,
+      });
       const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
         actor,
         provider,
@@ -1425,6 +1434,11 @@ describe("Email multi-account connections", () => {
         [204],
       );
       await incoming({ sender: secondEmail }).send();
+      const deleted = await accept(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+        [200],
+      );
+      expect(deleted.body.emailSources).toStrictEqual({});
       await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
       await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     },

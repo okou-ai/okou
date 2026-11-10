@@ -8,6 +8,8 @@ import {
   number,
   object,
   string,
+  record,
+  union,
   uuid,
 } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
@@ -82,6 +84,10 @@ export const integrationsEmailContract = c.router({
         configured: boolean(),
         emails: array(string()),
         availableEmails: array(string()),
+        emailSources: record(
+          string(),
+          union([literal("gmail"), literal("outlook")]),
+        ).optional(),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,

@@ -75,6 +75,24 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     )
     .orderBy(emailUserLinks.createdAt, emailUserLinks.id);
   signal.throwIfAborted();
+  const emails = links.map((link) => {
+    return link.email;
+  });
+  const activeEmails = new Set(emails);
+  const emailSources: Record<string, "gmail" | "outlook"> = {};
+  if (!user.banned) {
+    for (const account of accounts) {
+      const email = account.email?.toLowerCase();
+      if (!email || !activeEmails.has(email)) {
+        continue;
+      }
+      if (account.provider === "gmail") {
+        emailSources[email] = "gmail";
+      } else if (account.provider === "outlook-mail") {
+        emailSources[email] = "outlook";
+      }
+    }
+  }
   return {
     status: 200 as const,
     body: {
@@ -82,9 +100,8 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       configured: Boolean(
         optionalEnv("RESEND_API_KEY") && optionalEnv("RESEND_WEBHOOK_SECRET"),
       ),
-      emails: links.map((link) => {
-        return link.email;
-      }),
+      emails,
+      emailSources,
       availableEmails: user.banned
         ? []
         : [

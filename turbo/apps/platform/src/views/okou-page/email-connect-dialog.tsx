@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Loader2 } from "lucide-react";
-import { Badge, Button, CopyButton, buttonVariants } from "@okouai/ui";
+import { Loader2, LockKeyhole, RefreshCw, Send, Trash2 } from "lucide-react";
+import { Button, CopyButton, Skeleton, buttonVariants } from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -22,56 +22,137 @@ import {
 import { currentUserInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { QuestFigure, QuestSplitLayout } from "./get-started-quest-shell.tsx";
 
 function EmailAddressRow({
   email,
   primary,
+  source,
 }: {
   readonly email: string;
   readonly primary: boolean;
+  readonly source: "gmail" | "outlook" | undefined;
 }) {
   const { t } = useTranslation();
   const [operation, remove] = useLoadableSet(deleteEmailConnection$);
   const signal = useGet(pageSignal$);
+  const sourceLabel = t(($) => {
+    return primary
+      ? $.works.email.signInEmail
+      : source === "gmail"
+        ? $.works.email.sourceGmail
+        : source === "outlook"
+          ? $.works.email.sourceOutlook
+          : $.works.email.title;
+  });
   return (
-    <div role="group" aria-label={email} className="space-y-2">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="min-w-0 break-all">{email}</span>
-        {primary ? (
-          <Badge className="shrink-0">
+    <tr aria-label={email} className="border-b border-border last:border-0">
+      <td className="min-w-0 py-3 pr-3 align-middle">
+        <span className="break-all text-sm font-medium leading-5">{email}</span>
+        <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+          {sourceLabel}
+        </span>
+        {operation.state === "hasError" ? (
+          <p role="alert" className="mt-2 text-xs text-destructive">
             {t(($) => {
-              return $.works.email.signInEmail;
+              return $.works.email.loadError;
             })}
-          </Badge>
+          </p>
+        ) : null}
+      </td>
+      <td className="hidden py-3 pr-3 align-middle text-xs break-words text-muted-foreground sm:table-cell">
+        {sourceLabel}
+      </td>
+      <td className="py-3 align-middle">
+        {primary ? (
+          <span className="flex size-8 items-center justify-center text-muted-foreground">
+            <LockKeyhole size={14} aria-hidden="true" />
+            <span className="sr-only">
+              {t(($) => {
+                return $.works.email.loginNotice;
+              })}
+            </span>
+          </span>
         ) : (
           <Button
             type="button"
-            size="sm"
-            className="shrink-0"
-            variant="outline"
+            size="icon-sm"
+            variant="quiet"
+            showTooltip
+            aria-label={t(
+              ($) => {
+                return $.works.email.deleteAria;
+              },
+              { email },
+            )}
             disabled={operation.state === "loading"}
             onClick={() => {
               detach(remove(email, signal), Reason.DomCallback);
             }}
           >
             {operation.state === "loading" ? (
-              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-            ) : null}
-            {t(($) => {
-              return $.connectors.actions.delete;
-            })}
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 aria-hidden="true" />
+            )}
           </Button>
         )}
-      </div>
-      {operation.state === "hasError" ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(($) => {
-            return $.works.email.loadError;
-          })}
-        </p>
-      ) : null}
-    </div>
+      </td>
+    </tr>
+  );
+}
+
+function EmailConnectionsTable({
+  emails,
+  sources,
+  primaryEmail,
+}: {
+  readonly emails: readonly string[];
+  readonly sources: Readonly<Record<string, "gmail" | "outlook">> | undefined;
+  readonly primaryEmail: string | undefined;
+}) {
+  const { t } = useTranslation();
+  return (
+    <table className="w-full table-fixed border-collapse text-left">
+      <thead>
+        <tr className="border-b border-border">
+          <th
+            scope="col"
+            className="pb-3 pr-3 text-xs font-normal text-muted-foreground"
+          >
+            {t(($) => {
+              return $.works.email.emailAddress;
+            })}
+          </th>
+          <th
+            scope="col"
+            className="hidden w-24 pb-3 pr-3 text-xs font-normal text-muted-foreground sm:table-cell"
+          >
+            {t(($) => {
+              return $.works.email.source;
+            })}
+          </th>
+          <th scope="col" className="w-9 pb-3">
+            <span className="sr-only">
+              {t(($) => {
+                return $.works.email.actions;
+              })}
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {emails.map((email) => {
+          return (
+            <EmailAddressRow
+              key={email}
+              email={email}
+              primary={email === primaryEmail}
+              source={sources?.[email]}
+            />
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -89,77 +170,62 @@ export function EmailConnectDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        smMaxWidth={680}
+        smMaxWidth={640}
         contentClassName="grid-cols-1"
         finalFocus={finalFocus}
       >
-        <QuestSplitLayout
-          figure={
-            <div className="hidden sm:contents">
-              <QuestFigure art="slack" />
-            </div>
-          }
-        >
-          <DialogHeader>
-            <DialogTitle className="pr-7">
-              {t(($) => {
-                return $.works.email.manageTitle;
-              })}
-            </DialogTitle>
-            <DialogDescription>
-              {t(($) => {
-                return $.works.email.manageDescription;
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          {status.state === "hasData" &&
-          status.data.configured &&
-          user.state === "hasData" ? (
-            <>
-              <a
-                href={`mailto:${status.data.address}`}
-                className="w-fit break-all text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground"
-              >
-                {status.data.address}
-              </a>
-              {status.data.emails.map((email) => {
-                return (
-                  <EmailAddressRow
-                    key={email}
-                    email={email}
-                    primary={email === primaryEmail}
-                  />
-                );
-              })}
-              <EmailAddAddressCode address={status.data.address} />
+        <DialogHeader>
+          <DialogTitle className="pr-7">
+            {t(($) => {
+              return $.works.email.manageTitle;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.works.email.manageDescription;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        {status.state === "hasData" &&
+        status.data.configured &&
+        user.state === "hasData" ? (
+          <>
+            <EmailConnectionsTable
+              emails={status.data.emails}
+              sources={status.data.emailSources}
+              primaryEmail={primaryEmail}
+            />
+            <EmailAddAddressCode address={status.data.address} />
+            {primaryEmail && status.data.emails.includes(primaryEmail) ? (
               <p className="text-xs text-muted-foreground">
                 {t(($) => {
-                  return $.works.email.healthNotice;
+                  return $.works.email.loginNotice;
                 })}
               </p>
-            </>
-          ) : status.state === "hasError" ||
-            user.state === "hasError" ||
-            (status.state === "hasData" && !status.data.configured) ? (
-            <p role="alert" className="text-sm text-destructive">
+            ) : null}
+            <p className="border-t border-border pt-3 text-xs text-muted-foreground">
               {t(($) => {
-                return status.state === "hasError" || user.state === "hasError"
-                  ? $.works.email.loadError
-                  : $.works.email.unavailable;
+                return $.works.email.healthNotice;
               })}
             </p>
-          ) : (
-            <div
-              className="flex min-h-40 items-center justify-center"
-              role="status"
-            >
-              <Loader2
-                className="size-5 animate-spin text-muted-foreground"
-                aria-hidden="true"
-              />
-            </div>
-          )}
-        </QuestSplitLayout>
+          </>
+        ) : status.state === "hasError" ||
+          user.state === "hasError" ||
+          (status.state === "hasData" && !status.data.configured) ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return status.state === "hasError" || user.state === "hasError"
+                ? $.works.email.loadError
+                : $.works.email.unavailable;
+            })}
+          </p>
+        ) : (
+          <div role="status" className="space-y-3">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -174,22 +240,34 @@ function EmailAddAddressCode({ address }: { readonly address: string }) {
   const code = lastCode.state === "hasData" ? lastCode.data : null;
   return (
     <div className="space-y-3">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={operation.state === "loading"}
-        onClick={() => {
-          detach(generate(signal), Reason.DomCallback);
-        }}
-      >
-        {operation.state === "loading" ? (
-          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-        ) : null}
-        {t(($) => {
-          return code ? $.works.email.newCode : $.works.email.addEmail;
-        })}
-      </Button>
+      {code ? (
+        <EmailConnectionCodePanel
+          address={address}
+          code={code}
+          pending={operation.state === "loading"}
+          onRegenerate={() => {
+            detach(generate(signal), Reason.DomCallback);
+          }}
+        />
+      ) : (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={operation.state === "loading"}
+            onClick={() => {
+              detach(generate(signal), Reason.DomCallback);
+            }}
+          >
+            {operation.state === "loading" ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : null}
+            {t(($) => {
+              return $.works.email.addEmail;
+            })}
+          </Button>
+        </div>
+      )}
       {operation.state === "hasError" ? (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
@@ -197,46 +275,93 @@ function EmailAddAddressCode({ address }: { readonly address: string }) {
           })}
         </p>
       ) : null}
-      {code ? (
-        <div className="space-y-3 rounded-xl bg-gray-50 p-3">
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
+    </div>
+  );
+}
+
+function EmailConnectionCodePanel({
+  address,
+  code,
+  pending,
+  onRegenerate,
+}: {
+  readonly address: string;
+  readonly code: { readonly code: string; readonly expiresAt: string };
+  readonly pending: boolean;
+  readonly onRegenerate: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 p-4"
+      aria-description={t(($) => {
+        return $.works.email.codeInstructions;
+      })}
+    >
+      <div className="min-w-0 flex-1 basis-52">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 font-mono text-xl tracking-wider sm:tracking-widest">
+            {code.code}
+          </code>
+          <CopyButton
+            text={code.code}
+            showTooltip={false}
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.agentphone.copyCodeAria;
+              },
+              { code: code.code },
+            )}
+          />
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            showTooltip
+            aria-label={t(($) => {
+              return $.works.email.newCode;
+            })}
+            disabled={pending}
+            onClick={onRegenerate}
+          >
+            {pending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw aria-hidden="true" />
+            )}
+          </Button>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <a
+            href={`mailto:${address}`}
+            className="break-all underline-offset-4 hover:text-foreground hover:underline"
+            title={t(($) => {
               return $.works.email.codeInstructions;
             })}
-          </p>
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <code className="min-w-0 break-all font-mono text-sm tracking-wide">
-              {code.code}
-            </code>
-            <CopyButton
-              text={code.code}
-              showTooltip={false}
-              aria-label={t(
-                ($) => {
-                  return $.connectors.providerSettings.agentphone.copyCodeAria;
-                },
-                { code: code.code },
-              )}
-            />
-          </div>
-          <time
-            dateTime={code.expiresAt}
-            className="block text-xs text-muted-foreground"
           >
+            {t(
+              ($) => {
+                return $.works.email.sendTo;
+              },
+              { address },
+            )}
+          </a>
+          <time dateTime={code.expiresAt}>
             {t(($) => {
               return $.connectors.providerSettings.agentphone.codeExpiry;
             })}
           </time>
-          <a
-            href={`mailto:${address}?subject=${encodeURIComponent(code.code)}&body=${encodeURIComponent(code.code)}`}
-            className={buttonVariants({ size: "sm" })}
-          >
-            {t(($) => {
-              return $.works.email.open;
-            })}
-          </a>
         </div>
-      ) : null}
+      </div>
+      <a
+        href={`mailto:${address}?subject=${encodeURIComponent(code.code)}&body=${encodeURIComponent(code.code)}`}
+        className={buttonVariants()}
+      >
+        <Send aria-hidden="true" />
+        {t(($) => {
+          return $.works.email.open;
+        })}
+      </a>
     </div>
   );
 }

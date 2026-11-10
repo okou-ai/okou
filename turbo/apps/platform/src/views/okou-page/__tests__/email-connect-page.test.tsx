@@ -73,7 +73,7 @@ test("explains an expired connection without asking the user to resend account d
 
 test("adds an email from the Works card with a short code and updates the open dialog", async () => {
   let emails: string[] = [];
-  const code = "01234567";
+  let code = "01234567";
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
     return respond(200, {
@@ -108,6 +108,13 @@ test("adds an email from the Works card with a short code and updates the open d
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([code]);
   });
+  code = "76543210";
+  click(getAction("button", "Generate new code", dialog));
+  await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
+  expect(getAction("link", "Open email", dialog)).toHaveAttribute(
+    "href",
+    `mailto:okou@okou.io?subject=${code}&body=${code}`,
+  );
   emails = [emailAddress];
   await context.mocks.ably.trigger("email:changed");
   await expect(
@@ -131,10 +138,6 @@ test("opens unsigned email settings in the Works dialog", async () => {
   });
   expect(window.location.pathname).toBe("/works");
   expect(getAction("button", "Add email", dialog)).toBeEnabled();
-  expect(getAction("link", "okou@okou.io", dialog)).toHaveAttribute(
-    "href",
-    "mailto:okou@okou.io",
-  );
   click(getAction("button", "Close", dialog));
   await waitFor(() => {
     expect(
@@ -210,12 +213,20 @@ test("deletes each linked address from Manage and returns focus to Add email", a
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
-  click(getAction("button", "Delete", emailRow(dialog, emailAddress)));
+  click(
+    getAction(
+      "button",
+      `Delete ${emailAddress}`,
+      emailRow(dialog, emailAddress),
+    ),
+  );
   await waitFor(() => {
     expect(within(dialog).queryByText(emailAddress)).not.toBeInTheDocument();
   });
   expect(within(dialog).getByText(secondEmail)).toBeInTheDocument();
-  click(getAction("button", "Delete", emailRow(dialog, secondEmail)));
+  click(
+    getAction("button", `Delete ${secondEmail}`, emailRow(dialog, secondEmail)),
+  );
   await waitFor(() => {
     expect(within(dialog).queryByText(secondEmail)).not.toBeInTheDocument();
   });
@@ -236,7 +247,16 @@ function control(role: "button" | "link", label: string): HTMLElement {
 }
 
 function emailRow(dialog: HTMLElement, email: string): HTMLElement {
-  return within(dialog).getByRole("group", { name: email });
+  return within(dialog).getByRole("row", { name: email });
+}
+
+function emailSource(
+  row: HTMLElement,
+  source: string,
+): HTMLElement | undefined {
+  return queryAllByRoleFast("cell", row).find((item) => {
+    return item.textContent?.trim() === source;
+  });
 }
 
 test("manages multiple connections and adds another mailbox without leaving Works", async () => {
@@ -250,6 +270,7 @@ test("manages multiple connections and adds another mailbox without leaving Work
       configured: true,
       emails,
       availableEmails: [emailAddress],
+      emailSources: { [emailAddress]: "gmail", [second]: "outlook" },
     });
   });
   context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
@@ -271,6 +292,10 @@ test("manages multiple connections and adds another mailbox without leaving Work
   });
   expect(within(dialog).getByText(emailAddress)).toBeInTheDocument();
   expect(within(dialog).getByText(second)).toBeInTheDocument();
+  expect(
+    emailSource(emailRow(dialog, emailAddress), "Gmail"),
+  ).toBeInTheDocument();
+  expect(emailSource(emailRow(dialog, second), "Outlook")).toBeInTheDocument();
   click(getAction("button", "Add email", dialog));
   await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
   emails = [...emails, third];
@@ -321,14 +346,16 @@ test("keeps the login email connected while other emails can be deleted", async 
     name: "Email connections",
   });
   expect(
-    within(emailRow(dialog, emailAddress)).getByText("Login email"),
+    emailSource(emailRow(dialog, emailAddress), "Login email"),
   ).toBeInTheDocument();
-  click(getAction("button", "Delete", emailRow(dialog, secondary)));
+  click(
+    getAction("button", `Delete ${secondary}`, emailRow(dialog, secondary)),
+  );
   await waitFor(() => {
     expect(within(dialog).queryByText(secondary)).not.toBeInTheDocument();
   });
   expect(
-    within(emailRow(dialog, emailAddress)).getByText("Login email"),
+    emailSource(emailRow(dialog, emailAddress), "Login email"),
   ).toBeInTheDocument();
   click(getAction("button", "Close", dialog));
   await waitFor(() => {

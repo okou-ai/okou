@@ -379,7 +379,10 @@ export const connectedMailAccounts$ = command(
     signal: AbortSignal,
   ) => {
     const accounts = await set(writeDb$)
-      .select({ email: connectors.externalEmail })
+      .select({
+        email: connectors.externalEmail,
+        provider: connectors.connectorSlug,
+      })
       .from(connectors)
       .where(
         and(
