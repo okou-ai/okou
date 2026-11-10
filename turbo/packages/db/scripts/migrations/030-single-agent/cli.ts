@@ -3,6 +3,7 @@ import { open, readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { inventory } from "./inventory";
 import { plan } from "./plan";
+import { parseAgentPrefixes } from "./plan-names";
 import { parseSnapshot, PlanningError } from "./snapshot";
 
 const help = `Read-only Single Agent migration preparation
@@ -11,6 +12,7 @@ inventory --org-id <id> --target <label> --output <new-private-file>
   Read one org using DATABASE_URL with database-enforced read-only access.
 plan --org-id <id> --inventory <file> --output <new-private-file>
   Generate an offline, non-executable dry-run plan. Exit 2 reports blockers.
+  Optional --agent-prefixes <file> reuses a complete fixed Agent prefix map.
 
 No apply, publication, feature activation or recovery command is implemented.`;
 
@@ -23,6 +25,7 @@ async function main() {
       target: { type: "string" },
       output: { type: "string" },
       inventory: { type: "string" },
+      "agent-prefixes": { type: "string" },
     },
   });
   if (values.help) {
@@ -35,9 +38,13 @@ async function main() {
     positionals.length !== 1 ||
     !orgId?.trim() ||
     !values.output ||
+    (values["agent-prefixes"] !== undefined &&
+      !values["agent-prefixes"].trim()) ||
     (command !== "inventory" && command !== "plan") ||
     (command === "inventory"
-      ? !values.target?.trim() || values.inventory
+      ? !values.target?.trim() ||
+        values.inventory ||
+        values["agent-prefixes"] !== undefined
       : !values.inventory || values.target)
   ) {
     throw new PlanningError(
@@ -53,10 +60,16 @@ async function main() {
   } else {
     const bytes = await readFile(values.inventory!);
     const snapshot = parseSnapshot(JSON.parse(bytes.toString("utf8")));
+    const configuredPrefixes = values["agent-prefixes"]
+      ? parseAgentPrefixes(
+          JSON.parse(await readFile(values["agent-prefixes"], "utf8")),
+        )
+      : undefined;
     const planned = plan(
       snapshot,
       orgId,
       createHash("sha256").update(bytes).digest("hex"),
+      configuredPrefixes,
     );
     result = planned;
     blocked = planned.blockers.length > 0;

@@ -4,6 +4,7 @@ import { PlanningError, type Snapshot } from "./snapshot";
 export function planProjects(
   snapshot: Snapshot,
   targetAgentId: string,
+  sourceProjectNames: ReadonlyMap<string, string>,
   block: (code: string, key: string) => void,
 ) {
   const agents = new Map(
@@ -48,7 +49,7 @@ export function planProjects(
       block("OwnerNotInMembershipCache", key);
     let group = projectGroups.get(key);
     if (!group) {
-      const name = source.displayName?.trim() || source.name;
+      const name = sourceProjectNames.get(source.id)!;
       if (!projectSchema.shape.name.safeParse(name).success)
         block("InvalidTargetProjectName", key);
       group = {

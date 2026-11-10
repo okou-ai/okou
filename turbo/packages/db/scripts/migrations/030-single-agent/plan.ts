@@ -1,5 +1,10 @@
 import { workflowNameSchema } from "@okouai/api-contracts/contracts/workflows";
 import { planProjects } from "./plan-projects";
+import {
+  planNames,
+  workflowTargetName,
+  type AgentPrefixes,
+} from "./plan-names";
 import { PlanningError, type Snapshot } from "./snapshot";
 
 type Agent = Snapshot["agents"][number];
@@ -10,6 +15,7 @@ export function plan(
   snapshot: Snapshot,
   orgId: string,
   inventorySha256: string,
+  configuredPrefixes?: AgentPrefixes,
 ) {
   if (snapshot.orgId !== orgId)
     throw new PlanningError("OrganizationScopeMismatch");
@@ -42,6 +48,12 @@ export function plan(
     snapshot.defaultAgentId && agents.get(snapshot.defaultAgentId);
   if (!destination || destination.visibility !== "public")
     throw new PlanningError("PublicDefaultAgentRequired");
+  const naming = planNames(snapshot, destination.id, configuredPrefixes);
+  const prefixes = new Map(
+    naming.agentPrefixes.prefixes.map((row) => {
+      return [row.agentId, row.prefix];
+    }),
+  );
   const blockers: Blocker[] = [];
   const block = (code: string, key: string) => {
     blockers.push({ code, key });
@@ -108,7 +120,11 @@ export function plan(
     })
     .map((workflow) => {
       const source = agents.get(workflow.agentId)!;
-      const name = `${source.name.toLowerCase()}--wf-${workflow.name}`;
+      const name = workflowTargetName(
+        prefixes.get(source.id)!,
+        source.id,
+        workflow.name,
+      );
       const key = `workflow:${workflow.id}`;
       reserve(name, `workflow:${source.id}:${workflow.name}`, key);
       ownerCheck(workflow.owner, key);
@@ -175,7 +191,7 @@ export function plan(
     })
     .map((source) => {
       const key = `agent-instructions:${source.id}`;
-      const name = `${source.name.toLowerCase()}--instruction`;
+      const name = `${prefixes.get(source.id)!}--instruction`;
       reserve(name, key, key);
       ownerCheck(source.owner, key);
       if (source.instructions.bundle === null)
@@ -220,7 +236,12 @@ export function plan(
         sourceContent: destination.instructions,
       };
     });
-  const projectGroups = planProjects(snapshot, destination.id, block);
+  const projectGroups = planProjects(
+    snapshot,
+    destination.id,
+    naming.projectNames,
+    block,
+  );
   const targets = new Map(
     movedWorkflows.map((row) => {
       return [
@@ -279,9 +300,10 @@ export function plan(
       return a.id.localeCompare(b.id);
     });
   return {
-    format: "single-agent-plan-v2",
+    format: "single-agent-plan-v3",
     executable: false,
     privateAgentWorkflowPolicy: "private-preserve-workflow-owner",
+    agentPrefixes: naming.agentPrefixes,
     scope: { orgId, target: snapshot.target, database: snapshot.database },
     capturedAt: snapshot.capturedAt,
     inventorySha256,

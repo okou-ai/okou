@@ -44,10 +44,27 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
-Plans use `single-agent-plan-v2`; inventories remain
+Plans use `single-agent-plan-v3`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
-apply the owner-private policy. No executable consumer of either plan version
-is implemented.
+apply the approved naming and owner-private policies. No executable consumer of
+any plan version is implemented.
+
+Each plan embeds a complete `agentPrefixes` object. Save that object as an
+owner-only JSON file to review, edit short English aliases, and reuse it:
+
+```sh
+pnpm single-agent:prepare plan \
+  --org-id <same-org-id> --inventory /private/path/inventory.json \
+  --agent-prefixes /private/path/agent-prefixes.json \
+  --output /private/path/another-plan.json
+```
+
+The map must use `single-agent-prefixes-v1`, match the org, cover exactly all
+non-default source Agent IDs and assign a distinct valid prefix to each.
+Configured prefixes are used verbatim and canonically sorted, not regenerated
+from display names. Input maps with unknown/missing IDs, duplicate IDs/prefixes,
+invalid characters or more than 12 characters fail before any report is written.
+The complete effective map is embedded in the plan and bound by its output hash.
 
 Exit codes:
 
@@ -61,14 +78,26 @@ Exit codes:
 
 - Resolve the target exclusively from this org's `default_agent_id`; require a
   public target. No name-based target lookup or all-org mode exists.
-- For each other Agent, plan `<agentName>--instruction`; for its existing
-  Workflows, plan `<agentName>--wf-<workflowName>`. Canonical Agent names are
-  lowercased. Validate with the product's Workflow name contract (64 characters).
+- For each other Agent, derive a lowercase ASCII prefix from its trimmed display
+  name (or canonical name when no display name exists), normalize accents and
+  separators, and bound it to 12 characters. Disambiguate colliding prefixes with
+  the first eight source Agent ID digits, shortening the readable stem to fit.
+  Labels with no ASCII letters/digits receive `a-<shortAgentId>` until the
+  operator supplies a readable English alias through the fixed map. Generated
+  prefix collisions still fail closed and require a distinct configured map.
+  Empty source labels are invalid; no identity is fabricated.
+- Plan `<prefix>--instruction` and `<prefix>--wf-<workflowName>`. Preserve valid
+  original Workflow names when the full name fits the 64-character contract.
+  Otherwise shorten the Workflow stem and append eight SHA-256 digits derived
+  from `(source Agent ID, original Workflow name)`. Same-source public/private
+  overrides therefore keep one target name; distinct long names retain distinct
+  suffixes. The original name remains in the source record. Invalid original
+  Workflow names are not repaired by shortening.
   Keep same-source overrides under one name when their target visibility/owner
   scopes remain distinct. Privatization can collapse a public Workflow and its
   same-owner private override into one scope; block that conflict without
   merging or renaming either ID. Block other collisions, existing default-Agent
-  names and overlong names; never truncate, overwrite or invent a suffix.
+  names and invalid names; never overwrite or merge a conflict.
 - Keep existing Workflow and Automation IDs. Workflow plans retain owner,
   source revision and immutable bundle reference, and require republishing the
   renamed generated `SKILL.md`. Every Workflow from a private Agent becomes
@@ -100,7 +129,9 @@ Exit codes:
   that a user did not save a value.
 - Group old Chats into new private Projects per `(org, Chat owner, source Agent)`.
   Prefer the Agent's trimmed display name, using its canonical name when no
-  nonempty display name exists; validate the product's 120-character limit.
+  nonempty display name exists. When source Agent labels match case-insensitively,
+  append ` (<shortAgentId>)` to each matching label. Keep these source groups
+  distinct and validate the product's 120-character limit.
   Preserve Chat IDs and original Project membership in the plan. Existing
   same-name Projects are listed and block automatic adoption; incoming Project
   name collisions also block. Existing Projects are never deleted or merged.
@@ -151,3 +182,7 @@ unchanged public-Agent visibility, post-privatization name-scope collisions, and
 lost Workflow access for both enabled/disabled Automations and execution Chat
 bindings. The migration CI job runs this same test. This is tool verification,
 not staff production rehearsal or runtime acceptance.
+Naming coverage includes bounded/deduplicated readable prefixes, non-Latin
+aliases, complete fixed-map replay, map scope/duplicate rejection, deterministic
+long-name shortening with preserved override grouping, and separate same-name
+Agent Projects with stable source suffixes.

@@ -44,10 +44,15 @@ const rightsSchema = object({
 });
 
 const planSchema = object({
-  format: literal("single-agent-plan-v2"),
+  format: literal("single-agent-plan-v3"),
   executable: literal(false),
   privateAgentWorkflowPolicy: literal("private-preserve-workflow-owner"),
   inventorySha256: string(),
+  agentPrefixes: object({
+    format: literal("single-agent-prefixes-v1"),
+    orgId: string(),
+    prefixes: array(object({ agentId: string(), prefix: string() })),
+  }),
   summary: object({
     workflowMoves: number(),
     instructionConversions: number(),
@@ -94,6 +99,7 @@ const planSchema = object({
   projectGroups: array(
     object({
       owner: string(),
+      sourceAgentId: string(),
       targetName: string(),
       existingSameNameProjectIds: array(string()),
       chats: array(object({ id: string(), projectId: string().nullable() })),
@@ -287,11 +293,11 @@ try {
     planned.movedWorkflows.map((row) => {
       return row.targetName;
     }),
-    ["research--wf-daily", "research--wf-daily"],
+    ["research-age--wf-daily", "research-age--wf-daily"],
   );
   assert.equal(
     planned.convertedInstructions[0]?.targetName,
-    "research--instruction",
+    "research-age--instruction",
   );
   assert.ok(
     !planned.blockers.some((row) => {
@@ -440,9 +446,10 @@ try {
   source.displayName = "x".repeat(121);
   const tooLong = await prepare(collision, "overlong");
   assert.ok(
-    tooLong.result.blockers.some((row) => {
+    !tooLong.result.blockers.some((row) => {
       return row.code === "InvalidTargetWorkflowName";
     }),
+    "long display names use bounded prefixes instead of the internal Agent name",
   );
   assert.ok(
     tooLong.result.blockers.some((row) => {
@@ -451,8 +458,141 @@ try {
   );
   assert.equal(
     tooLong.result.convertedInstructions[0]?.targetName,
-    `${source.name}--instruction`,
-    "never truncate",
+    `${"x".repeat(12)}--instruction`,
+    "the prefix is bounded to twelve characters",
+  );
+
+  const longWorkflows = structuredClone(snapshot);
+  for (const row of longWorkflows.workflows) row.name = "x".repeat(64);
+  const shortened = await prepare(longWorkflows, "long-workflow-names");
+  const longNames = shortened.result.movedWorkflows.map((row) => {
+    return row.targetName;
+  });
+  assert.equal(new Set(longNames).size, 1);
+  assert.ok(
+    longNames.every((name) => {
+      return name.length <= 64;
+    }),
+  );
+  assert.ok(longNames[0]?.match(/^research-age--wf-x+-[a-f0-9]{8}$/u));
+  assert.ok(
+    !shortened.result.blockers.some((row) => {
+      return row.code === "InvalidTargetWorkflowName";
+    }),
+    "long Workflow names retain their same-source override relationship with a stable suffix",
+  );
+  const distinctLong = structuredClone(longWorkflows);
+  for (const row of distinctLong.workflows)
+    row.name = "x".repeat(63) + (row.id === workflow ? "a" : "b");
+  const distinctShortened = await prepare(
+    distinctLong,
+    "distinct-long-workflow-names",
+  );
+  assert.equal(
+    new Set(
+      distinctShortened.result.movedWorkflows.map((row) => {
+        return row.targetName;
+      }),
+    ).size,
+    2,
+    "different long Workflow names with the same visible stem keep distinct target names",
+  );
+
+  const renamed = structuredClone(snapshot);
+  const renamedAgent = renamed.agents.find((row) => {
+    return row.id === oldAgent;
+  });
+  assert.ok(renamedAgent);
+  renamedAgent.displayName = "Research (new label)";
+  const frozenPrefixes = join(directory, "fixed-prefixes.json");
+  await writeFile(frozenPrefixes, JSON.stringify(planned.agentPrefixes), {
+    mode: 0o600,
+  });
+  const frozenOutput = join(directory, "fixed-prefix-plan.json");
+  run(
+    [
+      "plan",
+      "--org-id",
+      org,
+      "--inventory",
+      inventoryFile,
+      "--agent-prefixes",
+      frozenPrefixes,
+      "--output",
+      frozenOutput,
+    ],
+    2,
+  );
+  assert.equal(
+    await readFile(frozenOutput, "utf8"),
+    await readFile(output, "utf8"),
+    "reusing the complete embedded prefix map produces identical plan bytes",
+  );
+  const renamedInventory = join(directory, "renamed-inventory.json");
+  const renamedOutput = join(directory, "renamed-fixed-plan.json");
+  await writeFile(renamedInventory, JSON.stringify(renamed), { mode: 0o600 });
+  run(
+    [
+      "plan",
+      "--org-id",
+      org,
+      "--inventory",
+      renamedInventory,
+      "--agent-prefixes",
+      frozenPrefixes,
+      "--output",
+      renamedOutput,
+    ],
+    2,
+  );
+  assert.deepEqual(
+    planSchema
+      .parse(JSON.parse(await readFile(renamedOutput, "utf8")))
+      .movedWorkflows.map((row) => {
+        return row.targetName;
+      }),
+    planned.movedWorkflows.map((row) => {
+      return row.targetName;
+    }),
+    "a fixed prefix map is not silently regenerated from changed display names",
+  );
+
+  const nonLatin = structuredClone(snapshot);
+  const nonLatinAgent = nonLatin.agents.find((row) => {
+    return row.id === oldAgent;
+  });
+  assert.ok(nonLatinAgent);
+  nonLatinAgent.displayName = "研究助手";
+  const unicodePlan = await prepare(nonLatin, "non-latin-name");
+  assert.equal(
+    unicodePlan.result.agentPrefixes.prefixes[0]?.prefix,
+    `a-${oldAgent.replaceAll("-", "").slice(0, 8)}`,
+  );
+  const englishPrefixes = {
+    ...unicodePlan.result.agentPrefixes,
+    prefixes: [{ agentId: oldAgent, prefix: "research" }],
+  };
+  await writeFile(frozenPrefixes, JSON.stringify(englishPrefixes));
+  const unicodeInventory = join(directory, "non-latin-name-inventory.json");
+  const englishOutput = join(directory, "english-prefix-plan.json");
+  run(
+    [
+      "plan",
+      "--org-id",
+      org,
+      "--inventory",
+      unicodeInventory,
+      "--agent-prefixes",
+      frozenPrefixes,
+      "--output",
+      englishOutput,
+    ],
+    2,
+  );
+  assert.equal(
+    planSchema.parse(JSON.parse(await readFile(englishOutput, "utf8")))
+      .convertedInstructions[0]?.targetName,
+    "research--instruction",
   );
 
   const duplicate = structuredClone(snapshot);
@@ -475,14 +615,14 @@ try {
     return row.id === priorProject;
   });
   assert.ok(existing);
-  existing.name = "Research Agent";
+  existing.name = `Research Agent (${oldAgent.replaceAll("-", "").slice(0, 8)})`;
   const defaultCollision = duplicate.workflows[0];
   assert.ok(defaultCollision);
   duplicate.workflows.push({
     ...defaultCollision,
     id: randomUUID(),
     agentId: defaultAgent,
-    name: "research--wf-daily",
+    name: `res-${oldAgent.replaceAll("-", "").slice(0, 8)}--wf-daily`,
   });
   const conflicts = await prepare(duplicate, "collisions");
   assert.ok(
@@ -496,16 +636,107 @@ try {
     }),
   );
   assert.ok(
-    conflicts.result.blockers.some((row) => {
+    !conflicts.result.blockers.some((row) => {
       return row.code === "TargetProjectNameCollision";
     }),
+    "same-name source Agents receive separate Project labels with source IDs",
   );
   assert.deepEqual(
     conflicts.result.projectGroups.find((row) => {
-      return row.owner === owner;
+      return row.owner === owner && row.sourceAgentId === oldAgent;
     })?.existingSameNameProjectIds,
     [priorProject],
   );
+  assert.equal(
+    new Set(
+      conflicts.result.agentPrefixes.prefixes.map((row) => {
+        return row.prefix;
+      }),
+    ).size,
+    2,
+  );
+  assert.ok(
+    conflicts.result.agentPrefixes.prefixes.every((row) => {
+      return row.prefix.length <= 12;
+    }),
+  );
+  assert.ok(
+    conflicts.result.projectGroups.every((row) => {
+      return (
+        row.targetName ===
+        `Research Agent (${row.sourceAgentId.replaceAll("-", "").slice(0, 8)})`
+      );
+    }),
+  );
+
+  const malformedPrefixesOutput = join(directory, "bad-prefixes-plan.json");
+  for (const badPrefixes of [
+    { ...planned.agentPrefixes, orgId: otherOrg },
+    { ...planned.agentPrefixes, prefixes: [] },
+    {
+      ...planned.agentPrefixes,
+      prefixes: [{ agentId: otherAgent, prefix: "foreign" }],
+    },
+    {
+      ...planned.agentPrefixes,
+      prefixes: [{ agentId: oldAgent, prefix: "UPPER" }],
+    },
+    {
+      ...planned.agentPrefixes,
+      prefixes: [{ agentId: oldAgent, prefix: "x".repeat(13) }],
+    },
+    {
+      ...planned.agentPrefixes,
+      prefixes: [
+        ...planned.agentPrefixes.prefixes,
+        ...planned.agentPrefixes.prefixes,
+      ],
+    },
+  ]) {
+    await writeFile(frozenPrefixes, JSON.stringify(badPrefixes));
+    run(
+      [
+        "plan",
+        "--org-id",
+        org,
+        "--inventory",
+        inventoryFile,
+        "--agent-prefixes",
+        frozenPrefixes,
+        "--output",
+        malformedPrefixesOutput,
+      ],
+      1,
+    );
+    await assert.rejects(stat(malformedPrefixesOutput), { code: "ENOENT" });
+  }
+  await writeFile(
+    frozenPrefixes,
+    JSON.stringify({
+      ...conflicts.result.agentPrefixes,
+      prefixes: conflicts.result.agentPrefixes.prefixes.map((row) => {
+        return {
+          ...row,
+          prefix: "same",
+        };
+      }),
+    }),
+  );
+  run(
+    [
+      "plan",
+      "--org-id",
+      org,
+      "--inventory",
+      join(directory, "collisions-inventory.json"),
+      "--agent-prefixes",
+      frozenPrefixes,
+      "--output",
+      malformedPrefixesOutput,
+    ],
+    1,
+  );
+  await assert.rejects(stat(malformedPrefixesOutput), { code: "ENOENT" });
 
   const clean = structuredClone(snapshot);
   clean.workflows = clean.workflows.filter((row) => {
@@ -657,6 +888,36 @@ try {
   );
 
   const rejectedFile = join(directory, "rejected.json");
+  run(
+    [
+      "plan",
+      "--org-id",
+      org,
+      "--inventory",
+      inventoryFile,
+      "--agent-prefixes",
+      "",
+      "--output",
+      rejectedFile,
+    ],
+    1,
+  );
+  await assert.rejects(stat(rejectedFile), { code: "ENOENT" });
+  run(
+    [
+      "inventory",
+      "--org-id",
+      org,
+      "--target",
+      "test",
+      "--agent-prefixes",
+      frozenPrefixes,
+      "--output",
+      rejectedFile,
+    ],
+    1,
+  );
+  await assert.rejects(stat(rejectedFile), { code: "ENOENT" });
   run(
     [
       "plan",
