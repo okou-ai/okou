@@ -10,6 +10,7 @@
 //! - `event_delivery`: event sender watermark state.
 //! - `provider_event_normalization`: provider semantic arrays before sequencing.
 //! - `claude`: Claude Code tool tracking.
+//! - `claude_input`: Claude stream-json stdin and replay-aware input delivery.
 //! - `jsonl_result`: shared terminal result parsing for JSONL CLI backends.
 //! - `termination`: process-group termination FSM.
 //!
@@ -23,6 +24,7 @@ mod bounded_event_delivery;
 mod child_env;
 mod child_exit_notifier;
 mod claude;
+mod claude_input;
 #[doc(hidden)]
 pub mod codex_app_server;
 mod codex_app_server_backend;
@@ -57,6 +59,10 @@ pub use codex_setup::setup_codex_for_config;
 pub use codex_startup::CodexStartupTiming;
 pub use jsonl_result::{JsonlResultStatus, JsonlResultSummary};
 pub use pi_startup::PiStartupTiming;
+
+#[cfg(test)]
+use claude_input::claude_initial_prompt_frame;
+use claude_input::write_claude_stream_json_to_stdin;
 
 use crate::active_input::{ActiveInputController, ActiveInputWriter, ReplayUserEventAction};
 use crate::constants;
@@ -114,79 +120,6 @@ const CODEX_FIXED_STARTUP_CONFIGS: [&str; 4] = [
 const CODEX_FAST_MODE_STARTUP_CONFIGS: [&str; 2] =
     ["features.fast_mode=true", r#"service_tier="fast""#];
 const CODEX_WEB_SEARCH_DISABLED_CONFIG: &str = r#"web_search="disabled""#;
-
-#[derive(serde::Serialize)]
-struct ClaudeUserFrame<'a> {
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    uuid: String,
-    parent_tool_use_id: Option<&'static str>,
-    message: ClaudeUserMessage<'a>,
-}
-
-#[derive(serde::Serialize)]
-struct ClaudeUserMessage<'a> {
-    role: &'static str,
-    content: &'a str,
-}
-
-fn claude_user_frame<'a>(uuid: &str, text: &'a str) -> ClaudeUserFrame<'a> {
-    ClaudeUserFrame {
-        event_type: "user",
-        uuid: uuid.to_owned(),
-        parent_tool_use_id: None,
-        message: ClaudeUserMessage {
-            role: "user",
-            content: text,
-        },
-    }
-}
-
-#[cfg(test)]
-fn claude_initial_prompt_frame<'a>(run_id: &str, prompt: &'a str) -> ClaudeUserFrame<'a> {
-    let uuid = crate::active_input::claude_initial_prompt_uuid(run_id);
-    claude_user_frame(&uuid, prompt)
-}
-
-async fn write_claude_user_frame_to_stdin(
-    stdin: &mut tokio::process::ChildStdin,
-    uuid: &str,
-    text: &str,
-) -> Result<(), AgentError> {
-    let mut line = serde_json::to_vec(&claude_user_frame(uuid, text))?;
-    line.push(b'\n');
-    stdin.write_all(&line).await?;
-    stdin.flush().await?;
-    Ok(())
-}
-
-async fn write_claude_stream_json_to_stdin(
-    mut stdin: tokio::process::ChildStdin,
-    run_id: &str,
-    prompt: &str,
-    mut active_input: ActiveInputWriter,
-) -> Result<(), AgentError> {
-    let initial_uuid = crate::active_input::claude_initial_prompt_uuid(run_id);
-    write_claude_user_frame_to_stdin(&mut stdin, &initial_uuid, prompt).await?;
-    if !active_input.is_enabled() {
-        active_input.close_terminal();
-        return Ok(());
-    }
-
-    while let Some(frame) = active_input.next_frame().await {
-        active_input.mark_writing(&frame.uuid);
-        if let Err(error) =
-            write_claude_user_frame_to_stdin(&mut stdin, &frame.uuid, &frame.text).await
-        {
-            active_input.mark_backend_failed(&frame);
-            return Err(error);
-        }
-        active_input.mark_backend_accepted_with_replay(&frame)?;
-    }
-
-    active_input.close_terminal();
-    Ok(())
-}
 
 /// Bounded terminal failure detail extracted from a CLI event stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
