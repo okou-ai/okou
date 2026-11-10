@@ -8,9 +8,9 @@ import Observation
 /// Navigation data and list presentation for one workspace.
 @MainActor @Observable
 final class ThreadListStore {
-  // The confirmed baseline also serves persistence and business decisions. The graph
-  // stores it once; request loading/errors remain with their existing read owner.
-  @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
+  // Selection, read cursors and optimistic write reconciliation use this same projection.
+  // ChatSync owns durable snapshots; the graph does not copy request loading/errors.
+  @ObservationIgnored private let projectedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored let threadsValue: Computed<[ChatThread]>
   @ObservationIgnored private var threadsSubscription: Subscription?
   private(set) var threads: [ChatThread] {
@@ -18,13 +18,13 @@ final class ThreadListStore {
       access(keyPath: \.threads)
       // Only a synchronous local atom is read here, never external I/O.
       do { return try resources.store.get(threadsValue) } catch {
-        preconditionFailure("Cannot read confirmed threads: \(error)")
+        preconditionFailure("Cannot read sidebar threads: \(error)")
       }
     }
     set {
       guard !closed, threads != newValue else { return }
-      do { try resources.store.set(confirmedThreads, newValue) } catch {
-        preconditionFailure("Cannot publish confirmed threads: \(error)")
+      do { try resources.store.set(projectedThreads, newValue) } catch {
+        preconditionFailure("Cannot publish sidebar threads: \(error)")
       }
     }
   }
@@ -96,14 +96,14 @@ final class ThreadListStore {
     self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
-    let confirmed = confirmedThreads
-    threadsValue = Computed { get in try get(confirmed) }
+    let snapshot = projectedThreads
+    threadsValue = Computed { get in try get(snapshot) }
     do {
       threadsSubscription = try resources.store.watch(threadsValue) { [weak self] in
         guard let self else { return }
         withMutation(keyPath: \.threads) {}
       }
-    } catch { preconditionFailure("Cannot observe confirmed threads: \(error)") }
+    } catch { preconditionFailure("Cannot observe sidebar threads: \(error)") }
   }
 
   func restoreCached() async {
@@ -684,7 +684,7 @@ final class ThreadListStore {
 
   private func stopObservingThreads() {
     do { try threadsSubscription?.cancel() } catch {
-      preconditionFailure("Cannot release confirmed threads: \(error)")
+      preconditionFailure("Cannot release sidebar threads: \(error)")
     }
     threadsSubscription = nil
   }
