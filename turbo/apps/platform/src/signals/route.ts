@@ -329,15 +329,10 @@ function routeHash(hash: string | undefined): string {
   return hash.startsWith("#") ? hash : `#${hash}`;
 }
 
-// Compares serialized URLs, as the browser does, so a target is encoded the
-// same way as the address it is compared with.
+// The router builds paths in serialized form, so comparing one with the
+// current address is the browser's URL equality.
 function isCurrentLocation(path: string): boolean {
-  const target = new URL(path, location.origin);
-  return (
-    target.pathname === pathname() &&
-    target.search === search() &&
-    target.hash === hash()
-  );
+  return path === `${pathname()}${search()}${hash()}`;
 }
 
 const navigate$ = command(
