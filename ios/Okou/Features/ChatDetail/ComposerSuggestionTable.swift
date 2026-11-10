@@ -40,6 +40,8 @@ struct ComposerSuggestionTable: UIViewRepresentable {
   func updateUIView(_ table: ComposerSuggestionNativeTable, context: Context) {
     let coordinator = context.coordinator
     let previous = coordinator.items
+    let previousSelection = coordinator.selectedIndex
+    coordinator.selectedIndex = selectedIndex
     coordinator.items = items
     coordinator.activate = activate
     coordinator.didDismantle = didDismantle
@@ -49,13 +51,15 @@ struct ComposerSuggestionTable: UIViewRepresentable {
     if items.indices.contains(selectedIndex) {
       let path = IndexPath(row: selectedIndex, section: 0)
       table.selectRow(at: path, animated: false, scrollPosition: .none)
-      if !previous.isEmpty, coordinator.selectedIndex != selectedIndex {
+      if !previous.isEmpty, previousSelection != selectedIndex {
         table.scrollToRow(at: path, at: .none, animated: false)
       }
     } else if let path = table.indexPathForSelectedRow {
       table.deselectRow(at: path, animated: false)
     }
-    coordinator.selectedIndex = selectedIndex
+    for case let cell as SuggestionCell in table.visibleCells {
+      if let path = table.indexPath(for: cell) { cell.setFocused(path.row == selectedIndex) }
+    }
   }
 
   func sizeThatFits(
@@ -100,7 +104,9 @@ struct ComposerSuggestionTable: UIViewRepresentable {
         preconditionFailure("Suggestion cells must use their registered class")
       }
       let item = items[indexPath.row]
-      cell.configure(item) { [weak self] in self?.activate(item.id) }
+      cell.configure(item, focused: indexPath.row == selectedIndex) { [weak self] in
+        self?.activate(item.id)
+      }
       return cell
     }
 
@@ -124,10 +130,14 @@ final class ComposerSuggestionNativeTable: UITableView {
 
 private final class SuggestionCell: UITableViewCell {
   private var item: ComposerSuggestionItem?
+  private var focused = false
   private var activate: () -> Void = {}
 
-  func configure(_ item: ComposerSuggestionItem, activate: @escaping () -> Void) {
+  func configure(
+    _ item: ComposerSuggestionItem, focused: Bool, activate: @escaping () -> Void
+  ) {
     self.item = item
+    self.focused = focused
     self.activate = activate
     // Hosted rows draw their semantic focus layer; UIKit's default selection
     // otherwise covers it with an opaque system gray on current iOS.
@@ -144,8 +154,9 @@ private final class SuggestionCell: UITableViewCell {
     updateContent()
   }
 
-  override func setSelected(_ selected: Bool, animated: Bool) {
-    super.setSelected(selected, animated: animated)
+  func setFocused(_ focused: Bool) {
+    guard self.focused != focused else { return }
+    self.focused = focused
     updateContent()
   }
 
@@ -156,19 +167,21 @@ private final class SuggestionCell: UITableViewCell {
 
   private func updateContent() {
     guard let item else { return }
-    let focused = isSelected || isHighlighted
+    let showsFocus = focused || isHighlighted
     contentConfiguration = UIHostingConfiguration {
       OkouSuggestionRow(title: item.title, detail: item.detail, command: item.command)
+        .padding(.horizontal, OkouSpace.lg)
+        .padding(.vertical, OkouSpace.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+          RoundedRectangle(cornerRadius: OkouRadius.control)
+            .fill(showsFocus ? OkouColor.stateSelected : .clear)
+            .padding(.horizontal, OkouSpace.six)
+            .padding(.vertical, OkouSpace.one)
+        }
         .accessibilityHidden(true)
     }
-    .margins(.horizontal, OkouSpace.lg)
-    .margins(.vertical, OkouSpace.sm)
-    .background {
-      RoundedRectangle(cornerRadius: OkouRadius.control)
-        .fill(focused ? OkouColor.stateSelected : .clear)
-        .padding(.horizontal, OkouSpace.six)
-        .padding(.vertical, OkouSpace.one)
-    }
+    .margins(.all, 0)
   }
 
   override func prepareForReuse() {
