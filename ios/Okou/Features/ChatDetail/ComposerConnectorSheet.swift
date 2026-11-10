@@ -179,7 +179,7 @@ private struct ComposerConnectorSheetContent: View {
               .font(.okou(.body)).foregroundStyle(OkouColor.foreground).lineLimit(1)
             if let access = connector.access {
               Text("\(access.enabledCount) enabled")
-              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
+                .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
             }
           }
           Spacer(minLength: OkouSpace.sm)
