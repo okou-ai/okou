@@ -1315,6 +1315,38 @@
       "description": "More credits & concurrent runs",
       "getPlan": "Get {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "I was just checking the price",
+          "needs_approval": "I need approval from someone else",
+          "not_ready_yet": "I'm not ready to commit yet",
+          "other": "Something else",
+          "payment_issue": "I had trouble paying",
+          "price_higher_than_expected": "The price was higher than I expected"
+        },
+        "description": "One quick question. Your answer helps us improve.",
+        "question": "What stopped you from completing your purchase?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "I don't need more right now",
+          "not_sure_worth_it": "I'm not sure it's worth it yet",
+          "other": "Something else",
+          "still_trying": "I want to try it more first",
+          "too_expensive": "It's too expensive"
+        },
+        "question": "What's stopping you from upgrading today?",
+        "reward": "Answer to get {{credits}} free credits, about one more task.",
+        "thanksWithCredits": "Thanks! {{credits}} credits were added, so you can keep going."
+      },
+      "error": "Couldn't send your answer. Try again.",
+      "notNow": "Not now",
+      "otherLabel": "Your answer",
+      "otherPlaceholder": "Tell us more (optional)",
+      "submit": "Submit",
+      "thanks": "Thanks for telling us."
+    },
     "toasts": {
       "autoRechargeUpdated": "Auto-recharge updated",
       "cancellationScheduledDate": "Cancellation scheduled. Your current plan stays active until {{date}}.",

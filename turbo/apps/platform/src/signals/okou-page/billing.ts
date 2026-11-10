@@ -35,6 +35,11 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 import {
+  clearPendingBillingCheckout$,
+  markBillingCheckoutPending$,
+  markBillingCheckoutReturned$,
+} from "../billing-checkout-pending.ts";
+import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
@@ -630,6 +635,15 @@ export const handleBillingRedirect$ = command(
       await set(completePaidCheckout$, billingSessionId, signal);
       signal.throwIfAborted();
     }
+    if (billing === "canceled" || credits === "canceled") {
+      set(markBillingCheckoutReturned$);
+    } else if (
+      billing === "pro" ||
+      billing === "team" ||
+      credits === "purchased"
+    ) {
+      set(clearPendingBillingCheckout$);
+    }
 
     searchParams.delete("billing");
     searchParams.delete("billing_session_id");
@@ -772,6 +786,8 @@ export const startCheckout$ = command(
       throw new Error("Plan checkout returned an unexpected confirmation");
     }
     set(capturePaidOnboardingRedirectToStripe$, "paywall");
+    await set(markBillingCheckoutPending$, "plan", signal);
+    signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
     } else {
@@ -834,6 +850,8 @@ export const startUsagePackCheckout$ = command(
         "Usage pack checkout returned an unexpected confirmation",
       );
     }
+    await set(markBillingCheckoutPending$, "usage_pack", signal);
+    signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
     } else {
@@ -873,6 +891,8 @@ export const confirmSubscriptionPurchase$ = command(
           );
     signal.throwIfAborted();
     if ("url" in response.body) {
+      await set(markBillingCheckoutPending$, state.purchaseType, signal);
+      signal.throwIfAborted();
       if (state.newTab) {
         window.open(response.body.url, "_blank");
       } else {
@@ -912,6 +932,8 @@ export const confirmSubscriptionPurchase$ = command(
       return;
     }
     if (response.body.status === "checkout_required") {
+      await set(markBillingCheckoutPending$, state.purchaseType, signal);
+      signal.throwIfAborted();
       if (state.newTab) {
         window.open(response.body.checkoutUrl, "_blank");
       } else {
@@ -1186,6 +1208,8 @@ export const startCreditCheckout$ = command(
       return;
     }
     // Hosted Checkout remains the fallback when saved billing is unavailable.
+    await set(markBillingCheckoutPending$, "credits", signal);
+    signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
     } else {

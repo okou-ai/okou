@@ -146,6 +146,7 @@ export const clientContractImportManifest = [
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
+      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",

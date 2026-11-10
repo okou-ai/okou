@@ -164,6 +164,8 @@ import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { billingSurveyEnabled$ } from "../../signals/billing-survey.ts";
+import { CreditsExhaustedSurvey } from "./components/billing-survey.tsx";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
@@ -4592,6 +4594,7 @@ function InsufficientCreditsCard() {
   const setSubPage = useSet(setBillingSubPage$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
+  const billingSurveyEnabled = useGet(billingSurveyEnabled$);
 
   const billingResolved = billingLoadable.state === "hasData";
   const credits = billingResolved ? billingLoadable.data.credits : null;
@@ -4651,47 +4654,57 @@ function InsufficientCreditsCard() {
     );
   };
 
+  // The upgrade question follows only the Pro upgrade action a billing manager
+  // can take, never the credit top-up or the ask-an-admin copy.
+  const showUpgradeSurvey =
+    canShowBillingAction && shouldStartProCheckout && billingSurveyEnabled;
+
   return (
-    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-      <div className="min-w-0">
-        <p
-          className={cn(
-            "break-words text-[0.9375rem] font-medium",
-            hasAvailableCredits
-              ? "text-emerald-700 dark:text-emerald-300"
-              : "text-foreground",
-          )}
-        >
-          {headline}
-        </p>
-        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
-      </div>
-      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-        {!canShowBillingAction ? null : shouldStartProCheckout ? (
-          <Button
-            type="button"
-            onClick={handleUpgradeClick}
-            disabled={checkoutRedirecting}
-            variant="default"
-            size="sm"
-            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+    <>
+      <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-[0.9375rem] font-medium",
+              hasAvailableCredits
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-foreground",
+            )}
           >
-            {checkoutRedirecting
-              ? t(($) => {
-                  return $.chat.billing.redirecting;
-                })
-              : t(($) => {
-                  return $.chat.billing.upgradeToPro;
-                })}
-          </Button>
-        ) : (
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        )}
+            {headline}
+          </p>
+          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+            {helper}
+          </p>
+        </div>
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          {!canShowBillingAction ? null : shouldStartProCheckout ? (
+            <Button
+              type="button"
+              onClick={handleUpgradeClick}
+              disabled={checkoutRedirecting}
+              variant="default"
+              size="sm"
+              className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+            >
+              {checkoutRedirecting
+                ? t(($) => {
+                    return $.chat.billing.redirecting;
+                  })
+                : t(($) => {
+                    return $.chat.billing.upgradeToPro;
+                  })}
+            </Button>
+          ) : (
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          )}
+        </div>
       </div>
-    </div>
+      {showUpgradeSurvey ? <CreditsExhaustedSurvey /> : null}
+    </>
   );
 }
 

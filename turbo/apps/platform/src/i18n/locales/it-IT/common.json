@@ -1338,6 +1338,38 @@
       "description": "Più crediti e esecuzioni simultanee",
       "getPlan": "Ottieni {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Volevo solo vedere il prezzo",
+          "needs_approval": "Mi serve l'approvazione di qualcun altro",
+          "not_ready_yet": "Non sono ancora pronto a impegnarmi",
+          "other": "Altro",
+          "payment_issue": "Ho avuto problemi con il pagamento",
+          "price_higher_than_expected": "Il prezzo era più alto del previsto"
+        },
+        "description": "Solo una domanda. La tua risposta ci aiuta a migliorare.",
+        "question": "Cosa ti ha impedito di completare l'acquisto?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Al momento non mi serve altro",
+          "not_sure_worth_it": "Non sono ancora sicuro che ne valga la pena",
+          "other": "Altro",
+          "still_trying": "Voglio provarlo ancora un po'",
+          "too_expensive": "È troppo costoso"
+        },
+        "question": "Cosa ti impedisce di passare a un piano superiore oggi?",
+        "reward": "Rispondi e ricevi {{credits}} crediti gratuiti, circa un'attività in più.",
+        "thanksWithCredits": "Grazie! Abbiamo aggiunto {{credits}} crediti, così puoi continuare."
+      },
+      "error": "Impossibile inviare la risposta. Riprova.",
+      "notNow": "Non ora",
+      "otherLabel": "La tua risposta",
+      "otherPlaceholder": "Raccontaci di più (facoltativo)",
+      "submit": "Invia",
+      "thanks": "Grazie per avercelo detto."
+    },
     "toasts": {
       "autoRechargeUpdated": "Ricarica automatica aggiornata",
       "cancellationScheduledDate": "Cancellazione prevista. Il tuo piano attuale rimane attivo fino al {{date}}.",
