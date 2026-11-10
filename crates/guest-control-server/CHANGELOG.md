@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.90](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.89...guest-control-server-v0.24.90) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-control:** isolate exec output delivery ([#46314](https://github.com/okou-ai/okou/issues/46314)) ([1df3905](https://github.com/okou-ai/okou/commit/1df39057260472e1ceec5f79f8477c22b4561faa))
+
 ## [0.24.89](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.88...guest-control-server-v0.24.89) (2026-11-10)
 
 ## [0.24.88](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.87...guest-control-server-v0.24.88) (2026-11-09)

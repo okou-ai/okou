@@ -10,6 +10,14 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.55.5](https://github.com/okou-ai/okou/compare/api-v2.55.4...api-v2.55.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* **api:** preserve drive upload errors and add safe diagnostics ([#46261](https://github.com/okou-ai/okou/issues/46261)) ([ef6bd89](https://github.com/okou-ai/okou/commit/ef6bd8900402e16b088a7af61c4f57e8d7aefab7))
+* preserve handoff session access and recover failed task entry ([#46268](https://github.com/okou-ai/okou/issues/46268)) ([f68a92e](https://github.com/okou-ai/okou/commit/f68a92e1d2838100fcaaa2d7601d1b0338bc7e2a))
+
 ## [2.55.4](https://github.com/okou-ai/okou/compare/api-v2.55.3...api-v2.55.4) (2026-11-10)
 
 

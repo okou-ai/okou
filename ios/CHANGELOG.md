@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.6](https://github.com/okou-ai/okou/compare/ios-v0.31.5...ios-v0.31.6) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** hide expanded project status indicators ([#46289](https://github.com/okou-ai/okou/issues/46289)) ([91d429b](https://github.com/okou-ai/okou/commit/91d429b80ad08ecd93382220678f26871bfb8d19))
+* **ios:** share compact composer geometry with the design system ([#46285](https://github.com/okou-ai/okou/issues/46285)) ([3340655](https://github.com/okou-ai/okou/commit/33406555bdd75ea4da78ea1a8325a1f044c21bab))
+* **ios:** suspend sidebar swipes while the filter menu is open ([#46282](https://github.com/okou-ai/okou/issues/46282)) ([84637e1](https://github.com/okou-ai/okou/commit/84637e196985af3edffe638b4fb707905f5a29d6))
+
 ## [0.31.5](https://github.com/okou-ai/okou/compare/ios-v0.31.4...ios-v0.31.5) (2026-11-10)
 
 
