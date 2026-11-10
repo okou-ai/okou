@@ -59,17 +59,19 @@ final class WorkspaceStore {
     if list.syncError != nil || list.navigationError != nil
       || selectedConversation?.syncError != nil
     {
-      return .unavailable
+      return .updateFailed
     }
     guard realtime != nil else { return nil }
     switch connectionStatus {
     case .connecting: return .connecting
-    case .unavailable, .disconnected: return .unavailable
+    case .unavailable, .disconnected: return .liveUpdatesUnavailable
     case .connected: return nil
     }
   }
 
   func retrySynchronization() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    realtime?.retry()
     await refreshNavigation()
     await refresh()
   }

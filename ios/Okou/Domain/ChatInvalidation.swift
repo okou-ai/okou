@@ -40,13 +40,21 @@ enum RealtimeConnectionStatus: Sendable {
 }
 
 enum ChatSynchronizationState: Equatable {
-  case connecting, updating, unavailable
+  case connecting, updating, liveUpdatesUnavailable, updateFailed
+
+  var isFailure: Bool {
+    switch self {
+    case .connecting, .updating: false
+    case .liveUpdatesUnavailable, .updateFailed: true
+    }
+  }
 
   var label: String {
     switch self {
     case .connecting: String(localized: "Connecting…")
     case .updating: String(localized: "Updating chats…")
-    case .unavailable: String(localized: "Chats may not be up to date")
+    case .liveUpdatesUnavailable: String(localized: "Live updates unavailable")
+    case .updateFailed: String(localized: "Unable to update chats")
     }
   }
 }

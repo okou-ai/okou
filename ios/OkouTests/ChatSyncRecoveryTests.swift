@@ -80,6 +80,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
     XCTAssertNotNil(store.selectedConversation)
     XCTAssertNotNil(store.list.syncError)
     XCTAssertNil(store.list.actionError)
+    XCTAssertEqual(store.synchronizationState, .updateFailed)
 
     fixture.state.value.withLock {
       $0.listOffline = false
@@ -88,6 +89,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
     await store.refresh([.threadList])
     XCTAssertEqual(store.list.threads.first?.title, "Recovered chat")
     XCTAssertNil(store.list.syncError)
+    XCTAssertNil(store.synchronizationState)
   }
 
   func testBackgroundCancelsListIndicatorAndHistoryReadsAndForegroundCatchesUp() async throws {
