@@ -3200,11 +3200,10 @@
     "enableByDefault": "預設啟用 {{account}}",
     "enabledAccounts": "{{value}} 個已啟用",
     "manageAccounts": "管理帳號",
-    "noAccount": "未選擇帳號",
     "noEnabledAccount": "目前聊天未啟用任何帳號",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
-    "settingsDescription": "選擇預設啟用的帳號，以及新聊天的預設帳號。"
+    "settingsDescription": "選擇預設啟用的帳號。"
   },
   "connectors": {
     "access": {

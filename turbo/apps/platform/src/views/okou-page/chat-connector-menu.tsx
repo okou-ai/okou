@@ -11,15 +11,7 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
-import {
-  Button,
-  buttonVariants,
-  cn,
-  Input,
-  Radio,
-  RadioGroup,
-  PopoverClose,
-} from "@okouai/ui";
+import { Button, buttonVariants, cn, Input, PopoverClose } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ChatConnectorOverview,
@@ -57,12 +49,7 @@ function ChatAccountChoiceRow({
   const identity = connectorAccountExternalIdentity(account);
   return (
     <div className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-state-hover">
-      <label className="flex min-w-0 flex-1 cursor-default items-center gap-2.5">
-        <Radio
-          value={account.id}
-          disabled={!access.enabled || account.connectionStatus !== "connected"}
-          aria-label={name}
-        />
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm">{name}</span>
           {identity && identity !== name && (
@@ -78,7 +65,7 @@ function ChatAccountChoiceRow({
             </span>
           )}
         </span>
-      </label>
+      </div>
       <AccessChoiceSelect
         ariaLabel={t(
           ($) => {
@@ -118,7 +105,6 @@ function ChatAccountChoices({
   const previous = useLastResolved(accounts.list.accounts$);
   const search = useGet(accounts.list.search$);
   const setSearch = useSet(accounts.list.setSearch$);
-  const [selecting, select] = useLoadableSet(accounts.select$);
   const [saving, override] = useLoadableSet(accounts.setOverride$);
   const [loadingMore, loadMore] = useLoadableSet(accounts.list.loadMore$);
   const signal = useGet(pageSignal$);
@@ -138,7 +124,7 @@ function ChatAccountChoices({
     })
       ? [current.data, ...rows]
       : rows;
-  const busy = selecting.state === "loading" || saving.state === "loading";
+  const busy = saving.state === "loading";
   return (
     <>
       {(entry.access.accounts.length > 6 || search) && (
@@ -157,14 +143,7 @@ function ChatAccountChoices({
           />
         </div>
       )}
-      <RadioGroup
-        value={entry.access.currentConnectionId}
-        disabled={busy}
-        onValueChange={(connectionId: string) => {
-          detach(select(connectionId, signal), Reason.DomCallback);
-        }}
-        className="px-1"
-      >
+      <div className="px-1">
         {displayed.map((account) => {
           const access = entry.access.accounts.find((candidate) => {
             return candidate.connectionId === account.id;
@@ -189,7 +168,7 @@ function ChatAccountChoices({
             />
           ) : null;
         })}
-      </RadioGroup>
+      </div>
       {list.state === "loading" && !page && (
         <p className="px-3 py-2 text-sm text-muted-foreground">
           {t(($) => {
@@ -217,7 +196,7 @@ function ChatAccountChoices({
           })}
         </Button>
       )}
-      {!entry.access.currentConnectionId && (
+      {!entry.access.available && (
         <p className="px-3 py-2 text-xs text-muted-foreground">
           {t(($) => {
             return $.connectorChatAccess.noEnabledAccount;
@@ -236,19 +215,6 @@ function ConnectorOverviewRow({
   readonly onOpen: () => void;
 }) {
   const { t } = useTranslation();
-  const accountLabel = useConnectorAccountLabel();
-  const currentName = entry.current
-    ? accountLabel(entry.current)
-    : t(($) => {
-        return $.connectorChatAccess.noAccount;
-      });
-  const identity = entry.current
-    ? connectorAccountExternalIdentity(entry.current)
-    : null;
-  const currentLabel =
-    identity && identity !== currentName
-      ? `${currentName} · ${identity}`
-      : currentName;
   return (
     <button
       type="button"
@@ -265,15 +231,7 @@ function ConnectorOverviewRow({
           size={20}
         />
       )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{entry.label}</span>
-        <span
-          title={currentLabel}
-          className="block truncate text-xs text-muted-foreground"
-        >
-          {currentLabel}
-        </span>
-      </span>
+      <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
       <span className="shrink-0 text-xs text-muted-foreground">
         {t(
           ($) => {

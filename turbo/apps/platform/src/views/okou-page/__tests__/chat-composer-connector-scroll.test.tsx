@@ -19,10 +19,7 @@ import {
   createComposerConnectorHelpers,
   SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
-import {
-  findFastControl,
-  queryFastControl,
-} from "./chat-message-experience-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 const { installComposerConnectorFixture } =
@@ -72,7 +69,7 @@ async function connectorButton(popup: HTMLElement, label: string) {
 async function openAccountPanel(popup: HTMLElement, label = "Scroll 7") {
   click(await connectorButton(popup, label));
   const panel = await within(popup).findByRole("group", { name: label });
-  await findFastControl("radio", "Account 1", panel);
+  await within(panel).findByRole("combobox", { name: "Account 1 access" });
   return panel;
 }
 
@@ -107,7 +104,7 @@ test.each([12, 30])(
     const reopened = await within(popup).findByRole("group", {
       name: "Scroll 7",
     });
-    await findFastControl("radio", "Account 1", reopened);
+    await within(reopened).findByRole("combobox", { name: "Account 1 access" });
     expect(reopened.scrollTop).toBe(0);
     reopened.scrollTop = 120;
     const returned = await backToOverview(popup, reopened);
@@ -190,7 +187,9 @@ test("Keep a valid overview focus destination if the returning connector was rem
     connectorSlug: "scroll-7",
   });
   await waitFor(() => {
-    expect(queryFastControl("radio", "Account 1", panel)).toBeNull();
+    expect(
+      within(panel).queryByRole("combobox", { name: "Account 1 access" }),
+    ).toBeNull();
   });
   expect(
     within(panel).getByText("Accounts are unavailable for this connector."),
@@ -215,7 +214,9 @@ test("Keep popup focus as the final connector disappears and returns", async () 
     connectorSlug: "scroll-1",
   });
   await waitFor(() => {
-    expect(queryFastControl("radio", "Account 1", panel)).toBeNull();
+    expect(
+      within(panel).queryByRole("combobox", { name: "Account 1 access" }),
+    ).toBeNull();
   });
   await user.keyboard("{Tab}");
   await expect(findFastControl("button", "Back", panel)).resolves.toHaveFocus();
