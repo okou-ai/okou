@@ -12,6 +12,7 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
+import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -3551,7 +3552,10 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           ) : (
             <ChatThreadEventsPane thread={thread} />
           )}
-          <ChatThreadBottomBar thread={thread} />
+          <ChatThreadBottomBar
+            thread={thread}
+            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
+          />
         </div>
       </div>
       <ChatThreadFeedbackSlot thread={thread} />
@@ -3601,7 +3605,14 @@ function SharedThreadCreatedLink({
   );
 }
 
-function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadBottomBar({
+  thread,
+  below = null,
+}: {
+  readonly thread: ChatPanelSignals;
+  /** Shown under the composer, such as compliance on an empty thread's home. */
+  readonly below?: ReactNode;
+}) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
@@ -3613,7 +3624,9 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     thread.sharing.create$,
   );
   if (phase === "idle") {
-    return withChatScrollLayout(<ChatThreadComposer thread={thread} />);
+    return withChatScrollLayout(
+      <ChatThreadComposer thread={thread} below={below} />,
+    );
   }
 
   const creating = createLoadable.state === "loading";
@@ -3888,7 +3901,13 @@ function RecommendedFollowupList({
   );
 }
 
-function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadComposer({
+  thread,
+  below,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly below: ReactNode;
+}) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
@@ -3910,6 +3929,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
       >
         <div className="mx-auto max-w-[900px]">
           <ChatComposer signals={thread.composer} />
+          {below}
         </div>
       </div>
     </footer>

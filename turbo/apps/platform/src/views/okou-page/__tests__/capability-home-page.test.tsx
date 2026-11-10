@@ -71,7 +71,7 @@ test("An empty conversation offers capabilities without an avatar and sends its 
   await waitFor(() => {
     expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
   });
-  click(button("All capabilities", shelf));
+  click(button("All capabilities"));
   expect(capabilities()).toBeInTheDocument();
   expect(editor).toHaveTextContent("Prepare the launch presentation");
   click(button("Send"));
@@ -93,7 +93,7 @@ test.each([
   ["home", `/agents/${AGENT_ID}/chat`],
   ["empty conversation", `/chats/${THREAD_ID}`],
 ])(
-  "The %s lists compliance statuses under the capabilities in the same column",
+  "The %s lists compliance statuses under the composer",
   async (_surface, path) => {
     mockTemplateChat();
     await setupPage({
@@ -101,19 +101,22 @@ test.each([
       path,
       featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
     });
-    const discovery = await screen.findByRole("group", {
-      name: "Explore Okou capabilities",
-    });
+    const editor = await findComposerEditor();
+    await screen.findByRole("group", { name: "Explore Okou capabilities" });
     const compliance = screen.getByRole("region", {
       name: "Okou’s compliance, built for your trust",
     });
     expect(
-      discovery.compareDocumentPosition(compliance) &
+      editor.compareDocumentPosition(compliance) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
-    expect(compliance.closest("main")).toBe(discovery.closest("main"));
+    expect(compliance.closest("main")).toBeNull();
+    expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
+    // One quiet line names the frameworks; their statuses open from it.
+    click(queryAllByRoleFast("button", compliance)[0]!);
+    const details = await screen.findByRole("dialog");
     expect(
-      within(compliance)
+      within(details)
         .getAllByRole("listitem")
         .map((item) => {
           return item.textContent;
@@ -128,6 +131,35 @@ test.each([
   },
 );
 
+test("An open tray switches capabilities and types without going back to the cards", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  await fill(editor, "Keep my launch brief");
+  click(button("Presentation", capabilities()));
+  await screen.findByRole("group", { name: "Presentation templates" });
+  const row = screen.getByRole("navigation", {
+    name: "Explore Okou capabilities",
+  });
+  expect(button("Create", row)).toHaveAttribute("aria-current", "true");
+  const types = screen.getByRole("radiogroup", { name: "Create" });
+  const image = queryAllByRoleFast("radio", types).find((item) => {
+    return item.textContent?.trim() === "Image";
+  });
+  click(image!);
+  await screen.findByRole("group", { name: "Image styles" });
+  expect(
+    screen.queryByRole("group", { name: "Presentation templates" }),
+  ).toBeNull();
+  click(button("Find people", row));
+  await screen.findByRole("region", { name: "Find people" });
+  expect(button("Find people", row)).toHaveAttribute("aria-current", "true");
+  expect(screen.queryByRole("group", { name: "Image styles" })).toBeNull();
+  // Create reopens on the type chosen last.
+  click(button("Create", row));
+  await screen.findByRole("group", { name: "Image styles" });
+  expect(editor).toHaveTextContent("Keep my launch brief");
+});
+
 test("Capability discovery and templates replace each other while the composer keeps the draft and template", async () => {
   mockTemplateChat();
   const editor = await setupHome();
@@ -137,7 +169,7 @@ test("Capability discovery and templates replace each other while the composer k
   const shelf = await screen.findByRole("group", {
     name: "Presentation templates",
   });
-  expect(screen.queryByTestId("chat-greeting")).toBeNull();
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   expect(
     screen.queryByRole("group", { name: "Explore Okou capabilities" }),
   ).toBeNull();
@@ -146,7 +178,7 @@ test("Capability discovery and templates replace each other while the composer k
   await waitFor(() => {
     expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
   });
-  click(button("All capabilities", shelf));
+  click(button("All capabilities"));
   expect(capabilities()).toBeInTheDocument();
   expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   expect(
@@ -189,7 +221,7 @@ test("Workflow suggestions preserve the draft and open the real workflow picker"
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  click(button("All capabilities", suggestions));
+  click(button("All capabilities"));
   expect(editor).toHaveTextContent(/^Focus on customer meetingsMorning brief$/);
   expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
   click(button("Triggers", capabilities()));
@@ -212,7 +244,7 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   expect(editor).toHaveTextContent("Repeat on a schedule.");
   expect(editor).toHaveTextContent("which time zone to use");
   expect(editor).toHaveFocus();
-  click(button("All capabilities", scheduled));
+  click(button("All capabilities"));
   click(button("Triggers", capabilities()));
   const triggers = await screen.findByRole("region", { name: "Triggers" });
   click(button("Email replies", triggers));
@@ -258,7 +290,7 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   await fill(editor, "I am planning a research project.");
   click(button("Find people", capabilities()));
   const search = await screen.findByRole("region", { name: "Find people" });
-  expect(screen.queryByTestId("chat-greeting")).toBeNull();
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   expect(
     screen.queryByRole("group", { name: "Explore Okou capabilities" }),
   ).toBeNull();
@@ -267,9 +299,9 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   expect(editor).toHaveTextContent("I am planning a research project.");
   expect(editor).toHaveFocus();
   expect(capture.runPrompts).toStrictEqual([]);
-  click(button("All capabilities", search));
-  const explore = queryAllByRoleFast("link", capabilities()).find((link) => {
-    return link.getAttribute("aria-label") === "Explore";
+  click(button("All capabilities"));
+  const explore = queryAllByRoleFast("link").find((link) => {
+    return link.textContent?.trim() === "Explore what's new";
   });
   expect(explore).toHaveAttribute("href", "https://www.okou.ai/en/blog");
   expect(explore).toHaveAttribute("target", "_blank");
@@ -280,7 +312,7 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   expect(editor).toHaveTextContent("Compare website traffic.");
   expect(editor).toHaveTextContent("I am planning a research project.");
   expect(capture.runPrompts).toStrictEqual([]);
-  click(button("All capabilities", research));
+  click(button("All capabilities"));
   expect(capabilities()).toBeInTheDocument();
   expect(editor).toHaveTextContent(/^I am planning a research project\.$/);
 });
@@ -323,7 +355,7 @@ test.each(HOME_PROMPTS)(
     click(button(suggestion, guide));
     expect(editor.textContent).not.toBe("");
 
-    click(button("All capabilities", guide));
+    click(button("All capabilities"));
 
     expect(capabilities()).toBeInTheDocument();
     expect(editor).toHaveFocus();
@@ -346,7 +378,7 @@ test.each(HOME_PROMPTS)(
     await user.paste(" Focus on my company.");
     const editedText = editor.textContent;
 
-    click(button("All capabilities", guide));
+    click(button("All capabilities"));
 
     expect(editor.textContent).toBe(editedText);
     expect(editor).toHaveTextContent("Focus on my company.");
@@ -363,7 +395,7 @@ test("Dismissing repeated suggestions restores the original draft without stacke
   click(button("Event speakers", guide));
   expect(editor).toHaveTextContent("Help me find: Event speakers.");
 
-  click(button("All capabilities", guide));
+  click(button("All capabilities"));
 
   expect(editor).toHaveTextContent(/^Keep my own brief\.$/);
 });
@@ -379,7 +411,7 @@ test("Dismissing a suggestion does not clear matching text the user wrote", asyn
   click(button("Potential customers", guide));
   click(button("Potential customers", guide));
 
-  click(button("All capabilities", guide));
+  click(button("All capabilities"));
 
   expect(editor.textContent).toBe(prompt);
 });

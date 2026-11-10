@@ -1899,7 +1899,9 @@
         "title": "Crear"
       },
       "explore": "Explorar",
+      "exploreWhatsNew": "Descubre las novedades",
       "research": {
+        "description": "Tráfico, anuncios, productos, temas",
         "items": {
           "ads": "Explorar creatividades publicitarias",
           "products": "Investigar productos",
@@ -1912,6 +1914,7 @@
         "title": "Investigar"
       },
       "search": {
+        "description": "Clientes, creadores, responsables",
         "items": {
           "affiliates": "Programas de afiliación",
           "creators": "Colaboraciones con creadores",
@@ -1942,6 +1945,7 @@
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",
+        "summary": "Se ejecuta con un horario o un activador",
         "triggers": {
           "description": "Empieza cuando ocurra algo.",
           "eventPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta por la fuente, los filtros y el destino del resultado. Prepara un borrador del flujo y confirma la configuración antes de activarlo.",

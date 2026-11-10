@@ -1865,7 +1865,9 @@
         "title": "作成"
       },
       "explore": "探索",
+      "exploreWhatsNew": "新機能を見る",
       "research": {
+        "description": "トラフィック、広告、製品、トピック",
         "items": {
           "ads": "広告クリエイティブを調べる",
           "products": "商品を調べる",
@@ -1878,6 +1880,7 @@
         "title": "リサーチ"
       },
       "search": {
+        "description": "顧客、クリエイター、意思決定者",
         "items": {
           "affiliates": "アフィリエイトプログラム",
           "creators": "クリエイターとの提携",
@@ -1908,6 +1911,7 @@
           "title": "定期タスク"
         },
         "suggestions": "提案を選んで、自分に合うように調整しましょう。",
+        "summary": "スケジュールまたはトリガーで実行",
         "triggers": {
           "description": "イベントの発生をきっかけに開始。",
           "eventPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のソース、絞り込み条件、出力先を確認し、ワークフローの下書きを作成してください。設定を確認してから有効にしてください。",

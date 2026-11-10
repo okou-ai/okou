@@ -1899,7 +1899,9 @@
         "title": "Criar"
       },
       "explore": "Explorar",
+      "exploreWhatsNew": "Veja as novidades",
       "research": {
+        "description": "Tráfego, anúncios, produtos, temas",
         "items": {
           "ads": "Explorar peças publicitárias",
           "products": "Pesquisar produtos",
@@ -1912,6 +1914,7 @@
         "title": "Pesquisar"
       },
       "search": {
+        "description": "Clientes, criadores, decisores",
         "items": {
           "affiliates": "Programas de afiliados",
           "creators": "Parcerias com criadores",
@@ -1942,6 +1945,7 @@
           "title": "Tarefas agendadas"
         },
         "suggestions": "Comece com uma sugestão e adapte ao que você precisa.",
+        "summary": "Executa por agenda ou gatilho",
         "triggers": {
           "description": "Comece quando algo acontecer.",
           "eventPrompt": "Ajude-me a configurar {{task}} com {{source}}. Fluxo: {{event}} → {{action}} → {{result}}. Pergunte a fonte, os filtros e o destino dos resultados. Prepare um rascunho do fluxo e confirme a configuração antes de ativar.",

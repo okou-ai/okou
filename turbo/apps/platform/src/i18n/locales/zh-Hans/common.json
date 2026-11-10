@@ -1865,7 +1865,9 @@
         "title": "创作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什么新功能",
       "research": {
+        "description": "流量、广告、产品、话题",
         "items": {
           "ads": "探索广告创意",
           "products": "研究产品",
@@ -1878,6 +1880,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客户、创作者、决策者",
         "items": {
           "affiliates": "联盟营销计划",
           "creators": "创作者合作",
@@ -1908,6 +1911,7 @@
           "title": "定时任务"
         },
         "suggestions": "从一条建议开始，按你的需要调整。",
+        "summary": "按计划或触发器自动运行",
         "triggers": {
           "description": "事件发生时自动开始。",
           "eventPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认具体来源、筛选条件和输出位置，准备工作流草稿，确认设置后再启用。",
