@@ -177,6 +177,7 @@ public actor ChatCache {
   }
 
   public func saveNavigation(_ snapshot: SidebarNavigationSnapshot) throws {
+    try Task.checkCancellation()
     let data = try JSONEncoder().encode(snapshot)
     try withDatabase { database in
       let write = try database.prepare(
