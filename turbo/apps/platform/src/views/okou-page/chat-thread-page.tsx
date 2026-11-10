@@ -6365,6 +6365,7 @@ function MessageAttachment({
             threadId,
             url: a.url,
             filename: a.filename,
+            contentType: a.signals.contentType,
             preview: a.signals,
             shareAvailable: false,
           });
@@ -6818,6 +6819,7 @@ function UserMessageFileReference({
             threadId,
             url: signals.url,
             filename: part.filenameSnapshot,
+            contentType: part.contentType,
             preview: signals,
             shareAvailable: false,
           });
@@ -7474,6 +7476,7 @@ function PagedUserMessage({
       threadId: thread.threadId,
       url: attachment.url,
       filename: attachment.filename,
+      contentType: attachment.signals.contentType,
       preview: attachment.signals,
       // The user's own attachment, not a published artifact: previewing it
       // offers no sharing controls.

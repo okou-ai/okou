@@ -83,6 +83,7 @@ export type ArtifactRef = {
   readonly url: string;
   readonly kind: ArtifactPreviewKind;
   readonly filename: string;
+  readonly contentType?: string | undefined;
   readonly shareAvailable?: boolean;
   /**
    * Text preview content for text-kind refs, resolved by the opening command
@@ -117,6 +118,7 @@ function artifactRefFromUrl(url: string): ArtifactRef {
     ...createAttachmentPreviewSignals(url),
     kind: classifyChatAttachment(attachment),
     filename: attachment.filename,
+    contentType: attachment.contentType,
   };
 }
 
@@ -159,6 +161,7 @@ function materializeArtifactRef(
           url: input.url,
         }),
         filename: input.filename,
+        contentType: input.contentType,
         ...(input.text$ === undefined ? {} : { text$: input.text$ }),
         ...(input.shareAvailable === undefined
           ? {}
@@ -178,6 +181,7 @@ function materializeArtifactRef(
         url: resource.url,
       }),
       filename: input.file.name,
+      contentType: input.file.type,
       ...(input.shareAvailable === undefined
         ? {}
         : { shareAvailable: input.shareAvailable }),

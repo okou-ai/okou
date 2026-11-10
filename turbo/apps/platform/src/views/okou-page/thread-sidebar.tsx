@@ -425,6 +425,7 @@ function ThreadArtifactDetail({
           shareUrl$: sidebar.selectedArtifactShareUrl$,
           kind: preview.kind,
           filename: preview.filename,
+          contentType: preview.contentType,
         }}
         artifactKind={
           detail.kind === "presentation"

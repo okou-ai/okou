@@ -3,6 +3,7 @@ import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
+import type { ArtifactDownloadType } from "./artifact-download-type.ts";
 
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
@@ -216,6 +217,7 @@ export function captureTaskCompletedSuccessfully(): void {
 type ArtifactAction =
   | {
       readonly action: "download";
+      readonly artifact_type: ArtifactDownloadType;
       readonly surface:
         | "dialog"
         | "page"

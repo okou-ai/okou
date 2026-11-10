@@ -390,6 +390,7 @@ function ArtifactCardView({
       threadId,
       url,
       filename: signals.filename,
+      contentType: signals.contentType,
       preview: signals,
     });
   };
@@ -443,6 +444,7 @@ function ArtifactCardView({
           openVideoLightbox({
             url: signals.url,
             filename: signals.filename,
+            contentType: signals.contentType,
             preview: signals,
           });
         }}
@@ -466,6 +468,7 @@ function ArtifactCardView({
       onPreviewFile={() => {
         openFileLightbox({
           filename: signals.filename,
+          contentType: signals.contentType,
           url: signals.url,
           preview: signals,
         });
