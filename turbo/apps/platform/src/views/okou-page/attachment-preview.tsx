@@ -578,7 +578,7 @@ function AudioPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openAudioLightbox({ url, filename, preview });
+        openAudioLightbox({ url, filename, contentType, preview });
       }}
       disabled={lightboxOpen}
       aria-label={t(
@@ -630,7 +630,7 @@ function VideoThumbnailPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openVideoLightbox({ url, filename, preview });
+        openVideoLightbox({ url, filename, contentType, preview });
       }}
       disabled={lightboxOpen}
       aria-label={t(

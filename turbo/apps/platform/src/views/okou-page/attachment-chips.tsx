@@ -1673,6 +1673,7 @@ export function FileAttachmentChip({
           openFileLightbox({
             threadId,
             filename,
+            contentType,
             url,
             ...(preview ? { preview } : {}),
             ...(shareAvailable === undefined ? {} : { shareAvailable }),
@@ -1825,6 +1826,7 @@ export function PreviewableAudioAttachmentChip({
           threadId,
           url,
           filename,
+          contentType,
           ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),

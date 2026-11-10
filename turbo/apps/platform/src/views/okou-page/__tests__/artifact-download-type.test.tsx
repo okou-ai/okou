@@ -26,6 +26,7 @@ import {
   findNamedMenuItem,
   mockAttachmentChat,
   mockPrivateUrlSequence,
+  userMessage,
 } from "./chat-attachment-test-helpers.ts";
 
 vi.hoisted(() => {
@@ -231,3 +232,70 @@ test("A MIME-only draft video download retains its preview type", async () => {
     { action: "download", surface: "dialog", artifact_type: "video" },
   ]);
 });
+
+test.each([false, true])(
+  "A MIME-only sent audio attachment retains its type in the sidebar (refined: %s)",
+  async (refined) => {
+    const telemetry = context.mocks.posthog();
+    const browser = context.mocks.browser.blobDownload();
+    const filename = "recording";
+    const fileId = "download-type-sent-audio";
+    const url = "https://files.example.test/audio?signature=private";
+    mockAttachmentChat(context, {
+      chatEvents: [
+        {
+          id: "download-type-sent-audio-message",
+          role: "user",
+          content: null,
+          runId: ATTACHMENT_RUN_ID,
+          createdAt: "2026-03-10T00:00:01Z",
+          userMessage: userMessage([
+            {
+              type: "file",
+              fileId,
+              filenameSnapshot: filename,
+              contentType: "audio/mpeg",
+            },
+          ]),
+        },
+      ],
+    });
+    mockPrivateUrlSequence(context, { [fileId]: [url] });
+
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.ArtifactSidebarPreview]: true,
+        [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
+      },
+    });
+    click(await findNamedButton(`Open audio preview for ${filename}`));
+    const preview = await screen.findByTestId("artifact-sidebar");
+    await waitFor(() => {
+      expect(preview.querySelector("audio")).toHaveAttribute("src", url);
+    });
+    click(
+      await findNamedButton(
+        refined ? "More artifact actions" : "Download artifact",
+        preview,
+      ),
+    );
+    click(await findNamedMenuItem("Download"));
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(
+      telemetry.events
+        .filter((event) => {
+          return event.name === "artifact_action_clicked";
+        })
+        .map((event) => {
+          return event.properties;
+        }),
+    ).toStrictEqual([
+      { action: "download", surface: "page", artifact_type: "audio" },
+    ]);
+  },
+);
