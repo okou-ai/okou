@@ -82,9 +82,9 @@ interface WorkflowShadow {
 }
 
 /**
- * Whether the caller may edit/delete the workflow's content.
+ * Whether the caller may edit, delete, or demote the workflow.
  * - private: owner only (agent admins cannot even see private workflows).
- * - public: whoever has write-permission on the host agent.
+ * - public: workflow owner or whoever has write-permission on the host agent.
  */
 function canManageWorkflow(
   workflow: WorkflowSummaryRow,
@@ -98,6 +98,7 @@ function canManageWorkflow(
     return workflow.ownerUserId === member.userId;
   }
   return (
+    workflow.ownerUserId === member.userId ||
     requireAgentPermission(agent.owner, member, "manage", {
       visibility: agent.visibility,
     }) === null
@@ -133,7 +134,7 @@ export function requireWorkflowPermission(
   const ownerLabel =
     workflow.visibility === "private"
       ? "the private workflow owner"
-      : "an agent owner or org admin";
+      : "the workflow owner, agent owner, or org admin";
   return {
     status: 403 as const,
     body: {
