@@ -134,21 +134,26 @@ private final class SuggestionCell: UITableViewCell {
     .margins(.horizontal, OkouSpace.lg)
     .margins(.vertical, OkouSpace.sm)
     backgroundColor = .clear
-    configurationUpdateHandler = { cell, state in
-      var background = UIBackgroundConfiguration.clear()
-      background.backgroundColor =
-        state.isSelected || state.isHighlighted ? UIColor(OkouColor.stateSelected) : .clear
-      background.cornerRadius = OkouRadius.control
-      background.backgroundInsets = NSDirectionalEdgeInsets(
-        top: OkouSpace.one, leading: OkouSpace.six,
-        bottom: OkouSpace.one, trailing: OkouSpace.six)
-      cell.backgroundConfiguration = background
-    }
+    automaticallyUpdatesBackgroundConfiguration = false
     isAccessibilityElement = true
     accessibilityTraits = .button
     accessibilityLabel = item.accessibilityLabel
     accessibilityHint = item.accessibilityHint
     accessibilityIdentifier = item.id
+    // A row can already be selected before its hosted content is configured.
+    setNeedsUpdateConfiguration()
+  }
+
+  override func updateConfiguration(using state: UICellConfigurationState) {
+    super.updateConfiguration(using: state)
+    var background = UIBackgroundConfiguration.clear()
+    background.backgroundColor =
+      state.isSelected || state.isHighlighted ? UIColor(OkouColor.stateSelected) : .clear
+    background.cornerRadius = OkouRadius.control
+    background.backgroundInsets = NSDirectionalEdgeInsets(
+      top: OkouSpace.one, leading: OkouSpace.six,
+      bottom: OkouSpace.one, trailing: OkouSpace.six)
+    backgroundConfiguration = background
   }
 
   override func prepareForReuse() {

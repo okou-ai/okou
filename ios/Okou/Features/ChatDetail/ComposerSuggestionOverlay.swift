@@ -26,7 +26,7 @@ extension View {
       GeometryReader { geometry in
         if isEnabled, let presentation {
           let composer = geometry[presentation.bounds]
-          let top = max(0, topInset)
+          let top = max(0, topInset) + OkouSpace.sm
           let bottom = min(geometry.size.height, composer.minY - OkouSpace.sm)
           let availableHeight = max(0, bottom - top)
           if availableHeight > 0 {

@@ -60,7 +60,6 @@ struct OkouSuggestionRow: View {
           .foregroundStyle(OkouColor.foreground)
           .lineLimit(command == nil ? 2 : 1)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .layoutPriority(1)
         if let command {
           Text(verbatim: command)
             .font(.okou(.caption, design: .monospaced))
