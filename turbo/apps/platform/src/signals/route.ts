@@ -329,6 +329,17 @@ function routeHash(hash: string | undefined): string {
   return hash.startsWith("#") ? hash : `#${hash}`;
 }
 
+// Compares serialized URLs, as the browser does, so a target is encoded the
+// same way as the address it is compared with.
+function isCurrentLocation(path: string): boolean {
+  const target = new URL(path, location.origin);
+  return (
+    target.pathname === pathname() &&
+    target.search === search() &&
+    target.hash === hash()
+  );
+}
+
 const navigate$ = command(
   async (
     { get, set },
@@ -345,8 +356,11 @@ const navigate$ = command(
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
+    // Like the browser, a navigation to the URL already open replaces its
+    // history entry instead of adding a duplicate, and still reloads the page:
+    // its setup runs again below.
     const move: RouteMove = {
-      kind: options.replace ? "replace" : "push",
+      kind: options.replace || isCurrentLocation(newPath) ? "replace" : "push",
       path: newPath,
     };
     if (direction === "none") {
