@@ -78,75 +78,101 @@ func nativeCondition(
   _ condition: some SyntaxProtocol, properties: Set<String>, locals: Set<String> = [],
   signals: Set<String> = []
 ) -> Int {
-  // A check hidden on only one side of OR does not establish the successful path.
-  let tokens = condition.tokens(viewMode: .sourceAccurate).map(\.text)
-  guard !tokens.contains("||") else { return 0 }
-  let visitor = ConditionChecks(properties: properties, locals: locals, signals: signals)
-  visitor.walk(condition)
-  return visitor.result
+  let checks = ConditionChecks(properties: properties, locals: locals, signals: signals)
+  if let conditions = condition.as(ConditionElementListSyntax.self) {
+    let proofs = conditions.map { element in
+      element.condition.as(ExprSyntax.self).map { checks.proof($0) } ?? 0
+    }
+    if proofs.count == 1 { return proofs.first ?? 0 }
+    // Every comma condition holds on success; failure can come from any condition.
+    return proofs.contains(1) ? 1 : 0
+  }
+  return condition.as(ExprSyntax.self).map { checks.proof($0) } ?? 0
 }
 
-private final class ConditionChecks: SyntaxVisitor {
+private struct ConditionChecks {
   let properties: Set<String>
   let locals: Set<String>
   let signals: Set<String>
-  var result = 0
-  init(properties: Set<String>, locals: Set<String>, signals: Set<String>) {
-    self.properties = properties
-    self.locals = locals
-    self.signals = signals
-    super.init(viewMode: .sourceAccurate)
-  }
-  override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind { .skipChildren }
-  override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-    if node.declName.baseName.text == "isCancelled",
-      (Set(["Task", "Swift.Task", "_Concurrency.Task"]).union(signals))
-        .contains(node.base?.trimmedDescription ?? "")
-    {
-      mark(node)
+
+  /// Positive proves the true path; negative proves the false path. Zero proves neither.
+  func proof(_ expression: ExprSyntax) -> Int {
+    if let prefix = expression.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "!" {
+      return -proof(prefix.expression)
     }
-    if ["closed", "isClosed"].contains(node.declName.baseName.text),
-      node.base?.trimmedDescription == "self", properties.contains(node.declName.baseName.text)
+    if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1,
+      let element = tuple.elements.first, element.label == nil
     {
-      mark(node)
+      return proof(element.expression)
     }
-    return .visitChildren
-  }
-  override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
-    if ["closed", "isClosed"].contains(node.baseName.text),
-      properties.contains(node.baseName.text), !locals.contains(node.baseName.text),
-      node.parent?.is(MemberAccessExprSyntax.self) != true
+    if let sequence = expression.as(SequenceExprSyntax.self) {
+      return sequenceProof(Array(sequence.elements))
+    }
+    if let member = expression.as(MemberAccessExprSyntax.self),
+      member.declName.baseName.text == "isCancelled",
+      Set(["Task", "Swift.Task", "_Concurrency.Task"]).union(signals)
+        .contains(member.base?.trimmedDescription ?? "")
     {
-      mark(node)
+      return -1
     }
-    return .visitChildren
+    if let property = ownedProperty(expression), ["closed", "isClosed"].contains(property),
+      properties.contains(property)
+    {
+      return -1
+    }
+    // A flag passed into an unknown helper is not proof about that helper's result.
+    return 0
   }
-  override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
-    let parts = Array(node.elements)
-    for index in parts.indices where index > 0 && index + 1 < parts.count {
-      guard let operation = parts[index].as(BinaryOperatorExprSyntax.self),
-        ["==", "!="].contains(operation.operator.text),
-        parts[index - 1].trimmedDescription != parts[index + 1].trimmedDescription
-      else { continue }
-      let names = [parts[index - 1], parts[index + 1]].map { value in
-        value.as(DeclReferenceExprSyntax.self).flatMap {
-          locals.contains($0.baseName.text) ? nil : $0.baseName.text
-        } ?? value.as(MemberAccessExprSyntax.self).flatMap {
-          $0.base?.trimmedDescription == "self" ? $0.declName.baseName.text : nil
-        } ?? ""
+
+  private func sequenceProof(_ parts: [ExprSyntax]) -> Int {
+    if parts.count == 1, let expression = parts.first { return proof(expression) }
+    let operations = parts.compactMap { $0.as(BinaryOperatorExprSyntax.self)?.operator.text }
+    guard !operations.contains("||") else { return 0 }
+    if operations.contains("&&") {
+      var segment: [ExprSyntax] = []
+      var proofs: [Int] = []
+      for part in parts {
+        if part.as(BinaryOperatorExprSyntax.self)?.operator.text == "&&" {
+          proofs.append(sequenceProof(segment))
+          segment.removeAll()
+        } else {
+          segment.append(part)
+        }
       }
-      if names.contains(where: {
-        properties.contains($0)
-          && ($0.lowercased().contains("generation") || $0.lowercased().contains("revision"))
-      }) {
-        result = operation.operator.text == "==" ? 1 : -1
+      proofs.append(sequenceProof(segment))
+      // A failed conjunction may only mean an unrelated condition was false.
+      return proofs.contains(1) ? 1 : 0
+    }
+    guard parts.count == 3, let operation = parts[1].as(BinaryOperatorExprSyntax.self),
+      ["==", "!="].contains(operation.operator.text)
+    else { return 0 }
+    for index in [0, 2] {
+      if let value = parts[index].as(BooleanLiteralExprSyntax.self) {
+        let other = proof(parts[2 - index])
+        let matchesTrue = (value.literal.text == "true") == (operation.operator.text == "==")
+        return matchesTrue ? other : -other
       }
     }
-    return .visitChildren
+    guard parts[0].trimmedDescription != parts[2].trimmedDescription else { return 0 }
+    let generation = [parts[0], parts[2]].compactMap { ownedProperty($0) }.contains {
+      properties.contains($0)
+        && ($0.lowercased().contains("generation") || $0.lowercased().contains("revision"))
+    }
+    return generation ? (operation.operator.text == "==" ? 1 : -1) : 0
   }
-  private func mark(_ node: some SyntaxProtocol) {
-    let negated = node.parent?.as(PrefixOperatorExprSyntax.self)?.operator.text == "!"
-    result = negated ? 1 : -1
+
+  private func ownedProperty(_ expression: ExprSyntax) -> String? {
+    if let name = expression.as(DeclReferenceExprSyntax.self)?.baseName.text,
+      !locals.contains(name)
+    {
+      return name
+    }
+    if let member = expression.as(MemberAccessExprSyntax.self),
+      member.base?.trimmedDescription == "self"
+    {
+      return member.declName.baseName.text
+    }
+    return nil
   }
 }
 

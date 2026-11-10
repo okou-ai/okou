@@ -72,6 +72,8 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `Task.checkCancellation()`, an evaluation-signal check, or a terminating
   closed/generation guard can establish the current publication path. A check
   before the await, in another branch, or swallowed with `try?` cannot do so.
+  Compound conditions must fence the actual continuing path; a conditional
+  cancellation exit or a flag passed to an unknown helper is not proof.
   Same-owner synchronous check helpers are accepted only when their bodies
   establish the check; their names alone grant nothing. Local projections and
   deferred teardown are different from publishing resource data.

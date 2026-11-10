@@ -2,6 +2,71 @@
 
 CANCELLATION_CASES = [
     (
+        "boolean guards prove the actual continuing path",
+        "okou_check_after_await",
+        """
+        import CCState
+        let conditionalExit = asyncCommand { context, value in
+          await service.save(value)
+          if Task.isCancelled && shouldStop { return }
+          try context.set(saved, value) // violation
+        }
+        let commaExit = asyncCommand { context, value in
+          await service.save(value)
+          if Task.isCancelled, shouldStop { return }
+          try context.set(saved, value) // violation
+        }
+        let invertedComparison = asyncCommand { context, value in
+          await service.save(value)
+          if Task.isCancelled == false {} else {
+            try context.set(saved, value) // violation
+          }
+        }
+        let helperResult = asyncCommand { context, value in
+          await service.save(value)
+          guard unknownHelper(!Task.isCancelled) else { return }
+          try context.set(saved, value) // violation
+        }
+        let negation = asyncCommand { context, value in
+          await service.save(value)
+          guard !(!Task.isCancelled) else { return }
+          try context.set(saved, value) // violation
+        }
+        let fenced = asyncCommand { context, value in
+          await service.save(value)
+          guard !Task.isCancelled && ready else { return }
+          try context.set(saved, value)
+          await service.refresh()
+          guard !Task.isCancelled, ready else { return }
+          try context.set(saved, value)
+          await service.refresh()
+          guard Task.isCancelled == false else { return }
+          try context.set(saved, value)
+          await service.refresh()
+          guard false == Task.isCancelled else { return }
+          try context.set(saved, value)
+          await service.refresh()
+          guard Task.isCancelled != true else { return }
+          try context.set(saved, value)
+          await service.refresh()
+          if Task.isCancelled { return }
+          try context.set(saved, value)
+        }
+        final class Owner {
+          var closed = false
+          var title = ""
+          let read = Computed { get, options in
+            let task = Task {
+              let value = await service.load()
+              if closed && shouldStop { return }
+              self.title = value.title // violation
+            }
+            return task
+          }
+        }
+    """,
+    ),
+    (
         "teardown is registered before suspension and remains reachable",
         "okou_resource_cancellation",
         """
