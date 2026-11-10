@@ -1295,7 +1295,9 @@ export function FeishuCard({
               return $.connectors.providerSettings[platform].documentTitle;
             })}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
+          <div
+            className={cn("text-sm text-muted-foreground", classes.overflow)}
+          >
             {t(($) => {
               return $.connectors.providerSettings[platform].routeDescription;
             })}

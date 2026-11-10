@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { CircleCheck, EllipsisVertical } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import {
   integrationCardLayout,
   type IntegrationCardLayout,
@@ -179,7 +179,9 @@ export function AgentPhoneCard({ layout }: { layout: IntegrationCardLayout }) {
                 })}
               </div>
             </div>
-            <div className="truncate text-sm text-muted-foreground">
+            <div
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
+            >
               {t(($) => {
                 return $.connectors.providerSettings.agentphone.description;
               })}
