@@ -35,15 +35,21 @@ function privateArtifactFinalReplyLine(args: {
   return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in ${args.surface}. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to ${args.surface} unless the user explicitly requests it. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private \`/artifacts/...\` address from before the upload in the final reply, not the address returned by \`${args.uploadCommand}\`, so the owner can open the original artifact after returning to the web app.`;
 }
 
+const EMAIL_INTEGRATION_NOTE_LINES = [
+  "- Email messaging and files: your final response is automatically delivered to the verified sender in this email conversation. Use `okou email upload-file -f <path>` for a requested file attachment, with optional `--text` for its caption. The server derives the recipient and RFC reply references from the current run; the command cannot choose another recipient. Incoming attachments arrive as canonical `[Web file]` blocks; read them with `okou web download-file -h`.",
+  "- Email attachment delivery: files remain private in Okou and are sent as real email attachments, up to 25 MiB each. Preserve the returned upload ID and operation ID. A pending receipt is queued, and an accepted receipt means Resend accepted the message, not that the recipient received it. After an uncertain response, use `okou email upload-file --upload-id <id>` to inspect or resume that same delivery; never upload the same file again merely to retry delivery. A bare private artifact link does not deliver the file to the recipient. Hosted HTML pages and websites should use their hosted view URL instead of an attachment. The final text reply is delivered separately; do not duplicate it with Gmail, Outlook or Resend calls.",
+  privateArtifactFinalReplyLine({
+    surface: "Email",
+    uploadCommand: "okou email upload-file",
+  }),
+] as const;
+
 function integrationNoteLines(
   args: IntegrationNotePromptInputs,
 ): readonly string[] {
   switch (args.triggerSource) {
     case "email": {
-      return [
-        "- Email messaging and files: your final response is automatically delivered to the verified sender in this email conversation. Use `okou email upload-file -f <path>` for a requested file attachment, with optional `--text` for its caption. The server derives the recipient and RFC reply references from the current run; the command cannot choose another recipient. Incoming attachments arrive as canonical `[Web file]` blocks; read them with `okou web download-file -h`.",
-        "- Email attachment delivery: files remain private in Okou and are sent as real email attachments, up to 25 MiB each. Preserve the returned upload ID and operation ID. A pending receipt is queued, and an accepted receipt means Resend accepted the message, not that the recipient received it. After an uncertain response, use `okou email upload-file --upload-id <id>` to inspect or resume that same delivery; never upload the same file again merely to retry delivery. A bare private artifact link does not deliver the file to the recipient. Hosted HTML pages and websites should use their hosted view URL instead of an attachment. The final text reply is delivered separately; do not duplicate it with Gmail, Outlook or Resend calls.",
-      ];
+      return EMAIL_INTEGRATION_NOTE_LINES;
     }
     case "web":
     case "agent": {
