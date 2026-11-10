@@ -9,11 +9,30 @@ import {
   resetEmailConnection$,
   watchEmailConnection$,
   connectEmailFromLink$,
+  emailConnectParams$,
+  emailLinkStatus$,
+  setEmailConnectDialogOpen$,
 } from "./email.ts";
 import { detach, Reason } from "../utils.ts";
+import { replacePathSilently$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
+import { setupWorksPage$ } from "../works-page/works-page-setup.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 export const setupEmailConnectPage$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
+    if (
+      get(featureSwitch$)[FeatureSwitchKey.EmailIntegration] &&
+      get(emailConnectParams$) === null
+    ) {
+      set(replacePathSilently$, ROUTES.works);
+      await set(setupWorksPage$, signal);
+      const status = await get(emailLinkStatus$);
+      signal.throwIfAborted();
+      set(setEmailConnectDialogOpen$, status.configured);
+      return;
+    }
     set(resetEmailConnection$);
     set(updatePage$, createElement(EmailConnectPage));
     set(

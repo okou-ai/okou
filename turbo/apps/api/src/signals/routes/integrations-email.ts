@@ -16,7 +16,6 @@ import { publishUserSignal } from "../external/realtime";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   EMAIL_CHANNEL_ADDRESS,
-  linkEmailIdentity$,
   processEmailChannelMessage$,
   validEmailConnectionSignature,
   ownsVerifiedEmail,
@@ -28,6 +27,14 @@ import {
 } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import {
+  linkEmailIdentity$,
+  createEmailConnectionCode$,
+  connectedMailAccounts$,
+  syncConnectedMailAccounts$,
+  connectSignInEmail$,
+  signInEmailAddress,
+} from "../services/email-connection.service";
 import type { RouteEntry } from "../route-entry";
 
 const emailAccount$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -58,6 +65,17 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
+  const accounts = await set(connectedMailAccounts$, auth, signal);
+  if (!user.banned) {
+    await set(connectSignInEmail$, { user, orgId: auth.orgId }, signal);
+    signal.throwIfAborted();
+    await set(
+      syncConnectedMailAccounts$,
+      { userId: auth.userId, orgId: auth.orgId, accounts },
+      signal,
+    );
+    signal.throwIfAborted();
+  }
   const links = await set(writeDb$)
     .select({ email: emailUserLinks.emailAddress })
     .from(emailUserLinks)
@@ -67,8 +85,27 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(emailUserLinks.orgId, auth.orgId),
         isNull(emailUserLinks.disconnectedAt),
       ),
-    );
+    )
+    .orderBy(emailUserLinks.createdAt, emailUserLinks.id);
   signal.throwIfAborted();
+  const emails = links.map((link) => {
+    return link.email;
+  });
+  const activeEmails = new Set(emails);
+  const emailSources: Record<string, "gmail" | "outlook"> = {};
+  if (!user.banned) {
+    for (const account of accounts) {
+      const email = account.email?.toLowerCase();
+      if (!email || !activeEmails.has(email)) {
+        continue;
+      }
+      if (account.provider === "gmail") {
+        emailSources[email] = "gmail";
+      } else if (account.provider === "outlook-mail") {
+        emailSources[email] = "outlook";
+      }
+    }
+  }
   return {
     status: 200 as const,
     body: {
@@ -76,18 +113,24 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       configured: Boolean(
         optionalEnv("RESEND_API_KEY") && optionalEnv("RESEND_WEBHOOK_SECRET"),
       ),
-      emails: links.map((link) => {
-        return link.email;
-      }),
+      emails,
+      emailSources,
       availableEmails: user.banned
         ? []
-        : user.emailAddresses
-            .filter((entry) => {
-              return entry.verification?.status === "verified";
-            })
-            .map((entry) => {
-              return entry.emailAddress.toLowerCase();
-            }),
+        : [
+            ...new Set([
+              ...accounts.flatMap((account) => {
+                return account.email ? [account.email.toLowerCase()] : [];
+              }),
+              ...user.emailAddresses
+                .filter((entry) => {
+                  return entry.verification?.status === "verified";
+                })
+                .map((entry) => {
+                  return entry.emailAddress.toLowerCase();
+                }),
+            ]),
+          ],
     },
   };
 });
@@ -105,14 +148,23 @@ const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const email = body.data.emailAddress.toLowerCase();
-  if (!ownsVerifiedEmail(user, email)) {
+  const accounts = await set(connectedMailAccounts$, auth, signal);
+  const account = accounts.find((entry) => {
+    return entry.email?.toLowerCase() === email;
+  });
+  if (user.banned || (!ownsVerifiedEmail(user, email) && !account)) {
     return resourceUnavailable(
       "Connect a verified email address belonging to your account.",
     );
   }
   const link = await set(
     linkEmailIdentity$,
-    { email, userId: auth.userId, orgId: auth.orgId, reconnect: true },
+    {
+      email,
+      userId: auth.userId,
+      orgId: auth.orgId,
+      reconnect: true,
+    },
     signal,
   );
   signal.throwIfAborted();
@@ -179,7 +231,8 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const unlinkBody$ = bodyResultOf(contract.unlink);
 const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(emailAccount$, signal)).enabled) {
+  const { user, enabled } = await set(emailAccount$, signal);
+  if (!enabled) {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
@@ -187,6 +240,11 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+  if (signInEmailAddress(user) === body.data.emailAddress.toLowerCase()) {
+    return resourceUnavailable(
+      "Your login email is always connected and cannot be deleted.",
+    );
   }
   await set(writeDb$)
     .update(emailUserLinks)
@@ -204,11 +262,31 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
+const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { user, enabled } = await set(emailAccount$, signal);
+  if (
+    !enabled ||
+    !optionalEnv("RESEND_API_KEY") ||
+    !optionalEnv("RESEND_WEBHOOK_SECRET")
+  ) {
+    return resourceUnavailable("Email integration is not available");
+  }
+  const owner = get(organizationAuthContext$);
+  if (user.banned) {
+    return resourceUnavailable("Email integration is not available");
+  }
+  return {
+    status: 200 as const,
+    body: await set(createEmailConnectionCode$, owner, signal),
+  };
+});
+
 const auth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
 export const integrationsEmailRoutes: readonly RouteEntry[] = [
+  { route: contract.createLinkCode, handler: authRoute(auth, createLinkCode$) },
   { route: contract.connectAddress, handler: authRoute(auth, connectAddress$) },
   { route: contract.getLinkStatus, handler: authRoute(auth, getLinkStatus$) },
   { route: contract.connect, handler: authRoute(auth, connect$) },
