@@ -152,6 +152,19 @@ def _priority(form: str) -> tuple[int, ...]:
     return tuple(score)
 
 
+def _outcomes_and_priorities(
+    forms: set[str], paths: set[str], matches: Callable[[str, str], bool]
+) -> tuple[list[bool], list[tuple[int, ...]]]:
+    outcomes: list[bool] = []
+    priorities: list[tuple[int, ...]] = []
+    for form in forms:
+        form_outcomes = [matches(candidate, form) for candidate in paths]
+        outcomes.extend(form_outcomes)
+        if any(form_outcomes):
+            priorities.append(_priority(form))
+    return outcomes, priorities
+
+
 @pytest.mark.parametrize(
     "pattern",
     [
@@ -188,10 +201,7 @@ def test_public_language_proof_matches_independent_concrete_model(
 ):
     forms = _source_forms(pattern)
     paths = _views(path)
-    outcomes = [reference_matches(candidate, form) for form in forms for candidate in paths]
-    priorities = [
-        _priority(form) for form in forms if any(reference_matches(p, form) for p in paths)
-    ]
+    outcomes, priorities = _outcomes_and_priorities(forms, paths, reference_matches)
     result = applicability(request_language(path), PathCompiler().compile(pattern))
     assert result.possible == any(outcomes)
     assert result.certain == all(outcomes)
@@ -352,10 +362,7 @@ def test_shared_corpus_is_derived_from_reference_and_matches_python(reference_ma
     for case in json.loads(corpus.read_text()):
         forms = _source_forms(case["pattern"])
         paths = _views(case["path"])
-        outcomes = [reference_matches(path, form) for form in forms for path in paths]
-        priorities = [
-            _priority(form) for form in forms if any(reference_matches(p, form) for p in paths)
-        ]
+        outcomes, priorities = _outcomes_and_priorities(forms, paths, reference_matches)
         expected = {
             "possible": any(outcomes),
             "certain": all(outcomes),
@@ -388,10 +395,7 @@ def test_exhaustive_small_joint_literal_choices_against_independent_model(refere
         analysis = PathAnalysis(request_language(path))
         for pattern in patterns:
             forms = forms_by_pattern[pattern]
-            outcomes = [reference_matches(candidate, form) for form in forms for candidate in views]
-            priorities = [
-                _priority(form) for form in forms if any(reference_matches(p, form) for p in views)
-            ]
+            outcomes, priorities = _outcomes_and_priorities(forms, views, reference_matches)
             result = analysis.applicability(compiled_by_pattern[pattern])
             assert result.possible == any(outcomes), (pattern, path)
             assert result.certain == all(outcomes), (pattern, path)

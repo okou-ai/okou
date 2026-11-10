@@ -32,8 +32,8 @@ export {
 
 /**
  * Agent run request schema — subset of unified schema.
- * Server-side defaults are injected by agent-runs-create.service.ts:
- * disallowedTools.
+ * Product-owned disallowedTools restrictions are applied at Claim; callers
+ * cannot override them through this request.
  * Fields not used by unattended workflow runs are omitted:
  * triggerSource, vars, secrets, volumeVersions, permissionPolicies.
  */

@@ -186,7 +186,12 @@ async fn a_busy_home_does_not_preempt_another_hosts_probe() {
     assert!(env.handle.claim_candidates().is_empty());
 }
 
-async fn publish_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str, source: RunId) {
+pub(super) async fn publish_home(
+    cache: &HomeImageCache,
+    paths: &RunnerPaths,
+    key: &str,
+    source: RunId,
+) {
     let sandbox_id = SandboxId::new_v4();
     let lease = cache
         .prepare(HomeImagePrepareRequest {

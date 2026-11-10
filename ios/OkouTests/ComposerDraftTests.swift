@@ -81,7 +81,7 @@ final class ComposerDraftTests: XCTestCase {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)
     try await waitForBusinessResult { composer.text.isEmpty }
-    try await hostingPresentationFrame()
+    try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await waitForBusinessResult { composer.value == saved }
   }

@@ -24,7 +24,7 @@ from tests.model_provider_websocket_helpers import (
 from tests.usage_helpers import assert_usage_event_rows
 
 _INTEGER_LIMIT_FRAME = b'{"usage":{"input_tokens":9007199254740992}}'
-_WORK_LIMIT_FRAME = b'{"padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+_WORK_LIMIT_FRAME = b'{"padding":[' + (b"0," * 40_000)[:-1] + b"]}"
 _PARSE_WARNING_MESSAGE = "Model provider WebSocket usage extraction failed"
 
 

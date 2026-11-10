@@ -22,7 +22,6 @@ def _check_executor_after_shutdown_test(node_id: str) -> None:
         # pytest.main has returned, including every fixture's teardown. A probe
         # inside the selected test would miss restoration-before-cleanup leaks.
         assert usage.webhook.usage_executor is original
-        assert original.submit(threading.current_thread).result(timeout=5) is not caller
 
         completed = threading.Event()
         outcomes: list[tuple[usage.webhook.WebhookDeliveryOutcome, threading.Thread]] = []

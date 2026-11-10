@@ -79,7 +79,7 @@ final class NewChatNavigationTests: XCTestCase {
     XCTAssertEqual(workspace.newChatDraft, saved + " 继续")
 
     input.resignFirstResponder()
-    try await hostingPresentationFrame()
+    try await eventually { !input.isFirstResponder }
     let scene = try XCTUnwrap(window.windowScene)
     NewChatSceneDelegate().windowScene(
       scene,

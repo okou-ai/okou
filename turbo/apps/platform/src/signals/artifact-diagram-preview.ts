@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { captureArtifactAction } from "../lib/posthog.ts";
 import { createObjectUrlResource } from "./object-url-resource.ts";
 import { resetSignal } from "./utils.ts";
 import { createZoomableImageCanvasSignals } from "./zoomable-image-canvas.ts";
@@ -81,6 +82,7 @@ export function createArtifactDiagramPreviewSignals() {
   const download$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const current = get(current$);
     if (current && get(visible$)) {
+      captureArtifactAction({ action: "download", surface: "diagram_preview" });
       const signal = set(resetDownload$, parentSignal);
       await downloadAttachmentUrl(
         current.url,

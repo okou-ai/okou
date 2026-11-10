@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.244.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.52...runner-rs-v0.244.53) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize blocking response projection ([#46195](https://github.com/okou-ai/okou/issues/46195)) ([9ad9015](https://github.com/okou-ai/okou/commit/9ad90151ac42e0bb25ec36366b52096d8f50b375))
+* **runner:** centralize bounded sigv4 prebinding probe ([#46202](https://github.com/okou-ai/okou/issues/46202)) ([50fd640](https://github.com/okou-ai/okou/commit/50fd640337f08bf18dc7ed8350311cb8daa95dc3))
+* **runner:** give webhook delivery one lifecycle owner ([#46210](https://github.com/okou-ai/okou/issues/46210)) ([4b53ef8](https://github.com/okou-ai/okou/commit/4b53ef87efbb63f7463d89a20334a575312bf4a4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.52](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.51...runner-rs-v0.244.52) (2026-11-09)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.51](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.50...runner-rs-v0.244.51) (2026-11-09)
+
+
+### Refactoring
+
+* **python:** centralize firewall request identity ([#46175](https://github.com/okou-ai/okou/issues/46175)) ([bafa32a](https://github.com/okou-ai/okou/commit/bafa32a490681694271275f22f9ae22cd4bc8eec))
+
+## [0.244.50](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.49...runner-rs-v0.244.50) (2026-11-09)
+
+
+### Refactoring
+
+* **python:** centralize http network log projection ([#46134](https://github.com/okou-ai/okou/issues/46134)) ([4c31b24](https://github.com/okou-ai/okou/commit/4c31b2417442359a68426f7b6d136937c67dee57))
+* **python:** centralize usage buffer batch materialization ([#46100](https://github.com/okou-ai/okou/issues/46100)) ([fa13ecc](https://github.com/okou-ai/okou/commit/fa13ecc2c783f95cc15a606cfeb7273b3bce471d))
+
+
+### Performance Improvements
+
+* **runner:** bound unsafe-path response diagnostics ([#46139](https://github.com/okou-ai/okou/issues/46139)) ([87a52b4](https://github.com/okou-ai/okou/commit/87a52b4554b66e22b78be68a536baf9e4a3d9164))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.49](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.48...runner-rs-v0.244.49) (2026-11-09)
 
 ### Release Dependencies

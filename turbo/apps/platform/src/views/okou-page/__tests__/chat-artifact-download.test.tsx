@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -21,6 +21,11 @@ import {
   privateAttachmentUrl,
 } from "./chat-attachment-test-helpers.ts";
 
+vi.hoisted(() => {
+  // Product analytics resolves the deployment environment at module load.
+  window.location.href = "https://app.okou.ai/";
+});
+
 const context = testContext();
 
 test.each([
@@ -29,6 +34,12 @@ test.each([
 ])(
   "$filename remains downloadable when the browser reads bytes after the click",
   async ({ filename, contentType }) => {
+    const telemetry = context.mocks.posthog();
+    const actions = () => {
+      return telemetry.events.filter((event) => {
+        return event.name === "artifact_action_clicked";
+      });
+    };
     const url = publicArtifactUrl(filename);
     context.mocks.data.availableRunModels([]);
     const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
@@ -61,7 +72,16 @@ test.each([
     click(await findNamedLink("Report"));
     const dialog = await screen.findByRole("dialog");
     click(await findNamedButton("Download options", dialog));
-    click(await findNamedMenuItem("Download"));
+    const downloadItem = await findNamedMenuItem("Download");
+    expect(actions()).toStrictEqual([]);
+    click(downloadItem);
+    expect(actions()).toStrictEqual([
+      {
+        name: "artifact_action_clicked",
+        properties: { action: "download", surface: "dialog" },
+        options: undefined,
+      },
+    ]);
 
     await waitFor(() => {
       expect(browser.downloads).toHaveLength(1);
@@ -96,6 +116,7 @@ test.each([
 ])(
   "$filename downloads through a newly resolved attachment URL on every click",
   async ({ filename, contentType, webFile }) => {
+    const telemetry = context.mocks.posthog();
     const id = "00000000-0000-4000-8000-000000000951";
     const url = webFile
       ? privateAttachmentUrl(id)
@@ -151,6 +172,18 @@ test.each([
       });
     }
     expect(browser.downloads).toHaveLength(2);
+    expect(
+      telemetry.events
+        .filter((event) => {
+          return event.name === "artifact_action_clicked";
+        })
+        .map((event) => {
+          return event.properties;
+        }),
+    ).toStrictEqual([
+      { action: "download", surface: "dialog" },
+      { action: "download", surface: "dialog" },
+    ]);
     expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
   },
 );

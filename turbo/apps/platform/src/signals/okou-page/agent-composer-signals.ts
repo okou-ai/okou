@@ -19,6 +19,7 @@ import {
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import { createChatEventProjectionSignals } from "../chat-page/chat-event-projection-signals.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
+import { createComposerProjectSignals } from "../projects/composer-project.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
   chatPageModelSelection$,
@@ -196,8 +197,14 @@ function createAgentComposerSignalsWithDraft(
     options,
   );
 
-  return createComposerSignals({
+  // A dialog composer sends from its own draft without leaving the page, so
+  // only the page's own composer can move its chat into a Project.
+  const project = options.inPlace
+    ? undefined
+    : createComposerProjectSignals(agentId, options.projectId ?? null);
+  const composer = createComposerSignals({
     agentId,
+    ...(project ? { project } : {}),
     connector,
     pendingRemoteAccess,
     draft: {
@@ -223,6 +230,7 @@ function createAgentComposerSignalsWithDraft(
     removeQueuedMessage$: noOpEventAction$,
     removeAutomationEvent$: noOpEventAction$,
   });
+  return project ? { ...composer, project } : composer;
 }
 
 export function createForwardAgentComposerSignals(

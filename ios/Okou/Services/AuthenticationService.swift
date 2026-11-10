@@ -1,3 +1,4 @@
+import ChatData
 import ClerkKit
 import Foundation
 import Observation
@@ -5,19 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class AuthenticationService {
-  struct Workspace: Identifiable, Equatable, Sendable {
-    let id: String
-    let name: String
-    let imageURL: URL?
-    let hasImage: Bool
-
-    init(id: String, name: String, imageURL: URL? = nil, hasImage: Bool = false) {
-      self.id = id
-      self.name = name
-      self.imageURL = imageURL
-      self.hasImage = hasImage
-    }
-  }
+  typealias Workspace = WorkspacePresentation
 
   enum AuthenticationError: LocalizedError {
     case notConfigured
@@ -45,6 +34,8 @@ final class AuthenticationService {
   }
 
   let clerk: Clerk?
+  private(set) var presentation: IdentityPresentation?
+  private let presentationDirectory: URL?
   private var isRestoringSession = true
   private var clientRefreshGeneration = 0
   private var clientRefreshTask:
@@ -89,11 +80,13 @@ final class AuthenticationService {
     return workspaceSwitch.sessionID == clerk?.session?.id && workspaceSwitch.userID == userID
   }
 
-  init(clerk: Clerk) {
+  init(clerk: Clerk, presentationDirectory: URL? = nil) {
     self.clerk = clerk
+    self.presentationDirectory = presentationDirectory
   }
 
   init(publishableKey: String? = nil) {
+    presentationDirectory = nil
     let key =
       (publishableKey ?? Bundle.main.object(forInfoDictionaryKey: "ClerkPublishableKey") as? String
       ?? "")
@@ -134,6 +127,47 @@ final class AuthenticationService {
     return Profile(
       name: name.isEmpty ? nil : name, email: user.primaryEmailAddress?.emailAddress,
       imageURL: URL(string: user.imageUrl), hasImage: user.hasImage)
+  }
+
+  func workspacePresentation(_ id: String) -> Workspace? {
+    if workspacesUserID == userID, let workspace = workspaces.first(where: { $0.id == id }) {
+      return workspace
+    }
+    if presentation?.userID == userID, let workspace = presentation?.workspace(id) {
+      return workspace
+    }
+    let membership = clerk?.user?.organizationMemberships?.first { $0.organization.id == id }
+    guard let organization = membership?.organization else { return nil }
+    return Workspace(
+      id: organization.id, name: organization.name,
+      imageURL: URL(string: organization.imageUrl), hasImage: organization.hasImage)
+  }
+
+  func preparePresentation() async {
+    guard let clerk, let userID, let workspaceID = presentationWorkspaceID else { return }
+    let scope = presentationScopeID
+    if presentation?.userID != userID {
+      let previous = presentation
+      presentation = IdentityPresentation(
+        userID: userID,
+        cache: IdentityPresentationCache(
+          environment: clerk.publishableKey, userID: userID, directory: presentationDirectory),
+        workspaces: (clerk.user?.organizationMemberships ?? []).map {
+          Workspace(
+            id: $0.organization.id, name: $0.organization.name,
+            imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
+        })
+      await previous?.close(removeFiles: false)
+    }
+    guard let presentation, presentation.userID == userID, presentationScopeID == scope
+    else { return }
+    if workspacesSessionID == clerk.session?.id, workspacesUserID == userID {
+      await presentation.replaceWorkspaces(workspaces, activeID: workspaceID)
+    }
+    guard presentationScopeID == scope, !Task.isCancelled else { return }
+    await presentation.restore(
+      workspaceID: workspaceID, profileURL: profile?.imageURL,
+      hasProfileImage: profile?.hasImage ?? false)
   }
 
   /// A restored SDK session can present its own local cache before network verification.
@@ -204,7 +238,7 @@ final class AuthenticationService {
               group.addTask { await self.refreshWorkspaces() }
             }
           case .signedOut, .accountDeleted:
-            clearWorkspaces()
+            await clearWorkspaces()
           default:
             break
           }
@@ -278,7 +312,7 @@ final class AuthenticationService {
     refreshGeneration += 1
     let generation = refreshGeneration
     guard let clerk, let user = clerk.user, let session = clerk.session else {
-      clearWorkspaces()
+      await clearWorkspaces()
       return
     }
     guard let identity = workspaceIdentity else {
@@ -330,6 +364,7 @@ final class AuthenticationService {
         clerk.session?.id == session.id, clerk.user?.id == user.id
       else { return }
       resolvedWorkspaceIdentity = workspaceIdentity
+      if presentation != nil { await preparePresentation() }
     } catch is CancellationError {
       return
     } catch {
@@ -427,7 +462,7 @@ final class AuthenticationService {
   func signOut() async throws {
     guard let clerk else { throw AuthenticationError.notConfigured }
     try await clerk.auth.signOut()
-    clearWorkspaces()
+    await clearWorkspaces()
     errorMessage = nil
   }
 
@@ -442,7 +477,9 @@ final class AuthenticationService {
     }
   }
 
-  private func clearWorkspaces() {
+  private func clearWorkspaces() async {
+    let previous = presentation
+    presentation = nil
     clientRefreshTask?.identity.cancel()
     clientRefreshTask?.task.cancel()
     clientRefreshTask = nil
@@ -455,5 +492,6 @@ final class AuthenticationService {
     workspacesSessionID = nil
     workspacesUserID = nil
     isLoadingWorkspaces = false
+    await previous?.close(removeFiles: true)
   }
 }

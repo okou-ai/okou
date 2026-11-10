@@ -10,6 +10,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -267,6 +268,7 @@ test("preserves the native health timeout response and recovers the same window"
     const a = await f.start();
     const first = await open(a);
     f.provider.native.windowReply = "withhold";
+    f.provider.native.onWithheldReply = controlBrowserDeadline(context);
     await expect(
       client().leaseByThread({
         headers,

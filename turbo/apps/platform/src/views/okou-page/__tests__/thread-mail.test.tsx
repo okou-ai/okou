@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
@@ -251,7 +252,7 @@ async function openChat(
 }
 
 async function openList() {
-  click(await button("Manage emails"));
+  await selectDesktopHeaderAction("Manage emails");
   return await screen.findByRole("dialog", { name: "Emails" });
 }
 
@@ -273,7 +274,7 @@ describe("thread email manager", () => {
   it("navigates filters with arrow keys, selects with Enter or Space, and restores focus on Escape", async () => {
     installMails();
     await openChat();
-    const entry = await button("Manage emails");
+    const entry = await button("More actions");
     const list = await openList();
     const user = userEvent.setup({ delay: null });
     await user.click(await button("All", list));
@@ -520,7 +521,7 @@ describe("thread email manager", () => {
     if (!leftPane) {
       throw new Error("Missing left chat pane");
     }
-    click(await button("Manage emails", leftPane));
+    await selectDesktopHeaderAction("Manage emails", leftPane);
     const leftList = await screen.findByRole("dialog", { name: "Emails" });
     await link("Open email: Proposal 1", leftList);
     expect(

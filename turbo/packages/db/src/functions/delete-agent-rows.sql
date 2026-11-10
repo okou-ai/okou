@@ -123,11 +123,6 @@ BEGIN
       USING CONSTRAINT = 'agent_deletion_lost_run';
   END IF;
 
-  PERFORM g.org_id FROM public.storage_publication_generations g
-  WHERE g.agent_id = p_agent_id ORDER BY g.org_id, g.agent_id, g.subject FOR UPDATE;
-  DELETE FROM public.storage_publication_generations WHERE agent_id = p_agent_id;
-  DELETE FROM public.storage_publication_tokens WHERE agent_id = p_agent_id;
-
   -- Retire Official identities before Automation deletion can SET NULL its FK.
   DELETE FROM public.official_workflow_automation_identities i WHERE EXISTS (
     SELECT 1 FROM public.workflows w WHERE w.id = i.workflow_id
@@ -188,12 +183,6 @@ BEGIN
   DELETE FROM public.agents WHERE id = p_agent_id AND org_id = p_org_id
     AND ((SELECT count(*) FROM detached_runs) +
       (SELECT count(*) FROM detached_bindings)) >= 0;
-
-  -- Preserve the fresh-snapshot late fence sweep and generation-before-token order.
-  PERFORM g.org_id FROM public.storage_publication_generations g
-  WHERE g.agent_id = p_agent_id ORDER BY g.org_id, g.agent_id, g.subject FOR UPDATE;
-  DELETE FROM public.storage_publication_generations WHERE agent_id = p_agent_id;
-  DELETE FROM public.storage_publication_tokens WHERE agent_id = p_agent_id;
 
   SELECT COALESCE(jsonb_agg(jsonb_build_object('hash', r.hash,
     'release_count', r.release_count) ORDER BY r.hash COLLATE "C"), '[]'::jsonb),

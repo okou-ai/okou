@@ -151,7 +151,7 @@ test("Retain a thread icon when resizing from mobile to desktop", async () => {
     viewport.setMatches(true);
   });
   await waitFor(() => {
-    expect(screen.getByLabelText("Open browser")).toBeInTheDocument();
+    expect(buttonByLabel("More actions")).toBeInTheDocument();
     expect(buttonByLabel("Change icon")).toHaveTextContent("😀");
   });
   expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
@@ -230,7 +230,7 @@ test.each([
 
     await waitFor(() => {
       expect(
-        screen.getByLabelText(desktop ? "Back to chats" : "Open browser"),
+        screen.getByLabelText(desktop ? "Back to chats" : "More actions"),
       ).toBeInTheDocument();
       const searchInputs = screen.getAllByLabelText("Search emoji");
       expect(searchInputs).toHaveLength(1);

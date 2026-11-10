@@ -1,20 +1,51 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, type LucideIcon } from "lucide-react";
+import { ChevronRight, Plus, type LucideIcon } from "lucide-react";
 import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@okouai/ui";
 
-/** One row of the composer's add menu. */
-export interface ComposerAddMenuItem {
+interface ComposerAddMenuRow {
   readonly id: string;
   readonly Icon: LucideIcon;
   readonly label: string;
-  readonly onSelect: () => void;
+}
+
+/**
+ * One row of the composer's add menu: an action, or a choice that opens its
+ * options beside the menu.
+ */
+export type ComposerAddMenuItem = ComposerAddMenuRow &
+  (
+    | { readonly onSelect: () => void }
+    | {
+        /** The submenu's own menu items, rendered flat like the rows here. */
+        readonly submenu: ReactNode;
+      }
+  );
+
+function ComposerAddMenuRowLabel({
+  item,
+}: {
+  readonly item: ComposerAddMenuRow;
+}) {
+  return (
+    <>
+      <item.Icon
+        className="shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
+      <span className="min-w-0 truncate">{item.label}</span>
+    </>
+  );
 }
 
 /**
@@ -30,7 +61,7 @@ export type ComposerAddMenuGroup = readonly [
 /**
  * The composer toolbar's `+`: one entry point for what a message can gain,
  * rather than a button per capability. It groups attachments, templates and
- * skill imports in one menu.
+ * skill imports in one menu, and on a new chat the Project it starts in.
  *
  * Rows are single-line on purpose. Every label is already a noun the product
  * uses elsewhere, so a description line would only restate it.
@@ -79,13 +110,28 @@ export function ComposerAddMenu({
           return [
             ...separator,
             ...group.map((item) => {
+              if ("submenu" in item) {
+                return (
+                  <DropdownMenuSub key={item.id}>
+                    <DropdownMenuSubTrigger>
+                      <ComposerAddMenuRowLabel item={item} />
+                      <ChevronRight
+                        className="ml-auto text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      aria-label={item.label}
+                      className="w-64"
+                    >
+                      {item.submenu}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                );
+              }
               return (
                 <DropdownMenuItem key={item.id} onClick={item.onSelect}>
-                  <item.Icon
-                    className="shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 truncate">{item.label}</span>
+                  <ComposerAddMenuRowLabel item={item} />
                 </DropdownMenuItem>
               );
             }),

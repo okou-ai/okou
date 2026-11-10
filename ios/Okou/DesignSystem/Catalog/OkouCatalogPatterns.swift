@@ -85,7 +85,6 @@
   struct OkouCatalogSidebarPage: View {
     let close: (() -> Void)?
     @State private var workspace = "catalog"
-    @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
       OkouCatalogPage(.sidebar, close: close) {
@@ -101,7 +100,8 @@
                   Label {
                     Text(verbatim: workspace.name)
                   } icon: {
-                    menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                    OkouWorkspaceMenuLogos.image(
+                      workspaceID: workspace.id, hasImage: false, cachedImage: nil)
                   }
                   .tag(workspace.id)
                 }
@@ -115,11 +115,6 @@
             Text(verbatim: name).font(.okou(.headline))
             Spacer(minLength: 0)
             OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
-          }
-          .task {
-            for workspace in OkouCatalogSamples.workspaces {
-              await menuLogos.load(workspaceID: workspace.id, imageURL: nil, hasImage: false)
-            }
           }
         }
         OkouCatalogSection("Chats") {

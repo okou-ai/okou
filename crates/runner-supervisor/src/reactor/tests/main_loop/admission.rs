@@ -24,6 +24,7 @@ mod local_home;
 mod physical_handoff;
 mod predecessor_home;
 mod terminal_reuse;
+mod transition_home;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
 const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);

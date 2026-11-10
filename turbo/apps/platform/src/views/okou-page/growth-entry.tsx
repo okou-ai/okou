@@ -29,6 +29,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
 import { GetStartedEntry } from "./get-started-entry.tsx";
+import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { FriendReferralEntry } from "./friend-referral-entry.tsx";
 
 const telegramIconImg = settingsIconAssetUrl("telegram");
@@ -314,6 +315,7 @@ export function GrowthEntryHeader({
       <GetStartedEntry />
       {showGrowthEntry ? <AdminGrowthEntry /> : null}
       <FriendReferralEntry />
+      <UserNotificationsEntry desktop />
     </CornerHeader>
   );
 }

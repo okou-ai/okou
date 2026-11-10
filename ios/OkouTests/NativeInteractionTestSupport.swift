@@ -11,7 +11,7 @@ func nativeViews(in view: UIView) -> [UIView] {
 @MainActor
 func mountNativeHost<V: View>(
   _ host: UIHostingController<V>, timeout: Duration = .seconds(3),
-  ready: @MainActor (UIWindow) -> Bool = { _ in true }
+  ready: @escaping @MainActor (UIWindow) -> Bool = { _ in true }
 ) async throws -> UIWindow {
   let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
   let window = UIWindow(windowScene: scene)
@@ -21,7 +21,6 @@ func mountNativeHost<V: View>(
   host.view.backgroundColor = .systemBackground
   host.view.layoutIfNeeded()
   do {
-    try await hostingPresentationFrame()
     try await eventually(timeout: timeout, message: "The native host did not become ready") {
       ready(window)
     }

@@ -902,6 +902,9 @@ function requireCompletePiFields(
     readonly piModelConfig?: unknown;
   },
   refinement: RefinementCtx,
+  requiredFields: readonly (
+    "piSessionId" | "piLaunchConfig" | "piModelConfig"
+  )[] = ["piSessionId", "piLaunchConfig", "piModelConfig"],
 ): void {
   const expectsPi = context.cliAgentType === "pi";
   for (const field of [
@@ -916,7 +919,7 @@ function requireCompletePiFields(
         path: [field],
         message: `${field} requires cliAgentType pi`,
       });
-    } else if (expectsPi && !fieldPresent) {
+    } else if (expectsPi && requiredFields.includes(field) && !fieldPresent) {
       refinement.addIssue({
         code: "custom",
         path: [field],
@@ -935,9 +938,8 @@ const storedSkillBundleSchema = contentBundleSchema
   .strict();
 
 /**
- * Stored execution context (subset stored in database for late routing)
- * Contains prepared context without runtime-generated fields
- * Secrets are encrypted with AES-256-GCM before storage
+ * Compact queue snapshot. Run-owned facts and product defaults are resolved
+ * into PreparedExecutionContext at claim, before durable ownership.
  */
 const storedExecutionContextObjectSchema = object({
   // Exact Official content is selected at admission, never refreshed at claim.
@@ -981,7 +983,6 @@ const storedExecutionContextObjectSchema = object({
   secretConnectorMetadataMap: secretConnectorMetadataMapSchema
     .nullable()
     .optional(),
-  cliAgentType: string(),
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the real
   // agent runtime.
   realAgentInPreview: boolean().optional(),
@@ -990,26 +991,13 @@ const storedExecutionContextObjectSchema = object({
   captureNetworkBodies: boolean().optional(),
   // Dispatch timestamp for E2E timing metrics, as Unix epoch milliseconds
   apiStartTime: apiStartTimeSchema.optional(),
-  // User's timezone preference (IANA format, e.g., "Asia/Shanghai")
-  userTimezone: string().optional(),
   // Firewall entries for proxy-side token replacement. Built-ins stay compact;
   // org custom connectors use inline firewall bodies.
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
-  // Per-connector runtime network policy refresh deadlines. Used by runners to refresh
-  // active sandbox policy when temporary allow grants expire.
-  networkPolicyRefreshes: networkPolicyRefreshesSchema.optional(),
-  // Stable connector targets pinned for this run. The runner owns this list
-  // after claim independently of whether each target is currently available.
-  connectorRuntimeTargets: connectorRuntimeTargetsSchema,
-  // Tools to disable in Claude CLI (passed as --disallowed-tools)
-  disallowedTools: array(string()).optional(),
-  // Tools to make available in Claude CLI (passed as --tools)
-  tools: array(string()).optional(),
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
-  // Feature flags evaluated at job creation time (all switch states for user/org)
+  // Captured Claim decisions: singleAgent and connectorChatAccountAccess.
+  // Retained contexts may contain additional flags; those are not execution input.
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
@@ -1032,26 +1020,59 @@ const storedExecutionContextObjectSchema = object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  // Pi runs carry their session, launch config and model as one bundle.
+  // Pi's unique session/model inputs stay captured; its launch marker is derived.
   piSessionId: uuid().optional(),
-  piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
 });
 
-/** Reads persisted execution contexts while stripping unknown writer metadata. */
-export const storedExecutionContextSchema =
-  storedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
+export const storedExecutionContextSchema = storedExecutionContextObjectSchema;
+
+/** Complete preparation also serves registration, diagnostics and Claim. */
+const preparedExecutionContextObjectSchema =
+  storedExecutionContextObjectSchema.extend({
+    cliAgentType: string(),
+    // Stable admitted targets, independently of current availability.
+    connectorRuntimeTargets: connectorRuntimeTargetsSchema,
+    piLaunchConfig: piLaunchConfigSchema.optional(),
+    // Current preference and product default, or supplied retained inputs.
+    userTimezone: string().optional(),
+    disallowedTools: array(string()).optional(),
+  });
+
+export const preparedExecutionContextSchema =
+  preparedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
 
 /**
  * Claim-time reader that inspects Pi generation support before decoding the
- * generation-specific route. Other stored-context readers remain fully typed.
+ * generation-specific route. Other prepared-context readers remain fully typed.
  */
+const claimPreparedExecutionContextObjectSchema =
+  preparedExecutionContextObjectSchema.extend({
+    piModelConfig: zUnknown().optional(),
+  });
+
+/** Complete normalized inputs, before generation-specific Pi negotiation. */
+export const claimPreparedExecutionContextSchema =
+  claimPreparedExecutionContextObjectSchema.superRefine(
+    requireCompletePiFields,
+  );
+
+/** Duplicate Run-owned inputs may be resolved after decoding a queued context. */
 export const claimCompatibleStoredExecutionContextSchema =
-  storedExecutionContextObjectSchema
-    .extend({
-      piModelConfig: zUnknown().optional(),
+  claimPreparedExecutionContextObjectSchema
+    .partial({
+      cliAgentType: true,
+      connectorRuntimeTargets: true,
+      piLaunchConfig: true,
     })
-    .superRefine(requireCompletePiFields);
+    .superRefine((context, refinement) => {
+      if (context.cliAgentType !== undefined) {
+        requireCompletePiFields(context, refinement, [
+          "piSessionId",
+          "piModelConfig",
+        ]);
+      }
+    });
 
 /**
  * Execution context returned when claiming a job.
@@ -1450,6 +1471,9 @@ export type HeldHomeState = zInfer<typeof heldHomeStateSchema>;
 export type ExecutionContext = zInfer<typeof executionContextSchema>;
 export type StoredExecutionContext = zInfer<
   typeof storedExecutionContextSchema
+>;
+export type PreparedExecutionContext = zInfer<
+  typeof preparedExecutionContextSchema
 >;
 export type PiModelConfig = zInfer<typeof piModelConfigSchema>;
 export type PiModelConfigV2 = zInfer<typeof piModelConfigV2Schema>;

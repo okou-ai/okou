@@ -135,12 +135,6 @@ const unifiedRunRequestSchema = object({
   // Optional list of tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(claudeToolEntrySchema).optional(),
 
-  // Optional list of tools to make available in Claude CLI (passed as --tools)
-  tools: array(claudeToolEntrySchema).optional(),
-
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
-
   triggerSource: triggerSourceSchema.optional(),
 
   // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })

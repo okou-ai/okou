@@ -1,8 +1,9 @@
-import { enum as zEnum } from "zod";
+import { boolean, int, object, uuid, enum as zEnum, type output } from "zod";
 import {
   RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   type RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
+import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -12,6 +13,7 @@ import {
   and,
   arrayContains,
   asc,
+  count,
   desc,
   eq,
   exists,
@@ -35,9 +37,14 @@ import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodDriverValueDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
   withPgQueryExecutionCapture,
@@ -703,23 +710,41 @@ export function runnerPreferenceTelemetryDimensions(
   };
 }
 
-interface RunnerReuseCandidate {
-  readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
-  readonly heartbeatSequence: number;
-  readonly hasAdvertisedPredecessorSandbox: boolean;
-  readonly hasLocalFinalizingPredecessor: boolean;
-  readonly predecessorHomeEvidence:
-    "advertised" | "expected" | "location" | null;
-  readonly predecessorRunnerHasActiveProducer: boolean;
-  readonly candidateRunnerHasActiveProducer: boolean;
-  readonly hasReusableSandbox: boolean;
-  readonly predecessorCompletedAt: Date | null;
-  readonly predecessorRunId: string | null;
-  readonly predecessorStatus: (typeof agentRuns.$inferSelect)["status"] | null;
-  readonly predecessorRunnerId: string | null;
-  readonly predecessorHeartbeatGeneration: number | null;
-  readonly predecessorHeartbeatSequence: number | null;
-}
+const runnerReuseCandidateSchema = object({
+  runnerIdentity: object({
+    runnerId: uuid(),
+    heartbeatGeneration: int().positive(),
+  }).strict(),
+  heartbeatSequence: int().nonnegative(),
+  hasAdvertisedPredecessorSandbox: boolean(),
+  hasLocalFinalizingPredecessor: boolean(),
+  predecessorHomeEvidence: predecessorHomeEvidenceKindSchema.nullable(),
+  predecessorRunnerHasActiveProducer: boolean(),
+  candidateRunnerHasActiveProducer: boolean(),
+  hasReusableSandbox: boolean(),
+  hasHomeCache: boolean(),
+  hasPredecessorHostLocation: boolean(),
+  predecessorCompletedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
+  predecessorRunId: uuid().nullable(),
+  predecessorStatus: runStatusSchema.nullable(),
+  predecessorRunnerId: uuid().nullable(),
+  predecessorHeartbeatGeneration: int().nullable(),
+  predecessorHeartbeatSequence: int().nullable(),
+}).strict();
+
+const homeEvidenceDecoder = nullableDriverValueDecoder(
+  zodEnumDriverValueDecoder(predecessorHomeEvidenceKindSchema),
+);
+const runStatusDecoder = nullableDriverValueDecoder(
+  zodEnumDriverValueDecoder(runStatusSchema),
+);
+
+type RunnerReuseCandidate = output<typeof runnerReuseCandidateSchema>;
+
+const runnerReuseDiscoverySchema = object({
+  discoveryStartedAt: pgTimestampWithoutTimezoneToDateSchema,
+  candidate: runnerReuseCandidateSchema.nullable(),
+}).strict();
 
 function advertisedReuseConditions(
   args: {
@@ -837,9 +862,7 @@ function runnerReuseCandidatePlan(args: {
         pgBooleanDecoder,
       ),
       predecessorHomeEvidence: sql`${homeEvidence}`.mapWith(
-        nullableDriverValueDecoder(
-          zodEnumDriverValueDecoder(predecessorHomeEvidenceKindSchema),
-        ),
+        homeEvidenceDecoder,
       ),
       predecessorRunnerHasActiveProducer:
         sql`coalesce(${predecessorHome.activeProducer}, false)`.mapWith(
@@ -849,8 +872,14 @@ function runnerReuseCandidatePlan(args: {
         pgBooleanDecoder,
       ),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
+      hasHomeCache: sql`${homeCondition}`.mapWith(pgBooleanDecoder),
+      hasPredecessorHostLocation: sql`${predecessorHome.hostLocation}`.mapWith(
+        pgBooleanDecoder,
+      ),
       predecessorCompletedAt: predecessorRun.completedAt,
-      predecessorStatus: predecessorRun.status,
+      predecessorStatus: sql`${predecessorRun.status}`.mapWith(
+        runStatusDecoder,
+      ),
       predecessorRunnerId: predecessorRunnerState.runnerId,
       predecessorHeartbeatGeneration:
         predecessorRunnerState.heartbeatGeneration,
@@ -940,8 +969,9 @@ function preparedReuseUnchanged(
         ),
     ),
   );
+  // A competing discovery may expire the strongest tier before delivery.
+  // Validate every captured predecessor fact that weaker advice could use.
   if (
-    !candidate.hasAdvertisedPredecessorSandbox &&
     (candidate.hasLocalFinalizingPredecessor ||
       candidate.predecessorHomeEvidence !== null) &&
     candidate.predecessorStatus !== null &&
@@ -963,8 +993,6 @@ function preparedReuseUnchanged(
     );
   }
   if (
-    !candidate.hasAdvertisedPredecessorSandbox &&
-    !candidate.hasLocalFinalizingPredecessor &&
     candidate.predecessorHomeEvidence === "expected" &&
     candidate.predecessorRunnerHasActiveProducer &&
     candidate.predecessorRunnerId !== null &&
@@ -1002,6 +1030,18 @@ function preparedReuseUnchanged(
   return sql`(${and(...conditions)})`;
 }
 
+function predecessorCompletionBridgeActive(
+  candidate: RunnerReuseCandidate,
+  currentDate: Date,
+): boolean {
+  return (
+    candidate.predecessorCompletedAt !== null &&
+    candidate.predecessorCompletedAt.getTime() +
+      RUNNER_FINALIZING_COMPLETION_BRIDGE_MS >
+      currentDate.getTime()
+  );
+}
+
 function preparedCompletionBridgeExpired(
   candidate: RunnerReuseCandidate | null,
 ): boolean {
@@ -1017,56 +1057,106 @@ function preparedCompletionBridgeExpired(
     : candidate.predecessorHomeEvidence === "expected" &&
       !candidate.predecessorRunnerHasActiveProducer;
   return (
-    requiresBridge &&
-    candidate.predecessorCompletedAt.getTime() +
-      RUNNER_FINALIZING_COMPLETION_BRIDGE_MS <=
-      nowDate().getTime()
+    requiresBridge && !predecessorCompletionBridgeActive(candidate, nowDate())
   );
 }
 
-const startRunnerJobDiscovery$ = command(
+const finalizeRunnerJobDiscovery$ = command(
   async (
     { set },
-    args: RunnerReusePreferenceArgs,
+    args: RunnerReusePreferenceArgs & { readonly reuseKey: string },
     prepared?: Extract<
       RunnerReusePreparation["selection"],
       { ok: true }
     >["value"],
   ) => {
-    // Both poll and notification can discover the committed row first. Keep
-    // their original winner's time even when they race or publication retries.
-    const [row] = await set(writeDb$)
-      .update(runnerJobQueue)
-      .set({
-        discoveryStartedAt: sql`COALESCE(
-          ${runnerJobQueue.discoveryStartedAt},
-          ${sql.param(nowDate(), runnerJobQueue.discoveryStartedAt)}
-        )`,
-      })
-      .where(
-        and(
-          eq(runnerJobQueue.runId, args.runId),
-          eq(runnerJobQueue.runnerGroup, args.runnerGroup),
-          gt(runnerJobQueue.expiresAt, sql`now()`),
-        ),
-      )
-      .returning({
-        discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
-        preparedUnchanged:
-          sql`${prepared ? preparedReuseUnchanged(args, prepared) : sql`true`}`.mapWith(
-            pgBooleanDecoder,
-          ),
-      });
-    if (!row) {
-      return null;
-    }
-    if (row.discoveryStartedAt === null) {
-      throw new Error("Discovered runner job is missing its start time");
-    }
-    return {
-      discoveryStartedAt: row.discoveryStartedAt,
-      preparedUnchanged: row.preparedUnchanged,
+    const currentDate = nowDate();
+    const plan = runnerReuseCandidatePlan({
+      ...args,
+      ...runnerReuseLookupStages(args, currentDate),
+      freshAfter: runnerReuseStateFreshAfter(currentDate),
+      finalizingCompletedAfter: new Date(
+        currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+      ),
+    });
+    const { runnerId, heartbeatGeneration, ...candidateFields } = plan.fields;
+    const jsonFields = {
+      ...candidateFields,
+      runnerIdentity: sql`jsonb_build_object(
+        'runnerId', ${runnerId}, 'heartbeatGeneration', ${heartbeatGeneration}
+      )`,
+      predecessorCompletedAt: sql`${plan.fields.predecessorCompletedAt}::text`,
     };
+    const candidateJson = sql`jsonb_build_object(${sql.join(
+      Object.entries(jsonFields).flatMap(([key, value]) => {
+        return [sql`${key}::text`, sql`${value}`];
+      }),
+      sql`, `,
+    )})`;
+    const candidateQuery = new QueryBuilder()
+      .select({
+        candidate: candidateJson.mapWith(
+          zodDriverValueDecoder(runnerReuseCandidateSchema),
+        ),
+      })
+      .from(runnerState)
+      .leftJoinLateral(plan.predecessor, sql`true`)
+      .leftJoin(predecessorRun, plan.joinCondition)
+      .leftJoin(
+        predecessorRunnerState,
+        eq(predecessorRunnerState.runnerId, predecessorRun.runnerId),
+      )
+      .where(
+        and(plan.where, sql`NOT (SELECT valid FROM runner_reuse_prepared)`),
+      )
+      .orderBy(...plan.orderBy)
+      .limit(1);
+    const captured = prepared?.candidate;
+    const preparedJson = captured
+      ? sql`${JSON.stringify({
+          ...captured,
+          predecessorCompletedAt: captured.predecessorCompletedAt
+            ? timestampWithoutTimeZone(captured.predecessorCompletedAt)
+            : null,
+        })}::jsonb`
+      : sql`NULL::jsonb`;
+    const preparedValid =
+      prepared && !preparedCompletionBridgeExpired(prepared.candidate)
+        ? preparedReuseUnchanged(args, prepared)
+        : sql`false`;
+
+    // Fully consume validation and any fresh selection before sampling time.
+    // COALESCE also keeps a concurrent poll/notification winner's original time.
+    // The count dependency handles an empty candidate without starting early.
+    const statement = sql`
+      WITH runner_reuse_prepared AS MATERIALIZED (
+        SELECT ${preparedValid} AS valid
+      ), runner_reuse_candidate AS MATERIALIZED (
+        SELECT ${preparedJson} AS candidate
+        WHERE (SELECT valid FROM runner_reuse_prepared)
+        UNION ALL
+        (${candidateQuery})
+      )
+      UPDATE ${runnerJobQueue}
+      SET discovery_started_at = COALESCE(
+        ${runnerJobQueue.discoveryStartedAt},
+        (SELECT ${nowDateSql()} FROM
+          (SELECT ${count()} AS candidates FROM runner_reuse_candidate) AS ready
+          WHERE ready.candidates >= 0)
+      )
+      WHERE ${and(
+        eq(runnerJobQueue.runId, args.runId),
+        eq(runnerJobQueue.runnerGroup, args.runnerGroup),
+        gt(runnerJobQueue.expiresAt, sql`now()`),
+      )}
+      RETURNING ${runnerJobQueue.discoveryStartedAt}::text AS "discoveryStartedAt",
+        (SELECT candidate FROM runner_reuse_candidate) AS candidate
+    `;
+    const [row] = parseRawRows(
+      runnerReuseDiscoverySchema,
+      await set(writeDb$).execute(statement),
+    );
+    return row ?? null;
   },
 );
 
@@ -1150,6 +1240,8 @@ const findRunnerReuseCandidate$ = command(
           candidateRunnerHasActiveProducer:
             row.candidateRunnerHasActiveProducer,
           hasReusableSandbox: row.hasReusableSandbox,
+          hasHomeCache: row.hasHomeCache,
+          hasPredecessorHostLocation: row.hasPredecessorHostLocation,
           predecessorCompletedAt: row.predecessorCompletedAt,
           predecessorRunId: row.predecessorRunId,
           predecessorStatus: row.predecessorStatus,
@@ -1169,7 +1261,7 @@ const selectRunnerReuseCandidate$ = command(
       "freshAfter" | "finalizingCompletedAfter"
     >,
     timing: RunnerReusePreferenceTiming | undefined,
-    phase: "holder_select" | "holder_reselect",
+    phase: "holder_select",
   ) => {
     const select = () => {
       return set(findRunnerReuseCandidate$, args);
@@ -1259,97 +1351,58 @@ export const resolveRunnerReusePreference$ = command(
         preference: { kind: "noPreference", reason: "expired" },
       };
     }
-    const lookupArgs = {
-      runId: args.runId,
-      runnerGroup: args.runnerGroup,
-      profile: args.profile,
-      reuseKey: args.reuseKey,
+    if (args.discoveryStartedAt !== null) {
+      // A later poll only reads evidence; it must not rewrite the queue row.
+      const candidate = await set(findRunnerReuseCandidate$, {
+        runId: args.runId,
+        runnerGroup: args.runnerGroup,
+        profile: args.profile,
+        reuseKey: args.reuseKey,
+        ...lookupStages,
+      });
+      return runnerReusePreferenceResult({
+        candidate,
+        discoveryStartedAt: args.discoveryStartedAt,
+      });
+    }
+    const discoveryArgs = { ...args, reuseKey: args.reuseKey };
+    const finalizeDiscovery = () => {
+      return set(finalizeRunnerJobDiscovery$, discoveryArgs, preparedSelection);
     };
-    let candidate = preparedSelection
-      ? preparedSelection.candidate
-      : await set(
-          selectRunnerReuseCandidate$,
-          { ...lookupArgs, ...lookupStages },
-          timing,
-          "holder_select",
-        );
-
-    // Prepare the candidate before starting a new window. Both delivery paths
-    // await this write before returning a poll result or publishing to Ably.
-    const startDiscovery = () => {
-      return set(startRunnerJobDiscovery$, args, preparedSelection);
-    };
-    const discovery = args.discoveryStartedAt
-      ? {
-          discoveryStartedAt: args.discoveryStartedAt,
-          preparedUnchanged: preparedSelection === undefined,
-        }
-      : await (async () => {
-          const discoveryCapture = timing?.start();
-          return await (discoveryCapture
-            ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
-                const result = await withPgQueryExecutionCapture(
-                  discoveryCapture.queries,
-                  startDiscovery,
-                );
-                discoveryCapture.success = true;
-                return result;
-              }).finally(() => {
-                timing?.record("discovery_persist", discoveryCapture);
-              })
-            : startDiscovery());
-        })();
+    const discoveryCapture = timing?.start();
+    const discovery = await (discoveryCapture
+      ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
+          const result = await withPgQueryExecutionCapture(
+            discoveryCapture.queries,
+            finalizeDiscovery,
+          );
+          discoveryCapture.success = true;
+          return result;
+        }).finally(() => {
+          timing?.record("delivery_finalize", discoveryCapture);
+        })
+      : finalizeDiscovery());
     if (discovery === null) {
       return {
         preference: { kind: "noPreference", reason: "noViableHolder" },
       };
     }
-    const { discoveryStartedAt } = discovery;
-    const savedStages = runnerReuseLookupStages(
-      {
-        discoveryStartedAt,
-      },
-      nowDate(),
-    );
-    if (runnerReuseLookupExpired(savedStages)) {
-      return {
-        preference: { kind: "noPreference", reason: "expired" },
-      };
-    }
-    if (
-      !discovery.preparedUnchanged ||
-      (preparedSelection !== undefined &&
-        preparedCompletionBridgeExpired(candidate)) ||
-      lookupStages.shouldLookUpExactSandbox !==
-        savedStages.shouldLookUpExactSandbox ||
-      lookupStages.shouldLookUpFinalizingProducer !==
-        savedStages.shouldLookUpFinalizingProducer ||
-      lookupStages.shouldLookUpGenericReuse !==
-        savedStages.shouldLookUpGenericReuse
-    ) {
-      // A competing discovery or the lookup itself may have consumed a stage.
-      // Select using the saved deadline without renewing it or retrying writes.
-      candidate = await set(
-        selectRunnerReuseCandidate$,
-        { ...lookupArgs, ...savedStages },
-        timing,
-        "holder_reselect",
-      );
-    }
-    return runnerReusePreferenceResult({
-      candidate,
-      discoveryStartedAt,
-      shouldLookUpGenericReuse: savedStages.shouldLookUpGenericReuse,
-    });
+    return runnerReusePreferenceResult(discovery);
   },
 );
 
 function runnerReusePreferenceResult(args: {
   readonly candidate: RunnerReuseCandidate | null;
   readonly discoveryStartedAt: Date;
-  readonly shouldLookUpGenericReuse: boolean;
 }): RunnerReusePreferenceResolution {
-  const { candidate, discoveryStartedAt, shouldLookUpGenericReuse } = args;
+  const { candidate, discoveryStartedAt } = args;
+  const currentDate = nowDate();
+  const stages = runnerReuseLookupStages({ discoveryStartedAt }, currentDate);
+  if (runnerReuseLookupExpired(stages)) {
+    return {
+      preference: { kind: "noPreference", reason: "expired" },
+    };
+  }
   const reuseRoutingExpiresAt = new Date(
     discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
   );
@@ -1364,12 +1417,15 @@ function runnerReusePreferenceResult(args: {
     return {
       preference: {
         kind: "noPreference",
-        reason: shouldLookUpGenericReuse ? "noViableHolder" : "expired",
+        reason: stages.shouldLookUpGenericReuse ? "noViableHolder" : "expired",
       },
     };
   }
 
-  if (candidate.hasAdvertisedPredecessorSandbox) {
+  if (
+    stages.shouldLookUpExactSandbox &&
+    candidate.hasAdvertisedPredecessorSandbox
+  ) {
     if (!candidate.predecessorRunId) {
       throw new Error("Exact sandbox preference is missing its predecessor");
     }
@@ -1384,7 +1440,15 @@ function runnerReusePreferenceResult(args: {
     };
   }
 
-  if (candidate.hasLocalFinalizingPredecessor) {
+  const completionBridgeActive = predecessorCompletionBridgeActive(
+    candidate,
+    currentDate,
+  );
+  if (
+    stages.shouldLookUpFinalizingProducer &&
+    candidate.hasLocalFinalizingPredecessor &&
+    (candidate.candidateRunnerHasActiveProducer || completionBridgeActive)
+  ) {
     if (!candidate.predecessorCompletedAt || !candidate.predecessorRunId) {
       throw new Error(
         "Finalizing predecessor is missing its identity or completion time",
@@ -1413,14 +1477,24 @@ function runnerReusePreferenceResult(args: {
     };
   }
 
-  if (candidate.predecessorHomeEvidence !== null) {
+  if (!stages.shouldLookUpGenericReuse) {
+    return { preference: { kind: "noPreference", reason: "expired" } };
+  }
+  const homeEvidence = currentPredecessorHomeEvidence(
+    candidate,
+    completionBridgeActive,
+  );
+  if (homeEvidence !== null) {
     return predecessorHomePreferenceResult(
-      candidate,
+      { ...candidate, predecessorHomeEvidence: homeEvidence },
       reuseRoutingExpiresAt,
       predecessorWaitUntil,
     );
   }
 
+  if (!candidate.hasReusableSandbox && !candidate.hasHomeCache) {
+    return { preference: { kind: "noPreference", reason: "noViableHolder" } };
+  }
   return {
     preference: {
       kind: "preference",
@@ -1429,6 +1503,24 @@ function runnerReusePreferenceResult(args: {
       expiresAt: reuseRoutingExpiresAt.toISOString(),
     },
   };
+}
+
+function currentPredecessorHomeEvidence(
+  candidate: RunnerReuseCandidate,
+  completionBridgeActive: boolean,
+): RunnerReuseCandidate["predecessorHomeEvidence"] {
+  if (
+    candidate.predecessorHomeEvidence !== "expected" ||
+    candidate.predecessorRunnerHasActiveProducer ||
+    completionBridgeActive
+  ) {
+    return candidate.predecessorHomeEvidence;
+  }
+  return candidate.hasPredecessorHostLocation &&
+    !candidate.hasReusableSandbox &&
+    !candidate.hasHomeCache
+    ? "location"
+    : null;
 }
 
 function predecessorHomePreferenceResult(

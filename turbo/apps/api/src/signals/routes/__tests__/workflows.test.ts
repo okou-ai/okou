@@ -1230,6 +1230,18 @@ describe("workflows", () => {
         [200],
       ),
     ).resolves.toMatchObject({ body: { visibility: "public" } });
+    const retained = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(retained.body).toMatchObject({
+      visibility: "public",
+      instruction: "# original private workflow",
+      files: [],
+    });
   });
 
   it.each(["private", "public"] as const)(

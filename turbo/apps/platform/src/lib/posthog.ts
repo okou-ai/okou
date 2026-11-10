@@ -213,6 +213,36 @@ export function captureTaskCompletedSuccessfully(): void {
   });
 }
 
+type ArtifactAction =
+  | {
+      readonly action: "download";
+      readonly surface:
+        | "dialog"
+        | "page"
+        | "file_preview"
+        | "attachment_chip"
+        | "shared_preview"
+        | "diagram_preview"
+        | "inline_table";
+    }
+  | {
+      readonly action: "google_drive_sync";
+      readonly surface: "dialog" | "page" | "inline_table";
+      readonly target: "file" | "document" | "spreadsheet" | "presentation";
+    }
+  | {
+      readonly action: "banner_visibility_change";
+      readonly surface: "dialog" | "sidebar";
+      readonly show_banner: boolean;
+    };
+
+/** Capture user intent before authorization or transfer; never include file data. */
+export function captureArtifactAction(properties: ArtifactAction): void {
+  runPostHog(() => {
+    posthog.capture("artifact_action_clicked", properties);
+  });
+}
+
 export type ChatThreadMetadataShortcutOutcome =
   "hit" | "not-found" | "transport-failure";
 

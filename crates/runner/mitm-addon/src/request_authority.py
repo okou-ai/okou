@@ -1,4 +1,4 @@
-"""Trusted request authority validation and URL reconstruction.
+"""Trusted request authority validation, identity snapshots and URL reconstruction.
 
 Pure functions with no module-level state or I/O.
 
@@ -15,6 +15,7 @@ from mitmproxy import http
 
 import connection_endpoints
 import connector_runtime_metadata
+import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import public_destination
@@ -47,6 +48,13 @@ class TrustedAuthority:
     host: str
     port: int
     url: str
+
+
+@dataclass(frozen=True)
+class FirewallRequestIdentity:
+    authority: TrustedAuthority
+    method: str
+    scheme: str
 
 
 @dataclass(frozen=True)
@@ -427,3 +435,23 @@ def get_trusted_authority(flow: http.HTTPFlow) -> TrustedAuthority:
             )
 
     return TrustedAuthority(host=normalized_sni, port=port, url=trusted_url)
+
+
+def capture_firewall_request_identity(flow: http.HTTPFlow) -> FirewallRequestIdentity:
+    return FirewallRequestIdentity(
+        authority=get_trusted_authority(flow),
+        method=flow.request.method,
+        scheme=flow.request.scheme,
+    )
+
+
+def firewall_request_identity_is_current(
+    flow: http.HTTPFlow,
+    expected: FirewallRequestIdentity,
+) -> bool:
+    return (
+        flow_metadata.trusted_authority_host(flow.metadata) == expected.authority.host
+        and flow.request.port == expected.authority.port
+        and flow.request.method == expected.method
+        and flow.request.scheme == expected.scheme
+    )

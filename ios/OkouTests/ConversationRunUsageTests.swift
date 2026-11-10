@@ -394,6 +394,7 @@ private final class RunUsageProbe {
   @ObservationIgnored private var subscriptions: [String: Subscription] = [:]
   @ObservationIgnored private var watched: [String: ConversationRunUsageResource] = [:]
   @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var retiredTasks: [Task<Void, Never>] = []
   @ObservationIgnored private var revisions: [String: UUID] = [:]
   @ObservationIgnored private var stopped = false
 
@@ -409,12 +410,15 @@ private final class RunUsageProbe {
       do { try subscription.cancel() } catch { XCTFail("Cannot detach usage observer: \(error)") }
     }
     for task in tasks.values { task.cancel() }
+    for task in retiredTasks { task.cancel() }
     subscriptions = [:]
   }
 
   func close() async {
     detach()
     for task in tasks.values { await task.value }
+    for task in retiredTasks { await task.value }
+    retiredTasks = []
     watched = [:]
     tasks = [:]
   }
@@ -430,7 +434,7 @@ private final class RunUsageProbe {
       do { try subscriptions.removeValue(forKey: id)?.cancel() } catch {
         XCTFail("Cannot detach usage observer: \(error)")
       }
-      tasks.removeValue(forKey: id)?.cancel()
+      retireReader(id)
       revisions[id] = nil
       watched[id] = nil
       states[id] = nil
@@ -446,9 +450,15 @@ private final class RunUsageProbe {
     }
   }
 
+  private func retireReader(_ id: String) {
+    guard let task = tasks.removeValue(forKey: id) else { return }
+    task.cancel()
+    retiredTasks.append(task)
+  }
+
   private func read(_ resource: ConversationRunUsageResource) {
     let id = resource.runID
-    tasks[id]?.cancel()
+    retireReader(id)
     let revision = UUID()
     revisions[id] = revision
     states[id] = .loading

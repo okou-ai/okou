@@ -331,7 +331,7 @@ class TestOpenAIResponsesSseUsageExtractor:
         parse, usage = create_openai_responses_sse_usage_extractor(
             on_parse_error=lambda event, error: parse_errors.append((event, error))
         )
-        dense_array = b",".join([b"0"] * 40_000)
+        dense_array = (b"0," * 40_000)[:-1]
         midpoint = len(dense_array) // 2
 
         parse(

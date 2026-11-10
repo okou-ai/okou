@@ -7,7 +7,9 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
 import { browserRoutes } from "../browser";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import {
@@ -52,7 +54,13 @@ describe("server-owned shared Browser recovery", () => {
       const leased = await renew(b);
       mockNow(START + 11 * MINUTE);
       f.provider.native.closeReply = "withhold";
-      const reopened = await open(a);
+      const closeRequested = createDeferredPromise<void>(context.signal);
+      const expireDeadline = controlBrowserDeadline(context);
+      f.provider.native.onWithheldReply = () => {
+        expireDeadline();
+        closeRequested.resolve();
+      };
+      const [reopened] = await Promise.all([open(a), closeRequested.promise]);
       expect(f.provider.native.targets.get(page.targetId)).toStrictEqual(page);
       const siblingAfterRecovery = await view(b);
       expect(siblingAfterRecovery.window).toStrictEqual(sibling.window);

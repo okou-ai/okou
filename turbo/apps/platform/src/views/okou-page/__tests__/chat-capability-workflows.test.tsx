@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -174,7 +175,7 @@ function findButton(
 
 async function openAutomationEditor(): Promise<HTMLElement> {
   await readyChat();
-  click(await findButton("Automations"));
+  await selectDesktopHeaderAction("Automations");
   const sidebar = await screen.findByRole("complementary", {
     name: "Automations",
   });

@@ -40,7 +40,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let viewer = makeViewer(fixture)
     defer { viewer.close() }
     let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
-    let first = Task { _ = try await viewer.thumbnail(image) }
+    let resources = viewer.reads
+    let read = resources.thumbnail(image)
+    let subscription = try resources.store.watch(read.value) {}
+    addTeardownBlock { @MainActor in try subscription.cancel() }
+    let first = Task { _ = try await resources.store.get(read.value).value }
     addTeardownBlock {
       first.cancel()
       release.finish()
@@ -48,10 +52,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     }
     await fulfillment(of: [entered], timeout: 3)
     first.cancel()
+    try subscription.cancel()
     let second = Task {
       release.yield(())
-      let thumbnail = try await viewer.thumbnail(image)
-      XCTAssertNotNil(thumbnail)
+      let thumbnail = try await resources.store.get(read.value).value
+      XCTAssertNotNil(thumbnail.image)
     }
     addTeardownBlock {
       second.cancel()
@@ -59,13 +64,10 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
       _ = await second.result
     }
     try await second.value
-    do {
-      try await first.value
-      XCTFail("The disappearing cell must not receive the shared result")
-    } catch { XCTAssertTrue(error is CancellationError) }
+    _ = try await first.value
 
     for _ in 0..<10 {
-      let thumbnail = try await viewer.thumbnail(image)
+      let thumbnail = try await readThumbnail(image, viewer: viewer)
       XCTAssertNotNil(thumbnail)
     }
     XCTAssertEqual(lookups.withLock { $0 }, 1)
@@ -98,11 +100,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     defer { viewer.close() }
     let loaded = ChatMessageAttachment(
       id: "loaded", filename: "image.png", contentType: "image/png")
-    let thumbnail = try await viewer.thumbnail(loaded)
+    let thumbnail = try await readThumbnail(loaded, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     let pending = ChatMessageAttachment(
       id: "pending", filename: "image.png", contentType: "image/png")
-    let downloading = Task { _ = try await viewer.thumbnail(pending) }
+    let downloading = Task { _ = try await readThumbnail(pending, viewer: viewer) }
     addTeardownBlock {
       downloading.cancel()
       release.finish()
@@ -120,7 +122,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     }
     for attachment in [loaded, pending] {
       do {
-        _ = try await viewer.thumbnail(attachment)
+        _ = try await readThumbnail(attachment, viewer: viewer)
         XCTFail("Reentering the detail must require fresh authorization")
       } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
     }
@@ -148,16 +150,16 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     defer { viewer.close() }
     let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
     do {
-      _ = try await viewer.thumbnail(image)
+      _ = try await readThumbnail(image, viewer: viewer)
       XCTFail("An unavailable thumbnail must report its error")
     } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 503) }
     unavailable.withLock { $0 = false }
-    let thumbnail = try await viewer.thumbnail(image)
+    let thumbnail = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     let annotated = ChatMessageAttachment(
       id: "image", filename: "image.png", contentType: "image/png", renderedFileID: "annotated")
     do {
-      _ = try await viewer.thumbnail(annotated)
+      _ = try await readThumbnail(annotated, viewer: viewer)
       XCTFail("An annotated file must not reuse the original file's authorization")
     } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
   }
@@ -180,7 +182,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let viewer = makeViewer(fixture)
     defer { viewer.close() }
     let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
-    let thumbnail = try await viewer.thumbnail(image)
+    let thumbnail = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     viewer.open(image)
     try await waitForBusinessResult { viewer.preview?.file != nil }
@@ -195,7 +197,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     XCTAssertEqual(transfers.withLock { $0 }, 1)
     viewer.deactivate()
     XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-    let thumbnailAfterReentry = try await viewer.thumbnail(image)
+    let thumbnailAfterReentry = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnailAfterReentry)
     XCTAssertEqual(transfers.withLock { $0 }, 1)
   }
@@ -220,7 +222,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let viewer = makeViewer(fixture)
     defer { viewer.close() }
     let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
-    let thumbnail = try await viewer.thumbnail(image)
+    let thumbnail = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     viewer.open(image)
     XCTAssertNotNil(viewer.preview?.thumbnail)
@@ -246,7 +248,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let viewer = makeViewer(fixture)
     defer { viewer.close() }
     let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
-    let thumbnail = try await viewer.thumbnail(image)
+    let thumbnail = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     denied.withLock { $0 = true }
     viewer.open(image)
@@ -255,6 +257,92 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
       viewer.preview?.error, "You do not have permission to view this attachment.")
     XCTAssertNil(viewer.preview?.file)
     XCTAssertEqual(viewer.preview?.canRetry, false)
+  }
+
+  func testSharedThumbnailFailureCanRetryWithoutReplacingItsResource() async throws {
+    let bytes = imageData()
+    let server = try ChatFileHTTPServer { _ in .init(body: bytes) }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let unavailable = Mutex(true)
+    let lookups = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let url = request.url, url.path == "/api/web/file-url",
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+          .first(where: { $0.name == "file_id" })?.value == "image"
+      else { throw URLError(.unsupportedURL) }
+      lookups.withLock { $0 += 1 }
+      if unavailable.withLock({ $0 }) {
+        return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Offline\"}}")
+      }
+      return ChatHTTPResponse(
+        body: "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/image\"}")
+    }
+    let viewer = makeViewer(fixture)
+    defer { viewer.close() }
+    let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
+    let resources = viewer.reads
+    let read = resources.thumbnail(image)
+    do {
+      _ = try await resources.store.get(read.value).value
+      XCTFail("An unavailable thumbnail must report its error")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 503) }
+    unavailable.withLock { $0 = false }
+    do {
+      _ = try await resources.store.get(read.value).value
+      XCTFail("Observing the failed resource must not start another request")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 503) }
+    XCTAssertEqual(lookups.withLock { $0 }, 1)
+    let retried = try await readThumbnail(image, viewer: viewer)
+    XCTAssertNotNil(retried)
+    let displayed = try await resources.store.get(read.value).value
+    XCTAssertNotNil(displayed.image)
+    XCTAssertEqual(lookups.withLock { $0 }, 2)
+  }
+
+  func testRetiredThumbnailResourceCannotReturnItsPreviousImage() async throws {
+    let bytes = imageData()
+    let server = try ChatFileHTTPServer { _ in .init(body: bytes) }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let denied = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let url = request.url, url.path == "/api/web/file-url",
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+          .first(where: { $0.name == "file_id" })?.value == "image"
+      else { throw URLError(.unsupportedURL) }
+      if denied.withLock({ $0 }) {
+        return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
+      }
+      return ChatHTTPResponse(
+        body: "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/image\"}")
+    }
+    let viewer = makeViewer(fixture)
+    defer { viewer.close() }
+    let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
+    let resources = viewer.reads
+    let read = resources.thumbnail(image)
+    let loaded = try await resources.store.get(read.value).value
+    XCTAssertNotNil(loaded.image)
+    viewer.deactivate()
+    denied.withLock { $0 = true }
+    do {
+      _ = try await resources.store.get(read.value).value
+      XCTFail("A retired detail must not return its cached thumbnail")
+    } catch { XCTAssertTrue(error is CancellationError) }
+    do {
+      _ = try await readThumbnail(image, viewer: viewer)
+      XCTFail("A replacement detail must obtain fresh authorization")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+  }
+
+  private func readThumbnail(_ attachment: ChatMessageAttachment, viewer: MessageAttachmentStore)
+    async throws -> UIImage?
+  {
+    let reads = viewer.reads
+    let read = reads.thumbnail(attachment)
+    reads.retryIfNeeded(read)
+    return try await reads.store.get(read.value).value.image
   }
 
   private func makeViewer(_ fixture: ChatHTTPFixture) -> MessageAttachmentStore {

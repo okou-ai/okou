@@ -418,7 +418,19 @@ try {
   const newAttachment = `workflow-attachments/${orgId}/${main.workflowId}/${randomUUID()}/archive.tar.gz`;
   objects.add(sibling);
   objects.add(newAttachment);
-  const reviewed = await review(main.id);
+  const currentReview = await review(main.id);
+  // Retained receipts must remain usable for exact-job recovery and audit.
+  const retainedContents = `${JSON.stringify({
+    ...currentReview.plan,
+    inventory: { ...currentReview.plan.inventory, pendingPublications: 0 },
+  })}\n`;
+  const retainedPath = join(root, "retained-reviewed-plan.json");
+  await writeFile(retainedPath, retainedContents, { mode: 0o600, flag: "wx" });
+  const reviewed: Review = {
+    ...currentReview,
+    path: retainedPath,
+    sha: digest(retainedContents),
+  };
   for (const [key, value] of [
     ["host", databaseAddress.hostname],
     ["port", String(db.port)],

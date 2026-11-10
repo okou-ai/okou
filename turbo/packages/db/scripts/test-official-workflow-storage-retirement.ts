@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Client } from "pg";
+import { Client, DatabaseError } from "pg";
 
 /** The predecessor API projects only these surviving revision columns. */
 const revisionRead = `SELECT definition_name, revision, payload, content_bundle, created_at
@@ -23,6 +23,9 @@ export async function validateOfficialWorkflowStorageRetirement(
     for (const scenario of [
       "complete",
       "incomplete-source",
+      "incomplete-v1-source",
+      "incomplete-v1-file",
+      "unsupported-source-version",
       "unmaterialized-catalog",
       "workflow-cleanup-candidate",
       "workflow-cleanup-version",
@@ -76,28 +79,73 @@ export async function validateOfficialWorkflowStorageRetirement(
           storageVersion,
           storageId,
         ]);
-        const sources = ["legacy-only", "dual-bound", "bundle-only"].map(
-          (name, index) => {
-            return {
-              schemaVersion: index === 0 ? 2 : 3,
-              name,
-              revision,
-              workflow: {
-                displayName: name,
-                description: name,
-                instruction: `# ${name}\nPreserve this source exactly.`,
-                files: [
-                  {
-                    path: "reference.txt",
-                    content: "unchanged supplementary bytes\n",
-                  },
-                ],
-              },
-              blueprints: [],
-            };
+        const fixtures = [
+          {
+            name: "legacy-only",
+            schemaVersion: 2,
+            bound: true,
+            bundled: false,
           },
-        );
+          { name: "dual-bound", schemaVersion: 3, bound: true, bundled: true },
+          {
+            name: "bundle-only",
+            schemaVersion: 3,
+            bound: false,
+            bundled: true,
+          },
+          {
+            name: "historical-v1",
+            schemaVersion: 1,
+            bound: true,
+            bundled: false,
+          },
+        ];
+        const sources = fixtures.map(({ name, schemaVersion }) => {
+          return {
+            schemaVersion,
+            name,
+            revision,
+            workflow: {
+              displayName: name,
+              description: name,
+              instruction: `# ${name}\nPreserve this source exactly.`,
+              files: [
+                {
+                  path: "reference.txt",
+                  content: "unchanged supplementary bytes\n",
+                },
+              ],
+            },
+            blueprints:
+              schemaVersion === 1
+                ? [
+                    {
+                      key: "daily",
+                      parameters: [
+                        {
+                          key: "timezone",
+                          type: "string",
+                          format: "timezone",
+                          required: true,
+                          derivation: { kind: "user-timezone" },
+                        },
+                      ],
+                      desiredState: {
+                        kind: "schedule",
+                        schedule: {
+                          type: "cron",
+                          cronExpression: "0 8 * * *",
+                          timezone: { parameter: "timezone" },
+                        },
+                      },
+                      runtime: { resultEmail: true },
+                    },
+                  ]
+                : [],
+          };
+        });
         for (const [index, source] of sources.entries()) {
+          const fixture = fixtures[index]!;
           await client.query(
             `INSERT INTO official_workflow_definition_revisions
             (definition_name,revision,payload,storage_name,storage_id,storage_version,content_bundle)
@@ -106,10 +154,10 @@ export async function validateOfficialWorkflowStorageRetirement(
               source.name,
               revision,
               source,
-              index === 2 ? null : `official-workflow-${source.name}`,
-              index === 2 ? null : storageId,
-              index === 2 ? null : storageVersion,
-              index === 0 ? null : bundle,
+              fixture.bound ? `official-workflow-${source.name}` : null,
+              fixture.bound ? storageId : null,
+              fixture.bound ? storageVersion : null,
+              fixture.bundled ? bundle : null,
             ],
           );
         }
@@ -150,6 +198,18 @@ export async function validateOfficialWorkflowStorageRetirement(
         if (scenario === "incomplete-source") {
           await client.query(
             "UPDATE official_workflow_definition_revisions SET payload = payload #- '{workflow,instruction}' WHERE definition_name='legacy-only'",
+          );
+        } else if (scenario === "incomplete-v1-source") {
+          await client.query(
+            "UPDATE official_workflow_definition_revisions SET payload = payload #- '{workflow,instruction}' WHERE definition_name='historical-v1'",
+          );
+        } else if (scenario === "incomplete-v1-file") {
+          await client.query(
+            "UPDATE official_workflow_definition_revisions SET payload = payload #- '{workflow,files,0,content}' WHERE definition_name='historical-v1'",
+          );
+        } else if (scenario === "unsupported-source-version") {
+          await client.query(
+            "UPDATE official_workflow_definition_revisions SET payload = jsonb_set(payload, '{schemaVersion}', '4') WHERE definition_name='historical-v1'",
           );
         } else if (scenario === "unmaterialized-catalog") {
           await client.query(
@@ -238,7 +298,41 @@ export async function validateOfficialWorkflowStorageRetirement(
             [sources[2]!.name, revision, sources[2], bundle],
           );
         } else {
-          await assert.rejects(client.query(migration));
+          const sourceFailure = {
+            "incomplete-source": {
+              definitionName: "legacy-only",
+              failedChecks: ["instruction-not-string"],
+            },
+            "incomplete-v1-source": {
+              definitionName: "historical-v1",
+              failedChecks: ["instruction-not-string"],
+            },
+            "incomplete-v1-file": {
+              definitionName: "historical-v1",
+              failedChecks: ["invalid-file-entry"],
+            },
+            "unsupported-source-version": {
+              definitionName: "historical-v1",
+              failedChecks: ["unsupported-schema-version"],
+            },
+          };
+          await assert.rejects(client.query(migration), (error: unknown) => {
+            assert(error instanceof DatabaseError);
+            assert.equal(error.code, "P0001");
+            if (scenario in sourceFailure) {
+              const expected =
+                sourceFailure[scenario as keyof typeof sourceFailure];
+              assert.equal(
+                error.message,
+                "C05: a retained Official revision lacks complete immutable source",
+              );
+              assert.deepEqual(JSON.parse(error.detail!), {
+                ...expected,
+                revision,
+              });
+            }
+            return true;
+          });
           assert.deepEqual(
             (
               await client.query(

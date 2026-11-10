@@ -8,6 +8,7 @@ import XCTest
 final class ChatModelEntryTests: XCTestCase {
   func testColdComposerLoadsModelSettingsWithoutPreloadingOrReplacingTheEditor() async throws {
     let requested = expectation(description: "Mounted composer requests model settings")
+    let loaded = expectation(description: "The mounted composer consumed model settings")
     let (responses, response) = AsyncStream<Void>.makeStream()
     defer { response.finish() }
     let fixture = ChatHTTPFixture { request in
@@ -20,7 +21,8 @@ final class ChatModelEntryTests: XCTestCase {
     }
     let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { workspace.close() }
-    let host = UIHostingController(rootView: ModelEntryComposer(workspace: workspace))
+    let host = UIHostingController(
+      rootView: ModelEntryComposer(workspace: workspace, didLoadModels: { loaded.fulfill() }))
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
     let window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -39,7 +41,7 @@ final class ChatModelEntryTests: XCTestCase {
     try await waitForBusinessResult {
       workspace.modelStore.configuration?.defaultSelection.model == "codex-model"
     }
-    try await hostingPresentationFrame()
+    await fulfillment(of: [loaded], timeout: 3)
     let current = try XCTUnwrap(textView(in: host.view))
     XCTAssertTrue(current.isFirstResponder)
     XCTAssertEqual(current.text, "Keep this draft while models load")
@@ -54,6 +56,7 @@ final class ChatModelEntryTests: XCTestCase {
 
 private struct ModelEntryComposer: View {
   let workspace: WorkspaceStore
+  let didLoadModels: () -> Void
   var body: some View {
     @Bindable var composer = workspace.newComposer
     VStack {
@@ -63,6 +66,9 @@ private struct ModelEntryComposer: View {
         needsUpgrade: false, error: nil, attachmentURL: workspace.webURL,
         attachments: composer.attachments, draftState: composer,
         submit: {}, refresh: nil, modelSelection: workspace.newModelSelection)
+    }
+    .onChange(of: workspace.modelStore.configuration?.defaultSelection.model) { _, model in
+      if model != nil { didLoadModels() }
     }
   }
 }

@@ -6,7 +6,7 @@ import type {
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
 
-type ReusePhase = "holder_select" | "discovery_persist" | "holder_reselect";
+type ReusePhase = "holder_select" | "delivery_finalize";
 type ObservationFields = Readonly<Record<string, string | number>>;
 
 interface ReusePhaseObservation {
@@ -84,7 +84,7 @@ export class RunnerReusePreferenceTiming {
     readonly runId: string;
     readonly dimensions: Readonly<Record<string, string>>;
   }) {
-    // One initial select, one persistence call and at most one reselect. Keep
+    // Overlapped preparation and one atomic delivery finalization. Keep
     // registration in the caller's existing post-publication batch.
     return this.observations.map((observation) => {
       return {

@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  UserNotifications = "userNotifications",
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   PastedTextAttachments = "pastedTextAttachments",

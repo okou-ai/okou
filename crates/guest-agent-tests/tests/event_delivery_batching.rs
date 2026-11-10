@@ -4,7 +4,8 @@ use guest_agent_tests as common;
 
 use common::json_fixture::JsonFieldTemplate;
 use guest_agent::masker::SecretMasker;
-use serde_json::{Value, json};
+use serde_json::{json, value::RawValue};
+use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
 use std::time::Duration;
 
@@ -29,22 +30,29 @@ fn capture_batch(
     if request.authorization.as_deref() != Some("Bearer test-token") {
         return Err(io::Error::other("event request omitted bearer authorization").into());
     }
-    let body: Value = serde_json::from_str(&request.body)?;
-    if body.get("runId").and_then(Value::as_str) != Some(run_id) {
+    #[derive(serde::Deserialize)]
+    struct ObservedBatch<'a> {
+        #[serde(rename = "runId")]
+        run_id: String,
+        #[serde(borrow)]
+        events: Vec<BTreeMap<String, &'a RawValue>>,
+    }
+    // Inspect metadata without owning the multi-MiB event content. Serde structs
+    // also accept positional arrays, but the HTTP boundary requires an object.
+    if !request.body.trim_start().starts_with('{') {
+        return Err(io::Error::other("event request omitted events array").into());
+    }
+    let body: ObservedBatch<'_> = serde_json::from_str(&request.body)?;
+    if body.run_id != run_id {
         return Err(io::Error::other("event request used the wrong run ID").into());
     }
-    let events = body
-        .get("events")
-        .and_then(Value::as_array)
-        .ok_or_else(|| io::Error::other("event request omitted events array"))?;
-    let sequences = events
+    let sequences = body
+        .events
         .iter()
         .map(|event| {
-            event
-                .get("sequenceNumber")
-                .and_then(Value::as_u64)
-                .and_then(|sequence| u32::try_from(sequence).ok())
-                .ok_or_else(|| io::Error::other("event omitted a u32 sequenceNumber"))
+            let invalid = || io::Error::other("event omitted a u32 sequenceNumber");
+            let sequence = event.get("sequenceNumber").ok_or_else(invalid)?;
+            serde_json::from_str::<u32>(sequence.get()).map_err(|_| invalid())
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(CapturedBatch {

@@ -2,13 +2,11 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Sparkles } from "lucide-react";
 import { Button } from "@okouai/ui/components/ui/button";
-import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
@@ -33,6 +31,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
+import { CarouselNavigation } from "./carousel-navigation.tsx";
 
 const FEATURE_GUIDE_ACTION_ROUTES = {
   "connect-discord": ROUTES.settingsDiscord,
@@ -149,65 +148,23 @@ function FeatureGuideNavigation({
   const itemIndex = useGet(snapshot.selection.itemIndex$);
   const selectItem = useSet(snapshot.selection.selectItem$);
   const items = snapshot.edition.content.items;
-  if (items.length < 2) {
-    return null;
-  }
   return (
-    <DialogFooter
-      role="group"
-      aria-label={t(($) => {
+    <CarouselNavigation
+      items={items.map((item) => {
+        return { id: item.featureId, label: item.title };
+      })}
+      index={itemIndex}
+      onSelect={selectItem}
+      label={t(($) => {
         return $.featureGuide.navigation;
       })}
-      className="flex-row items-center justify-between gap-2 border-t border-border pt-3 sm:justify-between"
-    >
-      <IconButton
-        aria-label={t(($) => {
-          return $.featureGuide.previousFeature;
-        })}
-        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          return selectItem((itemIndex + items.length - 1) % items.length);
-        }}
-      >
-        <ArrowLeft size={16} aria-hidden="true" />
-      </IconButton>
-      <div className="flex min-w-0 items-center gap-0.5">
-        {items.map((item, index) => {
-          return (
-            <IconButton
-              key={item.featureId}
-              aria-label={item.title}
-              aria-current={index === itemIndex ? "step" : undefined}
-              className="size-6 rounded-full"
-              onClick={() => {
-                return selectItem(index);
-              }}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "h-1.5 rounded-full",
-                  index === itemIndex
-                    ? "w-4 bg-foreground"
-                    : "w-1.5 bg-gray-300",
-                )}
-              />
-            </IconButton>
-          );
-        })}
-      </div>
-      <IconButton
-        aria-label={t(($) => {
-          return $.featureGuide.nextFeature;
-        })}
-        className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          return selectItem((itemIndex + 1) % items.length);
-        }}
-      >
-        <ArrowRight size={16} aria-hidden="true" />
-      </IconButton>
-    </DialogFooter>
+      previousLabel={t(($) => {
+        return $.featureGuide.previousFeature;
+      })}
+      nextLabel={t(($) => {
+        return $.featureGuide.nextFeature;
+      })}
+    />
   );
 }
 

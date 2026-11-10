@@ -289,7 +289,7 @@ def _render_client_invalid(event: _ClientInvalid) -> bytes:
         b'{"type":"response.create","generate":false,"input":"'
         + event.marker.encode()
         + b'","padding":['
-        + b",".join([b"0"] * 40_000)
+        + (b"0," * 40_000)[:-1]
         + b"]}"
     )
 
@@ -335,7 +335,7 @@ def _render_boundary(event: _ServerBoundary) -> bytes:
         b'{"type":"error","marker":"'
         + event.marker.encode()
         + b'","padding":['
-        + b",".join([b"0"] * 40_000)
+        + (b"0," * 40_000)[:-1]
         + b"]}"
     )
 

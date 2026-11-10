@@ -37,6 +37,7 @@ import type {
   ProjectChatThreadListRow,
 } from "../../signals/chat-page/chat-thread-list-rows.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -148,7 +149,8 @@ function ProjectActions({
 }: ProjectRowProps & {
   unread: boolean;
   creating: boolean;
-  onNewChat: () => void;
+  /** Null when the row only carries its menu, as in My Okou's chat list. */
+  onNewChat: (() => void) | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -159,24 +161,26 @@ function ProjectActions({
         layout === "list" ? "gap-1" : "gap-0.5",
       )}
     >
-      <Button
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        className={cn(
-          "shrink-0",
-          touch && "min-h-11 min-w-11",
-          unread &&
-            "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project-actions:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
-        )}
-        aria-label={t(($) => {
-          return $.projects.newChat;
-        })}
-        disabled={creating}
-        onClick={onNewChat}
-      >
-        <Plus />
-      </Button>
+      {onNewChat ? (
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className={cn(
+            "shrink-0",
+            touch && "min-h-11 min-w-11",
+            unread &&
+              "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project-actions:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
+          )}
+          aria-label={t(($) => {
+            return $.projects.newChat;
+          })}
+          disabled={creating}
+          onClick={onNewChat}
+        >
+          <Plus />
+        </Button>
+      ) : null}
       <ProjectMenu project={project} touch={touch} unread={unread} />
     </div>
   );
@@ -367,6 +371,9 @@ export function ProjectRow({
   const showUnread = !expanded && unread;
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(rootSignal$);
+  // My Okou starts chats from the list's New chat row, so a Project row keeps
+  // only its menu.
+  const singleAgent = useGet(singleAgentEnabled$);
   function newChat() {
     detach(create(project.id, signal), Reason.DomCallback);
   }
@@ -399,7 +406,7 @@ export function ProjectRow({
         layout={layout}
         unread={showUnread}
         creating={creation.state === "loading"}
-        onNewChat={newChat}
+        onNewChat={singleAgent ? null : newChat}
       />
     </div>
   );

@@ -536,6 +536,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouChip` / `OkouChipRail` | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                 |
 | `OkouSegmentControl`        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                          |
 | `OkouAddIndicator`          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                          |
+| `OkouNameDialog`            | Native name alert (new or renamed project, renamed chat): one field, Cancel and a preferred Save, off while the name is empty or too long                       |
 
 #### Lists and rows
 

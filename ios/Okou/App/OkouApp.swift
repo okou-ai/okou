@@ -109,7 +109,9 @@ struct AppRootView: View {
         let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
-        if let workspaceData, workspaceData.scopeID == scopeID,
+        if authentication.presentation?.userID == userID,
+          authentication.presentation?.preparedWorkspaceID == workspaceID,
+          let workspaceData, workspaceData.scopeID == scopeID,
           scenePhase != .background || presentedScopeID == scopeID
         {
           WorkspaceRootView(
@@ -126,6 +128,8 @@ struct AppRootView: View {
       }
     }
     .task(id: authentication.presentationScopeID) {
+      await authentication.preparePresentation()
+      guard !Task.isCancelled else { return }
       let data = notifications.data(
         authentication: authentication, configuration: configuration, session: session)
       workspaceData = data
@@ -291,7 +295,9 @@ private struct WorkspaceRootView: View {
                     agentID: store.defaultAgentID, agents: store.list.agents,
                     threads: store.list.threads),
                   workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
-                  placeholder: String(localized: "Message \(store.currentAgentName)"))
+                  placeholder: String(localized: "Message \(store.currentAgentName)"),
+                  project: store.newChatProject,
+                  removeProject: store.removeNewChatProject)
               }
               .animation(
                 reduceMotion ? nil : .easeInOut(duration: 0.22),

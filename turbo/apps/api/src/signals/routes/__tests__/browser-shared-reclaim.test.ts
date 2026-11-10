@@ -11,6 +11,7 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
@@ -406,13 +407,14 @@ describe("shared Browser expiry through public reopen", () => {
     });
   });
 
-  it("cancels an unacknowledged stop at the real provider deadline and retains it for reconciliation", async () => {
+  it("cancels an unacknowledged stop at its provider deadline and retains it for reconciliation", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       const first = await open(a);
       const cancelled = createDeferredPromise<void>(context.signal);
+      const expireDeadline = controlBrowserDeadline(context);
       let withhold = true;
       server.use(
         http.patch(
@@ -421,9 +423,11 @@ describe("shared Browser expiry through public reopen", () => {
             if (!withhold || !f.provider.sessionIds.has(String(params.id))) {
               return;
             }
-            if (!request.signal.aborted) {
-              await once(request.signal, "abort", { signal: context.signal });
-            }
+            const cancellation = once(request.signal, "abort", {
+              signal: context.signal,
+            });
+            expireDeadline();
+            await cancellation;
             cancelled.resolve();
             return HttpResponse.error();
           },

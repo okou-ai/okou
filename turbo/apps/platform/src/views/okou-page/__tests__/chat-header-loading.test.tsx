@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
@@ -72,7 +73,7 @@ async function closeMailList(list: HTMLElement) {
 
 async function openAutomations(desktop: boolean, container: ParentNode) {
   if (desktop) {
-    click(fastButton("Automations", container));
+    await selectDesktopHeaderAction("Automations", container);
   } else {
     click(fastButton("More actions"));
     click(menuItem("Automations", await screen.findByRole("menu")));
@@ -183,13 +184,7 @@ test("Keep every desktop header action for a chat without mail or automations", 
     queryAllByRoleFast("button", group).map((button) => {
       return button.getAttribute("aria-label");
     }),
-  ).toStrictEqual([
-    "Share messages",
-    "Automations",
-    "Manage emails",
-    "Open browser",
-    "Artifacts and chats",
-  ]);
+  ).toStrictEqual(["Share messages", "Artifacts and chats", "More actions"]);
 });
 
 test.each([true, false])(
@@ -198,7 +193,11 @@ test.each([true, false])(
     await setupHeaders({ desktop, mailThreads: [], automationThreads: [] });
     const header = desktop ? pane(previous.id) : document;
 
-    click(fastButton("Manage emails", header));
+    if (desktop) {
+      await selectDesktopHeaderAction("Manage emails", header);
+    } else {
+      click(fastButton("Manage emails", header));
+    }
     const list = await screen.findByRole("dialog", { name: "Emails" });
     await expect(
       within(list).findByText("No emails yet"),
@@ -238,14 +237,7 @@ test("Open the destination's loading lists as soon as its pane replaces the prev
   });
   await navigate(destination.id);
   const header = pane(destination.id);
-  const mailEntry = fastButton("Manage emails", header);
-  expect(mailEntry).toHaveAttribute("aria-busy", "false");
-  expect(fastButton("Automations", header)).toHaveAttribute(
-    "aria-disabled",
-    "false",
-  );
-
-  click(mailEntry);
+  await selectDesktopHeaderAction("Manage emails", header);
   const list = await screen.findByRole("dialog", { name: "Emails" });
   await within(list).findByRole("status", { name: "Loading emails" });
   // The first load shows placeholders, not search, filters or a count.
@@ -274,13 +266,7 @@ test("Open the destination's loading lists as soon as its pane replaces the prev
 test("Mark every header button as settling while the previous chat is still on screen", async () => {
   const serviceWorker = context.mocks.browser.serviceWorker();
   await setupHeaders();
-  const names = [
-    "Share messages",
-    "Automations",
-    "Manage emails",
-    "Open browser",
-    "Artifacts and chats",
-  ];
+  const names = ["Share messages", "Artifacts and chats", "More actions"];
   for (const name of names) {
     expect(fastButton(name, pane(previous.id))).toHaveAttribute(
       "aria-busy",
@@ -327,7 +313,7 @@ test("Show failed first mail and automation reads instead of empty states", asyn
   });
   const header = pane(previous.id);
 
-  click(fastButton("Manage emails", header));
+  await selectDesktopHeaderAction("Manage emails", header);
   const list = await screen.findByRole("dialog", { name: "Emails" });
   await expect(
     within(list).findByText("Unable to load emails"),
@@ -381,14 +367,14 @@ test("Let each pane open its own chat's mail", async () => {
     );
   });
 
-  click(fastButton("Manage emails", pane(previous.id)));
+  await selectDesktopHeaderAction("Manage emails", pane(previous.id));
   const primaryList = await screen.findByRole("dialog", { name: "Emails" });
   await expect(
     within(primaryList).findByText("No emails yet"),
   ).resolves.toBeInTheDocument();
   await closeMailList(primaryList);
 
-  click(fastButton("Manage emails", pane(destination.id)));
+  await selectDesktopHeaderAction("Manage emails", pane(destination.id));
   const secondaryList = await screen.findByRole("dialog", { name: "Emails" });
   await expect(
     within(secondaryList).findByText("Current header mail"),

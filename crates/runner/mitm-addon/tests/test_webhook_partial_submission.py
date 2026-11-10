@@ -103,7 +103,10 @@ def test_fallback_owns_delivery_after_worker_start_failure(
         other_report.release()
 
 
-def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webhook_server, capsys):
+@pytest.mark.parametrize("error_type", [RuntimeError, OSError])
+def test_existing_worker_owns_delivery_before_submit_raises(
+    tmp_path, usage_webhook_server, capsys, error_type
+):
     control_root = tmp_path / "delivery-control"
     other_report = usage.counters.admit_pending_report()
     worker_occupied = threading.Event()
@@ -134,9 +137,17 @@ def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webh
             try:
                 executor.submit(occupy_worker)
                 assert worker_occupied.wait(timeout=5)
-                with _fail_worker_start(
-                    RuntimeError("can't start new thread"),
-                    before_failure=let_existing_worker_claim,
+                error_context = (
+                    pytest.raises(OSError, match="can't start new thread")
+                    if error_type is OSError
+                    else nullcontext()
+                )
+                with (
+                    _fail_worker_start(
+                        error_type("can't start new thread"),
+                        before_failure=let_existing_worker_claim,
+                    ),
+                    error_context,
                 ):
                     assert usage.webhook.enqueue_webhook_delivery(
                         usage_webhook_server.url(),
@@ -147,7 +158,7 @@ def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webh
                         delivery_outcome_callback=on_outcome,
                     )
 
-                # Submission recovered while the worker still owns its callback and counters.
+                # The worker still owns its callback and counters after submission finishes.
                 assert [body["runId"] for body in usage_webhook_server.json_bodies()] == ["A"]
                 assert outcomes == ["success"]
                 assert usage.webhook.pending_delivery_payload_count_for_tests() == 1
