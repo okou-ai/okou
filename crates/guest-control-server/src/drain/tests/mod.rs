@@ -400,19 +400,24 @@ fn bounded_drain_zero_chunk_limit_emits_truncation_marker_on_data() {
 
 #[test]
 fn bounded_drain_stream_callback_failure_stops_stream_but_keeps_draining() {
-    let (reader, mut writer) = pipe_pair();
-    writer.write_all(b"abcdef").unwrap();
-    drop(writer);
+    // Complete capture must require more reads after the first callback fails.
+    let input = b"abcdef"
+        .iter()
+        .copied()
+        .cycle()
+        .take(DEFAULT_DRAIN_READ_BYTES * 2 + 123)
+        .collect::<Vec<_>>();
+    let reader = file_with_contents(&input);
 
     let cancel = DrainCancellation::new().unwrap();
     let mut chunks = Vec::new();
     let result = drain_bounded_cancellable(
         reader,
         &cancel,
-        Some(10),
+        Some(input.len()),
         Some(BoundedStreamConfig {
             chunk_limit_bytes: 2,
-            stream_limit_bytes: 10,
+            stream_limit_bytes: input.len(),
         }),
         |chunk, truncated| {
             chunks.push((chunk.to_vec(), truncated));
@@ -421,7 +426,7 @@ fn bounded_drain_stream_callback_failure_stops_stream_but_keeps_draining() {
     );
 
     assert_eq!(chunks, vec![(b"ab".to_vec(), false)]);
-    assert_eq!(result.captured, Some(b"abcdef".to_vec()));
+    assert_eq!(result.captured, Some(input));
     assert!(!result.capture_truncated);
     assert!(!result.stream_truncated);
 }
