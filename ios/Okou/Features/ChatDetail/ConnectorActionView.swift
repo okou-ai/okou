@@ -7,23 +7,38 @@ struct ConnectorActionCard: View {
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   let loadsState: Bool
-  @State private var read: ConnectorActionStatusRead?
+  private struct Target: Equatable {
+    let owner: ObjectIdentifier
+    let action: ChatConnectorAction
+    let loadsState: Bool
+  }
+  private struct Attachment {
+    let target: Target
+    let read: ConnectorActionStatusRead
+  }
+  @State private var attachment: Attachment?
+
+  private var target: Target {
+    Target(owner: ObjectIdentifier(store.resources), action: action, loadsState: loadsState)
+  }
 
   var body: some View {
     Group {
       if action.kind == .unavailable {
         ConnectorActionCardContent(action: action, store: store, state: .hasData(nil))
-      } else if let read, read.key == ConnectorActionResources.Key(action) {
+      } else if let attachment, attachment.target == target {
         StoreProvider(store.resources.store) {
-          ConnectorActionCardValue(action: action, store: store, read: read)
+          ConnectorActionCardValue(action: action, store: store, read: attachment.read)
         }
       } else {
         ConnectorActionCardContent(action: action, store: store, state: .loading)
       }
     }
-    .task(id: action) {
+    .task(id: target) {
       // Mounting attaches a consumer. Its disappearance never cancels the shared read.
-      if loadsState { read = store.resources.status(action) }
+      if loadsState {
+        attachment = Attachment(target: target, read: store.resources.status(action))
+      }
     }
   }
 }
