@@ -2,6 +2,7 @@
 
 import type { ComponentProps, ReactElement } from "react";
 import { getShortcutLabel } from "../../lib/keyboard-shortcuts";
+import { cn } from "../../lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -17,16 +18,25 @@ interface ShortcutItem {
   }>;
 }
 
+/**
+ * `className` reaches the wrapper around the triggers, for a trigger that has
+ * to keep its own box: a full-width rail link would otherwise shrink to the
+ * wrapper's content width.
+ */
 export function ShortcutTooltipGroup({
   items,
   side = "bottom",
+  className,
 }: {
   readonly items: readonly ShortcutItem[];
   readonly side?: ComponentProps<typeof TooltipContent>["side"];
+  readonly className?: string;
 }) {
   return (
     <TooltipProvider delay={200}>
-      <span className="inline-flex shrink-0 items-center gap-1">
+      <span
+        className={cn("inline-flex shrink-0 items-center gap-1", className)}
+      >
         {items.map((item) => {
           return (
             <Tooltip key={item.shortcut} disabled={item.trigger.props.disabled}>
