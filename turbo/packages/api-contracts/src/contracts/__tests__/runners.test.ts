@@ -154,7 +154,6 @@ function loadRunnerClaimResponseFixture(): unknown {
 describe("runner claim response contract", () => {
   it("round-trips minimum execution intent without materialized runtime fields", () => {
     const input = {
-      storageMounts: [],
       platformEnvironment: {
         OKOU_TOKEN: "captured-run-authorization",
         OKOU_DISABLED_PAID_TOOLS: "[]",

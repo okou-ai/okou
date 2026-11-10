@@ -1031,7 +1031,6 @@ export const storedExecutionContextSchema = storedExecutionContextObjectSchema;
 /** Irrecoverable Claim inputs; reconstructible fields on a full queue row are ignored. */
 export const claimExecutionInputSchema = storedExecutionContextObjectSchema
   .pick({
-    storageMounts: true,
     nativeContinuation: true,
     customWorkflowSelection: true,
     featureFlags: true,

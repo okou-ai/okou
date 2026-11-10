@@ -1095,6 +1095,7 @@ const claimableJob$ = computed(async (get): Promise<ClaimLookupResult> => {
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
+        storageMounts: agentRuns.storageMounts,
         modelProvider: agentRuns.modelProvider,
         // Claim's current input may already belong to this Run; only another
         // run-attributed event is evidence of earlier thread activity.
@@ -2291,7 +2292,12 @@ const resolveStoredExecutionContextForClaim$ = command(
         response: notFound("Run execution sources are unavailable"),
       };
     }
-    const { result: storedContextResult, hydrationMs, secrets } = materialized;
+    const {
+      result: storedContextResult,
+      hydrationMs,
+      secrets,
+      storageCacheWrites,
+    } = materialized;
     args.timing.recordElapsed(
       "claim_route_context_parse",
       "top_level",
@@ -2344,6 +2350,7 @@ const resolveStoredExecutionContextForClaim$ = command(
     }
     return {
       compatible: true as const,
+      storageCacheWrites,
       secretNames: Object.keys(secrets ?? {}),
       value: {
         ...storedContextResult.data,
@@ -2477,7 +2484,11 @@ const claimAuthorizedJob$ = command(
       telemetry: args.telemetry,
       runnerAttribution: args.runnerAttribution,
       claimRouteTiming,
-      cachePublication: set(persistStoragePresignedUrls$, cacheWrites, signal),
+      cachePublication: set(
+        persistStoragePresignedUrls$,
+        [...storedContextResult.storageCacheWrites, ...cacheWrites],
+        signal,
+      ),
       secretNames: storedContextResult.secretNames,
       secretValues: preparedResponse.secretValues,
       networkPolicies: preparedResponse.refreshedPolicies.networkPolicies,

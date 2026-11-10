@@ -6,6 +6,7 @@ import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computed, type Computed } from "ccstate";
 import { monotonicNow } from "../../lib/time";
 import { settle } from "../utils";
+import { ExecutionStorageUnavailableError } from "./execution-storage.service";
 import {
   ClaimRuntimeUnavailableError,
   createClaimRuntimeContext,
@@ -20,6 +21,7 @@ export type ClaimExecutionContextRun = Pick<
   | "chatThreadId"
   | "launchSnapshot"
   | "vars"
+  | "storageMounts"
   | "modelProvider"
   | "modelProviderId"
   | "modelProviderCredentialScope"
@@ -67,12 +69,16 @@ export function createClaimExecutionContext(
         result: parsed,
         hydrationMs: undefined,
         secrets: null,
+        storageCacheWrites: [],
       };
     }
     const startedAt = monotonicNow();
     const runtime = await settle(get(runtime$));
     if (!runtime.ok) {
-      if (runtime.error instanceof ClaimRuntimeUnavailableError) {
+      if (
+        runtime.error instanceof ClaimRuntimeUnavailableError ||
+        runtime.error instanceof ExecutionStorageUnavailableError
+      ) {
         return { status: "unavailable" as const };
       }
       throw runtime.error;
@@ -84,6 +90,7 @@ export function createClaimExecutionContext(
       ),
       hydrationMs: monotonicNow() - startedAt,
       secrets: runtime.value.secrets,
+      storageCacheWrites: runtime.value.storageCacheWrites,
     };
   });
 }

@@ -22,6 +22,7 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
@@ -123,11 +124,7 @@ export function createConnectedAccountsSignals(
     execution,
     dispatchTiming$,
   );
-  const accounts = createThreadAccountSignals(
-    execution,
-    connectorSourceId$,
-    inputs,
-  );
+  const accounts = createThreadAccountSignals(connectorSourceId$, inputs);
   const connectors$ = computed(async (get) => {
     return await get(execution.connectors$);
   });
@@ -281,8 +278,8 @@ function createChatAccountInputSignals(
   return { chatAccountsEnabled$, effectiveAccounts$ };
 }
 
-/** Re-read an admitted Run's exact accounts; never choose a new default at Claim. */
-export function createClaimConnectedAccounts(args: {
+/** Preserve registered account bindings and resolve current native-only selections. */
+interface ClaimConnectedAccountsArgs {
   readonly identity$: Computed<
     Promise<{
       readonly userId: string;
@@ -301,44 +298,121 @@ export function createClaimConnectedAccounts(args: {
   readonly policies$: AgentRunContextSignals["permissionPolicies$"];
   readonly features$: AgentRunContextSignals["featureSwitches$"];
   readonly timing$: DispatchTiming$;
-}): ConnectedAccounts {
+}
+
+function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
   const connectorInput$ = computed(async (get) => {
+    const [identity, targets] = await Promise.all([
+      get(args.identity$),
+      get(args.targets$),
+    ]);
+    const rows = await get(db$)
+      .select({
+        connectorId: chatThreadConnectorSelections.connectorId,
+        connectorSlug: chatThreadConnectorSelections.connectorSlug,
+        customConnectorId: chatThreadConnectorSelections.customConnectorId,
+      })
+      .from(chatThreadConnectorSelections)
+      .where(
+        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
+      );
+    const registered = new Set(targets.map(connectorAccountTargetKey));
     return {
-      ...(await get(args.identity$)),
-      threadSelectionRows: [],
+      ...identity,
+      threadSelectionRows: [
+        ...rows.filter((row) => {
+          return !registered.has(
+            connectorAccountTargetKey(runConnectorTargetFromRow(row)),
+          );
+        }),
+        ...targets.flatMap((target) => {
+          return target.sourceId
+            ? [
+                {
+                  connectorId: target.sourceId,
+                  connectorSlug:
+                    target.kind === "builtin" ? target.connectorSlug : null,
+                  customConnectorId:
+                    target.kind === "custom" ? target.customConnectorId : null,
+                },
+              ]
+            : [];
+        }),
+      ],
       timing: get(args.timing$),
     };
   });
-  const chatAccounts = createChatAccountInputSignals(
+  const currentAccounts = createChatAccountInputSignals(
     { featureSwitches$: args.features$, connectors$: args.connectors$ },
     connectorInput$,
   );
-  const connectorScope$ = computed(
-    async (get): Promise<EffectiveConnectorScope> => {
-      const [scope, targets] = await Promise.all([
-        get(args.scope$),
-        get(args.targets$),
-      ]);
-      const allowed = runConnectorScope(scope);
-      return {
-        ...allowed,
-        allowedConnectorSlugs: allowed.allowedConnectorSlugs.filter((slug) => {
-          return targets.some((target) => {
+  const effectiveAccounts$ = computed(async (get) => {
+    const [rows, targets] = await Promise.all([
+      get(currentAccounts.effectiveAccounts$),
+      get(args.targets$),
+    ]);
+    const pinned = new Map(
+      targets.map((target) => {
+        return [connectorAccountTargetKey(target), target.sourceId];
+      }),
+    );
+    return rows.filter((row) => {
+      const key = connectorAccountTargetKey(runConnectorTargetFromRow(row));
+      return !pinned.has(key) || pinned.get(key) === row.connectorId;
+    });
+  });
+  return {
+    connectorInput$,
+    chatAccounts: { ...currentAccounts, effectiveAccounts$ },
+  };
+}
+
+function createClaimConnectorScope(args: ClaimConnectedAccountsArgs) {
+  return computed(async (get): Promise<EffectiveConnectorScope> => {
+    const [scope, targets, catalog] = await Promise.all([
+      get(args.scope$),
+      get(args.targets$),
+      get(args.catalog$),
+    ]);
+    const allowed = runConnectorScope(scope);
+    if (allowed.allowedConnectorSlugs.length > 0 && !catalog) {
+      throw new Error("Scoped connector catalog is missing from Claim");
+    }
+    return {
+      ...allowed,
+      customConnectorGrants: isFeatureEnabled(
+        FeatureSwitchKey.ConnectorChatAccountAccess,
+        await get(args.features$),
+      )
+        ? []
+        : allowed.customConnectorGrants,
+      allowedConnectorSlugs: allowed.allowedConnectorSlugs.filter((slug) => {
+        // Native-only environment bindings have no firewall registration.
+        return (
+          (catalog !== null &&
+            !catalog.serverFirewalls.has(slug) &&
+            !catalog.serverFirewalls.isMcp(slug)) ||
+          targets.some((target) => {
             return target.kind === "builtin" && target.connectorSlug === slug;
+          })
+        );
+      }),
+      allowedCustomConnectorIds: allowed.allowedCustomConnectorIds.filter(
+        (id) => {
+          return targets.some((target) => {
+            return target.kind === "custom" && target.customConnectorId === id;
           });
-        }),
-        allowedCustomConnectorIds: allowed.allowedCustomConnectorIds.filter(
-          (id) => {
-            return targets.some((target) => {
-              return (
-                target.kind === "custom" && target.customConnectorId === id
-              );
-            });
-          },
-        ),
-      };
-    },
-  );
+        },
+      ),
+    };
+  });
+}
+
+export function createClaimConnectedAccounts(
+  args: ClaimConnectedAccountsArgs,
+): ConnectedAccounts {
+  const { connectorInput$, chatAccounts } = createClaimAccountInputs(args);
+  const connectorScope$ = createClaimConnectorScope(args);
   const inputs: ConnectorInputSignals = {
     connectorInput$,
     connectorScope$,
@@ -361,43 +435,12 @@ export function createClaimConnectedAccounts(args: {
         : undefined;
     }),
   };
-  const threadSelections$ = computed(
-    async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const [targets, rows, scope] = await Promise.all([
-        get(args.targets$),
-        get(chatAccounts.effectiveAccounts$),
-        get(connectorScope$),
-      ]);
-      const available = new Set(
-        rows.map((row) => {
-          return row.connectorId;
-        }),
-      );
-      return targets.flatMap((target) => {
-        return target.sourceId &&
-          available.has(target.sourceId) &&
-          runConnectorTargetIsAuthorized(scope, target)
-          ? [{ connectionId: target.sourceId, target }]
-          : [];
-      });
-    },
+  const accounts = createThreadAccountSignals(
+    computed(() => {
+      return Promise.resolve(undefined);
+    }),
+    inputs,
   );
-  const accounts: ThreadAccountSignals = {
-    threadSelections$,
-    selectionIds$: computed(async (get) => {
-      return runThreadConnectorCandidates(await get(threadSelections$), null);
-    }),
-    accountCandidates$: computed(async (get) => {
-      return new Map(
-        (await get(threadSelections$)).map((selection) => {
-          return [
-            connectorAccountTargetKey(selection.target),
-            [selection.connectionId],
-          ];
-        }),
-      );
-    }),
-  };
   return createConnectorMaterialization(args.connectors$, inputs, accounts);
 }
 
@@ -519,7 +562,6 @@ function createConnectorInputSignals(
 type ThreadAccountSignals = ReturnType<typeof createThreadAccountSignals>;
 
 function createThreadAccountSignals(
-  execution: AgentRunContextSignals,
   connectorSourceId$: ConnectorSourceId$,
   inputs: ConnectorInputSignals,
 ) {

@@ -32,6 +32,7 @@ import type { ClaimExecutionContextRun } from "./claim-execution-context";
 import { createConnectorsContext } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
+import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   createMemberModelSources,
@@ -57,6 +58,7 @@ import {
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
 import { createRunTemplates } from "./run-templates.service";
+import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
@@ -114,12 +116,13 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     { modelRoute$ },
   );
   const initialInput$ = createClaimInitialInput(run$);
+  const storage$ = createClaimStorage(input$);
   const packages$ = createClaimPackages(
     input$,
     initialInput$,
     disabledTools$,
     sources,
-    global,
+    { global, storage$ },
   );
   const platform$ = createClaimPlatform(
     input$,
@@ -139,7 +142,46 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     preferences$,
     packages$,
     environment$,
-    targets$: connectors.targets$,
+    storage$,
+  });
+}
+
+function createClaimStorage(input$: ClaimInput$) {
+  const mounts$ = computed(async (get) => {
+    const { run } = await get(input$);
+    if (run.storageMounts === null) {
+      throw new Error("Admitted Run is missing its accepted Storage mounts");
+    }
+    return run.storageMounts;
+  });
+  const objects = createAcceptedExecutionStorageObjects(mounts$);
+  return computed(async (get) => {
+    const [mounts, prepared] = await Promise.all([
+      get(mounts$),
+      get(objects.preparedMounts$),
+    ]);
+    const byPath = new Map(
+      mounts.map((mount) => {
+        return [mount.mountPath, mount];
+      }),
+    );
+    return {
+      storageMounts: prepared.map((mount) => {
+        const accepted = byPath.get(mount.mountPath);
+        if (!accepted) {
+          throw new Error("Prepared Storage mount has no accepted identity");
+        }
+        return storedMountFromPrepared(
+          mount,
+          accepted.missingRootPolicy !== undefined,
+        );
+      }),
+      cacheWrites: prepared.flatMap((mount) => {
+        return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
+          ? [mount.presignedUrlCacheWrite]
+          : [];
+      }),
+    };
   });
 }
 
@@ -274,7 +316,7 @@ function createClaimConnectorContext(
       dispatchTiming$: timing$,
     },
   );
-  return { bodyEnvironment$, connectorEnvironment$, targets$ };
+  return { bodyEnvironment$, connectorEnvironment$ };
 }
 
 function createClaimModel(
@@ -434,7 +476,13 @@ function createClaimPackages(
   initialInput$: InitialInput$,
   disabledTools$: DisabledTools$,
   sources: ClaimSources,
-  global: GlobalModels,
+  {
+    global,
+    storage$,
+  }: {
+    readonly global: GlobalModels;
+    readonly storage$: ReturnType<typeof createClaimStorage>;
+  },
 ) {
   const templateInput$ = computed(async (get) => {
     const input = await get(initialInput$);
@@ -459,7 +507,7 @@ function createClaimPackages(
     }),
   );
   return computed(async (get) => {
-    const { run, context } = await get(input$);
+    const { run } = await get(input$);
     const framework = claimFramework(run);
     const skillRoot =
       framework === "pi"
@@ -487,7 +535,7 @@ function createClaimPackages(
     );
     const winners = normalizeMountOverlay([
       ...volumes,
-      ...context.storageMounts,
+      ...(await get(storage$)).storageMounts,
     ]);
     const seedSkillBundles = winners.flatMap((volume) => {
       return "contentBundle" in volume
@@ -660,25 +708,25 @@ function createClaimPreparedContext(
     readonly preferences$: ReturnType<typeof createClaimPreferences>;
     readonly packages$: ReturnType<typeof createClaimPackages>;
     readonly environment$: ReturnType<typeof createClaimEnvironment>;
-    readonly targets$: ReturnType<
-      typeof createClaimConnectorContext
-    >["targets$"];
+    readonly storage$: ReturnType<typeof createClaimStorage>;
   },
 ) {
   return computed(async (get) => {
     const { run, context } = await get(input$);
-    const [model, originalInput, preferences, packages, resolved] =
+    const [model, originalInput, preferences, packages, resolved, storage] =
       await Promise.all([
         get(dependencies.model$),
         get(dependencies.initialInput$),
         get(dependencies.preferences$),
         get(dependencies.packages$),
         get(dependencies.environment$),
+        get(dependencies.storage$),
       ]);
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
       ...context,
       ...claimModelConfiguration(run, model),
+      storageMounts: storage.storageMounts,
       nativeContinuation: {
         ...context.nativeContinuation,
         recoveryPrompt:
@@ -699,8 +747,7 @@ function createClaimPreparedContext(
       secretConnectorMap: environment.secretConnectorMap ?? null,
       secretConnectorMetadataMap:
         environment.secretConnectorMetadataMap ?? null,
-      connectorRuntimeTargets:
-        run.agentId === null ? [] : await get(dependencies.targets$),
+      connectorRuntimeTargets: [...environment.runtimeTargets],
       billableFirewalls: billableFirewallsForPermissions({
         modelProvider: model?.provider ?? null,
         permissions: environmentPermissionManifest(environment),
@@ -712,7 +759,11 @@ function createClaimPreparedContext(
       officialWorkflowBundles: claimOfficialBundles(run, packages.skillRoot),
       templateGuidanceBundles: packages.templateGuidanceBundles,
     };
-    return { context: prepared, secrets: environment.secrets ?? null };
+    return {
+      context: prepared,
+      secrets: environment.secrets ?? null,
+      storageCacheWrites: storage.cacheWrites,
+    };
   });
 }
 
