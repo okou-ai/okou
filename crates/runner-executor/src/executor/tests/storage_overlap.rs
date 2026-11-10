@@ -26,7 +26,28 @@ fn archive() -> Vec<u8> {
 
 #[tokio::test]
 async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_failure() {
-    for failure in ["none", "guest", "ready", "abort", "cooperative", "hard"] {
+    assert_early_storage_lifecycle(false).await;
+}
+
+#[tokio::test]
+async fn split_storage_application_waits_for_both_owners_before_decoded_tail() {
+    assert_early_storage_lifecycle(true).await;
+}
+
+async fn assert_early_storage_lifecycle(split: bool) {
+    for failure in [
+        "none",
+        "guest",
+        "ready",
+        "abort",
+        "cooperative",
+        "hard",
+        "tail",
+        "ready-after-ordinary",
+    ] {
+        if !split && matches!(failure, "tail" | "ready-after-ordinary") {
+            continue;
+        }
         let temp = tempfile::tempdir().unwrap();
         let (config, _startup_api) = test_executor_config_with_startup_api(temp.path()).await;
         let body = archive();
@@ -61,6 +82,43 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
             ],
             artifacts: Vec::new(),
         });
+        if split {
+            let cached = config.home.storage_cache_dir("decoded", "v1");
+            tokio::fs::create_dir_all(&cached).await.unwrap();
+            tokio::fs::write(cached.join("archive.tar.gz"), &body)
+                .await
+                .unwrap();
+            drop(
+                runner_host::lock::open_lock_file(&config.home.storage_lock("decoded", "v1"))
+                    .unwrap(),
+            );
+            config
+                .decoded_cache
+                .warm_from_archive("decoded", "v1")
+                .await
+                .unwrap();
+            assert!(
+                config
+                    .decoded_cache
+                    .get_ready("decoded", "v1")
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            context
+                .storage_manifest
+                .as_mut()
+                .unwrap()
+                .storages
+                .extend((0..3).map(|index| {
+                    api_storage(
+                        "decoded",
+                        &format!("/mnt/decoded-{index}"),
+                        "v1",
+                        &format!("https://example.test/decoded?{}", "q".repeat(35_000)),
+                    )
+                }));
+        }
         let overrides = Arc::new(MockSandboxOverrides::new());
         let application = MockLifecycleGate::new();
         overrides.set_storage_manifest_lifecycle_gate(application.clone());
@@ -77,11 +135,13 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
             )));
         }
         if matches!(failure, "ready" | "abort") {
-            overrides.push_storage_manifest_result(Ok(ExecResult::new(
-                1,
-                Vec::new(),
-                b"secondary consumer abort".to_vec(),
-            )));
+            if !split {
+                overrides.push_storage_manifest_result(Ok(ExecResult::new(
+                    1,
+                    Vec::new(),
+                    b"secondary consumer abort".to_vec(),
+                )));
+            }
             overrides.push_private_write_files_result(Err(sandbox_write_file_error(
                 "ready publication failed",
             )));
@@ -89,6 +149,21 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
         if failure == "abort" {
             overrides.push_private_write_file_result(Err(sandbox_write_file_error(
                 "abort publication failed",
+            )));
+        }
+        if failure == "tail" {
+            overrides.push_storage_manifest_result(Ok(ExecResult::new(0, Vec::new(), Vec::new())));
+            overrides.push_storage_manifest_result(Ok(ExecResult::new(
+                1,
+                Vec::new(),
+                b"decoded continuation failed".to_vec(),
+            )));
+        }
+        let publication = (failure == "ready-after-ordinary").then(MockLifecycleGate::new);
+        if let Some(gate) = &publication {
+            overrides.set_private_write_file_lifecycle_gate(gate.clone());
+            overrides.push_private_write_files_result(Err(sandbox_write_file_error(
+                "ready publication failed",
             )));
         }
         let cancel = RunCancellationHandle::new();
@@ -140,6 +215,28 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
         } else {
             release.send(()).unwrap();
         }
+        if let Some(publication) = &publication {
+            publication
+                .wait_entered(1, Duration::from_secs(5))
+                .await
+                .unwrap();
+            application.release_one();
+            // Observe the ordinary response completing, while its producer's
+            // ready publication still has no acknowledgement. The current-thread
+            // executor polls application through to its next external wait.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while overrides.completed_storage_manifest_calls() < 2 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(overrides.storage_manifest_calls().len(), 2);
+            assert!(overrides.start_agent_process_calls().is_empty());
+            assert!(!task.is_finished());
+            overrides.clear_private_write_file_lifecycle_gate();
+            publication.release_one();
+        }
         if matches!(failure, "ready" | "abort" | "cooperative") {
             tokio::time::timeout(Duration::from_secs(5), async {
                 while overrides.private_write_file_calls().is_empty() {
@@ -153,8 +250,8 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
                 "even a failed abort cannot abandon accepted application"
             );
         }
-        if failure != "hard" {
-            application.release_one();
+        if failure != "hard" && publication.is_none() {
+            application.release_many(if split { 4 } else { 1 });
         }
         let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
             .await
@@ -164,13 +261,29 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
             assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
             assert_eq!(overrides.start_agent_process_calls().len(), 1);
             assert!(outcome.storage_fingerprints.storages["/mnt/pending"].matches("pending", "v1"));
+            if split {
+                let batches = overrides.storage_manifest_calls();
+                assert_eq!(batches.len(), 5);
+                for call in &batches[2..] {
+                    let (json, payload) =
+                        guest_contracts::storage_files::split_input(&call.manifest_json).unwrap();
+                    let manifest: guest_contracts::storage_manifest::Manifest =
+                        serde_json::from_slice(json).unwrap();
+                    assert!(manifest.cleanup_paths.is_empty());
+                    assert!(manifest.instruction_cleanups.is_empty());
+                    assert!(manifest.archive_readiness.is_none());
+                    let groups = guest_contracts::storage_files::decode(payload).unwrap();
+                    assert_eq!(groups.len(), 1);
+                    assert_eq!(groups[0].files[0].content, b"content");
+                }
+            }
         } else {
             assert!(overrides.start_agent_process_calls().is_empty());
             assert!(
                 !outcome.storage_fingerprints.storages["/mnt/pending"].matches("pending", "v1")
             );
             assert!(!outcome.storage_fingerprints.storages["/mnt/ready"].matches("ready", "v1"));
-            if matches!(failure, "ready" | "abort") {
+            if matches!(failure, "ready" | "abort" | "ready-after-ordinary") {
                 assert!(
                     outcome
                         .error()
@@ -186,6 +299,17 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
                     "{:?}",
                     outcome.error()
                 );
+            }
+            if failure == "tail" {
+                assert!(
+                    outcome
+                        .error()
+                        .unwrap()
+                        .contains("decoded continuation failed")
+                );
+                assert_eq!(overrides.storage_manifest_calls().len(), 3);
+            } else if split {
+                assert_eq!(overrides.storage_manifest_calls().len(), 2);
             }
         }
         server.assert_finished_with_requests().await;

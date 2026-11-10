@@ -103,7 +103,9 @@ use background_fill::BackgroundFillAction;
 use background_fill::*;
 pub use background_fill::{DeferredBackgroundFill, StorageCacheBackgroundFillCoordinator};
 
-pub use guest_application::{GuestApplication, GuestStorageInput, populate_cache_for_guest};
+pub use guest_application::{
+    GuestApplication, GuestStorageBatch, GuestStorageInput, populate_cache_for_guest,
+};
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
