@@ -63,8 +63,8 @@ struct ComputerAuthorizationCardContent: View {
   @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
 
   var body: some View {
-    TimelineView(.explicit(request.map { [$0.expiresAt] } ?? [])) { context in
-      let status = request?.effectiveStatus(at: context.date)
+    TimelineView(.explicit(request.map { [$0.expiresAt] } ?? [])) { _ in
+      let status = request?.effectiveStatus(at: .now)
       ChatActionCard {
         ChatCardHeader(title: title, icon: icon) {
           if kind == .shell {

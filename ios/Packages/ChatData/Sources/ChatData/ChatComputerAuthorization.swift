@@ -59,13 +59,6 @@ public struct ChatComputerAuthorizationAction: Hashable, Sendable {
         && UUID(uuidString: threadID) != nil && Set(query.map(\.name)).count == query.count)
   }
 
-  var apiPath: String {
-    switch kind {
-    case .computerUse: "/api/computer-use/authorization-requests/\(identifier)"
-    case .browser: "/api/browser/authorization-requests/\(identifier)"
-    case .shell: "/api/computer-use/shell/authorizations/\(identifier)"
-    }
-  }
 }
 
 /// Confirmed server state shared by the three access controls, not a local grant.
@@ -116,7 +109,8 @@ extension APIClient {
     let threadID: String?
     switch action.kind {
     case .computerUse:
-      let result: ComputerUseAuthorizationResponse = try await request(action.apiPath)
+      let result: ComputerUseAuthorizationResponse = try await request(
+        "/api/computer-use/authorization-requests/\(action.identifier)")
       guard result.source == "chat" else { throw APIClientError.invalidResponse }
       threadID = result.chatThreadId
       value = ChatComputerAuthorizationRequest(
@@ -125,7 +119,8 @@ extension APIClient {
         computerUseHostID: result.computerUseHostId, computerName: nil, reason: nil,
         approvalBlockedReason: nil)
     case .browser:
-      let result: BrowserAuthorizationResponse = try await request(action.apiPath)
+      let result: BrowserAuthorizationResponse = try await request(
+        "/api/browser/authorization-requests/\(action.identifier)")
       threadID = result.chatThreadId
       value = ChatComputerAuthorizationRequest(
         id: result.id, status: result.completedAt == nil ? .pending : .approved,
@@ -151,14 +146,18 @@ extension APIClient {
     _ action: ChatComputerAuthorizationAction, hostID: String?
   ) async throws {
     guard action.isValid else { throw APIClientError.invalidURL }
-    let body: Data
-    if action.kind == .computerUse {
+    switch action.kind {
+    case .computerUse:
       guard let hostID, UUID(uuidString: hostID) != nil else { throw APIClientError.invalidURL }
-      body = try JSONEncoder().encode(["computerUseHostId": hostID])
-    } else {
-      body = Data("{}".utf8)
+      try await data(
+        "/api/computer-use/authorization-requests/\(action.identifier)/apply", method: "POST",
+        body: JSONEncoder().encode(["computerUseHostId": hostID]))
+    case .browser:
+      try await data(
+        "/api/browser/authorization-requests/\(action.identifier)/apply", method: "POST",
+        body: Data("{}".utf8))
+    case .shell:
+      _ = try await approveShellAuthorization(id: action.identifier)
     }
-    let suffix = action.kind == .shell ? "/approve" : "/apply"
-    try await data(action.apiPath + suffix, method: "POST", body: body)
   }
 }
