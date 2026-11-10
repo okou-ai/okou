@@ -4343,6 +4343,7 @@
     "documentTitles": {
       "make": "Selamat datang di {{brandName}}"
     },
+    "handoffUnavailable": "Tugas dari tautan tidak dapat dipulihkan. Anda dapat melanjutkan seperti biasa; draf yang ada tetap tersimpan.",
     "make": {
       "promptLabel": "Prompt onboarding",
       "promptTitle": "Sesuaikan tugas ini"

@@ -1,14 +1,84 @@
 import { command, computed, state } from "ccstate";
+import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { marketingHandoffsContract } from "@okouai/api-contracts/client/marketing-handoffs";
 import type { MarketingHandoffManifest } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { accept } from "../../lib/accept.ts";
+import { ApiError } from "../../lib/api-error.ts";
+import { isNetworkRequestError } from "../../lib/network-error.ts";
+import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerkUser$ } from "../auth.ts";
 import { object, string, uuid } from "zod";
-import { jsonParseOr } from "../utils.ts";
-import { searchParams$ } from "../route.ts";
+import { isAbortError, jsonParseOr } from "../utils.ts";
+import { replaceSearchParams$, searchParams$ } from "../route.ts";
+import { logger } from "../log.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { createDraftSignals } from "../okou-page/chat-draft.ts";
+
+const L = logger("MarketingHandoff");
+
+// Receiving an optional task must not prevent normal App entry. Authentication,
+// upgrades, cancellation, and programming errors still belong to their owners.
+async function receiveMarketingHandoff<T>(
+  request: Promise<T>,
+  signal: AbortSignal,
+  httpErrorNotified = false,
+): Promise<{ ok: true; value: T } | { ok: false; notified: boolean }> {
+  const [result] = await Promise.allSettled([request]);
+  signal.throwIfAborted();
+  if (result.status === "fulfilled") {
+    return { ok: true, value: result.value };
+  }
+  const error: unknown = result.reason;
+  if (isAbortError(error)) {
+    throw error;
+  }
+  if (
+    error instanceof ApiError &&
+    error.status !== 401 &&
+    error.status !== CLIENT_FORCE_UPGRADE_STATUS
+  ) {
+    L.warn("Unable to receive task", { status: error.status });
+    return { ok: false, notified: httpErrorNotified };
+  }
+  if (isNetworkRequestError(error)) {
+    L.warn("Unable to receive task", { kind: "network" });
+    return { ok: false, notified: false };
+  }
+  throw error;
+}
+
+const discardUnavailableHandoff$ = command(
+  ({ get, set }, hash: string, notify = true) => {
+    const params = new URLSearchParams(get(searchParams$));
+    if (params.get("handoff") !== hash) {
+      return;
+    }
+    for (const key of [
+      "handoff",
+      "prompt",
+      "model",
+      "template",
+      "connector",
+      "showcase",
+    ]) {
+      params.delete(key);
+    }
+    set(internalHandoff$, null);
+    set(replaceSearchParams$, params);
+    if (notify) {
+      toast.warning(
+        i18n.t(($) => {
+          return $.onboarding.handoffUnavailable;
+        }),
+        {
+          id: "marketing-handoff-unavailable",
+        },
+      );
+    }
+  },
+);
 
 // A new user may receive a task before their organization has been provisioned.
 const settledHandoffUser$ = state<{
@@ -90,20 +160,29 @@ export const loadMarketingHandoff$ = command(
     set(settledHandoffUser$, { snapshot, userId: user.id });
     const owner = get(handoffOwner$);
     const client = get(apiClient$)(marketingHandoffsContract);
-    const resolved = await accept(
-      client.resolve({
-        params: { hash },
-        body: {},
-        fetchOptions: { signal, credentials: "include" },
-      }),
-      [200],
+    const resolved = await receiveMarketingHandoff(
+      accept(
+        client.resolve({
+          params: { hash },
+          body: {},
+          fetchOptions: { signal, credentials: "include" },
+        }),
+        [200, 404],
+        signal,
+        { showErrorToast: false },
+      ),
+      signal,
     );
     signal.throwIfAborted();
     if (owner !== get(handoffOwner$)) {
       throw new DOMException("Session changed", "AbortError");
     }
+    if (!resolved.ok || resolved.value.status === 404) {
+      set(discardUnavailableHandoff$, hash, resolved.ok || !resolved.notified);
+      return null;
+    }
     const intentId = set(handoffIntent$, hash);
-    const value = { owner, hash, intentId, manifest: resolved.body };
+    const value = { owner, hash, intentId, manifest: resolved.value.body };
     set(internalHandoff$, value);
     return value;
   },
@@ -143,7 +222,7 @@ export const saveMarketingHandoff$ = command(
   },
 );
 
-export const importMarketingHandoffFiles$ = command(
+const importMarketingHandoffFiles$ = command(
   async ({ get, set }, hash: string, signal: AbortSignal) => {
     const owner = get(handoffOwner$);
     const imported = await accept(
@@ -153,6 +232,8 @@ export const importMarketingHandoffFiles$ = command(
         fetchOptions: { signal, credentials: "include" },
       }),
       [200],
+      signal,
+      { showErrorToast: false },
     );
     signal.throwIfAborted();
     if (owner !== get(handoffOwner$)) {
@@ -164,12 +245,33 @@ export const importMarketingHandoffFiles$ = command(
 
 export const createMarketingHandoffDraft$ = command(
   async ({ get, set }, hash: string, signal: AbortSignal) => {
-    const files = await set(importMarketingHandoffFiles$, hash, signal);
+    const owner = get(handoffOwner$);
+    const files = await receiveMarketingHandoff(
+      set(importMarketingHandoffFiles$, hash, signal),
+      signal,
+    );
+    if (owner !== get(handoffOwner$)) {
+      throw new DOMException("Session changed", "AbortError");
+    }
+    if (!files.ok) {
+      set(discardUnavailableHandoff$, hash, !files.notified);
+      return null;
+    }
     const draft = createDraftSignals();
-    await set(draft.restoreAttachments$, files, signal);
+    // Shared attachment restoration already presents HTTP failures and missing
+    // files. Reuse its notice without replacing the user's active draft.
+    const restored = await receiveMarketingHandoff(
+      set(draft.restoreAttachments$, files.value, signal),
+      signal,
+      true,
+    );
     signal.throwIfAborted();
-    if (get(draft.attachments$).length !== files.length) {
-      throw new Error("The received attachments are no longer available");
+    if (owner !== get(handoffOwner$)) {
+      throw new DOMException("Session changed", "AbortError");
+    }
+    if (!restored.ok || get(draft.attachments$).length !== files.value.length) {
+      set(discardUnavailableHandoff$, hash, !restored.ok && !restored.notified);
+      return null;
     }
     return draft;
   },

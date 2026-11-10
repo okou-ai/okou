@@ -4343,6 +4343,7 @@
     "documentTitles": {
       "make": "{{brandName}}에 오신 것을 환영합니다"
     },
+    "handoffUnavailable": "링크의 작업을 복원하지 못했습니다. 계속 정상적으로 이용할 수 있으며 기존 초안은 유지됩니다.",
     "make": {
       "promptLabel": "온보딩 프롬프트",
       "promptTitle": "필요에 맞게 작업 조정하기"

@@ -4343,6 +4343,7 @@
     "documentTitles": {
       "make": "欢迎使用 {{brandName}}"
     },
+    "handoffUnavailable": "无法恢复链接中的任务。你可以继续正常使用，已有草稿已保留。",
     "make": {
       "promptLabel": "新手引导提示词",
       "promptTitle": "按你的需要调整任务"

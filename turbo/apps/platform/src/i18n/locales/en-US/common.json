@@ -4358,6 +4358,7 @@
     "documentTitles": {
       "make": "Welcome to {{brandName}}"
     },
+    "handoffUnavailable": "We couldn’t restore the linked task. You can continue normally; your existing draft is unchanged.",
     "make": {
       "promptLabel": "Onboarding prompt",
       "promptTitle": "Make this task your own"

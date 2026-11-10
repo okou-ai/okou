@@ -4416,6 +4416,7 @@
     "documentTitles": {
       "make": "Te damos la bienvenida a {{brandName}}"
     },
+    "handoffUnavailable": "No pudimos restaurar la tarea del enlace. Puedes continuar con normalidad; tu borrador se ha conservado.",
     "make": {
       "promptLabel": "Prompt de incorporación",
       "promptTitle": "Haz tuya esta tarea"

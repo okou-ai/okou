@@ -4416,6 +4416,7 @@
     "documentTitles": {
       "make": "Benvenuto a {{brandName}}"
     },
+    "handoffUnavailable": "Non è stato possibile ripristinare l’attività collegata. Puoi continuare normalmente; la bozza esistente è stata conservata.",
     "make": {
       "promptLabel": "Richiesta di onboarding",
       "promptTitle": "Personalizza questa attività"
