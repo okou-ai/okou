@@ -24,11 +24,9 @@ import {
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { setSecretKmsClientForTests } from "../../../lib/secret-kms-client";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadGetRoutes } from "../chat-threads-get";
@@ -55,7 +53,8 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const publicRuns = createPublicAutomationRunApi(context);
 const CRON_SECRET = "automation-disabled-notifications-cron-secret";
-const KMS_FAILURE_MESSAGE = "KMS data-key generation unavailable";
+const ADMISSION_FAILURE_MESSAGE =
+  "No executor configured: set RUNNER_DEFAULT_GROUP";
 
 interface Scenario {
   readonly actor: ApiTestUser;
@@ -153,16 +152,6 @@ async function createScenario(
   };
 }
 
-/** Preserve provider credential decryption; fail only new runtime-secret encryption. */
-function failRuntimeSecretEncryption() {
-  setSecretKmsClientForTests({
-    ...createApiTestKmsClient(),
-    generateDataKey() {
-      return Promise.reject(new Error(KMS_FAILURE_MESSAGE));
-    },
-  });
-}
-
 async function readAutomation(scenario: Scenario) {
   const response = await accept(
     automationsClient().get({
@@ -175,7 +164,7 @@ async function readAutomation(scenario: Scenario) {
 }
 
 /** Issue #46339 explicitly scopes the authenticated operator cron as a system boundary. */
-async function executeCron(expectEncryptionFailure = false) {
+async function executeCron(expectAdmissionFailure = false) {
   const response = await accept(
     setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
       cronExecuteWorkflowAutomationsContract,
@@ -183,10 +172,12 @@ async function executeCron(expectEncryptionFailure = false) {
     [200],
   );
   expect(response.body.success).toBeTruthy();
-  if (expectEncryptionFailure) {
+  if (expectAdmissionFailure) {
     // A launch preparation failure rejects its input and still propagates to
-    // the background owner. Acknowledge that exact injected provider failure.
-    await expect(flushWaitUntilForTest()).rejects.toThrow(KMS_FAILURE_MESSAGE);
+    // the background owner. Acknowledge the missing executor configuration.
+    await expect(flushWaitUntilForTest()).rejects.toThrow(
+      ADMISSION_FAILURE_MESSAGE,
+    );
   } else {
     await flushWaitUntilForTest();
   }
@@ -194,7 +185,7 @@ async function executeCron(expectEncryptionFailure = false) {
 
 async function fireNextOccurrence(
   scenario: Scenario,
-  expectEncryptionFailure = false,
+  expectAdmissionFailure = false,
 ) {
   const before = await readAutomation(scenario);
   if (!before.enabled || !before.nextRunAt) {
@@ -203,7 +194,7 @@ async function fireNextOccurrence(
     );
   }
   mockNow(new Date(before.nextRunAt));
-  await executeCron(expectEncryptionFailure);
+  await executeCron(expectAdmissionFailure);
   return await readAutomation(scenario);
 }
 
@@ -392,9 +383,8 @@ describe("recurring automation auto-disable bell notifications", () => {
       isolatePg: true,
     });
     const scenario = await createScenario();
-    // Prepared Workflow bundles need no launch-time S3 presigning. KMS still
-    // encrypts runtime secrets before a Run can commit; only that provider fails.
-    failRuntimeSecretEncryption();
+    // The replacement API cannot admit scheduled work without an executor.
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
 
     for (const failure of [1, 2]) {
       const automation = await fireNextOccurrence(scenario, true);
@@ -706,7 +696,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       });
       const scenario = await createScenario({ notifications: writerEnabled });
       await notificationSwitches(scenario.actor, writerEnabled, inboxEnabled);
-      failRuntimeSecretEncryption();
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
       for (const failure of [1, 2, 3]) {
         const automation = await fireNextOccurrence(scenario, true);
         await expectPreRunRejections(scenario, automation, failure);
