@@ -155,7 +155,7 @@ export function plan(
         );
         if (!changed.length) return [];
         const acceptedChanges = changed.filter((key) => {
-          return source.visibility === "private" && key !== "publish";
+          return key === "publish" || source.visibility === "private";
         });
         const unresolvedChanges = changed.filter((key) => {
           return !acceptedChanges.includes(key);
@@ -342,8 +342,9 @@ export function plan(
       return [{ ...thread, workflowAccess }];
     });
   return {
-    format: "single-agent-plan-v5",
+    format: "single-agent-plan-v6",
     executable: false,
+    workflowPublicationPolicy: "use-existing-target-permissions",
     privateAgentWorkflowPolicy: "private-use-agent-owner",
     privateAgentAssociationPolicy: "delete-non-owner-associations",
     agentPrefixes: naming.agentPrefixes,

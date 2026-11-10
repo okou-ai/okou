@@ -44,10 +44,10 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
-Plans use `single-agent-plan-v5`; inventories remain
+Plans use `single-agent-plan-v6`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
-apply the approved naming and private-Agent-owner policies. No executable
-consumer of any plan version is implemented.
+apply the approved naming, private-Agent-owner and publication policies. No
+executable consumer of any plan version is implemented.
 
 Each plan embeds a complete `agentPrefixes` object. Save that object as an
 owner-only JSON file to review, edit short English aliases, and reuse it:
@@ -125,10 +125,16 @@ Exit codes:
   Record all per-member differences. For private-Agent Workflows, view/manage
   changes are accepted by the explicit private-Agent-owner policy: the Agent
   owner receives owner-only access and a different former Workflow owner loses
-  access. List these as `acceptedChanges`; all publish-right changes and all
-  public-Agent permission differences remain `unresolvedChanges` and block.
-  Converted Instructions also block changed maintenance rights. No runtime
-  permission code or publication policy is changed. The cache is preliminary
+  access. Under `workflowPublicationPolicy: use-existing-target-permissions`,
+  publication eligibility follows the target's existing owner/admin gate for
+  the private Workflow owner. Record gains and losses as `acceptedChanges`,
+  retaining their before/after rights; there is no migration-specific publish
+  grant or grandfathered eligibility. Public-Agent view/manage differences
+  remain `unresolvedChanges` and block. Converted Instructions also block
+  changed maintenance rights. The public Workflow owner maintenance fix in
+  #46438 must be deployed/verified before the planner adopts that policy;
+  this version retains its maintenance blockers. No runtime permissions or
+  actual Workflow visibility are changed by planning. The cache is preliminary
   evidence, not live membership authority.
 - Initialize members with no personal Instructions row once from the public
   default Agent's snapshotted Instructions. Preserve every saved row, including
@@ -188,8 +194,9 @@ Postgres read-only attestation through a local gateway that strips optional
 startup settings, no source-row changes, private report creation,
 offline deterministic planning, preserved empty personal content, owner-separated
 Projects and prior membership, enabled/disabled Automations and execution Chat
-bindings, permission blockers, name/length conflicts, strict scope validation and
-overwrite refusal. It covers Agent-owner private conversion, recorded
+bindings, audited publication gains/losses, remaining permission blockers,
+name/length conflicts, strict scope validation and overwrite refusal. It covers
+Agent-owner private conversion, recorded
 ownership/access changes, unchanged public-Agent visibility, post-privatization name-scope collisions, and
 private-Agent non-owner cleanup, preserved Chat/source data, and other lost
 Workflow access for both enabled/disabled Automations and execution Chat

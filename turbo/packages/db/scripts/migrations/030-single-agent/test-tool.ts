@@ -44,8 +44,9 @@ const rightsSchema = object({
 });
 
 const planSchema = object({
-  format: literal("single-agent-plan-v5"),
+  format: literal("single-agent-plan-v6"),
   executable: literal(false),
+  workflowPublicationPolicy: literal("use-existing-target-permissions"),
   privateAgentWorkflowPolicy: literal("private-use-agent-owner"),
   privateAgentAssociationPolicy: literal("delete-non-owner-associations"),
   inventorySha256: string(),
@@ -346,10 +347,10 @@ try {
     "privatizing a public override must not collide with its same-owner private Workflow",
   );
   assert.ok(
-    planned.blockers.some((row) => {
+    !planned.blockers.some((row) => {
       return row.code === "WorkflowRightsChange";
     }),
-    "unapproved publish-right changes still block migration",
+    "approved target publication eligibility changes remain audited without blocking",
   );
   const privateMove = planned.movedWorkflows.find((row) => {
     return row.source.id === workflow;
@@ -373,11 +374,11 @@ try {
         userId: owner,
         before: { view: true, manage: true, publish: true },
         after: { view: true, manage: true, publish: false },
-        acceptedChanges: [],
-        unresolvedChanges: ["publish"],
+        acceptedChanges: ["publish"],
+        unresolvedChanges: [],
       },
     ],
-    "private Workflow owner loses publish permission on the public default host",
+    "loss of publish permission follows the target host and is explicitly accepted",
   );
   assert.deepEqual(
     publicMove.permissionChanges,
@@ -521,6 +522,7 @@ try {
   const distinctShortened = await prepare(
     distinctLong,
     "distinct-long-workflow-names",
+    0,
   );
   assert.equal(
     new Set(
@@ -788,6 +790,28 @@ try {
     false,
     "absence of detected blockers never authorizes apply",
   );
+  const publicationGain = structuredClone(clean);
+  const sharedSource = publicationGain.workflows.find((row) => {
+    return row.id === workflow;
+  });
+  assert.ok(sharedSource);
+  sharedSource.visibility = "public";
+  const gained = await prepare(publicationGain, "accepted-publication-gain", 0);
+  assert.equal(gained.result.blockers.length, 0);
+  assert.deepEqual(gained.result.movedWorkflows[0]?.permissionChanges, [
+    {
+      userId: owner,
+      before: { view: true, manage: true, publish: false },
+      after: { view: true, manage: true, publish: true },
+      acceptedChanges: ["publish"],
+      unresolvedChanges: [],
+    },
+  ]);
+  assert.equal(
+    gained.result.movedWorkflows[0]?.targetVisibility,
+    "private",
+    "publication eligibility never changes the planned private visibility",
+  );
   const publicSource = structuredClone(snapshot);
   const sharedAgent = publicSource.agents.find((row) => {
     return row.id === oldAgent;
@@ -799,6 +823,21 @@ try {
   assert.deepEqual(
     maintenance.result.convertedInstructions[0]?.maintenanceChanges,
     [owner],
+  );
+  assert.deepEqual(
+    maintenance.result.movedWorkflows.find((row) => {
+      return row.source.id === publicWorkflow;
+    })?.permissionChanges,
+    [
+      {
+        userId: owner,
+        before: { view: true, manage: true, publish: false },
+        after: { view: true, manage: false, publish: false },
+        acceptedChanges: [],
+        unresolvedChanges: ["manage"],
+      },
+    ],
+    "accepting publication changes must not waive public maintenance changes",
   );
   assert.ok(
     maintenance.result.blockers.some((row) => {
