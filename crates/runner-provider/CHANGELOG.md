@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.5...runner-provider-v0.17.6) (2026-11-10)
+
+
+### Refactoring
+
+* **provider:** isolate schema-bound response decoding ([#46405](https://github.com/okou-ai/okou/issues/46405)) ([0a0780f](https://github.com/okou-ai/okou/commit/0a0780f60b28ac76d99a1a009c162e449bbde60b))
+
 ## [0.17.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.4...runner-provider-v0.17.5) (2026-11-10)
 
 ## [0.17.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.3...runner-provider-v0.17.4) (2026-11-09)

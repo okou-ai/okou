@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.244.61](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.60...runner-rs-v0.244.61) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize selective json document initialization ([#46404](https://github.com/okou-ai/okou/issues/46404)) ([e9ed184](https://github.com/okou-ai/okou/commit/e9ed18452e26c033c4e1f75f0e32d843ea452a8d))
+* **runner:** remove dead delivery trigger forwarding ([#46414](https://github.com/okou-ai/okou/issues/46414)) ([11cf5ea](https://github.com/okou-ai/okou/commit/11cf5ea9cb94d1022c768304a74df3903fe07982))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.60](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.59...runner-rs-v0.244.60) (2026-11-10)
 
 
