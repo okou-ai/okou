@@ -8,6 +8,43 @@ import XCTest
 
 @MainActor
 final class ChatThreadActionsTests: XCTestCase {
+  func testOpenMenuUsesTheLatestTitleWhenSettingStatusOrMovingToProject() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    var movedTitle: String?
+    let menu = ChatThreadMenu(
+      workspace: store, threadID: ThreadActionsFixture.thread,
+      moveToProject: { movedTitle = $0.title })
+    fixture.remote(kind: "renamed", extra: ",\"title\":\"Updated from another device\"")
+    await store.refresh()
+
+    await menu.perform(.setStatus("🔥"))
+    XCTAssertEqual(fixture.writes.map(\.title), ["🔥 Updated from another device"])
+    await menu.perform(.moveToProject)
+    XCTAssertEqual(movedTitle, "🔥 Updated from another device")
+    await menu.perform(.setStatus(nil))
+    XCTAssertEqual(store.list.threads.first?.title, "Updated from another device")
+  }
+
+  func testOpenMenuCannotMarkUnreadAfterTheChatBecomesMuted() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    let menu = ChatThreadMenu(
+      workspace: store, threadID: ThreadActionsFixture.thread, moveToProject: { _ in })
+
+    await menu.perform(.mute)
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isMuted)
+    await menu.perform(.markUnread)
+    XCTAssertEqual(fixture.writes.map(\.action), ["mute"])
+    await menu.perform(.mute)
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isMuted)
+    XCTAssertEqual(fixture.writes.map(\.action), ["mute", "mark-read", "unmute"])
+  }
+
   func testRenameUpdatesListAndOpenChatBeforeSavingAndReconcilesWithRemoteTitles() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
