@@ -21,7 +21,10 @@ export function integrationCardLayout(layout: IntegrationCardLayout) {
     };
   }
   return {
-    frame: surfaceVariants({ radius: "compact", className: "flex flex-col" }),
+    frame: surfaceVariants({
+      radius: "compact",
+      className: "flex flex-col justify-center",
+    }),
     header: "flex items-center gap-3 py-2.5 pr-2.5 pl-3.5",
     icon: "size-5",
     iconFrame: `${ICON_FRAME} size-5`,

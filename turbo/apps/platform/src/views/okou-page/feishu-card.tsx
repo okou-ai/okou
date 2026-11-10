@@ -1283,7 +1283,7 @@ export function FeishuCard({
       }
       data-slot="integration-card"
       data-testid={`${platform}-setup-button`}
-      className={cn(classes.frame, "block")}
+      className={classes.frame}
     >
       <div className={classes.header}>
         <div className={classes.iconFrame}>
