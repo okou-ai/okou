@@ -179,7 +179,6 @@ final class PermissionActionStore {
         if self.generation == generation {
           isSaving = false
           operation = nil
-          resource.invalidate()
         }
       }
       do {
@@ -225,7 +224,14 @@ final class PermissionActionStore {
         guard !closed, self.generation == generation else { return }
         self.error = ChatRequestFailure.message(for: error)
         didFail(error)
-        // The resource reload in defer reads back without repeating the write or callback.
+      }
+      guard !closed, self.generation == generation, !Task.isCancelled else { return }
+      // Readback belongs to the operation even when every row/sheet waiter has detached.
+      resource.invalidate()
+      if case .success(let current) = await readResult(), !closed, self.generation == generation,
+        applied(current), !needsContinuation
+      {
+        hasUnconfirmedOperation = false
       }
     }
     operation = task

@@ -179,6 +179,46 @@ final class PermissionActionTests: XCTestCase {
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
   }
 
+  func testUncertainWriteOwnsReadbackWithoutAnyUIWaiter() async throws {
+    let gate = ModelResponseGate()
+    let readbackStarted = expectation(description: "Uncertain permission write readback started")
+    let boundary = Mutex((written: false, blocked: false))
+    var state = PermissionHTTPFixture.State()
+    state.loseApplyResponseOnce = true
+    let fixture = PermissionHTTPFixture(initial: state) { request in
+      let blocksReadback = boundary.withLock { state in
+        if request.httpMethod == "PUT" { state.written = true }
+        if request.url!.path == "/api/user-permission-grants", state.written, !state.blocked {
+          state.blocked = true
+          return true
+        }
+        return false
+      }
+      if blocksReadback {
+        readbackStarted.fulfill()
+        await gate.wait()
+      }
+    }
+    let (conversation, card) = try await setup(fixture)
+    defer {
+      gate.open()
+      conversation.close()
+    }
+    let operation = Task { await card.confirm() }
+    // No view, subscription or resource waiter starts this read: Confirm owns it.
+    await fulfillment(of: [readbackStarted], timeout: 3)
+    XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
+    gate.open()
+    await operation.value
+    let current = try await card.resource.load()
+    XCTAssertTrue(card.applied(current))
+    XCTAssertTrue(card.needsContinuation)
+    await card.confirm()
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
+  }
+
   func testDeniedWriteCanRetryAndClosingPreventsFurtherMutations() async throws {
     var state = PermissionHTTPFixture.State()
     state.failApplyOnce = true
