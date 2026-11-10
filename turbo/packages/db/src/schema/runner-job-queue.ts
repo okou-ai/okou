@@ -40,7 +40,8 @@ export const runnerJobQueue = pgTable(
     // Snapshot of the sandbox and home reuse identity at enqueue time.
     reuseKey: varchar("reuse_key", { length: 263 }),
 
-    // Execution context (secrets encrypted with persistent-secret envelope)
+    // Minimal Claim input. Runtime configuration comes from the accepted Run
+    // and current authorized sources, not a persisted runtime snapshot.
     executionContext: jsonb("execution_context")
       .$type<RunnerJobQueueExecutionContext>()
       .notNull(),

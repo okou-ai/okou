@@ -164,7 +164,8 @@ interface ModelUsageContext {
 
 export function billableFirewallsForPermissions(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly permissions: PermissionManifest | undefined;
+  readonly permissions:
+    Pick<PermissionManifest, "firewalls" | "billableFirewalls"> | undefined;
 }): string[] {
   const firewalls = args.permissions?.firewalls ?? [];
   const firewallNames = firewalls.map((firewall) => {
@@ -216,7 +217,8 @@ function validateModelUsageProviderInvariant(args: {
 export function prepareModelUsageContext(args: {
   readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly permissionManifest: PermissionManifest | undefined;
+  readonly permissionManifest:
+    Pick<PermissionManifest, "firewalls" | "billableFirewalls"> | undefined;
   /**
    * The run's Built-in route pricing, read from the same catalog snapshot;
    * required for a Built-in run (null for every other run).

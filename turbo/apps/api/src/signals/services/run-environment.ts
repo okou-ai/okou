@@ -15,10 +15,10 @@ import {
 /**
  * One source's contribution to a Run's sandbox environment and firewall. Each
  * source expands its own environment templates; `mergeEnvironments` only
- * applies precedence. Fields map to the stored execution context.
+ * applies precedence. Claim maps these fields to complete runtime preparation.
  */
 export interface Environment {
-  /** Connector variables persisted as `executionContext.vars`. */
+  /** Current connector variables used by runtime preparation. */
   readonly vars: Record<string, string> | undefined;
   /** Expanded, untrusted sandbox environment entries. */
   readonly environment: Record<string, string> | undefined;

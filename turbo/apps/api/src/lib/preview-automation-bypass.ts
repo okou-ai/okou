@@ -1,7 +1,6 @@
 import { env } from "./env";
 import { safeUriComponentDecode } from "../signals/utils";
 
-export const VERCEL_AUTOMATION_BYPASS_ENV = "VERCEL_AUTOMATION_BYPASS_SECRET";
 export const VERCEL_PROTECTION_BYPASS_HEADER = "x-vercel-protection-bypass";
 
 export function previewAutomationBypassSecret(): string | undefined {

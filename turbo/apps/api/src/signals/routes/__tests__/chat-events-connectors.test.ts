@@ -93,7 +93,7 @@ async function configurePersonalRuntimeContext(
 }
 
 describe("chat eager connector credentials", () => {
-  it("does not decrypt firewall-only credentials at launch", async () => {
+  it("keeps firewall-only credentials deferred when the Runner claims the Run", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const figma = await connectors.connectManualGrant(
       actor,
@@ -115,11 +115,11 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use my firewall-only connectors",
     });
-    expect(kms.decryptCalls).toBe(0);
     const { claim, sandboxHeaders } = await claimChatRun(
       runnerGroup,
       run.runId,
     );
+    expect(kms.decryptCalls).toBe(0);
     expect(claim.environment).toMatchObject({
       FIGMA_TOKEN: "fixture-figma-token",
     });
@@ -130,7 +130,7 @@ describe("chat eager connector credentials", () => {
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   });
 
-  it("decrypts only the eager connector and delivers its plaintext to the runner", async () => {
+  it("decrypts only the eager connector at Claim and delivers its plaintext to the runner", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const openai = await connectors.connectManualGrant(
       actor,
@@ -152,11 +152,11 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use eager and deferred connector credentials",
     });
-    expect(kms.decryptCalls).toBe(1);
     const { claim, sandboxHeaders } = await claimChatRun(
       runnerGroup,
       run.runId,
     );
+    expect(kms.decryptCalls).toBe(1);
     expect(claim.environment).toMatchObject({
       OPENAI_TOKEN: "eager-openai-token",
       FIGMA_TOKEN: "fixture-figma-token",
@@ -256,11 +256,11 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use only my selected healthy account",
     });
-    expect(kms.decryptCalls - beforeLaunch).toBe(1);
     const { claim, sandboxHeaders } = await claimChatRun(
       runnerGroup,
       run.runId,
     );
+    expect(kms.decryptCalls - beforeLaunch).toBe(1);
     expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: good.id,
     });
