@@ -751,6 +751,8 @@ final class AttachmentFlowFixture: Sendable {
         default:
           return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         }
+      case "/api/chat-thread-drafts":
+        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)

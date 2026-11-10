@@ -85,7 +85,8 @@
             .modifier(OkouGlassControl(shape: .capsule))
             // The sidebar's bottom bar: account, search capsule, prominent new chat.
             HStack(spacing: OkouSpace.md) {
-              OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouControl.minimumTarget)
+              OkouProfileAvatar(
+                imageURL: nil, hasImage: false, size: OkouControl.minimumTarget, name: "Tong")
               HStack(spacing: OkouSpace.sm) {
                 OkouIcon("search", size: OkouIconSize.standard)
                 Text("Search chats")
@@ -126,16 +127,23 @@
           }
           .id("composer-preview")
           section("Chat rows") {
-            // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
-            // and the trailing states.
-            VStack(spacing: 0) {
+            // Chat rows, as the sidebar draws them: the folding Pinned heading, a hairline,
+            // status emoji, the quiet glyph and the trailing states in their order (unread,
+            // draft). A working chat's title shimmers, so it keeps its trailing state.
+            VStack(alignment: .leading, spacing: 0) {
+              OkouListHeading("Pinned", isExpanded: true)
+                .frame(minHeight: OkouControl.minimumTarget)
+              OkouChatRowLabel("!36076 Share in two steps", isWorking: true, trailing: .draft) {
+                OkouChatStatusMark(emoji: "✅")
+              }
+              OkouListDivider().padding(.vertical, OkouSpace.sm)
               OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
                 OkouChatStatusMark(emoji: "✅")
               }
-              OkouChatRowLabel("!36076 Share in two steps", trailing: .running(phase: 0)) {
-                OkouChatStatusMark(emoji: "✅")
+              OkouChatRowLabel("Release notes", trailing: .draft) {
+                OkouChatStatusMark(emoji: nil)
               }
-              OkouChatRowLabel("Design tokens review", trailing: .pinned) {
+              OkouChatRowLabel("Design tokens review") {
                 OkouChatStatusMark(emoji: nil)
               }
               OkouChatRowLabel("A chat in a section without statuses")
@@ -224,10 +232,8 @@
           }
           section("Running & greeting") {
             HStack(spacing: OkouSpace.md) {
-              ForEach(0..<4) { row in
-                OkouRunningIndicator(phaseOffset: Double(row) / OkouMotion.runningWaveRows)
-              }
-              Text("Rows trail by 1/12 of a cycle").font(.okou(.footnote))
+              OkouRunningIndicator()
+              Text("The transcript's working line").font(.okou(.footnote))
                 .foregroundStyle(OkouColor.mutedForeground)
             }
             NewChatGreeting(
@@ -242,7 +248,8 @@
               OkouAccountRowLabel(
                 Text(verbatim: "Tong Xing"), detail: Text(verbatim: "tong@example.com")
               ) {
-                OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouAvatarSize.account)
+                OkouProfileAvatar(
+                  imageURL: nil, hasImage: false, size: OkouAvatarSize.account, name: "Tong")
               }
               OkouRowLabel(Text(verbatim: "Max & Zoe, Inc"), slot: OkouAvatarSize.account) {
                 OkouWorkspaceLogo(
