@@ -78,6 +78,10 @@ if op=='list-units':
   if any(fnmatch.fnmatch(name,p) for p in patterns):print(name+' loaded inactive dead Fixture')
 elif op=='show':
  if os.environ.get('STATE_ERROR') and (root/'stopped').exists():sys.exit(1)
+ if os.environ.get('WAIT_DRAIN') and (root/'stopped').exists() and 'populated 1' in (root/'sys/fs/cgroup/system.slice/fixture.service/cgroup.events').read_text():
+  fixture=Path(os.environ['FIXTURE'])
+  with (fixture/'drain-ready').open('w') as ready:ready.write('observing\n')
+  with (fixture/'drain-advance').open() as advance:advance.readline()
  for name in names:
   state={'Id':name,'LoadState':'loaded' if name in files else 'not-found','ActiveState':'inactive','MainPID':'0','ControlGroup':'','FragmentPath':files.get(name,'')};state.update(states.get(name,{}))
   print('\n'.join(k+'='+str(v) for k,v in state.items()));print()
@@ -279,6 +283,55 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(unit.exists())
         self.assertTrue(config.exists())
 
+    def test_cleanup_retains_files_until_cgroup_execution_drains(self):
+        name = "vm0-runner-pr-42-api.service"
+        unit = self.resource(f"etc/systemd/system/{name}")
+        config = self.resource("var/lib/vm0-runner/runners/pr-42-api/config")
+        self.state(name, ControlGroup="/system.slice/fixture.service")
+        cgroup = self.resource(
+            "sys/fs/cgroup/system.slice/fixture.service/cgroup.events",
+            contents="populated 1\nfrozen 0\n",
+        )
+        descriptors = []
+        for fifo in ("drain-ready", "drain-advance"):
+            path = self.root / fifo
+            os.mkfifo(path)
+            descriptor = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+            self.addCleanup(os.close, descriptor)
+            descriptors.append(descriptor)
+        ready, advance = descriptors
+        with (
+            (self.root / "drain.log").open("w") as log,
+            subprocess.Popen(
+                [sys.executable, str(TOOLS / "cleanup-metal-runners.py")],
+                env={**self.env, "WAIT_DRAIN": "1"},
+                stdout=log,
+                stderr=log,
+            ) as process,
+        ):
+            try:
+                # Return a populated cgroup once after stop has returned, then
+                # hold the next observation until execution actually drains.
+                # Advancing the provider state uses FIFOs, not elapsed time.
+                for drained in (False, True):
+                    self.assertTrue(
+                        select.select([ready], [], [], 5)[0],
+                        (self.root / "drain.log").read_text(),
+                    )
+                    self.assertEqual(os.read(ready, 100), b"observing\n")
+                    self.assertTrue(unit.exists())
+                    self.assertTrue(config.exists())
+                    if drained:
+                        cgroup.write_text("populated 0\nfrozen 0\n")
+                    os.write(advance, b"continue\n")
+                self.assertEqual(process.wait(timeout=10), 0, log.name)
+                self.assertFalse(unit.exists())
+                self.assertFalse(config.exists())
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
+
     def test_symlink_resource_does_not_delete_external_target(self):
         target = self.root / "external"
         target.mkdir()
@@ -396,6 +449,18 @@ class CleanupTests(unittest.TestCase):
         result = self.controller(OFFLINE="metal-b")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(config.exists())
+
+    def test_namespace_selection_is_explicit_and_fails_closed(self):
+        selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        other = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        result = self.controller(RUNNER_PR_NUMBERS=" ")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(selected.exists())
+        self.assertTrue(other.exists())
+        result = self.controller(RUNNER_PR_NUMBERS=" 42, 9999 ")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(selected.exists())
+        self.assertTrue(other.exists())
 
     def test_release_failure_does_not_claim_workflow_success(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")

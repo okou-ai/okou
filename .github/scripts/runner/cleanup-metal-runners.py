@@ -546,7 +546,7 @@ def main():
     ):
         parser.error("invalid metal host or user")
     github = GitHub(os.environ["GITHUB_REPOSITORY"])
-    requested = os.environ.get("RUNNER_PR_NUMBERS", "").strip()
+    requested = os.environ.get("RUNNER_PR_NUMBERS", "")
     if requested and any(
         not re.fullmatch(r"[1-9][0-9]*", value.strip())
         for value in requested.split(",")
