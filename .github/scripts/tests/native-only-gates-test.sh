@@ -52,7 +52,10 @@ def context(ios=True, ts=False, event='pull_request', release=False):
 def condition(job, values, cancelled=False):
     expression = job.get('if', 'True').strip().removeprefix('${{').removesuffix('}}').strip()
     has_status = any(f'{function}(' in expression for function in ['success', 'failure', 'cancelled', 'always'])
-    if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in job.get('needs', [])):
+    dependencies = job.get('needs', [])
+    if isinstance(dependencies, str):
+        dependencies = [dependencies]
+    if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in dependencies):
         return False
     expression = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
     expression = expression.replace('cancelled()', str(cancelled)).replace('always()', 'True')
@@ -212,23 +215,27 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect', 'build-test'} <= set(android_gate['needs'])
+assert {'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
         'needs.detect.result': 'success',
         'needs.detect.outputs.needed': needed,
         'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
+        'needs.instrumentation.result': 'success' if needed == 'true' else 'skipped',
     }
+    assert condition(android['instrumentation'], values) == (needed == 'true')
     assert condition(android_gate, values, cancelled=True)
     gate(android, 'ci-gate-android', values, True)
     for failure in ['failure', 'cancelled', 'skipped']:
         blocked = values | {'needs.detect.result': failure}
+        assert not condition(android['instrumentation'], blocked)
         assert condition(android_gate, blocked)
         gate(android, 'ci-gate-android', blocked, False)
-    for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
-        blocked = values | {'needs.build-test.result': result}
-        assert condition(android_gate, blocked)
-        gate(android, 'ci-gate-android', blocked, False)
+    for job in ['build-test', 'instrumentation']:
+        for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
+            blocked = values | {f'needs.{job}.result': result}
+            assert condition(android_gate, blocked)
+            gate(android, 'ci-gate-android', blocked, False)
     for invalid in ['', 'unknown']:
         gate(android, 'ci-gate-android', values | {'needs.detect.outputs.needed': invalid}, False)
 
