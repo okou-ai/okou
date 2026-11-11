@@ -386,7 +386,8 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     let project = group.project
     let expanded = store.projects.isExpanded(project.id)
-    let trailing: OkouChatTrailing = group.section.hasUnread ? .unread : .none
+    // An open project leaves unread to its chats' own dots.
+    let unread = !expanded && group.section.hasUnread
     return Button {
       withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
         store.projects.toggle(project.id)
@@ -395,17 +396,16 @@ struct ChatSidebarView: View {
       // The chat rows' geometry: the folder in the status column, so the name starts on the
       // chat titles' edge.
       HStack(spacing: OkouSpace.ten) {
+        // A folded project badges its folder, as the menu button does for the whole list: the
+        // trailing column keeps the chevron, in line with the chats' own dots.
         OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
+          .modifier(OkouUnreadBadge(isVisible: unread))
           .frame(width: statusColumn, alignment: .leading)
-        // Unread takes priority over working in a folded project; an open one leaves it to its chats.
+        // Unread takes priority over working in a folded project.
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-          .okouShimmerText(
-            !expanded && trailing != .unread && group.section.isWorking)
+          .okouShimmerText(!expanded && !unread && group.section.isWorking)
         Spacer(minLength: 0)
-        if !expanded {
-          OkouChatTrailingMark(trailing: trailing)
-        }
         // The fold's own mark ends the row in the trailing column, turning from down (open)
         // to right (folded) with the disclosure.
         OkouIcon("chevron-down", size: OkouIconSize.standard)
@@ -418,7 +418,13 @@ struct ChatSidebarView: View {
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("project-\(project.id)")
-    .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
+    // The badge is drawn only, so the value names it, as the menu button's does.
+    .accessibilityValue(
+      [
+        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
+        unread ? String(localized: "Unread") : nil,
+      ].compactMap { $0 }.joined(separator: ", ")
+    )
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
