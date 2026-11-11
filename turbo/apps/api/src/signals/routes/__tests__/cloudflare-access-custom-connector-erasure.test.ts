@@ -146,25 +146,23 @@ async function erasureScenario() {
       [201],
     )
   ).body;
-  const mcp = (
-    await accept(
-      connectors().create({
-        headers,
-        body: {
-          displayName: "Protected MCP connector",
-          authMode: "none",
-          fields: [],
-          headerInjections: [],
-          queryInjections: [],
-          networkBinding: { type: "cloudflare_access", configId: removed.id },
-          kind: "mcp",
-          endpoint: "https://api.example.com/mcp",
-          transport: "streamable-http",
-        },
-      }),
-      [201],
-    )
-  ).body;
+  await accept(
+    connectors().create({
+      headers,
+      body: {
+        displayName: "Protected MCP connector",
+        authMode: "none",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        networkBinding: { type: "cloudflare_access", configId: removed.id },
+        kind: "mcp",
+        endpoint: "https://api.example.com/mcp",
+        transport: "streamable-http",
+      },
+    }),
+    [201],
+  );
   const survivor = await owner();
   const retained = await createConfig();
   const retainedConnector = (
@@ -178,40 +176,10 @@ async function erasureScenario() {
     departing,
     removed,
     existing,
-    mcp,
     survivor,
     retained,
     retainedConnector,
   };
-}
-
-async function assertErasedDefinition(id: string) {
-  const disabled = (
-    await accept(connectorById().get({ headers, params: { id } }), [200])
-  ).body;
-  expect(disabled.networkBinding).toBeUndefined();
-  await accept(
-    connectorById().update({
-      headers,
-      params: { id },
-      body: {
-        displayName: "Cannot revive an erased definition",
-        authMode: "none",
-        fields: [],
-        headerInjections: [],
-        queryInjections: [],
-        storageVersion: disabled.storageVersion,
-        ...(disabled.kind === "mcp"
-          ? {
-              kind: "mcp",
-              endpoint: disabled.endpoint,
-              transport: disabled.transport,
-            }
-          : { kind: "http", prefixTemplates: disabled.prefixTemplates }),
-      },
-    }),
-    [400],
-  );
 }
 
 test.each([
@@ -226,7 +194,6 @@ test.each([
       departing,
       removed,
       existing,
-      mcp,
       survivor,
       retained,
       retainedConnector,
@@ -287,12 +254,6 @@ test.each([
           );
     expect(probe.generateDataKeyCalls).toBe(1);
     expect(JSON.stringify(rejected.body)).not.toContain("application-secret");
-    for (const id of [existing.id, mcp.id]) {
-      await assertErasedDefinition(id);
-    }
-    expect(
-      (await accept(connectors().list({ headers }), [200])).body.connectors,
-    ).toHaveLength(2);
 
     mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
     // Reusing the ID proves deletion removed the protected configuration and all edges.

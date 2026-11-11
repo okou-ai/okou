@@ -7,6 +7,7 @@ import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, exists } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
@@ -14,6 +15,26 @@ type RemoteErasureScope =
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
+
+function boundCustomConnectorErasureCondition(orgId: string) {
+  return and(
+    eq(orgCustomConnectors.orgId, orgId),
+    exists(
+      new QueryBuilder()
+        .select({ id: orgCustomConnectorCloudflareBindings.connectorId })
+        .from(orgCustomConnectorCloudflareBindings)
+        .where(
+          and(
+            eq(
+              orgCustomConnectorCloudflareBindings.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorCloudflareBindings.orgId, orgId),
+          ),
+        ),
+    ),
+  );
+}
 
 /** Commit dependency removal before deleting its parents; no remote work or replay. */
 export const eraseRemoteOwnerData$ = command(
@@ -32,7 +53,7 @@ export const eraseRemoteOwnerData$ = command(
           db
             .update(orgCustomConnectors)
             .set({ enabled: false })
-            .where(eq(orgCustomConnectors.orgId, scope.orgId))
+            .where(boundCustomConnectorErasureCondition(scope.orgId))
             .returning({ id: orgCustomConnectors.id }),
         );
       await db
