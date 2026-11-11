@@ -1991,6 +1991,40 @@ test("Project deep links open the Project page with its composer", async () => {
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
 });
+test("A Project page shares the capability home and its compliance line under the composer", async () => {
+  const member = {
+    ...continuityThread(95, 1, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 95,
+    threads: [member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeInTheDocument();
+  });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const compliance = screen.getByRole("region", {
+    name: "Okou’s compliance, built for your trust",
+  });
+  expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
+  expect(
+    editor.compareDocumentPosition(compliance) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+});
 test("A message sent from the Project page starts its chat inside the Project", async () => {
   const ordinary = continuityThread(116, 1, "Thread B");
   const workspace = installContinuityWorkspace(context, {

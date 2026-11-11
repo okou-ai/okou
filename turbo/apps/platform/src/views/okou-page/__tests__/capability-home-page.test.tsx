@@ -87,6 +87,18 @@ test("An empty conversation offers capabilities without an avatar and sends its 
     screen.queryByRole("group", { name: "Explore Okou capabilities" }),
   ).toBeNull();
   expect(capture.threadCreates).toStrictEqual([]);
+  // The conversation drops the compliance line but keeps its room under the
+  // composer, so the composer does not move when the first message is sent.
+  expect(
+    screen.queryByRole("region", {
+      name: "Okou’s compliance, built for your trust",
+    }),
+  ).toBeNull();
+  expect(
+    editor
+      .closest("[data-chat-composer]")
+      ?.querySelector('[data-slot="composer-footnote-space"]'),
+  ).toBeInTheDocument();
 });
 
 test.each([
