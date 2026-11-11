@@ -175,7 +175,7 @@ struct ChatComposerView: View {
         }
         .accessibilityIdentifier("message-input")
       } leading: {
-        HStack(spacing: OkouSpace.xs) {
+        HStack(spacing: 0) {
           Button {
             showsAddSheet = true
           } label: {
@@ -196,7 +196,7 @@ struct ChatComposerView: View {
           .disabled(isBusy || needsUpgrade)
         }
       } trailing: {
-        HStack(spacing: 0) {
+        HStack(spacing: OkouSpace.xs) {
           // The chat's model, only while the composer is open, where the next message is written.
           // Keep controls mounted so they enter with the moving toolbar, not at its final position.
           if let modelSelection {
