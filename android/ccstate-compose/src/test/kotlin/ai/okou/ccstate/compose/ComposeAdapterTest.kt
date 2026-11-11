@@ -67,7 +67,7 @@ class ComposeAdapterTest {
                 }
             }
             compose.onNodeWithText("Value 0").assertExists()
-            val previous = compose.runOnIdle { setter to action }
+            val previous = compose.runOnIdle { checkNotNull(setter) to checkNotNull(action) }
             compose.onNodeWithText("Set").performClick()
             compose.onNodeWithText("Value 7").assertExists()
             compose.runOnIdle {
@@ -94,15 +94,21 @@ class ComposeAdapterTest {
         val store = compose.runOnIdle { Store() }
         val task = CompletableDeferred<String>()
         val signal = state<Deferred<String>>(task)
+        val synchronous = state(0)
         val attached = mutableStateOf(true)
         var retained: State<Loadable<String>>? = null
+        var retainedSynchronous: State<Loadable<Int>>? = null
         try {
             compose.setContent {
                 StoreProvider(store) {
                     Column {
                         if (attached.value) {
                             val result = observeDeferredAsState(signal)
-                            SideEffect { retained = result }
+                            val current = observeAsState(synchronous)
+                            SideEffect {
+                                retained = result
+                                retainedSynchronous = current
+                            }
                             BasicText("Attached")
                         } else BasicText("Detached")
                         BasicText("Hide", Modifier.clickable { attached.value = false })
@@ -116,8 +122,13 @@ class ComposeAdapterTest {
                 assertTrue(task.isActive)
                 task.complete("late")
                 store.set(signal, CompletableDeferred("replacement"))
+                store.set(synchronous, 1)
             }
-            compose.runOnIdle { assertSame(Loadable.Loading, checkNotNull(retained).value) }
+            compose.runOnIdle {
+                assertSame(Loadable.Loading, checkNotNull(retained).value)
+                assertEquals(0, (checkNotNull(retainedSynchronous).value as Loadable.Data).value)
+                assertEquals(1, store.get(synchronous))
+            }
             compose.onNodeWithText("Detached").assertExists()
         } finally {
             compose.runOnIdle { store.close() }
