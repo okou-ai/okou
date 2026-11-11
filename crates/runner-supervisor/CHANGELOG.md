@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.14...runner-supervisor-v0.22.15) (2026-11-11)
+
+
+### Bug Fixes
+
+* **runner:** log evidenced upstream model failures at info ([#46573](https://github.com/okou-ai/okou/issues/46573)) ([6838750](https://github.com/okou-ai/okou/commit/6838750e34ad428b8a0222e86a424366b2c53be5))
+
 ## [0.22.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.13...runner-supervisor-v0.22.14) (2026-11-11)
 
 ## [0.22.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.12...runner-supervisor-v0.22.13) (2026-11-11)

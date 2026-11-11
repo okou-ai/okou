@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.3](https://github.com/okou-ai/okou/compare/ios-v0.35.2...ios-v0.35.3) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own connector action status reads with ccstate ([#46554](https://github.com/okou-ai/okou/issues/46554)) ([3e0d3dd](https://github.com/okou-ai/okou/commit/3e0d3dda2a3a24c890b8fd91b8418d1c14d86c02))
+
 ## [0.35.2](https://github.com/okou-ai/okou/compare/ios-v0.35.1...ios-v0.35.2) (2026-11-11)
 
 
