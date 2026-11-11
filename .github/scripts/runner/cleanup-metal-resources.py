@@ -31,6 +31,7 @@ PROPERTIES = (
     "LoadState",
     "ActiveState",
     "MainPID",
+    "Job",
     "ControlGroup",
     "FragmentPath",
 )
@@ -122,6 +123,8 @@ class Host:
                 fields["busy"] = (
                     fields["ActiveState"] not in {"inactive", "failed"}
                     or int(fields["MainPID"]) != 0
+                    # --all prints Job= only when no job is scheduled/running.
+                    or bool(fields["Job"])
                     or self.populated(fields["ControlGroup"])
                 )
                 states[fields["Id"]] = fields

@@ -82,17 +82,19 @@ elif op=='show':
   fixture=Path(os.environ['FIXTURE'])
   with (fixture/'drain-ready').open('w') as ready:ready.write('observing\n')
   with (fixture/'drain-advance').open() as advance:advance.readline()
+ missing=False
  for name in names:
-  state={'Id':name,'LoadState':'loaded' if name in files else 'not-found','ActiveState':'inactive','MainPID':'0','ControlGroup':'','FragmentPath':files.get(name,'')};state.update(states.get(name,{}))
+  state={'Id':name,'LoadState':'loaded' if name in files else 'not-found','ActiveState':'inactive','MainPID':'0','ControlGroup':'','FragmentPath':files.get(name,''),'Job':''};state.update(states.get(name,{}))
+  missing=missing or state['LoadState']=='not-found'
   print('\n'.join(k+'='+str(v) for k,v in state.items()));print()
- if any(name not in files for name in names):sys.exit(4)
+ if missing:sys.exit(4)
 elif op in ('stop','reset-failed'):
  if op=='stop' and os.environ.get('BLOCK_STOP'):
   import signal
   with (Path(os.environ['FIXTURE'])/'ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
   signal.pause()
  (root/'stopped').touch()
- for name in names:states.setdefault(name,{}).update(ActiveState='inactive',MainPID='0')
+ for name in names:states.setdefault(name,{}).update(ActiveState='inactive',MainPID='0',Job='')
  if op=='stop':
   for name in names:(root/'run/systemd/transient'/name).unlink(missing_ok=True)
  statefile.write_text(json.dumps(states))
@@ -282,6 +284,19 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["42"]["outcome"], "unverified")
         self.assertTrue(unit.exists())
         self.assertTrue(config.exists())
+
+    def test_pending_systemd_job_is_not_an_empty_manager_record(self):
+        name = "vm0-runner-pr-42-api.service"
+        self.state(name, LoadState="loaded", Job="91")
+        result, payload = self.worker("inventory")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("42", payload)
+        result, payload = self.worker("cleanup", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "cleaned")
+        result, payload = self.worker("inventory")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload, {})
 
     def test_cleanup_retains_files_until_cgroup_execution_drains(self):
         name = "vm0-runner-pr-42-api.service"
