@@ -113,11 +113,13 @@ enum EntryKind {
 }
 
 fn version_key(version: &str, kind: EntryKind) -> String {
-    let prefix = match kind {
-        EntryKind::Positive => "decoded-v2-",
-        EntryKind::Rejection => "decoded-v1-rejected-",
-    };
-    format!("{prefix}{}", short_digest(version))
+    let version_hash = short_digest(version);
+    match kind {
+        EntryKind::Positive => format!("decoded-v2-{version_hash}"),
+        EntryKind::Rejection => {
+            format!("decoded-rejected-p{ADMISSION_POLICY_VERSION}-{version_hash}")
+        }
+    }
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> (PathBuf, PathBuf) {
