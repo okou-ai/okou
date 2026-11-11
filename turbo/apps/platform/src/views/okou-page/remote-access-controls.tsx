@@ -343,13 +343,13 @@ function HostChoiceSelect({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-w-0 items-center gap-3 px-3 py-2.5 text-sm">
+    <div className="grid min-w-0 grid-cols-[15px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-3 py-2.5 text-sm sm:grid-cols-[15px_minmax(0,1fr)_auto] sm:items-center">
       {protocol === "ssh" ? (
         <Terminal size={15} className="shrink-0 text-muted-foreground" />
       ) : (
         <Monitor size={15} className="shrink-0 text-muted-foreground" />
       )}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0">
         <span className="block break-words [overflow-wrap:anywhere]">
           {host.displayName}
         </span>
@@ -373,14 +373,16 @@ function HostChoiceSelect({
               })}
         </p>
       </div>
-      <AccessChoiceSelect
-        ariaLabel={`${protocol.toUpperCase()} ${host.displayName}`}
-        defaultEnabled={host.defaultEnabled}
-        value={value}
-        readOnly={readOnly}
-        busy={busy}
-        onChange={onChange}
-      />
+      <div className="col-start-2 min-w-0 sm:col-start-3 sm:row-start-1">
+        <AccessChoiceSelect
+          ariaLabel={`${protocol.toUpperCase()} ${host.displayName}`}
+          defaultEnabled={host.defaultEnabled}
+          value={value}
+          readOnly={readOnly}
+          busy={busy}
+          onChange={onChange}
+        />
+      </div>
     </div>
   );
 }
