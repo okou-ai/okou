@@ -15,15 +15,12 @@ import {
   type AgentRunStorageInput,
   type AgentRunStoragePlan,
   type AgentRunStorageSelection,
-  assertUniquePersistedMountPaths,
   finalizePreparedStorage,
   type ResolvedAgentRunStorage,
-  persistedStorageMountRequests,
   prepareRequestStorageResolution,
   prepareRunOutputMetadata,
   resolveStorageEntries,
   resolveStorageManifestInputs,
-  resolveValidatedPersistedStorageMounts,
   StorageManifestBuildStats,
   storageEntriesMetadata,
   storageIndexKey,
@@ -136,10 +133,8 @@ function createStorageInputSignal(
       body: {},
       resolved,
     });
-    // Initialize the existing database dependency before returning captured data.
     get(db$);
     return {
-      kind: "requested",
       args: {
         agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
@@ -165,25 +160,6 @@ function createStorageBaseIndexSignal(
     async (get): Promise<AgentRunStorageSelection> => {
       const input = await get(storageInput$);
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      if (input.kind === "captured") {
-        if (
-          input.args.mounts.some((mount) => {
-            return (
-              mount.version === undefined ||
-              !/^[0-9a-f]{64}$/u.test(mount.version)
-            );
-          })
-        ) {
-          throw new Error("Captured Pi storage must pin every version");
-        }
-        assertUniquePersistedMountPaths(input.args.mounts);
-        return {
-          kind: "captured",
-          args: input.args,
-          bucket,
-          requests: persistedStorageMountRequests(input.args.mounts),
-        };
-      }
       const { artifacts, composeVolumes } = await resolveStorageManifestInputs({
         framework: input.args.framework,
         artifacts: input.args.artifacts,
@@ -205,9 +181,7 @@ function createStorageBaseIndexSignal(
         artifacts,
       );
       return {
-        kind: "requested",
         args: input.args,
-        bucket,
         request,
         requests: request.requests,
       };
@@ -356,19 +330,6 @@ function createStoragePlanSignals(
     const spanTiming = selection.args.timing;
     const spanStartedAt = spanTiming ? performance.now() : undefined;
     return await (async () => {
-      if (selection.kind === "captured") {
-        return {
-          requested: await resolveValidatedPersistedStorageMounts({
-            mounts: selection.args.mounts,
-            timing: selection.args.timing,
-            stats: selection.args.stats,
-            bucket: selection.bucket,
-            storageIndex,
-            branch: "captured",
-          }),
-          missingArtifacts: [],
-        };
-      }
       const missingArtifacts = selection.request.input.artifacts.filter(
         (artifact) => {
           const entry = storageIndex.get(
@@ -386,16 +347,13 @@ function createStoragePlanSignals(
           return artifact.name;
         }),
       );
-      const requested = await resolveStorageEntries(
-        {
-          ...selection.request.input,
-          artifacts: selection.request.input.artifacts.filter((artifact) => {
-            return !missingNames.has(artifact.name);
-          }),
-          storageIndex,
-        },
-        "requested",
-      );
+      const requested = await resolveStorageEntries({
+        ...selection.request.input,
+        artifacts: selection.request.input.artifacts.filter((artifact) => {
+          return !missingNames.has(artifact.name);
+        }),
+        storageIndex,
+      });
       return {
         requested: {
           ...requested,
