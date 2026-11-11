@@ -80,7 +80,10 @@ import {
   contextJsonProjection,
   contextProjectionSchema,
 } from "./context-rowset";
-import { createGlobalModelContext } from "./execution-global-model-context.service";
+import {
+  createGlobalModelCapture,
+  createGlobalModelContext,
+} from "./execution-global-model-context.service";
 import { createExecutionOrgMemberContext } from "./execution-org-member-context.signals";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
@@ -326,7 +329,7 @@ function createOrgContextReferences(
           catalog$: supplied[globalModelOwner],
         }
       : undefined
-    : createGlobalModelContext(globalRequest$);
+    : createGlobalModelContext(createGlobalModelCapture(globalRequest$));
   if (!globalReferences) {
     throw new Error("Agent run context has no global reference owner");
   }

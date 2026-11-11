@@ -27,8 +27,10 @@ export function contextJsonRows(query: SQLWrapper) {
     from (${query}) context_rows)`;
 }
 
-function columnSchema<T extends Column>(column: T): ZodType<GetColumnData<T>>;
-function columnSchema(column: Column): ZodType<unknown> {
+export function contextColumnSchema<T extends Column>(
+  column: T,
+): ZodType<GetColumnData<T>>;
+export function contextColumnSchema(column: Column): ZodType<unknown> {
   return zUnknown().transform((value) => {
     // Drizzle also bypasses column decoders for SQL NULL.
     return value === null ? null : column.mapFromDriverValue(value);
@@ -45,7 +47,7 @@ export function contextProjectionSchema(
   return object(
     Object.fromEntries(
       Object.entries(columns).map(([name, column]) => {
-        return [name, columnSchema(column)];
+        return [name, contextColumnSchema(column)];
       }),
     ),
   );

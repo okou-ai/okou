@@ -11,21 +11,13 @@ import {
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { computed, type Computed } from "ccstate";
-import { and, asc, eq, inArray } from "drizzle-orm";
 import { array, record, string } from "zod";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
-import { db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import { createExecutionConnectorSources } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ClaimExecutionContextRun } from "./claim-execution-context";
 import { createClaimSourceContext } from "./claim-source-context.service";
@@ -156,15 +148,11 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
       };
     },
   );
-  const globalRequest$ = computed(async (get) => {
-    const run = await get(run$);
-    return {
-      kind: "claim" as const,
-      modelKeyId:
-        run.modelProvider === "built-in" ? run.builtInModelKeyId : null,
-    };
-  });
-  const global = createGlobalModelContext(globalRequest$);
+  const global = createGlobalModelContext(
+    computed(async (get) => {
+      return (await get(sourceContext$)).globalModels;
+    }),
+  );
   const preferences$ = computed(async (get) => {
     return { timezone: (await get(sourceContext$)).timezone };
   });
@@ -183,7 +171,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     { bodyEnvironment$: connectors.bodyEnvironment$ },
     { modelRoute$ },
   );
-  const initialInput$ = createClaimInitialInput(run$);
+  const initialInput$ = createClaimInitialInput(run$, sourceContext$);
   const storage$ = createClaimStorage(input$);
   const packages$ = createClaimPackages(
     input$,
@@ -614,59 +602,15 @@ function createClaimModel(
   });
 }
 
-function createClaimInitialInput(run$: ClaimRun$) {
+function createClaimInitialInput(
+  run$: ClaimRun$,
+  sourceContext$: ClaimSourceContext$,
+) {
   return computed(async (get) => {
-    const run = await get(run$);
-    const [row] = await get(db$)
-      .select({
-        userMessage: canonicalChatEventUserMessage(),
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        chatThreadId: chatEvents.chatThreadId,
-        captureId: chatNetworkBodyCaptures.chatEventId,
-        phoneChannel: chatAgentphoneContext.channel,
-        feishuPlatform: feishuOrgInstallations.platform,
-      })
-      .from(chatEvents)
-      .leftJoin(
-        chatNetworkBodyCaptures,
-        and(
-          eq(chatNetworkBodyCaptures.chatEventId, chatEvents.revokesEventId),
-          eq(chatNetworkBodyCaptures.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        chatAgentphoneContext,
-        and(
-          eq(chatEvents.contextType, "agentphone"),
-          eq(chatAgentphoneContext.id, chatEvents.contextId),
-          eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        chatFeishuContext,
-        and(
-          eq(chatEvents.contextType, "feishu"),
-          eq(chatFeishuContext.id, chatEvents.contextId),
-          eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        feishuOrgInstallations,
-        and(
-          eq(feishuOrgInstallations.id, chatFeishuContext.installationId),
-          eq(feishuOrgInstallations.orgId, run.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(chatEvents.runId, run.id),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(1);
-    return row ? { ...row, userId: run.userId } : null;
+    const [run, capture] = await Promise.all([get(run$), get(sourceContext$)]);
+    return capture.initialInput
+      ? { ...capture.initialInput, userId: run.userId }
+      : null;
   });
 }
 
