@@ -26,6 +26,7 @@ included:
   - Okou
   - OkouTests
   - Push
+  - Widgets
   - Packages
   - Tools/SwiftLint/Rules
 

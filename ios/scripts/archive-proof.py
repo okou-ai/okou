@@ -16,6 +16,8 @@ APP_ID = "ai.okou.ios"
 APP_PATH = Path("Products/Applications/Okou.app")
 EXTENSION_PATH = Path("PlugIns/OkouNotificationService.appex")
 EXTENSION_ID = APP_ID + ".notifications"
+WIDGETS_PATH = Path("PlugIns/OkouWidgets.appex")
+WIDGETS_ID = APP_ID + ".widgets"
 
 
 def read_plist(path):
@@ -44,7 +46,10 @@ def validate_archive(archive, version):
     if sorted(path.name for path in applications.iterdir()) != ["Okou.app"]:
         raise ValueError("Expected one Okou application")
     extension = app / EXTENSION_PATH
-    if sorted(app.rglob("*.appex")) != [extension] or list(app.rglob("*.app")):
+    widgets = app / WIDGETS_PATH
+    if sorted(app.rglob("*.appex")) != sorted([extension, widgets]) or list(
+        app.rglob("*.app")
+    ):
         raise ValueError("Unexpected application extension inventory")
     info = read_plist(app / "Info.plist")
     if info["CFBundleIdentifier"] != APP_ID:
@@ -89,6 +94,7 @@ def validate_archive(archive, version):
         raise ValueError("Expected an unsigned, unprovisioned extension")
     if not (archive / "dSYMs/OkouNotificationService.appex.dSYM").is_dir():
         raise ValueError("Release archive is missing extension symbols")
+    validate_widgets(archive, widgets, info, version)
     archive_info = read_plist(archive / "Info.plist")
     properties = archive_info["ApplicationProperties"]
     if properties["ApplicationPath"] != "Applications/Okou.app":
@@ -99,6 +105,29 @@ def validate_archive(archive, version):
     if not (archive / "dSYMs/Okou.app.dSYM").is_dir():
         raise ValueError("Release archive is missing application symbols")
     return app, info, archive_info
+
+
+def validate_widgets(archive, widgets, info, version):
+    """The WidgetKit extension reads the App's snapshot; it needs no keychain or Sentry."""
+    widgets_info = read_plist(widgets / "Info.plist")
+    if (
+        widgets_info["CFBundleIdentifier"] != WIDGETS_ID
+        or widgets_info["CFBundleShortVersionString"] != version
+        or widgets_info["CFBundleVersion"] != info["CFBundleVersion"]
+        or widgets_info["CFBundleSupportedPlatforms"] != ["iPhoneOS"]
+        or widgets_info["CFBundleExecutable"] != "OkouWidgets"
+        or not (widgets / "OkouWidgets").is_file()
+    ):
+        raise ValueError("Widget extension and application release identity disagree")
+    expected = {"NSExtensionPointIdentifier": "com.apple.widgetkit-extension"}
+    if widgets_info.get("NSExtension") != expected:
+        raise ValueError("Expected a WidgetKit extension")
+    if (widgets / "_CodeSignature").exists() or (
+        widgets / "embedded.mobileprovision"
+    ).exists():
+        raise ValueError("Expected an unsigned, unprovisioned widget extension")
+    if not (archive / "dSYMs/OkouWidgets.appex.dSYM").is_dir():
+        raise ValueError("Release archive is missing widget extension symbols")
 
 
 def file_digests(directory):
@@ -123,6 +152,9 @@ def prepare(source, destination, version, build_number):
     extension_info = read_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist")
     extension_info["CFBundleVersion"] = build_number
     write_plist(destination / APP_PATH / EXTENSION_PATH / "Info.plist", extension_info)
+    widgets_info = read_plist(destination / APP_PATH / WIDGETS_PATH / "Info.plist")
+    widgets_info["CFBundleVersion"] = build_number
+    write_plist(destination / APP_PATH / WIDGETS_PATH / "Info.plist", widgets_info)
     write_plist(destination / "Info.plist", archive_info)
     validate_archive(destination, version)
     after = file_digests(destination)
@@ -130,6 +162,7 @@ def prepare(source, destination, version, build_number):
         "Info.plist",
         str(APP_PATH / "Info.plist"),
         str(APP_PATH / EXTENSION_PATH / "Info.plist"),
+        str(APP_PATH / WIDGETS_PATH / "Info.plist"),
     }
     changed = {
         name
@@ -216,9 +249,11 @@ def verify_export(source, ipa, version, build_number):
             raise ValueError("Exported IPA is not signed")
         extension_prefix = "Payload/Okou.app/" + str(EXTENSION_PATH)
         extension_plist = extension_prefix + "/Info.plist"
-        if sorted(name for name in names if name.endswith(".appex/Info.plist")) != [
-            extension_plist
-        ]:
+        widgets_prefix = "Payload/Okou.app/" + str(WIDGETS_PATH)
+        widgets_plist = widgets_prefix + "/Info.plist"
+        if sorted(
+            name for name in names if name.endswith(".appex/Info.plist")
+        ) != sorted([extension_plist, widgets_plist]):
             raise ValueError("Exported IPA has the wrong extension inventory")
         extension_info = plistlib.loads(package.read(extension_plist))
         if (
@@ -227,11 +262,22 @@ def verify_export(source, ipa, version, build_number):
             or extension_info["CFBundleVersion"] != build_number
         ):
             raise ValueError("Exported extension has the wrong release identity")
-        for required in ("embedded.mobileprovision", "_CodeSignature/CodeResources"):
-            if extension_prefix + "/" + required not in names:
-                raise ValueError(
-                    "Exported extension has no provisioning profile or signature"
-                )
+        widgets_info = plistlib.loads(package.read(widgets_plist))
+        if (
+            widgets_info["CFBundleIdentifier"] != WIDGETS_ID
+            or widgets_info["CFBundleShortVersionString"] != version
+            or widgets_info["CFBundleVersion"] != build_number
+        ):
+            raise ValueError("Exported widget extension has the wrong release identity")
+        for prefix in (extension_prefix, widgets_prefix):
+            for required in (
+                "embedded.mobileprovision",
+                "_CodeSignature/CodeResources",
+            ):
+                if prefix + "/" + required not in names:
+                    raise ValueError(
+                        "Exported extension has no provisioning profile or signature"
+                    )
         for bundle_info in (info, extension_info):
             if (
                 bundle_info.get("ClerkKeychainAccessGroup") != "C5UWSXYB67.ai.okou.ios"
