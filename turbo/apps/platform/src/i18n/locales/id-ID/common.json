@@ -1865,7 +1865,9 @@
         "title": "Buat"
       },
       "explore": "Jelajahi",
+      "exploreWhatsNew": "Lihat yang baru",
       "research": {
+        "description": "Trafik, iklan, produk, topik",
         "items": {
           "ads": "Jelajahi materi iklan",
           "products": "Riset produk",
@@ -1878,6 +1880,7 @@
         "title": "Riset"
       },
       "search": {
+        "description": "Pelanggan, kreator, pengambil keputusan",
         "items": {
           "affiliates": "Program afiliasi",
           "creators": "Kemitraan kreator",
@@ -1908,6 +1911,7 @@
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
+        "summary": "Berjalan sesuai jadwal atau pemicu",
         "triggers": {
           "description": "Mulai saat suatu peristiwa terjadi.",
           "eventPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan sumber, filter, dan tujuan hasil. Siapkan draf alur kerja dan konfirmasi pengaturan sebelum mengaktifkannya.",

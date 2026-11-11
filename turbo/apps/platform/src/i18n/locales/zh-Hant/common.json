@@ -1865,7 +1865,9 @@
         "title": "創作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什麼新功能",
       "research": {
+        "description": "流量、廣告、產品、話題",
         "items": {
           "ads": "探索廣告創意",
           "products": "研究產品",
@@ -1878,6 +1880,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客戶、創作者、決策者",
         "items": {
           "affiliates": "聯盟行銷計畫",
           "creators": "創作者合作",
@@ -1908,6 +1911,7 @@
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",
+        "summary": "依排程或觸發器自動執行",
         "triggers": {
           "description": "事件發生時自動開始。",
           "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",

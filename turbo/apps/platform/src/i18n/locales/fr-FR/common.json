@@ -1899,7 +1899,9 @@
         "title": "Créer"
       },
       "explore": "Explorer",
+      "exploreWhatsNew": "Découvrir les nouveautés",
       "research": {
+        "description": "Trafic, publicités, produits, sujets",
         "items": {
           "ads": "Explorer des créations publicitaires",
           "products": "Étudier des produits",
@@ -1912,6 +1914,7 @@
         "title": "Étudier"
       },
       "search": {
+        "description": "Clients, créateurs, décideurs",
         "items": {
           "affiliates": "Des programmes d’affiliation",
           "creators": "Partenariats créateurs",
@@ -1942,6 +1945,7 @@
           "title": "Tâches planifiées"
         },
         "suggestions": "Partez d’une suggestion et adaptez-la à vos besoins.",
+        "summary": "S’exécute selon un planning ou un déclencheur",
         "triggers": {
           "description": "Démarrez lorsqu’un événement se produit.",
           "eventPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande la source, les filtres et la destination des résultats. Prépare un brouillon du workflow et confirme la configuration avant de l’activer.",

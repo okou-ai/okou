@@ -1870,7 +1870,9 @@
         "title": "Erstellen"
       },
       "explore": "Entdecken",
+      "exploreWhatsNew": "Entdecke, was neu ist",
       "research": {
+        "description": "Traffic, Anzeigen, Produkte, Themen",
         "items": {
           "ads": "Werbemotive erkunden",
           "products": "Produkte recherchieren",
@@ -1883,6 +1885,7 @@
         "title": "Recherche"
       },
       "search": {
+        "description": "Kunden, Creator, Entscheider",
         "items": {
           "affiliates": "Affiliate-Programme",
           "creators": "Creator-Kooperationen",
@@ -1913,6 +1916,7 @@
           "title": "Geplante Aufgaben"
         },
         "suggestions": "Starte mit einem Vorschlag und passe ihn an.",
+        "summary": "Läuft nach Zeitplan oder per Auslöser",
         "triggers": {
           "description": "Starten, sobald etwas passiert.",
           "eventPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Quelle, Filtern und Ausgabeziel. Erstelle einen Workflow-Entwurf und bestätige die Einrichtung vor der Aktivierung.",

@@ -1899,7 +1899,9 @@
         "title": "Crea"
       },
       "explore": "Esplora",
+      "exploreWhatsNew": "Scopri le novità",
       "research": {
+        "description": "Traffico, annunci, prodotti, argomenti",
         "items": {
           "ads": "Esplorare creatività pubblicitarie",
           "products": "Studiare prodotti",
@@ -1912,6 +1914,7 @@
         "title": "Ricerca"
       },
       "search": {
+        "description": "Clienti, creator, decisori",
         "items": {
           "affiliates": "Programmi di affiliazione",
           "creators": "Partnership con creator",
@@ -1942,6 +1945,7 @@
           "title": "Attività pianificate"
         },
         "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
+        "summary": "Si avvia a orario o con un trigger",
         "triggers": {
           "description": "Avvia quando si verifica un evento.",
           "eventPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quale fonte, quali filtri e dove salvare i risultati. Prepara una bozza del workflow e conferma la configurazione prima di attivarlo.",
