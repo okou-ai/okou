@@ -1,6 +1,7 @@
 import { array, int, iso, object, string, uuid, enum as zEnum } from "zod";
 
 import { vncNetworkHostReferenceSchema } from "../contracts/vnc-transport";
+import { cloudflareCustomConnectorReferenceSchema } from "./custom-connector-network";
 
 export const CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH = 4_096;
 // Service-token values become HTTP headers. Preserve bytes, but reject controls,
@@ -39,6 +40,9 @@ const sshHostReferenceSchema = object({
 }).strict();
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
   .extend({
+    customConnectors: array(
+      cloudflareCustomConnectorReferenceSchema,
+    ).optional(),
     sshHosts: array(sshHostReferenceSchema),
     vncHosts: array(vncNetworkHostReferenceSchema),
   })

@@ -3197,6 +3197,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} Mitglied",
     "affectedMembers_other": "{{count}} Mitglieder",
+    "bindingUnavailable": "Nicht verfügbar",
     "cancel": "Abbrechen",
     "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert.",
     "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
@@ -3209,7 +3210,7 @@
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden.",
     "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
     "impactChanged": "Die betroffenen Hosts haben sich geändert. Die Änderung wurde nicht angewendet.",
-    "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
+    "inUse": "Dieser Cloudflare Access wird noch verwendet. Lösen oder ändern Sie zuerst die Zuordnung der abhängigen Hosts und benutzerdefinierten Connectors.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
     "loadFailed": "Cloudflare Access konnte nicht geladen werden.",
     "loading": "Cloudflare Access wird geladen…",

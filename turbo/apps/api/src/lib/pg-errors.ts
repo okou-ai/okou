@@ -1,4 +1,6 @@
 const PG_FOREIGN_KEY_VIOLATION = "23503";
+// ON DELETE/UPDATE RESTRICT can report this rather than the NO ACTION code.
+const PG_RESTRICT_VIOLATION = "23001";
 const PG_LOCK_NOT_AVAILABLE = "55P03";
 const PG_UNIQUE_VIOLATION = "23505";
 const PG_QUERY_CANCELED = "57014";
@@ -22,7 +24,8 @@ export function isForeignKeyViolation(
   error: unknown,
   constraint?: string,
 ): boolean {
-  if (pgErrorCode(error) !== PG_FOREIGN_KEY_VIOLATION) {
+  const code = pgErrorCode(error);
+  if (code !== PG_FOREIGN_KEY_VIOLATION && code !== PG_RESTRICT_VIOLATION) {
     return false;
   }
   if (constraint === undefined) {

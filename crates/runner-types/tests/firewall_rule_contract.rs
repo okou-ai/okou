@@ -65,6 +65,7 @@ fn firewall(rule: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),
         apis: vec![FirewallApi {
+            network_intent: None,
             id: String::new(),
             base: "https://ec2.us-east-1.amazonaws.com".to_string(),
             auth: FirewallAuth {

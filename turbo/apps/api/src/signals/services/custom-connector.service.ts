@@ -240,6 +240,7 @@ interface CustomConnectorSharedRow<
   OAuthConfig extends CustomConnectorOAuthAdapter =
     CustomConnectorOAuthConfigRow,
 > {
+  readonly networkBinding?: CustomConnectorResponse["networkBinding"];
   readonly id: string;
   readonly orgId: string;
   readonly slug: string;
@@ -570,6 +571,7 @@ export function normaliseCustomConnectorConnectionDefinition<
     throw new Error("Invalid persisted Custom OAuth app configuration");
   }
   const shared = {
+    ...(row.networkBinding ? { networkBinding: row.networkBinding } : {}),
     id: row.id,
     orgId: row.orgId,
     slug: row.slug,
@@ -928,6 +930,9 @@ export function serialiseCustomConnector(args: {
     throw new Error("Invalid normalized Custom Connector OAuth setup");
   })();
   const common = {
+    ...(args.row.networkBinding
+      ? { networkBinding: args.row.networkBinding }
+      : {}),
     id: args.row.id,
     slug: args.row.slug,
     displayName: args.row.displayName,

@@ -3184,6 +3184,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 位成員",
+    "bindingUnavailable": "無法使用",
     "cancel": "取消",
     "changed": "此 Cloudflare Access 在編輯期間發生了變更。變更未儲存。",
     "clientIdPlaceholder": "貼上 Service Token Client ID",
@@ -3196,7 +3197,7 @@
     "failed": "無法儲存 Cloudflare Access 更改。",
     "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
     "impactChanged": "受影響的主機已發生變更，此次變更未套用。",
-    "inUse": "有 SSH 主機正在使用此 Cloudflare Access。主機擁有者須先重新綁定或刪除該主機。",
+    "inUse": "此 Cloudflare Access 仍被引用。請先解除或更換依賴它的主機和自訂連接器的網路綁定。",
     "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
     "loadFailed": "無法載入 Cloudflare Access。",
     "loading": "正在載入 Cloudflare Access…",

@@ -53,6 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Custom connector Cloudflare Access",
+    description:
+      "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",

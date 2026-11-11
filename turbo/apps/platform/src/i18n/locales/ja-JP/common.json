@@ -3184,6 +3184,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 人のメンバー",
+    "bindingUnavailable": "利用不可",
     "cancel": "キャンセル",
     "changed": "編集中にこの Cloudflare Access が変更されました。変更は保存されていません。",
     "clientIdPlaceholder": "Service Token の Client ID を貼り付け",
@@ -3196,7 +3197,7 @@
     "failed": "Cloudflare Accessの変更を保存できませんでした。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
     "impactChanged": "影響を受けるホストが変更されました。変更は適用されていません。",
-    "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
+    "inUse": "この Cloudflare Access は使用中です。先に依存するホストとカスタムコネクタの関連付けを解除または変更してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "loadFailed": "Cloudflare Access を読み込めませんでした。",
     "loading": "Cloudflare Access を読み込み中…",

@@ -140,26 +140,35 @@ export const commitNetworkConfigMutation$ = command(
         .orderBy(asc(hosts.protocol), asc(hosts.id)),
     );
     if (!result.ok) {
-      // The only division in this statement is its completion guard. PostgreSQL
-      // has rolled back every effect before reporting this known failed write.
-      // A deadlock victim is also a known fully aborted statement. Let the
-      // caller review the current snapshot; never replay prepared secret work.
-      // A binding committed after the delete snapshot is protected by its FK;
-      // that rejection also rolls back the statement's peer detachments.
-      if (
-        safeSqlStateCode(result.error) === "22012" ||
-        safeSqlStateCode(result.error) === "40P01" ||
-        (args.operation === "delete" &&
-          (isForeignKeyViolation(result.error) ||
-            safeSqlStateCode(result.error) === "23001"))
-      ) {
-        return { ok: false as const, reason: "conflict" as const };
+      const reason = mutationFailureReason(result.error, args.operation);
+      if (reason) {
+        return { ok: false as const, reason };
       }
       throw result.error;
     }
     return mutationResult(args.operation, result.value);
   },
 );
+
+function mutationFailureReason(
+  error: unknown,
+  operation: NetworkMutationArgs["operation"],
+): "inUse" | "conflict" | undefined {
+  // A late binding rejects the entire statement, including peer host fanout.
+  if (isForeignKeyViolation(error, "fk_custom_connector_cloudflare_config")) {
+    return "inUse";
+  }
+  // The only division is the completion guard. These failures have fully rolled
+  // back; require a fresh reviewed snapshot without replaying prepared secrets.
+  if (
+    safeSqlStateCode(error) === "22012" ||
+    safeSqlStateCode(error) === "40P01" ||
+    (operation === "delete" && isForeignKeyViolation(error))
+  ) {
+    return "conflict";
+  }
+  return undefined;
+}
 
 function mutationResult(
   operation: NetworkMutationArgs["operation"],
