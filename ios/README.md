@@ -271,9 +271,9 @@ an explicitly supplied `SWIFTLINT_BIN`, otherwise the verified local installatio
 an ordinary official binary cannot replace the custom build. The lint entry
 point never downloads, builds or fixes code.
 
-The six safety/directive rules remain active alongside the six `okou_*` rules
-listed in `.swiftlint.yml`. App, Push, packages, tests and rule implementations
-are included. Generated Swift and build output are excluded. Test/test-support
+The configured safety/directive and `okou_*` rules in `.swiftlint.yml` cover
+App, Push, packages, tests and rule implementations. Generated Swift and build
+output are excluded. Test/test-support
 overrides relax only force casts and force tries; do not add baselines,
 suppressions or broader exclusions to hide findings.
 

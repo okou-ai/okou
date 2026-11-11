@@ -289,10 +289,14 @@ final class NavigationResourceTests: XCTestCase {
         retired.fulfill()
       }
     }
+    defer {
+      do { try subscription.cancel() } catch {
+        XCTFail("Cannot release navigation observer: \(error)")
+      }
+    }
     let pending = try resources.store.get(resources.navigation)
     addTeardownBlock { @MainActor in
       resources.close()
-      try subscription.cancel()
       gate.open()
       _ = await pending.result
     }
