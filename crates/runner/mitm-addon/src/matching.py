@@ -1099,7 +1099,7 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
         auth_malformed = not firewall_auth_config.firewall_api_auth_config_is_valid(api_entry)
         injects_ordinary_upstream_credentials = (
             not auth_malformed
-            and auth_config_injects_ordinary_upstream_credentials(api_entry.get("auth"))
+            and firewall_auth_config.api_injects_ordinary_upstream_credentials(api_entry)
         )
         routing_identity = _api_routing_identity(api_entry)
 

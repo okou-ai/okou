@@ -24,39 +24,36 @@ export const eraseRemoteOwnerData$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     if (scope.kind === "organization") {
-      // Organization teardown must not turn retained definitions into Direct
-      // connectors if cleanup stops between removing the edge and its network.
+      // Consume only disabled parent IDs. A concurrent new edge not visible in
+      // this snapshot remains protected by its restrictive configuration FK.
+      const disabled = db
+        .$with("disabled_erased_custom_connectors")
+        .as(
+          db
+            .update(orgCustomConnectors)
+            .set({ enabled: false })
+            .where(eq(orgCustomConnectors.orgId, scope.orgId))
+            .returning({ id: orgCustomConnectors.id }),
+        );
       await db
-        .update(orgCustomConnectors)
-        .set({ enabled: false })
+        .with(disabled)
+        .delete(orgCustomConnectorCloudflareBindings)
         .where(
           and(
-            eq(orgCustomConnectors.orgId, scope.orgId),
+            eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId),
             exists(
               db
-                .select({
-                  id: orgCustomConnectorCloudflareBindings.connectorId,
-                })
-                .from(orgCustomConnectorCloudflareBindings)
+                .select({ id: disabled.id })
+                .from(disabled)
                 .where(
-                  and(
-                    eq(
-                      orgCustomConnectorCloudflareBindings.connectorId,
-                      orgCustomConnectors.id,
-                    ),
-                    eq(
-                      orgCustomConnectorCloudflareBindings.orgId,
-                      orgCustomConnectors.orgId,
-                    ),
+                  eq(
+                    disabled.id,
+                    orgCustomConnectorCloudflareBindings.connectorId,
                   ),
                 ),
             ),
           ),
         );
-      signal.throwIfAborted();
-      await db
-        .delete(orgCustomConnectorCloudflareBindings)
-        .where(eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId));
       signal.throwIfAborted();
     }
     await db

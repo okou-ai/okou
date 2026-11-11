@@ -16,6 +16,8 @@ import {
 } from "drizzle-orm";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
+import type { CustomConnectorNetworkSnapshot } from "./custom-connector-network-authority.service";
+import { customConnectorNetworkPublicationCondition } from "./custom-connector-network-publication";
 import {
   tokenConnectionMetadataClauses,
   tokenPublicationFields,
@@ -25,6 +27,8 @@ import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
 import { completedGetStartedQuestPublication } from "./get-started-member-reward";
 
 interface CustomOAuthPublication {
+  readonly definitionUpdatedAt: Date;
+  readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   readonly orgId: string;
   readonly connectorId: string;
   readonly storageVersion: number;
@@ -61,6 +65,7 @@ function customOAuthDefinition(args: CustomOAuthPublication) {
         eq(orgCustomConnectors.orgId, args.orgId),
         eq(orgCustomConnectors.storageVersion, args.storageVersion),
         eq(orgCustomConnectors.authMode, args.authMode),
+        customConnectorNetworkPublicationCondition(args),
         args.providerAdapter === null
           ? isNull(orgCustomConnectorOauthConfigs.providerAdapter)
           : eq(

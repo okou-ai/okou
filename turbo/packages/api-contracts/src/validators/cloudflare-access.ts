@@ -2,18 +2,7 @@ import { array, int, iso, object, string, uuid, enum as zEnum } from "zod";
 
 import { vncNetworkHostReferenceSchema } from "../contracts/vnc-transport";
 import { cloudflareCustomConnectorReferenceSchema } from "./custom-connector-network";
-
-export const CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH = 4_096;
-// Service-token values become HTTP headers. Preserve bytes, but reject controls,
-// whitespace and non-ASCII rather than silently changing the credential.
-const tokenValueSchema = string()
-  .min(1)
-  .max(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH)
-  .regex(/^[\x21-\x7e]+$/u);
-export const cloudflareAccessCredentialsSchema = object({
-  clientId: tokenValueSchema,
-  clientSecret: tokenValueSchema,
-}).strict();
+import { cloudflareAccessCredentialsSchema } from "./cloudflare-access-credentials";
 export const name = string().trim().min(1).max(128);
 export const createCloudflareAccessRequestSchema = object({
   name,

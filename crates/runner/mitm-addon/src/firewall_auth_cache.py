@@ -444,6 +444,21 @@ async def _fetch_and_cache_firewall_headers(
         _release_firewall_auth_fetch()
 
 
+async def get_uncached_network_admission(request: FirewallAuthRequest) -> dict:
+    """One physical request owns one bounded lookup; no key or shared result."""
+    if not request.network_admission:
+        raise ValueError("network admission must be explicitly requested")
+    _reserve_firewall_auth_fetch()
+    try:
+        async with _get_firewall_auth_fetch_semaphore():
+            result = await fetch_firewall_headers(request)
+        if result.payload.network_admission is None:
+            raise ValueError("network admission is missing")
+        return result.payload.network_admission
+    finally:
+        _release_firewall_auth_fetch()
+
+
 async def get_firewall_headers(
     cache_key: FirewallAuthCacheKey,
     request: FirewallAuthRequest,

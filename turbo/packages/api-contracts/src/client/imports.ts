@@ -460,7 +460,7 @@ export const clientContractImportManifest = [
     bindings: [
       {
         name: "CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH",
-        source: "validators/cloudflare-access",
+        source: "validators/cloudflare-access-credentials",
         imported: "CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH",
       },
       {
@@ -470,7 +470,7 @@ export const clientContractImportManifest = [
       },
       {
         name: "cloudflareAccessCredentialsSchema",
-        source: "validators/cloudflare-access",
+        source: "validators/cloudflare-access-credentials",
         imported: "cloudflareAccessCredentialsSchema",
       },
       {

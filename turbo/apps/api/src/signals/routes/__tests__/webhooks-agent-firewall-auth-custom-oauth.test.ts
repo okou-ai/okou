@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 
 import {
   connectorAccountsContract,
@@ -12,6 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -169,6 +173,7 @@ async function setupCustomOAuthFirewall(
     connectionId: string,
     forceRefresh: boolean,
     networkAdmission = false,
+    intent: CustomConnectorNetworkIntent = { kind: "direct" },
   ) {
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
@@ -176,7 +181,9 @@ async function setupCustomOAuthFirewall(
       headers,
       {
         encryptedSecrets: fw.encryptedSecretsBody({}),
-        authHeaders: { Authorization: `Bearer ${secretTemplate(secretKey)}` },
+        authHeaders: networkAdmission
+          ? {}
+          : { Authorization: `Bearer ${secretTemplate(secretKey)}` },
         matchedFirewall: {
           name: internalName,
           apiId: `${internalName}:0`,
@@ -185,13 +192,35 @@ async function setupCustomOAuthFirewall(
           routingVariables: {},
         },
         forceRefresh,
-        ...(networkAdmission ? { networkAdmission: true as const } : {}),
+        ...(networkAdmission
+          ? {
+              networkAdmission: true as const,
+              networkRequest: {
+                method: "GET",
+                url:
+                  connector.kind === "mcp"
+                    ? connector.endpoint
+                    : (connector.prefixTemplates[0] ?? ""),
+                intent,
+              },
+            }
+          : {}),
       },
-      [200, 502],
+      [200, 400, 403, 502],
     );
   }
   const account = await connect({ intent: "add", displayName: "First" });
-  return { actor, account, connector, connectors, provider, connect, request };
+  return {
+    actor,
+    account,
+    connector,
+    connectors,
+    provider,
+    connect,
+    request,
+    agentId: agent.agentId,
+    headers,
+  };
 }
 
 test("custom network admission is explicitly opted in and leaves installed Runner responses unchanged", async () => {
@@ -208,11 +237,231 @@ test("custom network admission is explicitly opted in and leaves installed Runne
     const legacy = await custom.request(custom.account.id, false);
     expect(legacy.status).toBe(200);
     expect(legacy.body).not.toHaveProperty("networkAdmission");
+    await custom.connectors.updateFeatureSwitches(custom.actor, {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    });
     const admitted = await custom.request(custom.account.id, false, true);
     expect(admitted.status).toBe(200);
     expect(admitted.body).toMatchObject({
       networkAdmission: { kind: "direct" },
     });
+  });
+});
+
+test("Run network admission uses current bindings and rotation independently of application OAuth", async () => {
+  const fixture = createPublicFirewallFixture(context, {
+    orgRole: "org:admin",
+  });
+  await fixture.run(async () => {
+    const custom = await setupCustomOAuthFirewall(
+      "configured",
+      undefined,
+      {},
+      fixture,
+    );
+    await custom.connectors.updateFeatureSwitches(custom.actor, {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    });
+    mocks.clerk.session(custom.actor.userId, custom.actor.orgId, "org:admin");
+    const api = setupApp({ context, routes: cloudflareAccessRoutes })(
+      cloudflareAccessContract,
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    const config = (
+      await accept(
+        api.create({
+          headers,
+          query: { view: "scoped" },
+          body: {
+            id: randomUUID(),
+            scope: "organization",
+            name: "Run network",
+            credentials: { clientId: "first-id", clientSecret: "first-secret" },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const connector = custom.connector;
+    const definition = {
+      displayName: connector.displayName,
+      fields: connector.fields,
+      headerInjections: connector.headerInjections,
+      queryInjections: connector.queryInjections,
+      authMode: connector.authMode,
+      storageVersion: connector.storageVersion,
+      ...(connector.kind === "mcp"
+        ? {
+            kind: "mcp" as const,
+            endpoint: connector.endpoint,
+            transport: connector.transport,
+          }
+        : {
+            kind: "http" as const,
+            prefixTemplates: connector.prefixTemplates,
+          }),
+    };
+    await custom.connectors.updateCustomConnector(custom.actor, connector.id, {
+      ...definition,
+      networkBinding: { type: "cloudflare_access", configId: config.id },
+    });
+    expect((await custom.request(custom.account.id, false, true)).status).toBe(
+      403,
+    );
+    const intent = { kind: "cloudflare_access" as const, configId: config.id };
+    const admitted = await custom.request(
+      custom.account.id,
+      false,
+      true,
+      intent,
+    );
+    expect(admitted).toMatchObject({
+      status: 200,
+      body: {
+        headers: {},
+        networkAdmission: {
+          ...intent,
+          generation: 1,
+          headers: {
+            "CF-Access-Client-Id": "first-id",
+            "CF-Access-Client-Secret": "first-secret",
+          },
+        },
+      },
+    });
+    await accept(
+      api.update({
+        headers,
+        params: { configId: config.id },
+        query: { view: "scoped" },
+        body: {
+          expectedRevision: config.revision,
+          credentials: { clientId: "next-id", clientSecret: "next-secret" },
+        },
+      }),
+      [200],
+    );
+    const rotated = await custom.request(
+      custom.account.id,
+      false,
+      true,
+      intent,
+    );
+    expect(rotated).toMatchObject({
+      status: 200,
+      body: {
+        networkAdmission: {
+          generation: 2,
+          headers: {
+            "CF-Access-Client-Id": "next-id",
+            "CF-Access-Client-Secret": "next-secret",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(rotated.body)).not.toContain("first-secret");
+    await custom.connectors.requestUpdateAgentCustomConnectors(
+      custom.actor,
+      custom.agentId,
+      [connector.id],
+      [200],
+      "remove",
+    );
+    expect(
+      (await custom.request(custom.account.id, false, true, intent)).status,
+    ).toBe(403);
+    await custom.connectors.requestUpdateAgentCustomConnectors(
+      custom.actor,
+      custom.agentId,
+      [connector.id],
+      [200],
+      "add",
+    );
+    const accountless = await custom.connectors.createCustomConnector(
+      custom.actor,
+      {
+        kind: "http",
+        displayName: "No application account",
+        prefixTemplates: ["https://noauth.example.test/"],
+        authMode: "none",
+        fields: [],
+        headerInjections: [],
+        queryInjections: [],
+        networkBinding: { type: "cloudflare_access", configId: config.id },
+      },
+    );
+    fixture.registerCustomConnector(accountless.id);
+    const accountlessName = `custom_connector_${accountless.id.replaceAll("-", "")}`;
+    const networkBody = {
+      authHeaders: {},
+      networkAdmission: true as const,
+      networkRequest: {
+        method: "GET",
+        url: "https://noauth.example.test/items",
+        intent,
+      },
+      matchedFirewall: {
+        name: accountlessName,
+        apiId: `${accountlessName}:0`,
+        customConnectorId: accountless.id,
+        routingVariables: {},
+      },
+    };
+    const firewall = createFirewallApi(context);
+    expect(
+      (await firewall.requestFirewallAuth(custom.headers, networkBody, [403]))
+        .status,
+    ).toBe(403);
+    await custom.connectors.requestUpdateAgentCustomConnectors(
+      custom.actor,
+      custom.agentId,
+      [accountless.id],
+      [200],
+      "add",
+    );
+    expect(
+      await firewall.requestFirewallAuth(custom.headers, networkBody, [200]),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        headers: {},
+        networkAdmission: {
+          generation: 2,
+          headers: { "CF-Access-Client-Secret": "next-secret" },
+        },
+      },
+    });
+    expect(
+      (
+        await firewall.requestFirewallAuth(
+          custom.headers,
+          {
+            ...networkBody,
+            matchedFirewall: {
+              ...networkBody.matchedFirewall,
+              sourceId: custom.account.id,
+            },
+          },
+          [403],
+        )
+      ).status,
+    ).toBe(403);
+    await custom.connectors.updateCustomConnector(custom.actor, connector.id, {
+      ...definition,
+      networkBinding: null,
+    });
+    expect(
+      (await custom.request(custom.account.id, false, true, intent)).status,
+    ).toBe(403);
+    expect((await custom.request(custom.account.id, false, true)).status).toBe(
+      200,
+    );
+    expect(
+      await custom.connectors.listCustomConnectorAccounts(
+        custom.actor,
+        connector.id,
+      ),
+    ).toMatchObject([{ id: custom.account.id, connectionStatus: "connected" }]);
   });
 });
 

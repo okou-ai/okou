@@ -441,9 +441,7 @@ def _start_request_timing(flow: http.HTTPFlow) -> None:
 def _firewall_allow_injects_ordinary_upstream_credentials(
     allow: matching.FirewallAllow,
 ) -> bool:
-    return firewall_auth_config.auth_config_injects_ordinary_upstream_credentials(
-        allow.api_entry.get("auth")
-    )
+    return firewall_auth_config.api_injects_ordinary_upstream_credentials(allow.api_entry)
 
 
 def _builtin_host_policy_error_for_firewall_allow(
@@ -810,6 +808,7 @@ def _requestheaders_after_authority(
                     bounded_classification.firewall_allow.api_entry.get("auth", {})
                 )
                 and bounded_classification.firewall_allow.name != data_router.OWNER
+                and bounded_classification.firewall_allow.api_entry.get("networkIntent") is None
             )
         ):
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
@@ -902,6 +901,12 @@ def _requestheaders_after_authority(
             classification=classification,
             request_end_stream=request_end_stream,
         )
+        if (
+            flow.error is None
+            and classification.kind == "firewall_allow"
+            and classification.firewall_allow.api_entry.get("networkIntent") is not None
+        ):
+            return _admit_custom_network_from_headers(flow, classification, metadata_snapshot)
         if flow.error is None:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         return None
@@ -1285,6 +1290,34 @@ def _admit_buffered_aws_sigv4_request(
         )
     aws_sigv4_flow.release_inspection(flow)
     _terminate_classified_requestheaders(flow)
+
+
+async def _admit_custom_network_from_headers(
+    flow: http.HTTPFlow,
+    classification: request_classification.FirewallAllow,
+    metadata_snapshot: dict[str, object],
+) -> None:
+    """Authenticate without bypassing the existing bounded upload owner."""
+    allow = classification.firewall_allow
+    expected_run_id = flow_metadata.run_id(flow.metadata)
+    expected_request = request_authority.capture_firewall_request_identity(flow)
+    result = await try_apply_stream_safe_firewall_auth_for_requestheaders(
+        flow,
+        allow,
+        classification.sandbox_info,
+        revalidate_current_firewall_authorization=lambda: (
+            _firewall_authorization_is_current_for_requestheaders(
+                flow, allow, expected_run_id=expected_run_id, expected_request=expected_request
+            )
+        ),
+    )
+    if result is FirewallHeaderPhaseAuthResult.REJECTED:
+        _mark_local_requestheaders_response(flow)
+    elif result is FirewallHeaderPhaseAuthResult.APPLIED:
+        request_classification.cache_classification(flow, classification)
+        flow.metadata[_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS] = True
+    else:
+        _restore_request_headers_probe_metadata(flow, metadata_snapshot)
 
 
 async def _try_firewall_request_stream_from_headers(
@@ -1905,6 +1938,8 @@ def _release_terminal_flow_state(
         terminal_usage.release_model_websocket_terminal_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
+    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
+    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
     aws_sigv4_flow.release_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
@@ -2115,10 +2150,29 @@ def _finish_response_handling(
     # us the token is no longer valid, overriding whatever the DB believes.
     # request_force_refresh enforces a cooldown so a persistent non-token 401
     # can't amplify into a loop of provider refresh calls (#9860).
+    network_rejected = bool(
+        flow.response
+        and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
+        and flow.response.status_code in (401, 403)
+        and not flow.response.headers.get("www-authenticate", "")
+        .strip()
+        .lower()
+        .startswith("bearer ")
+    )
+    if network_rejected:
+        log_proxy_entry(
+            proxy_log_path,
+            "warn",
+            "Cloudflare Access may have rejected this request; "
+            "check its service token and application policy",
+            type="cloudflare_access",
+            status=flow.response.status_code if flow.response else 0,
+        )
     if (
         flow.response
         and flow.response.status_code == _HTTP_STATUS_UNAUTHORIZED
         and flow_metadata.firewall_base(flow.metadata)
+        and not network_rejected
     ):
         cache_key = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_KEY)
         cache_entry_identity = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY)

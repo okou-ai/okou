@@ -255,7 +255,7 @@ fn firewall_auth_base_omitted_when_none() {
 }
 
 #[test]
-fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
+fn custom_network_intent_is_valid_only_for_custom_execution() {
     let value = serde_json::json!({
         "name": "custom-fixture",
         "apis": [{"id": "custom-api", "base": "https://api.example.com/",
@@ -271,7 +271,8 @@ fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
         "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44"
     });
     let prepared: Firewall = serde_json::from_value(bound).unwrap();
-    assert!(prepared.validate_for_connector_runtime().is_err());
+    prepared.validate_for_connector_runtime().unwrap();
+    assert!(prepared.validate_for_cache().is_err());
 
     let mut unknown = value;
     unknown["apis"][0]["networkIntent"]["kind"] = "unknown".into();

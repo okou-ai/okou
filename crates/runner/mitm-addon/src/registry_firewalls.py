@@ -427,10 +427,33 @@ def resolve_firewall_entries(
                 for api in raw_apis:
                     if isinstance(api, dict):
                         intent = api.get("networkIntent")
-                        if intent is not None and intent != {"kind": "direct"}:
-                            raise FirewallEntryResolutionError(
-                                "Cloudflare Access is unavailable in this preparation release"
-                            )
+                        if intent is not None:
+                            if not isinstance(intent, dict):
+                                raise FirewallEntryResolutionError(
+                                    "custom network intent must be an object"
+                                )
+                            if intent.get("kind") == "direct":
+                                if set(intent) != {"kind"}:
+                                    raise FirewallEntryResolutionError(
+                                        "Direct intent has unexpected fields"
+                                    )
+                            elif intent.get("kind") == "cloudflare_access":
+                                if (
+                                    set(intent) != {"kind", "configId"}
+                                    or _optional_uuid_field(
+                                        intent,
+                                        "configId",
+                                        message="Cloudflare configId must be a UUID",
+                                    )
+                                    is None
+                                ):
+                                    raise FirewallEntryResolutionError(
+                                        "Cloudflare intent requires a configId"
+                                    )
+                            else:
+                                raise FirewallEntryResolutionError(
+                                    "unsupported custom network intent"
+                                )
                         api["customConnectorId"] = custom_connector_id
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)

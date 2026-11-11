@@ -323,15 +323,6 @@ impl FirewallApi {
     }
 
     fn validate_for_connector_runtime(&self) -> Result<(), String> {
-        if matches!(
-            self.network_intent,
-            Some(CustomConnectorNetworkIntent::CloudflareAccess { .. })
-        ) {
-            return Err(
-                "Cloudflare Access execution is not available in this preparation release"
-                    .to_string(),
-            );
-        }
         if self.id.is_empty() {
             return Err("id must be non-empty".to_string());
         }

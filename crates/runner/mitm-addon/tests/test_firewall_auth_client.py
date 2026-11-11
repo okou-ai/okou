@@ -577,7 +577,15 @@ class TestFetchFirewallHeaders:
         endpoint.queue_json_response(
             firewall_auth_success_response({}) | {"networkAdmission": {"kind": "direct"}}
         )
-        request = replace(firewall_auth_request(), network_admission=True)
+        request = replace(
+            firewall_auth_request(),
+            network_admission=True,
+            network_request={
+                "method": "GET",
+                "url": "https://api.example.com/items",
+                "intent": {"kind": "direct"},
+            },
+        )
         with endpoint.run(), mitm_ctx(api_url=endpoint.api_url):
             result = await auth_client.fetch_firewall_headers(request)
         assert result.payload.headers == {}
