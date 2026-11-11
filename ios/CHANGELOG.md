@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.2](https://github.com/okou-ai/okou/compare/ios-v0.35.1...ios-v0.35.2) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own failure recovery context reads with ccstate ([#46504](https://github.com/okou-ai/okou/issues/46504)) ([f86603d](https://github.com/okou-ai/okou/commit/f86603db4e80fb6be0cb4cf17d2b29af36166c42))
+
 ## [0.35.1](https://github.com/okou-ai/okou/compare/ios-v0.35.0...ios-v0.35.1) (2026-11-11)
 
 
