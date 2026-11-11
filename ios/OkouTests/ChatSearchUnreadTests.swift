@@ -448,7 +448,8 @@ final class ChatSearchUnreadTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, readRetrySleep: { _ in })
     defer { store.close() }
     store.search.present()
     let failed = await store.openSearchResult(SearchUnreadFixture.id(2))
@@ -485,7 +486,7 @@ final class ChatSearchUnreadTests: XCTestCase {
         XCTAssertEqual(query(request, "keyword"), "brand")
         return ChatHTTPResponse(
           body: """
-            {"artifacts":[{"id":"x","kind":"hosted-site","title":"Brand site","thumbnail":null,"aliasUrl":"https://brand.sites.vm0.io"},
+            {"artifacts":[{"id":"x","kind":"hosted-site","title":"Brand site","thumbnail":null,"sourceUrl":"https://dpl-1.sites.vm0.io","aliasUrl":"https://brand.sites.vm0.io"},
                           {"id":"y","kind":"shared-thread","title":"Shared chat","thumbnail":null,"sharedThreadId":"s"}],
              "nextCursor":null}
             """)
@@ -507,6 +508,8 @@ final class ChatSearchUnreadTests: XCTestCase {
     let found = try await artifacts.value
     // A shared conversation is left out: the app cannot open it.
     XCTAssertEqual(found.map(\.title), ["Brand site"])
+    XCTAssertEqual(found.map(\.aliasUrl), ["https://brand.sites.vm0.io"])
+    XCTAssertEqual(found.map(\.kind), ["hosted-site"])
     let matching = try await search.stateStore.get(search.workflowsValue).value
     XCTAssertEqual(matching.map(\.id), ["w1"])
     search.updateQuery("nothing like it")
