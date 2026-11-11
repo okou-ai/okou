@@ -450,15 +450,11 @@ function LegacyChatAgentAvatar({
 }
 
 /**
- * The new-chat page of an Agent, or of a Project when `projectPage` is set.
- * A Project's page keeps the greeting: the conversation is still with Okou,
- * and the composer's toolbar names the Project the chat starts in.
+ * The new-chat page of an Agent, and of a Project. A Project's page is the
+ * same page: it keeps the greeting, because the conversation is still with
+ * Okou, and the composer's toolbar names the Project the chat starts in.
  */
-export function AgentComposerPage({
-  projectPage = false,
-}: {
-  projectPage?: boolean;
-} = {}) {
+export function AgentComposerPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const user = useLastResolved(user$);
@@ -512,7 +508,7 @@ export function AgentComposerPage({
         </h2>
       </div>
     );
-  if (!projectPage && switches[FeatureSwitchKey.HomeCapabilities]) {
+  if (switches[FeatureSwitchKey.HomeCapabilities]) {
     return (
       <CapabilityHomePage
         signals={composerSignals}
