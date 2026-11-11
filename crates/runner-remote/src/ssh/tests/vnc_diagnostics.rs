@@ -76,7 +76,7 @@ async fn apple_dh_failure(stalled: bool) {
             socket.write_all(&[1, 30]).await.unwrap();
             assert_eq!(socket.read_u8().await.unwrap(), 30);
             socket.write_u16(5).await.unwrap();
-            socket.write_u16(128).await.unwrap();
+            socket.write_u16(112).await.unwrap();
             socket.flush().await.unwrap();
         }
         let mut byte = [0; 1];
@@ -104,7 +104,7 @@ async fn apple_dh_failure(stalled: bool) {
     } else {
         assert!(explanation.contains("VNC authentication: failed"));
         assert!(explanation.contains("invalid_apple_dh_parameters"));
-        assert!(explanation.contains("Apple DH check: key_length; generator: 5; key bytes: 128"));
+        assert!(explanation.contains("Apple DH check: key_length; generator: 5; key bytes: 112"));
     }
     for secret in [USER, SECRET, PASSWORD, TOKEN] {
         assert!(!explanation.contains(secret));
@@ -148,7 +148,7 @@ async fn apple_dh_failure(stalled: bool) {
             ("vnc_authentication_stage", "apple_dh_authentication"),
             ("apple_dh_parameter_check", "key_length"),
             ("apple_dh_generator", "5"),
-            ("apple_dh_key_bytes", "128"),
+            ("apple_dh_key_bytes", "112"),
         ] {
             assert_eq!(fields.get(name).map(String::as_str), Some(value));
         }
