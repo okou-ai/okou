@@ -40,7 +40,7 @@ import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { safeJsonParse, safeSync, settle } from "../utils";
 import {
-  automaticAccountExists$,
+  readAutomaticReconnectAccount$,
   publishAutomaticConnection$,
   type AutomaticConnectionPublication,
 } from "./builtin-connector-automatic-connection.service";
@@ -308,6 +308,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
       readonly state: string;
       readonly cimdClientId: string;
       readonly dcrClientMetadata: OAuthClientMetadata;
+      readonly hasOAuthAccount: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -352,6 +353,7 @@ const prepareBuiltinAutomaticAuthorization$ = command(
         },
         endpoint: contract.endpoint,
         additionalScopes: contract.method.grant.scopes,
+        hasOAuthAccount: args.hasOAuthAccount,
         authorizationPrompt: contract.method.grant.authorizationPrompt,
         redirectUri: args.redirectUri,
         state: args.state,
@@ -397,19 +399,20 @@ export const startBuiltinConnectorAutomatic$ = command(
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
     }
-    if (
-      args.account.intent === "reconnect" &&
-      !(await set(
-        automaticAccountExists$,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: contract.connectorSlug,
-          connectionId: args.account.connectionId,
-        },
-        signal,
-      ))
-    ) {
+    const reconnectedAccount =
+      args.account.intent === "reconnect"
+        ? await set(
+            readAutomaticReconnectAccount$,
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              connectorSlug: contract.connectorSlug,
+              connectionId: args.account.connectionId,
+            },
+            signal,
+          )
+        : null;
+    if (args.account.intent === "reconnect" && !reconnectedAccount) {
       return { kind: "error", reason: "invalid-account" };
     }
     const state = generateConnectorOAuthState();
@@ -423,6 +426,7 @@ export const startBuiltinConnectorAutomatic$ = command(
           state,
           cimdClientId: args.cimdClientId,
           dcrClientMetadata: args.dcrClientMetadata,
+          hasOAuthAccount: reconnectedAccount?.automaticAuthType === "oauth",
         },
         signal,
       ),
@@ -442,6 +446,7 @@ export const startBuiltinConnectorAutomatic$ = command(
           storageVersion: contract.storageVersion,
           account: args.account,
           binding: null,
+          preserveOAuth: prepared.value.discoveryUnavailable,
           identity: null,
           expiresAt: null,
           scopes: null,
