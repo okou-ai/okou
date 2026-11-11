@@ -16,11 +16,21 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Bell, ChevronRight } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  Building2,
+  ChevronRight,
+  Clock,
+  Repeat,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
@@ -33,7 +43,7 @@ import {
 } from "@okouai/ui/components/ui/popover";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { cn } from "@okouai/ui/lib/utils";
-import { useMediaQuery } from "@okouai/ui";
+import { Badge, surfaceVariants, useMediaQuery } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -119,48 +129,21 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
   );
 }
 
-function NotificationHeader({
-  item,
-  automationDisabled,
-}: {
-  readonly item: UserNotification;
-  readonly automationDisabled?: AutomationDisabledMetadata;
-}) {
+function NotificationHeader({ item }: { readonly item: UserNotification }) {
   const { t } = useTranslation();
-  const preferences = useLastResolved(userPreferences$);
-  const timestamp = automationDisabled?.disabledAt ?? item.createdAt;
   return (
     <DialogHeader className="shrink-0 gap-3 pr-7 text-left">
       <DialogDescription>
         {t(($) => {
-          return automationDisabled
-            ? $.userNotifications.automationDisabled.systemSource
-            : $.userNotifications.sender;
+          return $.userNotifications.sender;
         })}
       </DialogDescription>
       <DialogTitle className="text-2xl leading-tight">{item.title}</DialogTitle>
       <time
-        dateTime={timestamp}
+        dateTime={item.createdAt}
         className="block text-xs text-muted-foreground"
       >
-        {automationDisabled
-          ? t(
-              ($) => {
-                return $.userNotifications.automationDisabled.disabledAt;
-              },
-              {
-                time: new Date(timestamp).toLocaleString(resolvedAppLocale(), {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                  timeZoneName: "short",
-                  ...(preferences ? { timeZone: preferences.timezone } : {}),
-                }),
-              },
-            )
-          : formatChatTimestamp(timestamp)}
+        {formatChatTimestamp(item.createdAt)}
       </time>
     </DialogHeader>
   );
@@ -194,13 +177,40 @@ function RichTextNotification({
   );
 }
 
+function AutomationDisabledTimestamp({
+  disabledAt,
+}: {
+  readonly disabledAt: string;
+}) {
+  const { t } = useTranslation();
+  const preferences = useLastResolved(userPreferences$);
+  return (
+    <time dateTime={disabledAt} className="min-w-0 break-words">
+      {t(
+        ($) => {
+          return $.userNotifications.automationDisabled.disabledAt;
+        },
+        {
+          time: new Date(disabledAt).toLocaleString(resolvedAppLocale(), {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZoneName: "short",
+            ...(preferences ? { timeZone: preferences.timezone } : {}),
+          }),
+        },
+      )}
+    </time>
+  );
+}
+
 function AutomationDisabledNotification({
   inbox,
-  item,
   metadata,
 }: {
   readonly inbox: NotificationInbox;
-  readonly item: UserNotification;
   readonly metadata: AutomationDisabledMetadata;
 }) {
   const { t } = useTranslation();
@@ -214,28 +224,81 @@ function AutomationDisabledNotification({
     });
   return (
     <>
-      <div ref={mounted} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-        <NotificationHeader item={item} automationDisabled={metadata} />
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain text-sm leading-relaxed">
-          <h2 className="break-words font-semibold">
-            {metadata.automationName}
-          </h2>
-          <p>
+      <div ref={mounted} className="flex min-w-0 flex-col gap-5">
+        <DialogHeader className="gap-4 text-left">
+          <div className="flex items-center gap-3 pr-7">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gray-50 text-brand-text">
+              <AlertTriangle size={20} aria-hidden="true" />
+            </span>
+            <DialogTitle className="text-xl leading-tight">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.title;
+              })}
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-sm leading-relaxed">
             {t(
               ($) => {
                 return $.userNotifications.automationDisabled.reason;
               },
               { count: metadata.consecutiveFailures },
             )}
-          </p>
-          <dl className="space-y-1">
-            <dt className="text-xs text-muted-foreground">
+          </DialogDescription>
+        </DialogHeader>
+        <section
+          className={surfaceVariants({
+            className: "bg-gray-50 p-4 shadow-none",
+          })}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
+              <Repeat size={16} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="break-words text-sm font-semibold">
+                {metadata.automationName}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.userNotifications.automationDisabled.systemSource;
+                })}
+              </p>
+            </div>
+            <Badge className="shrink-0 text-xs font-medium text-brand-text">
               {t(($) => {
-                return $.userNotifications.automationDisabled.workspace;
+                return $.userNotifications.automationDisabled.disabled;
               })}
-            </dt>
-            <dd className="break-words">{workspaceName}</dd>
-          </dl>
+            </Badge>
+          </div>
+          <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <p className="flex items-start gap-2">
+              <Building2
+                size={14}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 break-words">
+                <span className="sr-only">
+                  {t(($) => {
+                    return $.userNotifications.automationDisabled.workspace;
+                  })}
+                  {": "}
+                </span>
+                {workspaceName}
+              </span>
+            </p>
+            <p className="flex items-start gap-2">
+              <Clock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <AutomationDisabledTimestamp disabledAt={metadata.disabledAt} />
+            </p>
+          </div>
+        </section>
+        <DialogFooter className="gap-2">
+          <DialogClose render={<Button variant="quiet" />}>
+            {t(($) => {
+              return $.userNotifications.automationDisabled.notNow;
+            })}
+          </DialogClose>
           <Link
             pathname={ROUTES.workflowDetailAutomations}
             options={{
@@ -245,13 +308,14 @@ function AutomationDisabledNotification({
                 workspaceId: metadata.workspaceId,
               }),
             }}
-            className={buttonVariants({ variant: "neutral", size: "sm" })}
+            className={buttonVariants()}
           >
             {t(($) => {
               return $.userNotifications.automationDisabled.viewAutomation;
             })}
+            <ArrowRight aria-hidden="true" />
           </Link>
-        </div>
+        </DialogFooter>
       </div>
       <ReadError inbox={inbox} />
     </>
@@ -512,7 +576,6 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
         return (
           <AutomationDisabledNotification
             inbox={inbox}
-            item={item}
             metadata={item.payload.automationDisabled}
           />
         );
@@ -765,6 +828,11 @@ function NotificationInboxView({ desktop }: { readonly desktop: boolean }) {
   const { t } = useTranslation();
   const inbox = useGet(notificationInbox$);
   const summary = useLastLoadable(inbox.summary$);
+  const detail = useLoadable(inbox.detail$);
+  const compact =
+    detail.state === "hasData" &&
+    detail.data?.payload.type === "rich_text" &&
+    Boolean(detail.data.payload.automationDisabled);
   const open = useGet(inbox.open$);
   const selectedId = useGet(inbox.selectedId$);
   const lastSelectedId = useGet(inbox.lastSelectedId$);
@@ -847,9 +915,9 @@ function NotificationInboxView({ desktop }: { readonly desktop: boolean }) {
         }}
       >
         <DialogContent
-          maxWidth="2xl"
-          height={600}
-          scrollable={false}
+          maxWidth={compact ? 480 : "2xl"}
+          height={compact ? "content" : 600}
+          scrollable={compact}
           contentClassName="flex min-h-0 flex-1 flex-col"
           closeLabel={t(($) => {
             return $.userNotifications.close;

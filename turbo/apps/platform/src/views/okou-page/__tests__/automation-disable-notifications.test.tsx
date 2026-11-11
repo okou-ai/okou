@@ -21,6 +21,7 @@ import {
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const WORKSPACE_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
@@ -212,7 +213,9 @@ async function openDetails(item = notification()) {
   }
   expect(within(row).getByText("Unread")).toBeInTheDocument();
   click(row);
-  const dialog = await screen.findByRole("dialog", { name: TITLE });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Automation disabled",
+  });
   await within(dialog).findByText("System notification");
   return dialog;
 }
@@ -283,9 +286,10 @@ test("A historical disablement uses system attribution, membership name, actual 
   const dialog = await openDetails();
   expect(within(dialog).getByText("Daily work summary")).toBeInTheDocument();
   expect(within(dialog).getByText("Research workspace")).toBeInTheDocument();
+  expect(within(dialog).getByText("Disabled")).toBeInTheDocument();
   expect(
     within(dialog).getByText(
-      "Automatically disabled after 3 consecutive execution failures.",
+      "3 consecutive runs failed. Review the automation before re-enabling it.",
     ),
   ).toBeInTheDocument();
   const timestamp = dialog.querySelector("time");
@@ -309,6 +313,73 @@ test("A recovery pause stays readable without a workspace name and never display
   expect(within(dialog).getByText("Original workspace")).toBeInTheDocument();
   expect(dialog).not.toHaveTextContent("org_no_longer_accessible");
   await screen.findByText("0 unread notifications");
+});
+
+test("Not now dismisses a disablement and restores focus to its notification", async () => {
+  const dialog = await openDetails();
+  click(control("button", "Not now", dialog));
+  const title = await screen.findByText(TITLE);
+  const row = title.closest("button");
+  await waitFor(() => {
+    expect(row).toHaveFocus();
+  });
+  await userEvent.keyboard("{Enter}");
+  const reopened = await screen.findByRole("dialog", {
+    name: "Automation disabled",
+  });
+  expect(within(reopened).getByText("Disabled")).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await screen.findByText(TITLE);
+  await waitFor(() => {
+    expect(screen.getByText(TITLE).closest("button")).toHaveFocus();
+  });
+});
+
+test("A pending notification destination shows a lightweight status until access resolves", async () => {
+  mockAutomationDestination();
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
+    await response.promise;
+    return respond(200, automation());
+  });
+  const dialog = await openDetails();
+  click(control("link", "View automation", dialog));
+  const loading = await screen.findByText("Loading automation");
+  await waitFor(() => {
+    expect(loading).toBeVisible();
+  });
+  expect(screen.getByRole("main")).toHaveTextContent(/^Loading automation$/);
+  response.resolve();
+  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+  expect(selected).toHaveAttribute("aria-current", "true");
+  expect(within(selected).getByRole("switch")).not.toBeChecked();
+});
+
+test("A failed destination can retry through the loading status and reach the same automation", async () => {
+  mockAutomationDestination();
+  let failed = true;
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
+    if (failed) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Unavailable" },
+      });
+    }
+    await response.promise;
+    return respond(200, automation());
+  });
+  await setupPage({ context, path: destination(), auth: auth() });
+  await screen.findByText("Couldn’t load this automation");
+  expect(control("link", "Back to workflows")).toBeInTheDocument();
+  failed = false;
+  click(control("button", "Try again"));
+  const loading = await screen.findByText("Loading automation");
+  await waitFor(() => {
+    expect(loading).toBeVisible();
+  });
+  response.resolve();
+  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+  expect(within(selected).getByRole("switch")).not.toBeChecked();
 });
 
 test("View automation rechecks access and focuses the exact current automation without enabling it or its sibling", async () => {

@@ -259,6 +259,7 @@ import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import {
   automationNotificationTarget$,
+  revealAutomationNotificationLoadingRef$,
   switchAutomationNotificationWorkspace$,
   workflowAutomationNotificationAccess$,
 } from "../../signals/workflows-page/workflow-automation-notification.ts";
@@ -963,6 +964,7 @@ export function WorkflowAutomationNotificationPage() {
   const { t } = useTranslation();
   const access = useLoadable(workflowAutomationNotificationAccess$);
   const target = useGet(automationNotificationTarget$);
+  const revealLoading = useSet(revealAutomationNotificationLoadingRef$);
   const retry = useSet(reloadWorkflows$);
   const signal = useGet(pageSignal$);
   const [switching, switchWorkspace] = useLoadableSet(
@@ -976,6 +978,32 @@ export function WorkflowAutomationNotificationPage() {
     // normal workflow API authorization still owns access without that query.
     return <WorkflowDetailPage />;
   }
+  if (access.state === "loading") {
+    return (
+      <DetailPageShell>
+        <main className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <div hidden ref={revealLoading}>
+            <p
+              role="status"
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <Loader2
+                size={16}
+                aria-hidden="true"
+                className="shrink-0 motion-safe:animate-spin"
+              />
+              <span>
+                {t(($) => {
+                  return $.userNotifications.automationDisabled
+                    .loadingAutomation;
+                })}
+              </span>
+            </p>
+          </div>
+        </main>
+      </DetailPageShell>
+    );
+  }
   return (
     <DetailPageShell>
       <DetailPageHeader>
@@ -987,13 +1015,7 @@ export function WorkflowAutomationNotificationPage() {
       </DetailPageHeader>
       <DetailPageMain>
         <div className="mx-auto flex max-w-[900px] flex-col items-start gap-4 text-sm">
-          {access.state === "loading" ? (
-            <p role="status" className="text-muted-foreground">
-              {t(($) => {
-                return $.userNotifications.automationDisabled.loadingAutomation;
-              })}
-            </p>
-          ) : access.state === "hasError" ? (
+          {access.state === "hasError" ? (
             <>
               <p role="status" className="text-muted-foreground">
                 {t(($) => {
