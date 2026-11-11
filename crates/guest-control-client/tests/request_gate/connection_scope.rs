@@ -1,11 +1,55 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use guest_control_client::GuestControlClient;
 use guest_control_client::test_support::request_gate::{RequestKind, gate_connection};
 use guest_control_client::test_support::{self, ConnectionScope};
 use tokio::net::UnixStream;
 
 use super::support::*;
+
+#[tokio::test]
+async fn listener_readiness_is_sandbox_scoped_and_retained_until_observed() -> TestResult<()> {
+    let dir = tempfile::tempdir()?;
+    for wait_before_bind in [false, true] {
+        let base = dir.path().join(wait_before_bind.to_string());
+        let base = base.to_str().unwrap();
+        let path = format!("{base}_{}", guest_control_proto::VSOCK_PORT);
+        let scope = ConnectionScope::new("original".into(), Ok)?;
+
+        // Binding another sandbox in this task must not release our waiter.
+        let mut other = Box::pin(
+            scope.scope(GuestControlClient::wait_for_connection_for_sandbox(
+                base, DEADLINE, "other",
+            )),
+        );
+        pending_once(other.as_mut()).await;
+        pending_once(Box::pin(scope.wait_for_listener()).as_mut()).await;
+        drop(other);
+        assert!(!std::path::Path::new(&path).exists());
+
+        let mut ready = Box::pin(scope.wait_for_listener());
+        if wait_before_bind {
+            pending_once(ready.as_mut()).await;
+        }
+        let mut connection = Box::pin(scope.scope(
+            GuestControlClient::wait_for_connection_for_sandbox(base, DEADLINE, "original"),
+        ));
+        pending_once(connection.as_mut()).await;
+        // In the late-waiter case, the matching bind has already notified.
+        bounded(ready).await?;
+        let mut peer = Peer {
+            stream: bounded(UnixStream::connect(&path)).await??,
+        };
+        let (client, handshake) = tokio::join!(bounded(connection), peer.handshake());
+        handshake?;
+        let client = client??;
+        assert!(!std::path::Path::new(&path).exists());
+        drop(client);
+        drop(peer);
+    }
+    Ok(())
+}
 
 #[tokio::test]
 async fn explicit_listener_scope_preserves_handshake_and_cancelled_fixed_request() -> TestResult<()>

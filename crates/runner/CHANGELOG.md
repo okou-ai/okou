@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.244.70](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.69...runner-rs-v0.244.70) (2026-11-11)
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.69](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.68...runner-rs-v0.244.69) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** unify usage flush timer retirement ([#46559](https://github.com/okou-ai/okou/issues/46559)) ([47ab56e](https://github.com/okou-ai/okou/commit/47ab56e683d43281cefe60067198836110d32325))
+
+## [0.244.68](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.67...runner-rs-v0.244.68) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** centralize selected scalar publication ([#46540](https://github.com/okou-ai/okou/issues/46540)) ([edaa90b](https://github.com/okou-ai/okou/commit/edaa90b51353f0727662ea5112b3179182f1a883))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.67](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.66...runner-rs-v0.244.67) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.66](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.65...runner-rs-v0.244.66) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.65](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.64...runner-rs-v0.244.65) (2026-11-11)
 
 

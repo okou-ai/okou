@@ -134,6 +134,7 @@ fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
 fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContext) -> TestResult {
     assert_eq!(actual.storage_manifest, expected.storage_manifest);
     assert_eq!(actual.instruction_file, expected.instruction_file);
+    assert_eq!(actual.environment, expected.environment);
     macro_rules! same_fields {
         ($($field:ident),+ $(,)?) => {
             $(assert_eq!(
@@ -150,7 +151,6 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
         append_system_prompt,
         vars,
         sandbox_token,
-        environment,
         platform_environment,
         native_continuation,
         secret_values,

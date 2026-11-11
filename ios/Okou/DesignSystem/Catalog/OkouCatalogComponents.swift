@@ -126,16 +126,16 @@
           Text("Footer notes explain the card above in supporting text.").okouSectionNote()
         }
         OkouCatalogSection("Chat rows") {
-          // As the sidebar draws them: the folding Pinned heading, a hairline, status emoji, the
-          // quiet glyph and the trailing states in their order (unread, draft). A working chat's
-          // title shimmers, so it keeps its trailing state.
+          // As the sidebar draws them: status emoji, the quiet glyph and the trailing states in
+          // their order (unread, draft, pinned). A working chat's title shimmers, so it keeps its
+          // trailing state.
           VStack(alignment: .leading, spacing: 0) {
-            OkouListHeading("Pinned", isExpanded: true)
-              .frame(minHeight: OkouControl.minimumTarget)
+            OkouChatRowLabel("Launch checklist", trailing: .pinned) {
+              OkouChatStatusMark(emoji: nil)
+            }
             OkouChatRowLabel("!36076 Share in two steps", isWorking: true, trailing: .draft) {
               OkouChatStatusMark(emoji: "✅")
             }
-            OkouListDivider().padding(.vertical, OkouSpace.sm)
             OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
               OkouChatStatusMark(emoji: "✅")
             }

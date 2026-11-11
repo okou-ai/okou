@@ -18,25 +18,43 @@ final class ChatSidebarStoreTests: XCTestCase {
 
     let recent = try snapshot(workspace)
     XCTAssertEqual(recent.filter, .recent)
-    XCTAssertEqual(recent.pinned.rows.map(\.id), [SidebarProjectionFixture.id(1)])
-    XCTAssertEqual(recent.pinned.rows.first?.title, "Active pinned")
-    XCTAssertEqual(recent.pinned.rows.first?.emoji, "✅")
-    XCTAssertTrue(recent.pinned.isWorking)
-    XCTAssertTrue(recent.pinned.showsStatusColumn)
-    XCTAssertFalse(recent.pinned.hasUnread)
-    XCTAssertEqual(recent.chats.rows.map(\.id), [5, 3].map(SidebarProjectionFixture.id))
+    XCTAssertTrue(recent.isInbox)
+    // Pins lead the chats outside Projects; the others follow by activity.
+    XCTAssertEqual(recent.chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
+    let pinned = try XCTUnwrap(recent.chats.rows.first)
+    XCTAssertTrue(pinned.isPinned)
+    XCTAssertEqual(pinned.title, "Active pinned")
+    XCTAssertEqual(pinned.emoji, "✅")
+    XCTAssertTrue(pinned.isWorking)
+    XCTAssertTrue(recent.chats.showsStatusColumn)
+    XCTAssertFalse(recent.chats.rows.dropFirst().contains(where: \.isPinned))
+    XCTAssertEqual(
+      recent.pinNeighbors(of: SidebarProjectionFixture.id(1)), .init(above: nil, below: nil))
+    XCTAssertNil(recent.pinNeighbors(of: SidebarProjectionFixture.id(5)))
+    // Projects keep their creation order, whatever order the API lists them in.
     XCTAssertEqual(recent.projects.map(\.project.name), ["Shared", "Empty"])
-    XCTAssertEqual(recent.projects.first?.section.rows.map(\.id), [SidebarProjectionFixture.id(2)])
+    // A pinned chat leads its Project ahead of more recent activity, and reorders among the
+    // Project's own pins.
+    XCTAssertEqual(
+      recent.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
     XCTAssertTrue(recent.projects.first?.section.hasUnread == true)
+    XCTAssertEqual(
+      recent.pinNeighbors(of: SidebarProjectionFixture.id(2)),
+      .init(above: nil, below: nil, projectID: SidebarProjectionFixture.project))
+    // The inbox leaves archived chats out; only the Project holding some offers them.
+    XCTAssertEqual(recent.projects.map(\.hasHiddenArchivedChats), [true, false])
+    XCTAssertFalse(recent.hasHiddenArchivedChats)
 
     workspace.sidebar.select(.unread)
     let unread = try snapshot(workspace)
     XCTAssertEqual(unread.filter, .unread)
-    XCTAssertTrue(unread.pinned.isEmpty)
+    XCTAssertFalse(unread.isInbox)
+    XCTAssertNil(unread.pinNeighbors(of: SidebarProjectionFixture.id(2)))
+    XCTAssertEqual(unread.projects.map(\.hasHiddenArchivedChats), [false])
     XCTAssertEqual(unread.chats.rows.map(\.id), [SidebarProjectionFixture.id(3)])
     XCTAssertEqual(unread.projects.count, 1)
     XCTAssertEqual(
-      unread.projects.first?.section.rows.map(\.id), [4, 2].map(SidebarProjectionFixture.id))
+      unread.projects.first?.section.rows.map(\.id), [2, 4].map(SidebarProjectionFixture.id))
 
     workspace.sidebar.select(.archived)
     let archived = try snapshot(workspace)
@@ -57,11 +75,11 @@ final class ChatSidebarStoreTests: XCTestCase {
     let otherAgent = try snapshot(workspace)
     XCTAssertEqual(otherAgent.chats.rows.map(\.id), [SidebarProjectionFixture.id(6)])
     XCTAssertEqual(
-      otherAgent.projects.first?.section.rows.map(\.id), [SidebarProjectionFixture.id(2)])
+      otherAgent.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this unrelated input"
     XCTAssertEqual(
-      try snapshot(workspace).chats.rows.map(\.id), [5, 3].map(SidebarProjectionFixture.id))
+      try snapshot(workspace).chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
     XCTAssertEqual(workspace.newChatDraft, "Keep this unrelated input")
   }
 
@@ -115,7 +133,8 @@ final class ChatSidebarStoreTests: XCTestCase {
     old.sidebar.select(.muted)
     XCTAssertEqual(try snapshot(replacement).filter, .recent)
     XCTAssertEqual(
-      try snapshot(replacement).pinned.rows.map(\.id), [SidebarProjectionFixture.id(1)])
+      try snapshot(replacement).chats.rows.filter(\.isPinned).map(\.id),
+      [SidebarProjectionFixture.id(1)])
   }
 
   private func snapshot(_ workspace: WorkspaceStore) throws -> ChatSidebarPresentation {
@@ -154,10 +173,11 @@ private final class SidebarProjectionFixture: Sendable {
         if server.failProjects {
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
         }
+        // The newer Project comes first here; the sidebar still lists the older one first.
         return ChatHTTPResponse(
           body: """
-            {"projects":[\(Self.projectRecord(Self.project, name: server.name)),
-            \(Self.projectRecord(Self.id(201), name: "Empty"))]}
+            {"projects":[\(Self.projectRecord(Self.id(201), name: "Empty", createdAt: Self.timestamp)),
+            \(Self.projectRecord(Self.project, name: server.name))]}
             """)
       case "/api/projects/\(Self.project)":
         let name = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))[
@@ -165,16 +185,18 @@ private final class SidebarProjectionFixture: Sendable {
         state.value.withLock { $0.name = name }
         return ChatHTTPResponse(body: Self.projectRecord(Self.project, name: name))
       case "/api/chat-threads/snapshot":
-        let rows = (1...7).map { index in
+        let rows = (1...8).map { index in
           let agent = [2, 6].contains(index) ? Self.otherAgent : Self.agent
-          let project = [2, 4, 7].contains(index) ? Self.project : index == 3 ? Self.id(999) : nil
+          let project =
+            [2, 4, 7, 8].contains(index) ? Self.project : index == 3 ? Self.id(999) : nil
           let title = index == 1 ? "✅ Active pinned" : "Chat \(index)"
+          let pinOrder = [1: "\"a0\"", 2: "\"a1\""][index]
           return """
             {"id":"\(Self.id(index))","agentId":"\(agent)","title":"\(title)",
             "createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)",
             "sortAt":"2026-11-11T00:0\(index):00Z","archived":\([4, 7].contains(index)),
             "muted":\([5, 7].contains(index)),"projectId":\(project.map { "\"\($0)\"" } ?? "null"),
-            "pinnedAt":\(index == 1 ? "\"\(Self.timestamp)\"" : "null"),"pinOrder":\(index == 1 ? "\"a0\"" : "null")}
+            "pinnedAt":\(pinOrder == nil ? "null" : "\"\(Self.timestamp)\""),"pinOrder":\(pinOrder ?? "null")}
             """
         }
         return ChatHTTPResponse(
@@ -204,7 +226,9 @@ private final class SidebarProjectionFixture: Sendable {
     "63000000-0000-4000-8000-\(String(format: "%012d", value))"
   }
 
-  private static func projectRecord(_ id: String, name: String) -> String {
-    "{\"id\":\"\(id)\",\"name\":\"\(name)\",\"createdAt\":\"\(timestamp)\",\"updatedAt\":\"\(timestamp)\"}"
+  private static func projectRecord(
+    _ id: String, name: String, createdAt: String = "2026-11-10T00:00:00Z"
+  ) -> String {
+    "{\"id\":\"\(id)\",\"name\":\"\(name)\",\"createdAt\":\"\(createdAt)\",\"updatedAt\":\"\(timestamp)\"}"
   }
 }

@@ -110,9 +110,22 @@ export async function readClaimedPiMemory(
         message !== null &&
         "type" in message &&
         message.type === "memory-provider-request" &&
-        "body" in message
+        "body" in message &&
+        "requestId" in message &&
+        typeof message.requestId === "number"
       ) {
         requests.push(message.body);
+        child.send(
+          {
+            type: "memory-provider-request-ack",
+            requestId: message.requestId,
+          },
+          (error) => {
+            if (error) {
+              stdout.destroy(error);
+            }
+          },
+        );
       }
     });
     child.on("error", (error) => {

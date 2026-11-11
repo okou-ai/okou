@@ -163,7 +163,9 @@ export const enqueueEmailFile$ = command(
         inReplyTo: source.messageId,
         references: [...source.references, source.messageId],
       })
-      .onConflictDoNothing({ target: emailChannelMessages.id })
+      // All three unique keys above identify this same deterministic receipt.
+      // A concurrent insert can encounter any of them before the primary key.
+      .onConflictDoNothing()
       .returning({ id: emailChannelMessages.id });
     const fields = [
       { column: emailOutbox.id, value: values.id },

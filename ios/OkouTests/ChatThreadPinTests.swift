@@ -250,6 +250,162 @@ final class ChatThreadPinTests: XCTestCase {
     store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt != nil
   }
 
+  func testMovingAPinWritesItsNewRankAndTheSidebarKeepsTheConfirmedOrder() async throws {
+    let fixture = PinOrderFixture()
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, readRetrySleep: { _ in })
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.list.refresh()
+    await store.projects.activate()
+    let first = PinOrderFixture.id(1)
+    let second = PinOrderFixture.id(2)
+    let third = PinOrderFixture.id(3)
+    XCTAssertEqual(try pinnedRows(store), [first, second, third])
+    let initial = try store.sidebar.stateStore.get(store.sidebar.presentation)
+    XCTAssertEqual(initial.pinNeighbors(of: second), .init(above: first, below: third))
+
+    await store.list.movePinned(third, beside: first, placement: .before)
+    XCTAssertEqual(fixture.writes.map(\.threadID), [third])
+    XCTAssertEqual(fixture.writes.last?.pinOrder, "Zz")
+    XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(fixture.writes.last?.eventID)))
+    XCTAssertEqual(try pinnedRows(store), [third, first, second])
+    XCTAssertNil(store.list.error)
+
+    // Down from the top lands between the next two pins; refresh keeps the confirmed rank.
+    await store.list.movePinned(third, beside: first, placement: .after)
+    XCTAssertEqual(fixture.writes.last?.pinOrder, "a0V")
+    await store.list.refresh(waitForCurrent: true)
+    XCTAssertEqual(try pinnedRows(store), [first, third, second])
+    XCTAssertEqual(fixture.writes.count, 2)
+  }
+
+  func testAProjectPinRanksAgainstTheProjectsPinsAcrossAgents() async throws {
+    let fixture = PinOrderFixture()
+    let store = WorkspaceStore(
+      client: fixture.http.client, webURL: fixture.http.baseURL, readRetrySleep: { _ in })
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.list.refresh()
+    await store.projects.activate()
+    let own = PinOrderFixture.id(4)
+    let otherAgents = PinOrderFixture.id(5)
+    XCTAssertEqual(try projectRows(store), [own, otherAgents])
+    let initial = try store.sidebar.stateStore.get(store.sidebar.presentation)
+    let neighbors = try XCTUnwrap(initial.pinNeighbors(of: otherAgents))
+    XCTAssertEqual(neighbors, .init(above: own, below: nil, projectID: PinOrderFixture.project))
+
+    await store.list.movePinned(
+      otherAgents, beside: own, placement: .before, projectID: neighbors.projectID)
+    XCTAssertEqual(fixture.writes.map(\.threadID), [otherAgents])
+    XCTAssertEqual(fixture.writes.last?.pinOrder, "a4")
+    await store.list.refresh(waitForCurrent: true)
+    XCTAssertEqual(try projectRows(store), [otherAgents, own])
+    // The pins outside the project keep their order.
+    XCTAssertEqual(try pinnedRows(store), (1...3).map(PinOrderFixture.id))
+    XCTAssertNil(store.list.error)
+  }
+
+  private func pinnedRows(_ store: WorkspaceStore) throws -> [String] {
+    try store.sidebar.stateStore.get(store.sidebar.presentation).chats.rows
+      .filter(\.isPinned).map(\.id)
+  }
+
+  private func projectRows(_ store: WorkspaceStore) throws -> [String] {
+    try store.sidebar.stateStore.get(store.sidebar.presentation).projects.first?.section.rows
+      .map(\.id) ?? []
+  }
+}
+
+/// Three pins of the default Agent outside projects, and a project pinning one chat of that
+/// Agent and one of another; each rank write is confirmed in the event stream.
+private final class PinOrderFixture: Sendable {
+  struct Write: Decodable, Sendable {
+    var threadID = ""
+    let pinOrder: String
+    let eventId: String
+    var eventID: String { eventId }
+
+    enum CodingKeys: CodingKey { case pinOrder, eventId }
+  }
+  struct Server: Sendable {
+    var writes: [Write] = []
+    var events: [String] = []
+  }
+  final class ServerBox: Sendable { let value = Mutex(Server()) }
+  static let agent = "69000000-0000-4000-8000-000000000100"
+  static let otherAgent = "69000000-0000-4000-8000-000000000101"
+  static let project = "69000000-0000-4000-8000-000000000200"
+  private let server: ServerBox
+  var writes: [Write] { server.value.withLock { $0.writes } }
+  let http: ChatHTTPFixture
+
+  static func id(_ value: Int) -> String {
+    "69000000-0000-4000-8000-\(String(format: "%012d", value))"
+  }
+
+  static func agentID(of threadID: String) -> String {
+    threadID == id(5) ? otherAgent : agent
+  }
+
+  init() {
+    let state = ServerBox()
+    server = state
+    http = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      switch path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body: "[{\"agentId\":\"\(Self.agent)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]"
+        )
+      case "/api/projects":
+        return ChatHTTPResponse(
+          body:
+            "{\"projects\":[{\"id\":\"\(Self.project)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-10T00:00:00Z\",\"updatedAt\":\"2026-11-10T00:00:00Z\"}]}"
+        )
+      case "/api/chat-threads/snapshot":
+        // Chats 4 and 5 are the project's; their ranks sit after the Agent's own pins.
+        let rows = (1...5).map { index in
+          let project = index > 3 ? "\"\(Self.project)\"" : "null"
+          return """
+            {"id":"\(Self.id(index))","agentId":"\(Self.agentID(of: Self.id(index)))",
+            "title":"Pin \(index)","projectId":\(project),
+            "createdAt":"2026-11-11T00:00:00Z","updatedAt":"2026-11-11T00:00:00Z",
+            "sortAt":"2026-11-11T00:0\(index):00Z","pinnedAt":"2026-11-11T00:00:00Z",
+            "pinOrder":"a\(index > 3 ? index + 1 : index - 1)"}
+            """
+        }
+        return ChatHTTPResponse(
+          body:
+            "{\"chatThreads\":[\(rows.joined(separator: ","))],\"latestEventId\":null,\"latestSeqId\":null}"
+        )
+      case "/api/chat-threads/events":
+        let since =
+          Int(
+            URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+              .queryItems?.first { $0.name == "sinceSeqId" }?.value ?? "0") ?? 0
+        let events = state.value.withLock { Array($0.events.dropFirst(since)) }
+        return ChatHTTPResponse(
+          body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      default:
+        guard request.httpMethod == "POST", path.hasPrefix("/api/chat-threads/"),
+          path.hasSuffix("/pin-order")
+        else { throw URLError(.unsupportedURL) }
+        var write = try JSONDecoder().decode(Write.self, from: chatRequestBody(request))
+        write.threadID = String(path.split(separator: "/")[2])
+        state.value.withLock { state in
+          state.writes.append(write)
+          state.events.append(
+            """
+            {"id":"\(write.eventID)","seqId":\(state.events.count + 1),"kind":"sort_touched","chatThreadId":"\(write.threadID)","agentId":"\(Self.agentID(of: write.threadID))","pinOrder":"\(write.pinOrder)","createdAt":"2026-11-11T01:00:00Z"}
+            """)
+        }
+        return ChatHTTPResponse(status: 204, body: "")
+      }
+    }
+  }
 }
 
 private final class PinGate: Sendable {

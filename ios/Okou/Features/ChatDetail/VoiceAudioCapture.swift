@@ -78,10 +78,10 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
   }
 
   func stop() {
-    guard let engine else { return }
-    self.engine = nil
     for observer in observers { NotificationCenter.default.removeObserver(observer) }
     observers.removeAll()
+    guard let engine else { return }
+    self.engine = nil
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     do {

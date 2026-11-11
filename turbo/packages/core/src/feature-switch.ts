@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SshChatApproval]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "SSH chat approval",
+    description: "Review SSH host access in chat and continue after approval.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",
@@ -194,6 +201,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
   },
+  [FeatureSwitchKey.HelpMenu]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Help menu",
+    description:
+      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -225,13 +240,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.BrowserNativeInput]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BrowserSharedOwner]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Shared Browser",
@@ -248,11 +256,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.48](https://github.com/okou-ai/okou/compare/runner-host-v0.10.47...runner-host-v0.10.48) (2026-11-11)
+
+## [0.10.47](https://github.com/okou-ai/okou/compare/runner-host-v0.10.46...runner-host-v0.10.47) (2026-11-11)
+
+
+### Refactoring
+
+* **test-support:** own restrictive directory permissions ([#46500](https://github.com/okou-ai/okou/issues/46500)) ([4a5cbda](https://github.com/okou-ai/okou/commit/4a5cbdab942908086d3190f678556b93d55f8eb1))
+
 ## [0.10.46](https://github.com/okou-ai/okou/compare/runner-host-v0.10.45...runner-host-v0.10.46) (2026-11-11)
 
 

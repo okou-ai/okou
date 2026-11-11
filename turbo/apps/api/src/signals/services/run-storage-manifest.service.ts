@@ -52,7 +52,6 @@ import type {
 } from "./storage-index.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
-  StorageManifestCacheBranch,
   StorageManifestCacheEntryKind,
   SystemStoragePresignedUrlCacheStatus,
   WorkflowSkillStoragePresignedUrlCacheStatus,
@@ -125,7 +124,6 @@ interface StorageManifestEntryPhaseTimings {
 
 interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
-  readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }
@@ -1014,7 +1012,6 @@ async function resolveStorageManifestEntryPlans(args: {
 
 export async function resolveStorageEntries(
   input: BuildStorageManifestEntriesArgs,
-  branch: StorageManifestCacheBranch,
 ): Promise<ResolvedStorageEntries> {
   const phaseTimings = createStorageManifestEntryPhaseTimings(input);
   const resolved = await resolveStorageManifestEntryPlans({
@@ -1025,7 +1022,7 @@ export async function resolveStorageEntries(
     phaseTimings.additional.flushResolve();
     phaseTimings.artifact.flushResolve();
   });
-  return { input, branch, phaseTimings, resolved };
+  return { input, phaseTimings, resolved };
 }
 
 /** Assemble runner mounts from immutable version plans and already signed URLs. */
@@ -1060,151 +1057,6 @@ export function storageEntriesMetadata(
     resolvedComposeEntryCount: plan.resolved.composePlans.length,
     resolvedAdditionalEntryCount: plan.resolved.additionalPlans.length,
   };
-}
-
-export function assertUniquePersistedMountPaths(
-  mounts: readonly PersistedStorageMount[],
-): void {
-  const paths = new Set<string>();
-  for (const mount of mounts) {
-    if (paths.has(mount.mountPath)) {
-      throw new Error(`Duplicate Storage mount path "${mount.mountPath}"`);
-    }
-    paths.add(mount.mountPath);
-  }
-}
-
-export function persistedStorageMountRequests(
-  mounts: readonly PersistedStorageMount[],
-): readonly StorageRequest[] {
-  return mounts.map((mount) => {
-    return {
-      lookup: {
-        orgId: mount.orgId,
-        userId: mount.userId,
-        name: mount.name,
-      },
-      version: mount.version,
-    };
-  });
-}
-
-function resolvePersistedStorageMounts(args: {
-  readonly index: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-}): ResolvedStorageManifestEntryPlans {
-  const additionalPlans: ResolvedManifestStoragePlan[] = [];
-  const artifactInputs: ResolvedManifestArtifactInput[] = [];
-
-  for (const mount of args.mounts) {
-    if (mount.writeback && mount.orgId === SYSTEM_ORG_ID) {
-      throw new Error("System Storage cannot be mounted with writeback");
-    }
-    const lookup: StorageLookup = {
-      orgId: mount.orgId,
-      userId: mount.userId,
-      name: mount.name,
-    };
-    const storage = args.index.get(
-      storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-    );
-    if (!storage) {
-      if (mount.optional) {
-        continue;
-      }
-      throw new Error(`Storage "${mount.name}" not found in database`);
-    }
-    if (storage.storageId !== mount.storageId) {
-      throw new Error(`Storage "${mount.name}" identity does not match`);
-    }
-
-    const resolvedResult = safeSync(() => {
-      return resolveStorageVersion(args.index, lookup, mount.version);
-    });
-    if ("error" in resolvedResult) {
-      if (mount.optional && isMissingStorageError(resolvedResult.error)) {
-        continue;
-      }
-      throw resolvedResult.error;
-    }
-    const resolved = resolvedResult.ok;
-
-    if (mount.writeback) {
-      artifactInputs.push({
-        artifact: {
-          name: mount.name,
-          version: mount.version,
-          mountPath: mount.mountPath,
-          ...(mount.missingRootPolicy === undefined
-            ? {}
-            : { missingRootPolicy: mount.missingRootPolicy }),
-        },
-        resolved,
-        source: "artifact",
-      });
-      continue;
-    }
-
-    additionalPlans.push({
-      name: mount.name,
-      vasStorageName: mount.name,
-      mountPath: mount.mountPath,
-      ...(mount.optional === undefined ? {} : { optional: mount.optional }),
-      resolved,
-      entryKind: "additional",
-      source: "unknown",
-    });
-  }
-
-  return { composePlans: [], additionalPlans, artifactInputs };
-}
-
-export function resolveValidatedPersistedStorageMounts(args: {
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly branch: "captured";
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): ResolvedStorageEntries {
-  const phaseTimings = createStorageManifestEntryPhaseTimings(args);
-  const result = safeSync(() => {
-    const input: BuildStorageManifestEntriesArgs = {
-      bucket: args.bucket,
-      storageIndex: args.storageIndex,
-      agentOrgId: "",
-      runtimeOrgId: "",
-      userId: "",
-      composeVolumes: [],
-      additionalVolumes: undefined,
-      additionalVolumeSources: undefined,
-      artifacts: [],
-      timing: args.timing,
-      stats: args.stats,
-    };
-    const resolved = resolvePersistedStorageMounts({
-      index: args.storageIndex,
-      mounts: args.mounts,
-    });
-    args.stats?.recordResolvedEntry(
-      "additional",
-      "unknown",
-      resolved.additionalPlans.length,
-    );
-    args.stats?.recordResolvedEntry(
-      "artifact",
-      "artifact",
-      resolved.artifactInputs.length,
-    );
-    return { input, branch: args.branch, phaseTimings, resolved };
-  });
-  phaseTimings.compose.flushResolve();
-  phaseTimings.additional.flushResolve();
-  phaseTimings.artifact.flushResolve();
-  if ("error" in result) {
-    throw result.error;
-  }
-  return result.ok;
 }
 
 export function prepareRequestStorageResolution(
@@ -1252,33 +1104,15 @@ export function prepareRequestStorageResolution(
   };
 }
 
-interface CapturedAgentRunStorageArgs {
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
+export interface AgentRunStorageInput {
+  readonly args: PrepareAgentRunStorageManifestArgs;
 }
 
-export type AgentRunStorageInput =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-    }
-  | { readonly kind: "captured"; readonly args: CapturedAgentRunStorageArgs };
-
-export type AgentRunStorageSelection =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-      readonly bucket: string;
-      readonly request: PreparedRequestStorageResolution;
-      readonly requests: readonly StorageRequest[];
-    }
-  | {
-      readonly kind: "captured";
-      readonly args: CapturedAgentRunStorageArgs;
-      readonly bucket: string;
-      readonly requests: readonly StorageRequest[];
-    };
+export interface AgentRunStorageSelection {
+  readonly args: PrepareAgentRunStorageManifestArgs;
+  readonly request: PreparedRequestStorageResolution;
+  readonly requests: readonly StorageRequest[];
+}
 
 function frameworkSkillsMountPath(framework: SupportedFramework): string {
   return framework === "codex"

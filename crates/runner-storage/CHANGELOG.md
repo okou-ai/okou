@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.11...runner-storage-v0.10.12) (2026-11-11)
+
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.10...runner-storage-v0.10.11) (2026-11-11)
+
+
+### Performance Improvements
+
+* **runner:** stage archives during active guest application ([#46517](https://github.com/okou-ai/okou/issues/46517)) ([f236d85](https://github.com/okou-ai/okou/commit/f236d8567fbd20bcba7be1c68aa2dd3bfd06009f))
+
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.9...runner-storage-v0.10.10) (2026-11-11)
+
+
+### Bug Fixes
+
+* **storage:** scope decoded rejections to admission policy ([#46497](https://github.com/okou-ai/okou/issues/46497)) ([cff7060](https://github.com/okou-ai/okou/commit/cff7060231c11599897a23692a98b6fc7461d203))
+
 ## [0.10.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.8...runner-storage-v0.10.9) (2026-11-11)
 
 ## [0.10.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.7...runner-storage-v0.10.8) (2026-11-10)

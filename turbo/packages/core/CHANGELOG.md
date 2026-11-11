@@ -1,5 +1,56 @@
 # Changelog
 
+## [8.828.1](https://github.com/okou-ai/okou/compare/core-v8.828.0...core-v8.828.1) (2026-11-11)
+
+
+### Refactoring
+
+* remove mercuryConnector feature switch ([#46576](https://github.com/okou-ai/okou/issues/46576)) ([2f848b1](https://github.com/okou-ai/okou/commit/2f848b148ae68294a462925699420763682bd086))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.1
+
+## [8.828.0](https://github.com/okou-ai/okou/compare/core-v8.827.0...core-v8.828.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+
+## [8.827.0](https://github.com/okou-ai/okou/compare/core-v8.826.2...core-v8.827.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+
+## [8.826.2](https://github.com/okou-ai/okou/compare/core-v8.826.1...core-v8.826.2) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.2
+
 ## [8.826.1](https://github.com/okou-ai/okou/compare/core-v8.826.0...core-v8.826.1) (2026-11-10)
 
 

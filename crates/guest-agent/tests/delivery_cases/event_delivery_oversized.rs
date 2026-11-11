@@ -4,7 +4,7 @@ use crate::common;
 
 use base64::Engine as _;
 use serde_json::{Value, json};
-use std::io::{BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -192,14 +192,44 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
         completions[0]["completion"]["cliAgentSessionId"],
         SESSION_ID
     );
-    let source = std::fs::read_to_string(&source_path)?;
-    assert_eq!(std::fs::read_to_string(input_path)?, source);
     let native = home
         .join(".claude/projects/-home-user-workspace")
         .join(format!("{SESSION_ID}.jsonl"));
-    assert_eq!(std::fs::read_to_string(native)?, source);
+    // Compare every original byte and both EOFs with bounded reusable buffers.
+    const CHUNK_BYTES: usize = 64 * 1024;
+    let mut actual_chunk = Vec::with_capacity(CHUNK_BYTES);
+    let mut expected_chunk = Vec::with_capacity(CHUNK_BYTES);
+    let mut expected = std::fs::File::open(&source_path)?;
+    let mut files = [
+        (&input_path, std::fs::File::open(&input_path)?),
+        (&native, std::fs::File::open(&native)?),
+    ];
+    loop {
+        expected_chunk.clear();
+        Read::by_ref(&mut expected)
+            .take(CHUNK_BYTES as u64)
+            .read_to_end(&mut expected_chunk)?;
+        for (path, actual) in &mut files {
+            actual_chunk.clear();
+            Read::by_ref(actual)
+                .take(CHUNK_BYTES as u64)
+                .read_to_end(&mut actual_chunk)?;
+            assert!(actual_chunk == expected_chunk, "{} changed", path.display());
+        }
+        if expected_chunk.is_empty() {
+            break;
+        }
+    }
     let log = std::fs::read_to_string(paths.agent_log_file())?;
     let logged_lines = log.lines().collect::<Vec<_>>();
-    assert!(source.lines().all(|line| logged_lines.contains(&line)));
+    let mut source = BufReader::new(std::fs::File::open(source_path)?);
+    let mut line = String::new();
+    while source.read_line(&mut line)? != 0 {
+        // Match str::lines, including its CRLF handling, without loading the
+        // complete source alongside the complete log.
+        let expected = line.lines().next().ok_or("missing source line")?;
+        assert!(logged_lines.contains(&expected));
+        line.clear();
+    }
     Ok(())
 }

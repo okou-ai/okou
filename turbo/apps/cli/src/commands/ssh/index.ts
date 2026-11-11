@@ -21,6 +21,7 @@ import { createSessionCommand } from "./sessions";
 import { createFileCommand } from "./files";
 import { FILE_LIMIT_HELP } from "./file-protocol";
 import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
+import { createSshRequestAccessCommand } from "./request-access";
 import { createCheckCommand } from "../../lib/remote-check";
 import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 
@@ -89,7 +90,7 @@ const list = new Command("list")
         }
         if (inventory.data.hosts.length === 0)
           console.log(
-            "No SSH hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
+            "No SSH hosts available to this Run. Inspect configured hosts with okou ssh host list --scope configured --json, then use okou ssh request-access <connection-id> --reason <purpose> to request current-chat access.",
           );
         for (const host of inventory.data.hosts) {
           const availability =
@@ -167,6 +168,7 @@ Safety:
   );
 
 export const sshCommand = new Command("ssh")
+  .addCommand(createSshRequestAccessCommand())
   .addCommand(createDiagnoseCommand("ssh"))
   .addCommand(createCheckCommand("ssh"))
   .description("Access owner-configured SSH hosts from an authorized Run")
@@ -180,6 +182,7 @@ Command guide (read the relevant subcommand's --help before use):
   - Manage owned configuration: okou ssh host list --scope configured --json; okou ssh host --help
   - Manage write-only credentials: okou ssh credential --help
     Management uses connector:read/write, preserves ownership, and never grants this Run SSH access.
+  - Request current-chat access: okou ssh request-access <connection-id> --reason <purpose>; share its exact URL and end this Run for approval and automatic continuation.
   - Run one command: okou ssh exec <connection-id> --command <command> --json
   - Long commands or persistent shells: okou ssh session --help
     Start with okou ssh session start <connection-id> --command <command> --json, or use --shell instead of --command; add --pty when a terminal is needed.

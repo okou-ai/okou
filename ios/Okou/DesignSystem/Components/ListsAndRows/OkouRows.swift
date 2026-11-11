@@ -63,6 +63,12 @@ struct OkouChatTrailingMark: View {
           .frame(width: OkouIconSize.standard)
           .accessibilityElement()
           .accessibilityLabel("Draft")
+      case .pinned:
+        // A pin outlasts the other states, so the row's value announces it, not this mark.
+        OkouIcon("pin", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
+          .frame(width: OkouIconSize.standard)
+          .accessibilityHidden(true)
       }
     }
   }
@@ -78,62 +84,21 @@ extension OkouChatRowLabel where Status == EmptyView {
   }
 }
 
-/// A chat row's trailing state, one at a time in the web's order: unread, then draft. Working is
-/// not one of them: it shimmers the title, so a working chat keeps its draft in view. Pinned
-/// chats are a section of the list (`OkouListHeading`), not a mark on the row.
+/// A chat row's trailing state, one at a time in the web's order: unread, then draft, then the
+/// pin a pinned chat rests with. Working is not one of them: it shimmers the title, so a working
+/// chat keeps its draft in view.
 enum OkouChatTrailing: Equatable {
   case none
   /// The web's 8 px sky-blue dot: a run finished (or failed) since the chat was last read.
   case unread
   /// The web's quiet pencil: text or files typed here and not sent yet.
   case draft
+  /// The web's resting pin: the chat leads its list or Project in its manual order.
+  case pinned
 }
 
-/// A list section's name (Pinned): subheadline in supporting text, the size Manus gives its
-/// sections, read as a header. A section that folds (`isExpanded` set) ends its row with a
-/// chevron that turns from down (open) to right (folded) with the fold. Folded, the heading
-/// shows what its chats are doing: the name shimmers while one works, and `summary` (the
-/// unread dot) sits before the chevron. The list wraps a folding heading in its toggle.
-struct OkouListHeading: View {
-  let title: LocalizedStringKey
-  var isExpanded: Bool?
-  var isWorking = false
-  var summary: OkouChatTrailing = .none
-
-  init(
-    _ title: LocalizedStringKey, isExpanded: Bool? = nil, isWorking: Bool = false,
-    summary: OkouChatTrailing = .none
-  ) {
-    self.title = title
-    self.isExpanded = isExpanded
-    self.isWorking = isWorking
-    self.summary = summary
-  }
-
-  var body: some View {
-    let text = Text(title).font(.okou(.subheadline)).lineLimit(1)
-    HStack(spacing: OkouSpace.sm) {
-      Group {
-        if isWorking {
-          text.okouShimmerText()
-        } else {
-          text.foregroundStyle(OkouColor.mutedForeground)
-        }
-      }
-      .accessibilityAddTraits(.isHeader)
-      if let isExpanded {
-        Spacer(minLength: 0)
-        OkouChatTrailingMark(trailing: summary)
-        OkouIcon("chevron-down", size: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.quietMark)
-          .rotationEffect(.degrees(isExpanded ? 0 : -90))
-          .accessibilityHidden(true)
-      }
-    }
-  }
-}
-
-/// A hairline between list sections (Pinned and the chats below it), in the border colour.
+/// A hairline between list sections (the projects and the chats below them), in the border
+/// colour.
 struct OkouListDivider: View {
   var body: some View {
     Rectangle()

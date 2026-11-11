@@ -13,6 +13,7 @@ import { locale$ } from "./locale.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
 import { sshIdentity$ } from "./ssh.ts";
+import type { ComposerSignals } from "./okou-page/composer-signals.ts";
 import {
   invalidateRemoteAccess$,
   invalidateThreadRemoteAccess$,
@@ -190,5 +191,63 @@ export const setThreadRemoteAccess$ = command(
       set(invalidateThreadRemoteAccess$);
     }
     return result.body;
+  },
+);
+
+/** A failed write is reconciled by reading, never by replaying the mutation. */
+export const changeDialogRemoteAccess$ = command(
+  async (
+    { get, set },
+    signals: ComposerSignals,
+    action:
+      | { type: "reload" }
+      | {
+          type: "choose";
+          protocol: RemoteAccessProtocol;
+          connectionId: string;
+          enabled: boolean | null;
+        },
+    signal: AbortSignal,
+  ): Promise<"draft" | "saved" | "reloaded"> => {
+    signal.throwIfAborted();
+    if (action.type === "choose") {
+      const { protocol, connectionId, enabled } = action;
+      const ui = get(signals.connector.connectorUiState$);
+      const key = `${protocol}:${connectionId}`;
+      if (!ui.remoteAccessEditedHosts.includes(key)) {
+        set(signals.connector.updateConnectorUiState$, {
+          remoteAccessEditedHosts: [...ui.remoteAccessEditedHosts, key],
+        });
+      }
+      if (!signals.threadId) {
+        set(
+          signals.pendingRemoteAccess.setOverride$,
+          protocol,
+          connectionId,
+          enabled,
+        );
+        return "draft";
+      }
+      await set(
+        setThreadRemoteAccess$,
+        { threadId: signals.threadId, protocol, connectionId, enabled },
+        signal,
+      );
+    } else {
+      set(signals.connector.resources.reloadRemotes$);
+      set(invalidateThreadRemoteAccess$);
+      await get(signals.connector.resources.remoteHostDefaults$);
+      signal.throwIfAborted();
+    }
+    signal.throwIfAborted();
+    if (signals.threadId) {
+      const access = await get(signals.remoteAccess$);
+      signal.throwIfAborted();
+      if (!access) {
+        throw new Error("Remote access unavailable");
+      }
+    }
+    signal.throwIfAborted();
+    return action.type === "choose" ? "saved" : "reloaded";
   },
 );

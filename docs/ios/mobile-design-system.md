@@ -83,7 +83,8 @@ and [`sidebar-threads.tsx`](../../turbo/apps/platform/src/views/okou-page/sideba
 | Cards and large composer surfaces           | `card`, `card-foreground`, `border`                          | Same semantic roles; use `OkouSurfaceStyle` for general cards                                               |
 | Main copy / supporting copy                 | `foreground` / `muted-foreground`                            | Same roles; supporting text does not become disabled opacity                                                |
 | Brand CTA and Send                          | `primary` + `primary-foreground`                             | Amber fill with Ink label in both schemes; never white on Amber                                             |
-| Brand links and textual emphasis            | `brand-text`                                                 | Theme-aware readable brand text; not the raw Amber fill                                                     |
+| Brand links and textual emphasis            | `brand-text`                                                 | Not used natively: it reads brown. Text actions and links are ink, card glyphs `muted-foreground`           |
+| System tint (caret, alert actions, menus)   | `foreground`                                                 | `AccentColor` is neutral ink, never brand-text; an alert's filled Save is ink in light, `gray500` in dark   |
 | Markdown/content hyperlinks                 | `link`                                                       | Blue content links; distinguish them from brand navigation/actions                                          |
 | Neutral standalone controls                 | Web `outline` button: `background`, `gray-400`, `foreground` | `OkouButtonStyle(isPrimary: false)`; not `control-surface`, whose warm gray-50 read as pink on white cards  |
 | Toolbar/composer utility icons              | Web `quiet`: `muted-foreground`                              | Neutral glyphs; brand color is reserved for action emphasis                                                 |
@@ -156,7 +157,7 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   text and native menu labels retain full Dynamic Type. Glyph size and touch
   target size are separate choices; do not enlarge glyphs to obtain a 44 pt target.
 - Resting navigation uses neutral `foreground`; brand/selected emphasis has a
-  separate color role. Never tint ordinary navigation icons with `brand-text`.
+  separate color role. Never tint icons, links or text actions with `brand-text`.
 - Native UIKit menus consume the image's intrinsic dimensions. SwiftUI frame
   modifiers and SF Symbol configurations do not resize a custom UIImage there.
   The asset generator therefore emits `width="20" height="20"` while preserving
@@ -332,12 +333,13 @@ Reusable views, grouped by what they do. Each group is a folder in
   The emoji stays in the title so web and iOS agree; archive is a separate flag.
 - **Working** shimmers the chat's title (`OkouShimmerText`) instead of taking the trailing
   slot, so a working chat keeps its draft in view. A folded project's name shimmers only
-  when one of its chats works and none is unread; unread takes priority. A folded Pinned
-  heading shimmers while one of its chats works.
+  when one of its chats works and none is unread; unread takes priority.
 - **Trailing state** shows one state, in the web's order: an unread dot (8 pt `running` sky
   blue, as on the web; amber is kept for a primary commit) once a run finished or failed since
-  the chat was read, with the title in medium weight; a `pencil` for an unsent draft; or
-  nothing. The pencil is 20 pt in `OkouColor.quietMark` (gray-500), as is the status column's
+  the chat was read, with the title in medium weight; a `pencil` for an unsent draft; the
+  resting `pin` of a pinned chat; or nothing. The pin outlasts the other states, so the row's
+  accessibility value says "Pinned" rather than the mark. The pencil and the pin are 20 pt in
+  `OkouColor.quietMark` (gray-500), as is the status column's
   quiet chat glyph, so a row draws one line weight (a glyph's stroke grows with its size);
   every trailing mark is centred in one 20 pt column so they line up down the list. A chat still in memory takes its
   draft from its own composer, so leaving it with text typed marks it at once; other chats use
@@ -430,7 +432,8 @@ single floating line, and colour is a small accent for status only.
 - **Chat feedback floats under the header** in `ChatFeedbackSurface`: a finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
-  medium line, an optional `brand-text` action and a ✕; at accessibility sizes the action
+  medium line, an optional semibold `foreground` action (as `OkouBanner`'s) and a ✕; at
+  accessibility sizes the action
   moves under the text. Routine synchronization is silent — no "Updating chats…" line —
   and a failure shows only after it has lasted 300 ms. Confirm in place first where
   possible (a copy glyph turning into a check).
@@ -461,7 +464,7 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
 
 - **Cards in the transcript** use `ChatCardSurface` (`OkouSurfaceStyle`, chat radius) and
   open with `ChatCardHeader`, as the web's `AssistantErrorCard`: a 16 pt glyph in
-  `brand-text` on the title's first line (no tile behind it), the title in callout medium,
+  `muted-foreground` on the title's first line (no tile behind it), the title in callout medium,
   every detail line in subheadline `muted-foreground`. Callers never restyle the details, so a
   card uses at most three sizes.
 - **Card actions** use `ChatCardButtonStyle`: the web's small outline button (`gray-400`
@@ -474,7 +477,7 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
   frame (`mediaTileWidth`, `cardMediaHeight`) with the whole picture fitted inside on the
   `state-hover` ground, nothing cropped, no caption. A website, slides or a document is
   `OkouResultCard`, the web's `SitePreviewCard`: the transcript card heading
-  (`ChatCardHeader`: brand-text glyph, title, one detail line such as "Slides · PPTX ·
+  (`ChatCardHeader`: muted glyph, title, one detail line such as "Slides · PPTX ·
   2.3 MB" or "Website · lumina.okou.app") over one 16:9 cover for every kind (a site or a page fills it from the top; a deck's first slide sits in it whole, so a 4:3 slide is centred on the neutral ground), at most
   400 pt wide; any other file is the heading alone. Tiles and cards share the chat card
   corner and hairline. The shape comes from the result as the message writes it, never
@@ -581,16 +584,15 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Lists and rows
 
-| Component                                  | Use / states                                                                                                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouRowLabel`                             | Row title with its leading graphic in the shared 28 pt slot                                                                                                |
-| `OkouValueRow`                             | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt `trailingValue` value yields and truncates in the middle  |
-| `okouSectionHeader()`, `okouSectionNote()` | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                   |
-| `OkouChatRowLabel` / `OkouChatStatusMark`  | A sidebar chat: status column (emoji or quiet glyph), one body line (medium when unread, shimmering while working), trailing unread / draft                |
-| `OkouListHeading`                          | A list section's name (Pinned) at Manus's size, 15 pt supporting text; `isExpanded` adds the end chevron that turns with the fold, `isWorking` shimmers it |
-| `OkouListDivider`                          | A hairline in `border` between list sections (Pinned and the chats below)                                                                                  |
-| `OkouActionRow`                            | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                     |
-| `OkouAccountRowLabel`                      | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                   |
+| Component                                  | Use / states                                                                                                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OkouRowLabel`                             | Row title with its leading graphic in the shared 28 pt slot                                                                                               |
+| `OkouValueRow`                             | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt `trailingValue` value yields and truncates in the middle |
+| `okouSectionHeader()`, `okouSectionNote()` | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                  |
+| `OkouChatRowLabel` / `OkouChatStatusMark`  | A sidebar chat: status column (emoji or quiet glyph), one body line (medium when unread, shimmering while working), trailing unread / draft / pin         |
+| `OkouListDivider`                          | A hairline in `border` between list sections (the projects and the chats below)                                                                           |
+| `OkouActionRow`                            | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                    |
+| `OkouAccountRowLabel`                      | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                  |
 
 #### Navigation and search
 
@@ -618,7 +620,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 | Component                                                                     | Use / states                                                                                                                                                                         |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt brand-text glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                                 |
+| `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt muted glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                                      |
 | `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                             |
 | `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                                   |
 | `OkouResultCard` / `OkouResultTile` / `OkouPreviewState`                      | A result in the transcript: card heading over a 16:9 cover (website, slides, document) or a fixed 200 × 180 tile with the whole picture; loading pulse, picture, or the kind's glyph |
@@ -725,20 +727,27 @@ feature; the catalog shows each one.
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
   middle, and new chat is the prominent circle on the right.
-- **Sidebar order**: the chat filter is the header's menu (the web's Inbox — All chats
-  without archiving — / Unread / Archived / Muted, then Mark all read), so the list starts
-  12 pt below the header. Pinned chats lead under a "Pinned" heading instead of a pin on
-  each row, as Manus and other sidebars mark them; a pinned chat inside a project stays first
-  in its project. The heading is Manus's size (`OkouListHeading`: 15 pt subheadline in
-  supporting text, a 44 pt row) with a 20 pt chevron at the row's end; the whole row folds the
-  section, the chevron turns from down to right with it, and the choice is remembered across
-  launches. Folded, its name shimmers while one of its chats works and the unread dot sits
-  before the chevron, as a folded project's row does. A hairline (`OkouListDivider`) then
-  sets the pinned chats off from the projects and chats below, which need no heading. Pinned
-  and projects fold with `OkouMotion.disclosure`, a soft spring with no bounce, so rows and
-  chevron settle together. Pinned's fold lives in `@AppStorage`, whose updates arrive outside
-  a `withAnimation` transaction, so the list animates on the value itself
-  (`.animation(_:value:)`). Everything starts on the `pageInset` edge.
+- **Sidebar order**: the header's one menu holds the chat filter (the web's Inbox — All
+  chats without archiving — / Unread / Archived / Muted), then Mark all read and New project,
+  so the list starts 12 pt below the header. Projects come first, oldest first, as the web
+  lists them; a whole project row folds it with `OkouMotion.disclosure`, a soft spring with
+  no bounce, and its fold is remembered. The folder sits in the status column, so the name
+  starts on the chat titles' edge, and the row ends with a 20 pt `chevron-down` in
+  `quietMark` that turns right as the project folds; a folded project's unread dot sits
+  before it. Inside an unfolded project, its pinned chats lead in their manual order, then
+  the rest by latest activity, indented to the project's name; a project lists every chat it
+  holds. An empty project says so in one quiet line, then offers "Show archived chats" when
+  it holds archived ones. A hairline (`OkouListDivider`) closes the projects, and the chats
+  outside them follow in the same order: pins first, then activity; with none, the inbox
+  says so below the projects ("Your inbox is empty" and "Show archived chats" when it holds
+  archived chats). Beside projects their status column always shows, so every title shares
+  one edge. There are no section headings: a pin on the row marks a pinned chat. In the
+  inbox, a pin moves up or down among the pins listed with it (Move up / Move down in the
+  row's menu): a project's pins rank against each other across Agents, the others against
+  their Agent's. Unread, Archived and Muted end with "Show all chats", which returns to the
+  inbox.
+  With a hardware keyboard, ⌘1–⌘9 open the first nine chats outside projects. Everything
+  starts on the `pageInset` edge.
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
   left swipe anywhere in the sidebar closes it, as does a tap on the chat's strip beside it;
   a swipe is never the only way back. Content that scrolls
@@ -816,8 +825,10 @@ feature; the catalog shows each one.
   `primary` / `primary-foreground`; provider rows use `card` / `control-border`.
   The full SDK flow remains available for additional account verification and
   recovery methods. Its public theme still shares link and filled-control primary
-  colors; that SDK-owned surface uses the readable provider pair through
-  `OkouAuthTheme`. Do not modify dependency internals to style those exceptions.
+  colors; that SDK-owned surface uses ink for both through `OkouAuthTheme`, with the
+  inverse on fills (white on ink, ink on near-white in dark). Native text actions on the
+  sign-in steps (Change email, Resend code) are ink in medium weight. Do not modify
+  dependency internals to style those exceptions.
 - Web has no shared success/warning semantic pair for every native status case.
   `OkouStatusColor` centralizes native green/orange until those shared roles
   exist. Status text/icons must also identify the state; color alone is insufficient.

@@ -3235,6 +3235,13 @@
       "when": 1794304820376,
       "tag": "1540_email_multi_account_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 1541,
+      "version": "7",
+      "when": 1794371115468,
+      "tag": "1541_ssh_chat_approval",
+      "breakpoints": true
     }
   ]
 }

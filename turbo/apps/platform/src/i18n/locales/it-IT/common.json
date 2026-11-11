@@ -1899,7 +1899,9 @@
         "title": "Crea"
       },
       "explore": "Esplora",
+      "exploreWhatsNew": "Scopri le novità",
       "research": {
+        "description": "Traffico, annunci, prodotti, argomenti",
         "items": {
           "ads": "Esplorare creatività pubblicitarie",
           "products": "Studiare prodotti",
@@ -1912,6 +1914,7 @@
         "title": "Ricerca"
       },
       "search": {
+        "description": "Clienti, creator, decisori",
         "items": {
           "affiliates": "Programmi di affiliazione",
           "creators": "Partnership con creator",
@@ -1942,6 +1945,7 @@
           "title": "Attività pianificate"
         },
         "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
+        "summary": "Si avvia a orario o con un trigger",
         "triggers": {
           "description": "Avvia quando si verifica un evento.",
           "eventPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quale fonte, quali filtri e dove salvare i risultati. Prepara una bozza del workflow e conferma la configurazione prima di attivarlo.",
@@ -2393,18 +2397,36 @@
       "untitled": "Senza titolo"
     },
     "remoteAccess": {
+      "all": "Tutte",
+      "allowed": "Consentite",
+      "autoSave": "Le modifiche vengono salvate per questa chat",
+      "connections": "Connessioni",
       "default": "Predefinito",
       "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
-      "disabled": "Disabilitato",
-      "enabled": "Abilitato",
+      "draft": "Si applica all’invio del primo messaggio",
       "enabledCount_one": "{{count}} attivo",
       "enabledCount_many": "{{count}} attivi",
       "enabledCount_other": "{{count}} attivi",
+      "enableInChat": "Attiva in questa chat",
+      "enableSsh": "Attiva SSH {{name}} in questa chat",
+      "filterHint": "Le connessioni modificate restano visibili fino al cambio del filtro",
+      "fromChat": "Questa chat",
       "loadFailed": "Impossibile caricare l'accesso remoto.",
       "loading": "Caricamento accesso remoto…",
+      "manage": "Gestisci connessioni",
+      "needsReload": "Ricarica per confermare le autorizzazioni",
+      "noConnections": "Nessuna connessione SSH o VNC configurata",
+      "noneAllowed": "Nessuna connessione consentita in questa chat",
+      "notAllowed": "Non consentita",
       "off": "Disattivo",
       "on": "Attivo",
+      "reload": "Ricarica",
       "requiresSsh": "Richiede SSH: {{name}}",
+      "saved": "Salvato per questa chat",
+      "saveUnconfirmed": "Impossibile confermare il salvataggio. Ricarica le autorizzazioni prima di altre modifiche.",
+      "saving": "Salvataggio…",
+      "scope": "Scegli le connessioni che Okou può usare in questa chat",
+      "showAll": "Mostra tutte le connessioni",
       "sshDisabled": "Attiva SSH: {{name}}",
       "sshEnabled": "SSH attivo: {{name}}",
       "title": "Accesso remoto",
@@ -5173,7 +5195,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5566,6 +5587,11 @@
       "creditBalance_many": "{{value}} crediti",
       "creditBalance_other": "{{value}} crediti",
       "exportData": "Esporta dati",
+      "help": {
+        "docs": "Documentazione",
+        "keyboardShortcuts": "Scorciatoie",
+        "label": "Aiuto"
+      },
       "lab": "Laboratorio",
       "settings": "Impostazioni",
       "signOut": "Esci",
@@ -6429,6 +6455,32 @@
     "unavailable": "L’accesso SSH non è disponibile per questo account.",
     "username": "Nome utente SSH"
   },
+  "sshAuthorization": {
+    "allow": "Consenti in questa chat",
+    "blocked": {
+      "chat_busy": "Attendi la fine del Run in corso in questa chat prima di approvare.",
+      "host_changed": "La configurazione dell’host è cambiata. Richiedi una nuova approvazione.",
+      "permissions_required": "Approva prima le autorizzazioni del connettore associate.",
+      "run_active": "Attendi la fine del Run che ha inviato la richiesta prima di approvare.",
+      "run_unavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat."
+    },
+    "continue": "Continua attività",
+    "details": "Dettagli di accesso",
+    "effect": "Consente comandi e trasferimenti di file come questo utente remoto finché l’accesso non viene disattivato.",
+    "failed": "Impossibile completare l’azione. Riprova per verificare l’accesso e continuare.",
+    "retry": "Riprova",
+    "scope": "Questo host · Solo questa chat",
+    "status": {
+      "approved": "Accesso SSH consentito",
+      "denied": "Accesso SSH negato",
+      "expired": "Richiesta SSH scaduta",
+      "pending": "Accesso SSH",
+      "revoked": "Accesso SSH revocato",
+      "stale": "Richiesta SSH modificata"
+    },
+    "title": "Accesso SSH",
+    "unavailable": "Questa richiesta non è disponibile. Richiedine una nuova."
+  },
   "tailscale": {
     "changed": "Questa rete Tailscale è cambiata. Le modifiche non sono state salvate; la bozza è conservata.",
     "delete": "Elimina Tailscale",
@@ -6542,17 +6594,20 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Torna ai workflow",
+      "disabled": "Disattivata",
       "disabledAt": "Disattivata il {{time}}",
       "loadFailed": "Impossibile caricare questa automazione",
       "loadingAutomation": "Caricamento dell’automazione",
+      "notNow": "Non ora",
       "otherWorkspace": "Questa automazione si trova in {{workspace}}. Cambia area di lavoro per visualizzarla.",
-      "reason_one": "Disattivata automaticamente dopo {{count}} errore di esecuzione consecutivo.",
-      "reason_many": "Disattivata automaticamente dopo {{count}} errori di esecuzione consecutivi.",
-      "reason_other": "Disattivata automaticamente dopo {{count}} errori di esecuzione consecutivi.",
+      "reason_one": "{{count}} esecuzione non è riuscita. Controlla l’automazione prima di riattivarla.",
+      "reason_many": "{{count}} esecuzioni consecutive non sono riuscite. Controlla l’automazione prima di riattivarla.",
+      "reason_other": "{{count}} esecuzioni consecutive non sono riuscite. Controlla l’automazione prima di riattivarla.",
       "switchFailed": "Impossibile cambiare area di lavoro. Riprova o usa il selettore delle aree di lavoro.",
       "switchWorkspace": "Cambia area di lavoro",
       "systemManaged": "Questa automazione è gestita dal sistema. Lo stato attuale è mostrato di seguito.",
       "systemSource": "Notifica di sistema",
+      "title": "Automazione disattivata",
       "unavailable": "Automazione non trovata o accesso non consentito",
       "viewAutomation": "Visualizza automazione",
       "workspace": "Area di lavoro",

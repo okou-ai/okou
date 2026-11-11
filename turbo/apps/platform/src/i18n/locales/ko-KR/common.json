@@ -1865,7 +1865,9 @@
         "title": "만들기"
       },
       "explore": "탐색",
+      "exploreWhatsNew": "새로운 소식 보기",
       "research": {
+        "description": "트래픽, 광고, 제품, 주제",
         "items": {
           "ads": "광고 소재 살펴보기",
           "products": "제품 조사",
@@ -1878,6 +1880,7 @@
         "title": "리서치"
       },
       "search": {
+        "description": "고객, 크리에이터, 의사결정자",
         "items": {
           "affiliates": "제휴 프로그램",
           "creators": "크리에이터 협업",
@@ -1908,6 +1911,7 @@
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
+        "summary": "예약 또는 트리거로 실행",
         "triggers": {
           "description": "이벤트가 발생하면 시작하세요.",
           "eventPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 소스, 필터, 결과 저장 위치를 물어보고 워크플로 초안을 준비한 뒤 설정을 확인하고 활성화해 주세요.",
@@ -2346,16 +2350,34 @@
       "untitled": "제목 없음"
     },
     "remoteAccess": {
+      "all": "전체",
+      "allowed": "허용됨",
+      "autoSave": "변경 사항은 이 채팅에 자동 저장됩니다",
+      "connections": "연결",
       "default": "기본값",
       "defaultEnabled": "채팅에서 기본적으로 사용",
-      "disabled": "비활성화됨",
-      "enabled": "활성화됨",
+      "draft": "첫 메시지를 보낼 때 적용됩니다",
       "enabledCount_other": "{{count}}개 사용 중",
+      "enableInChat": "이 채팅에서 활성화",
+      "enableSsh": "이 채팅에서 SSH {{name}} 활성화",
+      "filterHint": "변경한 연결은 필터를 전환할 때까지 표시됩니다",
+      "fromChat": "이 채팅",
       "loadFailed": "원격 액세스를 불러올 수 없습니다.",
       "loading": "원격 액세스 로드 중…",
+      "manage": "연결 관리",
+      "needsReload": "권한을 확인하려면 다시 불러오세요",
+      "noConnections": "설정된 SSH 또는 VNC 연결이 없습니다",
+      "noneAllowed": "이 채팅에서 허용된 연결이 없습니다",
+      "notAllowed": "허용되지 않음",
       "off": "끄기",
       "on": "켜기",
+      "reload": "다시 불러오기",
       "requiresSsh": "SSH 필요: {{name}}",
+      "saved": "이 채팅에 저장됨",
+      "saveUnconfirmed": "변경 사항이 저장되었는지 확인할 수 없습니다. 권한을 다시 불러온 후 변경하세요.",
+      "saving": "저장 중…",
+      "scope": "이 채팅에서 Okou가 사용할 수 있는 연결을 선택하세요",
+      "showAll": "모든 연결 보기",
       "sshDisabled": "SSH 켜기: {{name}}",
       "sshEnabled": "SSH 켜짐: {{name}}",
       "title": "원격 액세스",
@@ -5098,7 +5120,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5486,6 +5507,11 @@
       "creditBalance_one": "{{value}} 크레딧",
       "creditBalance_other": "{{value}} 크레딧",
       "exportData": "데이터 내보내기",
+      "help": {
+        "docs": "문서",
+        "keyboardShortcuts": "단축키",
+        "label": "도움말"
+      },
       "lab": "랩",
       "settings": "설정",
       "signOut": "로그아웃",
@@ -6341,6 +6367,32 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
+  "sshAuthorization": {
+    "allow": "이 채팅에서 허용",
+    "blocked": {
+      "chat_busy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
+      "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
+      "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
+      "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요."
+    },
+    "continue": "작업 계속",
+    "details": "접근 권한 상세",
+    "effect": "액세스를 비활성화할 때까지 이 원격 사용자로 명령 실행 및 파일 전송을 허용합니다.",
+    "failed": "작업을 완료하지 못했습니다. 다시 시도하여 권한을 확인하고 계속하세요.",
+    "retry": "다시 시도",
+    "scope": "이 호스트 · 이 채팅만",
+    "status": {
+      "approved": "SSH 액세스 허용됨",
+      "denied": "SSH 액세스 거부됨",
+      "expired": "SSH 요청 만료됨",
+      "pending": "SSH 액세스",
+      "revoked": "SSH 액세스 취소됨",
+      "stale": "SSH 요청 변경됨"
+    },
+    "title": "SSH 액세스",
+    "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
+  },
   "tailscale": {
     "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
     "delete": "Tailscale 삭제",
@@ -6452,16 +6504,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "워크플로로 돌아가기",
+      "disabled": "비활성화됨",
       "disabledAt": "비활성화 시간: {{time}}",
       "loadFailed": "이 자동화를 불러올 수 없습니다",
       "loadingAutomation": "자동화 불러오는 중",
+      "notNow": "나중에",
       "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
-      "reason_one": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",
-      "reason_other": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",
+      "reason_one": "{{count}}회 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "reason_other": "{{count}}회 연속 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
       "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
       "switchWorkspace": "워크스페이스 전환",
       "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
       "systemSource": "시스템 알림",
+      "title": "자동화가 비활성화됨",
       "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",
       "viewAutomation": "자동화 보기",
       "workspace": "워크스페이스",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.3](https://github.com/okou-ai/okou/compare/desktop-v0.56.2...desktop-v0.56.3) (2026-11-11)
+
+
+### Bug Fixes
+
+* **desktop:** clear latest snapshot references on eviction ([#46551](https://github.com/okou-ai/okou/issues/46551)) ([b081dc9](https://github.com/okou-ai/okou/commit/b081dc9a0f7eb5b798a05fc279d2625cbfd244f7))
+
 ## [0.56.2](https://github.com/okou-ai/okou/compare/desktop-v0.56.1...desktop-v0.56.2) (2026-11-09)
 
 

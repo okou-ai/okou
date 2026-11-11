@@ -2,6 +2,7 @@
 
 use crate::process::{self, CommandExecution};
 use crate::support::create_tar_gz;
+use cli_test_support::directory_permissions::DirectoryPermissions;
 use guest_contracts::runtime_paths;
 use guest_contracts::storage_manifest::{ArchiveReadiness, Manifest};
 use serde_json::json;
@@ -59,14 +60,6 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
     CommandExecution::spawn(&mut command, Some(&bytes))
 }
 
-struct RestoreSearchPermission(std::path::PathBuf);
-
-impl Drop for RestoreSearchPermission {
-    fn drop(&mut self) {
-        let _ = fs::set_permissions(&self.0, std::os::unix::fs::PermissionsExt::from_mode(0o700));
-    }
-}
-
 fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
@@ -101,7 +94,6 @@ fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> 
 #[test]
 fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
     use guest_contracts::storage_manifest::StorageEntry;
-    use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
     let runtime = dir.path().join("runtime");
@@ -126,8 +118,7 @@ fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
         .to_vec();
     manifest.archive_readiness.as_mut().unwrap().check_only = true;
     let mut command = unprivileged_command(dir.path(), &runtime).unwrap();
-    let restore = RestoreSearchPermission(protected.clone());
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o0)).unwrap();
+    let restore = DirectoryPermissions::set(&protected, 0o0).unwrap();
     let output =
         CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(&manifest).unwrap()))
             .unwrap()
@@ -158,7 +149,7 @@ fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
         fs::read(dir.path().join("pending/value")).unwrap(),
         b"stale"
     );
-    drop(restore);
+    restore.restore().unwrap();
     assert_eq!(fs::read(kept.join("sentinel")).unwrap(), b"preserved input");
 }
 
@@ -307,8 +298,7 @@ fn ordinary_application_owns_cleanup_and_required_permission_failures() {
 
         let mut command = unprivileged_command(dir.path(), &runtime).unwrap();
         fs::set_permissions(&work, fs::Permissions::from_mode(0o777)).unwrap();
-        let restore = RestoreSearchPermission(protected.clone());
-        fs::set_permissions(&protected, fs::Permissions::from_mode(0o0)).unwrap();
+        let restore = DirectoryPermissions::set(&protected, 0o0).unwrap();
         let mut run = |manifest: &Manifest| {
             CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(manifest).unwrap()))
                 .unwrap()
@@ -355,7 +345,7 @@ fn ordinary_application_owns_cleanup_and_required_permission_failures() {
             b"stale"
         );
         assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
-        drop(restore);
+        restore.restore().unwrap();
         assert_eq!(fs::read(protected.join("sentinel")).unwrap(), b"untouched");
     }
 }

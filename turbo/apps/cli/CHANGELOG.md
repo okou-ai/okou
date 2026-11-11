@@ -1,5 +1,64 @@
 # Changelog
 
+## [10.20.1](https://github.com/okou-ai/okou/compare/cli-v10.20.0...cli-v10.20.1) (2026-11-11)
+
+
+### Refactoring
+
+* remove mercuryConnector feature switch ([#46576](https://github.com/okou-ai/okou/issues/46576)) ([2f848b1](https://github.com/okou-ai/okou/commit/2f848b148ae68294a462925699420763682bd086))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.49.1
+    * @okouai/core bumped to 8.828.1
+    * @okouai/pi-agent-runtime bumped to 1.51.101
+
+## [10.20.0](https://github.com/okou-ai/okou/compare/cli-v10.19.10...cli-v10.20.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+    * @okouai/pi-agent-runtime bumped to 1.51.100
+
+## [10.19.10](https://github.com/okou-ai/okou/compare/cli-v10.19.9...cli-v10.19.10) (2026-11-11)
+
+
+### Performance Improvements
+
+* **api:** remove the chat search time filter ([#46502](https://github.com/okou-ai/okou/issues/46502)) ([baa9594](https://github.com/okou-ai/okou/commit/baa95943ef45870b92855b3974772657ca2b6711))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+    * @okouai/pi-agent-runtime bumped to 1.51.99
+
+## [10.19.9](https://github.com/okou-ai/okou/compare/cli-v10.19.8...cli-v10.19.9) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.2
+    * @okouai/core bumped to 8.826.2
+    * @okouai/pi-agent-runtime bumped to 1.51.98
+
 ## [10.19.8](https://github.com/okou-ai/okou/compare/cli-v10.19.7...cli-v10.19.8) (2026-11-10)
 
 

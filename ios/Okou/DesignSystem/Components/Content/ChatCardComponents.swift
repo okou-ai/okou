@@ -7,7 +7,7 @@ struct ChatCardSurface: ViewModifier {
 }
 
 /// A transcript card's heading, as the web draws it (`AssistantErrorCard`): a 16 pt glyph in
-/// `brand-text` on the title's first line, no tile behind it; the title in callout medium and
+/// neutral supporting grey on the title's first line, no tile behind it; the title in callout medium and
 /// every detail line in one supporting style. Callers do not restyle the details.
 struct ChatCardHeader<Details: View>: View {
   let title: String
@@ -20,7 +20,7 @@ struct ChatCardHeader<Details: View>: View {
   var body: some View {
     HStack(alignment: .top, spacing: OkouSpace.ten) {
       OkouIcon(icon, size: OkouIconSize.inline)
-        .foregroundStyle(OkouColor.brandText)
+        .foregroundStyle(OkouColor.mutedForeground)
         .frame(height: titleLineHeight)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: OkouSpace.two) {

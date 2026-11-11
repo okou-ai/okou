@@ -1865,7 +1865,9 @@
         "title": "作成"
       },
       "explore": "探索",
+      "exploreWhatsNew": "新機能を見る",
       "research": {
+        "description": "トラフィック、広告、製品、トピック",
         "items": {
           "ads": "広告クリエイティブを調べる",
           "products": "商品を調べる",
@@ -1878,6 +1880,7 @@
         "title": "リサーチ"
       },
       "search": {
+        "description": "顧客、クリエイター、意思決定者",
         "items": {
           "affiliates": "アフィリエイトプログラム",
           "creators": "クリエイターとの提携",
@@ -1908,6 +1911,7 @@
           "title": "定期タスク"
         },
         "suggestions": "提案を選んで、自分に合うように調整しましょう。",
+        "summary": "スケジュールまたはトリガーで実行",
         "triggers": {
           "description": "イベントの発生をきっかけに開始。",
           "eventPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のソース、絞り込み条件、出力先を確認し、ワークフローの下書きを作成してください。設定を確認してから有効にしてください。",
@@ -2346,16 +2350,34 @@
       "untitled": "無題"
     },
     "remoteAccess": {
+      "all": "すべて",
+      "allowed": "許可済み",
+      "autoSave": "変更はこのチャットに自動保存されます",
+      "connections": "接続",
       "default": "既定",
       "defaultEnabled": "チャットで既定で有効",
-      "disabled": "無効",
-      "enabled": "有効",
+      "draft": "最初のメッセージ送信時に適用",
       "enabledCount_other": "{{count}} 件有効",
+      "enableInChat": "このチャットで有効にする",
+      "enableSsh": "このチャットで SSH {{name}} を有効にする",
+      "filterHint": "変更した接続はフィルターを切り替えるまで表示されます",
+      "fromChat": "このチャット",
       "loadFailed": "リモートアクセスを読み込めませんでした。",
       "loading": "リモートアクセスを読み込み中…",
+      "manage": "接続を管理",
+      "needsReload": "再読み込みして権限を確認",
+      "noConnections": "SSH または VNC 接続が設定されていません",
+      "noneAllowed": "このチャットで許可された接続はありません",
+      "notAllowed": "未許可",
       "off": "オフ",
       "on": "オン",
+      "reload": "再読み込み",
       "requiresSsh": "SSH が必要：{{name}}",
+      "saved": "このチャットに保存済み",
+      "saveUnconfirmed": "変更が保存されたか確認できませんでした。権限を再読み込みしてから変更してください。",
+      "saving": "保存中…",
+      "scope": "このチャットで Okou が使用できる接続を選択",
+      "showAll": "すべての接続を表示",
       "sshDisabled": "SSH をオンに：{{name}}",
       "sshEnabled": "SSH 有効：{{name}}",
       "title": "リモートアクセス",
@@ -5098,7 +5120,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5486,6 +5507,11 @@
       "creditBalance_one": "{{value}} クレジット",
       "creditBalance_other": "{{value}} クレジット",
       "exportData": "データのエクスポート",
+      "help": {
+        "docs": "ドキュメント",
+        "keyboardShortcuts": "ショートカット",
+        "label": "ヘルプ"
+      },
       "lab": "研究室",
       "settings": "設定",
       "signOut": "サインアウト",
@@ -6341,6 +6367,32 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
+  "sshAuthorization": {
+    "allow": "このチャットで許可",
+    "blocked": {
+      "chat_busy": "このチャットで実行中の Run が終了してから承認してください。",
+      "host_changed": "ホスト設定が変更されました。再申請してください。",
+      "permissions_required": "先に関連するコネクタの権限を承認してください。",
+      "run_active": "リクエスト元の Run が終了してから承認してください。",
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+    },
+    "continue": "タスクを続行",
+    "details": "アクセスの詳細",
+    "effect": "アクセスを無効にするまで、このリモートユーザーとしてコマンド実行とファイル転送を許可します。",
+    "failed": "操作を完了できませんでした。再試行して権限を確認し、続行してください。",
+    "retry": "再試行",
+    "scope": "このホスト · このチャットのみ",
+    "status": {
+      "approved": "SSH アクセスを許可しました",
+      "denied": "SSH アクセスを拒否しました",
+      "expired": "SSH リクエストの有効期限切れ",
+      "pending": "SSH アクセス",
+      "revoked": "SSH アクセスを取り消しました",
+      "stale": "SSH リクエストが変更されました"
+    },
+    "title": "SSH アクセス",
+    "unavailable": "このリクエストは利用できません。再申請してください。"
+  },
   "tailscale": {
     "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
     "delete": "Tailscale を削除",
@@ -6452,16 +6504,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "ワークフローに戻る",
+      "disabled": "無効",
       "disabledAt": "無効化日時：{{time}}",
       "loadFailed": "この自動化を読み込めませんでした",
       "loadingAutomation": "自動化を読み込み中",
+      "notNow": "後で",
       "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
-      "reason_one": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
-      "reason_other": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
+      "reason_one": "実行が {{count}} 回失敗しました。再度有効にする前に自動化を確認してください。",
+      "reason_other": "実行が {{count}} 回連続で失敗しました。再度有効にする前に自動化を確認してください。",
       "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
       "switchWorkspace": "ワークスペースを切り替える",
       "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
       "systemSource": "システム通知",
+      "title": "自動化が無効になりました",
       "unavailable": "自動化が見つからないか、アクセス権がありません",
       "viewAutomation": "自動化を表示",
       "workspace": "ワークスペース",

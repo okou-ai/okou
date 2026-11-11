@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 
 from cancellation_cases import CANCELLATION_CASES
+from import_cases import IMPORT_CASES
+from subscription_cases import SUBSCRIPTION_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -21,6 +23,7 @@ BINARY = (
 
 CASES = [
     *CANCELLATION_CASES,
+    *SUBSCRIPTION_CASES,
     (
         "typed cancellation cannot become resource data",
         "okou_resource_failures",
@@ -749,6 +752,29 @@ class NativeRuleTests(unittest.TestCase):
                 "Packages/ChatData/Sources/ChatData/APIClient.swift",
             )
             self.assertEqual(findings, [])
+
+    def test_import_boundaries(self):
+        rule = "okou_import_boundaries"
+        with tempfile.TemporaryDirectory(prefix="native import cases ") as directory:
+            for index, (name, filename, source) in enumerate(IMPORT_CASES):
+                with self.subTest(name=name):
+                    source = textwrap.dedent(source).lstrip()
+                    expected = [
+                        i
+                        for i, line in enumerate(source.splitlines(), 1)
+                        if "// violation" in line
+                    ]
+                    root = Path(directory) / str(index)
+                    root.mkdir()
+                    result, diagnostics = self.lint(root, source, rule, filename)
+                    self.assertEqual(
+                        result.returncode, 2 if expected else 0, result.stderr
+                    )
+                    self.assertEqual(
+                        sorted((d["rule_id"], d["line"]) for d in diagnostics),
+                        [(rule, line) for line in expected],
+                        result.stdout,
+                    )
 
     def test_test_helper_waits(self):
         with tempfile.TemporaryDirectory(prefix="native test helpers ") as directory:

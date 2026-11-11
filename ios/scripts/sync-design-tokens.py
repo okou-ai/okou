@@ -97,7 +97,9 @@ def main():
         ["xcrun", "swift-format", "format"], input="\n".join(lines),
         capture_output=True, text=True, check=True).stdout
     files = {OUTPUT: formatted}
-    assets = {"AccentColor": "brand-text", "SignInPrimary": "brand-text", "SignInCard": "card", "StartupBackground": "background"}
+    # The system tint (caret, alert actions, plain buttons) and the sign-in primary are neutral
+    # ink, as resting controls are; brand-text reads brown, and iOS and Clerk fill with them.
+    assets = {"AccentColor": "foreground", "SignInPrimary": "foreground", "SignInCard": "card", "StartupBackground": "background"}
     for asset, token in assets.items():
         colors = []
         for scheme, variables in (("light", light), ("dark", dark)):

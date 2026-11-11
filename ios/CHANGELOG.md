@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.35.3](https://github.com/okou-ai/okou/compare/ios-v0.35.2...ios-v0.35.3) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own connector action status reads with ccstate ([#46554](https://github.com/okou-ai/okou/issues/46554)) ([3e0d3dd](https://github.com/okou-ai/okou/commit/3e0d3dda2a3a24c890b8fd91b8418d1c14d86c02))
+
+## [0.35.2](https://github.com/okou-ai/okou/compare/ios-v0.35.1...ios-v0.35.2) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own failure recovery context reads with ccstate ([#46504](https://github.com/okou-ai/okou/issues/46504)) ([f86603d](https://github.com/okou-ai/okou/commit/f86603db4e80fb6be0cb4cf17d2b29af36166c42))
+
+## [0.35.1](https://github.com/okou-ai/okou/compare/ios-v0.35.0...ios-v0.35.1) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** derive sidebar filters and groups with ccstate ([#46476](https://github.com/okou-ai/okou/issues/46476)) ([4ad354c](https://github.com/okou-ai/okou/commit/4ad354c8879331424d72a2e4f0790481ecfc79b1))
+
 ## [0.35.0](https://github.com/okou-ai/okou/compare/ios-v0.34.2...ios-v0.35.0) (2026-11-11)
 
 

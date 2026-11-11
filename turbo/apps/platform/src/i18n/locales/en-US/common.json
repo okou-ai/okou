@@ -1870,7 +1870,9 @@
         "title": "Create"
       },
       "explore": "Explore",
+      "exploreWhatsNew": "Explore what's new",
       "research": {
+        "description": "Traffic, ads, products, topics",
         "items": {
           "ads": "Explore ad creatives",
           "products": "Research products",
@@ -1883,6 +1885,7 @@
         "title": "Research"
       },
       "search": {
+        "description": "Customers, creators, decision-makers",
         "items": {
           "affiliates": "Affiliate programs",
           "creators": "Creator partnerships",
@@ -1913,6 +1916,7 @@
           "title": "Scheduled tasks"
         },
         "suggestions": "Start with a suggestion, then make it yours.",
+        "summary": "Runs on a schedule or a trigger",
         "triggers": {
           "description": "Start when something happens.",
           "eventPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which source, filters and output destination to use. Prepare a draft workflow and confirm the setup before enabling it.",
@@ -2354,17 +2358,35 @@
       "untitled": "Untitled"
     },
     "remoteAccess": {
+      "all": "All",
+      "allowed": "Allowed",
+      "autoSave": "Changes save automatically for this chat",
+      "connections": "Connections",
       "default": "Default",
       "defaultEnabled": "Enabled by default for chats",
-      "disabled": "Disabled",
-      "enabled": "Enabled",
+      "draft": "Applied when you send the first message",
       "enabledCount_one": "{{count}} enabled",
       "enabledCount_other": "{{count}} enabled",
+      "enableInChat": "Enable in this chat",
+      "enableSsh": "Enable SSH {{name}} in this chat",
+      "filterHint": "Changed connections stay visible until you switch filters",
+      "fromChat": "This chat",
       "loadFailed": "Couldn't load remote access.",
       "loading": "Loading remote access…",
+      "manage": "Manage connections",
+      "needsReload": "Reload to confirm permissions",
+      "noConnections": "No SSH or VNC connections configured",
+      "noneAllowed": "No connections are allowed in this chat",
+      "notAllowed": "Not allowed",
       "off": "Off",
       "on": "On",
+      "reload": "Reload",
       "requiresSsh": "Requires SSH: {{name}}",
+      "saved": "Saved for this chat",
+      "saveUnconfirmed": "Couldn't confirm whether your change was saved. Reload permissions before making another change.",
+      "saving": "Saving…",
+      "scope": "Choose connections Okou can use in this chat",
+      "showAll": "Show all connections",
       "sshDisabled": "Enable SSH: {{name}}",
       "sshEnabled": "SSH enabled: {{name}}",
       "title": "Remote access",
@@ -5114,7 +5136,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5502,6 +5523,11 @@
       "creditBalance_one": "{{value}} credit",
       "creditBalance_other": "{{value}} credits",
       "exportData": "Export data",
+      "help": {
+        "docs": "Docs",
+        "keyboardShortcuts": "Shortcuts",
+        "label": "Help"
+      },
       "lab": "Lab",
       "settings": "Settings",
       "signOut": "Sign out",
@@ -6360,6 +6386,32 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
+  "sshAuthorization": {
+    "allow": "Allow in this chat",
+    "blocked": {
+      "chat_busy": "Wait for the current Run in this chat to finish before approving.",
+      "host_changed": "The host configuration changed. Ask for a new request.",
+      "permissions_required": "Approve the accompanying connector permissions first.",
+      "run_active": "Wait for the requesting Run to finish before approving.",
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
+    },
+    "continue": "Continue task",
+    "details": "Access details",
+    "effect": "Allows commands and file transfers as this remote user until access is disabled.",
+    "failed": "Could not complete the action. Retry to check access and continue.",
+    "retry": "Retry",
+    "scope": "This host · This chat only",
+    "status": {
+      "approved": "SSH access allowed",
+      "denied": "SSH access denied",
+      "expired": "SSH request expired",
+      "pending": "SSH access",
+      "revoked": "SSH access revoked",
+      "stale": "SSH request changed"
+    },
+    "title": "SSH access",
+    "unavailable": "This request is unavailable. Ask for a new request."
+  },
   "tailscale": {
     "changed": "This Tailscale network changed. Your changes were not saved; your draft is preserved.",
     "delete": "Delete Tailscale",
@@ -6471,16 +6523,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Back to workflows",
+      "disabled": "Disabled",
       "disabledAt": "Disabled at {{time}}",
       "loadFailed": "Couldn’t load this automation",
       "loadingAutomation": "Loading automation",
+      "notNow": "Not now",
       "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
-      "reason_one": "Automatically disabled after {{count}} consecutive execution failure.",
-      "reason_other": "Automatically disabled after {{count}} consecutive execution failures.",
+      "reason_one": "{{count}} run failed. Review the automation before re-enabling it.",
+      "reason_other": "{{count}} consecutive runs failed. Review the automation before re-enabling it.",
       "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
       "switchWorkspace": "Switch workspace",
       "systemManaged": "This automation is managed by the system. Its current status is shown below.",
       "systemSource": "System notification",
+      "title": "Automation disabled",
       "unavailable": "Automation not found or you do not have access",
       "viewAutomation": "View automation",
       "workspace": "Workspace",

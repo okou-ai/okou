@@ -816,106 +816,159 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut CacheProcessMetrics,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
+        // Complete-plan callers retain the original collection order. Only
+        // mixed preparation consumes publication progress between fetches.
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
-
-        let mut resolved = Vec::new();
         while let Some(task) = self.fetches.join_next().await {
-            match task.map_err(|error| {
+            let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
-            })? {
-                FreshArchiveFetchTaskResult::Downloaded(downloaded) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_COMPLETE,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    let FreshArchiveDownloaded {
-                        group,
-                        bytes,
-                        size_source,
-                        writer,
-                        permit,
-                    } = downloaded;
-                    telemetry.record(
-                        match size_source {
-                            FreshArchiveSizeSource::Manifest => {
-                                STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST
-                            }
-                            FreshArchiveSizeSource::Response => {
-                                STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE
-                            }
-                        },
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    let target = &group.representative;
-                    let cache_dir = home.storage_cache_dir(&target.name, &target.version);
-                    let phase_records = self.phase_records.clone();
-                    self.publications.spawn(async move {
-                        let _writer = writer;
-                        let phase = FreshArchivePhaseGuard::new(
-                            &phase_records,
-                            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
-                        );
-                        let result = write_to_cache(&cache_dir, &bytes)
-                            .await
-                            .map(|()| FreshArchivePublished { bytes, permit });
-                        phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
-                        FreshArchivePublicationTaskResult { group, result }
-                    });
-                }
-                FreshArchiveFetchTaskResult::Terminal { error } => {
-                    let reason = error.reason;
-                    let action = if reason == "cancelled" {
-                        STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
-                    } else {
-                        STORAGE_CACHE_FRESH_DELIVERY_FAILED
-                    };
-                    telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    return Err(if reason == "cancelled" {
-                        RunnerError::Cancelled
-                    } else {
-                        RunnerError::Internal(format!(
-                            "runner-owned archive download failed: {error}"
-                        ))
-                    });
-                }
-            }
+            })?;
+            self.accept_fetched(task, home, telemetry)?;
         }
-
+        let mut resolved = Vec::new();
         while let Some(task) = self.publications.join_next().await {
             let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
             })?;
-            match task.result {
-                Ok(archive) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    resolved.push(FreshArchiveResolved {
-                        group: task.group,
-                        archive,
-                    });
-                }
-                Err(error) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
-                        Duration::ZERO,
-                        false,
-                        Some("publication"),
-                    );
-                    return Err(error);
-                }
-            }
+            resolved.push(Self::accept_published(task, telemetry)?);
         }
         Ok(resolved)
+    }
+
+    fn accept_fetched(
+        &mut self,
+        task: FreshArchiveFetchTaskResult,
+        home: &HomePaths,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<()> {
+        match task {
+            FreshArchiveFetchTaskResult::Downloaded(downloaded) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_COMPLETE,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                let FreshArchiveDownloaded {
+                    group,
+                    bytes,
+                    size_source,
+                    writer,
+                    permit,
+                } = downloaded;
+                telemetry.record(
+                    match size_source {
+                        FreshArchiveSizeSource::Manifest => {
+                            STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST
+                        }
+                        FreshArchiveSizeSource::Response => {
+                            STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE
+                        }
+                    },
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                let target = &group.representative;
+                let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+                let phase_records = self.phase_records.clone();
+                self.publications.spawn(async move {
+                    let _writer = writer;
+                    let phase = FreshArchivePhaseGuard::new(
+                        &phase_records,
+                        STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                    );
+                    let result = write_to_cache(&cache_dir, &bytes)
+                        .await
+                        .map(|()| FreshArchivePublished { bytes, permit });
+                    phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
+                    FreshArchivePublicationTaskResult { group, result }
+                });
+            }
+            FreshArchiveFetchTaskResult::Terminal { error } => {
+                let reason = error.reason;
+                let action = if reason == "cancelled" {
+                    STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
+                } else {
+                    STORAGE_CACHE_FRESH_DELIVERY_FAILED
+                };
+                telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
+                return Err(if reason == "cancelled" {
+                    RunnerError::Cancelled
+                } else {
+                    RunnerError::Internal(format!("runner-owned archive download failed: {error}"))
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Joining a task is cancellation-safe. Accepted publication remains in
+    /// this delivery even if its caller stops polling between completions.
+    async fn next_resolved(
+        &mut self,
+        home: &HomePaths,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<Option<FreshArchiveResolved>> {
+        for apply in self.apply.drain(..) {
+            let _ = apply.send(());
+        }
+
+        loop {
+            let published = tokio::select! {
+                // Drain already-ready downloads before deciding that useful
+                // network overlap remains. Complete downloads retain batching.
+                biased;
+                Some(task) = self.fetches.join_next(), if !self.fetches.is_empty() => {
+                    let task = task.map_err(|error| {
+                        RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
+                    })?;
+                    self.accept_fetched(task, home, telemetry)?;
+                    None
+                },
+                Some(task) = self.publications.join_next(), if !self.publications.is_empty() => {
+                    Some(task.map_err(|error| {
+                        RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
+                    })?)
+                },
+                else => return Ok(None),
+            };
+            let Some(task) = published else {
+                continue;
+            };
+            return Self::accept_published(task, telemetry).map(Some);
+        }
+    }
+
+    fn accept_published(
+        task: FreshArchivePublicationTaskResult,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<FreshArchiveResolved> {
+        match task.result {
+            Ok(archive) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                Ok(FreshArchiveResolved {
+                    group: task.group,
+                    archive,
+                })
+            }
+            Err(error) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
+                    Duration::ZERO,
+                    false,
+                    Some("publication"),
+                );
+                Err(error)
+            }
+        }
     }
 }
 
@@ -1611,7 +1664,7 @@ async fn populate_cache_inner(
             // admission until staging, including bodies already downloaded.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
             if !owned_keys.is_empty() && ordinary_concurrency > 0 && !target_groups.is_empty() {
-                let (resolved, ordinary) = population::prepare_mixed(
+                let prepared = population::prepare_mixed(
                     delivery,
                     home,
                     target_groups,
@@ -1627,9 +1680,11 @@ async fn populate_cache_inner(
                         }),
                 )
                 .await?;
-                let mut outcomes = stage_fresh_archives(resolved, &mut stage).await?;
+                // Deferred background admission is bounded. Preserve its
+                // fresh, decoded, ordinary order despite earlier staging.
+                let mut outcomes = prepared.fresh;
                 outcomes.extend(decoded_outcomes);
-                outcomes.extend(ordinary);
+                outcomes.extend(prepared.ordinary);
                 return Ok(outcomes);
             }
             let resolved = delivery.resolve(home, stage.telemetry).await?;

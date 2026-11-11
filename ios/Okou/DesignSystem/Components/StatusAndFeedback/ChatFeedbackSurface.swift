@@ -65,9 +65,10 @@ struct ChatFeedbackSurface: View {
   }
 
   private func actionButton(title: String) -> some View {
+    // Semibold ink, as `OkouBanner`'s actions: the weight, not a brand colour, marks the action.
     Button(title, action: action)
-      .font(.okou(.subheadline).weight(.medium))
-      .foregroundStyle(OkouColor.brandText)
+      .font(.okou(.subheadline).weight(.semibold))
+      .foregroundStyle(OkouColor.foreground)
       .padding(.horizontal, OkouSpace.six)
       .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
       .contentShape(Rectangle())

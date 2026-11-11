@@ -1865,7 +1865,9 @@
         "title": "創作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什麼新功能",
       "research": {
+        "description": "流量、廣告、產品、話題",
         "items": {
           "ads": "探索廣告創意",
           "products": "研究產品",
@@ -1878,6 +1880,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客戶、創作者、決策者",
         "items": {
           "affiliates": "聯盟行銷計畫",
           "creators": "創作者合作",
@@ -1908,6 +1911,7 @@
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",
+        "summary": "依排程或觸發器自動執行",
         "triggers": {
           "description": "事件發生時自動開始。",
           "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",
@@ -2346,16 +2350,34 @@
       "untitled": "未命名"
     },
     "remoteAccess": {
+      "all": "全部",
+      "allowed": "已允許",
+      "autoSave": "變更自動儲存，僅用於此對話",
+      "connections": "連線",
       "default": "預設",
       "defaultEnabled": "聊天預設啟用",
-      "disabled": "已停用",
-      "enabled": "已啟用",
+      "draft": "傳送第一則訊息時套用",
       "enabledCount_other": "已啟用 {{count}} 個",
+      "enableInChat": "在此對話開啟",
+      "enableSsh": "在此對話開啟 SSH {{name}}",
+      "filterHint": "修改過的連線會保留到切換篩選時",
+      "fromChat": "此對話",
       "loadFailed": "無法載入遠端存取權限。",
       "loading": "正在載入遠端存取…",
+      "manage": "管理連線",
+      "needsReload": "重新載入以確認權限",
+      "noConnections": "尚未設定 SSH 或 VNC 連線",
+      "noneAllowed": "此對話尚未允許任何連線",
+      "notAllowed": "未允許",
       "off": "關閉",
       "on": "開啟",
+      "reload": "重新載入",
       "requiresSsh": "需要 SSH：{{name}}",
+      "saved": "已儲存，僅用於此對話",
+      "saveUnconfirmed": "無法確認變更是否已儲存，請重新載入權限後再修改。",
+      "saving": "正在儲存…",
+      "scope": "選擇 Okou 可在此對話中使用的連線",
+      "showAll": "查看全部連線",
       "sshDisabled": "需開啟 SSH：{{name}}",
       "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
@@ -5098,7 +5120,6 @@
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
@@ -5486,6 +5507,11 @@
       "creditBalance_one": "{{value}} 積分",
       "creditBalance_other": "{{value}} 積分",
       "exportData": "匯出資料",
+      "help": {
+        "docs": "文件",
+        "keyboardShortcuts": "快捷鍵",
+        "label": "說明"
+      },
       "lab": "實驗室",
       "settings": "設定",
       "signOut": "退出登入",
@@ -6341,6 +6367,32 @@
     "unavailable": "該帳號無法使用 SSH 訪問。",
     "username": "SSH 使用者名稱"
   },
+  "sshAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
+    },
+    "continue": "繼續任務",
+    "details": "存取詳細資訊",
+    "effect": "允許以此遠端使用者執行命令和傳輸檔案，直到關閉存取。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 SSH 存取",
+      "denied": "已拒絕 SSH 存取",
+      "expired": "SSH 申請已過期",
+      "pending": "SSH 存取",
+      "revoked": "已撤銷 SSH 存取",
+      "stale": "SSH 申請已變更"
+    },
+    "title": "SSH 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
     "delete": "刪除 Tailscale",
@@ -6452,16 +6504,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "返回工作流程",
+      "disabled": "已停用",
       "disabledAt": "停用時間：{{time}}",
       "loadFailed": "無法載入此自動化",
       "loadingAutomation": "正在載入自動化",
+      "notNow": "暫時不用",
       "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
-      "reason_one": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
-      "reason_other": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
+      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
       "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
       "switchWorkspace": "切換工作區",
       "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
       "systemSource": "系統通知",
+      "title": "自動化已停用",
       "unavailable": "找不到此自動化，或你無權存取",
       "viewAutomation": "查看自動化",
       "workspace": "工作區",

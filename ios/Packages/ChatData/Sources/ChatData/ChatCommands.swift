@@ -273,6 +273,13 @@ public actor ChatCommands {
     }
   }
 
+  /// Moves a pinned chat to an explicit fractional rank without touching its activity.
+  public func setPinOrder(threadID: String, pinOrder: String, eventID: String) async throws {
+    try await client.data(
+      "/api/chat-threads/\(threadID)/pin-order", method: "POST",
+      body: JSONEncoder().encode(["pinOrder": pinOrder, "eventId": eventID]))
+  }
+
   public func setMuted(threadID: String, muted: Bool, eventID: String) async throws {
     let query = [URLQueryItem(name: "eventId", value: eventID)]
     if muted {

@@ -1,3 +1,4 @@
+import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
@@ -68,6 +69,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly teamsContext$: ReturnType<typeof createTeamsThreadContext>;
   readonly telegramContext$: ReturnType<typeof createTelegramThreadContext>;
   readonly emailContext$: ReturnType<typeof createEmailThreadContext>;
+  readonly emailMailboxConnections$: ReturnType<
+    typeof createEmailMailboxConnections
+  >;
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
@@ -97,12 +101,7 @@ export function createThreadContext(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
 ): ThreadContext {
   const orgId = bootstrap.orgId;
-  const sourceFeatureSwitches$ = computed((get) => {
-    return get(bootstrap.featureSwitches$);
-  });
-  const disabledPaidTools$ = computed((get) => {
-    return get(bootstrap.disabledPaidTools$);
-  });
+  const sourceSettings = createThreadSourceSettings(bootstrap);
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
@@ -110,7 +109,7 @@ export function createThreadContext(
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
     orgId,
-    sourceFeatureSwitches$,
+    sourceSettings.featureSwitches$,
   );
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
@@ -119,7 +118,7 @@ export function createThreadContext(
   const wechatContext$ = createWechatThreadContext(
     pickedEvent$,
     orgId,
-    sourceFeatureSwitches$,
+    sourceSettings.featureSwitches$,
   );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
@@ -166,7 +165,7 @@ export function createThreadContext(
   const templates$ = createRunTemplates(
     pickedEvent$,
     templateOrgId$,
-    disabledPaidTools$,
+    sourceSettings.disabledPaidTools$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
@@ -187,6 +186,11 @@ export function createThreadContext(
     connectorSourceId$,
     model.dispatchTiming$,
   );
+  const emailMailboxConnections$ = createEmailMailboxConnections(
+    pickedEvent$,
+    connectedAccounts.selectedStoredConnectorSources$,
+    orgId,
+  );
   return {
     threadContinuation$,
     computerUseHostGrant$,
@@ -195,6 +199,7 @@ export function createThreadContext(
     teamsContext$,
     telegramContext$,
     emailContext$,
+    emailMailboxConnections$,
     agentPhoneContext$,
     wechatContext$,
     discordContext$,
@@ -218,6 +223,16 @@ export function createThreadContext(
     selectedConnectorSources$:
       connectedAccounts.selectedStoredConnectorSources$,
   };
+}
+
+function createThreadSourceSettings(bootstrap: AgentRunContextSignals) {
+  const featureSwitches$ = computed((get) => {
+    return get(bootstrap.featureSwitches$);
+  });
+  const disabledPaidTools$ = computed((get) => {
+    return get(bootstrap.disabledPaidTools$);
+  });
+  return { featureSwitches$, disabledPaidTools$ };
 }
 
 /** Routing candidate only; exact accepted artifacts and installation ownership

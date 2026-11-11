@@ -41,7 +41,6 @@ export type StorageManifestPresignedUrlCacheScope = Exclude<
   | "content_bundle"
 >;
 
-export type StorageManifestCacheBranch = "requested" | "captured";
 export type StorageManifestCacheEntryKind =
   "compose" | "additional" | "artifact";
 

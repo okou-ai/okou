@@ -1,5 +1,9 @@
+import { ShieldCheck } from "lucide-react";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import {
   ComplianceBadges,
+  ComplianceFrameworkSummary,
+  SecurityDetailsLink,
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
 
@@ -28,22 +32,44 @@ export function ChatHomeCompliance() {
 }
 
 /**
- * The compliance badges directly under the capability cards. The row shares
- * the cards' column, so once it fits on one line it spreads across the card
- * grid with its outer items on the cards' 20px content inset, and it scrolls
- * with the cards on a short window.
+ * Compliance under the composer on the capability home, as one quiet line of
+ * framework names. Hovering or pressing it opens each framework's status and
+ * the link to the public security page, so the claims stay one step away
+ * without spreading five separate fragments around the page.
  *
- * Desktop only, like the footer row it replaces on this page.
+ * Desktop only, like the footer row on the plain chat home.
  */
 export function CapabilityHomeCompliance() {
   const title = useComplianceTitle();
 
   return (
-    <section aria-label={title} className="hidden pt-2 sm:block">
-      <ComplianceBadges
-        quiet
-        className="flex flex-wrap justify-center gap-x-6 gap-y-2 px-5 @3xl:justify-between"
-      />
+    <section
+      aria-label={title}
+      className="hidden min-w-0 justify-center pt-1.5 sm:flex"
+    >
+      <Popover>
+        <PopoverTrigger
+          openOnHover
+          delay={150}
+          render={
+            <Button
+              variant="quiet"
+              size="xs"
+              className="max-w-full gap-1.5 text-xs font-normal text-gray-700"
+            />
+          }
+        >
+          <ShieldCheck aria-hidden />
+          <span className="truncate">
+            <ComplianceFrameworkSummary />
+          </span>
+        </PopoverTrigger>
+        <PopoverContent side="top" className="flex flex-col gap-3">
+          <p className="text-sm font-medium leading-5">{title}</p>
+          <ComplianceBadges className="flex flex-col items-start gap-2" />
+          <SecurityDetailsLink className="text-xs text-brand-text hover:text-brand-text-hover" />
+        </PopoverContent>
+      </Popover>
     </section>
   );
 }
