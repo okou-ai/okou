@@ -148,10 +148,6 @@ enum OkouMotion {
   static let greetingWordBlur: CGFloat = 8
   /// One dictation level sample; the waveform scrolls one bar per sample.
   static let waveformSample: TimeInterval = 0.05
-  /// How far each page drifts as the sidebar opens or closes, as a share of the screen's width.
-  static let sidebarParallax: CGFloat = 0.25
-  /// How much of the screen each page's leading edge fades over while the sidebar moves.
-  static let sidebarFeather: CGFloat = 0.35
   /// A skeleton's shimmer: one sweep of the light across the group, the band's width as a
   /// share of the group's, how much it lifts the grey, and its slant.
   static let shimmer: Double = 1.6
@@ -177,8 +173,6 @@ enum OkouMotion {
 
 /// Shadows are reserved for surfaces that float over content.
 enum OkouElevation {
-  /// The page leaving as the sidebar opens or closes blurs to this radius while it fades.
-  static let sidebarBlur: CGFloat = 12
   /// Suggestion panels above the composer (slash workflows, @mentions).
   static let floatingRadius: CGFloat = 16
   static let floatingY: CGFloat = 6

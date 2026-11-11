@@ -117,7 +117,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                         |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample; navigation transitions are system-owned)                                                         |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -315,7 +315,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   left swipe anywhere in the sidebar closes it, as does its back button; a swipe is never
   the only way back. Content that scrolls
   sideways (a code block or a table) keeps the finger, and from there the chat still opens
-  the sidebar from its leading edge (`SidebarGesturePolicy`).
+  the sidebar from its leading edge. UIKit owns the interactive pop; the list’s left
+  swipe requests a native push rather than driving a custom transition.
   A page swipe never also taps the row under it. Chat rows keep their actions on the
   right swipe — Mark as read/unread, Archive — so they never compete with closing.
 - **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
@@ -497,15 +498,14 @@ single floating line, and colour is a small accent for status only.
 
 ### Navigation and lists
 
-- **The sidebar and the chat are two full pages**, as Grok has them: chat titles are long, and
-  the chat never shows beside the list. The pages cross-fade through a blur
-  (`OkouElevation.sidebarBlur`, 12 pt): the chat drifts a quarter of the screen right
-  (`OkouMotion.sidebarParallax`) as it blurs and fades away, and the list drifts in from a
-  quarter screen left as it comes into focus. The edge each page leads with fades out over up
-  to 35 % of the screen (`OkouMotion.sidebarFeather`) while it moves, so the pages meet in the
-  blur and never along a line. The blur is a `.visualEffect`, which never touches layout: a
-  `.blur` on the chat changed the transcript's safe area with every step of the radius, and
-  the messages jumped as the chat came back into focus.
+- **The sidebar and the chat are two full pages**: chat titles are long, and the
+  chat never shows beside the list. `WorkspaceNavigation` uses a native
+  `UINavigationController`, with the sidebar at its root and the chat pushed above it.
+  The navigation bar stays hidden: each page retains its custom header, footer,
+  typography, colors and controls. UIKit owns push/pop animations, interactive
+  return and Reduce Motion adaptation. Retain both page hosts across navigation
+  so drafts and scroll state survive. Forward the SwiftUI environment to both
+  hosts, including appearance, scene phase and scoped link/system-entry actions.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,

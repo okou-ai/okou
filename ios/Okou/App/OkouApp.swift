@@ -208,15 +208,6 @@ struct AppRootView: View {
   }
 }
 
-extension View {
-  /// Blurs one of the two workspace pages as they cross-fade. A visual effect never touches
-  /// layout: a `.blur` on the chat changed the transcript's safe area with every step of the
-  /// radius, and the messages jumped as the chat came back into focus.
-  fileprivate func sidebarPageBlur(_ radius: CGFloat) -> some View {
-    visualEffect { content, _ in content.blur(radius: radius) }
-  }
-}
-
 private struct WorkspaceRootView: View {
   let authentication: AuthenticationService
   let workspaceID: String
@@ -253,149 +244,32 @@ private struct WorkspaceRootView: View {
   }
 
   var body: some View {
-    GeometryReader { geometry in
-      // Two full pages, as Grok has them: chat titles are long, and the list's own back button
-      // returns to the chat. The pages cross-fade through a blur: the chat drifts a quarter
-      // screen right as it blurs away and the list drifts in from a quarter screen left as it
-      // comes into focus. Neither slides as a card, so no edge of either page crosses the
-      // screen.
-      let sidebarWidth = geometry.size.width
-      let sidebarProgress =
-        min(
-          max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
-        / sidebarWidth
-      let drift = sidebarWidth * OkouMotion.sidebarParallax
-      let topInset = geometry.safeAreaInsets.top
-      let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
-      // The edge each page leads with fades out over part of the screen while it moves, so the
-      // two pages meet in the blur instead of along a line.
-      let chatFeather = min(sidebarProgress, OkouMotion.sidebarFeather)
-      let sidebarFeather = min(1 - sidebarProgress, OkouMotion.sidebarFeather)
-      ZStack(alignment: .leading) {
-        OkouColor.background.ignoresSafeArea()
-
-        Group {
-          // Identity restoration gates the sidebar, never the new-chat screen.
-          if authentication.presentation?.userID == userID,
-            authentication.presentation?.preparedWorkspaceID == workspaceID
-          {
-            StoreProvider(store.projects.stateStore) {
-              ChatSidebarView(
-                store: store, authentication: authentication, workspaceID: workspaceID,
-                notifications: notifications, sidebar: sidebar,
-                headerHeight: headerHeight,
-                accountError: $accountError,
-                close: closeSidebar,
-                newChat: startNewChat
-              )
-              .id(ObjectIdentifier(store))
-            }
-          }
-        }
-        .frame(width: sidebarWidth, height: geometry.size.height)
-        .sidebarPageBlur(OkouElevation.sidebarBlur * (1 - sidebarProgress))
-        .opacity(sidebarProgress)
-        .mask(alignment: .top) {
-          LinearGradient(
-            stops: [
-              .init(color: .black, location: 1 - sidebarFeather), .init(color: .clear, location: 1),
-            ], startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: sidebarWidth, height: screenHeight)
-          .offset(y: -topInset)
-        }
-        .offset(x: -drift * (1 - sidebarProgress))
-        .allowsHitTesting(sidebar.isOpen)
-        .accessibilityHidden(!sidebar.isOpen)
-
-        Group {
-          if let conversation = store.selectedConversation {
-            ChatDetailView(
-              conversation: conversation,
-              agents: store.list,
-              didSend: { await notifications.requestAfterSend() },
-              topContentInset: topContentHeight, sidebar: sidebar,
-              mentionSource: ComposerMentionSource(
-                agentID: conversation.thread.agentID,
-                threads: store.list.threads),
-              onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+    WorkspaceNavigation(sidebar: sidebar) {
+      // Identity restoration gates the sidebar, never the new-chat screen.
+      Group {
+        if authentication.presentation?.userID == userID,
+          authentication.presentation?.preparedWorkspaceID == workspaceID
+        {
+          StoreProvider(store.projects.stateStore) {
+            ChatSidebarView(
+              store: store, authentication: authentication, workspaceID: workspaceID,
+              notifications: notifications, sidebar: sidebar,
+              headerHeight: headerHeight,
+              accountError: $accountError,
+              close: closeSidebar,
+              newChat: startNewChat
             )
-            .id(conversation.thread.id)
-          } else {
-            newChatHome
-              .frame(minHeight: 0, maxHeight: .infinity)
-              .safeAreaInset(edge: .bottom, spacing: 0) {
-                newChatComposer
-              }
-              .animation(
-                reduceMotion ? nil : .easeInOut(duration: 0.22),
-                value: store.newComposer.voice?.phase ?? .idle)
+            .id(ObjectIdentifier(store))
           }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
-        .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
-        .overlay {
-          if let submission = store.newChatSubmission, submission.isPresenting {
-            NewChatSubmissionView(submission: submission, webURL: store.webURL)
-              .id(submission.message.id)
-              .background { OkouColor.background.ignoresSafeArea() }
-          }
-        }
-        .safeAreaBar(edge: .top, spacing: 0) {
-          VStack(spacing: 0) {
-            // Sync problems float below the header with the rest of the chat feedback.
-            ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
-          }
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            topContentHeight = $0
-          }
-        }
-        .frame(width: geometry.size.width, height: geometry.size.height)
-        .background { OkouColor.background.ignoresSafeArea() }
-        .accessibilityHidden(sidebar.isOpen)
-        .allowsHitTesting(!sidebar.isOpen)
-        .sensoryFeedback(.selection, trigger: sidebar.isOpen)
-        .sidebarPageBlur(OkouElevation.sidebarBlur * sidebarProgress)
-        .mask(alignment: .top) {
-          LinearGradient(
-            stops: [
-              .init(color: .clear, location: 0), .init(color: .black, location: chatFeather),
-            ],
-            startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: sidebarWidth, height: screenHeight)
-          .offset(y: -topInset)
-        }
-        .opacity(1 - sidebarProgress)
-        .offset(x: drift * sidebarProgress)
       }
-      .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
-      .gesture(
-        SidebarPanGesture(
-          interaction: sidebar, sidebarWidth: sidebarWidth,
-          changed: { translation in
-            if sidebar.translation == nil {
-              UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-            sidebar.dragChanged(translation)
-          },
-          ended: { translation, velocity, cancelled in
-            let wasOpen = sidebar.isOpen
-            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-              sidebar.endDrag(
-                translation: translation, velocity: velocity, cancelled: cancelled,
-                sidebarWidth: sidebarWidth)
-            }
-            if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
-          })
-      )
-      .composerSuggestionOverlay(
-        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
-      )
+    } chat: {
+      chatPage
+    }
+    .ignoresSafeArea()
+    .sensoryFeedback(.selection, trigger: sidebar.isOpen)
+    .onChange(of: sidebar.isOpen) { _, isOpen in
+      if isOpen { Task { await store.refreshNavigation() } }
     }
     .overlay(alignment: .top) {
       ChatFeedbackBanner(store: store)
@@ -421,7 +295,6 @@ private struct WorkspaceRootView: View {
         didOpen: closeSidebar)
     )
     .onDisappear {
-      sidebar.cancelDrag()
       store.close()
     }
     .onReceive(
@@ -460,6 +333,55 @@ private struct WorkspaceRootView: View {
       .background(OkouColor.background)
       .interactiveDismissDisabled()
     }
+  }
+
+  private var chatPage: some View {
+    Group {
+      if let conversation = store.selectedConversation {
+        ChatDetailView(
+          conversation: conversation,
+          agents: store.list,
+          didSend: { await notifications.requestAfterSend() },
+          topContentInset: topContentHeight, sidebar: sidebar,
+          mentionSource: ComposerMentionSource(
+            agentID: conversation.thread.agentID,
+            threads: store.list.threads),
+          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+        )
+        .id(conversation.thread.id)
+      } else {
+        newChatHome
+          .frame(minHeight: 0, maxHeight: .infinity)
+          .safeAreaInset(edge: .bottom, spacing: 0) {
+            newChatComposer
+          }
+          .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.22),
+            value: store.newComposer.voice?.phase ?? .idle)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
+    .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
+    .overlay {
+      if let submission = store.newChatSubmission, submission.isPresenting {
+        NewChatSubmissionView(submission: submission, webURL: store.webURL)
+          .id(submission.message.id)
+          .background { OkouColor.background.ignoresSafeArea() }
+      }
+    }
+    .safeAreaBar(edge: .top, spacing: 0) {
+      ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          topContentHeight = $0
+        }
+    }
+    .background { OkouColor.background.ignoresSafeArea() }
+    .composerSuggestionOverlay(
+      topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
+    )
   }
 
   @ViewBuilder private var newChatComposer: some View {
@@ -543,16 +465,11 @@ private struct WorkspaceRootView: View {
   private func openSidebar() {
     UIApplication.shared.sendAction(
       #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      sidebar.setOpen(true)
-    }
-    Task { await store.refreshNavigation() }
+    sidebar.setOpen(true)
   }
 
   private func closeSidebar() {
-    withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      sidebar.setOpen(false)
-    }
+    sidebar.setOpen(false)
   }
 
   private func startNewChat() {
