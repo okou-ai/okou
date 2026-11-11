@@ -423,7 +423,7 @@ function ProjectFoldToggle({
                 {emoji && (
                   <span
                     aria-hidden="true"
-                    className="absolute bottom-px right-px flex size-3 items-center justify-center text-xs leading-none md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+                    className="absolute bottom-px right-px flex size-3 items-center justify-center font-family-emoji text-xs leading-none md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
                   >
                     {emoji}
                   </span>
