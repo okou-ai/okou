@@ -518,6 +518,8 @@ struct ChatSidebarView: View {
         menu: ChatThreadMenu(
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 },
           pinNeighbors: pinNeighbors))
+    } preview: {
+      ChatThreadPreview(thread: thread, workspace: store)
     }
     .menuOrder(.fixed)
     // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
