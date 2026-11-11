@@ -337,11 +337,12 @@ class Host:
                 pr: {"outcome": "unverified", "error": str(error)} for pr in selected
             }
         for pr, resource in remaining.items():
-            outcomes[pr] = {
-                "outcome": "failed",
-                "error": "resources remain after cleanup",
-                "remaining": resource,
-            }
+            if outcomes[pr]["outcome"] != "failed":
+                outcomes[pr] = {
+                    "outcome": "failed",
+                    "error": "resources remain after cleanup",
+                }
+            outcomes[pr]["remaining"] = resource
         return outcomes
 
     def session(self, numbers):

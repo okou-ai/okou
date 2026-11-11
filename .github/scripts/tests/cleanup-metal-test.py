@@ -370,6 +370,8 @@ class CleanupTests(unittest.TestCase):
         result, payload = self.worker("cleanup", 42, 43)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("Permission denied", payload["42"]["error"])
+        self.assertIn("remaining", payload["42"])
         self.assertEqual(payload["43"]["outcome"], "cleaned")
         self.assertTrue(unit.exists())
         self.assertFalse(config.exists())
