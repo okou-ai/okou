@@ -34,7 +34,7 @@ export function ChatHomeCompliance() {
 /**
  * The band under a bottom-anchored composer: a 6px step and one `xs` row. The
  * capability home fills it with compliance, and a conversation keeps it empty,
- * so moving from one to the other never moves the composer.
+ * so moving from one to the other never moves the composer's bottom edge.
  *
  * Desktop only, like the footer row on the plain chat home.
  */
@@ -84,11 +84,7 @@ export function CapabilityHomeCompliance() {
  */
 export function CapabilityHomeComplianceSpace() {
   return (
-    <div
-      aria-hidden
-      data-slot="composer-footnote-space"
-      className={COMPOSER_FOOTNOTE_BAND}
-    >
+    <div aria-hidden className={COMPOSER_FOOTNOTE_BAND}>
       <div className="h-7" />
     </div>
   );

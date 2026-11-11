@@ -3548,7 +3548,8 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     sharingPhase === "idle";
   // The capability home carries a compliance line under its composer. A
   // conversation keeps that line's room empty, so opening a chat from the home,
-  // or sending an empty chat's first message, leaves the composer where it was.
+  // or sending an empty chat's first message, leaves the composer's bottom edge
+  // where it was.
   let belowComposer: ReactNode = null;
   if (showCapabilities) {
     belowComposer = <CapabilityHomeCompliance />;
@@ -3621,12 +3622,12 @@ function SharedThreadCreatedLink({
 
 function ChatThreadBottomBar({
   thread,
-  layout = "default",
+  layout,
   below = null,
 }: {
   readonly thread: ChatPanelSignals;
   /** `home` while an empty thread shows the capability home above it. */
-  readonly layout?: ComposerLayout;
+  readonly layout: ComposerLayout;
   /** Shown under the composer, such as compliance on an empty thread's home. */
   readonly below?: ReactNode;
 }) {
