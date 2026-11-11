@@ -279,6 +279,43 @@ fn http_for_server(server: &MockServer) -> HttpClient {
     .unwrap()
 }
 
+async fn upload_with_counted_batches(
+    run_id: RunId,
+    path: &std::path::Path,
+) -> (usize, Vec<CapturedEvent>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let http = HttpClient::new(HttpClientConfig {
+        api_url: format!("http://{}", listener.local_addr().unwrap()),
+        vercel_bypass: None,
+        client_session_id: "runner-session-test".to_string(),
+    })
+    .unwrap();
+    let mut batches = 0;
+    let (_, events) = {
+        // Keep observing until upload completion, including unexpected extra requests.
+        let server = async {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let request = read_http_request(&mut stream).await;
+                let mut request_line = request.headers.lines().next().unwrap().split_whitespace();
+                assert_eq!(request_line.next(), Some("POST"));
+                assert_eq!(request_line.next(), Some("/api/webhooks/agent/telemetry"));
+                batches += 1;
+                drop(request);
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+            }
+        };
+        tokio::select! {
+            result = capture_async_log_events(upload_network_logs(&http, run_id, SANDBOX_TOKEN, path)) => result,
+            _ = server => unreachable!("batch server is an accept loop"),
+        }
+    };
+    (batches, events)
+}
+
 fn network_log_file(dir: &tempfile::TempDir) -> std::path::PathBuf {
     dir.path().join("network.jsonl")
 }
@@ -772,21 +809,8 @@ async fn upload_network_logs_allows_exact_batch_budget() {
     let run_id = RunId::from(uuid::Uuid::nil());
     write_one_entry_per_batch_logs(&path, NETWORK_LOG_UPLOAD_MAX_BATCHES);
 
-    let server = MockServer::start_async().await;
-    let upload = server
-        .mock_async(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
-            then.status(200);
-        })
-        .await;
-
-    let http = http_for_server(&server);
-    let (_, events) =
-        capture_async_log_events(upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path)).await;
-
-    upload
-        .assert_calls_async(NETWORK_LOG_UPLOAD_MAX_BATCHES)
-        .await;
+    let (batches, events) = upload_with_counted_batches(run_id, &path).await;
+    assert_eq!(batches, NETWORK_LOG_UPLOAD_MAX_BATCHES);
     assert!(!has_captured_event(&events, "network log upload truncated"));
 }
 
@@ -942,21 +966,8 @@ async fn upload_network_logs_stops_at_batch_budget() {
     *dropped_log.get_mut("sequence").unwrap() = json!(uploaded_count + 1);
     let remaining_source_bytes = serde_json::to_string(&dropped_log).unwrap().len() + 1;
 
-    let server = MockServer::start_async().await;
-    let upload = server
-        .mock_async(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
-            then.status(200);
-        })
-        .await;
-
-    let http = http_for_server(&server);
-    let (_, events) =
-        capture_async_log_events(upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path)).await;
-
-    upload
-        .assert_calls_async(NETWORK_LOG_UPLOAD_MAX_BATCHES)
-        .await;
+    let (batches, events) = upload_with_counted_batches(run_id, &path).await;
+    assert_eq!(batches, NETWORK_LOG_UPLOAD_MAX_BATCHES);
     let event = captured_event(&events, "network log upload truncated");
     assert_event_field(event, "reason", "batch_count");
     for field in [
