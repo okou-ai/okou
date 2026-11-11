@@ -297,7 +297,6 @@ export const firewallApiSchema = object({
     object({
       kind: literal("cloudflare_access"),
       configId: uuid(),
-      protectedOrigins: array(string()).min(1).max(32),
     }).strict(),
   ]).optional(),
   base: string(),

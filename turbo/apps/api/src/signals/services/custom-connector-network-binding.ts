@@ -47,7 +47,6 @@ export function customConnectorNetworkBindingSelection() {
       metadata: sql`jsonb_build_object(
       'type', 'cloudflare_access',
       'configId', ${binding.configId},
-      'protectedOrigins', ${binding.protectedOrigins},
       'status', 'available',
       'name', ${config.name}
     )`,

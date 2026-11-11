@@ -53,7 +53,6 @@ describe("Custom connector network metadata protocol", () => {
   const network = {
     type: "cloudflare_access",
     configId: "44444444-4444-4444-8444-444444444444",
-    protectedOrigins: ["https://api.example.com"],
     status: "available",
     name: "Corporate gateway",
   };
@@ -78,31 +77,6 @@ describe("Custom connector network metadata protocol", () => {
       }).success,
     ).toBe(false);
   });
-  it.each([
-    ["http://api.example.com"],
-    ["https://api.example.com/path"],
-    ["https://api.example.com?secret=1"],
-    ["https://user:password@api.example.com"],
-    ["https://*.example.com"],
-    ["https://{{variables.host}}.example.com"],
-    ["https://127.0.0.1"],
-    ["https://localhost"],
-    ["https://api.example.com", "https://api.example.com"],
-    [],
-    Array.from({ length: 33 }, (_, index) => {
-      return `https://api${index}.example.com`;
-    }),
-  ])(
-    "rejects an unsafe or ambiguous protected-origin set: %j",
-    (...protectedOrigins) => {
-      expect(
-        customConnectorHttpResponseSchema.safeParse({
-          ...response,
-          networkBinding: { ...network, protectedOrigins },
-        }).success,
-      ).toBe(false);
-    },
-  );
 });
 
 describe("Custom connector no-auth contracts", () => {

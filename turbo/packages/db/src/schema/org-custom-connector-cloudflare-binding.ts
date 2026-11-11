@@ -18,7 +18,6 @@ export const orgCustomConnectorCloudflareBindings = pgTable(
     orgId: text("org_id").notNull(),
     configId: uuid("config_id").notNull(),
     configScope: text("config_scope").notNull().default("organization"),
-    protectedOrigins: text("protected_origins").array().notNull(),
   },
   (table) => {
     return [
@@ -45,13 +44,6 @@ export const orgCustomConnectorCloudflareBindings = pgTable(
       check(
         "chk_custom_connector_cloudflare_scope",
         sql`${table.configScope} = 'organization'`,
-      ),
-      check(
-        "chk_custom_connector_cloudflare_origins",
-        sql`array_ndims(${table.protectedOrigins}) = 1
-        AND cardinality(${table.protectedOrigins}) BETWEEN 1 AND 32
-        AND array_position(${table.protectedOrigins}, NULL) IS NULL
-        AND array_position(${table.protectedOrigins}, '') IS NULL`,
       ),
     ];
   },

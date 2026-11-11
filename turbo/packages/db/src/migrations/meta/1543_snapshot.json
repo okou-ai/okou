@@ -1,5 +1,5 @@
 {
-  "id": "6f9a3a6e-18e6-4ee0-9a44-22aa6821f1ed",
+  "id": "bfee513a-7a49-4544-9994-99609ff67e6d",
   "prevId": "c4c134e7-d95c-4cfe-b8a3-b90405c04096",
   "version": "7",
   "dialect": "postgresql",
@@ -23985,12 +23985,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'organization'"
-        },
-        "protected_origins": {
-          "name": "protected_origins",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {
@@ -24057,10 +24051,6 @@
         "chk_custom_connector_cloudflare_scope": {
           "name": "chk_custom_connector_cloudflare_scope",
           "value": "\"org_custom_connector_cloudflare_bindings\".\"config_scope\" = 'organization'"
-        },
-        "chk_custom_connector_cloudflare_origins": {
-          "name": "chk_custom_connector_cloudflare_origins",
-          "value": "array_ndims(\"org_custom_connector_cloudflare_bindings\".\"protected_origins\") = 1\n        AND cardinality(\"org_custom_connector_cloudflare_bindings\".\"protected_origins\") BETWEEN 1 AND 32\n        AND array_position(\"org_custom_connector_cloudflare_bindings\".\"protected_origins\", NULL) IS NULL\n        AND array_position(\"org_custom_connector_cloudflare_bindings\".\"protected_origins\", '') IS NULL"
         }
       },
       "isRLSEnabled": false

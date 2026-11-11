@@ -283,8 +283,6 @@ pub enum CustomConnectorNetworkIntent {
     CloudflareAccess {
         #[serde(rename = "configId")]
         config_id: String,
-        #[serde(rename = "protectedOrigins")]
-        protected_origins: Vec<String>,
     },
 }
 

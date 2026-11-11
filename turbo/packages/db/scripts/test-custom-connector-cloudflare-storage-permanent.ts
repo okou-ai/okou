@@ -16,7 +16,6 @@ export async function validateCustomConnectorCloudflareStorage(
   const http = randomUUID();
   const mcp = randomUUID();
   const spare = randomUUID();
-  const origins = ["https://api.example.com"];
   try {
     for (const [id, owner, scope] of [
       [config, org, "organization"],
@@ -45,25 +44,19 @@ export async function validateCustomConnectorCloudflareStorage(
       [mcp, org, `_${mcp}`],
     );
     const insert = `INSERT INTO org_custom_connector_cloudflare_bindings
-      (connector_id,org_id,config_id,protected_origins) VALUES ($1,$2,$3,$4)`;
-    await assert.rejects(
-      client.query(insert, [spare, org, personal, origins]),
-      { constraint: "fk_custom_connector_cloudflare_config" },
-    );
-    await assert.rejects(client.query(insert, [spare, org, foreign, origins]), {
+      (connector_id,org_id,config_id) VALUES ($1,$2,$3)`;
+    await assert.rejects(client.query(insert, [spare, org, personal]), {
       constraint: "fk_custom_connector_cloudflare_config",
     });
-    await assert.rejects(
-      client.query(insert, [spare, foreignOrg, foreign, origins]),
-      { constraint: "fk_custom_connector_cloudflare_connector" },
-    );
-    await assert.rejects(client.query(insert, [spare, org, config, []]), {
-      code: "23514",
-      constraint: "chk_custom_connector_cloudflare_origins",
+    await assert.rejects(client.query(insert, [spare, org, foreign]), {
+      constraint: "fk_custom_connector_cloudflare_config",
     });
-    await client.query(insert, [http, org, config, origins]);
-    await client.query(insert, [mcp, org, config, origins]);
-    await assert.rejects(client.query(insert, [http, org, config, origins]), {
+    await assert.rejects(client.query(insert, [spare, foreignOrg, foreign]), {
+      constraint: "fk_custom_connector_cloudflare_connector",
+    });
+    await client.query(insert, [http, org, config]);
+    await client.query(insert, [mcp, org, config]);
+    await assert.rejects(client.query(insert, [http, org, config]), {
       code: "23505",
     });
     await assert.rejects(
@@ -133,7 +126,7 @@ export async function validateCustomConnectorCloudflareStorage(
           [racingConfig, org],
         );
         const [bound, changed] = await Promise.allSettled([
-          client.query(insert, [spare, org, racingConfig, origins]),
+          client.query(insert, [spare, org, racingConfig]),
           competitor.query(
             operation === "delete"
               ? "DELETE FROM cloudflare_access_configs WHERE id=$1"

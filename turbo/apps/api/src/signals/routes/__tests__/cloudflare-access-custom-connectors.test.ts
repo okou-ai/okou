@@ -168,7 +168,6 @@ test.each([
   {
     type: "cloudflare_access" as const,
     configId: randomUUID(),
-    protectedOrigins: ["https://api.example.com"],
   },
 ])(
   "preparation rejects an explicit binding mutation instead of silently dropping it: %j",

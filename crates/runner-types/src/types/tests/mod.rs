@@ -268,8 +268,7 @@ fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
 
     let mut bound = value.clone();
     bound["apis"][0]["networkIntent"] = serde_json::json!({
-        "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44",
-        "protectedOrigins": ["https://api.example.com"]
+        "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44"
     });
     let prepared: Firewall = serde_json::from_value(bound).unwrap();
     assert!(prepared.validate_for_connector_runtime().is_err());

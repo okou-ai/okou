@@ -3,12 +3,7 @@ CREATE TABLE "org_custom_connector_cloudflare_bindings" (
 	"org_id" text NOT NULL,
 	"config_id" uuid NOT NULL,
 	"config_scope" text DEFAULT 'organization' NOT NULL,
-	"protected_origins" text[] NOT NULL,
-	CONSTRAINT "chk_custom_connector_cloudflare_scope" CHECK ("org_custom_connector_cloudflare_bindings"."config_scope" = 'organization'),
-	CONSTRAINT "chk_custom_connector_cloudflare_origins" CHECK (array_ndims("org_custom_connector_cloudflare_bindings"."protected_origins") = 1
-        AND cardinality("org_custom_connector_cloudflare_bindings"."protected_origins") BETWEEN 1 AND 32
-        AND array_position("org_custom_connector_cloudflare_bindings"."protected_origins", NULL) IS NULL
-        AND array_position("org_custom_connector_cloudflare_bindings"."protected_origins", '') IS NULL)
+	CONSTRAINT "chk_custom_connector_cloudflare_scope" CHECK ("org_custom_connector_cloudflare_bindings"."config_scope" = 'organization')
 );
 --> statement-breakpoint
 ALTER TABLE "org_custom_connector_cloudflare_bindings" ADD CONSTRAINT "fk_custom_connector_cloudflare_connector" FOREIGN KEY ("connector_id","org_id") REFERENCES "public"."org_custom_connectors"("id","org_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
