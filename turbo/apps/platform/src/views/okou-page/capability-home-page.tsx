@@ -7,30 +7,27 @@ import {
   Building2,
   CalendarClock,
   ChartNoAxesCombined,
-  Clock3,
-  Files,
-  GitBranch,
-  Globe,
+  ChevronRight,
+  Compass,
   Handshake,
-  Image,
   Link2,
   Megaphone,
   MicVocal,
   Network,
   Package,
   Podcast,
-  Presentation,
   Repeat2,
   Search,
   SlidersHorizontal,
-  Users,
   X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {
   Button,
+  buttonVariants,
   cn,
+  SegmentControl,
+  SegmentControlItem,
   surfaceVariants,
   Tooltip,
   TooltipContent,
@@ -38,7 +35,11 @@ import {
 } from "@okouai/ui";
 import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import type { HomeExploreKind } from "../../signals/okou-page/composer-home.ts";
+import type {
+  HomeExploreKind,
+  HomeWorkflowKind,
+} from "../../signals/okou-page/composer-home.ts";
+import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { WORKFLOW_RECOMMENDATIONS } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -55,73 +56,64 @@ import {
   TRIGGER_EXAMPLES,
   TriggerSuggestionCover,
 } from "./trigger-suggestion-cover.tsx";
+import { CapabilityIllustration } from "./capability-illustrations.tsx";
 
+/*
+ * Each Create and Workflow choice carries `data-art`; its card shows the
+ * matching drawing while that choice is hovered or focused. The visibility
+ * classes are spelled out in full because Tailwind's scanner only generates
+ * classes that appear literally in the source.
+ */
 const CREATE_TASKS = [
   {
     task: "presentation",
-    Icon: Presentation,
-    color:
-      "border-[#f5dce6] bg-[#fff0f5] text-[#cd7e9e] dark:border-[#cd7e9e]/25 dark:bg-[#cd7e9e]/10 dark:text-[#e7b1c7]",
+    art: "presentation",
+    visibility:
+      "group-has-[[data-art]:not([data-art=presentation]):is(:hover,:focus-visible)]/card:hidden",
   },
   {
     task: "image",
-    Icon: Image,
-    color:
-      "border-[#e5ddfa] bg-[#f4f0ff] text-[#9480cf] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/10 dark:text-[#c3b6ee]",
+    art: "image",
+    visibility:
+      "hidden group-has-[[data-art=image]:is(:hover,:focus-visible)]/card:block",
   },
   {
     task: "document",
-    Icon: Files,
-    color:
-      "border-[#d9e8fb] bg-[#eef5ff] text-[#7b9fd3] dark:border-[#7b9fd3]/25 dark:bg-[#7b9fd3]/10 dark:text-[#b2ccef]",
+    art: "document",
+    visibility:
+      "hidden group-has-[[data-art=document]:is(:hover,:focus-visible)]/card:block",
   },
   {
     task: "website",
-    Icon: Globe,
-    color:
-      "border-[#d9efe5] bg-[#eefaf5] text-[#71ad98] dark:border-[#71ad98]/25 dark:bg-[#71ad98]/10 dark:text-[#b0dcca]",
+    art: "website",
+    visibility:
+      "hidden group-has-[[data-art=website]:is(:hover,:focus-visible)]/card:block",
   },
   {
     task: "visualization",
-    Icon: ChartNoAxesCombined,
-    color:
-      "border-[#f5e2d9] bg-[#fff4ee] text-[#cf947c] dark:border-[#cf947c]/25 dark:bg-[#cf947c]/10 dark:text-[#e7bdab]",
-  },
-] as const;
-const EXPLORE_KINDS = [
-  {
-    kind: "search",
-    Icon: Users,
-    color:
-      "border-[#d9efe5] bg-[#eefaf5] text-[#71ad98] dark:border-[#71ad98]/25 dark:bg-[#71ad98]/10 dark:text-[#b0dcca]",
-    surface: "from-[#f1faf6]/50 dark:from-[#71ad98]/5",
-  },
-  {
-    kind: "research",
-    Icon: BookOpenCheck,
-    color:
-      "border-[#e5ddfa] bg-[#f4f0ff] text-[#9480cf] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/10 dark:text-[#c3b6ee]",
-    surface: "from-[#f7f2ff]/50 dark:from-[#9480cf]/5",
+    art: "chart",
+    visibility:
+      "hidden group-has-[[data-art=chart]:is(:hover,:focus-visible)]/card:block",
   },
 ] as const;
 const WORKFLOW_KINDS = [
   {
     kind: "scheduled",
-    Icon: Clock3,
-    color:
-      "border-[#d9e8fb] bg-[#eef5ff] text-[#7b9fd3] dark:border-[#7b9fd3]/25 dark:bg-[#7b9fd3]/10 dark:text-[#b2ccef]",
+    art: "scheduled",
+    visibility:
+      "hidden group-has-[[data-art=scheduled]:is(:hover,:focus-visible)]/card:block",
   },
   {
     kind: "triggers",
-    Icon: Zap,
-    color:
-      "border-[#f5dce6] bg-[#fff0f5] text-[#cd7e9e] dark:border-[#cd7e9e]/25 dark:bg-[#cd7e9e]/10 dark:text-[#e7b1c7]",
+    art: "triggers",
+    visibility:
+      "hidden group-has-[[data-art=triggers]:is(:hover,:focus-visible)]/card:block",
   },
   {
     kind: "advanced",
-    Icon: GitBranch,
-    color:
-      "border-[#e5ddfa] bg-[#f4f0ff] text-[#9480cf] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/10 dark:text-[#c3b6ee]",
+    art: "advanced",
+    visibility:
+      "group-has-[[data-art]:not([data-art=advanced]):is(:hover,:focus-visible)]/card:hidden",
   },
 ] as const;
 
@@ -148,21 +140,45 @@ const SCHEDULE_SUGGESTIONS = [
   { id: "recurring", Icon: Repeat2 },
 ] as const;
 
-function CapabilityIcon({
-  Icon,
-  color,
+/**
+ * Every capability card shares one anatomy: copy at the top left, its drawing
+ * centred in the card's drawing box at the right, and any choices along the
+ * bottom. The cards are flat tone with no stroke or shadow; the composer stays
+ * the one outlined surface on the page.
+ */
+const CAPABILITY_CARD =
+  "group/card relative isolate flex min-w-0 flex-col items-start overflow-hidden rounded-surface bg-muted px-6 py-5 text-left";
+
+function CapabilityCopy({
+  title,
+  description,
+  heading = false,
+  className,
 }: {
-  readonly Icon: LucideIcon;
-  readonly color: string;
+  readonly title: string;
+  readonly description: string;
+  readonly heading?: boolean;
+  /** The copy column's width, which stops short of the card's drawing box. */
+  readonly className: string;
 }) {
+  const Title = heading ? "h2" : "span";
   return (
-    <span
-      className={cn(
-        "flex size-10 shrink-0 items-center justify-center rounded-xl border duration-150 group-hover:border-current/40 group-hover:brightness-95 group-focus-visible:border-current/40 motion-safe:transition-[border-color,filter] dark:group-hover:brightness-110",
-        color,
-      )}
-    >
-      <Icon strokeWidth={1.8} aria-hidden />
+    <span className={cn("relative z-[2] flex flex-col items-start", className)}>
+      <Title className="flex items-center gap-1 text-lg font-medium leading-7 tracking-tight whitespace-nowrap text-foreground">
+        {title}
+        {!heading && (
+          <ChevronRight
+            aria-hidden
+            strokeWidth={2}
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+        )}
+      </Title>
+      {/* Balanced, so a description that wraps never leaves one word alone
+          on its last line ("share.", "topics"). */}
+      <span className="mt-0.5 text-sm leading-5 text-balance text-muted-foreground">
+        {description}
+      </span>
     </span>
   );
 }
@@ -182,163 +198,290 @@ function ExploreCapabilityCard({
     { returnObjects: true },
   );
   const openExplore = useSet(signals.taskChips.home.openExplore$);
-  const { Icon, color, surface } = EXPLORE_KINDS.find((item) => {
-    return item.kind === kind;
-  })!;
   return (
-    <Button
-      variant="quiet"
-      iconSize="lg"
+    <button
+      type="button"
       aria-label={copy.title}
       className={cn(
-        surfaceVariants({ interactive: true }),
-        "group h-auto min-h-16 min-w-0 items-center justify-start gap-3 bg-linear-to-br via-card to-card p-3 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @2xl:min-h-22 @2xl:p-5",
-        surface,
+        CAPABILITY_CARD,
+        "min-h-42 transition-[background-color] duration-150 ease-surface [&:hover]:bg-state-hover-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none @2xl:col-span-9",
       )}
       onClick={() => {
         return openExplore(kind);
       }}
     >
-      <CapabilityIcon Icon={Icon} color={color} />
-      <span className="min-w-0 text-base font-medium leading-6 tracking-tight">
-        {copy.title}
-      </span>
-    </Button>
+      <CapabilityIllustration
+        art={kind === "search" ? "people" : "research"}
+        className="motion-safe:animate-capability-art-in"
+      />
+      <CapabilityCopy
+        title={copy.title}
+        description={copy.description}
+        className="max-w-36"
+      />
+    </button>
   );
 }
 
-const FEATURE_PREVIEW_CARD =
-  "absolute overflow-hidden rounded-lg border border-surface-border bg-card shadow-surface";
-
-/** Decorative product UI fragments, not examples of generated artwork. */
-function ExploreFeaturePreview() {
-  return (
-    <div
-      className="relative h-24 w-full max-w-56 scale-90 select-none"
-      aria-hidden
-    >
-      <div
-        className={cn(
-          FEATURE_PREVIEW_CARD,
-          "left-1 top-3 h-20 w-24 -rotate-12 p-2",
-        )}
-      >
-        <div className="h-1 w-8 rounded-full bg-state-pressed" />
-        <div className="mt-3 flex items-center">
-          <div className="size-5 rounded-md border border-[#d9e8fb] bg-[#eef5ff] dark:border-[#7b9fd3]/25 dark:bg-[#7b9fd3]/15" />
-          <div className="h-px w-3 bg-[#b2ccef]" />
-          <div className="flex flex-col gap-2 border-l border-[#b2ccef] py-1 pl-2">
-            <div className="size-3 rounded border border-[#e5ddfa] bg-[#f4f0ff] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/15" />
-            <div className="size-3 rounded border border-[#d9efe5] bg-[#eefaf5] dark:border-[#71ad98]/25 dark:bg-[#71ad98]/15" />
-          </div>
-        </div>
-      </div>
-      <div
-        className={cn(
-          FEATURE_PREVIEW_CARD,
-          "right-1 top-3 flex h-20 w-24 rotate-12 flex-col gap-2 p-2",
-        )}
-      >
-        {[
-          "bg-[#d9efe5] dark:bg-[#71ad98]/25",
-          "bg-[#e5ddfa] dark:bg-[#9480cf]/25",
-          "bg-[#d9e8fb] dark:bg-[#7b9fd3]/25",
-        ].map((color) => {
-          return (
-            <div
-              key={color}
-              className="flex flex-row-reverse items-center gap-2"
-            >
-              <div className={cn("size-3 shrink-0 rounded-full", color)} />
-              <div className="flex flex-1 flex-col gap-1">
-                <div className="ml-auto h-1 w-7 rounded-full bg-state-pressed" />
-                <div className="ml-auto h-0.5 w-10 rounded-full bg-state-hover" />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        className={cn(
-          FEATURE_PREVIEW_CARD,
-          "left-1/2 top-1 h-20 w-32 -translate-x-1/2 -rotate-2",
-        )}
-      >
-        <div className="flex h-4 items-center gap-1 border-b border-surface-border px-2">
-          <span className="size-1 rounded-full bg-[#e7b1c7]" />
-          <span className="size-1 rounded-full bg-[#c3b6ee]" />
-          <span className="size-1 rounded-full bg-[#b0dcca]" />
-          <span className="ml-1 h-1.5 flex-1 rounded-full bg-state-hover" />
-        </div>
-        <div className="flex gap-2 p-2">
-          <div className="flex w-3 shrink-0 flex-col gap-2 pt-1">
-            <div className="h-1 rounded-full bg-state-pressed" />
-            <div className="h-1 rounded-full bg-state-hover" />
-            <div className="h-1 rounded-full bg-state-hover" />
-          </div>
-          <div className="grid flex-1 grid-cols-2 gap-1.5">
-            <div className="col-span-2 h-5 rounded border border-[#e5ddfa] bg-[#f4f0ff] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/15" />
-            <div className="h-4 rounded border border-[#d9e8fb] bg-[#eef5ff] dark:border-[#7b9fd3]/25 dark:bg-[#7b9fd3]/15" />
-            <div className="h-4 rounded border border-[#f5dce6] bg-[#fff0f5] dark:border-[#cd7e9e]/25 dark:bg-[#cd7e9e]/15" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExploreBlogCard() {
+/** The blog link, kept quiet under the cards. */
+function ExploreLink() {
   const { t } = useTranslation();
-  const title = t(($) => {
-    return $.chat.capabilityHome.explore;
-  });
   return (
     <a
       href="https://www.okou.ai/en/blog"
       target="_blank"
       rel="noopener noreferrer"
-      aria-label={title}
-      className={surfaceVariants({
-        interactive: true,
-        className:
-          "group flex h-full flex-col overflow-hidden bg-linear-to-br from-[#fff4ee]/50 via-card to-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:from-[#cf947c]/5",
+      className={buttonVariants({
+        variant: "quiet",
+        size: "xs",
+        className: "-ml-2.5 gap-1.5 text-xs",
       })}
     >
-      <div className="flex min-h-7 items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-1.5 text-base font-medium leading-6 tracking-tight">
-          <span className="min-w-0">{title}</span>
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-4 shrink-0 text-amber-400"
-          >
-            <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m0-12a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m-7 12a6 6 0 0 1 6-6a6 6 0 0 1-6-6a6 6 0 0 1-6 6a6 6 0 0 1 6 6" />
-          </svg>
-        </h2>
-        <ArrowUpRight
-          strokeWidth={1.8}
-          className="size-4 shrink-0 text-muted-foreground duration-150 group-hover:text-foreground group-focus-visible:text-foreground motion-safe:transition-transform motion-safe:group-hover:-translate-y-0.5 motion-safe:group-hover:translate-x-0.5"
-          aria-hidden
-        />
-      </div>
-      <div className="mt-2 flex flex-1 items-center justify-center">
-        <ExploreFeaturePreview />
-      </div>
+      <Compass aria-hidden />
+      {t(($) => {
+        return $.chat.capabilityHome.exploreWhatsNew;
+      })}
+      <ArrowUpRight aria-hidden />
     </a>
   );
 }
 
-function CapabilityCards({
+function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
+  const { t } = useTranslation();
+  const copy = t(
+    ($) => {
+      return $.chat.capabilityHome;
+    },
+    { returnObjects: true },
+  );
+  const tasks = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  const openTask = useSet(signals.taskChips.openTask$);
+  const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
+  // Explore takes the top row in halves. Below it the row runs 5:4, which still
+  // fits Create's five choices on one line and gives Workflow the width its
+  // wide flow drawing needs.
+  return (
+    <div
+      className="grid min-w-0 gap-3 @2xl:grid-cols-18"
+      role="group"
+      aria-label={copy.capabilities}
+    >
+      <ExploreCapabilityCard signals={signals} kind="search" />
+      <ExploreCapabilityCard signals={signals} kind="research" />
+      <section
+        className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
+        aria-label={copy.create.title}
+      >
+        {CREATE_TASKS.map(({ art, visibility }) => {
+          return (
+            <CapabilityIllustration
+              key={art}
+              art={art}
+              className={cn(
+                visibility,
+                "motion-safe:animate-capability-art-in",
+              )}
+            />
+          );
+        })}
+        <CapabilityCopy
+          heading
+          title={copy.create.title}
+          description={copy.create.description}
+          className="max-w-70"
+        />
+        <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
+          {CREATE_TASKS.map(({ task, art }) => {
+            const button = (
+              <Button
+                key={task}
+                variant="neutral"
+                size="sm"
+                data-art={art}
+                onClick={() => {
+                  openTask(task);
+                }}
+              >
+                {tasks[task]}
+              </Button>
+            );
+            return task === "document" ? (
+              <Tooltip key={task}>
+                <TooltipTrigger render={button} />
+                <TooltipContent>{copy.create.documentFormats}</TooltipContent>
+              </Tooltip>
+            ) : (
+              button
+            );
+          })}
+        </div>
+      </section>
+      <section
+        className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
+        aria-label={tasks.workflow}
+      >
+        {WORKFLOW_KINDS.map(({ art, visibility }) => {
+          return (
+            <CapabilityIllustration
+              key={art}
+              art={art}
+              className={cn(
+                visibility,
+                "motion-safe:animate-capability-art-in",
+              )}
+            />
+          );
+        })}
+        <CapabilityCopy
+          heading
+          title={tasks.workflow}
+          description={copy.workflow.summary}
+          className="max-w-33"
+        />
+        <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
+          {WORKFLOW_KINDS.map(({ kind, art }) => {
+            return (
+              <Button
+                key={kind}
+                variant="neutral"
+                size="sm"
+                data-art={art}
+                aria-label={copy.workflow[kind].title}
+                onClick={() => {
+                  openWorkflow(kind);
+                }}
+              >
+                {copy.workflow[kind].shortTitle}
+              </Button>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+type HomeTask = ComposerTask | HomeExploreKind;
+type CapabilityGroup = HomeExploreKind | "create" | "workflow";
+
+function capabilityGroup(task: HomeTask): CapabilityGroup {
+  if (task === "search" || task === "research" || task === "workflow") {
+    return task;
+  }
+  return "create";
+}
+
+function isCreateTask(
+  task: ComposerTask | null,
+): task is (typeof CREATE_TASKS)[number]["task"] {
+  return CREATE_TASKS.some((entry) => {
+    return entry.task === task;
+  });
+}
+
+/**
+ * While a tray is open the cards fold into this row, so the page keeps its map
+ * of capabilities and another one is a click away without closing first.
+ * Create reopens on the type the member last chose.
+ */
+function CapabilitySwitcher({
   signals,
-  suggestions,
+  selected,
 }: {
   readonly signals: ComposerSignals;
-  readonly suggestions?: ReactNode;
+  readonly selected: HomeTask;
+}) {
+  const { t } = useTranslation();
+  const copy = t(
+    ($) => {
+      return $.chat.capabilityHome;
+    },
+    { returnObjects: true },
+  );
+  const tasks = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  const openExplore = useSet(signals.taskChips.home.openExplore$);
+  const openTask = useSet(signals.taskChips.openTask$);
+  const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
+  const task = useGet(signals.taskChips.task$);
+  const workflowKind = useGet(signals.taskChips.home.workflowKind$);
+  const group = capabilityGroup(selected);
+  const items = [
+    {
+      id: "search",
+      art: "people",
+      label: copy.search.title,
+      open: () => {
+        openExplore("search");
+      },
+    },
+    {
+      id: "research",
+      art: "research",
+      label: copy.research.title,
+      open: () => {
+        openExplore("research");
+      },
+    },
+    {
+      id: "create",
+      art: "presentation",
+      label: copy.create.title,
+      open: () => {
+        openTask(isCreateTask(task) ? task : "presentation");
+      },
+    },
+    {
+      id: "workflow",
+      art: "advanced",
+      label: tasks.workflow,
+      open: () => {
+        openWorkflow(workflowKind);
+      },
+    },
+  ] as const;
+  return (
+    <nav
+      aria-label={copy.capabilities}
+      className="grid min-w-0 grid-cols-2 gap-2 motion-safe:animate-composer-panel-in @2xl:grid-cols-4"
+    >
+      {items.map((item) => {
+        return (
+          <button
+            key={item.id}
+            type="button"
+            aria-current={group === item.id ? "true" : undefined}
+            className="flex h-14 min-w-0 items-center gap-2.5 rounded-surface-compact bg-muted pr-3.5 pl-2 text-left text-sm font-medium text-muted-foreground transition-[background-color,box-shadow] duration-150 ease-surface [&:hover]:bg-state-hover-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-[current=true]:bg-card aria-[current=true]:text-foreground aria-[current=true]:shadow-surface aria-[current=true]:ring-1 aria-[current=true]:ring-surface-border"
+            onClick={item.open}
+          >
+            <CapabilityIllustration art={item.art} thumb />
+            <span className="min-w-0 truncate">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
+ * Create's types and Workflow's kinds switch in the tray's own header, so a
+ * member compares them without going back to the cards.
+ */
+function CapabilityTabs({
+  signals,
+  selected,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: ComposerTask;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -355,97 +498,94 @@ function CapabilityCards({
   );
   const openTask = useSet(signals.taskChips.openTask$);
   const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
-  return (
-    <div
-      className="grid min-w-0 gap-3 @2xl:grid-cols-12"
-      role="group"
-      aria-label={copy.capabilities}
-    >
-      <div className="grid grid-cols-2 gap-3 @2xl:col-span-4 @2xl:grid-cols-1 @2xl:grid-rows-2">
-        <ExploreCapabilityCard signals={signals} kind="search" />
-        <ExploreCapabilityCard signals={signals} kind="research" />
-      </div>
-      <section
-        className={surfaceVariants({
-          className:
-            "flex flex-col bg-linear-to-br from-[#f7f2ff]/50 via-card to-card p-4 dark:from-[#9480cf]/5 @2xl:col-span-8 @2xl:p-5",
-        })}
-        aria-label={copy.create.title}
-      >
-        <h2 className="flex min-h-7 items-center text-base font-medium leading-6 tracking-tight">
-          {copy.create.title}
-        </h2>
-        <div className="mt-3 grid flex-1 grid-cols-3 content-center gap-1 @2xl:mt-5 @2xl:grid-cols-5 @2xl:gap-y-3">
-          {CREATE_TASKS.map(({ task, Icon, color }) => {
-            const button = (
-              <Button
-                key={task}
-                variant="quiet"
-                iconSize="lg"
-                aria-label={tasks[task]}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-xl px-0 py-2 font-medium hover:bg-transparent active:bg-transparent motion-reduce:transition-none"
-                onClick={() => {
-                  openTask(task);
-                }}
-              >
-                <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full text-sm leading-5 break-words whitespace-normal">
-                  {tasks[task]}
-                </span>
-              </Button>
-            );
-            return task === "document" ? (
-              <Tooltip key={task}>
-                <TooltipTrigger render={button} />
-                <TooltipContent>{copy.create.documentFormats}</TooltipContent>
-              </Tooltip>
-            ) : (
-              button
-            );
-          })}
-        </div>
-      </section>
-      <section
-        className={surfaceVariants({
-          className: cn(
-            "flex flex-col bg-linear-to-br from-[#f2f7ff]/50 via-card to-card p-4 dark:from-[#7b9fd3]/5 @2xl:p-5",
-            suggestions ? "@2xl:col-span-4" : "@2xl:col-span-8",
-          ),
-        })}
+  const workflowKind = useGet(signals.taskChips.home.workflowKind$);
+  if (selected === "workflow") {
+    return (
+      <SegmentControl
+        variant="plain"
+        size="sm"
+        className="-ml-1 min-w-0 overflow-x-auto"
         aria-label={tasks.workflow}
+        value={workflowKind}
+        onValueChange={(kind: HomeWorkflowKind) => {
+          openWorkflow(kind);
+        }}
       >
-        <h2 className="flex min-h-7 items-center text-base font-medium leading-6 tracking-tight">
-          {tasks.workflow}
-        </h2>
-        <div className="mt-3 grid flex-1 grid-cols-3 content-center gap-1">
-          {WORKFLOW_KINDS.map(({ kind, Icon, color }) => {
-            return (
-              <Button
-                key={kind}
-                variant="quiet"
-                iconSize="lg"
-                aria-label={copy.workflow[kind].title}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-xl px-0 py-2 text-center whitespace-normal hover:bg-transparent active:bg-transparent motion-reduce:transition-none"
-                onClick={() => {
-                  openWorkflow(kind);
-                }}
-              >
-                <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full text-sm font-medium leading-5 hyphens-auto whitespace-normal">
-                  {copy.workflow[kind].shortTitle}
-                </span>
-              </Button>
-            );
-          })}
-        </div>
-      </section>
-      <div className="@2xl:col-span-4">
-        <ExploreBlogCard />
-      </div>
-      {suggestions && (
-        <div className="min-w-0 @2xl:col-span-4">{suggestions}</div>
+        {WORKFLOW_KINDS.map(({ kind }) => {
+          return (
+            <SegmentControlItem key={kind} value={kind}>
+              {copy.workflow[kind].shortTitle}
+            </SegmentControlItem>
+          );
+        })}
+      </SegmentControl>
+    );
+  }
+  return (
+    <SegmentControl
+      variant="plain"
+      size="sm"
+      className="-ml-1 min-w-0 overflow-x-auto"
+      aria-label={copy.create.title}
+      value={selected}
+      onValueChange={(task: ComposerTask) => {
+        openTask(task);
+      }}
+    >
+      {CREATE_TASKS.map(({ task }) => {
+        return (
+          <SegmentControlItem key={task} value={task}>
+            {tasks[task]}
+          </SegmentControlItem>
+        );
+      })}
+    </SegmentControl>
+  );
+}
+
+/**
+ * A capability's choices, in a tray that slides up from behind the composer
+ * they feed. It takes the composer's own white, border and shadow, and its
+ * foot runs under the composer's top edge, so the two read as one surface
+ * opening upward rather than a box placed above it; a tinted tray would also
+ * tint every template cover inside it.
+ */
+function CapabilityTray({
+  signals,
+  selected,
+  closeButton,
+  className,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: HomeTask;
+  readonly closeButton: ReactNode;
+  readonly className: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "relative flex min-w-0 flex-col gap-4 rounded-t-3xl border border-b-0 border-gray-300 bg-card px-4 pt-4 pb-10 shadow-[var(--okou-card-shadow)] motion-safe:animate-capability-tray-in sm:px-5",
+        className,
       )}
-    </div>
+    >
+      {selected !== "search" && selected !== "research" && (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <CapabilityTabs signals={signals} selected={selected} />
+          {closeButton}
+        </div>
+      )}
+      {selected === "search" || selected === "research" ? (
+        <HomeExploreSuggestions
+          signals={signals}
+          kind={selected}
+          headerAction={closeButton}
+        />
+      ) : selected === "workflow" ? (
+        <HomeWorkflowSuggestions signals={signals} headerAction={null} />
+      ) : (
+        <ComposerTaskTemplates signals={signals} selected={selected} />
+      )}
+    </section>
   );
 }
 
@@ -796,25 +936,34 @@ export function CapabilityHomeContent({
       <X aria-hidden />
     </Button>
   );
+  const open = selected !== null;
   return (
     <main
       className={cn(
         "isolate flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] px-4 sm:px-6",
         // Reserve greeting space in empty chats, whose desktop thread header
         // already occupies 56px.
-        heading === undefined && selected === null
-          ? "pt-24 md:pt-14"
-          : selected === null
-            ? "pt-6 md:pt-20"
-            : "pt-6 md:pt-10",
+        heading === undefined ? "pt-24 md:pt-14" : "pt-6 md:pt-20",
+        // The scroller runs 36px under the composer's footer, which paints
+        // above it: through the footer's transparent 12px top padding and
+        // past the composer's 24px corner radius. Content that overflows
+        // therefore slides under the composer instead of being sliced flat
+        // 12px above it with a white band between. The resting distance is
+        // padding inside the scroller, so at rest the cards still end 12px
+        // above the composer, and an open tray still tucks 12px under its
+        // top edge.
+        "-mb-9",
+        open ? "pb-3" : "pb-9",
       )}
     >
       <div
         className={cn(
           "@container mx-auto w-full max-w-[900px] flex-1",
-          heading !== undefined && selected === null
-            ? "grid grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)]"
-            : "flex flex-col",
+          heading === undefined
+            ? "flex flex-col"
+            : open
+              ? "grid grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)_auto]"
+              : "grid grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)]",
         )}
       >
         {selected === null ? (
@@ -825,34 +974,42 @@ export function CapabilityHomeContent({
             )}
           >
             {heading !== undefined && (
-              <div className="flex min-h-14 justify-start">{heading}</div>
+              // The suggestion strip rides in the greeting row, so showing it
+              // never pushes the cards or the composer down.
+              <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                {heading}
+                {suggestions && (
+                  <div className="min-w-0 basis-full @3xl:max-w-110 @3xl:flex-1 @3xl:basis-0">
+                    {suggestions}
+                  </div>
+                )}
+              </div>
             )}
-            <CapabilityCards signals={signals} suggestions={suggestions} />
-            <CapabilityHomeCompliance />
-          </div>
-        ) : (
-          <div className="flex flex-1 flex-col justify-end py-4">
-            <div className="rounded-2xl border border-surface-border bg-card p-4 sm:p-5">
-              {selected === "search" || selected === "research" ? (
-                <HomeExploreSuggestions
-                  signals={signals}
-                  kind={selected}
-                  headerAction={closeButton}
-                />
-              ) : selected === "workflow" ? (
-                <HomeWorkflowSuggestions
-                  signals={signals}
-                  headerAction={closeButton}
-                />
-              ) : (
-                <ComposerTaskTemplates
-                  signals={signals}
-                  selected={selected}
-                  headerAction={closeButton}
-                />
-              )}
+            <CapabilityCards signals={signals} />
+            <div className="-mt-2 flex min-w-0 px-1">
+              <ExploreLink />
             </div>
           </div>
+        ) : (
+          <>
+            <div
+              className={cn(
+                "flex min-w-0 shrink-0 flex-col gap-5",
+                heading === undefined ? "mt-auto" : "row-start-2",
+              )}
+            >
+              {heading !== undefined && (
+                <div className="flex min-h-14 items-center">{heading}</div>
+              )}
+              <CapabilitySwitcher signals={signals} selected={selected} />
+            </div>
+            <CapabilityTray
+              signals={signals}
+              selected={selected}
+              closeButton={closeButton}
+              className={heading === undefined ? "mt-6" : "row-start-4 mt-6"}
+            />
+          </>
         )}
       </div>
     </main>
@@ -881,6 +1038,7 @@ export function CapabilityHomePage({
           <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
             <div className="mx-auto max-w-[900px]">
               <ChatComposer signals={signals} layout="thread" />
+              <CapabilityHomeCompliance />
               <SuggestionSaveErrors />
             </div>
           </div>

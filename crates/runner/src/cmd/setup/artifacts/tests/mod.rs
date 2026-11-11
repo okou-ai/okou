@@ -26,7 +26,7 @@ fn content_identity(content: &[u8]) -> SetupArtifactIdentity {
 }
 
 fn test_client() -> reqwest::Client {
-    reqwest::Client::builder().build().unwrap()
+    crate::cmd::setup::setup_http_client().unwrap()
 }
 
 fn mode(path: &std::path::Path) -> u32 {
@@ -310,11 +310,15 @@ async fn installed_artifact_skips_download() {
 async fn direct_artifact_downloads_and_installs() {
     let dir = tempfile::tempdir().unwrap();
     let server = MockServer::start_async().await;
-    let content = b"direct artifact".to_vec();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    std::io::Write::write_all(&mut encoder, b"direct artifact").unwrap();
+    let content = encoder.finish().unwrap();
     let download = server
         .mock_async(|when, then| {
             when.method(GET).path("/direct.bin");
-            then.status(200).body(content.clone());
+            then.status(200)
+                .header("content-encoding", "gzip")
+                .body(content.clone());
         })
         .await;
     let target = dir.path().join("nested").join("direct.bin");
@@ -380,7 +384,9 @@ async fn tar_entry_artifact_downloads_extracts_and_installs() {
     let download = server
         .mock_async(|when, then| {
             when.method(GET).path("/archive.tar.gz");
-            then.status(200).body(tarball.clone());
+            then.status(200)
+                .header("content-encoding", "gzip")
+                .body(tarball.clone());
         })
         .await;
     let target = dir.path().join("nested").join("tool");

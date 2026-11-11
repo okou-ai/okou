@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.92](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.91...runner-lifecycle-v0.17.92) (2026-11-11)
+
+## [0.17.91](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.90...runner-lifecycle-v0.17.91) (2026-11-11)
+
+## [0.17.90](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.89...runner-lifecycle-v0.17.90) (2026-11-11)
+
+## [0.17.89](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.88...runner-lifecycle-v0.17.89) (2026-11-11)
+
+## [0.17.88](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.87...runner-lifecycle-v0.17.88) (2026-11-10)
+
+## [0.17.87](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.86...runner-lifecycle-v0.17.87) (2026-11-10)
+
 ## [0.17.86](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.85...runner-lifecycle-v0.17.86) (2026-11-10)
 
 ## [0.17.85](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.84...runner-lifecycle-v0.17.85) (2026-11-10)

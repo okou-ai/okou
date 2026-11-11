@@ -63,7 +63,8 @@ async def test_costly_row_yields_before_completion_and_preserves_billing(
                 )
             )
             assert response_stream(flow)(chunk) == chunk
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
             pending, parsed, failed = await heartbeat
             yielded_while_pending |= pending and parsed == failed == 0
 
@@ -161,7 +162,8 @@ async def test_trailing_cr_does_not_change_exact_row_work_limit(
         chunks.append(b"\n")
     for chunk in chunks:
         assert response_stream(flow)(chunk) == chunk
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     response_streaming.finalize_connector_response_state(flow)
     assert state["lines_parsed"] == 1
     assert state["lines_failed"] == 0
@@ -173,7 +175,8 @@ async def test_cr_before_later_content_is_validated_and_next_row_recovers(real_f
     state = flow.metadata[metadata_keys.X_NDJSON_STATE]
     for chunk in (b'{"data":{"id":"1","text":"a\r', b'\rb"}}\n{"data":{"id":"2"}}\n'):
         assert response_stream(flow)(chunk) == chunk
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     assert state["lines_failed"] == 1
     assert state["lines_parsed"] == state["data_count"] == 1
 
@@ -185,7 +188,8 @@ async def test_withheld_cr_before_later_content_counts_against_work_limit(real_f
     chunks = [b" " * (65_536 - 6) + b"null", b"\r\r", b"\r\r", b" \n{}\n"]
     for chunk in chunks:
         assert response_stream(flow)(chunk) == chunk
-        await mitm_addon.responseinspection(flow)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
     assert state["lines_failed"] == 1
     assert state["lines_parsed"] == 1
 
@@ -209,7 +213,8 @@ async def test_oversized_partially_inspected_row_discards_observations_and_recov
         ]
         for chunk in chunks:
             assert response_stream(flow)(chunk) == chunk
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         assert mitm_addon.response(flow) is None
         usage.flush_usage_events(trigger="test")
     assert state["lines_failed"] == 1

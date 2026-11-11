@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.109.68](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.67...guest-agent-v0.109.68) (2026-11-11)
+
+
+### Bug Fixes
+
+* **memory:** merge concurrent run changes before publication ([#46529](https://github.com/okou-ai/okou/issues/46529)) ([fef343e](https://github.com/okou-ai/okou/commit/fef343edcb076caa33115a724820f5e5c2faf83c))
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
+## [0.109.67](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.66...guest-agent-v0.109.67) (2026-11-11)
+
+## [0.109.66](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.65...guest-agent-v0.109.66) (2026-11-11)
+
+## [0.109.65](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.64...guest-agent-v0.109.65) (2026-11-11)
+
+
+### Refactoring
+
+* **guest-agent:** isolate claude stdin protocol ownership ([#46470](https://github.com/okou-ai/okou/issues/46470)) ([00e06f3](https://github.com/okou-ai/okou/commit/00e06f3960689a71ece65a133ccbbb9d6fe19f3a))
+
+## [0.109.64](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.63...guest-agent-v0.109.64) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-agent:** centralize api success json decoding ([#46442](https://github.com/okou-ai/okou/issues/46442)) ([f40b601](https://github.com/okou-ai/okou/commit/f40b60192f15b80058b6ba9f92b6d20bf167c4d6))
+* **guest-agent:** isolate codex message codec ([#46431](https://github.com/okou-ai/okou/issues/46431)) ([537eec6](https://github.com/okou-ai/okou/commit/537eec60576e04b14b639c4e98da4988cc887d1b))
+
+## [0.109.63](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.62...guest-agent-v0.109.63) (2026-11-10)
+
+## [0.109.62](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.61...guest-agent-v0.109.62) (2026-11-10)
+
+
+### Documentation
+
+* **guest-agent:** clarify heartbeat stopped semantics ([#46349](https://github.com/okou-ai/okou/issues/46349)) ([dac4516](https://github.com/okou-ai/okou/commit/dac45168bd4dc52a72f7e13dd5c89a81bb2f878c))
+
 ## [0.109.61](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.60...guest-agent-v0.109.61) (2026-11-10)
 
 ## [0.109.60](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.59...guest-agent-v0.109.60) (2026-11-10)

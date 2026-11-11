@@ -69,12 +69,8 @@ pub fn create_tar_gz_entries(entries: &[TarEntry]) -> std::io::Result<Vec<u8>> {
         tar_data.extend_from_slice(&[0u8; 1024]); // EOF
     }
 
-    let mut tar_data = Vec::new();
-    let has_raw = entries
-        .iter()
-        .any(|entry| matches!(entry, TarEntry::Raw { .. }));
-    {
-        let mut builder = tar::Builder::new(&mut tar_data);
+    fn write_tar<W: Write>(writer: W, entries: &[TarEntry]) -> std::io::Result<W> {
+        let mut builder = tar::Builder::new(writer);
         for entry in entries {
             match entry {
                 TarEntry::File(path, contents) => {
@@ -104,15 +100,20 @@ pub fn create_tar_gz_entries(entries: &[TarEntry]) -> std::io::Result<Vec<u8>> {
             }
         }
         builder.finish()?;
+        builder.into_inner()
     }
 
-    if has_raw {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    if entries
+        .iter()
+        .any(|entry| matches!(entry, TarEntry::Raw { .. }))
+    {
+        let mut tar_data = write_tar(Vec::new(), entries)?;
         append_raw_entries(&mut tar_data, entries);
+        encoder.write_all(&tar_data)?;
+    } else {
+        // Ordinary fixtures do not need a second complete, uncompressed archive.
+        encoder = write_tar(encoder, entries)?;
     }
-
-    let mut gz_data = Vec::new();
-    let mut encoder = GzEncoder::new(&mut gz_data, Compression::fast());
-    encoder.write_all(&tar_data)?;
-    encoder.finish()?;
-    Ok(gz_data)
+    encoder.finish()
 }

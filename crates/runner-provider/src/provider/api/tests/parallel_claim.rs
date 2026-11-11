@@ -4,17 +4,42 @@ fn request_body(request: &str) -> serde_json::Value {
     serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap()
 }
 
-// This case observes real TCP requests across the provider's ordinary poll
-// timer. A paused clock can expire the claim before kernel I/O progresses.
+// Advance only after both real responses have been consumed and both ordinary
+// poll timers have returned Pending. Preserve concurrent claim/exclusion arms.
 #[tokio::test]
 async fn pending_claim_exclusions_do_not_rearm_immediate_poll() {
+    let phase = Arc::new(PollTimerPhase {
+        deadlines: std::sync::Mutex::new(Vec::new()),
+        armed: tokio::sync::Barrier::new(2),
+        resumed: tokio::sync::Barrier::new(2),
+    });
     tokio::join!(
-        assert_pending_poll_cadence(false),
-        assert_pending_poll_cadence(true)
+        assert_pending_poll_cadence(false, Arc::clone(&phase)),
+        assert_pending_poll_cadence(true, phase)
     );
 }
 
-async fn assert_pending_poll_cadence(ignore_exclusions: bool) {
+struct PollTimerPhase {
+    deadlines: std::sync::Mutex<Vec<tokio::time::Instant>>,
+    armed: tokio::sync::Barrier,
+    resumed: tokio::sync::Barrier,
+}
+
+impl PollTimerPhase {
+    async fn advance(&self, at: tokio::time::Instant) {
+        self.deadlines.lock().unwrap().push(at);
+        if self.armed.wait().await.is_leader() {
+            let at = *self.deadlines.lock().unwrap().iter().min().unwrap();
+            raw_http_test_support::clock::advance_timer_phase(
+                at.saturating_duration_since(tokio::time::Instant::now()),
+            )
+            .await;
+        }
+        self.resumed.wait().await;
+    }
+}
+
+async fn assert_pending_poll_cadence(ignore_exclusions: bool, phase: Arc<PollTimerPhase>) {
     let slow = RunId::new_v4();
     let fast = RunId::new_v4();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -63,6 +88,7 @@ async fn assert_pending_poll_cadence(ignore_exclusions: bool) {
         CancellationToken::new(),
         Arc::new(PollWakeups::new(false)),
     );
+    let timer = provider.poll_wakeups.observe_next_fast_poll_for_test(false);
     let claiming = Arc::clone(&provider);
     let claim = tokio::spawn(async move {
         claiming
@@ -76,10 +102,25 @@ async fn assert_pending_poll_cadence(ignore_exclusions: bool) {
     assert!(request.starts_with(&format!(
         "POST /api/runners/jobs/{slow}/claim?workflowSkills=2 "
     )));
-    let candidate = tokio::time::timeout(POLL_FAST + Duration::from_secs(5), provider.discover())
-        .await
-        .unwrap()
-        .unwrap();
+    let discovery = tokio::time::timeout(POLL_FAST + Duration::from_secs(5), provider.discover());
+    tokio::pin!(discovery);
+    let at = tokio::select! {
+        result = &mut discovery => panic!("discovery finished before ordinary poll timer: {result:?}"),
+        at = timer => at.unwrap(),
+    };
+    let advance = phase.advance(at);
+    tokio::pin!(advance);
+    // Keep the original discovery deadline and real IO polled while the other
+    // arm prepares; a slow peer must not acquire a new, narrower setup budget.
+    let candidate = tokio::select! {
+        result = &mut discovery => {
+            advance.await;
+            result
+        }
+        () = &mut advance => discovery.await,
+    }
+    .unwrap()
+    .unwrap();
     release.send(()).unwrap();
     assert!(
         join_raw_http_task(claim, "pending claim settlement")

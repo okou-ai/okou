@@ -3643,6 +3643,9 @@ pub mod webhooks {
                     /// Optional parent version used when preparing an incremental upload.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub parent_version_id: Option<String>,
+                    /// Request immutable inputs for recovering a Memory publication conflict.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub include_memory_merge: Option<bool>,
                     /// Whether to bypass deduplication checks for this upload.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub force: Option<bool>,
@@ -3684,6 +3687,48 @@ pub mod webhooks {
                     pub manifest: ResponseUploadsManifest,
                 }
 
+                /// An authorized immutable Memory snapshot used for file merging.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct ResponseMemoryMergeBase {
+                    /// Content-addressed snapshot version identifier.
+                    pub version_id: String,
+                    /// Whether this snapshot has no files and needs no downloads.
+                    pub empty: bool,
+                    /// Presigned manifest download URL for a nonempty snapshot.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub manifest_url: Option<String>,
+                    /// Presigned archive download URL for a nonempty snapshot.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub archive_url: Option<String>,
+                }
+
+                /// An authorized immutable Memory snapshot used for file merging.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct ResponseMemoryMergeHead {
+                    /// Content-addressed snapshot version identifier.
+                    pub version_id: String,
+                    /// Whether this snapshot has no files and needs no downloads.
+                    pub empty: bool,
+                    /// Presigned manifest download URL for a nonempty snapshot.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub manifest_url: Option<String>,
+                    /// Presigned archive download URL for a nonempty snapshot.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub archive_url: Option<String>,
+                }
+
+                /// Immutable inputs for replaying a Run's Memory file changes.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct ResponseMemoryMerge {
+                    /// The Run's originally captured Memory snapshot.
+                    pub base: ResponseMemoryMergeBase,
+                    /// The current published Memory snapshot.
+                    pub head: ResponseMemoryMergeHead,
+                }
+
                 /// Response body for preparing a direct sandbox storage upload.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -3695,6 +3740,9 @@ pub mod webhooks {
                     /// Presigned upload targets when archive and manifest uploads are required.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub uploads: Option<ResponseUploads>,
+                    /// Optional negotiated Memory conflict recovery inputs.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub memory_merge: Option<ResponseMemoryMerge>,
                 }
             }
         }

@@ -516,7 +516,8 @@ class TestXJsonFinalize:
         for offset in range(0, len(body), resolved_chunk_size):
             chunk = body[offset : offset + resolved_chunk_size]
             assert callback(chunk) == chunk
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         response_streaming.finalize_connector_response_state(flow)
 
         state = flow.metadata[metadata_keys.X_JSON_STATE]

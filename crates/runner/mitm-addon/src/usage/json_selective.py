@@ -404,14 +404,7 @@ class JsonSelectiveExtractor:
         self._scalar_consistency: dict[Path, _ScalarConsistency] = {}
 
         self._stack: list[_Frame] = []
-        self._root_done = False
-        self._error: str | None = None
-        self._string: _StringState | None = None
-        self._number: _NumberState | None = None
-        self._literal: _LiteralState | None = None
-        self._work_units_used = 0
-        self._slow_work_bytes_remaining = 0
-        self._discarded_string_bulk_work_bytes_remaining = 0
+        self._reset_parser_state()
 
     def reset(self) -> None:
         """Reset document state while retaining the fixed observation configuration."""
@@ -422,12 +415,15 @@ class JsonSelectiveExtractor:
         self.value_present.clear()
         self._scalar_consistency.clear()
 
+        self._reset_parser_state()
+
+    def _reset_parser_state(self) -> None:
         self._stack.clear()
         self._root_done = False
-        self._error = None
-        self._string = None
-        self._number = None
-        self._literal = None
+        self._error: str | None = None
+        self._string: _StringState | None = None
+        self._number: _NumberState | None = None
+        self._literal: _LiteralState | None = None
         self._work_units_used = 0
         self._slow_work_bytes_remaining = 0
         self._discarded_string_bulk_work_bytes_remaining = 0
@@ -1053,8 +1049,7 @@ class JsonSelectiveExtractor:
         if _contains_surrogate(value):
             self._value_complete()
             return
-        self._record_scalar_consistency(state.path, value)
-        self.values[state.path] = value
+        self._record_selected_scalar(state.path, value)
         self._value_complete()
 
     def _consume_number(self, chunk: bytes, i: int) -> int:
@@ -1186,19 +1181,18 @@ class JsonSelectiveExtractor:
             if field.max_int_value is not None and value > field.max_int_value:
                 self._error = JSON_INTEGER_VALUE_LIMIT_EXCEEDED
                 return
-            self._record_scalar_consistency(state.path, value)
-            self.values[state.path] = value
+            self._record_selected_scalar(state.path, value)
         self._value_complete()
 
-    def _record_scalar_consistency(self, path: Path, value: object) -> None:
+    def _record_selected_scalar(self, path: Path, value: object) -> None:
         consistency = self._scalar_consistency.get(path)
-        if consistency is None:
-            return
-        if consistency.valid_occurrences == 0:
-            consistency.first_value = value
-        elif consistency.first_value != value:
-            consistency.conflicting = True
-        consistency.valid_occurrences += 1
+        if consistency is not None:
+            if consistency.valid_occurrences == 0:
+                consistency.first_value = value
+            elif consistency.first_value != value:
+                consistency.conflicting = True
+            consistency.valid_occurrences += 1
+        self.values[path] = value
 
     def _consume_literal(self, chunk: bytes, i: int) -> int:
         state = self._literal
@@ -1226,8 +1220,7 @@ class JsonSelectiveExtractor:
                     state.path, {b"true": True, b"false": False, b"null": None}[state.literal]
                 )
             if state.selected_value is not None:
-                self._record_scalar_consistency(state.path, state.selected_value)
-                self.values[state.path] = state.selected_value
+                self._record_selected_scalar(state.path, state.selected_value)
             self._value_complete()
         return i
 

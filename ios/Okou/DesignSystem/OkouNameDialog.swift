@@ -16,6 +16,14 @@ struct OkouNameDialog: UIViewControllerRepresentable {
   let cancel: () -> Void
   let save: (String) -> Void
 
+  /// The system fills the preferred action with the alert's tint and always labels it white.
+  /// Save is neutral, not brand: ink in light appearance, and in dark a mid gray that white
+  /// reads on and that stands apart from Cancel (ink there is near-white).
+  static let actionTint = UIColor { traits in
+    UIColor(traits.userInterfaceStyle == .dark ? OkouColor.gray500 : OkouColor.foreground)
+      .resolvedColor(with: traits)
+  }
+
   func makeUIViewController(context: Context) -> Controller { Controller() }
 
   func updateUIViewController(_ controller: Controller, context: Context) {
@@ -64,7 +72,7 @@ struct OkouNameDialog: UIViewControllerRepresentable {
       let alert = UIAlertController(
         title: request.title, message: request.error, preferredStyle: .alert)
       alert.overrideUserInterfaceStyle = overrideUserInterfaceStyle
-      alert.view.tintColor = UIColor(OkouColor.brandText)
+      alert.view.tintColor = OkouNameDialog.actionTint
       let save = UIAlertAction(title: String(localized: "Save"), style: .default) {
         [weak self, weak alert] _ in
         let name = alert?.textFields?.first?.text ?? request.name

@@ -1426,6 +1426,13 @@ async function uploadDriveFile(args: {
   })();
 }
 
+// The Node adapter replaces global Response, but fetch keeps its native one.
+function isDriveUploadResponse(
+  response: Response | BadRequestResponse,
+): response is Response {
+  return "ok" in response && typeof response.ok === "boolean";
+}
+
 async function uploadArtifactWithToken(
   args: {
     readonly pendingTextStyles?: boolean;
@@ -1466,7 +1473,7 @@ async function uploadArtifactWithToken(
     targetMimeType: args.targetMimeType,
     file: args.file,
   });
-  if (!(response instanceof Response)) {
+  if (!isDriveUploadResponse(response)) {
     return response;
   }
   if (response.status === 401) {

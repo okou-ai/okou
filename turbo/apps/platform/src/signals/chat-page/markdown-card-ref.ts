@@ -6,6 +6,7 @@ import type { BankingSignals } from "./banking-action-block.ts";
 import type { ConnectorSignals } from "./connector-action-block.ts";
 import type { ConnectorAccountActionSignals } from "./connector-account-action-block.ts";
 import type { ComputerUseAuthorizationSignals } from "./computer-use-authorization-block.ts";
+import type { SshAuthorizationSignals } from "./ssh-authorization-block.ts";
 import type { DesktopShellAuthorizationSignals } from "./desktop-shell-authorization-block.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type { PermissionSignals } from "./permission-card-signals.ts";
@@ -22,6 +23,10 @@ import type { WalletActionSignals } from "./wallet-action-block.ts";
  * `data`, which `rehype-raw` cannot produce, so quoted HTML cannot forge one.
  */
 export type MarkdownCardRef =
+  | {
+      readonly kind: "ssh-authorization";
+      readonly signals: SshAuthorizationSignals;
+    }
   | {
       readonly kind: "artifact";
       readonly signals: ArtifactSignals;

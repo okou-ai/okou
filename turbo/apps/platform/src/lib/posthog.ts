@@ -3,6 +3,7 @@ import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
+import type { ArtifactDownloadType } from "./artifact-download-type.ts";
 
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
@@ -216,6 +217,7 @@ export function captureTaskCompletedSuccessfully(): void {
 type ArtifactAction =
   | {
       readonly action: "download";
+      readonly artifact_type: ArtifactDownloadType;
       readonly surface:
         | "dialog"
         | "page"
@@ -537,13 +539,23 @@ function recommendedFollowupGenerationTypes(
 }
 
 export function captureRecommendedFollowupsShown(args: {
+  readonly threadId: string;
   readonly messageId: string;
+  readonly layout: "rows" | "quick-reply-rail";
   readonly followups: readonly RecommendedFollowupTelemetryItem[];
 }): void {
   runPostHog(() => {
     posthog.capture("chat_recommended_followups_shown", {
+      chat_thread_id: args.threadId,
       assistant_message_id: args.messageId,
+      followup_layout: args.layout,
       followup_count: args.followups.length,
+      workflow_followup_count: args.followups.filter((followup) => {
+        return followup.kind === "workflow";
+      }).length,
+      email_followup_count: args.followups.filter((followup) => {
+        return followup.kind === "email";
+      }).length,
       followup_kinds: args.followups.map((followup) => {
         return followup.kind;
       }),
@@ -553,14 +565,18 @@ export function captureRecommendedFollowupsShown(args: {
 }
 
 export function captureRecommendedFollowupSelected(args: {
+  readonly threadId: string;
   readonly messageId: string;
+  readonly layout: "rows" | "quick-reply-rail";
   readonly followupIndex: number;
   readonly followupCount: number;
   readonly followup: RecommendedFollowupTelemetryItem;
 }): void {
   runPostHog(() => {
     posthog.capture("chat_recommended_followup_selected", {
+      chat_thread_id: args.threadId,
       assistant_message_id: args.messageId,
+      followup_layout: args.layout,
       followup_index: args.followupIndex,
       followup_count: args.followupCount,
       followup_kind: args.followup.kind,

@@ -4,7 +4,6 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   fireEvent,
@@ -462,7 +461,6 @@ test.each([true, false])(
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
 
     expect(
@@ -533,7 +531,6 @@ test("A required native slider starts at the website position and needs delibera
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -587,7 +584,6 @@ test("An optional native slider stays untouched unless the user changes it", asy
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -632,7 +628,6 @@ test("An optional native slider submits a changed position with its observed sna
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -684,7 +679,6 @@ test("A required native color starts from the website and needs explicit confirm
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -731,7 +725,6 @@ test("An optional native color remains untouched or submits an explicit change",
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -776,7 +769,6 @@ test("A changed native color submits its observed website snapshot", async () =>
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -870,7 +862,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -927,7 +918,6 @@ test("An optional file selection leaves existing website files untouched", async
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await screen.findByText(/old.txt/u);
   await waitFor(() => {
@@ -976,7 +966,6 @@ test("A required file field can retain already selected website files", async ()
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await screen.findByText(/old.txt/u);
   await waitFor(() => {
@@ -1019,7 +1008,6 @@ test("The standalone form accepts input and submission while its background chec
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1079,7 +1067,6 @@ test("The standalone form uses preflight's observed multiline and email controls
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1125,7 +1112,6 @@ test("The standalone form uses the existing input style with live number constra
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1171,7 +1157,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -1219,7 +1204,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -1261,7 +1245,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -1320,7 +1303,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -1367,7 +1349,6 @@ test("An untouched optional checkbox preserves a checked website value", async (
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1413,7 +1394,6 @@ test("A required checked checkbox submits its valid website state", async () => 
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1467,7 +1447,6 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1513,7 +1492,6 @@ test("An untouched optional radio group preserves the existing selection", async
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1560,7 +1538,6 @@ test("An Agent-required radio group submits its existing valid website choice", 
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1607,7 +1584,6 @@ test("The standalone form selects a required native option by index, not its web
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1682,7 +1658,6 @@ test("A required multiple select cannot keep a disabled website choice and drops
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1735,7 +1710,6 @@ test("An optional multiple select distinguishes untouched from an explicit clear
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1808,7 +1782,6 @@ test("An optional single select clears its website selection through the native 
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1834,7 +1807,6 @@ test("Leaving and returning to a standalone form clears password and code drafts
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1887,7 +1859,6 @@ test("The standalone form records cancellation before notifying the agent", asyn
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await screen.findByRole("form", { name: "Sign in to download invoices" });
   click(button("Cancel"));
@@ -1919,7 +1890,6 @@ test("A completed Browser input clears sensitive values when its callback fails"
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   const form = await screen.findByRole("form", {
     name: "Sign in to download invoices",
@@ -1953,7 +1923,6 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1974,7 +1943,6 @@ test("Standalone preflight makes a confirmed changed target stale before showing
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
   expect(screen.queryByRole("form")).toBeNull();
@@ -2028,7 +1996,6 @@ test.each(["apply", "cancel"] as const)(
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -2089,7 +2056,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     const form = await screen.findByRole("form", {
       name: "Sign in to download invoices",
@@ -2124,7 +2090,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
 
     await expect(screen.findByText(title)).resolves.toBeInTheDocument();
@@ -2141,7 +2106,6 @@ test("An applying action settles when the thread signals a change", async () => 
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
   await expect(
@@ -2170,7 +2134,6 @@ test.each([
       context,
       path: route(),
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
 
     await expect(screen.findByText(title)).resolves.toBeInTheDocument();
@@ -2191,7 +2154,6 @@ test("Maps an expired API response to the inert expiry state", async () => {
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
   await expect(
@@ -2208,21 +2170,9 @@ test("Fails closed for a mismatched response", async () => {
     context,
     path: route(),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
   await expect(
     screen.findByText("Request unavailable"),
   ).resolves.toBeInTheDocument();
-});
-
-test("The standalone feature gate prevents Browser action reads", async () => {
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: false },
-  });
-
-  await expect(screen.findByText("Request unavailable")).resolves.toBeVisible();
 });

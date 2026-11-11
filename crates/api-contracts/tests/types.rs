@@ -308,6 +308,7 @@ fn generated_prepare_request_serializes_wire_shape() {
             size: 12,
         }],
         parent_version_id: None,
+        include_memory_merge: None,
         force: None,
         base_version: None,
         changes: None,
@@ -339,6 +340,7 @@ fn generated_prepare_request_serializes_optional_fields() {
         storage_id: "00000000-0000-4000-8000-000000000001".to_string(),
         files: vec![],
         parent_version_id: Some("parent-1".to_string()),
+        include_memory_merge: Some(true),
         force: Some(true),
         base_version: Some("base-1".to_string()),
         changes: Some(prepare::RequestChanges {
@@ -351,6 +353,7 @@ fn generated_prepare_request_serializes_optional_fields() {
     let value = serde_json::to_value(request).unwrap();
     assert_eq!(value["storageId"], "00000000-0000-4000-8000-000000000001");
     assert_eq!(value["parentVersionId"], "parent-1");
+    assert_eq!(value["includeMemoryMerge"], true);
     assert_eq!(value["force"], true);
     assert_eq!(value["baseVersion"], "base-1");
     assert_eq!(value["changes"]["added"], json!(["new.txt"]));

@@ -2,15 +2,23 @@ import SwiftUI
 
 /// A chat in the sidebar: its status column, one body line of title and its trailing state.
 /// The status column holds the chat's status emoji or a quiet chat glyph when it has none;
-/// a section without any status leaves the column out so its titles sit flush.
+/// a section without any status leaves the column out so its titles sit flush. While the agent
+/// works the title shimmers (`OkouShimmerText`), so working never competes with the trailing
+/// state; an unread chat's title is medium weight, as on the web, so a finished chat reads
+/// before its dot.
 struct OkouChatRowLabel<Status: View>: View {
   let title: String
+  var isWorking = false
   var trailing: OkouChatTrailing = .none
   let status: Status?
   @ScaledMetric(relativeTo: .body) private var statusColumn = OkouControl.statusColumn
 
-  init(_ title: String, trailing: OkouChatTrailing = .none, @ViewBuilder status: () -> Status) {
+  init(
+    _ title: String, isWorking: Bool = false, trailing: OkouChatTrailing = .none,
+    @ViewBuilder status: () -> Status
+  ) {
     self.title = title
+    self.isWorking = isWorking
     self.trailing = trailing
     self.status = status()
   }
@@ -21,8 +29,9 @@ struct OkouChatRowLabel<Status: View>: View {
         status.frame(width: statusColumn)
       }
       Text(verbatim: title)
-        .font(.okou(.body))
+        .font(.okou(.body).weight(trailing == .unread ? .medium : .regular))
         .lineLimit(1)
+        .okouShimmerText(isWorking)
       Spacer(minLength: 0)
       OkouChatTrailingMark(trailing: trailing)
     }
@@ -31,7 +40,8 @@ struct OkouChatRowLabel<Status: View>: View {
   }
 }
 
-/// Shared trailing status for a chat or its Project's summary row.
+/// Shared trailing status for a chat or its Project's summary row. Every mark is centred in
+/// one `standard`-wide column, so dots, pencils and pins line up down the list.
 struct OkouChatTrailingMark: View {
   let trailing: OkouChatTrailing
 
@@ -40,11 +50,6 @@ struct OkouChatTrailingMark: View {
       switch trailing {
       case .none:
         EmptyView()
-      case .running(let phase):
-        OkouRunningIndicator(phaseOffset: phase)
-          .frame(width: OkouIconSize.standard)
-          .accessibilityElement()
-          .accessibilityLabel("Working")
       case .unread:
         // Amber stays for a primary commit.
         Circle()
@@ -52,10 +57,17 @@ struct OkouChatTrailingMark: View {
           .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
           .frame(width: OkouIconSize.standard)
           .accessibilityLabel("Unread")
-      case .pinned:
-        OkouIcon("pin", size: OkouIconSize.inline)
+      case .draft:
+        OkouIcon("pencil", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
           .frame(width: OkouIconSize.standard)
-          .foregroundStyle(OkouColor.mutedForeground)
+          .accessibilityElement()
+          .accessibilityLabel("Draft")
+      case .pinned:
+        // A pin outlasts the other states, so the row's value announces it, not this mark.
+        OkouIcon("pin", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
+          .frame(width: OkouIconSize.standard)
           .accessibilityHidden(true)
       }
     }
@@ -64,22 +76,36 @@ struct OkouChatTrailingMark: View {
 
 extension OkouChatRowLabel where Status == EmptyView {
   /// A chat in a section where no chat has a status: no status column.
-  init(_ title: String, trailing: OkouChatTrailing = .none) {
+  init(_ title: String, isWorking: Bool = false, trailing: OkouChatTrailing = .none) {
     self.title = title
+    self.isWorking = isWorking
     self.trailing = trailing
     self.status = nil
   }
 }
 
-/// A chat row's trailing state.
+/// A chat row's trailing state, one at a time in the web's order: unread, then draft, then the
+/// pin a pinned chat rests with. Working is not one of them: it shimmers the title, so a working
+/// chat keeps its draft in view.
 enum OkouChatTrailing: Equatable {
   case none
-  /// The running indicator; rows trail each other by `phase` of a cycle.
-  case running(phase: Double)
-  /// The web's 8 px sky-blue dot.
+  /// The web's 8 px sky-blue dot: a run finished (or failed) since the chat was last read.
   case unread
-  /// A pin, where a list does not already group pinned chats.
+  /// The web's quiet pencil: text or files typed here and not sent yet.
+  case draft
+  /// The web's resting pin: the chat leads its list or Project in its manual order.
   case pinned
+}
+
+/// A hairline between list sections (the projects and the chats below them), in the border
+/// colour.
+struct OkouListDivider: View {
+  var body: some View {
+    Rectangle()
+      .fill(OkouColor.border)
+      .frame(height: OkouSpace.hairline)
+      .accessibilityHidden(true)
+  }
 }
 
 /// What a chat's status column shows: its status emoji (✅ Done, ⏳ Waiting, …) on the
@@ -92,8 +118,9 @@ struct OkouChatStatusMark: View {
       if let emoji {
         Text(verbatim: emoji).font(.okou(.body))
       } else {
-        OkouIcon("message-circle", size: OkouIconSize.inline)
-          .foregroundStyle(OkouColor.mutedForeground)
+        // The same size and grey as the trailing marks, so one row draws one line weight.
+        OkouIcon("message-circle", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
           .accessibilityHidden(true)
       }
     }

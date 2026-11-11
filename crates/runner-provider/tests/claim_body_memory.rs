@@ -9,7 +9,7 @@ use runner_provider::{
 use runner_types::storage_manifest::{InstructionFile, StorageEntry};
 use runner_types::types::ExecutionContext;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::io;
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -134,6 +134,7 @@ fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
 fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContext) -> TestResult {
     assert_eq!(actual.storage_manifest, expected.storage_manifest);
     assert_eq!(actual.instruction_file, expected.instruction_file);
+    assert_eq!(actual.environment, expected.environment);
     macro_rules! same_fields {
         ($($field:ident),+ $(,)?) => {
             $(assert_eq!(
@@ -150,7 +151,6 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
         append_system_prompt,
         vars,
         sandbox_token,
-        environment,
         platform_environment,
         native_continuation,
         secret_values,
@@ -186,16 +186,32 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
 async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult {
     let mut measurements = Vec::new();
     let mut fragmented_largest = None;
-    for (chunked, fragmented) in [(false, false), (true, false), (true, true)] {
+    for (chunked, fragmented, compressed) in [
+        (false, false, false),
+        (true, false, false),
+        (true, true, false),
+        (false, false, true),
+        (true, false, true),
+        (true, true, true),
+    ] {
         let (body, expected) = claim_body(if fragmented { 128 } else { 8192 })?;
         let source_bytes = body.len();
+        let (body, encoding) = if compressed {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(&body)?;
+            (encoder.finish()?, "gzip")
+        } else {
+            (body, "identity")
+        };
+        let wire_bytes = body.len();
         let framing = if chunked {
             "Transfer-Encoding: chunked\r\n\r\n".to_owned()
         } else {
-            format!("Content-Length: {source_bytes}\r\n\r\n")
+            format!("Content-Length: {wire_bytes}\r\n\r\n")
         };
         let mut response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: identity\r\nConnection: close\r\n{framing}"
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: {encoding}\r\nConnection: close\r\n{framing}"
         )
         .into_bytes();
         if chunked {
@@ -203,7 +219,11 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
                 // Tiny/large/tiny ordering also exercises partial-group flushing.
                 let mut offset = 0;
                 while offset < body.len() {
-                    let length = if offset == 512 { 8 * 1024 } else { 1 };
+                    let length = if offset == 512 {
+                        (8 * 1024).min(body.len() - offset)
+                    } else {
+                        1
+                    };
                     let chunk = &body[offset..offset + length];
                     if length == 1 {
                         response.extend_from_slice(b"1\r\n");
@@ -215,7 +235,7 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
                     offset += length;
                 }
             } else {
-                response.extend_from_slice(format!("{source_bytes:x}\r\n").as_bytes());
+                response.extend_from_slice(format!("{wire_bytes:x}\r\n").as_bytes());
                 response.extend_from_slice(&body);
                 response.extend_from_slice(b"\r\n");
             }
@@ -269,7 +289,14 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
             timing.response_attribution().body_size_bucket(),
             if fragmented { "64_256_kib" } else { "ge_1_mib" },
         );
-        assert_eq!(timing.response_attribution().content_encoding(), "identity");
+        assert_eq!(
+            timing.response_attribution().content_encoding(),
+            if compressed {
+                "absent_or_decoded"
+            } else {
+                "identity"
+            },
+        );
         assert_eq!(captured.len(), 1);
         assert_eq!(
             captured[0].lines().next(),
@@ -282,18 +309,21 @@ async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult 
             ),
         );
         eprintln!(
-            "chunked={chunked}, fragmented={fragmented}: source={source_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"
+            "chunked={chunked}, fragmented={fragmented}, compressed={compressed}: decoded={source_bytes}, encoded={wire_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"
         );
         if fragmented {
-            fragmented_largest = Some(largest);
+            fragmented_largest = Some(fragmented_largest.unwrap_or(0).max(largest));
         } else {
-            measurements.push((chunked, source_bytes, requests, allocated_bytes));
+            measurements.push((chunked, compressed, source_bytes, requests, allocated_bytes));
         }
     }
     // Individual requests only: this does not bound RSS, retained chunks,
     // decoded context or concurrent successful claims.
-    for (chunked, source_bytes, requests, allocated_bytes) in measurements {
-        assert_eq!(requests, 1, "duplicate coalescing: chunked={chunked}");
+    for (chunked, compressed, source_bytes, requests, allocated_bytes) in measurements {
+        assert_eq!(
+            requests, 1,
+            "duplicate coalescing: chunked={chunked}, compressed={compressed}"
+        );
         assert_eq!(allocated_bytes, source_bytes);
     }
     assert!(

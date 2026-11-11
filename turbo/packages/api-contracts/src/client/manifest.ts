@@ -696,6 +696,10 @@ export const clientDescriptorManifest = [
     contracts: ["sshHostsContract"],
   },
   {
+    module: "ssh-authorization",
+    contracts: ["sshAuthorizationContract"],
+  },
+  {
     module: "ssh-connections",
     contracts: ["sshConnectionsContract"],
   },

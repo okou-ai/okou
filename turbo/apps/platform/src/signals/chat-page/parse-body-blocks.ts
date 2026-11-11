@@ -40,6 +40,10 @@ import {
   type BrowserAuthorizationDescriptor,
 } from "./browser-authorization-block.ts";
 import {
+  parseSshAuthorizationUrl,
+  type SshAuthorizationDescriptor,
+} from "./ssh-authorization-block.ts";
+import {
   parseDesktopShellAuthorizationUrl,
   type DesktopShellAuthorizationDescriptor,
 } from "./desktop-shell-authorization-block.ts";
@@ -134,6 +138,11 @@ export type ParsedBodyBlock =
       type: "computer-use-authorization";
       resourceKey: string;
       descriptor: ComputerUseAuthorizationDescriptor;
+    }
+  | {
+      type: "ssh-authorization";
+      resourceKey: string;
+      descriptor: SshAuthorizationDescriptor;
     }
   | {
       type: "desktop-shell-authorization";
@@ -793,6 +802,14 @@ function createComputerAuthorizationBlock(
     };
   }
 
+  const sshAuthorization = parseSshAuthorizationUrl(url);
+  if (sshAuthorization) {
+    return {
+      type: "ssh-authorization",
+      resourceKey: sshAuthorization.id,
+      descriptor: sshAuthorization,
+    };
+  }
   const desktopShellAuthorization = parseDesktopShellAuthorizationUrl(url);
   if (desktopShellAuthorization) {
     return {
@@ -1582,6 +1599,7 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "computer-use-authorization": {
       return block.descriptor.originalUrl;
     }
+    case "ssh-authorization":
     case "desktop-shell-authorization": {
       return block.descriptor.originalUrl;
     }

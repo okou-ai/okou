@@ -10,7 +10,11 @@ import {
 } from "@okouai/api-contracts/validators/morning-brief-preference";
 
 import { i18n } from "../../i18n/index.ts";
-import { WorkflowDetailPage } from "../../views/workflows-page/workflow-detail-page.tsx";
+import {
+  WorkflowDetailPage,
+  WorkflowAutomationNotificationPage,
+} from "../../views/workflows-page/workflow-detail-page.tsx";
+import { automationNotificationTarget$ } from "./workflow-automation-notification.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -44,6 +48,25 @@ export const setupWorkflowDetailPage$ = command(
       },
       signal,
     );
+    if (get(automationNotificationTarget$)) {
+      // Notification links recheck live access, including after an org switch.
+      // The destination page also permits read-only inspection of an exact
+      // system-managed automation without exposing Workflow editing.
+      set(reloadWorkflowData$);
+      set(
+        updatePage$,
+        createElement(WorkflowAutomationNotificationPage),
+        "sidebar",
+      );
+      set(
+        updateDocumentTitle$,
+        i18n.t(($) => {
+          return $.userNotifications.automationDisabled.viewAutomation;
+        }),
+      );
+      await set(hideAppSkeleton$, signal);
+      return;
+    }
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
     // Official Workflows are system-managed: Morning Brief is configured in

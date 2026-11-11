@@ -1,7 +1,7 @@
 import Foundation
 
 public struct ChatRecommendedFollowup: Equatable, Sendable, Decodable {
-  public enum Kind: String, Decodable, Sendable { case talk, generate }
+  public enum Kind: String, Decodable, Sendable { case talk, generate, workflow, email }
   public enum GenerationType: String, Decodable, Sendable {
     case image, video, presentation, website
   }

@@ -400,6 +400,10 @@ impl HttpClient {
         let diagnostics = TransportDiagnostics::new();
 
         let client = Client::builder()
+            .gzip(true)
+            .no_brotli()
+            .no_deflate()
+            .no_zstd()
             .timeout(DEFAULT_TIMEOUT)
             .dns_resolver(TimedResolver::default())
             .connector_layer(ConnectionTimingLayer)

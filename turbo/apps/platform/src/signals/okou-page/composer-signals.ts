@@ -741,6 +741,7 @@ function createComposerAttachmentAnnotation(
       const input = {
         url: image.url,
         filename: attachment.filename,
+        contentType: attachment.contentType,
         ...(image.preview ? { preview: image.preview } : {}),
         shareAvailable: false,
         splitViewAvailable: false,

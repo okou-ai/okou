@@ -2,33 +2,17 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use guest_contracts::runtime_environment::{SYSTEM_PATH, TRUSTED_ROOTFS_ENVIRONMENT};
+
 use super::CliRuntimeConfig;
 
-const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const DEFAULT_SHELL: &str = "/bin/bash";
 // The sandbox CLI needs the same API origin as the guest-agent in local
 // development. The managed-CLI reader floor is complete, so expose only the
 // canonical spelling. Tokens and all other bootstrap controls must stay private
 // to the guest-agent.
 const RUNNER_VISIBLE_API_URL_ENV_KEY: &str = guest_contracts::env::CANONICAL_API_URL_ENV;
-const OPTIONAL_BASE_ENV_KEYS: &[&str] = &[
-    "USER",
-    "LOGNAME",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    // Rootfs-wide runtime settings from /etc/environment. Keep these out of
-    // guest-agent bootstrap control while preserving access to preinstalled
-    // toolchains and the injected proxy CA by default.
-    "RUSTUP_HOME",
-    "NPM_CONFIG_UPDATE_NOTIFIER",
-    "NODE_EXTRA_CA_CERTS",
-    "AGENT_BROWSER_USE_SYSTEM_CA",
-    "SSL_CERT_FILE",
-    "REQUESTS_CA_BUNDLE",
-    "CARGO_HTTP_CAINFO",
-];
+const OPTIONAL_BASE_ENV_KEYS: &[&str] = &["USER", "LOGNAME", "LC_ALL", "LC_CTYPE", "TERM"];
 
 pub(super) fn values_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Vec<(String, String)> {
     let user_env = runtime.child_user_env();
@@ -79,14 +63,15 @@ pub(super) fn apply_values_to_tokio_command(
 }
 
 fn base_child_env(home_dir: &str) -> Vec<(&'static str, String)> {
-    let mut base = Vec::with_capacity(OPTIONAL_BASE_ENV_KEYS.len() + 3);
+    let mut base =
+        Vec::with_capacity(OPTIONAL_BASE_ENV_KEYS.len() + TRUSTED_ROOTFS_ENVIRONMENT.len() + 3);
     base.push(("HOME", home_dir.to_string()));
     base.push((
         "PATH",
         std::env::var("PATH")
             .ok()
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| DEFAULT_PATH.to_string()),
+            .unwrap_or_else(|| SYSTEM_PATH.to_string()),
     ));
     base.push((
         "SHELL",
@@ -96,11 +81,17 @@ fn base_child_env(home_dir: &str) -> Vec<(&'static str, String)> {
             .unwrap_or_else(|| DEFAULT_SHELL.to_string()),
     ));
 
-    for key in OPTIONAL_BASE_ENV_KEYS {
+    // Inherit runtime settings, not their compiled defaults. Missing or empty
+    // values stay absent, and explicit user settings are applied afterward.
+    for key in OPTIONAL_BASE_ENV_KEYS
+        .iter()
+        .copied()
+        .chain(TRUSTED_ROOTFS_ENVIRONMENT.iter().map(|&(key, _)| key))
+    {
         if let Ok(value) = std::env::var(key)
             && !value.is_empty()
         {
-            base.push((*key, value));
+            base.push((key, value));
         }
     }
 

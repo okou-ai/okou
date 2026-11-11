@@ -1,5 +1,8 @@
 import { watchWhatsappConnection$ } from "../okou-page/whatsapp.ts";
-import { watchEmailConnection$ } from "../okou-page/email.ts";
+import {
+  setEmailConnectDialogOpen$,
+  watchEmailConnection$,
+} from "../okou-page/email.ts";
 import { initWechat$, wechatStatus$ } from "../okou-page/wechat.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -76,6 +79,7 @@ export const setupWorksPage$ = command(
     }
     set(ownDiscordApprovalRoute$, signal);
     set(setAgentPhoneConnectDialogOpen$, false);
+    set(setEmailConnectDialogOpen$, false);
     set(reloadTelegramBots$);
     set(initWechat$);
     set(updatePage$, createElement(WorksPage), "sidebar");

@@ -6,7 +6,7 @@ import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-
 import { screen, waitFor } from "@testing-library/react";
 import { strToU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -20,6 +20,11 @@ import {
   mockAttachmentChat,
   type AttachmentChatEvent,
 } from "./chat-attachment-test-helpers.ts";
+
+vi.hoisted(() => {
+  // Product analytics resolves the deployment environment at module load.
+  window.location.href = "https://app.okou.ai/";
+});
 
 const context = testContext();
 const DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000041";
@@ -62,12 +67,14 @@ function mockPublicPublication({
   artifactUrl = deliveryUrl,
   manifestUrl = sourceUrl,
   members = publicationMembers(),
+  artifactKind = "hosted-site",
 }: {
   readonly sourceUrl?: string;
   readonly deliveryUrl?: string;
   readonly artifactUrl?: string | null;
   readonly manifestUrl?: string;
   readonly members?: ReturnType<typeof publicationMembers>;
+  readonly artifactKind?: "hosted-site" | "presentation-html";
 } = {}): void {
   mockAttachmentChat(context, {
     chatEvents: [siteMessage(sourceUrl)],
@@ -76,7 +83,7 @@ function mockPublicPublication({
         title: "Quarterly launch report",
         contentType: "text/html",
         url: sourceUrl,
-        artifactKind: "hosted-site",
+        artifactKind,
       }),
     ],
   });
@@ -196,21 +203,44 @@ test.each([
   }
 });
 
-test("a public site's display title preserves its original HTML download filename", async () => {
-  mockPublicPublication({ members: publicationMembers().slice(0, 1) });
-  const browser = context.mocks.browser.blobDownload({ deferRead: true });
+test.each(["hosted-site", "presentation-html"] as const)(
+  "a %s preserves its HTML filename and reports its product type",
+  async (artifactKind) => {
+    const telemetry = context.mocks.posthog();
+    mockPublicPublication({
+      members: publicationMembers().slice(0, 1),
+      artifactKind,
+    });
+    const browser = context.mocks.browser.blobDownload({ deferRead: true });
 
-  await downloadSite();
+    await downloadSite();
 
-  await expect(
-    screen.findByText("Quarterly launch report"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]?.filename).toBe("launch-site.html");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(PAGE);
-});
+    await expect(
+      screen.findByText("Quarterly launch report"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(browser.downloads[0]?.filename).toBe("launch-site.html");
+    await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(PAGE);
+    expect(
+      telemetry.events.filter((event) => {
+        return event.name === "artifact_action_clicked";
+      }),
+    ).toStrictEqual([
+      {
+        name: "artifact_action_clicked",
+        properties: {
+          action: "download",
+          surface: "dialog",
+          artifact_type:
+            artifactKind === "presentation-html" ? "presentation" : "website",
+        },
+        options: undefined,
+      },
+    ]);
+  },
+);
 
 test.each(["listing", "member"])(
   "a public site's unreadable %s reports failure without a partial download",

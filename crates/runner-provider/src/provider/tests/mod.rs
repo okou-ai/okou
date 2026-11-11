@@ -40,7 +40,7 @@ fn claim_response_attribution_uses_fixed_size_and_encoding_labels() {
 
     use reqwest::header::HeaderValue;
     let cases = [
-        (None, "absent"),
+        (None, "absent_or_decoded"),
         (Some(HeaderValue::from_static("identity")), "identity"),
         (Some(HeaderValue::from_static("GZIP")), "gzip"),
         (Some(HeaderValue::from_static("br")), "br"),

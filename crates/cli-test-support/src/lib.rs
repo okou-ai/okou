@@ -9,6 +9,8 @@
 pub mod child;
 pub mod command;
 pub mod delivery_image;
+#[cfg(unix)]
+pub mod directory_permissions;
 pub mod http;
 pub mod json_fixture;
 pub mod mock_build;

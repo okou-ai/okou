@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { captureArtifactAction } from "../lib/posthog.ts";
+import { artifactDownloadType } from "../lib/artifact-download-type.ts";
 
 import type { ArtifactSignals } from "./chat-page/artifact-card-signals.ts";
 import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
@@ -159,7 +160,16 @@ export function createPublicArtifactPreviewSignals() {
   const download$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const current = get(current$);
     if (current && get(visible$)) {
-      captureArtifactAction({ action: "download", surface: "shared_preview" });
+      captureArtifactAction({
+        action: "download",
+        surface: "shared_preview",
+        artifact_type: artifactDownloadType({
+          filename: current.preview.filename,
+          contentType: current.preview.contentType,
+          artifactKind: current.preview.artifactKind,
+          previewKind: current.preview.kind,
+        }),
+      });
       const signal = set(resetDownload$, parentSignal);
       await set(downloadStoredArtifact$, current.preview, signal);
     }

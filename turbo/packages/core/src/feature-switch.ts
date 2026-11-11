@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SshChatApproval]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "SSH chat approval",
+    description: "Review SSH host access in chat and continue after approval.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",
@@ -157,6 +164,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatActionFollowups]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Workflow and email follow-ups",
+    description:
+      "Recommend reusable workflows and email reply reminders with dedicated chat icons.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
@@ -193,6 +209,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.HelpMenu]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Help menu",
+    description:
+      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -224,13 +248,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.BrowserNativeInput]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BrowserSharedOwner]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Shared Browser",
@@ -247,11 +264,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {
@@ -355,6 +367,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.AutomationDisableNotifications]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Automation disable notifications",
+    description:
+      "Notify automation owners in the home bell when consecutive failures automatically disable a recurring schedule.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.UserNotifications]: {
     maintainer: "yuma@okou.ai",

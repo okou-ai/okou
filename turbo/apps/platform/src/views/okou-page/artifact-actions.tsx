@@ -52,6 +52,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
+import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
@@ -72,6 +73,7 @@ import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/ok
 import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
 import type { ZoomableImageControls } from "./zoomable-image-canvas.tsx";
+import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 
 const GOOGLE_DRIVE_CONNECTOR_SLUG = "google-drive";
 function siteSlugFromUrl(value: string): string | null {
@@ -754,6 +756,8 @@ export type ArtifactDownloadMenuProps = {
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   className?: string;
   children?: ReactNode;
+  contentType?: string | undefined;
+  previewKind?: ArtifactKind | undefined;
   filename: string;
   iconSize?: number;
   showGoogleDriveAction?: boolean;
@@ -862,6 +866,8 @@ export function ArtifactDownloadMenu({
   artifactKind,
   className,
   children,
+  contentType,
+  previewKind,
   filename,
   iconSize = 16,
   showGoogleDriveAction = true,
@@ -937,7 +943,16 @@ export function ArtifactDownloadMenu({
         <DropdownMenuItem
           disabled={downloadPending}
           onClick={() => {
-            captureArtifactAction({ action: "download", surface });
+            captureArtifactAction({
+              action: "download",
+              surface,
+              artifact_type: artifactDownloadType({
+                filename: downloadName,
+                contentType,
+                artifactKind,
+                previewKind,
+              }),
+            });
             detach(
               downloadAttachment({ filename: downloadName, url }, pageSignal),
               Reason.DomCallback,

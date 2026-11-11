@@ -75,6 +75,9 @@ export interface ComposerConnectorUiState {
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
   readonly remoteAccessDialogOpen: boolean;
+  readonly remoteAccessScopeId: string;
+  readonly remoteAccessFilter: "all" | "allowed";
+  readonly remoteAccessEditedHosts: readonly string[];
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly permissionConnector: BuiltinConnectorBrief | null;
@@ -153,6 +156,19 @@ const emptyCatalogKeyword$ = computed(() => {
 });
 const browseCatalog$ = relatedConnectorCatalog(emptyCatalogKeyword$);
 
+function remoteAccessDialogState(
+  open: boolean,
+): Pick<
+  ComposerConnectorUiState,
+  "remoteAccessDialogOpen" | "remoteAccessFilter" | "remoteAccessEditedHosts"
+> {
+  return {
+    remoteAccessDialogOpen: open,
+    remoteAccessFilter: "all",
+    remoteAccessEditedHosts: [],
+  };
+}
+
 function initialComposerConnectorUiState(): ComposerConnectorUiState {
   return {
     showAddDialog: false,
@@ -162,7 +178,8 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     addDialogSearch: "",
     popoverSearch: "",
     popoverOpen: false,
-    remoteAccessDialogOpen: false,
+    ...remoteAccessDialogState(false),
+    remoteAccessScopeId: `remote-access-${crypto.randomUUID()}`,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     permissionConnector: null,
@@ -459,7 +476,7 @@ function createConnectorUiSignals(
       popoverOpen: false,
       popoverSearch: "",
       popoverSortOrder: null,
-      remoteAccessDialogOpen: true,
+      ...remoteAccessDialogState(true),
     });
   });
   const closeRemoteAccessDialog$ = command(({ set }): void => {

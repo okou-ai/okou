@@ -109,6 +109,8 @@ impl GuestControlClient {
         let mut listener_socket = ListenerSocketGuard {
             path: Some(listener_path.clone()),
         };
+        #[cfg(feature = "test-support")]
+        crate::test_support::ConnectionScope::notify_listener_bound(sandbox_id.as_deref());
 
         let accept_result = time::timeout_at(deadline, listener.accept()).await;
         if matches!(&accept_result, Ok(Ok(_)))

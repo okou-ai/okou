@@ -28,6 +28,27 @@ export const emailUserLinks = pgTable(
   },
 );
 
+/** Possession of an authenticated email carrying a code proves its sender. */
+export const emailConnectionCodes = pgTable(
+  "email_connection_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    userId: text("user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    consumedEmail: text("consumed_email"),
+    consumedProviderEmailId: uuid("consumed_provider_email_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return [
+      index("email_connection_codes_member_idx").on(table.userId, table.orgId),
+      index("email_connection_codes_expires_idx").on(table.expiresAt),
+    ];
+  },
+);
+
 /** Header references are scoped to the sender, never globally trusted. */
 export const emailChatThreadRoutes = pgTable(
   "email_chat_thread_routes",

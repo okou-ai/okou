@@ -85,6 +85,8 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
         return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      case "/api/chat-thread-drafts":
+        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
       case "/api/agents/\(storeAgentID)/draft":
         return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
       case "/api/chat-threads/\(storeThreadID)/draft":
@@ -135,6 +137,57 @@ final class WorkspaceStoreTests: XCTestCase {
     await conversation.composer.synchronize()
     XCTAssertEqual(conversation.draft, "Changed on the other device")
     XCTAssertNil(conversation.composer.error)
+  }
+
+  func testSidebarDraftMarksComeFromTheAPIAndFromAnOpenChatsComposer() async throws {
+    let otherID = "40000000-0000-4000-8000-000000000009"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        return threadSnapshot(title: "Drafts", threadIDs: [storeThreadID, otherID])
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-thread-drafts":
+        return ChatHTTPResponse(body: #"{"draftThreadIds":["\#(storeThreadID)","\#(otherID)"]}"#)
+      case "/api/agents/\(storeAgentID)/draft", "/api/chat-threads/\(storeThreadID)/draft":
+        return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
+      case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
+      case "/api/chat-threads/\(storeThreadID)/event-rows":
+        let rows = [
+          historyEvent(sequence: 1, type: "output.message", payload: #"{"content":"Answer"}"#)
+        ]
+        return historyPage(rows: rows, lastSequence: 1)
+      case "/api/chat-threads/\(storeThreadID)":
+        return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let storage = ChatDraftStorage(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+      directory: directory)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
+    defer { store.close() }
+    store.setForeground(true)
+    await store.refresh()
+    XCTAssertTrue(store.hasDraft(storeThreadID))
+    XCTAssertTrue(store.hasDraft(otherID))
+
+    // An open chat answers from its own composer, ahead of the API's list.
+    store.selectChat(storeThreadID)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.composer.synchronize()
+    XCTAssertFalse(store.hasDraft(storeThreadID))
+    conversation.draft = "Unsent words"
+    XCTAssertTrue(store.hasDraft(storeThreadID))
+    conversation.draft = "  "
+    XCTAssertFalse(store.hasDraft(storeThreadID))
+    XCTAssertTrue(store.hasDraft(otherID))
   }
 
   func testBackgroundWarmingIncludesRecentAndActiveUnopenedChats() async throws {
@@ -239,7 +292,6 @@ final class WorkspaceStoreTests: XCTestCase {
 
     XCTAssertTrue(requests.withLock { $0.isEmpty })
     XCTAssertTrue(store.list.threads.isEmpty)
-    XCTAssertNil(store.list.navigationError)
   }
 
   func testStartupLoadsChatsAndRealtimeDuringSlowNavigationAndPreservesTheDraft()
@@ -501,7 +553,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(reopened.selectedAgentID, storeAgentID)
   }
 
-  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
+  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationPublication() async throws {
     for cancelStartup in [false, true] {
       let cacheDirectory = CacheTestDirectory(owner: self)
       let navigationStarted = expectation(
@@ -549,7 +601,6 @@ final class WorkspaceStoreTests: XCTestCase {
 
       XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
       XCTAssertTrue(store.list.agents.isEmpty)
-      XCTAssertNil(store.list.navigationError)
     }
   }
 
@@ -624,6 +675,8 @@ final class WorkspaceStoreTests: XCTestCase {
             """)
       case "/api/indicators":
         return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      case "/api/chat-thread-drafts":
+        return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

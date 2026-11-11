@@ -1,6 +1,5 @@
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import type { Project } from "@okouai/api-contracts/validators/projects";
-import { DEFAULT_PROJECT_THREAD_LIMIT } from "../projects/project-expansion.ts";
 
 interface ChatThreadListRowBase {
   readonly key: string;
@@ -24,8 +23,12 @@ export interface ThreadChatThreadListRow extends ChatThreadListRowBase {
   readonly listIndex: number | null;
 }
 
+/**
+ * An unfolded Project without listed chats says so, and `project-archived`
+ * then offers the archived ones it holds.
+ */
 interface ProjectStatusChatThreadListRow extends ChatThreadListRowBase {
-  readonly kind: "project-more" | "project-empty";
+  readonly kind: "project-empty" | "project-archived";
   readonly projectId: string;
 }
 
@@ -42,8 +45,7 @@ export type ChatThreadListRow =
 export interface ChatThreadNavigationList {
   /**
    * Every Project and chat in list order by row key, including the ones a
-   * fold, filter or "show more" limit hides, so a hidden current item keeps
-   * its position.
+   * fold or filter hides, so a hidden current item keeps its position.
    */
   readonly orderedKeys: readonly string[];
   /** Keys of the Projects and chats with a visible row. */
@@ -98,12 +100,12 @@ function projectGroupRows({
   project,
   expanded,
   threadIds,
-  limit,
+  hasHiddenArchivedThreads,
 }: {
   project: Project;
   expanded: boolean;
   threadIds: readonly string[];
-  limit: number;
+  hasHiddenArchivedThreads: boolean;
 }): ChatThreadListRow[] {
   const projectId = project.id;
   const rows: ChatThreadListRow[] = [
@@ -124,22 +126,22 @@ function projectGroupRows({
         projectId,
         projectEnd: false,
       });
+      if (hasHiddenArchivedThreads) {
+        rows.push({
+          kind: "project-archived",
+          key: `project-archived:${projectId}`,
+          projectId,
+          projectEnd: false,
+        });
+      }
     }
-    for (const threadId of threadIds.slice(0, limit)) {
+    for (const threadId of threadIds) {
       rows.push({
         kind: "thread",
         key: threadRowKey(threadId),
         threadId,
         projectId,
         listIndex: null,
-        projectEnd: false,
-      });
-    }
-    if (threadIds.length > limit) {
-      rows.push({
-        kind: "project-more",
-        key: `project-more:${projectId}`,
-        projectId,
         projectEnd: false,
       });
     }
@@ -152,16 +154,17 @@ function projectGroupRows({
 export function buildChatThreadListRows({
   projects,
   expandedProjectIds,
-  projectThreadLimits,
   projectThreads,
+  projectIdsWithHiddenArchivedThreads,
   threadIds,
   hideEmptyProjects,
 }: {
   projects: readonly Project[];
   expandedProjectIds: ReadonlySet<string>;
-  projectThreadLimits: Readonly<Record<string, number>>;
   /** Listed chats inside Projects, already sorted for display. */
   projectThreads: readonly EventDrivenChatThread[];
+  /** Projects holding archived chats that the list leaves out. */
+  projectIdsWithHiddenArchivedThreads: ReadonlySet<string>;
   /** Listed chats outside Projects, already sorted for display. */
   threadIds: readonly string[];
   /** A filtered list omits Projects without a matching chat. */
@@ -179,7 +182,9 @@ export function buildChatThreadListRows({
         project,
         expanded: expandedProjectIds.has(project.id),
         threadIds: ids,
-        limit: projectThreadLimits[project.id] ?? DEFAULT_PROJECT_THREAD_LIMIT,
+        hasHiddenArchivedThreads: projectIdsWithHiddenArchivedThreads.has(
+          project.id,
+        ),
       }),
     );
   }

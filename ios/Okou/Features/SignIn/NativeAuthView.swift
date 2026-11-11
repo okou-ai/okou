@@ -179,7 +179,7 @@ struct NativeAuthView: View {
   private var codeForm: some View {
     VStack(alignment: .leading, spacing: OkouSpace.xl) {
       Button("Change email") { flow.back() }
-        .font(.okou(.subheadline).weight(.medium)).foregroundStyle(OkouColor.brandText)
+        .font(.okou(.subheadline).weight(.medium)).foregroundStyle(OkouColor.foreground)
         .frame(minHeight: OkouControl.minimumTarget).disabled(flow.isWorking)
       TextField(
         "Verification code", text: $flow.code,
@@ -195,7 +195,7 @@ struct NativeAuthView: View {
       TimelineView(.periodic(from: .now, by: 1)) { timeline in
         let remaining = max(0, Int(ceil(flow.resendAvailableAt.timeIntervalSince(timeline.date))))
         Button(remaining == 0 ? "Resend code" : "Resend code in \(remaining)s") { flow.resend() }
-          .font(.okou(.subheadline)).foregroundStyle(OkouColor.brandText)
+          .font(.okou(.subheadline).weight(.medium)).foregroundStyle(OkouColor.foreground)
           .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget)
           .disabled(remaining > 0 || flow.isWorking)
       }
@@ -213,7 +213,7 @@ struct NativeAuthView: View {
         .disabled(flow.isWorking)
       primaryAction("Log in", disabled: flow.password.isEmpty) { flow.submitPassword() }
       Button("Forgot password or use another method?") { showsAdditionalMethods = true }
-        .font(.okou(.subheadline)).foregroundStyle(OkouColor.brandText)
+        .font(.okou(.subheadline).weight(.medium)).foregroundStyle(OkouColor.foreground)
         .frame(minHeight: OkouControl.minimumTarget)
     }
   }

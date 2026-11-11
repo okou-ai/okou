@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.17.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.9...runner-provider-v0.17.10) (2026-11-11)
+
+## [0.17.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.8...runner-provider-v0.17.9) (2026-11-11)
+
+## [0.17.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.7...runner-provider-v0.17.8) (2026-11-11)
+
+## [0.17.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.6...runner-provider-v0.17.7) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
+## [0.17.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.5...runner-provider-v0.17.6) (2026-11-10)
+
+
+### Refactoring
+
+* **provider:** isolate schema-bound response decoding ([#46405](https://github.com/okou-ai/okou/issues/46405)) ([0a0780f](https://github.com/okou-ai/okou/commit/0a0780f60b28ac76d99a1a009c162e449bbde60b))
+
 ## [0.17.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.4...runner-provider-v0.17.5) (2026-11-10)
 
 ## [0.17.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.3...runner-provider-v0.17.4) (2026-11-09)

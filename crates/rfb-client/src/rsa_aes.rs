@@ -4,6 +4,7 @@ pub(crate) mod records;
 use crate::{
     Authenticated, AuthenticatedStream, AuthenticationStage, Error,
     authentication::{phase, read_security_result},
+    credentials::valid_nul_free_field,
     version::{ServerVersion, exchange_version},
 };
 use crypto_bigint::BoxedUint;
@@ -83,9 +84,6 @@ impl fmt::Debug for RsaAesCredentials {
         f.write_str("RsaAesCredentials([REDACTED])")
     }
 }
-fn valid(value: &str) -> bool {
-    (1..=255).contains(&value.len()) && !value.as_bytes().contains(&0)
-}
 impl RsaAesCredentials {
     /// Password-only subtype 2, 1–255 exact UTF-8 bytes without NUL.
     pub fn password(password: String) -> Result<Self, Error> {
@@ -93,7 +91,7 @@ impl RsaAesCredentials {
     }
     /// Transfer an already zeroizing password allocation without copying it.
     pub fn password_zeroizing(password: Zeroizing<String>) -> Result<Self, Error> {
-        if !valid(&password) {
+        if !valid_nul_free_field(password.as_bytes(), 255) {
             return Err(Error::InvalidRsaAesCredential);
         }
         Ok(Self {
@@ -111,7 +109,9 @@ impl RsaAesCredentials {
         password: Zeroizing<String>,
     ) -> Result<Self, Error> {
         let username = Zeroizing::new(username);
-        if !valid(&username) || !valid(&password) {
+        if !valid_nul_free_field(username.as_bytes(), 255)
+            || !valid_nul_free_field(password.as_bytes(), 255)
+        {
             return Err(Error::InvalidRsaAesCredential);
         }
         Ok(Self {

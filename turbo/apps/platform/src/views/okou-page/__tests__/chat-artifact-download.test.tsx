@@ -29,11 +29,15 @@ vi.hoisted(() => {
 const context = testContext();
 
 test.each([
-  { filename: "report.png", contentType: "image/png" },
-  { filename: "report.pdf", contentType: "application/pdf" },
+  { filename: "report.png", contentType: "image/png", artifactType: "image" },
+  {
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    artifactType: "pdf",
+  },
 ])(
   "$filename remains downloadable when the browser reads bytes after the click",
-  async ({ filename, contentType }) => {
+  async ({ filename, contentType, artifactType }) => {
     const telemetry = context.mocks.posthog();
     const actions = () => {
       return telemetry.events.filter((event) => {
@@ -78,7 +82,11 @@ test.each([
     expect(actions()).toStrictEqual([
       {
         name: "artifact_action_clicked",
-        properties: { action: "download", surface: "dialog" },
+        properties: {
+          action: "download",
+          surface: "dialog",
+          artifact_type: artifactType,
+        },
         options: undefined,
       },
     ]);
@@ -108,14 +116,57 @@ test.each([
 );
 
 test.each([
-  { filename: "photo.png", contentType: "image/png", webFile: false },
-  { filename: "report.pdf", contentType: "application/pdf", webFile: false },
-  { filename: "clip.mp4", contentType: "video/mp4", webFile: false },
-  { filename: "voice.mp3", contentType: "audio/mpeg", webFile: false },
-  { filename: "upload.png", contentType: "image/png", webFile: true },
+  {
+    filename: "photo.png",
+    contentType: "image/png",
+    webFile: false,
+    artifactType: "image",
+  },
+  {
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    webFile: false,
+    artifactType: "pdf",
+  },
+  {
+    filename: "clip.mp4",
+    contentType: "video/mp4",
+    webFile: false,
+    artifactType: "video",
+  },
+  {
+    filename: "voice.mp3",
+    contentType: "audio/mpeg",
+    webFile: false,
+    artifactType: "audio",
+  },
+  {
+    filename: "upload.png",
+    contentType: "image/png",
+    webFile: true,
+    artifactType: "image",
+  },
+  {
+    filename: "proposal.DOCX",
+    contentType: "application/octet-stream",
+    webFile: false,
+    artifactType: "document",
+  },
+  {
+    filename: "forecast#1.xlsx",
+    contentType: "application/octet-stream",
+    webFile: false,
+    artifactType: "spreadsheet",
+  },
+  {
+    filename: "strategy.pptx",
+    contentType: "application/octet-stream",
+    webFile: false,
+    artifactType: "presentation",
+  },
 ])(
   "$filename downloads through a newly resolved attachment URL on every click",
-  async ({ filename, contentType, webFile }) => {
+  async ({ filename, contentType, webFile, artifactType }) => {
     const telemetry = context.mocks.posthog();
     const id = "00000000-0000-4000-8000-000000000951";
     const url = webFile
@@ -181,8 +232,8 @@ test.each([
           return event.properties;
         }),
     ).toStrictEqual([
-      { action: "download", surface: "dialog" },
-      { action: "download", surface: "dialog" },
+      { action: "download", surface: "dialog", artifact_type: artifactType },
+      { action: "download", surface: "dialog", artifact_type: artifactType },
     ]);
     expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
   },

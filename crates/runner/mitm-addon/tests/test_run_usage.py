@@ -180,8 +180,9 @@ async def test_json_totals_survive_flush_and_deduplicate_across_flows(
         usage.flush_usage_events(trigger="test")
         duplicate = await admit(real_flow)
         json_response(duplicate, payload())
-        assert read_usage(control)["totals"] == first["totals"]
-        assert read_usage(control)["observedResponses"] == 1
+        after_duplicate = read_usage(control)
+        assert after_duplicate["totals"] == first["totals"]
+        assert after_duplicate["observedResponses"] == 1
         child = await admit(real_flow)
         json_response(child, payload("response-2"))
         assert read_usage(control)["totals"]["total"] == 140
@@ -313,8 +314,9 @@ async def test_websocket_idle_prewarm_multiple_responses_and_flush(
             feed_websocket_server_message(flow, frame)
             feed_websocket_server_message(flow, frame)
             assert read_usage(control)["outstandingResponses"] == 0
-        assert read_usage(control)["totals"]["total"] == 140
-        assert read_usage(control)["observedResponses"] == 2
+        after_responses = read_usage(control)
+        assert after_responses["totals"]["total"] == 140
+        assert after_responses["observedResponses"] == 2
         mitm_addon.websocket_end(flow)
     assert read_usage(control)["totals"]["total"] == 140
 
@@ -857,8 +859,9 @@ async def test_websocket_close_keeps_known_usage_and_marks_unfinished_inference(
             flow,
             json.dumps({"type": "provider.future_event", "response": payload()}).encode(),
         )
-        assert read_usage(control)["totals"]["total"] == 70
-        assert read_usage(control)["outstandingResponses"] == 1
+        before_close = read_usage(control)
+        assert before_close["totals"]["total"] == 70
+        assert before_close["outstandingResponses"] == 1
         mitm_addon.websocket_end(flow)
     result = read_usage(control)
     assert result["totals"]["total"] == 70

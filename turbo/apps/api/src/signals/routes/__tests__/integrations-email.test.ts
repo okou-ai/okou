@@ -1,5 +1,6 @@
 import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, record } from "zod";
@@ -9,24 +10,39 @@ import {
   MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
 } from "@okouai/api-contracts/contracts/integrations-email";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsEmailRoutes } from "../integrations-email";
+import { emailInboundRoutes } from "../email-inbound";
 import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
+import { connectorPermissionsRoutes } from "../connector-permissions";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
-import { mockClerkUsers } from "./helpers/clerk-users";
+import {
+  mockClerkUsers,
+  ClerkUserNotFoundTestError,
+} from "./helpers/clerk-users";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -34,6 +50,7 @@ const runs = createRunsApi(context);
 const files = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
+const connectorsApi = createConnectorBddApi(context);
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -50,10 +67,14 @@ function emailUploadClient() {
   );
 }
 
-async function claimEmailFileRun() {
+async function claimEmailFileRun(additionalEmail?: string) {
   const { actor, group } = await entitledActor();
+  if (additionalEmail) {
+    const code = await connectionCode();
+    await incoming({ sender: additionalEmail, text: code }).send();
+  }
   const message = incoming({
-    sender: actor.email,
+    sender: additionalEmail ?? actor.email,
     subject: "Requested report",
   });
   await message.send();
@@ -99,24 +120,26 @@ async function prepareEmailFile(token: string) {
   return completed.body;
 }
 
-function verifiedDirectory(actor: ApiTestUser) {
+function verifiedDirectory(actor: ApiTestUser, primaryEmail = actor.email) {
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   mockClerkUsers(context, [
     {
       id: actor.userId,
-      primaryEmailAddressId: "email_verified",
+      primaryEmailAddressId: primaryEmail,
       firstName: "Email",
       lastName: "User",
       imageUrl: "",
       username: null,
       privateMetadata: {},
-      emailAddresses: [
-        {
-          id: "email_verified",
-          emailAddress: actor.email,
-          verification: { status: "verified" },
+      emailAddresses: [...new Set([actor.email, primaryEmail])].map(
+        (emailAddress) => {
+          return {
+            id: emailAddress,
+            emailAddress,
+            verification: { status: "verified" },
+          };
         },
-      ],
+      ),
     },
   ]);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
@@ -145,8 +168,577 @@ beforeEach(() => {
   });
 });
 
+describe("email-native signup", () => {
+  async function pendingSignup() {
+    const sender = "yuma@vm0.ai";
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data: [],
+      totalCount: 0,
+    });
+    const original = incoming({
+      sender,
+      text: "Please compare these options after signup",
+    });
+    await original.send();
+    const invitation = sentEmails().find((email) => {
+      return email.text.includes("\nCONFIRM\n");
+    });
+    const line = invitation?.text.match(/^CONFIRM$/mu)?.[0];
+    expect(line).toBeTruthy();
+    expect(invitation?.text).toContain("https://www.okou.ai/en/terms-of-use");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    const replyTo = invitation?.replyTo;
+    expect(replyTo).toMatch(/^okou\+confirm-[a-f0-9]{32}@okou\.io$/u);
+    return { sender, original, line: line!, replyTo: replyTo! };
+  }
+
+  function signupProvider(
+    sender: string,
+    uncertainCreate?: "user" | "organization",
+  ) {
+    const actor = bdd.user({ email: sender });
+    const profile = {
+      id: actor.userId,
+      primaryEmailAddressId: "email_signup",
+      firstName: null,
+      lastName: null,
+      username: null,
+      imageUrl: "",
+      privateMetadata: {},
+      emailAddresses: [
+        {
+          id: "email_signup",
+          emailAddress: sender,
+          verification: { status: "verified" },
+        },
+      ],
+    };
+    let userCreated = false;
+    let organizationCreated = false;
+    const organization = {
+      id: actor.orgId,
+      name: "My workspace",
+      slug: "email-signup",
+      createdAt: now(),
+      createdBy: actor.userId,
+      imageUrl: "",
+      hasImage: false,
+    };
+    context.mocks.clerk.users.getUser.mockResolvedValue(profile);
+    context.mocks.clerk.users.getUserList.mockImplementation(() => {
+      if (!userCreated) {
+        return Promise.resolve({ data: [], totalCount: 0 });
+      }
+      return Promise.resolve({ data: [profile], totalCount: 1 });
+    });
+    context.mocks.clerk.users.createUser.mockImplementation(() => {
+      userCreated = true;
+      if (uncertainCreate === "user") {
+        uncertainCreate = undefined;
+        return Promise.reject(new ClerkTransportTestError());
+      }
+      return Promise.resolve(profile);
+    });
+    context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+      () => {
+        if (!organizationCreated) {
+          return Promise.resolve({ data: [], totalCount: 0 });
+        }
+        return Promise.resolve({
+          data: [
+            {
+              id: "membership_signup",
+              role: "org:admin",
+              createdAt: now(),
+              organization,
+              publicUserData: { userId: actor.userId },
+            },
+          ],
+          totalCount: 1,
+        });
+      },
+    );
+    context.mocks.clerk.organizations.getOrganization.mockImplementation(() => {
+      return organizationCreated
+        ? Promise.resolve(organization)
+        : Promise.reject(new ClerkUserNotFoundTestError());
+    });
+    context.mocks.clerk.organizations.createOrganization.mockImplementation(
+      () => {
+        organizationCreated = true;
+        if (uncertainCreate === "organization") {
+          uncertainCreate = undefined;
+          return Promise.reject(new ClerkTransportTestError());
+        }
+        return Promise.resolve(organization);
+      },
+    );
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    return { actor, group };
+  }
+
+  it("creates the account and workspace only after consent, then resumes the original request once", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const { actor, group } = signupProvider(pending.sender);
+    const confirmation = incoming({
+      sender: pending.sender,
+      text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
+      to: [pending.replyTo],
+    });
+    await confirmation.send();
+    expect(
+      context.mocks.clerk.users.createUser,
+    ).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        emailAddress: [pending.sender],
+        legalAcceptedAt: expect.any(Date),
+        privateMetadata: {
+          emailSignup: expect.objectContaining({
+            confirmationMessageId: expect.any(String),
+            termsUrl: "https://www.okou.ai/en/terms-of-use",
+          }),
+        },
+      }),
+    );
+    expect(
+      context.mocks.clerk.organizations.createOrganization,
+    ).toHaveBeenCalledTimes(1);
+    await confirmation.send();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      needsOnboarding: false,
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    const snapshot = await createdThreads(actor);
+    expect(snapshot.chatThreads).toHaveLength(1);
+    const { events } = await files.listThreadEvents(
+      actor,
+      snapshot.chatThreads[0]!.id,
+    );
+    const prompts = events.filter((event) => {
+      return event.eventType === "input.prompt" && !event.revokesEventId;
+    });
+    expect(prompts).toHaveLength(1);
+    await runs.heartbeatRunner(group);
+    const polled = await runs.pollRunner(group);
+    expect(polled.body.job?.runId).toBeTruthy();
+    const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+    expect(claim.prompt).toContain("Please compare these options after signup");
+    expect(claim.prompt).not.toContain(pending.line);
+    verifiedDirectory(actor);
+    await expect(
+      emailClient().getLinkStatus({ headers: authHeaders() }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { emails: [pending.sender] },
+    });
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    expect(token).toBeTruthy();
+    const artifact = await prepareEmailFile(token!);
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: artifact.id },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sentEmails().at(-1)?.attachments).toMatchObject([
+      { filename: "report.txt" },
+    ]);
+    const runId = polled.body.job!.runId;
+    await webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "result",
+            sequenceNumber: 0,
+            result: "Your first email request is complete",
+          },
+        ],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: claim.cliAgentType,
+          cliAgentSessionId: claim.piSessionId ?? `email-signup-${runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sentEmails().at(-1)).toMatchObject({
+      replyTo: "okou@okou.io",
+      to: pending.sender,
+      text: "Your first email request is complete",
+    });
+  });
+
+  it.each(["*@vm0.ai", "YUMA@VM0.AI", "y*ma@vm0.*"])(
+    "refuses a Clerk-blocked sender matching %s before confirming or creating an account",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await incoming({ sender: "yuma@vm0.ai" }).send();
+      expect(sentEmails()).toMatchObject([
+        {
+          to: "yuma@vm0.ai",
+          text: expect.stringContaining("did not pass our security checks"),
+        },
+      ]);
+      expect(sentEmails()[0]!.text).not.toContain("CONFIRM");
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        context.mocks.clerk.organizations.createOrganization,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["*@vm0Xai", "*yuma*yuma@vm0.ai"])(
+    "confirms an allowed sender outside the literal blocklist entry %s",
+    async (identifier) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+        { data: [{ identifier }], totalCount: 1 },
+      );
+      await pendingSignup();
+      expect(sentEmails()).toMatchObject([
+        { text: expect.stringContaining("\nCONFIRM\n") },
+      ]);
+    },
+  );
+
+  it.each(["test@mailinator.com", "test@inbox.mailinator.com"])(
+    "refuses email-native signup for disposable address %s",
+    async (sender) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const actor = bdd.user({
+        email: sender,
+        orgId: createUniqueStaffOrgIdFixture(),
+      });
+      verifiedDirectory(actor);
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              organization: { id: actor.orgId, name: "Workspace" },
+            },
+            {
+              role: "org:admin",
+              organization: {
+                id: createUniqueStaffOrgIdFixture(),
+                name: "Other workspace",
+              },
+            },
+          ],
+          totalCount: 2,
+        },
+      );
+      await incoming({ sender }).send();
+      expect(sentEmails()).toMatchObject([
+        {
+          to: sender,
+          text: expect.stringContaining("did not pass our security checks"),
+        },
+      ]);
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      await expect(createdThreads(actor)).resolves.toStrictEqual({
+        chatThreads: [],
+      });
+      await expect(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+      ).resolves.toMatchObject({ status: 200, body: { emails: [sender] } });
+    },
+  );
+
+  it.each([
+    "Thanks, what does this do?\n\n> CONFIRM",
+    "> CONFIRM",
+    "Please CONFIRM this account",
+  ])(
+    "does not register when the reply only contains or quotes CONFIRM: %s",
+    async (text) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const pending = await pendingSignup();
+      await incoming({
+        sender: pending.sender,
+        text,
+        to: [pending.replyTo],
+      }).send();
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        sentEmails().filter((email) => {
+          return email.text.includes("\nCONFIRM\n");
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("rejects another mailbox's confirmation reply address without creating or running anything", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const other = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(other);
+    await incoming({
+      sender: other.email,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    await expect(createdThreads(other)).resolves.toStrictEqual({
+      chatThreads: [],
+    });
+  });
+
+  it("rejects expired consent and does not create an account", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const confirmation = incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    });
+    mockNow(now() + 25 * 60 * 60 * 1000);
+    await confirmation.send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forged reply address and still accepts the issued confirmation", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const forged = incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [`okou+confirm-${randomUUID().replaceAll("-", "")}@okou.io`],
+    });
+    await forged.send();
+    await forged.send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    const { actor } = signupProvider(pending.sender);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    await expect(createdThreads(actor)).resolves.toMatchObject({
+      chatThreads: [expect.anything()],
+    });
+  });
+
+  it("requires the issued reply address even when CONFIRM references the original request", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      inReplyTo: pending.original.messageId,
+    }).send();
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    expect(sentEmails()).toMatchObject([
+      { text: expect.stringContaining("\nCONFIRM\n") },
+      { text: expect.stringContaining("\nCONFIRM\n") },
+    ]);
+    const { actor } = signupProvider(pending.sender);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    const snapshot = await createdThreads(actor);
+    expect(snapshot.chatThreads).toHaveLength(1);
+    const { events } = await files.listThreadEvents(
+      actor,
+      snapshot.chatThreads[0]!.id,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        userMessage: expect.objectContaining({
+          parts: expect.arrayContaining([
+            {
+              type: "text",
+              text: expect.stringContaining(
+                "Please compare these options after signup",
+              ),
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const unavailable = new ClerkTransportTestError(403, [
+      { code: "authorization_invalid", message: "Unauthorized" },
+    ]);
+    context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockRejectedValueOnce(
+      unavailable,
+    );
+    const message = incoming({ sender: "yuma@vm0.ai" });
+    await expect(message.send(true)).rejects.toBe(unavailable);
+    expect(sentEmails()).toHaveLength(0);
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    await message.send();
+    expect(sentEmails()).toMatchObject([
+      { text: expect.stringContaining("\nCONFIRM\n") },
+    ]);
+  });
+
+  it.each(["user", "organization"] as const)(
+    "recovers a committed %s create after its response is lost",
+    async (resource) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const pending = await pendingSignup();
+      const { actor } = signupProvider(pending.sender, resource);
+      const confirmation = incoming({
+        sender: pending.sender,
+        text: pending.line,
+        to: [pending.replyTo],
+      });
+      await expect(confirmation.send(true)).rejects.toBeInstanceOf(
+        ClerkTransportTestError,
+      );
+      await confirmation.send();
+      expect(context.mocks.clerk.users.createUser).toHaveBeenCalledTimes(1);
+      expect(
+        context.mocks.clerk.organizations.createOrganization,
+      ).toHaveBeenCalledTimes(1);
+      await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+        onboardingComplete: true,
+        hasDefaultAgent: true,
+      });
+      await expect(createdThreads(actor)).resolves.toMatchObject({
+        chatThreads: [expect.anything()],
+      });
+    },
+  );
+
+  it("bounds unconfirmed signup messages from one sender", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    for (let index = 0; index < 4; index += 1) {
+      await incoming({
+        sender: "yuma@vm0.ai",
+        text: `Request ${index}`,
+      }).send();
+    }
+    expect(
+      sentEmails().filter((email) => {
+        return email.text.includes("\nCONFIRM\n");
+      }),
+    ).toHaveLength(3);
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+  });
+
+  it("preserves Clerk's authoritative rejection after a successful precheck", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    signupProvider(pending.sender);
+    context.mocks.clerk.users.createUser.mockRejectedValue(
+      new ClerkTransportTestError(403, [
+        {
+          code: "not_allowed_access",
+          message: "This identifier is not allowed",
+        },
+      ]),
+    );
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    expect(sentEmails().at(-1)?.text).toContain(
+      "did not pass our security checks",
+    );
+    expect(
+      context.mocks.clerk.organizations.createOrganization,
+    ).not.toHaveBeenCalled();
+  });
+});
+
 function incoming(options: {
   readonly sender: string;
+  readonly to?: readonly string[];
   readonly messageId?: string;
   readonly subject?: string;
   readonly text?: string;
@@ -169,7 +761,7 @@ function incoming(options: {
       return HttpResponse.json({
         id,
         from: options.sender,
-        to: ["okou@okou.io"],
+        to: options.to ?? ["okou@okou.io"],
         message_id: messageId,
         subject: options.subject ?? "A request",
         text: options.text ?? "Please compare these options",
@@ -188,15 +780,17 @@ function incoming(options: {
   );
   const event = {
     type: "email.received",
-    data: { email_id: id, to: ["okou@okou.io"] },
+    data: { email_id: id, to: options.to ?? ["okou@okou.io"] },
   };
+  const signedHeaders = webhooks.signedResendWebhookHeaders(event);
   return {
     id,
     messageId,
-    async send() {
-      await webhooks.requestResendInboundWebhook(
-        event,
-        webhooks.signedResendWebhookHeaders(event),
+    async send(rethrowErrors = false) {
+      await accept(
+        setupApp({ context, routes: emailInboundRoutes, rethrowErrors })(
+          emailInboundContract,
+        ).post({ body: event, headers: signedHeaders }),
         [200],
       );
       await flushWaitUntilForTest();
@@ -235,11 +829,174 @@ async function createdThreads(actor: ApiTestUser) {
   };
 }
 
+async function connectEmailMailbox(
+  actor: ApiTestUser,
+  provider: "gmail" | "outlook-mail",
+  address: string,
+) {
+  if (provider === "gmail") {
+    mockGmailConnectorOAuth({ email: address, subject: randomUUID() });
+  } else {
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_ID", "email-outlook-client");
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "email-outlook-secret");
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: "email-outlook-token",
+            refresh_token: "email-outlook-refresh",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.get("https://graph.microsoft.com/v1.0/me", () => {
+        return HttpResponse.json({
+          id: randomUUID(),
+          mail: address,
+          displayName: "Email Outlook",
+        });
+      }),
+    );
+  }
+  const started = await connectorsApi.startOauth(actor, provider, "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  const completed = await connectorsApi.completeOauthCallbackResult(provider, {
+    code: "email-channel-oauth",
+    state,
+  });
+  expect(completed.body).toMatchObject({ status: "success" });
+  const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
+    actor,
+    provider,
+    [200],
+  );
+  if (accounts.status !== 200) {
+    throw new Error("Expected connected mailbox accounts");
+  }
+  const account = accounts.body.connections.find((connection) => {
+    return connection.externalEmail === address;
+  });
+  if (!account) {
+    throw new Error("Expected the connected mailbox identity");
+  }
+  return account;
+}
+
+async function setGmailContextReadPermission(action: "allow" | "deny") {
+  await accept(
+    setupApp({ context, routes: connectorPermissionsRoutes })(
+      connectorPermissionsContract,
+    ).apply({
+      headers: authHeaders(),
+      body: {
+        target: { kind: "builtin", connectorSlug: "gmail" },
+        mode: "patch",
+        grants: [
+          { permission: "messages.read", action },
+          { permission: "messages.detail", action },
+        ],
+      },
+    }),
+    [200],
+  );
+}
+
+async function claimPendingEmail(
+  group: ReturnType<typeof runs.configureRunnerGroup>,
+) {
+  await runs.heartbeatRunner(group);
+  const polled = await runs.pollRunner(group);
+  const runId = polled.body.job?.runId;
+  if (!runId) {
+    throw new Error("Expected an Email run");
+  }
+  return await runs.claimRunnerJob(runId);
+}
+
+function mockEmailMessageLookup(
+  provider: "gmail" | "outlook-mail",
+  messageId: string,
+  body: string,
+  found = true,
+) {
+  const providerMessageId = `source-${randomUUID()}`;
+  const providerConversationId = `conversation-${randomUUID()}`;
+  if (provider === "gmail") {
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        ({ request }) => {
+          expect(new URL(request.url).searchParams.get("q")).toBe(
+            `rfc822msgid:${messageId}`,
+          );
+          return HttpResponse.json({
+            messages: found ? [{ id: providerMessageId }] : [],
+          });
+        },
+      ),
+      http.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${providerMessageId}`,
+        () => {
+          return HttpResponse.json({
+            id: providerMessageId,
+            threadId: providerConversationId,
+            payload: {
+              mimeType: "text/plain",
+              headers: [
+                { name: "Message-ID", value: messageId },
+                { name: "Subject", value: "API message subject" },
+              ],
+              body: { data: Buffer.from(body).toString("base64url") },
+            },
+          });
+        },
+      ),
+    );
+  } else {
+    server.use(
+      http.get(
+        "https://graph.microsoft.com/v1.0/me/messages",
+        ({ request }) => {
+          expect(new URL(request.url).searchParams.get("$filter")).toBe(
+            `internetMessageId eq '${messageId.replaceAll("'", "''")}'`,
+          );
+          expect(request.headers.get("Prefer")).toContain(
+            'IdType="ImmutableId"',
+          );
+          return HttpResponse.json({
+            value: found
+              ? [{ id: providerMessageId, internetMessageId: messageId }]
+              : [],
+          });
+        },
+      ),
+      http.get(
+        `https://graph.microsoft.com/v1.0/me/messages/${providerMessageId}`,
+        () => {
+          return HttpResponse.json({
+            id: providerMessageId,
+            conversationId: providerConversationId,
+            internetMessageId: messageId,
+            subject: "API message subject",
+            body: { contentType: "text", content: body },
+          });
+        },
+      ),
+    );
+  }
+  return { providerMessageId, providerConversationId };
+}
+
 function sentEmails() {
   return context.mocks.resend.send.mock.calls.map((call) => {
     return object({
       to: string(),
       text: string(),
+      replyTo: string().optional(),
       headers: record(string(), string()),
       attachments: array(
         object({ filename: string(), contentType: string(), path: string() }),
@@ -249,6 +1006,328 @@ function sentEmails() {
 }
 
 describe("Email integration", () => {
+  it.each(["gmail", "outlook-mail"] as const)(
+    "reads the forwarded message through the selected %s API without disclosing a disabled account",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: true,
+      });
+      const mailbox = await connectEmailMailbox(actor, provider, actor.email);
+      const disabled = await connectEmailMailbox(
+        actor,
+        provider,
+        `${randomUUID()}@private-mailbox.example`,
+      );
+      verifiedDirectory(actor);
+      await accept(
+        setupApp({ context, routes: chatConnectorAccessRoutes })(
+          chatConnectorAccessContract,
+        ).updateAccountDefault({
+          headers: authHeaders(),
+          params: { connectionId: disabled.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: provider },
+            enabled: false,
+          },
+        }),
+        [200],
+      );
+      if (provider === "gmail") {
+        await setGmailContextReadPermission("allow");
+      }
+      const parentId = `<${randomUUID()}@original.example>`;
+      const message = incoming({
+        sender: actor.email,
+        subject: "Fwd: Customer discussion",
+        text: "Please review this forwarded message.\nOriginal message content",
+        inReplyTo: parentId,
+      });
+      const sourceBody = `Provider-only message body ${randomUUID()}`;
+      const source = mockEmailMessageLookup(
+        provider,
+        message.messageId,
+        sourceBody,
+      );
+      await message.send();
+      await runs.heartbeatRunner(group);
+      const polled = await runs.pollRunner(group);
+      const runId = polled.body.job?.runId;
+      if (!runId) {
+        throw new Error("Expected the forwarded Email run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      expect(claim.prompt).toContain("Original message content");
+      expect(claim.prompt).not.toContain(sourceBody);
+      expect(claim.prompt).not.toContain("# Mailbox Message Context");
+      expect(claim.appendSystemPrompt).toContain(sourceBody);
+      expect(claim.appendSystemPrompt).toContain(source.providerMessageId);
+      expect(claim.appendSystemPrompt).toContain(source.providerConversationId);
+      expect(claim.appendSystemPrompt).toMatch(
+        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*# Restricted Explicit Content/,
+      );
+
+      expect(claim.appendSystemPrompt).toContain(
+        'Subject: "Fwd: Customer discussion"',
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `In-Reply-To: ${JSON.stringify(parentId)}`,
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `References: ${JSON.stringify([parentId])}`,
+      );
+      const prefix = "Connected mailbox for this Run: ";
+      const mailboxes = (claim.appendSystemPrompt ?? "")
+        .split("\n")
+        .filter((line) => {
+          return line.startsWith(prefix);
+        })
+        .map((line) => {
+          return object({
+            connectorSlug: string(),
+            connectionId: string(),
+            emailAddress: string().nullable(),
+            displayName: string().nullable(),
+          })
+            .strict()
+            .parse(JSON.parse(line.slice(prefix.length)));
+        });
+      expect(mailboxes).toStrictEqual([
+        {
+          connectorSlug: provider,
+          connectionId: mailbox.id,
+          emailAddress: actor.email,
+          displayName: mailbox.displayName,
+        },
+      ]);
+      const followUp = incoming({
+        sender: actor.email,
+        inReplyTo: message.messageId,
+        text: "A follow-up while the Run is active",
+      });
+      const followUpBody = `API follow-up body ${randomUUID()}`;
+      mockEmailMessageLookup(provider, followUp.messageId, followUpBody);
+      await followUp.send();
+      const next = await runs.nextSteerableInput(claim.sandboxToken, runId);
+      expect(next.input?.prompt).toContain(
+        "A follow-up while the Run is active",
+      );
+      expect(next.input?.prompt).toContain(followUpBody);
+      expect(next.input?.prompt).toMatch(
+        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*A follow-up while the Run is active/,
+      );
+      if (provider === "gmail") {
+        if (!next.input) {
+          throw new Error("Expected the active Email input");
+        }
+        await runs.declareSteeredInput(
+          claim.sandboxToken,
+          runId,
+          next.input.eventId,
+        );
+        await setGmailContextReadPermission("deny");
+        await incoming({
+          sender: actor.email,
+          inReplyTo: followUp.messageId,
+          text: "A follow-up after mailbox reads were revoked",
+        }).send();
+        const revoked = await runs.nextSteerableInput(
+          claim.sandboxToken,
+          runId,
+        );
+        expect(revoked.input?.prompt).toContain(
+          "A follow-up after mailbox reads were revoked",
+        );
+        expect(revoked.input?.prompt).toContain(
+          '"status":"permission-required"',
+        );
+      }
+    },
+  );
+
+  it.each(["gmail", "outlook-mail"] as const)(
+    "retains the received email when %s has no exact RFC Message-ID match",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      await connectEmailMailbox(actor, provider, actor.email);
+      verifiedDirectory(actor);
+      const message = incoming({
+        sender: actor.email,
+        text: "Only the received forward is available",
+      });
+      mockEmailMessageLookup(provider, message.messageId, "", false);
+      await message.send();
+      await runs.heartbeatRunner(group);
+      const polled = await runs.pollRunner(group);
+      const runId = polled.body.job?.runId;
+      if (!runId) {
+        throw new Error("Expected the Email run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      expect(claim.prompt).toContain("Only the received forward is available");
+      expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
+    },
+  );
+
+  it("preserves the received message without making a mailbox request when reads are denied", async () => {
+    const { actor, group } = await entitledActor();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("deny");
+    await incoming({
+      sender: actor.email,
+      text: "The received email remains usable",
+    }).send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.prompt).toContain("The received email remains usable");
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"permission-required"',
+    );
+  });
+
+  it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {
+    const { actor, group } = await entitledActor();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Body read after OAuth refresh",
+    );
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        expect(
+          new URLSearchParams(await request.text()).get("grant_type"),
+        ).toBe("refresh_token");
+        return HttpResponse.json({
+          access_token: "refreshed-email-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      }),
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        ({ request }) => {
+          return request.headers.get("Authorization") ===
+            "Bearer refreshed-email-token"
+            ? HttpResponse.json({
+                messages: [{ id: source.providerMessageId }],
+              })
+            : HttpResponse.json({ error: "expired" }, { status: 401 });
+        },
+      ),
+    );
+    await message.send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.appendSystemPrompt).toContain("Body read after OAuth refresh");
+  });
+
+  it("retains the received email when the mailbox provider is unavailable", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "outlook-mail", actor.email);
+    verifiedDirectory(actor);
+    server.use(
+      http.get("https://graph.microsoft.com/v1.0/me/messages", () => {
+        return HttpResponse.json(
+          { error: "temporarily unavailable" },
+          { status: 503 },
+        );
+      }),
+    );
+    await incoming({
+      sender: actor.email,
+      text: "Continue from this received message",
+    }).send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.prompt).toContain("Continue from this received message");
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"provider-unavailable"',
+    );
+  });
+
+  it("retains the received email when the mailbox response stream terminates", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "outlook-mail", actor.email);
+    verifiedDirectory(actor);
+    server.use(
+      http.get("https://graph.microsoft.com/v1.0/me/messages", () => {
+        return new HttpResponse(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"value":'));
+            },
+            pull(controller) {
+              controller.error(new TypeError("Provider response terminated"));
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    await incoming({
+      sender: actor.email,
+      text: "Continue despite the interrupted mailbox response",
+    }).send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.prompt).toContain(
+      "Continue despite the interrupted mailbox response",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"provider-unavailable"',
+    );
+  });
+
+  it("does not append a provider message with a different RFC Message-ID", async () => {
+    const { actor, group } = await entitledActor();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      connectorChatAccountAccess: true,
+    });
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Unrelated private body",
+    );
+    server.use(
+      http.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${source.providerMessageId}`,
+        () => {
+          return HttpResponse.json({
+            id: source.providerMessageId,
+            threadId: source.providerConversationId,
+            payload: {
+              mimeType: "text/plain",
+              headers: [
+                { name: "Message-ID", value: "<another@example.test>" },
+              ],
+              body: {
+                data: Buffer.from("Unrelated private body").toString(
+                  "base64url",
+                ),
+              },
+            },
+          });
+        },
+      ),
+    );
+    await message.send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
+    expect(claim.prompt).not.toContain("Unrelated private body");
+    expect(claim.appendSystemPrompt).not.toContain("Unrelated private body");
+  });
+
   it("provides Email system context and privately delivers an attachment once in the original conversation", async () => {
     const { actor, claim, token, message } = await claimEmailFileRun();
     expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
@@ -262,7 +1341,33 @@ describe("Email integration", () => {
     expect(claim.appendSystemPrompt).toContain(
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
+    expect(claim.appendSystemPrompt).toContain('Subject: "Requested report"');
     expect(claim.appendSystemPrompt).toContain("okou email upload-file");
+    expect(claim.appendSystemPrompt).toContain("# This Chat Thread");
+    const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected the Email chat thread identity");
+    }
+    expect(claim.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${threadId} --output-dir /tmp/okou-chat-history`,
+    );
+    const history = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadEventsContract,
+      ).rows({
+        headers: { authorization: `Bearer ${token}` },
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [200],
+    );
+    expect(history.body.rows).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        contextType: "email",
+      }),
+    );
+
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 20 * 1024 * 1024,
       UploadId: randomUUID(),
@@ -285,8 +1390,13 @@ describe("Email integration", () => {
         [200],
       );
     };
-    const [first, concurrent] = await Promise.all([request(), request()]);
-    expect(first.body.operationId).toBe(concurrent.body.operationId);
+    const [first, ...concurrent] = await Promise.all([
+      request(),
+      ...Array.from({ length: 7 }, request),
+    ]);
+    for (const response of concurrent) {
+      expect(response.body.operationId).toBe(first.body.operationId);
+    }
     await flushWaitUntilForTest();
     const replay = await request();
     expect(replay.body).toMatchObject({
@@ -378,6 +1488,12 @@ describe("Email integration", () => {
     expect(nextRunId).not.toBe(runId);
     const next = await runs.claimRunnerJob(nextRunId);
     expect(next.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
+    expect(next.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+      first.body.chatThreadId,
+    );
+    expect(next.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${first.body.chatThreadId} --output-dir /tmp/okou-chat-history`,
+    );
     expect(next.appendSystemPrompt).toContain(
       JSON.stringify(followup.messageId),
     );
@@ -482,12 +1598,13 @@ describe("Email integration", () => {
   });
 
   it("rejects Email attachment delivery after its mailbox disconnects", async () => {
-    const { actor, token } = await claimEmailFileRun();
+    const sender = `${randomUUID()}@example.com`;
+    const { token } = await claimEmailFileRun(sender);
     const file = await prepareEmailFile(token);
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
-        body: { emailAddress: actor.email },
+        body: { emailAddress: sender },
       }),
       [204],
     );
@@ -498,7 +1615,11 @@ describe("Email integration", () => {
       }),
       [403],
     );
-    expect(sentEmails()).toStrictEqual([]);
+    expect(
+      sentEmails().flatMap((email) => {
+        return email.attachments ?? [];
+      }),
+    ).toStrictEqual([]);
   });
 
   it("does not infer an email recipient for a Web-originated run", async () => {
@@ -526,112 +1647,130 @@ describe("Email integration", () => {
     expect(sentEmails()).toStrictEqual([]);
   });
 
-  it("imports an email attachment privately without forwarding the Resend credential to its download host", async () => {
-    const { actor } = await entitledActor();
-    const attachmentId = randomUUID();
-    const receipt = incoming({
-      sender: actor.email,
-      attachments: [{ id: attachmentId, filename: "comparison.txt" }],
-    });
-    const downloadUrl = `https://resend-attachments.s3.amazonaws.com/${attachmentId}/comparison.txt`;
-    server.use(
-      http.get(
-        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
-        ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer test-resend-key",
-          );
-          return HttpResponse.json({
-            id: attachmentId,
-            download_url: downloadUrl,
+  it.each([
+    "https://resend-attachments.s3.amazonaws.com",
+    "https://cdn.resend.app",
+  ])(
+    "imports an email attachment privately from %s without forwarding the Resend credential",
+    async (downloadOrigin) => {
+      const { actor } = await entitledActor();
+      const attachmentId = randomUUID();
+      const receipt = incoming({
+        sender: actor.email,
+        attachments: [{ id: attachmentId, filename: "comparison.txt" }],
+      });
+      const downloadUrl = `${downloadOrigin}/${attachmentId}/comparison.txt`;
+      server.use(
+        http.get(
+          `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+          ({ request }) => {
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer test-resend-key",
+            );
+            return HttpResponse.json({
+              id: attachmentId,
+              download_url: downloadUrl,
+            });
+          },
+        ),
+        http.get(downloadUrl, ({ request }) => {
+          expect(request.headers.get("authorization")).toBeNull();
+          return new HttpResponse("A private comparison", {
+            headers: { "Content-Type": "text/plain" },
           });
-        },
-      ),
-      http.get(downloadUrl, ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
-        return new HttpResponse("A private comparison", {
-          headers: { "Content-Type": "text/plain" },
-        });
-      }),
-    );
-    await receipt.send();
-    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
-    if (!threadId) {
-      throw new Error("Expected an email chat with an attachment");
-    }
-    const { events } = await files.listThreadEvents(actor, threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt";
-    });
-    if (prompt?.eventType !== "input.prompt") {
-      throw new Error("Expected the email input");
-    }
-    const attachment = prompt.userMessage.parts.find((part) => {
-      return part.type === "file";
-    });
-    if (attachment?.type !== "file") {
-      throw new Error("Expected the imported attachment");
-    }
-    expect(attachment).toMatchObject({
-      filenameSnapshot: "comparison.txt",
-      contentType: "text/plain",
-    });
-    const resolved = await files.resolveWebFileUrl(actor, attachment.fileId);
-    expect(resolved.publicUrl).toBeNull();
-    expect(resolved.url).not.toBe(downloadUrl);
-    const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
-    await files.requestWebFileUrl(outsider, attachment.fileId, [404]);
-  });
+        }),
+      );
+      await receipt.send();
+      expect(context.mocks.s3.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Body: Buffer.from("A private comparison"),
+            ContentType: "text/plain",
+          }),
+        }),
+        expect.anything(),
+      );
+      const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+      if (!threadId) {
+        throw new Error("Expected an email chat with an attachment");
+      }
+      const { events } = await files.listThreadEvents(actor, threadId);
+      const prompt = events.find((event) => {
+        return event.eventType === "input.prompt";
+      });
+      if (prompt?.eventType !== "input.prompt") {
+        throw new Error("Expected the email input");
+      }
+      const attachment = prompt.userMessage.parts.find((part) => {
+        return part.type === "file";
+      });
+      if (attachment?.type !== "file") {
+        throw new Error("Expected the imported attachment");
+      }
+      expect(attachment).toMatchObject({
+        filenameSnapshot: "comparison.txt",
+        contentType: "text/plain",
+      });
+      const resolved = await files.resolveWebFileUrl(actor, attachment.fileId);
+      expect(resolved.publicUrl).toBeNull();
+      expect(resolved.url).not.toBe(downloadUrl);
+      const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+      await files.requestWebFileUrl(outsider, attachment.fileId, [404]);
+    },
+  );
 
-  it("rejects untrusted attachment download hosts while preserving the email text", async () => {
-    const { actor } = await entitledActor();
-    const attachmentId = randomUUID();
-    const receipt = incoming({
-      sender: actor.email,
-      attachments: [{ id: attachmentId, filename: "untrusted.txt" }],
-    });
-    const downloadUrl = `https://untrusted.example/${attachmentId}/untrusted.txt`;
-    let untrustedHostRequested = false;
-    server.use(
-      http.get(
-        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
-        () => {
-          return HttpResponse.json({
-            id: attachmentId,
-            download_url: downloadUrl,
-          });
-        },
-      ),
-      http.get(downloadUrl, () => {
-        untrustedHostRequested = true;
-        return new HttpResponse("Untrusted attachment");
-      }),
-    );
-    await receipt.send();
-    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
-    if (!threadId) {
-      throw new Error("Expected the email text to remain available");
-    }
-    const { events } = await files.listThreadEvents(actor, threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt";
-    });
-    if (prompt?.eventType !== "input.prompt") {
-      throw new Error("Expected the email input");
-    }
-    const attachment = prompt.userMessage.parts.find((part) => {
-      return part.type === "file";
-    });
-    if (attachment?.type !== "file") {
-      throw new Error("Expected the unavailable attachment reference");
-    }
-    expect(attachment.filenameSnapshot).toBe("untrusted.txt");
-    expect(prompt.userMessage.parts).toContainEqual({
-      type: "text",
-      text: expect.stringContaining("Please compare these options"),
-    });
-    expect(untrustedHostRequested).toBeFalsy();
-  });
+  it.each(["untrusted.example", "cdn.resend.app.evil.example"])(
+    "rejects untrusted attachment download host %s while preserving the email text",
+    async (downloadHost) => {
+      const { actor } = await entitledActor();
+      const attachmentId = randomUUID();
+      const receipt = incoming({
+        sender: actor.email,
+        attachments: [{ id: attachmentId, filename: "untrusted.txt" }],
+      });
+      const downloadUrl = `https://${downloadHost}/${attachmentId}/untrusted.txt`;
+      let untrustedHostRequested = false;
+      server.use(
+        http.get(
+          `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+          () => {
+            return HttpResponse.json({
+              id: attachmentId,
+              download_url: downloadUrl,
+            });
+          },
+        ),
+        http.get(downloadUrl, () => {
+          untrustedHostRequested = true;
+          return new HttpResponse("Untrusted attachment");
+        }),
+      );
+      await receipt.send();
+      const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+      if (!threadId) {
+        throw new Error("Expected the email text to remain available");
+      }
+      const { events } = await files.listThreadEvents(actor, threadId);
+      const prompt = events.find((event) => {
+        return event.eventType === "input.prompt";
+      });
+      if (prompt?.eventType !== "input.prompt") {
+        throw new Error("Expected the email input");
+      }
+      const attachment = prompt.userMessage.parts.find((part) => {
+        return part.type === "file";
+      });
+      if (attachment?.type !== "file") {
+        throw new Error("Expected the unavailable attachment reference");
+      }
+      expect(attachment.filenameSnapshot).toBe("untrusted.txt");
+      expect(prompt.userMessage.parts).toContainEqual({
+        type: "text",
+        text: expect.stringContaining("Please compare these options"),
+      });
+      expect(untrustedHostRequested).toBeFalsy();
+    },
+  );
 
   it("keeps email chats readable through both installed-iOS event endpoints", async () => {
     const { actor } = await entitledActor();
@@ -701,8 +1840,10 @@ describe("Email integration", () => {
   });
 
   it("revokes pending reply delivery when its sender disconnects", async () => {
-    const { actor, group } = await entitledActor();
-    await incoming({ sender: actor.email }).send();
+    const { group } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await incoming({ sender, text: await connectionCode() }).send();
+    await incoming({ sender }).send();
     await runs.heartbeatRunner(group);
     const polled = await runs.pollRunner(group);
     const runId = polled.body.job?.runId;
@@ -713,7 +1854,7 @@ describe("Email integration", () => {
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
-        body: { emailAddress: actor.email },
+        body: { emailAddress: sender },
       }),
       [204],
     );
@@ -746,7 +1887,11 @@ describe("Email integration", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect(sentEmails()).toStrictEqual([]);
+    expect(
+      sentEmails().filter((email) => {
+        return email.text === "Reply after disconnect";
+      }),
+    ).toStrictEqual([]);
   });
 
   it("does not join another sender's chat through copied reference headers", async () => {
@@ -773,9 +1918,19 @@ describe("Email integration", () => {
     );
   });
 
-  it("connects only verified account addresses and requires explicit reconnection after disconnect", async () => {
+  it("automatically connects the login email and prevents its deletion", async () => {
     const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(actor);
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    const deleted = await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [403],
+    );
+    expect(deleted.body.error.message).toContain("always connected");
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     await accept(
       emailClient().connectAddress({
         headers: authHeaders(),
@@ -783,66 +1938,12 @@ describe("Email integration", () => {
       }),
       [403],
     );
-    await accept(
-      emailClient().connectAddress({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([actor.email]);
-    await accept(
-      emailClient().unlink({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [204],
-    );
-    await incoming({ sender: actor.email }).send();
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
-    await accept(
-      emailClient().connectAddress({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([actor.email]);
   });
 
-  it("does not auto-connect an account from a forged sender", async () => {
-    const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
-    verifiedDirectory(actor);
+  it("rejects a forged login sender without starting a task or replying", async () => {
+    const { actor } = await entitledActor();
     await incoming({ sender: actor.email, authenticated: false }).send();
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(0);
     expect(sentEmails()).toStrictEqual([]);
   });
 
@@ -855,14 +1956,6 @@ describe("Email integration", () => {
     await expect(createdThreads(actor)).resolves.toStrictEqual({
       chatThreads: [],
     });
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
     await incoming({
       sender: actor.email,
       authentication: { spf: "gray", dkim: "pass", dmarc: "gray" },
@@ -912,7 +2005,9 @@ describe("Email integration", () => {
     }
     const claim = await runs.claimRunnerJob(runId);
     expect(claim.prompt).toContain("First independent request");
-    expect(claim.appendSystemPrompt).toContain("Email integration");
+    expect(claim.appendSystemPrompt).toContain(
+      "You are currently running inside: Email",
+    );
     await webhooks.requestAgentEvents(
       {
         runId,
@@ -984,11 +2079,28 @@ describe("Email integration", () => {
     expect(prompts).toHaveLength(2);
   });
 
-  it("preserves the original request through signup and auto-connect, rejects another account, and resumes only once", async () => {
+  it("preserves workspace-selection links for existing accounts and resumes the original request only once", async () => {
     const sender = "yuma@vm0.ai";
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [],
-      totalCount: 0,
+    const actor = bdd.user({
+      email: sender,
+      orgId: createUniqueStaffOrgIdFixture(),
+    });
+    verifiedDirectory(actor);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          role: "org:admin",
+          organization: { id: actor.orgId, name: "First workspace" },
+        },
+        {
+          role: "org:admin",
+          organization: {
+            id: createUniqueStaffOrgIdFixture(),
+            name: "Second workspace",
+          },
+        },
+      ],
+      totalCount: 2,
     });
     await incoming({ sender, text: "Please handle this after signup" }).send();
     const invitation = sentEmails()[0];
@@ -1009,10 +2121,6 @@ describe("Email integration", () => {
       emailClient().connect({ headers: authHeaders(), body }),
       [403],
     );
-    const actor = bdd.user({
-      email: sender,
-      orgId: createUniqueStaffOrgIdFixture(),
-    });
     onTestFinished(async () => {
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
@@ -1113,4 +2221,326 @@ describe("Email integration", () => {
       }),
     ).toMatchObject([{ to: sender }]);
   });
+});
+
+async function connectionCode() {
+  const code = (
+    await accept(
+      emailClient().createLinkCode({ headers: authHeaders() }),
+      [200],
+    )
+  ).body.code;
+  expect(code).toMatch(/^\d{8}$/u);
+  return code;
+}
+async function connectedEmails() {
+  return (
+    await accept(emailClient().getLinkStatus({ headers: authHeaders() }), [200])
+  ).body.emails.sort();
+}
+
+describe("Email multi-account connections", () => {
+  it("keeps a changed login email connected even if it was previously deleted as an additional address", async () => {
+    const { actor } = await entitledActor();
+    const primary = `${randomUUID()}@example.com`;
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    await incoming({ sender: primary, text: await connectionCode() }).send();
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: primary },
+      }),
+      [204],
+    );
+    verifiedDirectory(actor, primary);
+    await incoming({ sender: primary, text: "Analyze my report" }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [actor.email, primary].sort(),
+    );
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: primary },
+      }),
+      [403],
+    );
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [204],
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([primary]);
+  });
+
+  it("processes an ordinary message with a numeric subject as a task", async () => {
+    const { actor } = await entitledActor();
+    await incoming({
+      sender: actor.email,
+      subject: "20261110",
+      text: "Analyze this report",
+    }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+  });
+
+  it("binds multiple non-login email addresses to one owner without starting tasks for connection codes", async () => {
+    const { actor } = await entitledActor();
+    const first = `${randomUUID()}@gmail.example`;
+    const second = `${randomUUID()}@outlook.example`;
+    const code = await connectionCode();
+    await incoming({
+      sender: first,
+      to: [`okou+confirm-${randomUUID().replaceAll("-", "")}@okou.io`],
+      text: code,
+    }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    await incoming({
+      sender: first,
+      subject: code,
+      text: "",
+    }).send();
+    await incoming({
+      sender: second,
+      text: `${await connectionCode()}\n\nSent from my phone`,
+    }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      expect.arrayContaining([first, second]),
+    );
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(0);
+    await incoming({ sender: first, text: "Analyze the first report" }).send();
+    await incoming({
+      sender: second,
+      text: "Analyze the second report",
+    }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(2);
+  });
+
+  it("deduplicates verification webhook retries and cannot reuse a code for another sender", async () => {
+    const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(actor);
+    const code = await connectionCode();
+    const sender = `${randomUUID()}@example.com`;
+    const message = incoming({ sender, text: code });
+    await message.send();
+    await message.send();
+    await incoming({
+      sender: `${randomUUID()}@example.com`,
+      text: code,
+    }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [actor.email, sender].sort(),
+    );
+    expect(
+      sentEmails().filter((email) => {
+        return email.text.startsWith("Email connected.");
+      }),
+    ).toHaveLength(1);
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: sender },
+      }),
+      [204],
+    );
+    await message.send();
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+  });
+
+  it("rejects another workspace with a reply and allows moving only after disconnect and a fresh proof", async () => {
+    const first = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(first);
+    const sender = `${randomUUID()}@example.com`;
+    const firstCodeMessage = incoming({ sender, text: await connectionCode() });
+    await firstCodeMessage.send();
+    const second = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(second);
+    await incoming({ sender, text: await connectionCode() }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual([second.email]);
+    expect(sentEmails()).toContainEqual(
+      expect.objectContaining({
+        to: sender,
+        text: expect.stringContaining(
+          "already connected to another account or workspace",
+        ),
+      }),
+    );
+    verifiedDirectory(first);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [first.email, sender].sort(),
+    );
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: sender },
+      }),
+      [204],
+    );
+    await firstCodeMessage.send();
+    await expect(connectedEmails()).resolves.toStrictEqual([first.email]);
+    verifiedDirectory(second);
+    await incoming({ sender, text: await connectionCode() }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [second.email, sender].sort(),
+    );
+    verifiedDirectory(first);
+    await expect(connectedEmails()).resolves.toStrictEqual([first.email]);
+  });
+
+  it.each(["expired", "forged"] as const)(
+    "rejects %s verification without creating a connection",
+    async (reason) => {
+      const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+      verifiedDirectory(actor);
+      const currentTime = now();
+      if (reason === "expired") {
+        mockNow(currentTime - 11 * 60 * 1000);
+      }
+      const code = await connectionCode();
+      mockNow(currentTime);
+      await incoming({
+        sender: `${randomUUID()}@example.com`,
+        text: code,
+        authenticated: reason !== "forged",
+      }).send();
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    },
+  );
+
+  it("consumes one code atomically when two authenticated senders race", async () => {
+    const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    verifiedDirectory(actor);
+    const code = await connectionCode();
+    const first = incoming({
+      sender: `${randomUUID()}@example.com`,
+      text: code,
+    });
+    const second = incoming({
+      sender: `${randomUUID()}@example.com`,
+      text: code,
+    });
+    await Promise.all([first.send(), second.send()]);
+    const linked = await connectedEmails();
+    expect(linked).toContain(actor.email);
+    expect(linked).toHaveLength(2);
+  });
+
+  it("delivers private attachments to a code-verified address outside the login account", async () => {
+    const sender = `${randomUUID()}@example.com`;
+    const { claim, token } = await claimEmailFileRun(sender);
+    expect(claim.appendSystemPrompt).toContain(
+      `Verified sender: ${JSON.stringify(sender)}`,
+    );
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: 1024,
+      UploadId: randomUUID(),
+      ETag: "email-code-file",
+    });
+    const file = await prepareEmailFile(token);
+    const result = await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id, text: "Your report" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(result.body.emailAddress).toBe(sender);
+    expect(sentEmails()).toContainEqual(
+      expect.objectContaining({
+        to: sender,
+        text: "Your report",
+        attachments: expect.any(Array),
+      }),
+    );
+  });
+
+  it.each([
+    { provider: "gmail", alreadyConnected: false },
+    { provider: "outlook-mail", alreadyConnected: false },
+    { provider: "gmail", alreadyConnected: true },
+    { provider: "outlook-mail", alreadyConnected: true },
+  ] as const)(
+    "automatically adds $provider accounts (existing: $alreadyConnected) and preserves individual deletion",
+    async ({ provider, alreadyConnected }) => {
+      const orgId = createUniqueStaffOrgIdFixture();
+      const actor = bdd.user({ orgId });
+      verifiedDirectory(actor);
+      if (alreadyConnected) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId },
+          {
+            [FeatureSwitchKey.EmailIntegration]: false,
+          },
+        );
+      }
+      const secondEmail = `${randomUUID()}@example.com`;
+      const addresses = [actor.email, secondEmail];
+      for (const address of addresses) {
+        await connectEmailMailbox(actor, provider, address);
+      }
+      if (alreadyConnected) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId },
+          {
+            [FeatureSwitchKey.EmailIntegration]: true,
+          },
+        );
+      }
+      verifiedDirectory(actor);
+      await expect(connectedEmails()).resolves.toStrictEqual(
+        expect.arrayContaining(addresses),
+      );
+      const source = provider === "gmail" ? "gmail" : "outlook";
+      const connected = await accept(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+        [200],
+      );
+      expect(connected.body.emailSources).toStrictEqual({
+        [actor.email]: source,
+        [secondEmail]: source,
+      });
+      const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
+        actor,
+        provider,
+        [200],
+      );
+      if (accounts.status !== 200) {
+        throw new Error("Expected mail accounts");
+      }
+      const account = accounts.body.connections.find((entry) => {
+        return entry.externalEmail === actor.email;
+      });
+      if (!account) {
+        throw new Error("Expected login mail account");
+      }
+      await connectorsApi.deleteBuiltinConnectorAccount(
+        actor,
+        provider,
+        account.id,
+      );
+      verifiedDirectory(actor);
+      await expect(connectedEmails()).resolves.toStrictEqual(
+        expect.arrayContaining(addresses),
+      );
+      await accept(
+        emailClient().unlink({
+          headers: authHeaders(),
+          body: { emailAddress: secondEmail },
+        }),
+        [204],
+      );
+      await incoming({ sender: secondEmail }).send();
+      const deleted = await accept(
+        emailClient().getLinkStatus({ headers: authHeaders() }),
+        [200],
+      );
+      expect(deleted.body.emailSources).toStrictEqual({});
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    },
+  );
 });

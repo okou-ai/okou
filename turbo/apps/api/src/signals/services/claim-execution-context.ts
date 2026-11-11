@@ -1,5 +1,5 @@
 import {
-  claimExecutionInputSchema,
+  storedExecutionContextSchema,
   claimPreparedExecutionContextSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -50,7 +50,7 @@ export function createClaimExecutionContext(
     const input = await get(input$);
     return {
       input,
-      parsed: claimExecutionInputSchema.safeParse(input.executionContext),
+      parsed: storedExecutionContextSchema.safeParse(input.executionContext),
     };
   });
   const runtimeInput$ = computed(async (get) => {
@@ -70,6 +70,8 @@ export function createClaimExecutionContext(
         hydrationMs: undefined,
         secrets: null,
         storageCacheWrites: [],
+        connectorOperationTimings: [],
+        networkPolicyInputs: null,
       };
     }
     const startedAt = monotonicNow();
@@ -91,6 +93,8 @@ export function createClaimExecutionContext(
       hydrationMs: monotonicNow() - startedAt,
       secrets: runtime.value.secrets,
       storageCacheWrites: runtime.value.storageCacheWrites,
+      connectorOperationTimings: runtime.value.connectorOperationTimings,
+      networkPolicyInputs: runtime.value.networkPolicyInputs,
     };
   });
 }

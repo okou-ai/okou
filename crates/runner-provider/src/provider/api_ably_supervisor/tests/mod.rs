@@ -8,6 +8,9 @@ use tracing_test_support::CapturedEvents;
 mod blocked_cancellation;
 mod finalizing_source;
 mod reuse_polling;
+mod scheduled_wait;
+
+pub(super) use scheduled_wait::ScheduledWaitObserver;
 
 fn make_message(name: Option<&str>, data: serde_json::Value) -> ably_subscriber::Message {
     ably_subscriber::Message {

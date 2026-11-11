@@ -343,7 +343,7 @@ export class ApiDispatchPhaseCollector {
   }
 }
 
-interface ApiDispatchTimingRecord {
+export interface ApiDispatchTimingRecord {
   readonly actionType: ApiDispatchTimingActionType;
   readonly spanKind: ApiDispatchTimingSpanKind;
   readonly durationMs: number;
@@ -356,6 +356,11 @@ export class ApiDispatchTimingCollector {
   private readonly processAgeBucket = apiProcessAgeBucket(performance.now());
   private processDispatchOrdinalBucket:
     ApiProcessDispatchOrdinalBucket | undefined;
+
+  /** Completed observations passed as plain data to the publication owner. */
+  snapshot(): readonly ApiDispatchTimingRecord[] {
+    return [...this.records];
+  }
 
   recordDatabaseElapsed(
     parentActionType: ApiDispatchTimingActionType,
@@ -554,6 +559,36 @@ export class ApiDispatchTimingCollector {
       }),
     );
   }
+}
+
+/** Publish runtime preparation only after the Claim wins durable ownership. */
+export function recordClaimPreparationTimings(args: {
+  readonly runId: string;
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly records: readonly ApiDispatchTimingRecord[];
+}): void {
+  const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+  recordSandboxOperations(
+    args.records.map((record) => {
+      return {
+        sandboxType: "runner",
+        actionType: record.actionType,
+        durationMs: record.durationMs,
+        success: true,
+        runId: args.runId,
+        timestamp: record.timestamp,
+        dimensions: {
+          ...record.dimensions,
+          runner_group: args.runnerGroup,
+          profile: args.profile,
+          preparation_phase: "claim",
+          span_kind: record.spanKind,
+          ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+        },
+      };
+    }),
+  );
 }
 
 export async function measureApiDispatchTiming<T>(

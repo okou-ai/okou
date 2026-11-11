@@ -24,7 +24,6 @@ from tests.connector_diagnostic_helpers import (
 )
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
@@ -732,7 +731,6 @@ class TestErrorHandler:
 
         mitm_addon.error(flow)
 
-        assert jsonl_exists_after_flush(proxy_log)
         [entry] = read_jsonl_entries_after_flush(proxy_log)
         assert entry["message"] == "Error: connection reset by peer: https://slack.com/api/test"
         assert "api_key=secret" not in entry["message"]

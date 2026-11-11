@@ -49,6 +49,7 @@ import type { AttachmentPreviewSignals } from "../../signals/attachment-resource
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
+import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
@@ -891,9 +892,11 @@ function ArtifactDialogDocumentFrameBody({
 // No preview is a terminal screen, so it has to carry the one action that
 // still works on the file: taking it away.
 function ArtifactDialogGenericFileBody({
+  artifact,
   filename,
   preview,
 }: {
+  artifact: AttachmentArtifactMetadata | undefined;
   filename: string;
   preview: AttachmentLightboxState;
 }) {
@@ -902,6 +905,7 @@ function ArtifactDialogGenericFileBody({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const downloading = downloadLoadable.state === "loading";
+  const downloadMetadata = artifact ?? preview;
   return (
     <ArtifactDialogStage centered>
       <div className="flex w-full max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
@@ -925,6 +929,12 @@ function ArtifactDialogGenericFileBody({
             captureArtifactAction({
               action: "download",
               surface: "file_preview",
+              artifact_type: artifactDownloadType({
+                filename,
+                contentType: downloadMetadata.contentType,
+                artifactKind: downloadMetadata.artifactKind,
+                previewKind: preview.kind,
+              }),
             });
             detach(
               downloadAttachment({ filename, url: preview.url }, pageSignal),
@@ -1102,7 +1112,11 @@ function ArtifactPreviewContent({
       );
     }
     return (
-      <ArtifactDialogGenericFileBody filename={filename} preview={preview} />
+      <ArtifactDialogGenericFileBody
+        artifact={artifact}
+        filename={filename}
+        preview={preview}
+      />
     );
   }
 
@@ -1395,6 +1409,8 @@ function ArtifactPreviewDialogActions({
     toggleLightboxDialogFullscreen$,
   );
   const shareUrl = useLastResolved(preview.shareUrl$);
+  const downloadMetadata = artifact ?? preview;
+  const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const showShare = preview.shareAvailable !== false;
   const refinedToolbar =
     useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
@@ -1443,8 +1459,10 @@ function ArtifactPreviewDialogActions({
           surface="dialog"
           artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
           origin={{ kind: "preview-dialog" }}
-          artifactKind={artifact?.artifactKind}
-          filename={artifact?.filename ?? artifactDialogFilename(preview)}
+          artifactKind={downloadMetadata.artifactKind}
+          contentType={downloadMetadata.contentType}
+          previewKind={preview.kind}
+          filename={filename}
           iconSize={18}
           syncTarget={artifactDialogSyncTarget(artifact)}
           url={preview.url}
@@ -1453,12 +1471,14 @@ function ArtifactPreviewDialogActions({
         <>
           <ArtifactDownloadMenu
             surface="dialog"
-            key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
+            key={`${preview.url}:${filename}`}
             ariaLabel={t(($) => {
               return $.artifacts.actions.downloadOptions;
             })}
-            artifactKind={artifact?.artifactKind}
-            filename={artifact?.filename ?? artifactDialogFilename(preview)}
+            artifactKind={downloadMetadata.artifactKind}
+            contentType={downloadMetadata.contentType}
+            previewKind={preview.kind}
+            filename={filename}
             iconSize={18}
             syncTarget={artifactDialogSyncTarget(artifact)}
             url={preview.url}
@@ -1653,6 +1673,7 @@ export function FileAttachmentChip({
           openFileLightbox({
             threadId,
             filename,
+            contentType,
             url,
             ...(preview ? { preview } : {}),
             ...(shareAvailable === undefined ? {} : { shareAvailable }),
@@ -1662,6 +1683,7 @@ export function FileAttachmentChip({
         captureArtifactAction({
           action: "download",
           surface: "attachment_chip",
+          artifact_type: artifactDownloadType({ filename, contentType }),
         });
         detach(
           downloadAttachment({ filename, url }, pageSignal),
@@ -1804,6 +1826,7 @@ export function PreviewableAudioAttachmentChip({
           threadId,
           url,
           filename,
+          contentType,
           ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),

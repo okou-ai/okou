@@ -2,9 +2,7 @@ import SwiftUI
 import UIKit
 
 /// The shared chat filters, with Chats as the native default label.
-enum ChatListFilter: CaseIterable {
-  case recent, unread, archived, muted
-
+extension ChatListFilter {
   var title: String {
     switch self {
     case .recent: String(localized: "Chats")
@@ -29,6 +27,8 @@ struct ChatListFilterMenu: UIViewRepresentable {
   let sidebar: SidebarInteraction
   let store: WorkspaceStore
   @Binding var selection: ChatListFilter
+  /// Names a new Project; the sidebar owns its name dialog.
+  let newProject: () -> Void
 
   func makeUIView(context: Context) -> SidebarMenuButton {
     let button = SidebarMenuButton(sidebar: sidebar)
@@ -86,6 +86,16 @@ struct ChatListFilterMenu: UIViewRepresentable {
             ) { _ in Task { await list.markAgentRead(agentID) } }
           ]))
     }
+    let newProject = newProject
+    groups.append(
+      UIMenu(
+        options: .displayInline,
+        children: [
+          UIAction(
+            title: String(localized: "New project"), image: OkouIcon.uiImage("folder-plus"),
+            attributes: store.needsUpgrade ? .disabled : []
+          ) { _ in newProject() }
+        ]))
     let menu = UIMenu(children: groups)
     button.menu = menu
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }

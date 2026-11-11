@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Lint the complete owned Swift tree from any directory. No download or fixes.
-# SWIFTLINT_BIN optionally selects an installed binary; its version must match.
+# SWIFTLINT_BIN optionally selects a built binary; its rule receipt must match.
 # GitHub Actions receives inline annotations. Configuration warnings also fail.
 set -euo pipefail
 
@@ -17,15 +17,10 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 if [[ -n "${SWIFTLINT_BIN:-}" ]]; then
   binary=$SWIFTLINT_BIN
-elif command -v swiftlint >/dev/null 2>&1; then
-  binary=$(command -v swiftlint)
 else
   binary=$(bash "$script_dir/install-swiftlint.sh" --path-only)
 fi
-if [[ "$("$binary" --version)" != "$version" ]]; then
-  echo "SwiftLint $version is required. Run bash ios/scripts/install-swiftlint.sh and use its binary." >&2
-  exit 1
-fi
+python3 "$ios_root/Tools/SwiftLint/build.py" --verify "$binary"
 reporter=xcode
 if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
   reporter=github-actions-logging

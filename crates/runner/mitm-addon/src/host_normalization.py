@@ -472,10 +472,6 @@ def _is_valid_alabel(label: str) -> bool:
     return canonical_label == label
 
 
-def _has_invalid_alabel(ascii_host: str) -> bool:
-    return any(not _is_valid_alabel(label) for label in ascii_host.split("."))
-
-
 def _normalize_label(label: str) -> str:
     if not label:
         raise UnicodeError("empty IDNA label")

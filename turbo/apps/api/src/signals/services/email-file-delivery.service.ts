@@ -14,7 +14,6 @@ import { conflict } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { ownsVerifiedEmail } from "./email-channel.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { emailChannelOutboxValues } from "./email-channel-delivery.service";
 import { emailTemplateSchema } from "./email-common.service";
@@ -101,7 +100,7 @@ export const emailFileDestination$ = command(
     }
     const user = await findClerkUser(get(clerk$), args.userId, signal);
     signal.throwIfAborted();
-    if (!user || !ownsVerifiedEmail(user, destination.emailAddress)) {
+    if (!user || user.banned) {
       return null;
     }
     const role = await set(
@@ -164,7 +163,9 @@ export const enqueueEmailFile$ = command(
         inReplyTo: source.messageId,
         references: [...source.references, source.messageId],
       })
-      .onConflictDoNothing({ target: emailChannelMessages.id })
+      // All three unique keys above identify this same deterministic receipt.
+      // A concurrent insert can encounter any of them before the primary key.
+      .onConflictDoNothing()
       .returning({ id: emailChannelMessages.id });
     const fields = [
       { column: emailOutbox.id, value: values.id },

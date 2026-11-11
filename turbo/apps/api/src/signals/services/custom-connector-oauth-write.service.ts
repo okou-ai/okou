@@ -17,6 +17,7 @@ import {
   eq,
   exists,
   getTableColumns,
+  ne,
   notExists,
   SQL,
   sql,
@@ -293,6 +294,7 @@ function insertAutomaticNoAuthAccount(
 /** The existing definition lock gates both account arbitration and cleanup. */
 export function automaticNoAuthPublicationSql(
   args: ConnectorConnectionWriteArgs,
+  preserveOAuth: boolean,
 ): SQL {
   if (args.target.kind !== "custom" || args.authMethod !== "none") {
     throw new Error("Automatic no-auth publication requires a custom target");
@@ -337,6 +339,8 @@ export function automaticNoAuthPublicationSql(
       joins: [],
       where: and(
         write.where,
+        // Optional public discovery cannot erase OAuth committed in parallel.
+        preserveOAuth ? ne(connectors.authMethod, "oauth") : undefined,
         admitted,
         sql`${connectors.id} IN (SELECT id FROM no_auth_account_snapshot)`,
         sql`${connectors}.xmin::text = (SELECT row_version FROM no_auth_account_snapshot)`,

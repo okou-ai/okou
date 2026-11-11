@@ -85,6 +85,7 @@ mod file;
 mod guest_dns_readiness;
 mod guest_state_restore;
 mod guest_storage_manifest;
+mod helper_output;
 mod home_drive_mount;
 mod operation_tracker;
 mod request_progress;

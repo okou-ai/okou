@@ -701,8 +701,8 @@ test("A folded Project keeps the open chat's place: up selects the Project and d
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("Clicking a Project's name opens its page and unfolds its chats", async () => {
-  await setupProjectNavigation(223, "/chats/:b");
+test("Clicking a Project's name opens its page and unfolds its chats, then toggles them there", async () => {
+  const { b } = await setupProjectNavigation(223, "/chats/:b");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(namedLink(projectRows(), "Thread A2")).toBeNull();
 
@@ -714,9 +714,80 @@ test("Clicking a Project's name opens its page and unfolds its chats", async () 
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
 
-  // A second click keeps the chats open; only the folder folds them.
+  // On the Project's page, clicking its name again folds and unfolds it
+  // without opening the page again.
+  await user.click(projectLink("Launch"));
+  expect(location.pathname).toBe(`/projects/${id}`);
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(projectRows(), "Thread A2")).toBeNull();
+
   await user.click(projectLink("Launch"));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+
+  // Back leaves the Project's page for the chat that opened it.
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+});
+
+test("Clicking a folded Project's name from one of its chats unfolds it", async () => {
+  await setupProjectNavigation(225, "/chats/:a");
+  const user = userEvent.setup({ delay: null });
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  await user.click(projectLink("Launch"));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+});
+
+test("A Project's folder names its fold action and shortcut", async () => {
+  await setupProjectNavigation(226, "/chats/:b");
+  const user = userEvent.setup({ delay: null });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  );
+
+  await user.hover(projectToggle("Launch"));
+  const expand = await screen.findByRole("tooltip");
+  expect(expand).toHaveTextContent("Expand");
+  expect(expand.querySelector("kbd")).toHaveTextContent("→");
+
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  );
+  // Clicking closes the tooltip; hovering again names the new action.
+  await user.unhover(projectToggle("Launch"));
+  await user.hover(projectToggle("Launch"));
+  await waitFor(() => {
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Collapse");
+  });
+  expect(screen.getByRole("tooltip").querySelector("kbd")).toHaveTextContent(
+    "←",
+  );
+});
+
+test("A Project name's emoji sits on its folder, and the name shows the rest", async () => {
+  const coffee = "30000000-0000-4000-8000-000000000271";
+  await setupProjectNavigation(227, "/chats/:b", [
+    { id: coffee, name: "☕ Coffee" },
+  ]);
+
+  expect(projectToggle("☕ Coffee", coffee)).toHaveTextContent("☕");
+  expect(projectLink("Coffee", coffee)).toBeInTheDocument();
+  expect(projectToggle("Launch").textContent).toBe("");
+  expect(projectLink("Launch")).toBeInTheDocument();
 });
 
 test("Opening a Project's name in a new tab leaves its chats folded", async () => {
@@ -2458,6 +2529,85 @@ test("Project rename closes immediately and yields to persisted events", async (
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
+  await waitFor(() => {
+    expect(projectToggle("Launch confirmed")).toBeInTheDocument();
+  });
+});
+
+test("A rejected Project name does not replace the confirmed name of a later save", async () => {
+  const ordinary = continuityThread(229, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 229,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  let rejected = false;
+  context.mocks.api(projectsContract.update, ({ body, respond }) => {
+    if (!rejected) {
+      rejected = true;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Project state changed" },
+      });
+    }
+    events.push(
+      {
+        id: body.eventId,
+        seqId: 2,
+        projectId: id,
+        kind: "renamed",
+        name: body.name,
+        createdAt: at,
+      },
+      {
+        id: crypto.randomUUID(),
+        seqId: 3,
+        projectId: id,
+        kind: "renamed",
+        name: "Launch confirmed",
+        createdAt: at,
+      },
+    );
+    return respond(200, {
+      id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Options for Launch", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch draft",
+  );
+  click(button("Save"));
+  await expect(
+    screen.findByText("Project state changed"),
+  ).resolves.toBeInTheDocument();
+
+  // The rejected name stays visible until reload; the next save supersedes it.
+  click(button("Options for Launch draft", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch plan",
+  );
+  click(button("Save"));
   await waitFor(() => {
     expect(projectToggle("Launch confirmed")).toBeInTheDocument();
   });

@@ -30,9 +30,6 @@ function client() {
 }
 
 async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
-  await updateFeatureSwitchesForUser(context, f.featureActor, {
-    [FeatureSwitchKey.BrowserNativeInput]: true,
-  });
   const a = await f.start();
   installBrowserWindowContentCommands(f.provider.native);
   const first = await open(a);
@@ -211,7 +208,6 @@ describe("shared-window native Browser input", () => {
     await f.owned.run(async () => {
       f.owned.ownsFeatureSwitches();
       await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserNativeInput]: true,
         [FeatureSwitchKey.BrowserSharedOwner]: false,
       });
       const a = await f.start();

@@ -117,6 +117,47 @@ test("A link activation creates one reversible navigation", async () => {
   expect(pathname()).toBe("/missing-platform-route");
 });
 
+test("A link to the open page adds no history entry", async () => {
+  mockAPIs();
+  await setupPage({ context, path: "/missing-platform-route" });
+  const browseLink = await waitFor(() => {
+    const candidate = queryAllByRoleFast("link").find((element) => {
+      return element.textContent?.trim() === "Browse workflows";
+    });
+    if (!candidate) {
+      throw new Error("Expected the workflows link");
+    }
+    return candidate;
+  });
+
+  click(browseLink);
+  const railLink = await waitFor(() => {
+    const candidate = queryAllByRoleFast(
+      "link",
+      screen.getByTestId("labeled-nav-rail"),
+    ).find((element) => {
+      return element.getAttribute("aria-label") === "Workflows";
+    });
+    if (!candidate) {
+      throw new Error("Expected the Workflows rail link");
+    }
+    expect(candidate).toHaveAttribute("aria-current", "page");
+    return candidate;
+  });
+  expect(pathname()).toBe("/workflows");
+
+  click(railLink);
+  expect(pathname()).toBe("/workflows");
+
+  act(() => {
+    window.history.back();
+  });
+  await expect(
+    screen.findByRole("heading", { name: "That page isn't here." }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/missing-platform-route");
+});
+
 test.each(["Meta"])(
   "%s-click leaves the internal destination to the browser",
   async (modifier) => {

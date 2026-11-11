@@ -149,6 +149,7 @@ export const updateWorkflow$ = command(
                     workflow.visibility === "private"
                       ? eq(workflows.ownerUserId, args.member.userId)
                       : or(
+                          eq(workflows.ownerUserId, args.member.userId),
                           eq(agents.owner, args.member.userId),
                           and(
                             eq(agents.visibility, "public"),

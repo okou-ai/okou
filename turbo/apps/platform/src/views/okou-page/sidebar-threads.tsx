@@ -1067,6 +1067,44 @@ function ChatThreadListEmptyState({
   );
 }
 
+/**
+ * What the inbox says where it lists no chat outside Projects: its archived
+ * chats are one filter away, and without any it waits for the first chat.
+ */
+export function InboxEmptyState({
+  listSignals,
+}: {
+  listSignals: SidebarChatThreadListSignals;
+}) {
+  const { t } = useTranslation();
+  const hasHiddenArchivedThreads = useGet(
+    listSignals.hasHiddenArchivedThreads$,
+  );
+
+  if (hasHiddenArchivedThreads) {
+    return (
+      <ChatThreadListEmptyState
+        message={t(($) => {
+          return $.chat.sidebar.inboxEmpty;
+        })}
+        action={{
+          filter: "archived",
+          label: t(($) => {
+            return $.chat.sidebar.showArchivedChats;
+          }),
+        }}
+      />
+    );
+  }
+  return (
+    <ChatThreadListEmptyState
+      message={t(($) => {
+        return $.chat.sidebar.empty;
+      })}
+    />
+  );
+}
+
 function VirtualizedChatThreads({
   listSignals,
 }: {
@@ -1076,9 +1114,13 @@ function VirtualizedChatThreads({
   const searchOpen = useGet(threeColumnSearchOpen$);
   const rowCount = useGet(listSignals.rowCount$);
   const count = useGet(listSignals.count$);
+  const inboxEmptyOutsideProjects = useGet(
+    listSignals.inboxEmptyOutsideProjects$,
+  );
 
-  // Only list rows have a fixed height. Keep the filter action in normal flow
-  // so its divider and spacing remain reachable at the end of a long list.
+  // Only list rows have a fixed height. Keep the filter action and the notice
+  // for an inbox without chats outside Projects in normal flow, so their
+  // spacing remains reachable at the end of a long list.
   return (
     <div ref={setShortcutRoot} className="w-full">
       <ChatThreadListRows
@@ -1090,6 +1132,9 @@ function VirtualizedChatThreads({
         height={count * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
       />
       {rowCount > count ? <ShowAllChatsRow /> : null}
+      {inboxEmptyOutsideProjects ? (
+        <InboxEmptyState listSignals={listSignals} />
+      ) : null}
     </div>
   );
 }
@@ -1103,9 +1148,6 @@ function ChatThreads({
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const rowCount = useGet(listSignals.count$);
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
 
   if (rowCount === 0) {
     const showAllChats = {
@@ -1134,28 +1176,7 @@ function ChatThreads({
         />
       );
     }
-    if (hasHiddenArchivedThreads) {
-      return (
-        <ChatThreadListEmptyState
-          message={t(($) => {
-            return $.chat.sidebar.inboxEmpty;
-          })}
-          action={{
-            filter: "archived",
-            label: t(($) => {
-              return $.chat.sidebar.showArchivedChats;
-            }),
-          }}
-        />
-      );
-    }
-    return (
-      <ChatThreadListEmptyState
-        message={t(($) => {
-          return $.chat.sidebar.empty;
-        })}
-      />
-    );
+    return <InboxEmptyState listSignals={listSignals} />;
   }
   return <VirtualizedChatThreads listSignals={listSignals} />;
 }

@@ -2,10 +2,7 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -287,9 +284,6 @@ async function createNativePasswordActionForPreflightTest(
     agent.agentId,
     "Enter a password on the current Browser page",
   );
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.BrowserNativeInput]: true,
-  });
   const providerId = randomUUID();
   acceptBrowserUseCdpSessions([providerId], eventsBeforeReply, withholdReply);
   mockNativeInputTarget();
@@ -676,9 +670,6 @@ async function setupNativeMixedVerificationScenario(
     agent.agentId,
     "Enter native input without submitting the website form",
   );
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.BrowserNativeInput]: true,
-  });
   const providerId = randomUUID();
   const state: {
     verification:
@@ -909,9 +900,6 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
     agent.agentId,
     "Fill the captured scalar Browser controls",
   );
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.BrowserNativeInput]: true,
-  });
   const providerId = randomUUID();
   acceptBrowserUseCdpSessions([providerId]);
   const document = {};
@@ -1530,12 +1518,6 @@ async function setupNativeFileScenario(
       agent.agentId,
       "Choose a local file for the website",
     ));
-  owned?.ownsFeatureSwitches();
-  await run(() => {
-    return updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
-  });
   const providerId = randomUUID();
   acceptBrowserUseCdpSessions([providerId]);
   const temporaryObjects = new Map<string, Buffer>();
@@ -1743,11 +1725,12 @@ describe("Browser user-action route", () => {
         if (!foreignActor.orgId) {
           throw new Error("Expected an organization for the other caller");
         }
-        const foreign = { ...foreignActor, orgId: foreignActor.orgId };
+        createRouteMocks(context).clerk.session(
+          foreignActor.userId,
+          foreignActor.orgId,
+          foreignActor.orgRole,
+        );
         const denial = await settleIncludingAbort(async () => {
-          await updateFeatureSwitchesForUser(context, foreign, {
-            [FeatureSwitchKey.BrowserNativeInput]: true,
-          });
           const denied = [
             await userActionClient().get({ headers, params }),
             await userActionClient().preflight({ headers, params, body: {} }),
@@ -1770,28 +1753,13 @@ describe("Browser user-action route", () => {
             });
           }
         });
-        const cleanup = await settleIncludingAbort(
-          deleteFeatureSwitchesForUser(context, foreign),
-        );
         createRouteMocks(context).clerk.session(
           owned.actor.userId,
           owned.actor.orgId,
           owned.actor.orgRole,
         );
-        await updateFeatureSwitchesForUser(context, owned.actor, {
-          [FeatureSwitchKey.BrowserNativeInput]: true,
-        });
-        if (!denial.ok && !cleanup.ok) {
-          throw new AggregateError(
-            [denial.error, cleanup.error],
-            "Browser owner checks and feature cleanup failed",
-          );
-        }
         if (!denial.ok) {
           throw denial.error;
-        }
-        if (!cleanup.ok) {
-          throw cleanup.error;
         }
 
         const pending = await accept(
@@ -3250,9 +3218,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Confirm a checkbox in the Browser",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let checked = true;
@@ -3492,9 +3457,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Choose radio option",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     const group = {
@@ -3888,9 +3850,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Choose a region on the current browser page",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let mode: "select-one" | "select-multiple" = "select-one";
@@ -4249,9 +4208,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Enter a quantity in the current browser",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let min = "10";
@@ -4475,9 +4431,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Choose a website slider position",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let value = "19";
@@ -4797,9 +4750,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Choose a website color",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let color = "#123abc";
@@ -5030,9 +4980,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Enter a date or time in the current browser",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let inputType = "date";
@@ -5527,9 +5474,6 @@ describe("Browser user-action route", () => {
       agent.agentId,
       "Ask for credentials on the current Browser page",
     );
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-    });
 
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
@@ -6058,28 +6002,6 @@ describe("Browser user-action route", () => {
       otherUser.userId,
       otherUser.orgId,
       otherUser.orgRole,
-    );
-    const featureDisabled = await userActionClient().get({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: created.body.action.requestToken },
-    });
-    expect(featureDisabled).toMatchObject({
-      status: 403,
-      body: { error: { code: "FORBIDDEN" } },
-    });
-    const disabledPreflight = await userActionClient().preflight({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: created.body.action.requestToken },
-      body: {},
-    });
-    expect(disabledPreflight.status).toBe(403);
-    if (!otherUser.orgId) {
-      throw new Error("Expected the second user to share the organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...otherUser, orgId: otherUser.orgId },
-      { [FeatureSwitchKey.BrowserNativeInput]: true },
     );
     const foreignOwner = await userActionClient().get({
       headers: { authorization: "Bearer clerk-session" },
@@ -7625,7 +7547,6 @@ describe("okou browser route", () => {
   it("keeps managed browser access off when the user explicitly disables it", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
       [FeatureSwitchKey.BrowserSharedOwner]: true,
     });
     const sent = await chat.sendAndLaunch(actor, {
@@ -7663,7 +7584,7 @@ describe("okou browser route", () => {
     });
   });
 
-  it("omits native input guidance when the switch is disabled", async () => {
+  it("includes native input guidance for the thread-owned Browser", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserSharedOwner]: false,
@@ -7683,7 +7604,7 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
     );
-    expect(appendSystemPrompt).not.toContain("okou browser input-request");
+    expect(appendSystemPrompt).toContain("okou browser input-request");
     expect(appendSystemPrompt).toContain(
       "Browser tab continuity: When resuming a page after `okou browser use`",
     );
@@ -7698,69 +7619,58 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
     );
-    expect(appendSystemPrompt).not.toContain("Browser input completion:");
+    expect(appendSystemPrompt).toContain("Browser input completion:");
     expect(appendSystemPrompt).toContain(
       "Direct Browser takeover is a last resort, not the default for login",
     );
-    expect(appendSystemPrompt).not.toContain("Browser user input priority:");
+    expect(appendSystemPrompt).toContain("Browser user input priority:");
     expect(appendSystemPrompt).not.toContain(
       "Okou Browser is currently off for this chat thread",
     );
   });
 
-  it.each([false, true])(
-    "describes shared Browser tabs and login state with native input %s",
-    async (nativeInput) => {
-      const { runs, chat, actor, agent } = await setupBrowserScenario();
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-        [FeatureSwitchKey.BrowserNativeInput]: nativeInput,
-      });
-      const sent = await chat.sendAndLaunch(actor, {
-        agentId: agent.agentId,
-        prompt: "Use this chat's shared Browser",
-        cloudBrowserEnabled: true,
-      });
-
-      await flushWaitUntilForTest();
-      const claim = await runs.claimRunnerJob(sent.runId);
-      const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-      expect(appendSystemPrompt).toContain("this chat's managed Browser");
-      expect(appendSystemPrompt).toContain(
-        "Each chat has its own window and tabs",
-      );
-      expect(appendSystemPrompt).toContain(
-        "website login state is shared across chats",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Browser tab continuity: When resuming a page after `okou browser use`",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Keep the selected tab only if non-sensitive page evidence confirms it",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Origin or selection alone is not proof, even with one match",
-      );
-      expect(appendSystemPrompt).toContain(
-        "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
-      );
-      if (nativeInput) {
-        expect(appendSystemPrompt).toContain("Browser user input priority:");
-        expect(appendSystemPrompt).toContain(
-          "prefer `okou browser input-request` over direct Browser takeover",
-        );
-        expect(appendSystemPrompt).toContain("Browser input completion:");
-      } else {
-        expect(appendSystemPrompt).not.toContain("okou browser input-request");
-      }
-    },
-  );
-
-  it("prioritizes native input when both browser and native input are enabled", async () => {
+  it("describes shared Browser tabs, login state and native input", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
+      [FeatureSwitchKey.BrowserSharedOwner]: true,
     });
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Use this chat's shared Browser",
+      cloudBrowserEnabled: true,
+    });
+
+    await flushWaitUntilForTest();
+    const claim = await runs.claimRunnerJob(sent.runId);
+    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    expect(appendSystemPrompt).toContain("this chat's managed Browser");
+    expect(appendSystemPrompt).toContain(
+      "Each chat has its own window and tabs",
+    );
+    expect(appendSystemPrompt).toContain(
+      "website login state is shared across chats",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Browser tab continuity: When resuming a page after `okou browser use`",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Keep the selected tab only if non-sensitive page evidence confirms it",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Origin or selection alone is not proof, even with one match",
+    );
+    expect(appendSystemPrompt).toContain(
+      "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
+    );
+    expect(appendSystemPrompt).toContain("Browser user input priority:");
+    expect(appendSystemPrompt).toContain(
+      "prefer `okou browser input-request` over direct Browser takeover",
+    );
+    expect(appendSystemPrompt).toContain("Browser input completion:");
+  });
+
+  it("prioritizes native input when Browser access is enabled", async () => {
+    const { runs, chat, actor, agent } = await setupBrowserScenario();
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Sign in to a website",

@@ -384,8 +384,11 @@ test("My Okou's home previews one suggestion inside its capabilities and opens i
     name: "Explore Okou capabilities",
   });
   expect(within(capabilities).getByText("Workflow")).toBeInTheDocument();
-  expect(within(capabilities).getByText("Explore")).toBeInTheDocument();
-  expect(capabilities).toContainElement(list);
+  // The suggestion rides in the greeting row, so it never pushes the cards.
+  expect(capabilities).not.toContainElement(list);
+  expect(screen.getByTestId("chat-greeting").parentElement).toContainElement(
+    list,
+  );
   expect(button("Previous suggestion", "button", list)).toBeDisabled();
   click(button("Next suggestion", "button", list));
   await within(list).findByRole("heading", { name: "Suggested action 2" });
@@ -421,12 +424,8 @@ test("Enabled homepage suggestions keep their place when there are no suggestion
       [FeatureSwitchKey.SingleAgent]: true,
     },
   });
-  const capabilities = await screen.findByRole("group", {
-    name: "Explore Okou capabilities",
-  });
-  const card = within(capabilities).getByRole("region", {
-    name: "Suggestions",
-  });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  const card = screen.getByRole("region", { name: "Suggestions" });
   const emptyState = await within(card).findByText("No new suggestions");
   expect(emptyState).toBeVisible();
 });
@@ -448,13 +447,11 @@ test("The homepage suggestion card is absent when the Suggestions switch is off"
     within(capabilities).getByRole("region", { name: "Workflow" }),
   ).toBeInTheDocument();
   expect(
-    queryAllByRoleFast("link", capabilities).find((link) => {
-      return link.getAttribute("aria-label") === "Explore";
+    queryAllByRoleFast("link").find((link) => {
+      return link.textContent?.trim() === "Explore what's new";
     }),
   ).toBeInTheDocument();
-  expect(
-    within(capabilities).queryByRole("region", { name: "Suggestions" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Suggestions" })).toBeNull();
 });
 
 test("A homepage suggestion keeps custom directions and sends inside its detail dialog", async () => {

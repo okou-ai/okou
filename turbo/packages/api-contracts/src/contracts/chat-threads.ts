@@ -1100,7 +1100,6 @@ export const chatSearchContract = c.router({
     query: object({
       keyword: string().trim().min(1),
       agentId: uuid().optional(),
-      since: coerce.number().optional(),
     }),
     responses: {
       200: chatSearchResponseSchema,

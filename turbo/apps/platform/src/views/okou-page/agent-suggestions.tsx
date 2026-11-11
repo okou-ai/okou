@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Ellipsis,
+  Sparkles,
 } from "lucide-react";
 import type {
   Suggestion,
@@ -587,7 +588,6 @@ function AgentSuggestionCard({
   readonly onCustomDirection: (item: Suggestion) => void;
   readonly embedded?: boolean;
 }) {
-  const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const submitFeedback = useSet(
@@ -622,11 +622,6 @@ function AgentSuggestionCard({
           </p>
         </div>
         <div className="flex flex-col gap-2 pt-1">
-          <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.chat.agentSuggestions.useSuggestion;
-            })}
-          </p>
           {item.options.map((option) => {
             return (
               <AgentSuggestionOption
@@ -727,10 +722,12 @@ function HomeSuggestionPreview({
   item,
   index,
   count,
+  label,
 }: {
   readonly item: Suggestion;
   readonly index: number;
   readonly count: number;
+  readonly label: string;
 }) {
   const { t } = useTranslation();
   const move = useSet(moveHomeSuggestion$);
@@ -752,15 +749,16 @@ function HomeSuggestionPreview({
           />
         }
       />
-      <div className="pointer-events-none relative z-10 min-h-0 flex-1 pt-1">
-        <h3 className="min-w-0 line-clamp-3 text-sm font-medium leading-5 break-words text-foreground">
+      <span className="pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col">
+        <span className="text-xs leading-4 text-muted-foreground">{label}</span>
+        <h3 className="truncate text-sm font-medium leading-5 text-foreground">
           {item.title}
         </h3>
-      </div>
+      </span>
       <div
         role="group"
         aria-label={copy.navigation}
-        className="pointer-events-none relative z-20 flex shrink-0 items-center justify-end gap-3 pt-3"
+        className="pointer-events-none relative z-20 flex shrink-0 items-center gap-1"
       >
         <Button
           variant="quiet"
@@ -879,89 +877,78 @@ export function HomeSuggestionsCard() {
       <section
         aria-label={label}
         className={surfaceVariants({
+          radius: "compact",
           interactive: Boolean(item),
           className:
-            "relative isolate flex h-52 min-w-0 flex-col bg-linear-to-br from-[#f3f7ed]/50 via-card to-card p-4 motion-reduce:transition-none pointer-coarse:h-56 dark:from-[#8fa07d]/5 @2xl:p-5",
+            "relative isolate flex h-14 min-w-0 items-center gap-3 pr-2 pl-2.5 motion-reduce:transition-none pointer-coarse:h-16",
         })}
       >
-        <div className="pointer-events-none relative z-10 mb-3 flex min-h-7 shrink-0 items-center justify-between gap-2">
-          <h2 className="flex min-w-0 items-center gap-1.5 text-base font-medium leading-6 tracking-tight">
-            <span className="min-w-0">{label}</span>
-            {item && (
-              <svg
-                aria-hidden
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="size-4 shrink-0 text-muted-foreground"
-              >
-                <path d="M10 13h.01" />
-                <path d="M14 13h.01" />
-                <path d="M10 16a3.5 3.5 0 0 0 4 0" />
-                <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />
-                <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" />
-              </svg>
-            )}
-          </h2>
-          {item && (
-            <div className="pointer-events-auto">
-              <HomeSuggestionFeedback item={item} />
-            </div>
-          )}
-        </div>
+        {/* The mark sits on a 36px tile, the height of the two lines beside
+            it, so it reads as the row's icon rather than a glyph floating
+            beside the text. The 10px inset matches the space above and below
+            the tile in the 56px row. The strip takes a hover state once it
+            holds a suggestion, so the tile is a nested fill: an opaque
+            `bg-muted` is what the hovered card composites to, and the tile
+            would vanish into the row. */}
+        <span
+          aria-hidden
+          className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-brand-text"
+        >
+          <Sparkles className="size-4" />
+        </span>
         {result.state === "hasError" ? (
-          <div className="flex flex-1 flex-col items-start justify-center gap-2">
-            <p role="alert" className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.global.errors.requestFailed;
-              })}
-            </p>
+          <>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-xs leading-4 text-muted-foreground">
+                {label}
+              </span>
+              <p
+                role="alert"
+                className="truncate text-sm leading-5 text-muted-foreground"
+              >
+                {t(($) => {
+                  return $.global.errors.requestFailed;
+                })}
+              </p>
+            </span>
             <Button
               variant="quiet"
-              size="sm"
+              size="xs"
               onClick={() => {
                 detach(reload(signal), Reason.DomCallback);
               }}
             >
               {copy.retry}
             </Button>
-          </div>
+          </>
         ) : !card ? (
           <div
             role="status"
             aria-label={copy.loading}
-            className="flex flex-1 items-center justify-center text-muted-foreground"
+            className="flex flex-1 items-center text-muted-foreground"
           >
-            <Loader2 aria-hidden className="size-5 motion-safe:animate-spin" />
+            <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
           </div>
         ) : item ? (
           <HomeSuggestionPreview
             item={item}
             index={card.index}
             count={card.count}
+            label={label}
           />
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-3 text-center text-muted-foreground">
-            <svg
-              aria-hidden
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="size-8 text-[#8c9b77] dark:text-[#b0bc97]"
-            >
-              <path d="M3 14c.83 .642 2.077 1.017 3.5 1c1.423 .017 2.67 -.358 3.5 -1c.83 -.642 2.077 -1.017 3.5 -1c1.423 -.017 2.67 .358 3.5 1" />
-              <path d="M8 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2" />
-              <path d="M12 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2" />
-              <path d="M3 10h14v5a6 6 0 0 1 -6 6h-2a6 6 0 0 1 -6 -6v-5" />
-              <path d="M16.746 16.726a3 3 0 1 0 .252 -5.555" />
-            </svg>
-            <p className="text-sm leading-5">{copy.emptyTitle}</p>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-xs leading-4 text-muted-foreground">
+              {label}
+            </span>
+            <p className="truncate text-sm leading-5 text-muted-foreground">
+              {copy.emptyTitle}
+            </p>
+          </span>
+        )}
+        {item && (
+          <div className="relative z-20 shrink-0">
+            <HomeSuggestionFeedback item={item} />
           </div>
         )}
       </section>

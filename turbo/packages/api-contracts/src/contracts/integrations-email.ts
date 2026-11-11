@@ -8,6 +8,8 @@ import {
   number,
   object,
   string,
+  record,
+  union,
   uuid,
 } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
@@ -61,6 +63,17 @@ const errors = {
   409: apiErrorSchema,
 };
 export const integrationsEmailContract = c.router({
+  createLinkCode: {
+    method: "POST",
+    path: "/api/integrations/email/link-code",
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: {
+      200: object({ code: string(), expiresAt: string() }),
+      ...errors,
+    },
+    summary: "Create a one-time code to connect another email sender",
+  },
   getLinkStatus: {
     method: "GET",
     path: "/api/integrations/email/link",
@@ -71,6 +84,10 @@ export const integrationsEmailContract = c.router({
         configured: boolean(),
         emails: array(string()),
         availableEmails: array(string()),
+        emailSources: record(
+          string(),
+          union([literal("gmail"), literal("outlook")]),
+        ),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,

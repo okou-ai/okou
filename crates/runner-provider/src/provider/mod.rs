@@ -704,6 +704,8 @@ pub struct ClaimedJob {
     api_claim_timing: Option<ApiClaimTiming>,
 }
 
+/// Claim durations at the application boundary. Response body reads include
+/// automatic decompression; response decode measures JSON/context decoding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApiClaimTiming {
     request_elapsed: Duration,
@@ -715,7 +717,10 @@ pub struct ApiClaimTiming {
 }
 
 /// Bounded facts about the application-visible successful claim response.
-/// Neither field represents bytes transferred by an intermediary.
+/// Size describes decoded JSON.
+/// reqwest removes Content-Encoding/Content-Length when it decodes a response,
+/// so an absent encoding cannot distinguish identity from decoded transfer.
+/// Neither field measures bytes transferred by an intermediary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClaimResponseAttribution {
     body_size_bucket: &'static str,
@@ -736,7 +741,7 @@ impl ClaimResponseAttribution {
             _ => "ge_1_mib",
         };
         let content_encoding = match content_encoding.map(reqwest::header::HeaderValue::to_str) {
-            None => "absent",
+            None => "absent_or_decoded",
             Some(Err(_)) => "invalid",
             Some(Ok(value)) => match value.trim() {
                 value if value.eq_ignore_ascii_case("identity") => "identity",

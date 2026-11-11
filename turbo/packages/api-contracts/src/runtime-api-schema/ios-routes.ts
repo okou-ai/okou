@@ -25,6 +25,7 @@ import {
   chatThreadModelSelectionContract,
   chatThreadMuteContract,
   chatThreadPinContract,
+  chatThreadPinOrderContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadUsageContract,
@@ -250,6 +251,10 @@ const iosContracts: readonly {
   },
   { id: "ios.chatThreadPinContract.pin", route: chatThreadPinContract.pin },
   {
+    id: "ios.chatThreadPinOrderContract.reorder",
+    route: chatThreadPinOrderContract.reorder,
+  },
+  {
     id: "ios.chatThreadRenameContract.rename",
     route: chatThreadRenameContract.rename,
   },
@@ -262,6 +267,7 @@ const iosContracts: readonly {
     route: chatThreadUsageContract.read,
   },
   { id: "ios.chatThreadsContract.create", route: chatThreadsContract.create },
+  { id: "ios.chatThreadsContract.drafts", route: chatThreadsContract.drafts },
   { id: "ios.chatThreadsContract.events", route: chatThreadsContract.events },
   {
     id: "ios.chatThreadsContract.indicators",

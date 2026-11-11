@@ -1,3 +1,5 @@
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { useGet } from "ccstate-react";
 import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -22,12 +24,14 @@ function scrollSelectedSuggestionIntoView(
 function ComposerMentionSuggestionItem({
   name,
   avatarUrl,
+  showAvatar = true,
   project,
   selected,
   onSelect,
 }: {
   readonly name: string;
   readonly avatarUrl: string | null;
+  readonly showAvatar?: boolean;
   readonly project?: true;
   readonly selected: boolean;
   readonly onSelect: () => void;
@@ -50,12 +54,14 @@ function ComposerMentionSuggestionItem({
           aria-hidden="true"
         />
       ) : (
-        <AvatarFromUrl
-          avatarUrl={avatarUrl}
-          alt=""
-          className="h-5 w-5 shrink-0 rounded-full"
-          size={20}
-        />
+        showAvatar && (
+          <AvatarFromUrl
+            avatarUrl={avatarUrl}
+            alt=""
+            className="h-5 w-5 shrink-0 rounded-full"
+            size={20}
+          />
+        )
       )}
       <span className="truncate text-sm text-popover-foreground">{name}</span>
     </button>
@@ -81,6 +87,7 @@ export function ComposerMentionSuggestionMenu({
     chatThread: ComposerChatThreadSuggestion,
   ) => void;
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
   const { t } = useTranslation();
   const agentSection = agents.length > 0 && (
     <div key="agents">
@@ -126,6 +133,7 @@ export function ComposerMentionSuggestionMenu({
             <ComposerMentionSuggestionItem
               name={chatThread.title}
               avatarUrl={chatThread.avatarUrl}
+              showAvatar={!singleAgent}
               project={chatThread.project}
               selected={selected}
               onSelect={() => {

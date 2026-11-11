@@ -211,6 +211,7 @@ import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authorization-block.ts";
+import { createSshAuthorizationCardSignalsRegistry } from "./ssh-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
@@ -1160,12 +1161,11 @@ const registerUserMessageRenderDocument$ = command(
     { set },
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
+    contextType: ChatEvent["contextType"],
   ): UserMessageRenderDocument => {
     const readableDocument = userMessageDocumentSchema.parse(document);
-    return {
-      // Registration uses the raw document identity across window updates.
-      document,
-      parts: readableDocument.parts.flatMap((part, index) => {
+    const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
+      (part, index) => {
         if (part.type === "additional_info") {
           return [];
         }
@@ -1178,7 +1178,19 @@ const registerUserMessageRenderDocument$ = command(
             ? { ...rendered, suggestionContext: context }
             : rendered,
         ];
-      }),
+      },
+    );
+    if (contextType === "email") {
+      parts.push({
+        type: "source",
+        kind: "external",
+        part: { type: "source", kind: "email" },
+      });
+    }
+    return {
+      // Registration uses the raw document identity across window updates.
+      document,
+      parts,
     };
   },
 );
@@ -1553,6 +1565,9 @@ interface EventTreeRegistries {
   readonly browserAuthorizationCardSignals: ReturnType<
     typeof createBrowserAuthorizationCardSignalsRegistry
   >;
+  readonly sshAuthorizationCardSignals: ReturnType<
+    typeof createSshAuthorizationCardSignalsRegistry
+  >;
   readonly desktopShellAuthorizationCardSignals: ReturnType<
     typeof createDesktopShellAuthorizationCardSignalsRegistry
   >;
@@ -1595,10 +1610,47 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
   );
 }
 
+type HostAuthorizationDescriptorBlock = Extract<
+  CardDescriptorBlock,
+  { type: "ssh-authorization" | "desktop-shell-authorization" }
+>;
+
+function createHostAuthorizationCardRefRegistrar(cards: EventTreeRegistries) {
+  return command(
+    (
+      { set },
+      descriptor: HostAuthorizationDescriptorBlock,
+    ): MarkdownCardRef => {
+      switch (descriptor.type) {
+        case "ssh-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.sshAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "desktop-shell-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.desktopShellAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+      }
+    },
+  );
+}
+
 function createCardRefRegistrar(
   cards: EventTreeRegistries,
 ): Command<MarkdownCardRef, [CardDescriptorBlock]> {
   const registerPermissionCardRef$ = createPermissionCardRefRegistrar(cards);
+  const registerHostAuthorizationCardRef$ =
+    createHostAuthorizationCardRefRegistrar(cards);
   return command(
     ({ set }, descriptor: CardDescriptorBlock): MarkdownCardRef => {
       switch (descriptor.type) {
@@ -1681,14 +1733,9 @@ function createCardRefRegistrar(
             ),
           };
         }
+        case "ssh-authorization":
         case "desktop-shell-authorization": {
-          return {
-            kind: descriptor.type,
-            signals: set(
-              cards.desktopShellAuthorizationCardSignals.register$,
-              descriptor.descriptor,
-            ),
-          };
+          return set(registerHostAuthorizationCardRef$, descriptor);
         }
         case "plan-upgrade": {
           return {
@@ -1950,6 +1997,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.connectorCardSignals.subscribe$, signal);
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
+      set(registries.sshAuthorizationCardSignals.subscribe$, signal);
       set(registries.computerUseAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);
       set(registries.browserAuthorizationCardSignals.subscribe$, signal);
@@ -2009,6 +2057,8 @@ function createPagedEventResources({
     createComputerUseAuthorizationCardSignalsRegistry(threadId);
   const browserAuthorizationCardSignals =
     createBrowserAuthorizationCardSignalsRegistry(chatActionContext);
+  const sshAuthorizationCardSignals =
+    createSshAuthorizationCardSignalsRegistry(threadId);
   const desktopShellAuthorizationCardSignals =
     createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
@@ -2030,6 +2080,7 @@ function createPagedEventResources({
       computerUseAuthorizationCardSignals,
       browserAuthorizationCardSignals,
       desktopShellAuthorizationCardSignals,
+      sshAuthorizationCardSignals,
       planUpgradeCardSignals,
       mailDraftCardSignals,
       browserSessionSignals,
@@ -2054,10 +2105,12 @@ function createPagedEventResources({
         next ??= new Map(current);
         next.set(
           event.id,
-          set(registerUserMessageRenderDocument$, document, {
-            artifactCardSignals,
-            agentReferenceSignals,
-          }),
+          set(
+            registerUserMessageRenderDocument$,
+            document,
+            { artifactCardSignals, agentReferenceSignals },
+            event.contextType,
+          ),
         );
       }
       if (next) {

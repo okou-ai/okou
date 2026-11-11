@@ -17,7 +17,6 @@ import flow_metadata_keys as metadata_keys
 import platform_api
 import usage
 from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
@@ -405,7 +404,6 @@ def test_gives_up_after_retry_budget(tmp_path, real_flow, sync_usage_executor, u
         _report_and_flush_model_usage(flow)
 
     assert webhook.request_count == 2
-    assert jsonl_exists_after_flush(proxy_log)
     assert "2 attempts" in read_jsonl_text_after_flush(proxy_log)
     entries = read_jsonl_entries_after_flush(proxy_log)
     assert all(entry["level"] != "error" for entry in entries)

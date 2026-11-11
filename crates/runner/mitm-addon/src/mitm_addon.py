@@ -1299,10 +1299,24 @@ async def _try_firewall_request_stream_from_headers(
     allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
     request_headers_snapshot = http.Headers(flow.request.headers.fields)
-    request_url_snapshot = flow.request.url
+    request_target_snapshot = (
+        flow.request.data.scheme,
+        flow.request.data.host,
+        flow.request.data.port,
+        flow.request.data.authority,
+        flow.request.data.path,
+    )
 
     def restore_request_state() -> None:
-        flow.request.url = request_url_snapshot
+        # Restore raw fields without the URL setter's ASCII reparsing: even a
+        # rejected query can contain native non-ASCII bytes.
+        (
+            flow.request.data.scheme,
+            flow.request.data.host,
+            flow.request.data.port,
+            flow.request.data.authority,
+            flow.request.data.path,
+        ) = request_target_snapshot
         flow.request.headers = http.Headers(request_headers_snapshot.fields)
 
     def fall_back() -> None:

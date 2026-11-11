@@ -78,6 +78,34 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
+import { ThreadRemoteAccessDialog } from "./remote-access-controls.tsx";
+import { ChatForwardDialogMount } from "./chat-feedback-selection.tsx";
+
+function ThreadComposerDialogs({ thread }: { thread: ChatPanelSignals }) {
+  return (
+    <>
+      <ThreadRemoteAccessDialog signals={thread.composer} />
+      <ChatForwardDialogMount feedback={thread.feedback} />
+    </>
+  );
+}
+
+function ThreadComposerDialogsMount() {
+  const route = useGet(activeRoute$);
+  const left = useGet(currentLeftThread$);
+  const right = useGet(currentRightThread$);
+  if (route !== "chat") {
+    return null;
+  }
+  return (
+    <>
+      {left && <ThreadComposerDialogs key={left.threadId} thread={left} />}
+      {right && right !== left && (
+        <ThreadComposerDialogs key={right.threadId} thread={right} />
+      )}
+    </>
+  );
+}
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -497,6 +525,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
+      {/* Workspace content remounts when mobile navigation adds its wrapper.
+          Keep in-flight remote permission actions outside that subtree. */}
+      <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>
           <ChatThreadDialogs />

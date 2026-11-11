@@ -4,7 +4,7 @@ use crate::support::{
 use httpmock::prelude::*;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path};
+use std::{fs, io::Read, path::Path};
 
 fn manifest(mount: &Path, url: &str, archive: &[u8]) -> Value {
     let digest = hex::encode(Sha256::digest(archive));
@@ -158,8 +158,15 @@ fn template_guidance_remote_archive_above_skill_and_host_cache_limits_is_verifie
     let dir = tempfile::tempdir().unwrap();
     let mount = dir.path().join("mount");
     assert!(apply(&manifest(&mount, &server.url("/large"), &archive)));
+    let mut buffer = [0; 64 * 1024];
     for name in ["first.bin", "second.bin"] {
-        assert_eq!(fs::read(mount.join(name)).unwrap(), data);
+        let mut file = fs::File::open(mount.join(name)).unwrap();
+        for expected in data.chunks(buffer.len()) {
+            let observed = &mut buffer[..expected.len()];
+            file.read_exact(observed).unwrap();
+            assert_eq!(observed, expected, "{name}");
+        }
+        assert_eq!(file.read(&mut [0]).unwrap(), 0, "{name}: extra bytes");
     }
     request.assert_calls(1);
 }

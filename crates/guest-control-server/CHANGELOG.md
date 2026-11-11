@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.24.94](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.93...guest-control-server-v0.24.94) (2026-11-11)
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
+## [0.24.93](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.92...guest-control-server-v0.24.93) (2026-11-11)
+
+## [0.24.92](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.91...guest-control-server-v0.24.92) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-control:** isolate exec terminal logging policy ([#46460](https://github.com/okou-ai/okou/issues/46460)) ([549c923](https://github.com/okou-ai/okou/commit/549c92318c5b3c3be651f7a4d91b58702c125a61))
+
+## [0.24.91](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.90...guest-control-server-v0.24.91) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-control:** isolate connection message dispatch ([#46413](https://github.com/okou-ai/okou/issues/46413)) ([5e2dc75](https://github.com/okou-ai/okou/commit/5e2dc757974af403699d24a7ee27de1af7f0ac0b))
+
 ## [0.24.90](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.89...guest-control-server-v0.24.90) (2026-11-10)
 
 

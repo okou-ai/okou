@@ -68,12 +68,13 @@ function ExportableTable({
   const { rows: rowCount, columns: columnCount } =
     getMarkdownTableDimensions(node);
   const run = (mode: "excel" | "original" | "google") => {
+    const surface = "inline_table";
     captureArtifactAction(
       mode === "excel"
-        ? { action: "download", surface: "inline_table" }
+        ? { action: "download", surface, artifact_type: "spreadsheet" }
         : {
             action: "google_drive_sync",
-            surface: "inline_table",
+            surface,
             target: mode === "google" ? "spreadsheet" : "file",
           },
     );
