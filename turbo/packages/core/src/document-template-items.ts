@@ -896,9 +896,9 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
       "Record attendees, agenda, decisions, action owners and due dates, and the next meeting.",
     category: "business-record",
     previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-v1-20261110-84fb506742d9/document-meeting-notes/page-01.png",
+      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-en-v1-20261111-5677f0e34c73/document-meeting-notes/page-01.png",
     previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-v1-20261110-84fb506742d9/document-meeting-notes/page-01.png",
+      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-en-v1-20261111-5677f0e34c73/document-meeting-notes/page-01.png",
     ],
   },
   {
