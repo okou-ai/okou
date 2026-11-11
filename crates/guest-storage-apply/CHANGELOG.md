@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.31.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.3...guest-storage-apply-v0.31.4) (2026-11-11)
+
+
+### Refactoring
+
+* **test-support:** own restrictive directory permissions ([#46500](https://github.com/okou-ai/okou/issues/46500)) ([4a5cbda](https://github.com/okou-ai/okou/commit/4a5cbdab942908086d3190f678556b93d55f8eb1))
+
+## [0.31.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.2...guest-storage-apply-v0.31.3) (2026-11-10)
+
+
+### Performance Improvements
+
+* **storage:** front-load one large ready archive ([#46462](https://github.com/okou-ai/okou/issues/46462)) ([7635ff4](https://github.com/okou-ai/okou/commit/7635ff421345efdd149cd9ff2710322356a824ed))
+
 ## [0.31.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.1...guest-storage-apply-v0.31.2) (2026-11-10)
 
 ## [0.31.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.0...guest-storage-apply-v0.31.1) (2026-11-09)

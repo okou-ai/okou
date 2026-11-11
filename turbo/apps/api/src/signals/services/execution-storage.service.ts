@@ -4,12 +4,19 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { command, computed, type Computed } from "ccstate";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
+import type { PersistedStorageMount } from "@okouai/db/types";
+import { computed, type Computed } from "ccstate";
+import { and, eq, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { publicPresignedGetUrlSigner$ } from "../external/s3";
-import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
+import { db$ } from "../external/db";
 import {
-  persistStoragePresignedUrls$,
+  cacheRowsFromProjection,
+  storageVersionCacheKeySql,
+  type ExecutionStorageCacheRows,
+} from "./execution-storage-cache-read.service";
+import {
   readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
   storageManifestPresignedUrlCacheLookupPairs,
@@ -141,6 +148,123 @@ type VersionRow = Pick<
   Pick<typeof storages.$inferSelect, "orgId" | "userId" | "name"> & {
     readonly versionId: typeof storageVersions.$inferSelect.id;
   };
+
+interface ResolvedExecutionStorageInput {
+  readonly mounts: readonly ExecutionStorageRequest[];
+  readonly versions: readonly VersionRow[];
+  readonly cacheRows: ExecutionStorageCacheRows;
+}
+
+/** A selected version can be removed by its owner after Run admission. */
+export class ExecutionStorageUnavailableError extends Error {
+  constructor() {
+    super("Accepted execution storage is unavailable");
+  }
+}
+
+function acceptedStorageRequests(
+  mounts: readonly PersistedStorageMount[],
+): readonly ExecutionStorageRequest[] {
+  return mounts.map((mount): ExecutionStorageRequest => {
+    if (!mount.version) {
+      throw new Error("Accepted storage mount is missing its exact version");
+    }
+    const identity = {
+      orgId: mount.orgId,
+      userId: mount.userId,
+      storageId: mount.storageId,
+      versionId: mount.version,
+      name: mount.name,
+      mountPath: mount.mountPath,
+    };
+    return mount.writeback
+      ? {
+          ...identity,
+          mode: "writeback",
+          missingRootPolicy: mount.missingRootPolicy ?? "fail",
+        }
+      : { ...identity, mode: "readonly" };
+  });
+}
+
+/** Resolve accepted Run versions, without consulting mutable Storage HEAD. */
+export function createAcceptedExecutionStorageObjects(
+  mounts$: Computed<Promise<readonly PersistedStorageMount[]>>,
+): ExecutionStorageObjects {
+  const input$ = computed(
+    async (get): Promise<ResolvedExecutionStorageInput> => {
+      const mounts = acceptedStorageRequests(await get(mounts$));
+      validateRequests(mounts);
+      if (mounts.length === 0) {
+        return { mounts, versions: [], cacheRows: [] };
+      }
+      const unique = new Map(
+        mounts.map((mount) => {
+          return [mountKey(mount), mount];
+        }),
+      );
+      const cacheKey = storageVersionCacheKeySql({
+        orgId: sql`${storages.orgId}`,
+        userId: sql`${storages.userId}`,
+        name: sql`${storages.name}`,
+        versionId: sql`${storageVersions.id}`,
+        s3Key: sql`${storageVersions.s3Key}`,
+      });
+      const rows = await get(db$)
+        .select({
+          storageId: storageVersions.storageId,
+          versionId: storageVersions.id,
+          s3Key: storageVersions.s3Key,
+          archiveSize: storageVersions.archiveSize,
+          fileCount: storageVersions.fileCount,
+          orgId: storages.orgId,
+          userId: storages.userId,
+          name: storages.name,
+          cacheKey: systemStoragePresignedUrlCache.cacheKey,
+          cacheScope: systemStoragePresignedUrlCache.scope,
+          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+          expiresAt: systemStoragePresignedUrlCache.expiresAt,
+        })
+        .from(storageVersions)
+        .innerJoin(storages, eq(storages.id, storageVersions.storageId))
+        .leftJoin(
+          systemStoragePresignedUrlCache,
+          eq(systemStoragePresignedUrlCache.cacheKey, cacheKey),
+        )
+        .where(
+          or(
+            ...[...unique.values()].map((mount) => {
+              return and(
+                eq(storageVersions.id, mount.versionId),
+                eq(storages.id, mount.storageId),
+                eq(storages.orgId, mount.orgId),
+                eq(storages.userId, mount.userId),
+                eq(storages.name, mount.name),
+              );
+            }),
+          ),
+        );
+      const found = new Set(
+        rows.map((row) => {
+          return mountKey({ ...row, mountPath: "" });
+        }),
+      );
+      if (
+        [...unique.keys()].some((key) => {
+          return !found.has(key);
+        })
+      ) {
+        throw new ExecutionStorageUnavailableError();
+      }
+      return {
+        mounts,
+        versions: rows,
+        cacheRows: rows.flatMap(cacheRowsFromProjection),
+      };
+    },
+  );
+  return createExecutionStorageObjects(input$);
+}
 
 function cacheRequest(
   mount: ExecutionStorageRequest,
@@ -278,24 +402,20 @@ function preparedMounts(
   );
 }
 
-/** The canonical Thread already resolved exact rows; never reread those identities. */
-export function createResolvedExecutionStorageObjects(
-  mounts: readonly ExecutionStorageRequest[],
-  versions: readonly VersionRow[],
-  cacheRows: ExecutionStorageCacheRows,
+function createExecutionStorageObjects(
+  input$: Computed<Promise<ResolvedExecutionStorageInput>>,
 ): ExecutionStorageObjects {
-  const versions$ = computed(() => {
-    validateRequests(mounts);
-    return versions;
-  });
   const requests$ = computed(async (get) => {
+    const { mounts, versions } = await get(input$);
+    validateRequests(mounts);
     return signingRequests(
       mounts,
-      await get(versions$),
+      versions,
       env("R2_USER_STORAGES_BUCKET_NAME"),
     );
   });
   const cacheRows$ = computed(async (get): Promise<CacheSnapshot> => {
+    const { cacheRows } = await get(input$);
     const { input } = await get(requests$);
     const { cacheKeysByRequest } = storageManifestPresignedUrlCacheLookupPairs(
       input,
@@ -315,7 +435,7 @@ export function createResolvedExecutionStorageObjects(
     });
   });
   const preparedMounts$ = computed(async (get) => {
-    if (mounts.length === 0) {
+    if ((await get(input$)).mounts.length === 0) {
       return [];
     }
     const [requests, signed] = await Promise.all([
@@ -352,28 +472,3 @@ function cacheSnapshot(
   }
   return { rowsByScope, cacheKeysByRequest };
 }
-
-/**
- * The approved log-only exception, run by the owner after its commit: stores
- * the URLs a preparation of `mounts` signed fresh, so later executions reuse
- * them. A failed write is logged and never fails the committed run.
- */
-export const updateExecutionStoragePresignedUrlCache$ = command(
-  async (
-    { set },
-    mounts: readonly ExecutionStorageRequest[],
-    prepared: readonly PreparedExecutionStorageMount[],
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    if (mounts.length === 0) {
-      return;
-    }
-    const values = prepared.flatMap((mount) => {
-      return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
-        ? [mount.presignedUrlCacheWrite]
-        : [];
-    });
-    await set(persistStoragePresignedUrls$, values, signal);
-  },
-);

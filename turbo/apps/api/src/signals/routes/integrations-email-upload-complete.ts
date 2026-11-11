@@ -41,9 +41,6 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)) {
-    return resourceUnavailable("Email integration is not available");
-  }
   const body = await get(
     bodyResultOf(integrationsEmailUploadContract.complete),
   );
@@ -57,6 +54,14 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable(
       "This run has no active, verified Email conversation.",
     );
+  }
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.EmailIntegration, {
+      ...features,
+      email: destination.emailAddress,
+    })
+  ) {
+    return resourceUnavailable("Email integration is not available");
   }
   const file = await set(
     uploadedArtifactObject$,

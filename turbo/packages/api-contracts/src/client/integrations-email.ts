@@ -10,6 +10,17 @@ import type { ClientDescriptor } from "./types";
 export const integrationsEmailContract: ClientDescriptor<
   typeof OriginalIntegrationsEmailContract
 > = {
+  createLinkCode: {
+    method: "POST",
+    path: "/api/integrations/email/link-code",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      409: true,
+    },
+  },
   getLinkStatus: {
     method: "GET",
     path: "/api/integrations/email/link",

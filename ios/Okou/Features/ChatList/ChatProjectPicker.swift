@@ -1,11 +1,88 @@
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
+
+extension View {
+  func chatProjectMembershipPicker(workspace: WorkspaceStore, thread: Binding<ChatThread?>)
+    -> some View
+  {
+    modifier(ChatProjectMembershipPicker(workspace: workspace, thread: thread))
+  }
+}
+
+/// Keep the sheet-to-dialog handoff identical in the sidebar and the chat header.
+private struct ChatProjectMembershipPicker: ViewModifier {
+  let workspace: WorkspaceStore
+  @Binding var thread: ChatThread?
+  @State private var creationThreadID: String?
+  @State private var nameRequest: OkouNameDialog.Request?
+  @State private var createTask: Task<Void, Never>?
+
+  func body(content: Content) -> some View {
+    content
+      .sheet(item: $thread, onDismiss: presentNameDialog) { thread in
+        StoreProvider(workspace.projects.stateStore) {
+          ChatProjectPicker(workspace: workspace, thread: thread) {
+            creationThreadID = thread.id
+            self.thread = nil
+          }
+          .id(ObjectIdentifier(workspace))
+        }
+        .okouSheetBackground()
+      }
+      .background {
+        OkouNameDialog(
+          request: nameRequest,
+          cancel: {
+            nameRequest = nil
+            creationThreadID = nil
+          }, save: createProject
+        ).frame(width: 0, height: 0)
+      }
+      .onDisappear { createTask?.cancel() }
+  }
+
+  private func presentNameDialog() {
+    guard creationThreadID != nil else { return }
+    nameRequest = request(name: "")
+  }
+
+  private func request(name: String, error: String? = nil) -> OkouNameDialog.Request {
+    OkouNameDialog.Request(
+      title: String(localized: "New project"), placeholder: String(localized: "Project name"),
+      name: name, error: error, maximumLength: 120, accessibilityIdentifier: "project-name")
+  }
+
+  private func createProject(_ name: String) {
+    guard let threadID = creationThreadID else { return }
+    nameRequest = nil
+    createTask?.cancel()
+    createTask = Task {
+      let created = await workspace.projects.create(name: name, fromThreadID: threadID)
+      guard !Task.isCancelled else { return }
+      if created != nil {
+        creationThreadID = nil
+      } else {
+        nameRequest = request(name: name, error: workspace.projects.actionError)
+      }
+    }
+  }
+}
 
 /// Membership uses the same native searchable list and dismissal controls as other pickers.
 struct ChatProjectPicker: View {
   let workspace: WorkspaceStore
   let thread: ChatThread
   let create: () -> Void
+  @LoadableValue private var projectRead: Loadable<[ChatProject]>
+
+  init(workspace: WorkspaceStore, thread: ChatThread, create: @escaping () -> Void) {
+    self.workspace = workspace
+    self.thread = thread
+    self.create = create
+    _projectRead = LoadableValue(task: workspace.projects.listValue, keepLast: true)
+  }
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
   @State private var moving = false
@@ -14,6 +91,11 @@ struct ChatProjectPicker: View {
   var body: some View {
     NavigationStack {
       List {
+        if case .hasError(let error) = projectRead {
+          OkouBanner(Text(error.localizedDescription), icon: "folder", tone: .problem) {
+            Button("Retry") { Task { await workspace.projects.refresh() } }
+          }
+        }
         ForEach(
           workspace.projects.projects.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
@@ -52,16 +134,17 @@ struct ChatProjectPicker: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
     }
+    .task { await workspace.projects.activate() }
     .onDisappear { moveTask?.cancel() }
   }
 
   private func move(to projectID: String?) {
     moving = true
     moveTask = Task {
-      let moved = await workspace.projects.move(threadID: thread.id, projectID: projectID)
+      // The list retains the mutation before the picker dismisses and cancels its waiter.
+      await workspace.moveToProject(thread.id, projectID: projectID) { dismiss() }
       guard !Task.isCancelled else { return }
       moving = false
-      if moved { dismiss() }
     }
   }
 }

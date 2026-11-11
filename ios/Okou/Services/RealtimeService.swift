@@ -122,6 +122,23 @@ final class RealtimeService {
     realtime.connect()
   }
 
+  func retry() {
+    guard let realtime else { return }
+    switch realtime.connection.state {
+    case .initialized, .disconnected, .suspended, .closed, .failed:
+      realtime.connect()
+    default: break
+    }
+    for name in channelNames {
+      let channel = realtime.channels.get(name)
+      switch channel.state {
+      case .detached, .suspended, .failed:
+        channel.attach()
+      default: break
+      }
+    }
+  }
+
   private func reportAvailability() {
     switch connectionAvailability {
     case .disconnected:

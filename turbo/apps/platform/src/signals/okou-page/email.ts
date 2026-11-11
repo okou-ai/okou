@@ -1,14 +1,76 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { emailConnectBodySchema } from "@okouai/api-contracts/validators/integrations-email";
 import { integrationsEmailContract } from "@okouai/api-contracts/client/integrations-email";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { searchParams$ } from "../route.ts";
-import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef } from "../utils.ts";
 
 const reload$ = state(0);
+const internalDialogOpen$ = state(false);
+const internalCodeRequest$ = state<Promise<{
+  readonly code: string;
+  readonly expiresAt: string;
+}> | null>(null);
+const internalTrigger$ = state<HTMLButtonElement | null>(null);
+export const emailConnectionTriggerRef$ = onRef(
+  command(({ set }, element: HTMLButtonElement, signal: AbortSignal) => {
+    set(internalTrigger$, element);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(internalTrigger$, null);
+      },
+      { once: true },
+    );
+  }),
+);
+export const emailConnectionFinalFocus$ = command(({ get }) => {
+  return get(internalTrigger$);
+});
+export const emailConnectionCode$ = computed(async (get) => {
+  return await get(internalCodeRequest$);
+});
+const requestEmailConnectionCode$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const response = await accept(
+      get(apiClient$)(integrationsEmailContract).createLinkCode({
+        headers: {},
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+      { showErrorToast: false },
+    );
+    signal.throwIfAborted();
+    return response.body;
+  },
+);
+export const createEmailConnectionCode$ = command(
+  ({ set }, signal: AbortSignal) => {
+    const request = set(requestEmailConnectionCode$, signal);
+    set(internalCodeRequest$, request);
+    return request;
+  },
+);
+export const emailConnectDialogOpen$ = computed((get) => {
+  return get(internalDialogOpen$);
+});
+export const setEmailConnectDialogOpen$ = command(({ set }, open: boolean) => {
+  if (open) {
+    set(internalCodeRequest$, null);
+  }
+  set(internalDialogOpen$, open);
+});
+export const addEmailConnection$ = command(({ set }, signal: AbortSignal) => {
+  set(setEmailConnectDialogOpen$, true);
+  return set(createEmailConnectionCode$, signal);
+});
 const connectionRequest$ = state<Promise<{
   readonly emailAddress: string;
 }> | null>(null);
@@ -60,6 +122,12 @@ const connectOriginalEmail$ = command(async ({ get }, signal: AbortSignal) => {
     { showErrorToast: false },
   );
   signal.throwIfAborted();
+  toast.success(
+    i18n.t(($) => {
+      return $.works.email.connected;
+    }),
+    { description: response.body.emailAddress },
+  );
   return response.body;
 });
 export const connectEmailFromLink$ = command(
@@ -76,8 +144,8 @@ export const connectEmailFromLink$ = command(
   },
 );
 
-export const disconnectEmail$ = command(
-  async ({ get }, emailAddress: string, signal: AbortSignal) => {
+export const deleteEmailConnection$ = command(
+  async ({ get, set }, emailAddress: string, signal: AbortSignal) => {
     await accept(
       get(apiClient$)(integrationsEmailContract).unlink({
         headers: {},
@@ -89,21 +157,7 @@ export const disconnectEmail$ = command(
       { showErrorToast: false },
     );
     signal.throwIfAborted();
-  },
-);
-export const connectVerifiedEmail$ = command(
-  async ({ get }, emailAddress: string, signal: AbortSignal) => {
-    await accept(
-      get(apiClient$)(integrationsEmailContract).connectAddress({
-        headers: {},
-        body: { emailAddress },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-      { showErrorToast: false },
-    );
-    signal.throwIfAborted();
+    set(reloadEmailLinkStatus$);
   },
 );
 const reloadEmailLinkStatus$ = command(({ set }) => {
@@ -111,24 +165,32 @@ const reloadEmailLinkStatus$ = command(({ set }) => {
     return value + 1;
   });
 });
+const refreshEmailFromChange$ = command(({ set }) => {
+  set(reloadEmailLinkStatus$);
+  return false;
+});
 export const watchEmailConnection$ = command(
   ({ get, set }, signal: AbortSignal) => {
     if (!get(featureSwitch$)[FeatureSwitchKey.EmailIntegration]) {
       return;
     }
     set(
-      setAblyInvalidationLoop$,
+      setAblyLoop$,
       {
         topic: "email:changed",
-        invalidations: [reloadEmailLinkStatus$],
+        loopCommand$: refreshEmailFromChange$,
         options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+    set(
+      setAblyLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: refreshEmailFromChange$,
+        options: { runOnSubscribe: false },
       },
       signal,
     );
   },
 );
-
-export type EmailLinkStatus =
-  typeof emailLinkStatus$ extends Computed<Promise<infer Value>>
-    ? Value
-    : never;

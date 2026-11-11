@@ -2,6 +2,7 @@ import type { GenerationTarget } from "@okouai/core/resource-registry";
 import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import type { ArtifactVisibility } from "./artifact-visibility";
 import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
+import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
@@ -206,6 +207,7 @@ export function createHtmlArtifactAuthoringInstructions(
     options.kind === "website"
       ? "Return the exact URL from the host command."
       : "Return the exact URL from the host command. Private artifacts use an authenticated preview URL.",
+    hostedSiteDeliveryInstructions,
     ...(options.kind === "website"
       ? [hostedSiteVisibilityInstructions]
       : [

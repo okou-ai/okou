@@ -10,6 +10,7 @@
 //! - `event_delivery`: event sender watermark state.
 //! - `provider_event_normalization`: provider semantic arrays before sequencing.
 //! - `claude`: Claude Code tool tracking.
+//! - `claude_input`: Claude stream-json stdin and replay-aware input delivery.
 //! - `jsonl_result`: shared terminal result parsing for JSONL CLI backends.
 //! - `termination`: process-group termination FSM.
 //!
@@ -23,6 +24,7 @@ mod bounded_event_delivery;
 mod child_env;
 mod child_exit_notifier;
 mod claude;
+mod claude_input;
 #[doc(hidden)]
 pub mod codex_app_server;
 mod codex_app_server_backend;
@@ -49,11 +51,18 @@ mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
 mod termination;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;
 
 pub use codex_setup::setup_codex_for_config;
 pub use codex_startup::CodexStartupTiming;
 pub use jsonl_result::{JsonlResultStatus, JsonlResultSummary};
 pub use pi_startup::PiStartupTiming;
+
+#[cfg(test)]
+use claude_input::claude_initial_prompt_frame;
+use claude_input::write_claude_stream_json_to_stdin;
 
 use crate::active_input::{ActiveInputController, ActiveInputWriter, ReplayUserEventAction};
 use crate::constants;
@@ -111,79 +120,6 @@ const CODEX_FIXED_STARTUP_CONFIGS: [&str; 4] = [
 const CODEX_FAST_MODE_STARTUP_CONFIGS: [&str; 2] =
     ["features.fast_mode=true", r#"service_tier="fast""#];
 const CODEX_WEB_SEARCH_DISABLED_CONFIG: &str = r#"web_search="disabled""#;
-
-#[derive(serde::Serialize)]
-struct ClaudeUserFrame<'a> {
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    uuid: String,
-    parent_tool_use_id: Option<&'static str>,
-    message: ClaudeUserMessage<'a>,
-}
-
-#[derive(serde::Serialize)]
-struct ClaudeUserMessage<'a> {
-    role: &'static str,
-    content: &'a str,
-}
-
-fn claude_user_frame<'a>(uuid: &str, text: &'a str) -> ClaudeUserFrame<'a> {
-    ClaudeUserFrame {
-        event_type: "user",
-        uuid: uuid.to_owned(),
-        parent_tool_use_id: None,
-        message: ClaudeUserMessage {
-            role: "user",
-            content: text,
-        },
-    }
-}
-
-#[cfg(test)]
-fn claude_initial_prompt_frame<'a>(run_id: &str, prompt: &'a str) -> ClaudeUserFrame<'a> {
-    let uuid = crate::active_input::claude_initial_prompt_uuid(run_id);
-    claude_user_frame(&uuid, prompt)
-}
-
-async fn write_claude_user_frame_to_stdin(
-    stdin: &mut tokio::process::ChildStdin,
-    uuid: &str,
-    text: &str,
-) -> Result<(), AgentError> {
-    let mut line = serde_json::to_vec(&claude_user_frame(uuid, text))?;
-    line.push(b'\n');
-    stdin.write_all(&line).await?;
-    stdin.flush().await?;
-    Ok(())
-}
-
-async fn write_claude_stream_json_to_stdin(
-    mut stdin: tokio::process::ChildStdin,
-    run_id: &str,
-    prompt: &str,
-    mut active_input: ActiveInputWriter,
-) -> Result<(), AgentError> {
-    let initial_uuid = crate::active_input::claude_initial_prompt_uuid(run_id);
-    write_claude_user_frame_to_stdin(&mut stdin, &initial_uuid, prompt).await?;
-    if !active_input.is_enabled() {
-        active_input.close_terminal();
-        return Ok(());
-    }
-
-    while let Some(frame) = active_input.next_frame().await {
-        active_input.mark_writing(&frame.uuid);
-        if let Err(error) =
-            write_claude_user_frame_to_stdin(&mut stdin, &frame.uuid, &frame.text).await
-        {
-            active_input.mark_backend_failed(&frame);
-            return Err(error);
-        }
-        active_input.mark_backend_accepted_with_replay(&frame)?;
-    }
-
-    active_input.close_terminal();
-    Ok(())
-}
 
 /// Bounded terminal failure detail extracted from a CLI event stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -322,10 +258,13 @@ pub enum HeartbeatStatus {
     /// heartbeat failure.
     Failed(HeartbeatFailure),
 
-    /// The heartbeat loop stopped cleanly.
+    /// The heartbeat task completed successfully, not necessarily the CLI execution.
     ///
-    /// During CLI execution this is a non-error completion signal for the
-    /// heartbeat race.
+    /// If observed before execution completes, the Codex app-server backend
+    /// treats this as an execution error and terminates the app-server. The
+    /// shared Claude Code/Pi JSONL path instead ends its event loop without
+    /// introducing a heartbeat error, then settles the actual process exit.
+    /// See [`HeartbeatMonitor`] for the required heartbeat lifetime.
     Stopped,
 
     /// The heartbeat task itself failed, such as a task panic or join error.
@@ -342,6 +281,10 @@ pub enum HeartbeatStatus {
 /// `Some(receiver)` races CLI execution against heartbeat completion. `None`
 /// disables heartbeat monitoring for that run, which is useful for tests and
 /// callers that do not own a heartbeat task.
+///
+/// Keep the monitored heartbeat task alive throughout active CLI execution.
+/// Sending [`HeartbeatStatus::Stopped`] is not equivalent to disabling
+/// monitoring with `None`; its execution outcome depends on the backend.
 pub type HeartbeatMonitor = Option<oneshot::Receiver<HeartbeatStatus>>;
 
 #[derive(Clone, Copy)]
@@ -958,6 +901,8 @@ pub struct CliExecutionControls<'a> {
     pi_startup: Option<&'a PiStartupTiming>,
     workload_containment: Option<&'a crate::workload_containment::WorkloadContainment>,
     session_metadata: SessionMetadataStore,
+    #[cfg(feature = "test-support")]
+    codex_turn_start_gate: Option<test_support::CodexTurnStartGate>,
 }
 
 impl<'a> CliExecutionControls<'a> {
@@ -975,6 +920,8 @@ impl<'a> CliExecutionControls<'a> {
             pi_startup: None,
             workload_containment: None,
             session_metadata: SessionMetadataStore::default(),
+            #[cfg(feature = "test-support")]
+            codex_turn_start_gate: None,
         }
     }
 
@@ -998,6 +945,14 @@ impl<'a> CliExecutionControls<'a> {
     #[must_use]
     pub fn with_session_metadata_store(mut self, store: SessionMetadataStore) -> Self {
         self.session_metadata = store;
+        self
+    }
+
+    /// Pause before Codex event arbitration to coordinate native test peers.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_codex_turn_start_gate(mut self, gate: test_support::CodexTurnStartGate) -> Self {
+        self.codex_turn_start_gate = Some(gate);
         self
     }
 }
@@ -1082,6 +1037,8 @@ async fn execute_cli_inner(
         pi_startup,
         workload_containment,
         session_metadata,
+        #[cfg(feature = "test-support")]
+            codex_turn_start_gate: _,
     } = controls;
 
     let replay_user_messages =

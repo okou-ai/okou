@@ -125,6 +125,8 @@ export const currentChatAgentDisplayName$ = computed(
 export interface ChatThreadListSignals {
   /** Listed chats outside Projects, which own number shortcuts and pins. */
   readonly threads$: Computed<EventDrivenChatThread[]>;
+  /** Listed chats inside Projects, including the ones a fold or limit hides. */
+  readonly projectThreads$: Computed<readonly EventDrivenChatThread[]>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly rows$: Computed<readonly ChatThreadListRow[]>;
   readonly navigation$: Computed<ChatThreadNavigationList>;
@@ -211,6 +213,7 @@ function createChatThreadListView({
 
   return {
     threads$,
+    projectThreads$,
     threadIds$,
     rows$,
     navigation$,

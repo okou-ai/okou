@@ -59,8 +59,15 @@ public struct ComposerDraft: Codable, Equatable, Sendable {
 }
 
 public struct ChatDraftRepository: Sendable {
+  private struct DraftThreads: Decodable { let draftThreadIds: [String] }
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
+
+  /// The caller's chats that hold an unsent draft, for the sidebar's draft mark.
+  public func threadIDs() async throws -> Set<String> {
+    let result: DraftThreads = try await client.request("/api/chat-thread-drafts")
+    return Set(result.draftThreadIds)
+  }
 
   public func load(_ target: ChatDraftTarget) async throws -> ComposerDraft {
     switch target {

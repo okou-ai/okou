@@ -18,6 +18,7 @@ APPROVED_ACTIONS = {
     "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",  # v8.0.2
     "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3",  # v9.0.0
     "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",  # v7.1.0
+    "actions/setup-java": "b6effb05e454b25005698d916606bdc6ffcbf961",  # v5
     "actions/setup-python": "6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",  # v7
     "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",  # v7.0.2
     "astral-sh/setup-uv": "68559e99cc807c1eb7e9238fd43a15bba460eec2",  # v10.3.3
@@ -30,6 +31,7 @@ APPROVED_ACTIONS = {
     "github/codeql-action/analyze": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
     "github/codeql-action/init": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
     "github/codeql-action/upload-sarif": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
+    "gradle/actions/setup-gradle": "0723195856401067f7a2779048b490ace7a47d7c",  # v5
     "marocchino/sticky-pull-request-comment": "5770ad5eb8f42dd2c4f34da00c94c5381e49af88",  # v3.0.5
     "okou-ai/release-please-action": "9d88edc37d41b22dcc46ab3fb56f19aec0e8b3d2",  # v5.0.0-okou
     "pnpm/action-setup": "73e46992e05b19abd31f2f3c20e0e7370d762115",  # v6.1.1

@@ -82,7 +82,11 @@ export function createArtifactDiagramPreviewSignals() {
   const download$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const current = get(current$);
     if (current && get(visible$)) {
-      captureArtifactAction({ action: "download", surface: "diagram_preview" });
+      captureArtifactAction({
+        action: "download",
+        surface: "diagram_preview",
+        artifact_type: "image",
+      });
       const signal = set(resetDownload$, parentSignal);
       await downloadAttachmentUrl(
         current.url,

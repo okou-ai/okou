@@ -66,7 +66,8 @@ final class ChatComposerMentionTests: XCTestCase {
       expected.parts.map { $0["type"]?.string },
       ["text", "chat_thread", "text", "chat_thread", "text"])
     XCTAssertEqual(expected.text, "Before  and  after 🌷")
-    XCTAssertEqual(input.text, "Before \u{fffc} and \u{fffc} after 🌷")
+    let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
+    XCTAssertEqual(input.text, expectedNativeText)
     try await eventually { input.undoManager?.groupingLevel == 0 }
 
     input.selectedRange = NSRange(location: 7, length: 1)
@@ -92,8 +93,27 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
     input.cut(nil)
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
+    // Keep native insertion separate from business observation in timeout diagnostics.
+    let trace = NativePasteTrace()
+    let observer = NotificationCenter.default.addObserver(
+      forName: UITextView.textDidChangeNotification, object: input, queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        if trace.nativeChange == nil, input.text == expectedNativeText {
+          trace.nativeChange = trace.started.duration(to: .now)
+        }
+      }
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
     input.paste(nil)
-    try await waitForBusinessResult { workspace.newComposer.document == expected }
+    try await waitForBusinessResult(
+      message: "Paste native change=\(String(describing: trace.nativeChange)); "
+        + "elapsed=\(trace.started.duration(to: .now)); "
+        + "document=\(workspace.newComposer.document); "
+        + "text=\(String(describing: input.text)); "
+        + "current=\(input.isCurrent()); focus=\(input.isFirstResponder); "
+        + "undo=\(input.undoManager?.groupingLevel ?? -1)"
+    ) { workspace.newComposer.document == expected }
     input.undoManager?.undo()
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
     input.undoManager?.redo()
@@ -122,6 +142,10 @@ final class ChatComposerMentionTests: XCTestCase {
     let editor = workspace.newComposer.editor
     input.insertText("@")
     try await waitForBusinessResult { !editor.mentionSuggestions.isEmpty }
+    // An empty query has no implicit choice: Return still edits the draft.
+    input.insertText("\n")
+    try await waitForBusinessResult { workspace.newChatDraft == "@\n" }
+    input.insertText("@")
     input.setMarkedText("研究", selectedRange: NSRange(location: 2, length: 0))
     try await eventually {
       input.markedTextRange != nil && input.keyCommands?.contains { $0.input == "\r" } != true
@@ -136,6 +160,7 @@ final class ChatComposerMentionTests: XCTestCase {
         $0.referenceID == MentionNavigationFixture.thread(35)
       })
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
+    try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
     try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
     try await mentionKey(UIKeyCommand.inputUpArrow, input: input)
     input.insertText("\n")
@@ -350,6 +375,12 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(1))
     XCTAssertNil(mentionTable(in: host.view))
   }
+}
+
+@MainActor
+private final class NativePasteTrace {
+  let started = ContinuousClock.now
+  var nativeChange: Duration?
 }
 
 struct MentionSend: Decodable {

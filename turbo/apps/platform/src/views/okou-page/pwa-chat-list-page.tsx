@@ -89,8 +89,8 @@ function PwaChatListHeader() {
         >
           <SquarePen aria-hidden="true" />
         </Button>
-        <ChatThreadsListMenu showMarkAllRead touch />
         <UserNotificationsEntry />
+        <ChatThreadsListMenu showMarkAllRead touch />
       </div>
     </header>
   );

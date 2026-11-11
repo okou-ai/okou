@@ -11,6 +11,7 @@ export function runContextCliAgentType(
     const dataset = getDatasetName("run-context");
     const apl = `['${dataset}']
 | where runId == "${escapeAplString(runId)}"
+| sort by _time desc
 | limit 1`;
 
     const results = (await get(queryAxiom(apl))) as Record<string, unknown>[];

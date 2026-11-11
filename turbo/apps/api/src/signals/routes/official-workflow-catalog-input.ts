@@ -75,18 +75,28 @@ The discovery window limits finding new work, not checking existing actions. Fol
 
 ### 3. Remove or update
 
-For each card, decide whether a useful action still requires this user now:
+For each card, decide whether a verified, unresolved next step still merits the user's attention or choice now. The action may be performed by the user or delegated to Okou; personal execution is not required.
 
 - Remove completed, answered, declined, superseded, duplicate or no-longer-useful actions. Remove obsolete options; remove the card when none remain useful.
-- Remove repeated requests to start, approve or decide once the user entrusted the action and it can proceed without them. Execution errors the Agent is already repairing do not by themselves require user intervention. A fresh blocker or decision can merit a new suggestion only when this user must act.
+- Remove repeated requests to start, approve or decide once the user entrusted the action and it can proceed without them. Execution errors the Agent is already repairing do not by themselves require user intervention. A verified new blocker or meaningful decision can merit a focused suggestion when progress depends on the user's choice, authorization or delegation.
 - Remove an old card when its current state cannot be verified after relevant read attempts and no other current evidence establishes its usefulness. Do not retain, hide, renew or raise its priority. Record the withdrawal as unverified, not completed or declined. Missing access is not a reason to recommend that the user fix access merely to preserve a card.
 - Retain a card only with current evidence for the unresolved action and why it matters now. Update genuinely changed facts, options, relative times or priority in place; do not update just to extend expiry, bump timestamps or append another unchanged scan.
+
+An existing question or authorization link in a Chat establishes that it was presented, not that the blocker was resolved. Verify whether the entrusted task remains blocked and whether surfacing the specific user action would help it progress.
+
+Do not dismiss a candidate solely because it already appears in a Chat. Consider current evidence that the user is actively handling it, and avoid duplicate reminders without material change.
+
+Distinguish inability to verify a suggestion's sources from a verified task blocked on authorization. Keep the existing withdrawal rule for unverifiable cards.
 
 An open issue, unchecked box, missing document or silence alone does not establish pending work. Reserve time to finish maintenance before discovery; report any unreviewed cards honestly rather than claiming they were verified.
 
 ### 4. Admit sparingly
 
-A new candidate must have a specific unresolved action, clear relevance to this user, a concrete useful result and a reason to act now. Check follow-up conversations and feedback before admission. Skip routine updates, normal execution, speculative investigations and work belonging to someone else. A third party's request is not the user's commitment. When evidence or benefit is weak, publish nothing; do not replenish removed cards.
+A new candidate must have a specific unresolved next step, evidence of personal relevance, a concrete useful result and a reason to consider it now.
+
+Useful actions include asking Okou to investigate a concrete question, compare options, prepare a decision or carry out a bounded task. Do not require urgency, explicit assignment or an action that only the user can personally perform. Establish relevance through the user's goals, responsibilities, commitments or current work; team activity or a third party's request alone is insufficient.
+
+Check follow-up conversations and feedback before admission. Skip routine status updates, work already entrusted and proceeding normally, weakly evidenced proposals and work belonging to someone else. When evidence or benefit is weak, publish nothing; do not replenish removed cards.
 
 An action withdrawn only because it was unverifiable may be re-evaluated when reliable verification resumes. Re-read its current sources, follow-up conversations and feedback; do not automatically restore the old card. Restored access alone does not establish a new reason to publish.
 
@@ -100,6 +110,8 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 
 ### Decision examples
 
+- A confirmed, unhandled defect affects work the user owns: offering to investigate or prepare a fix can be useful without explicit assignment to the user.
+- A concrete unresolved question affects the user's current work: offering a comparison or decision brief can be useful without an urgent deadline or a step the user must personally execute.
 - A review was completed in an already-read Chat while its issue stayed open: remove the review card; do not invent a documentation follow-up.
 - The user said "proceed" and the Agent is fixing an execution error: remove "approve/start this"; do not call the work finished or ask the user to repeat authorization.
 - The user marked an action Already done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
@@ -107,7 +119,7 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 - A referenced Chat is unreadable: check other relevant current sources; if the action still cannot be verified, remove the old card as unverified.
 - That Chat becomes readable again: re-evaluate the action and feedback; if the same action is unchanged, do not republish it.
 - A pending action was previously offered and has no new deadline, risk or request: do not publish it again under a new title or identity.
-- An entrusted task needs a specific decision or authorization only the user can provide: a narrow blocker card can be useful. Remove it once the user resolves that blocker; do not repeat the original start request.`;
+- An entrusted task is verified as blocked on the user's authorization, with a link already posted in its Chat: a narrow blocker card can be useful after checking current progress and prior suggestions. The link alone is not proof of resolution. Remove the card once the blocker is resolved; do not repeat the original start request.`;
 
 const PROACTIVE_SUGGESTIONS_INSTRUCTION = `# Proactive Suggestions
 

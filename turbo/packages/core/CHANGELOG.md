@@ -1,5 +1,98 @@
 # Changelog
 
+## [8.828.0](https://github.com/okou-ai/okou/compare/core-v8.827.0...core-v8.828.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+
+## [8.827.0](https://github.com/okou-ai/okou/compare/core-v8.826.2...core-v8.827.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+
+## [8.826.2](https://github.com/okou-ai/okou/compare/core-v8.826.1...core-v8.826.2) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.2
+
+## [8.826.1](https://github.com/okou-ai/okou/compare/core-v8.826.0...core-v8.826.1) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.1
+
+## [8.826.0](https://github.com/okou-ai/okou/compare/core-v8.825.5...core-v8.826.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+* **notifications:** notify owners when schedules are auto-disabled ([#46353](https://github.com/okou-ai/okou/issues/46353)) ([dbe6412](https://github.com/okou-ai/okou/commit/dbe6412be838f46e3200b9998358fb120f386dbb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.0
+
+## [8.825.5](https://github.com/okou-ai/okou/compare/core-v8.825.4...core-v8.825.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.47.0
+
+## [8.825.4](https://github.com/okou-ai/okou/compare/core-v8.825.3...core-v8.825.4) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.4
+
+## [8.825.3](https://github.com/okou-ai/okou/compare/core-v8.825.2...core-v8.825.3) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.3
+
 ## [8.825.2](https://github.com/okou-ai/okou/compare/core-v8.825.1...core-v8.825.2) (2026-11-10)
 
 

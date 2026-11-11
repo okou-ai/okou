@@ -20,6 +20,7 @@ import {
   type ArtifactVisibility,
 } from "../shared/artifact-visibility";
 import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
+import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 
 interface HostOptions {
   readonly site?: string;
@@ -101,6 +102,7 @@ Notes:
   - Preview images upload separately to private artifact storage and feed Artifacts cards; they do not become public files inside your site
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
+  - ${hostedSiteDeliveryInstructions}
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - ${hostedSiteVisibilityInstructions}
   - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
@@ -148,9 +150,17 @@ Notes:
         const presentation = createArtifactPresentation(
           result.title,
           result.aliasUrl ?? result.url,
+          hostedSiteDeliveryInstructions,
         );
         if (options.json) {
-          console.log(JSON.stringify({ ...result, ...presentation.json }));
+          const { artifactUrl: _artifactUrl, ...delivery } = result;
+          console.log(
+            JSON.stringify({
+              ...delivery,
+              url: result.aliasUrl ?? result.url,
+              ...presentation.json,
+            }),
+          );
           return;
         }
 
@@ -160,9 +170,6 @@ Notes:
         console.log(chalk.dim(`  Visibility: ${result.visibility}`));
         if (result.deploymentVersion !== undefined) {
           console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
-        }
-        if (result.artifactUrl) {
-          console.log(`  Artifact: ${result.artifactUrl}`);
         }
         if (result.aliasUrl) {
           const target =

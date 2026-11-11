@@ -29,15 +29,9 @@ import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -92,6 +86,7 @@ import {
   createClaimExecutionContext,
   type ClaimExecutionContextRun,
 } from "../services/claim-execution-context";
+import type { ClaimNetworkPolicyInputs } from "../services/claim-runtime-context";
 import {
   signClaimedContentBundle$,
   type ClaimedContentBundleSignature,
@@ -127,23 +122,19 @@ import {
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
+  recordClaimPreparationTimings,
+  type ApiDispatchTimingRecord,
+} from "../services/api-dispatch-timing.service";
+import {
   commitFailedQueuedRun$,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
-import {
-  connectorCatalogCurrentWhere,
-  connectorRuntimeAuthSelectionReadPlan,
-  connectorRuntimeAuthSelectionFromRows,
-} from "../services/connector-catalog-slug-source.service";
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
-import { decryptPersistentSecretsMap } from "../services/crypto.utils";
-import {
-  activeMemberConnectorPermissionCondition,
-  memberConnectorPermissionColumns,
-} from "../services/member-connector-selection";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
+import { encryptExecutionSecrets$ } from "../services/execution-secrets.service";
+import { recordClaimedRunContextSnapshot } from "../services/run-context-snapshot.service";
 import {
   resolveRunnerReusePreference$,
   runnerPreferenceTelemetryDimensions,
@@ -159,10 +150,9 @@ import {
 } from "../services/runner-claim-transition";
 
 import {
+  activeNetworkPolicyRefreshesFromGrants,
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
-  readActiveNetworkPolicyRefreshes$,
-  type NetworkPolicyRefreshTimingCapture,
 } from "../services/user-permission-grants.service";
 import { safeSync, settle, tapError } from "../utils";
 
@@ -239,7 +229,7 @@ interface ClaimFailedSideEffectArgs {
 
 type ClaimRouteTimingSpanKind =
   "parent" | "top_level" | "nested" | "background";
-type ClaimNetworkPolicyRefreshPath = "current_catalog" | "no_builtin_targets";
+type ClaimNetworkPolicyRefreshPath = "claim_inputs" | "no_builtin_targets";
 type ClaimRouteTimingActionType =
   | "claim_route_request_to_transition_start"
   | "claim_route_request_to_response_ready"
@@ -251,7 +241,6 @@ type ClaimRouteTimingActionType =
   | "claim_route_lookup_application_remainder"
   | "claim_route_context_parse"
   | "claim_route_context_hydrate"
-  | "claim_route_secret_materialization"
   | "claim_route_response_network_policy_refresh"
   | "claim_route_content_bundles"
   | "claim_route_content_bundle_instructions_sign"
@@ -259,11 +248,7 @@ type ClaimRouteTimingActionType =
   | "claim_route_content_bundle_templates_sign"
   | "claim_route_content_bundle_response_assembly"
   | "claim_route_content_bundle_cache_write"
-  | "claim_route_policy_catalog_read"
-  | "claim_route_policy_catalog_materialize"
-  | "claim_route_policy_permission_read"
   | "claim_route_policy_evaluate"
-  | "claim_route_policy_build"
   | "claim_route_policy_merge"
   | "claim_route_response_resume_session"
   | "claim_route_transition_running"
@@ -274,7 +259,6 @@ interface ClaimRouteTimingRecord {
   readonly spanKind: ClaimRouteTimingSpanKind;
   readonly durationMs: number;
   readonly timestamp: string;
-  readonly fallbackReason?: "invalid_keys";
   readonly policyRefreshPath?: ClaimNetworkPolicyRefreshPath;
   readonly dimensions?: Readonly<Record<string, string>>;
   readonly success?: boolean;
@@ -403,51 +387,22 @@ class ClaimRouteTimingCollector {
   }
 
   recordPolicyRefreshPhases(args: {
-    readonly catalogReadMs: number;
-    readonly catalogMaterializeMs: number;
     readonly permissionSource: "member" | "agent";
-    readonly permissionReadMs: number | undefined;
     readonly policyEvaluateMs: number;
-    readonly policyBuildMs: number | undefined;
     readonly mergeMs: number;
   }): void {
     const dimensions = {
       permission_source: args.permissionSource,
-      permission_read:
-        args.permissionReadMs === undefined ? "skipped" : "performed",
+      catalog_source: "claim_inputs",
+      permission_read: "reused",
     };
-    const phases: readonly (readonly [
-      ClaimRouteTimingActionType,
-      number | undefined,
-    ])[] = [
-      ["claim_route_policy_catalog_read", args.catalogReadMs],
-      ["claim_route_policy_catalog_materialize", args.catalogMaterializeMs],
-      ["claim_route_policy_permission_read", args.permissionReadMs],
+    const phases: readonly (readonly [ClaimRouteTimingActionType, number])[] = [
       ["claim_route_policy_evaluate", args.policyEvaluateMs],
-      ["claim_route_policy_build", args.policyBuildMs],
       ["claim_route_policy_merge", args.mergeMs],
     ];
     for (const [actionType, durationMs] of phases) {
-      if (durationMs !== undefined) {
-        this.recordDuration(actionType, durationMs, dimensions);
-      }
+      this.recordDuration(actionType, durationMs, dimensions);
     }
-  }
-
-  measureInvalidKeySecretMaterialization<T>(
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const startedAt = now();
-    return operation().finally(() => {
-      const finishedAt = now();
-      this.records.push({
-        actionType: "claim_route_secret_materialization",
-        spanKind: "top_level",
-        durationMs: Math.max(0, finishedAt - startedAt),
-        timestamp: new Date(finishedAt).toISOString(),
-        fallbackReason: "invalid_keys",
-      });
-    });
   }
 
   recordNetworkPolicyRefresh(
@@ -505,9 +460,6 @@ class ClaimRouteTimingCollector {
             span_kind: record.spanKind,
             ...(record.spanKind === "nested" || record.spanKind === "background"
               ? runnerClaimAttributionDimensions(args.runnerAttribution)
-              : {}),
-            ...(record.fallbackReason
-              ? { fallback_reason: record.fallbackReason }
               : {}),
             ...(record.policyRefreshPath
               ? { policy_refresh_path: record.policyRefreshPath }
@@ -1099,9 +1051,23 @@ const claimableJob$ = computed(async (get): Promise<ClaimLookupResult> => {
         agentId: agentRuns.agentId,
         chatThreadId: agentRuns.chatThreadId,
         launchSnapshot: agentRuns.launchSnapshot,
+        modelProviderId: agentRuns.modelProviderId,
+        modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+        modelProviderAccountIdentity: agentRuns.modelProviderAccountIdentity,
+        selectedModel: agentRuns.selectedModel,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+        modelRuntimeModel: agentRuns.modelRuntimeModel,
+        builtInModelKeyId: agentRuns.builtInModelKeyId,
+        modelUsageProvider: agentRuns.modelUsageProvider,
+        modelLongContextMinTotalInputTokens:
+          agentRuns.modelLongContextMinTotalInputTokens,
+        reasoningEffort: agentRuns.reasoningEffort,
+        codexServiceTier: agentRuns.codexServiceTier,
+        officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
+        storageMounts: agentRuns.storageMounts,
         modelProvider: agentRuns.modelProvider,
         // Claim's current input may already belong to this Run; only another
         // run-attributed event is evidence of earlier thread activity.
@@ -1148,14 +1114,7 @@ const claimExecutionContext$ = createClaimExecutionContext(
       throw new Error("Claim context requires an authorized queue entry");
     }
     return {
-      run: {
-        id: entry.run.id,
-        orgId: entry.run.orgId,
-        userId: entry.run.userId,
-        agentId: entry.run.agentId,
-        chatThreadId: entry.run.chatThreadId,
-        launchSnapshot: entry.run.launchSnapshot,
-      },
+      run: entry.run,
       executionContext: entry.job.executionContext,
     };
   }),
@@ -1490,21 +1449,12 @@ function poisonJobErrorResponse(result: FailedPoisonJobResult) {
   return notFound("Run not found");
 }
 
-type PreparedSecretValuesResult =
-  | {
-      readonly status: "resolved";
-      readonly secretValues: string[] | null;
-    }
-  | {
-      readonly status: "invalid-keys";
-    };
-
-function preparedSecretValuesForRunner(
+function secretValuesForRunner(
   storedContext: PreparedExecutionContext,
-): PreparedSecretValuesResult {
+): string[] | null {
   const keys = storedContext.secretValueEnvironmentKeys;
   if (keys === null) {
-    return { status: "resolved", secretValues: null };
+    return null;
   }
 
   const environment = {
@@ -1513,144 +1463,24 @@ function preparedSecretValuesForRunner(
   };
   const secretValues: string[] = [];
   for (const key of keys) {
-    if (!Object.hasOwn(environment, key)) {
-      return { status: "invalid-keys" };
-    }
     const value = environment[key];
-    if (typeof value !== "string") {
-      return { status: "invalid-keys" };
+    if (!Object.hasOwn(environment, key) || typeof value !== "string") {
+      throw new Error(
+        "Claim secret index references an absent environment key",
+      );
     }
     secretValues.push(value);
   }
-  return { status: "resolved", secretValues };
+  return secretValues;
 }
 
-async function secretValuesForRunner(
-  storedContext: PreparedExecutionContext,
-  timing: ClaimRouteTimingCollector,
-): Promise<string[] | null> {
-  const prepared = preparedSecretValuesForRunner(storedContext);
-  if (prepared.status === "resolved") {
-    return prepared.secretValues;
-  }
-
-  return await timing.measureInvalidKeySecretMaterialization(async () => {
-    const secretsMap = await decryptPersistentSecretsMap(
-      storedContext.encryptedSecrets,
-      {},
-    );
-    if (!secretsMap) {
-      return null;
-    }
-
-    const envValues = new Set(
-      Object.values({
-        ...storedContext.environment,
-        ...storedContext.platformEnvironment,
-      }),
-    );
-    return Object.values(secretsMap).filter((value) => {
-      return envValues.has(value);
-    });
-  });
-}
-
-const readClaimCurrentNetworkPolicyRefreshes$ = command(
+const prepareClaimNetworkPolicyRefreshes$ = command(
   async (
-    { get, set },
-    args: {
-      readonly scope: { orgId: string; userId: string; agentId: string };
-      readonly storedContext: PreparedExecutionContext;
-      readonly builtinConnectorSlugs: readonly string[];
-      readonly timing: ClaimRouteTimingCollector;
-    },
-  ): Promise<
-    Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-  > => {
-    const { scope, builtinConnectorSlugs } = args;
-    const plan = connectorRuntimeAuthSelectionReadPlan({
-      connectorSlugs: builtinConnectorSlugs,
-      firewallConnectorSlugs: builtinConnectorSlugs,
-    });
-    const catalogReadStartedAt = monotonicNow();
-    const rows = await get(db$)
-      .select(plan.columns)
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, plan.join)
-      .where(connectorCatalogCurrentWhere());
-    const catalogReadMs = monotonicNow() - catalogReadStartedAt;
-    const catalogMaterializeStartedAt = monotonicNow();
-    const snapshot = connectorRuntimeAuthSelectionFromRows(
-      rows,
-      plan.requestedConnectorSlugs,
-      plan.firewallConnectorSlugs,
-    );
-    const checkedAt = nowDate();
-    const catalogMaterializeMs = monotonicNow() - catalogMaterializeStartedAt;
-    const permissionSource = args.storedContext.featureFlags?.[
-      FeatureSwitchKey.ConnectorChatAccountAccess
-    ]
-      ? "member"
-      : "agent";
-    const permissionReadStartedAt = monotonicNow();
-    const memberRules =
-      permissionSource === "member"
-        ? await get(db$)
-            .select(memberConnectorPermissionColumns())
-            .from(connectorPermissionGrants)
-            .where(
-              and(
-                activeMemberConnectorPermissionCondition(scope, checkedAt),
-                inArray(
-                  connectorPermissionGrants.connectorSlug,
-                  builtinConnectorSlugs,
-                ),
-              ),
-            )
-        : undefined;
-    const memberReadMs =
-      memberRules === undefined
-        ? undefined
-        : monotonicNow() - permissionReadStartedAt;
-    const policyTiming: NetworkPolicyRefreshTimingCapture = {};
-    const policyEvaluateStartedAt = monotonicNow();
-    const refreshes = await set(
-      readActiveNetworkPolicyRefreshes$,
-      {
-        scope,
-        connectorSlugs: builtinConnectorSlugs,
-        snapshot,
-        memberRules,
-        timing: policyTiming,
-      },
-      checkedAt,
-    );
-    const policyEvaluateMs = monotonicNow() - policyEvaluateStartedAt;
-    const mergeStartedAt = monotonicNow();
-    const networkPolicies = mergeNetworkPolicyRefreshes(
-      args.storedContext.networkPolicies ?? {},
-      refreshes,
-    );
-    const networkPolicyRefreshes = networkPolicyRefreshesRecord(refreshes);
-    args.timing.recordPolicyRefreshPhases({
-      catalogReadMs,
-      catalogMaterializeMs,
-      permissionSource,
-      permissionReadMs: memberReadMs ?? policyTiming.permissionReadMs,
-      policyEvaluateMs,
-      policyBuildMs: policyTiming.policyBuildMs,
-      mergeMs: monotonicNow() - mergeStartedAt,
-    });
-    return { networkPolicies, networkPolicyRefreshes };
-  },
-);
-
-const readClaimNetworkPolicyRefreshes$ = command(
-  async (
-    { set },
+    _context,
     args: {
       readonly run: ClaimedRun;
       readonly storedContext: PreparedExecutionContext;
+      readonly networkPolicyInputs: ClaimNetworkPolicyInputs | null;
       readonly timing: ClaimRouteTimingCollector;
     },
   ): Promise<
@@ -1677,8 +1507,8 @@ const readClaimNetworkPolicyRefreshes$ = command(
     }
 
     const startedAt = now();
-    // Keep the whole finite read in the response owner's allSettled group.
-    // Recording accepts captured timing facts, never a database/accessor closure.
+    // Finish evaluation before the durable transition and retain its elapsed
+    // timing even if a captured input cannot be evaluated.
     const result = await settle(
       (async (): Promise<{
         readonly value: Pick<
@@ -1696,24 +1526,34 @@ const readClaimNetworkPolicyRefreshes$ = command(
             path: "no_builtin_targets",
           };
         }
-        if (args.run.agentId === null) {
+        if (args.run.agentId === null || args.networkPolicyInputs === null) {
           throw new Error(
-            "Connector network policy refresh requires an Agent identity",
+            "Connector network policy refresh requires Claim inputs and an Agent identity",
           );
         }
-
+        const policyEvaluateStartedAt = monotonicNow();
+        const refreshes = await activeNetworkPolicyRefreshesFromGrants(
+          {
+            ...args.networkPolicyInputs,
+            connectorSlugs: builtinConnectorSlugs,
+          },
+          nowDate(),
+        );
+        const policyEvaluateMs = monotonicNow() - policyEvaluateStartedAt;
+        const mergeStartedAt = monotonicNow();
+        const networkPolicies = mergeNetworkPolicyRefreshes(
+          args.storedContext.networkPolicies,
+          refreshes,
+        );
+        const networkPolicyRefreshes = networkPolicyRefreshesRecord(refreshes);
+        args.timing.recordPolicyRefreshPhases({
+          permissionSource: args.networkPolicyInputs.permissionSource,
+          policyEvaluateMs,
+          mergeMs: monotonicNow() - mergeStartedAt,
+        });
         return {
-          value: await set(readClaimCurrentNetworkPolicyRefreshes$, {
-            scope: {
-              orgId: args.run.orgId,
-              userId: args.run.userId,
-              agentId: args.run.agentId,
-            },
-            storedContext: args.storedContext,
-            builtinConnectorSlugs,
-            timing: args.timing,
-          }),
-          path: "current_catalog",
+          value: { networkPolicies, networkPolicyRefreshes },
+          path: "claim_inputs",
         };
       })(),
     );
@@ -1801,6 +1641,7 @@ const prepareClaimResponse$ = command(
     args: {
       readonly run: ClaimedRun;
       readonly storedContext: PreparedExecutionContext;
+      readonly networkPolicyInputs: ClaimNetworkPolicyInputs | null;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
@@ -1812,14 +1653,12 @@ const prepareClaimResponse$ = command(
     >;
   }> => {
     // Fallible preparation must finish before durable claim ownership.
-    const secretValues = await secretValuesForRunner(
-      args.storedContext,
-      args.timing,
-    );
+    const secretValues = secretValuesForRunner(args.storedContext);
     signal.throwIfAborted();
-    const refreshedPolicies = await set(readClaimNetworkPolicyRefreshes$, {
+    const refreshedPolicies = await set(prepareClaimNetworkPolicyRefreshes$, {
       run: args.run,
       storedContext: args.storedContext,
+      networkPolicyInputs: args.networkPolicyInputs,
       timing: args.timing,
     });
     signal.throwIfAborted();
@@ -1887,6 +1726,7 @@ function successfulClaimPreferenceTelemetry(args: {
 type UnavailableClaimReason =
   | "lookup_not_found"
   | "capability_unsupported"
+  | "runtime_source_unavailable"
   | "invalid_context_unavailable"
   | `transition_${Exclude<
       ClaimTransitionResult["status"],
@@ -1961,8 +1801,28 @@ function scheduleSuccessfulClaimSideEffects(args: {
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
   readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
+  readonly secretNames: readonly string[];
+  readonly secretValues: ExecutionContext["secretValues"];
+  readonly networkPolicies: ExecutionContext["networkPolicies"];
+  readonly connectorOperationTimings: readonly ApiDispatchTimingRecord[];
 }): void {
   const { job, run } = args.jobWithRun;
+  recordClaimPreparationTimings({
+    runId: run.id,
+    runnerGroup: job.runnerGroup,
+    profile: job.profile,
+    records: args.connectorOperationTimings,
+  });
+  recordClaimedRunContextSnapshot({
+    runId: run.id,
+    userId: run.userId,
+    prompt: run.prompt,
+    appendSystemPrompt: run.appendSystemPrompt,
+    claimedAt: args.claimResult.claimedAt,
+    context: { ...args.storedContext, networkPolicies: args.networkPolicies },
+    secretNames: args.secretNames,
+    secretValues: args.secretValues,
+  });
   const queueCreatedAtMs = job.createdAt.getTime();
   const preferenceTelemetry = successfulClaimPreferenceTelemetry({
     telemetry: args.telemetry,
@@ -2325,10 +2185,23 @@ const resolveStoredExecutionContextForClaim$ = command(
     signal: AbortSignal,
   ) {
     const contextParseStartedAt = now();
-    const { result: storedContextResult, hydrationMs } = await get(
-      claimExecutionContext$,
-    );
+    const materialized = await get(claimExecutionContext$);
     signal.throwIfAborted();
+    if (materialized.status === "unavailable") {
+      return {
+        compatible: false as const,
+        unavailableReason: "runtime_source_unavailable" as const,
+        response: notFound("Run execution sources are unavailable"),
+      };
+    }
+    const {
+      result: storedContextResult,
+      hydrationMs,
+      secrets,
+      storageCacheWrites,
+      connectorOperationTimings,
+      networkPolicyInputs,
+    } = materialized;
     args.timing.recordElapsed(
       "claim_route_context_parse",
       "top_level",
@@ -2381,9 +2254,14 @@ const resolveStoredExecutionContextForClaim$ = command(
     }
     return {
       compatible: true as const,
+      storageCacheWrites,
+      connectorOperationTimings,
+      networkPolicyInputs,
+      secretNames: Object.keys(secrets ?? {}),
       value: {
         ...storedContextResult.data,
         piModelConfig: piModelConfigResolution.modelConfig,
+        encryptedSecrets: await set(encryptExecutionSecrets$, secrets, signal),
       },
     };
   },
@@ -2418,13 +2296,11 @@ const claimAuthorizedJob$ = command(
       signal,
     );
     if (!storedContextResult.compatible) {
-      if (storedContextResult.response.status === 404) {
-        scheduleUnavailableClaimTiming(
-          args,
-          storedContextResult.unavailableReason,
-        );
+      const { response, unavailableReason } = storedContextResult;
+      if (response.status === 404) {
+        scheduleUnavailableClaimTiming(args, unavailableReason);
       }
-      return storedContextResult.response;
+      return response;
     }
     const storedContext = storedContextResult.value;
     const workflowInput = workflowClaimInput(storedContext);
@@ -2434,6 +2310,7 @@ const claimAuthorizedJob$ = command(
       {
         run,
         storedContext,
+        networkPolicyInputs: storedContextResult.networkPolicyInputs,
         timing: claimRouteTiming,
       },
       signal,
@@ -2456,13 +2333,7 @@ const claimAuthorizedJob$ = command(
         timing: claimRouteTiming,
         bundleUrlCache: {
           context: bundleUrlCache,
-          additionalHashes: [
-            ...(storedContext.officialWorkflowBundles ?? []),
-            ...storedContext.seedSkillBundles,
-            ...(storedContext.templateGuidanceBundles ?? []),
-          ].map((bundle) => {
-            return bundle.sha256;
-          }),
+          additionalHashes: claimBundleHashes(storedContext),
         },
       },
       signal,
@@ -2511,6 +2382,7 @@ const claimAuthorizedJob$ = command(
     );
     scheduleSuccessfulClaimSideEffects({
       jobWithRun,
+      connectorOperationTimings: storedContextResult.connectorOperationTimings,
       authType: args.authType,
       storedContext,
       claimRequestStartedAtMs: args.claimRequestStartedAtMs,
@@ -2518,12 +2390,29 @@ const claimAuthorizedJob$ = command(
       telemetry: args.telemetry,
       runnerAttribution: args.runnerAttribution,
       claimRouteTiming,
-      cachePublication: set(persistStoragePresignedUrls$, cacheWrites, signal),
+      cachePublication: set(
+        persistStoragePresignedUrls$,
+        [...storedContextResult.storageCacheWrites, ...cacheWrites],
+        signal,
+      ),
+      secretNames: storedContextResult.secretNames,
+      secretValues: preparedResponse.secretValues,
+      networkPolicies: preparedResponse.refreshedPolicies.networkPolicies,
     });
 
     return { status: 200 as const, body: responseBody };
   },
 );
+
+function claimBundleHashes(context: PreparedExecutionContext): string[] {
+  return [
+    ...(context.officialWorkflowBundles ?? []),
+    ...context.seedSkillBundles,
+    ...(context.templateGuidanceBundles ?? []),
+  ].map((bundle) => {
+    return bundle.sha256;
+  });
+}
 
 const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const claimRequestStartedAtMs = now();

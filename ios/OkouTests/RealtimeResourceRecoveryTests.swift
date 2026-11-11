@@ -82,8 +82,31 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     let published = expectation(description: "Resumed transport reads the missed server change")
     fixture.publication = ("claude-model", published)
     fixture.server.attachAutomatically()
-    try XCTUnwrap(fixture.sdk).connection.connect()
+    fixture.service.retry()
     await fulfillment(of: [published], timeout: 3)
+    await fixture.drain()
+    XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "claude-model")
+    XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 3))
+  }
+
+  func testRetryRestoresFailedSubscriptionAndReadsMissedChanges() async throws {
+    let fixture = try await makeFixture()
+    await fixture.models.load()
+    try await attach(fixture)
+    let unavailable = expectation(description: "The failed subscription is reported")
+    fixture.unavailable = unavailable
+    try fixture.server.fail(fixture.workspaceChannel)
+    await fulfillment(of: [unavailable], timeout: 3)
+
+    fixture.metadata.remoteModel.withLock { $0 = "claude-model" }
+    let published = expectation(description: "Retry restores canonical settings")
+    fixture.publication = ("claude-model", published)
+    let connected = expectation(description: "Both subscriptions recover")
+    fixture.connected = connected
+    fixture.server.attachAutomatically()
+    fixture.service.retry()
+
+    await fulfillment(of: [connected, published], timeout: 3)
     await fixture.drain()
     XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "claude-model")
     XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 3))

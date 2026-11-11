@@ -3,10 +3,25 @@ import { userNotificationsContract } from "@okouai/api-contracts/client/user-not
 import type { UserNotificationSummary } from "@okouai/api-contracts/contracts/user-notifications";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { authenticatedSessionKey$ } from "../auth.ts";
+import { authenticatedSessionKey$, clerk$, currentOrgInfo$ } from "../auth.ts";
 import { pageVersion$ } from "../page-signal.ts";
-import { onRef } from "../utils.ts";
+import { onRef, setLoop } from "../utils.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { createCarouselSelection } from "../carousel.ts";
+
+export const notificationWorkspaceNames$ = computed(async (get) => {
+  const current = await get(currentOrgInfo$);
+  const clerk = await get(clerk$);
+  const names = new Map<string, string>();
+  for (const membership of clerk.user?.organizationMemberships ?? []) {
+    names.set(membership.organization.id, membership.organization.name);
+  }
+  if (current) {
+    names.set(current.id, current.name);
+  }
+  return names;
+});
 
 function createInboxState() {
   const revision$ = state(0);
@@ -345,5 +360,22 @@ export const watchUserNotifications$ = command(
     };
     window.addEventListener("focus", refresh, { signal });
     document.addEventListener("visibilitychange", refresh, { signal });
+    setLoop(
+      async (roundSignal) => {
+        const switches = get(featureSwitch$);
+        roundSignal.throwIfAborted();
+        // The inbox is personal, so the writer's workspace rollout switch must
+        // not suppress unread updates for notifications from another workspace.
+        if (!document.hidden && switches[FeatureSwitchKey.UserNotifications]) {
+          set(inbox.refreshSummary$);
+          await get(inbox.summary$);
+          roundSignal.throwIfAborted();
+        }
+        return false;
+      },
+      30_000,
+      signal,
+      { testIntervalMs: 100 },
+    );
   },
 );

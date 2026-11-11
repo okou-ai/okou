@@ -80,7 +80,19 @@ type CallbackIdentity = {
   readonly orgId: string;
 };
 
+type OAuthCallbackDiagnostics = {
+  stage:
+    | "exchange_and_profile"
+    | "persist_connection"
+    | "authorize_agent"
+    | "link_github_integration"
+    | "record_completion"
+    | "publish_invalidation"
+    | "redirect";
+};
+
 type CompleteOAuthCallbackInput = {
+  readonly diagnostics: OAuthCallbackDiagnostics;
   readonly oauthAttemptId: string;
   readonly resolvedMethod: ResolvedConnectorActionMethod;
   readonly oauthRequestedScopes: readonly string[];
@@ -594,6 +606,7 @@ const completeOAuthCallback$ = command(
     });
     signal.throwIfAborted();
 
+    args.diagnostics.stage = "persist_connection";
     const result = await set(
       upsertBuiltinConnectorTokenConnection$,
       {
@@ -627,6 +640,7 @@ const completeOAuthCallback$ = command(
     }
 
     if (args.authorizeAgent) {
+      args.diagnostics.stage = "authorize_agent";
       const authorization = await set(
         authorizeConnectedConnector$,
         {
@@ -647,6 +661,7 @@ const completeOAuthCallback$ = command(
       }
     }
 
+    args.diagnostics.stage = "link_github_integration";
     await set(
       linkGithubIntegrationAfterConnectorConnect$,
       {
@@ -658,6 +673,7 @@ const completeOAuthCallback$ = command(
     );
     signal.throwIfAborted();
 
+    args.diagnostics.stage = "record_completion";
     await set(
       recordConnectorOAuthCompletion$,
       {
@@ -668,6 +684,7 @@ const completeOAuthCallback$ = command(
       },
       signal,
     );
+    args.diagnostics.stage = "publish_invalidation";
     await publishBuiltinConnectorInvalidationAfterCommit(
       {
         userId: args.identity.userId,
@@ -676,6 +693,7 @@ const completeOAuthCallback$ = command(
       signal,
     );
 
+    args.diagnostics.stage = "redirect";
     return successRedirectResponse({
       origin: args.origin,
       connectorSlug: args.connectorSlug,
@@ -1205,10 +1223,14 @@ const handleAuthCodeConnectorCallback$ = command(
       return resolvedState.response;
     }
 
+    const diagnostics: OAuthCallbackDiagnostics = {
+      stage: "exchange_and_profile",
+    };
     const callbackResponse = await tapError(
       set(
         completeOAuthCallback$,
         {
+          diagnostics,
           oauthAttemptId: claimedState.storedState.id,
           resolvedMethod: resolvedState.resolvedMethod,
           oauthRequestedScopes: resolvedState.oauthRequestedScopes,
@@ -1237,6 +1259,7 @@ const handleAuthCodeConnectorCallback$ = command(
           connectorSlug: args.connectorSlug,
           authMethodId: resolvedState.resolvedMethod.authMethodId,
           oauthAttemptId: claimedState.storedState.id,
+          callbackStage: diagnostics.stage,
           ...oauthFailureDiagnostics(error),
         });
       },

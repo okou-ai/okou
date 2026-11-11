@@ -46,10 +46,17 @@ export const setupOnboardingPromptPage$ = command(
       return;
     }
 
-    set(subscribeBuiltinConnectorChanges$, signal);
-    set(sendEvent$, "onboarding-start");
     const handoff = await set(loadMarketingHandoff$, signal);
     signal.throwIfAborted();
+    if (searchParams.get("handoff") && !handoff) {
+      set(detachedNavigateTo$, ROUTES.onboarding, {
+        searchParams: get(searchParams$),
+        replace: true,
+      });
+      return;
+    }
+    set(subscribeBuiltinConnectorChanges$, signal);
+    set(sendEvent$, "onboarding-start");
     set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
     signal.addEventListener(
       "abort",

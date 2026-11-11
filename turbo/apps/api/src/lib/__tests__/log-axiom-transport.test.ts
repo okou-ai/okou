@@ -28,6 +28,11 @@ import {
   userMessageWithTemplate,
 } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
 import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-chat-actor";
+import { createBddApi } from "../../signals/routes/__tests__/helpers/api-bdd";
+import {
+  createConnectorBddApi,
+  mockGitHubConnectorOAuth,
+} from "../../signals/routes/__tests__/helpers/api-bdd-connectors";
 import { createRouteMocks } from "../../signals/routes/__tests__/helpers/route-test";
 import {
   installS3Fixture,
@@ -51,6 +56,88 @@ import { recordTemplateUsage } from "../template-usage-log";
 const context = testContext();
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
+
+test("keeps OAuth callback stages and exception classes without private details", async () => {
+  const bdd = createBddApi(context);
+  const connectors = createConnectorBddApi(context);
+  const secret = "private-oauth-callback-detail";
+  const scenarios = [
+    { stage: "exchange_and_profile", exceptionClass: "SyntaxError" },
+    { stage: "persist_connection", exceptionClass: "TypeError" },
+  ] as const;
+  for (const scenario of scenarios) {
+    const actor = bdd.user();
+    mockGitHubConnectorOAuth();
+    if (scenario.stage === "exchange_and_profile") {
+      server.use(
+        http.post("https://github.com/login/oauth/access_token", () => {
+          return new HttpResponse(secret, {
+            headers: { "Content-Type": "application/json" },
+          });
+        }),
+      );
+    }
+    const start = await connectors.startOauth(actor, "github", "oauth");
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected GitHub OAuth state");
+    }
+    if (scenario.stage === "persist_connection") {
+      useSecretKmsProbe(() => {
+        const cause = new Error(secret);
+        cause.name = secret;
+        const error = new TypeError(secret, { cause });
+        error.name = secret;
+        return Promise.reject(error);
+      });
+    }
+    const result = await connectors.completeOauthCallbackResult("github", {
+      code: secret,
+      state,
+    });
+    expect(result.body).toMatchObject({
+      status: "error",
+      message: "OAuth authorization failed. Please try again.",
+    });
+    const records = context.mocks.axiomLogging.error.mock.calls.filter(
+      ([message, fields]) => {
+        return (
+          message === "OAuth callback failed" &&
+          object({ oauthAttemptId: string() }).parse(fields).oauthAttemptId ===
+            start.oauthAttemptId
+        );
+      },
+    );
+    expect(records).toHaveLength(1);
+    const record = object({})
+      .catchall(string().or(number()))
+      .parse(records[0]?.[1]);
+    expect(record).toStrictEqual({
+      context: "connectors:oauth-callback",
+      connectorSlug: "github",
+      authMethodId: "oauth",
+      oauthAttemptId: start.oauthAttemptId,
+      callbackStage: scenario.stage,
+      failureKind: "unexpected",
+      exceptionClass: scenario.exceptionClass,
+      ...(scenario.stage === "persist_connection"
+        ? { causeClass: "Error" }
+        : {}),
+    });
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain(state);
+    expect(serialized).not.toContain(start.authorizationUrl);
+    const replay = await connectors.completeOauthCallbackResult("github", {
+      code: secret,
+      state,
+    });
+    expect(replay.body).toMatchObject({
+      status: "error",
+      message: "Invalid state - please try again",
+    });
+  }
+});
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
 // through the authenticated production cron, without observing private services.
@@ -1562,8 +1649,8 @@ describe("selected eager Axiom operation payload", () => {
         model: "claude-fable-5-1",
         prompt: "Verify selected eager observations",
       });
-      const actualDecrypts = kms.decryptCalls;
       const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+      const actualDecrypts = kms.decryptCalls;
       expect(claimed.claim.environment).toMatchObject({
         FIGMA_TOKEN: "fixture-figma-token",
         ...(expectedCount ? { OPENAI_TOKEN: "eager-transport-token" } : {}),
@@ -1578,6 +1665,7 @@ describe("selected eager Axiom operation payload", () => {
         connector_context_schema: string().optional(),
         connector_context_builtin_decrypt_count: number().optional(),
         connector_context_builtin_decrypt_count_bucket: string().optional(),
+        preparation_phase: string().optional(),
         duration_ms: number().optional(),
         _time: string().optional(),
       });
@@ -1602,6 +1690,7 @@ describe("selected eager Axiom operation payload", () => {
         expect(matches).toHaveLength(1);
         expect(matches[0]).toMatchObject({
           connector_context_builtin_decrypt_count: actualDecrypts,
+          preparation_phase: "claim",
           connector_context_builtin_decrypt_count_bucket:
             expectedCount === 2 ? "2_4" : String(expectedCount),
           duration_ms: expect.any(Number),

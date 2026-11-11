@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.99](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.98...claude-mock-v0.22.99) (2026-11-11)
+
+## [0.22.98](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.97...claude-mock-v0.22.98) (2026-11-10)
+
+
+### Refactoring
+
+* **claude-mock:** construct canonical scenarios in matching rules ([#46351](https://github.com/okou-ai/okou/issues/46351)) ([1e34c16](https://github.com/okou-ai/okou/commit/1e34c16765e0ee64e55dc8ead9aefb694c216d0d))
+
 ## [0.22.97](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.96...claude-mock-v0.22.97) (2026-11-10)
 
 ## [0.22.96](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.95...claude-mock-v0.22.96) (2026-11-09)

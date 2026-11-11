@@ -7,18 +7,34 @@ import type {
   UserNotification,
   UserNotificationSummary,
 } from "@okouai/api-contracts/contracts/user-notifications";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Bell, ChevronRight } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  Building2,
+  ChevronRight,
+  Clock,
+  Repeat,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import {
   Popover,
@@ -27,11 +43,12 @@ import {
 } from "@okouai/ui/components/ui/popover";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { cn } from "@okouai/ui/lib/utils";
-import { useMediaQuery } from "@okouai/ui";
+import { Badge, surfaceVariants, useMediaQuery } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   notificationInbox$,
+  notificationWorkspaceNames$,
   type NotificationInbox,
 } from "../../signals/okou-page/user-notifications.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -40,10 +57,21 @@ import {
   formatChatTimestamp,
   formatLocalizedNumber,
   formatRelativeTimestamp,
+  resolvedAppLocale,
 } from "../../i18n/format.ts";
 import { Markdown } from "../components/markdown.tsx";
 import { CarouselNavigation } from "../components/carousel-navigation.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
+import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
+
+type AutomationDisabledMetadata = NonNullable<
+  Extract<
+    UserNotification["payload"],
+    { type: "rich_text" }
+  >["automationDisabled"]
+>;
 
 function InboxSkeleton() {
   const { t } = useTranslation();
@@ -143,6 +171,151 @@ function RichTextNotification({
             className="text-sm! leading-relaxed!"
           />
         </div>
+      </div>
+      <ReadError inbox={inbox} />
+    </>
+  );
+}
+
+function AutomationDisabledTimestamp({
+  disabledAt,
+}: {
+  readonly disabledAt: string;
+}) {
+  const { t } = useTranslation();
+  const preferences = useLastResolved(userPreferences$);
+  return (
+    <time dateTime={disabledAt} className="min-w-0 break-words">
+      {t(
+        ($) => {
+          return $.userNotifications.automationDisabled.disabledAt;
+        },
+        {
+          time: new Date(disabledAt).toLocaleString(resolvedAppLocale(), {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZoneName: "short",
+            ...(preferences ? { timeZone: preferences.timezone } : {}),
+          }),
+        },
+      )}
+    </time>
+  );
+}
+
+function AutomationDisabledNotification({
+  inbox,
+  metadata,
+}: {
+  readonly inbox: NotificationInbox;
+  readonly metadata: AutomationDisabledMetadata;
+}) {
+  const { t } = useTranslation();
+  const mounted = useSet(inbox.detailRef$);
+  const workspaceNames = useLastResolved(notificationWorkspaceNames$);
+  const workspaceName =
+    metadata.workspaceName?.trim() ||
+    workspaceNames?.get(metadata.workspaceId)?.trim() ||
+    t(($) => {
+      return $.userNotifications.automationDisabled.workspaceFallback;
+    });
+  return (
+    <>
+      <div ref={mounted} className="flex min-w-0 flex-col gap-5">
+        <DialogHeader className="gap-4 text-left">
+          <div className="flex items-center gap-3 pr-7">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gray-50 text-brand-text">
+              <AlertTriangle size={20} aria-hidden="true" />
+            </span>
+            <DialogTitle className="text-xl leading-tight">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.title;
+              })}
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-sm leading-relaxed">
+            {t(
+              ($) => {
+                return $.userNotifications.automationDisabled.reason;
+              },
+              { count: metadata.consecutiveFailures },
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <section
+          className={surfaceVariants({
+            className: "bg-gray-50 p-4 shadow-none",
+          })}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
+              <Repeat size={16} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="break-words text-sm font-semibold">
+                {metadata.automationName}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.userNotifications.automationDisabled.systemSource;
+                })}
+              </p>
+            </div>
+            <Badge className="shrink-0 text-xs font-medium text-brand-text">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.disabled;
+              })}
+            </Badge>
+          </div>
+          <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
+            <p className="flex items-start gap-2">
+              <Building2
+                size={14}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 break-words">
+                <span className="sr-only">
+                  {t(($) => {
+                    return $.userNotifications.automationDisabled.workspace;
+                  })}
+                  {": "}
+                </span>
+                {workspaceName}
+              </span>
+            </p>
+            <p className="flex items-start gap-2">
+              <Clock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <AutomationDisabledTimestamp disabledAt={metadata.disabledAt} />
+            </p>
+          </div>
+        </section>
+        <DialogFooter className="gap-2">
+          <DialogClose render={<Button variant="quiet" />}>
+            {t(($) => {
+              return $.userNotifications.automationDisabled.notNow;
+            })}
+          </DialogClose>
+          <Link
+            pathname={ROUTES.workflowDetailAutomations}
+            options={{
+              pathParams: { workflowId: metadata.workflowId },
+              searchParams: new URLSearchParams({
+                automationId: metadata.automationId,
+                workspaceId: metadata.workspaceId,
+              }),
+            }}
+            className={buttonVariants()}
+          >
+            {t(($) => {
+              return $.userNotifications.automationDisabled.viewAutomation;
+            })}
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </DialogFooter>
       </div>
       <ReadError inbox={inbox} />
     </>
@@ -397,6 +570,16 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
   // own decision UI; a read receipt is never a confirm/approve operation.
   switch (item.payload.type) {
     case "rich_text": {
+      if (item.payload.automationDisabled) {
+        // Reading a persisted message is independent of the writer's rollout
+        // switch; switching it off must not erase historical details.
+        return (
+          <AutomationDisabledNotification
+            inbox={inbox}
+            metadata={item.payload.automationDisabled}
+          />
+        );
+      }
       return (
         <RichTextNotification
           inbox={inbox}
@@ -641,10 +824,15 @@ function InboxHeader({ inbox }: { readonly inbox: NotificationInbox }) {
   );
 }
 
-function NotificationInboxView() {
+function NotificationInboxView({ desktop }: { readonly desktop: boolean }) {
   const { t } = useTranslation();
   const inbox = useGet(notificationInbox$);
   const summary = useLastLoadable(inbox.summary$);
+  const detail = useLoadable(inbox.detail$);
+  const compact =
+    detail.state === "hasData" &&
+    detail.data?.payload.type === "rich_text" &&
+    Boolean(detail.data.payload.automationDisabled);
   const open = useGet(inbox.open$);
   const selectedId = useGet(inbox.selectedId$);
   const lastSelectedId = useGet(inbox.lastSelectedId$);
@@ -653,19 +841,32 @@ function NotificationInboxView() {
   const count =
     summary.state === "hasData" ? summary.data.unreadCount : undefined;
   const id = inbox.descriptionId;
+  const label = t(($) => {
+    return $.userNotifications.title;
+  });
   return (
     <>
       <Popover open={open && selectedId === null} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
-            <IconButton
-              type="button"
-              aria-label={t(($) => {
-                return $.userNotifications.title;
-              })}
-              aria-describedby={id}
-              className="relative size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
-            />
+            desktop ? (
+              <IconButton
+                type="button"
+                aria-label={label}
+                aria-describedby={id}
+                className="relative size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
+              />
+            ) : (
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon"
+                iconSize="lg"
+                aria-label={label}
+                aria-describedby={id}
+                className="relative min-h-11 min-w-11 shrink-0"
+              />
+            )
           }
         >
           <Bell className="size-4" aria-hidden="true" />
@@ -714,9 +915,9 @@ function NotificationInboxView() {
         }}
       >
         <DialogContent
-          maxWidth="2xl"
-          height={600}
-          scrollable={false}
+          maxWidth={compact ? 480 : "2xl"}
+          height={compact ? "content" : 600}
+          scrollable={compact}
           contentClassName="flex min-h-0 flex-1 flex-col"
           closeLabel={t(($) => {
             return $.userNotifications.close;
@@ -743,5 +944,7 @@ export function UserNotificationsEntry({
 }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.UserNotifications];
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  return enabled && desktop === isDesktop ? <NotificationInboxView /> : null;
+  return enabled && desktop === isDesktop ? (
+    <NotificationInboxView desktop={desktop} />
+  ) : null;
 }

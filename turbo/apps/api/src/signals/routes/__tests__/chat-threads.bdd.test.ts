@@ -1,4 +1,6 @@
 import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
+import { HttpResponse } from "msw";
+import { getRequestListener } from "@hono/node-server";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
@@ -21,7 +23,7 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import AdmZip from "adm-zip";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -3173,6 +3175,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     bytes: Buffer,
     format: "docx" | "pptx" = "pptx",
     slidesEnabled = format === "pptx",
+    signal = context.signal,
   ) {
     const filename = format === "docx" ? "bilingual.docx" : "deck.pptx";
     const contentType =
@@ -3261,6 +3264,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const client = setupApp({
       context,
       routes: chatThreadsArtifactsSyncRoutes,
+      signal,
     })(artifactGoogleDriveContract);
     const files = setupApp({ context, routes: webFileUrlRoutes })(
       webFilesContract,
@@ -3281,13 +3285,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           );
         });
       },
-      uploadLegacy: () => {
+      uploadLegacy: (statuses: readonly (200 | 400)[] = [200]) => {
         return owned.run(() => {
           return chat.requestUploadArtifactToGoogleDrive(
             actor,
             artifactId,
             { agentId },
-            [200],
+            statuses,
           );
         });
       },
@@ -4138,6 +4142,476 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expect(readback.trashedFileIds).toHaveLength(0);
     await fixture.finish();
   }, 120_000);
+
+  function useNodeAdapterGlobals() {
+    const originalRequest = globalThis.Request;
+    const originalResponse = globalThis.Response;
+    onTestFinished(() => {
+      Object.defineProperty(globalThis, "Request", { value: originalRequest });
+      Object.defineProperty(globalThis, "Response", {
+        value: originalResponse,
+      });
+    });
+    // Match the Vercel entry's default lightweight Request/Response globals.
+    getRequestListener(
+      createApp({
+        signal: context.signal,
+        routes: chatThreadsArtifactsSyncRoutes,
+      }).fetch,
+    );
+  }
+
+  it.each([
+    { endpoint: "legacy", providerStatus: 200, afterRefresh: false },
+    { endpoint: "explicit mode", providerStatus: 201, afterRefresh: false },
+    { endpoint: "explicit mode", providerStatus: 200, afterRefresh: true },
+  ] as const)(
+    "drive upload returns HTTP $providerStatus success with node adapter globals through the $endpoint route (after refresh: $afterRefresh)",
+    async ({ endpoint, providerStatus, afterRefresh }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      useNodeAdapterGlobals();
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+      });
+      const file = {
+        id: "drive-upload-success",
+        name: "bilingual.docx",
+        webViewLink:
+          "https://drive.google.com/file/d/drive-upload-success/view",
+      };
+      let attempts = 0;
+      const upload = mockGoogleDriveArtifactUpload(file, {
+        contentResponse: () => {
+          attempts += 1;
+          return afterRefresh && attempts === 1
+            ? HttpResponse.json({ error: { code: 401 } }, { status: 401 })
+            : HttpResponse.json(file, { status: providerStatus });
+        },
+      });
+      const response =
+        endpoint === "legacy"
+          ? await fixture.uploadLegacy()
+          : await fixture.upload("original");
+      expect(response.status).toBe(200);
+      expect(response.body).toStrictEqual(file);
+      expect(upload.bodies).toHaveLength(afterRefresh ? 2 : 1);
+      expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
+    },
+    10_000,
+  );
+
+  it.each(["legacy", "explicit mode"] as const)(
+    "drive upload returns the controlled folder lookup error through the %s route",
+    async (endpoint) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+      });
+      const lookup = mockGoogleDriveFilesList(() => {
+        return { status: 403 };
+      });
+      const response =
+        endpoint === "legacy"
+          ? await fixture.uploadLegacy([400])
+          : await fixture.upload("original", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: "Google Drive folder lookup failed with HTTP 403",
+        },
+      });
+      expect(lookup.queries).toHaveLength(1);
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    10_000,
+  );
+
+  it("drive folder creation returns a controlled error before opening an upload session", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    const oauth = mockGoogleDriveConnectorOAuth();
+    let creations = 0;
+    const upload = mockGoogleDriveArtifactUpload(
+      { id: "unexpected", name: "report" },
+      {
+        createFolderResponse: () => {
+          creations += 1;
+          return new HttpResponse(null, { status: 403 });
+        },
+      },
+    );
+    const lookup = mockGoogleDriveFilesList(() => {
+      return { status: 200, files: [] };
+    });
+    const response = await fixture.upload("original", [400]);
+    expect(response.status).toBe(400);
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "BAD_REQUEST",
+        message: "Google Drive folder creation failed with HTTP 403",
+      },
+    });
+    expect(creations).toBe(1);
+    expect(lookup.queries).toHaveLength(1);
+    expect(oauth.refreshBodies).toHaveLength(0);
+    expect(upload.metadata).toHaveLength(0);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
+
+  it("drive upload returns a controlled error when the session location is missing", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    useNodeAdapterGlobals();
+    const oauth = mockGoogleDriveConnectorOAuth();
+    const upload = mockGoogleDriveArtifactUpload(
+      { id: "unexpected", name: "report" },
+      {
+        sessionResponse: () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      },
+    );
+    const response = await fixture.upload("original", [400]);
+    expect(response.status).toBe(400);
+    expect(response.body).toStrictEqual({
+      error: {
+        code: "BAD_REQUEST",
+        message: "Google Drive did not open an upload session",
+      },
+    });
+    expect(oauth.refreshBodies).toHaveLength(0);
+    expect(upload.folderQueries).toHaveLength(2);
+    expect(upload.metadata).toHaveLength(1);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
+
+  it.each([
+    { phase: "session", providerStatus: 400, afterRefresh: false },
+    { phase: "session", providerStatus: 403, afterRefresh: false },
+    { phase: "session", providerStatus: 403, afterRefresh: true },
+    { phase: "session", providerStatus: 401, afterRefresh: true },
+    { phase: "content", providerStatus: 400, afterRefresh: false },
+    { phase: "content", providerStatus: 503, afterRefresh: false },
+    { phase: "content", providerStatus: 403, afterRefresh: true },
+  ] as const)(
+    "drive upload returns a controlled error for $phase HTTP $providerStatus with node adapter globals (after refresh: $afterRefresh)",
+    async ({ phase, providerStatus, afterRefresh }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      useNodeAdapterGlobals();
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+      });
+      let rejections = 0;
+      const reject = () => {
+        rejections += 1;
+        return HttpResponse.json(
+          { error: { message: "private-provider-body" } },
+          { status: afterRefresh && rejections === 1 ? 401 : providerStatus },
+        );
+      };
+      const upload = mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "report" },
+        phase === "session"
+          ? { sessionResponse: reject }
+          : { contentResponse: reject },
+      );
+      const response = await fixture.upload("original", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: `Google Drive upload failed with HTTP ${String(providerStatus)}`,
+        },
+      });
+      const attempts = afterRefresh ? 2 : 1;
+      expect(rejections).toBe(attempts);
+      expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
+      expect(upload.folderQueries).toHaveLength(2 * attempts);
+      expect(upload.metadata).toHaveLength(attempts);
+      expect(upload.bodies).toHaveLength(phase === "content" ? attempts : 0);
+    },
+    10_000,
+  );
+
+  it.each(["transport failure", "invalid success payload"] as const)(
+    "drive upload keeps unexpected %s as an internal server error",
+    async (scenario) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      useNodeAdapterGlobals();
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload(
+        { id: "unexpected", name: "report" },
+        scenario === "transport failure"
+          ? {
+              sessionResponse: () => {
+                return HttpResponse.error();
+              },
+            }
+          : {
+              contentResponse: () => {
+                return HttpResponse.json({ unexpected: true });
+              },
+            },
+      );
+      await expect(fixture.upload("original")).rejects.toThrow(
+        "Unknown response status 500",
+      );
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(upload.metadata).toHaveLength(1);
+      expect(upload.bodies).toHaveLength(
+        scenario === "transport failure" ? 0 : 1,
+      );
+    },
+    10_000,
+  );
+
+  it("retains bounded folder lookup failure diagnostics without private provider content", async () => {
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+    );
+    const secret = "private-folder-credential-and-provider-content";
+    // The single redaction check exercises the shared reason allowlist through the upload route.
+    const output = context.mocks.console.log;
+    onTestFinished(context.mocks.console.capture());
+    const scenarios = [
+      {
+        name: "allowlisted and private reasons",
+        status: 403,
+        body: JSON.stringify({
+          error: {
+            message: secret,
+            errors: [
+              { reason: "insufficientPermissions", location: secret },
+              { reason: "domainPolicy" },
+              { reason: "dailyLimitExceeded" },
+              { reason: "rateLimitExceeded" },
+              { reason: "userRateLimitExceeded" },
+              { reason: "insufficientPermissions" },
+              { reason: secret },
+              {},
+            ],
+            details: [
+              {
+                reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                metadata: {
+                  account: `${secret}@example.test`,
+                  url: `https://drive.google.com/${secret}?access_token=${secret}`,
+                },
+              },
+            ],
+          },
+        }),
+        reasons: [
+          "insufficientPermissions",
+          "domainPolicy",
+          "dailyLimitExceeded",
+          "rateLimitExceeded",
+          "userRateLimitExceeded",
+          "unrecognized",
+          "unavailable",
+          "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+        ],
+      },
+      { name: "empty body", status: 403, body: "", reasons: ["unavailable"] },
+      {
+        name: "invalid JSON",
+        status: 403,
+        body: `<html>${secret}</html>`,
+        reasons: ["unavailable"],
+      },
+      {
+        name: "missing reasons",
+        status: 403,
+        body: JSON.stringify({ error: { message: secret } }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "invalid reason type",
+        status: 403,
+        body: JSON.stringify({ error: { details: [{ reason: { secret } }] } }),
+        reasons: ["unrecognized"],
+      },
+      {
+        name: "invalid envelope",
+        status: 503,
+        body: JSON.stringify({ error: { errors: secret } }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "oversized body",
+        status: 429,
+        body: JSON.stringify({
+          error: {
+            message: secret.repeat(1024),
+            errors: [{ reason: "rateLimitExceeded" }],
+          },
+        }),
+        reasons: ["unavailable"],
+      },
+      {
+        name: "rejected refreshed token",
+        status: 403,
+        body: JSON.stringify({
+          error: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+        }),
+        reasons: ["ACCESS_TOKEN_SCOPE_INSUFFICIENT"],
+        afterRefresh: true,
+      },
+    ] as const;
+    for (const scenario of scenarios) {
+      const afterRefresh = "afterRefresh" in scenario;
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "drive-folder-refreshed" },
+      });
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+      });
+      const lookup = mockGoogleDriveFilesList((request) => {
+        if (
+          afterRefresh &&
+          request.headers.get("authorization") !==
+            "Bearer drive-folder-refreshed"
+        ) {
+          return { status: 401 };
+        }
+        return { status: scenario.status, body: scenario.body };
+      });
+      const before = output.mock.calls.length;
+      const response = await fixture.upload("original", [400]);
+      expect(response.status, scenario.name).toBe(400);
+      expect(response.body, scenario.name).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: `Google Drive folder lookup failed with HTTP ${String(scenario.status)}`,
+        },
+      });
+      const calls = output.mock.calls.slice(before);
+      const records = calls.filter(([message]) => {
+        return (
+          typeof message === "string" &&
+          message.endsWith("Google Drive folder lookup failed")
+        );
+      });
+      expect(records, scenario.name).toStrictEqual([
+        [
+          expect.stringContaining("[WARN]"),
+          {
+            phase: "folder_lookup",
+            providerStatus: scenario.status,
+            providerReasons: scenario.reasons,
+            attempt: afterRefresh ? "after_refresh" : "initial",
+          },
+        ],
+      ]);
+      expect(JSON.stringify(calls), scenario.name).not.toContain(secret);
+      expect(oauth.refreshBodies, scenario.name).toHaveLength(
+        afterRefresh ? 1 : 0,
+      );
+      expect(lookup.queries, scenario.name).toHaveLength(afterRefresh ? 2 : 1);
+      expect(upload.metadata, scenario.name).toHaveLength(0);
+      expect(upload.bodies, scenario.name).toHaveLength(0);
+    }
+  }, 120_000);
+
+  it.each(["stalled", "unreadable"] as const)(
+    "folder lookup diagnostics preserve the response for a %s provider stream",
+    async (scenario) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+      });
+      const lookup = mockGoogleDriveFilesList(() => {
+        return {
+          status: 403,
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              if (scenario === "unreadable") {
+                controller.error(new Error("private-provider-message"));
+              } else {
+                controller.enqueue(new TextEncoder().encode('{"error":'));
+              }
+            },
+          }),
+        };
+      });
+      const response = await fixture.upload("original", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: "Google Drive folder lookup failed with HTTP 403",
+        },
+      });
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(lookup.queries).toHaveLength(1);
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    10_000,
+  );
+
+  it("folder lookup diagnostics preserve request-owner cancellation", async () => {
+    const owner = new AbortController();
+    onTestFinished(() => {
+      owner.abort();
+    });
+    const fixture = await publicOfficeConversionSource(
+      docsImportFixture(),
+      "docx",
+      false,
+      owner.signal,
+    );
+    const oauth = mockGoogleDriveConnectorOAuth();
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "report",
+    });
+    mockGoogleDriveFilesList(() => {
+      return {
+        status: 403,
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new TextEncoder().encode('{"error":'));
+            owner.abort();
+          },
+        }),
+      };
+    });
+    await expect(fixture.upload("original")).rejects.toThrow(
+      "Unknown response status 500",
+    );
+    expect(oauth.refreshBodies).toHaveLength(0);
+    expect(upload.metadata).toHaveLength(0);
+    expect(upload.bodies).toHaveLength(0);
+  }, 10_000);
 
   it.each([
     {

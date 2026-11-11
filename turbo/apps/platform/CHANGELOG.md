@@ -13,6 +13,193 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1114.2](https://github.com/okou-ai/okou/compare/app-v0.1114.1...app-v0.1114.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **platform:** clarify remote access selection across connection states ([#46520](https://github.com/okou-ai/okou/issues/46520)) ([ff03d11](https://github.com/okou-ai/okou/commit/ff03d11c1f6a7a0d256c126481fbc1401b5d14a4))
+
+## [0.1114.1](https://github.com/okou-ai/okou/compare/app-v0.1114.0...app-v0.1114.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **app:** simplify automation disablement notifications ([#46538](https://github.com/okou-ai/okou/issues/46538)) ([0471cae](https://github.com/okou-ai/okou/commit/0471cae5607a931c1798ea2728d4bcc875e18966))
+
+## [0.1114.0](https://github.com/okou-ai/okou/compare/app-v0.1113.0...app-v0.1114.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+
+## [0.1113.0](https://github.com/okou-ai/okou/compare/app-v0.1112.2...app-v0.1113.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+* **app:** redesign the capability home cards and choice tray ([#46432](https://github.com/okou-ai/okou/issues/46432)) ([590283f](https://github.com/okou-ai/okou/commit/590283f4984a42888949d15b00a3ad84ead3b221))
+
+
+### Bug Fixes
+
+* **platform:** keep connector scope counts stable during refresh ([#46506](https://github.com/okou-ai/okou/issues/46506)) ([1906e7c](https://github.com/okou-ai/okou/commit/1906e7c70193d78f61960c376f4516c3e1cf3e49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+
+## [0.1112.2](https://github.com/okou-ai/okou/compare/app-v0.1112.1...app-v0.1112.2) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.2
+    * @okouai/core bumped to 8.826.2
+
+## [0.1112.1](https://github.com/okou-ai/okou/compare/app-v0.1112.0...app-v0.1112.1) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.1
+    * @okouai/core bumped to 8.826.1
+
+## [0.1112.0](https://github.com/okou-ai/okou/compare/app-v0.1111.1...app-v0.1112.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+* **app:** classify artifact download intent by type ([#46396](https://github.com/okou-ai/okou/issues/46396)) ([d101cfa](https://github.com/okou-ai/okou/commit/d101cfa122a9424fdbfc24332faf1ae53af3cc78))
+* **app:** show okou's tilted avatar in the okou row and move its shortcut to chat ([#46391](https://github.com/okou-ai/okou/issues/46391)) ([99d36de](https://github.com/okou-ai/okou/commit/99d36dedaa706ad13799e90ebb6df21fa7d1ada3))
+* **email:** support multiple workspace sender connections ([#46296](https://github.com/okou-ai/okou/issues/46296)) ([f9761e3](https://github.com/okou-ai/okou/commit/f9761e3378b4a881a28d855962f8d87199b6a5d1))
+* **notifications:** notify owners when schedules are auto-disabled ([#46353](https://github.com/okou-ai/okou/issues/46353)) ([dbe6412](https://github.com/okou-ai/okou/commit/dbe6412be838f46e3200b9998358fb120f386dbb))
+
+
+### Bug Fixes
+
+* **app:** hide chat mention avatars in single-agent mode ([#46389](https://github.com/okou-ai/okou/issues/46389)) ([3d173fb](https://github.com/okou-ai/okou/commit/3d173fb00f41dfebb9707f71780d1f95085c31df))
+* **email:** clarify workspace connection and show success toast ([#46399](https://github.com/okou-ai/okou/issues/46399)) ([321c716](https://github.com/okou-ai/okou/commit/321c7160da2c7a4156d5151c1d1639e99ef984bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.0
+    * @okouai/core bumped to 8.826.0
+    * @okouai/ui bumped to 1.20.0
+
+## [0.1111.1](https://github.com/okou-ai/okou/compare/app-v0.1111.0...app-v0.1111.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **app:** remove redundant suggestion options label ([#46383](https://github.com/okou-ai/okou/issues/46383)) ([4170362](https://github.com/okou-ai/okou/commit/4170362335123a7fc260b4a5853274fe0e978490))
+* **app:** replace the history entry when navigating to the open url ([#46384](https://github.com/okou-ai/okou/issues/46384)) ([909d488](https://github.com/okou-ai/okou/commit/909d488e9492e6f2799cfdc3cb5a978cf7befde7))
+
+## [0.1111.0](https://github.com/okou-ai/okou/compare/app-v0.1110.0...app-v0.1111.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** show running chats on folded projects ([#46334](https://github.com/okou-ai/okou/issues/46334)) ([f577d8e](https://github.com/okou-ai/okou/commit/f577d8e24d6671a10b2d6fc7ce7fd7018ca3dde2))
+
+
+### Bug Fixes
+
+* **app:** fold or unfold a project by clicking its name on its page ([#46332](https://github.com/okou-ai/okou/issues/46332)) ([ef37bc0](https://github.com/okou-ai/okou/commit/ef37bc0fca0f8247ae4a7acda5d62a23b2328ad9))
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+* **email:** add thread context and message source labels ([#46348](https://github.com/okou-ai/okou/issues/46348)) ([c25e9f1](https://github.com/okou-ai/okou/commit/c25e9f1e62bfa7a1b557ac5bcc770ddbb5821ded))
+* **platform:** return the chat list to the inbox from the Chat rail link ([#46342](https://github.com/okou-ai/okou/issues/46342)) ([471baa0](https://github.com/okou-ai/okou/commit/471baa0bbb0b9f3db367d39b309b9ceacfb6414b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.47.0
+    * @okouai/core bumped to 8.825.5
+
+## [0.1110.0](https://github.com/okou-ai/okou/compare/app-v0.1109.1...app-v0.1110.0) (2026-11-10)
+
+
+### Features
+
+* **app:** keep connector account selection internal ([#46315](https://github.com/okou-ai/okou/issues/46315)) ([ffa08a3](https://github.com/okou-ai/okou/commit/ffa08a3ffa9ada48ff12bf01a82549577a889aa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.4
+    * @okouai/core bumped to 8.825.4
+
+## [0.1109.1](https://github.com/okou-ai/okou/compare/app-v0.1109.0...app-v0.1109.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* preserve handoff session access and recover failed task entry ([#46268](https://github.com/okou-ai/okou/issues/46268)) ([f68a92e](https://github.com/okou-ai/okou/commit/f68a92e1d2838100fcaaa2d7601d1b0338bc7e2a))
+
+## [0.1109.0](https://github.com/okou-ai/okou/compare/app-v0.1108.0...app-v0.1109.0) (2026-11-10)
+
+
+### Features
+
+* **browser:** add opt-in viewer fps overlay ([#46281](https://github.com/okou-ai/okou/issues/46281)) ([5de167e](https://github.com/okou-ai/okou/commit/5de167e7e5510cb136d8d32a12539ae6d749f40c))
+
+## [0.1108.0](https://github.com/okou-ai/okou/compare/app-v0.1107.0...app-v0.1108.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** open learning chat from debug settings ([#46265](https://github.com/okou-ai/okou/issues/46265)) ([0120b3c](https://github.com/okou-ai/okou/commit/0120b3cfa837ad38a96f0dba2189b966d5c6d6fa))
+* track hosted site banner state on copy link ([#46255](https://github.com/okou-ai/okou/issues/46255)) ([1769258](https://github.com/okou-ai/okou/commit/1769258343e2649772511696575cb0b1bebffc58))
+
+
+### Bug Fixes
+
+* **app:** align mobile chat header action order and styling ([#46273](https://github.com/okou-ai/okou/issues/46273)) ([a0dcb44](https://github.com/okou-ai/okou/commit/a0dcb44ccff515bb27f1089bc3b9762de6389504))
+* **app:** resolve hosted site settings from the owner site identity ([#46267](https://github.com/okou-ai/okou/issues/46267)) ([eff7ecc](https://github.com/okou-ai/okou/commit/eff7ecc8d7248b6a9c2c413891810a896a2310fa))
+* discard whitespace-only web and ios drafts ([#46256](https://github.com/okou-ai/okou/issues/46256)) ([3b76330](https://github.com/okou-ai/okou/commit/3b763302427a8b0b75990dc31f07d466b80b4e83))
+
+## [0.1107.0](https://github.com/okou-ai/okou/compare/app-v0.1106.1...app-v0.1107.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** fold projects with mod+shift+left/right and from the project menu ([#46136](https://github.com/okou-ai/okou/issues/46136)) ([aa9cc73](https://github.com/okou-ai/okou/commit/aa9cc730404bb417047d86e13b2c0bf8ff4c56df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.3
+    * @okouai/connectors bumped to 3.21.7
+    * @okouai/core bumped to 8.825.3
+
 ## [0.1106.1](https://github.com/okou-ai/okou/compare/app-v0.1106.0...app-v0.1106.1) (2026-11-10)
 
 

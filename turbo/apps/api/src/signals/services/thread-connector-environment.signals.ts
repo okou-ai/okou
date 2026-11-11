@@ -56,8 +56,17 @@ function isConnectorRuntimeError(
  * environment entries, decrypted secrets, firewalls and runtime targets.
  */
 export function createConnectorEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  threadContext: ThreadContext,
+  bootstrap: Pick<
+    AgentRunContextSignals,
+    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
+  >,
+  threadContext: Pick<
+    ThreadContext,
+    | "connectorSelection$"
+    | "connectorSnapshot$"
+    | "selectedConnectorSources$"
+    | "dispatchTiming$"
+  >,
 ) {
   const runtimeInputs = createConnectorRuntimeInputSignals(
     bootstrap,
@@ -75,9 +84,47 @@ type ConnectorRuntimeInputSignals = ReturnType<
   typeof createConnectorRuntimeInputSignals
 >;
 
+/** Admission validates policies and fixes diagnostic account bindings without
+ * decrypting credentials or assembling a runtime environment. */
+export function createConnectorAdmissionSignals(
+  bootstrap: Parameters<typeof createConnectorRuntimeInputSignals>[0],
+  threadContext: Parameters<typeof createConnectorRuntimeInputSignals>[1],
+) {
+  const inputs = createConnectorRuntimeInputSignals(bootstrap, threadContext);
+  return computed(async (get) => {
+    const input = await get(inputs.inputs$);
+    if (isConnectorRuntimeError(input)) {
+      return input;
+    }
+    const permissions = await input.timing.measure(
+      "api_dispatch_prepare_context_build_permission_manifest",
+      "nested",
+      async () => {
+        return await buildPreparedPermissionManifest(input);
+      },
+    );
+    if (isConnectorRuntimeError(permissions)) {
+      return permissions;
+    }
+    return {
+      permissions,
+      runtimeTargets: [
+        ...(permissions?.builtinRuntimeTargets ?? []),
+        ...input.customConnectorContext.targets,
+      ],
+    };
+  });
+}
+
 function createConnectorRuntimeInputSignals(
-  execution: AgentRunContextSignals,
-  threadContext: ThreadContext,
+  execution: Pick<
+    AgentRunContextSignals,
+    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
+  >,
+  threadContext: Pick<
+    ThreadContext,
+    "connectorSelection$" | "connectorSnapshot$" | "dispatchTiming$"
+  >,
 ) {
   const { connectorSelection$, connectorSnapshot$, dispatchTiming$ } =
     threadContext;
@@ -174,7 +221,7 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
 type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
 function createConnectorSecretSignals(
-  threadContext: ThreadContext,
+  threadContext: Pick<ThreadContext, "selectedConnectorSources$">,
   plan: EagerSecretPlanSignals,
 ) {
   const { selectedConnectorSources$ } = threadContext;
@@ -282,7 +329,7 @@ function createConnectorSecretSignals(
 
 /** The connector source's contribution to the Run environment. */
 function createConnectorEnvironmentSignal(
-  threadContext: ThreadContext,
+  threadContext: Pick<ThreadContext, "connectorSnapshot$">,
   connectorSecrets: ConnectorSecretSignals,
 ) {
   const { connectorSnapshot$ } = threadContext;

@@ -372,6 +372,8 @@
         "blurComposer": "작성기 포커스 해제",
         "changeIcon": "아이콘 변경",
         "clearIcon": "아이콘 지우기",
+        "collapseProject": "Project 접기",
+        "expandProject": "Project 펼치기",
         "newChat": "새 채팅",
         "nextAgent": "다음 에이전트",
         "nextThread": "다음 스레드",
@@ -1431,6 +1433,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "앞으로",
+    "fps": "FPS",
+    "fpsOff": "숨기기",
+    "fpsOn": "표시",
+    "fpsReading": "{{value}} FPS",
     "liveView": "브라우저 실시간 화면",
     "newTab": "새 탭",
     "noTabs": "열린 탭 없음",
@@ -1638,8 +1644,7 @@
       "sending": "보내는 중…",
       "sent": "새 채팅으로 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "제안 사용"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "첨부",
@@ -1860,7 +1865,9 @@
         "title": "만들기"
       },
       "explore": "탐색",
+      "exploreWhatsNew": "새로운 소식 보기",
       "research": {
+        "description": "트래픽, 광고, 제품, 주제",
         "items": {
           "ads": "광고 소재 살펴보기",
           "products": "제품 조사",
@@ -1873,6 +1880,7 @@
         "title": "리서치"
       },
       "search": {
+        "description": "고객, 크리에이터, 의사결정자",
         "items": {
           "affiliates": "제휴 프로그램",
           "creators": "크리에이터 협업",
@@ -1903,6 +1911,7 @@
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
+        "summary": "예약 또는 트리거로 실행",
         "triggers": {
           "description": "이벤트가 발생하면 시작하세요.",
           "eventPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 소스, 필터, 결과 저장 위치를 물어보고 워크플로 초안을 준비한 뒤 설정을 확인하고 활성화해 주세요.",
@@ -2341,16 +2350,34 @@
       "untitled": "제목 없음"
     },
     "remoteAccess": {
+      "all": "전체",
+      "allowed": "허용됨",
+      "autoSave": "변경 사항은 이 채팅에 자동 저장됩니다",
+      "connections": "연결",
       "default": "기본값",
       "defaultEnabled": "채팅에서 기본적으로 사용",
-      "disabled": "비활성화됨",
-      "enabled": "활성화됨",
+      "draft": "첫 메시지를 보낼 때 적용됩니다",
       "enabledCount_other": "{{count}}개 사용 중",
+      "enableInChat": "이 채팅에서 활성화",
+      "enableSsh": "이 채팅에서 SSH {{name}} 활성화",
+      "filterHint": "변경한 연결은 필터를 전환할 때까지 표시됩니다",
+      "fromChat": "이 채팅",
       "loadFailed": "원격 액세스를 불러올 수 없습니다.",
       "loading": "원격 액세스 로드 중…",
+      "manage": "연결 관리",
+      "needsReload": "권한을 확인하려면 다시 불러오세요",
+      "noConnections": "설정된 SSH 또는 VNC 연결이 없습니다",
+      "noneAllowed": "이 채팅에서 허용된 연결이 없습니다",
+      "notAllowed": "허용되지 않음",
       "off": "끄기",
       "on": "켜기",
+      "reload": "다시 불러오기",
       "requiresSsh": "SSH 필요: {{name}}",
+      "saved": "이 채팅에 저장됨",
+      "saveUnconfirmed": "변경 사항이 저장되었는지 확인할 수 없습니다. 권한을 다시 불러온 후 변경하세요.",
+      "saving": "저장 중…",
+      "scope": "이 채팅에서 Okou가 사용할 수 있는 연결을 선택하세요",
+      "showAll": "모든 연결 보기",
       "sshDisabled": "SSH 켜기: {{name}}",
       "sshEnabled": "SSH 켜짐: {{name}}",
       "title": "원격 액세스",
@@ -3194,11 +3221,10 @@
     "enableByDefault": "{{account}} 기본 활성화",
     "enabledAccounts": "{{value}}개 활성화",
     "manageAccounts": "계정 관리",
-    "noAccount": "선택된 계정 없음",
     "noEnabledAccount": "이 채팅에서 활성화된 계정이 없습니다",
     "permissions": "권한",
     "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
-    "settingsDescription": "기본으로 활성화할 계정과 새 채팅의 기본 계정을 선택하세요."
+    "settingsDescription": "기본으로 활성화할 계정을 선택하세요."
   },
   "connectors": {
     "access": {
@@ -4341,6 +4367,7 @@
     "documentTitles": {
       "make": "{{brandName}}에 오신 것을 환영합니다"
     },
+    "handoffUnavailable": "링크의 작업을 복원하지 못했습니다. 계속 정상적으로 이용할 수 있으며 기존 초안은 유지됩니다.",
     "make": {
       "promptLabel": "온보딩 프롬프트",
       "promptTitle": "필요에 맞게 작업 조정하기"
@@ -5062,6 +5089,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "접기",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
@@ -5071,6 +5099,7 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
+    "expand": "펼치기",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -5860,6 +5889,7 @@
         "learning": {
           "description": "최근 활동을 검토하고 개인 메모리를 한 번 업데이트합니다. 야간 실행 일정은 변경되지 않습니다.",
           "notInstalled": "먼저 환경설정에서 학습을 켜세요.",
+          "openChat": "대화 열기",
           "queued": "학습이 대기열에 추가되었습니다.",
           "requestFailed": "요청 결과를 확인할 수 없습니다.",
           "run": "학습 실행",
@@ -6333,6 +6363,32 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
+  "sshAuthorization": {
+    "allow": "이 채팅에서 허용",
+    "blocked": {
+      "chat_busy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
+      "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
+      "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
+      "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요."
+    },
+    "continue": "작업 계속",
+    "details": "접근 권한 상세",
+    "effect": "액세스를 비활성화할 때까지 이 원격 사용자로 명령 실행 및 파일 전송을 허용합니다.",
+    "failed": "작업을 완료하지 못했습니다. 다시 시도하여 권한을 확인하고 계속하세요.",
+    "retry": "다시 시도",
+    "scope": "이 호스트 · 이 채팅만",
+    "status": {
+      "approved": "SSH 액세스 허용됨",
+      "denied": "SSH 액세스 거부됨",
+      "expired": "SSH 요청 만료됨",
+      "pending": "SSH 액세스",
+      "revoked": "SSH 액세스 취소됨",
+      "stale": "SSH 요청 변경됨"
+    },
+    "title": "SSH 액세스",
+    "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
+  },
   "tailscale": {
     "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
     "delete": "Tailscale 삭제",
@@ -6442,6 +6498,26 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "워크플로로 돌아가기",
+      "disabled": "비활성화됨",
+      "disabledAt": "비활성화 시간: {{time}}",
+      "loadFailed": "이 자동화를 불러올 수 없습니다",
+      "loadingAutomation": "자동화 불러오는 중",
+      "notNow": "나중에",
+      "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
+      "reason_one": "{{count}}회 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "reason_other": "{{count}}회 연속 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
+      "switchWorkspace": "워크스페이스 전환",
+      "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
+      "systemSource": "시스템 알림",
+      "title": "자동화가 비활성화됨",
+      "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",
+      "viewAutomation": "자동화 보기",
+      "workspace": "워크스페이스",
+      "workspaceFallback": "원래 워크스페이스"
+    },
     "close": "닫기",
     "countUnavailable": "읽지 않은 알림 수를 확인할 수 없어요",
     "detailFailed": "이 알림을 불러오지 못했어요",
@@ -7321,15 +7397,30 @@
     },
     "documentTitle": "작업",
     "email": {
+      "actions": "작업",
+      "addEmail": "이메일 추가",
+      "codeError": "연결 코드를 만들 수 없습니다. 다시 시도하세요.",
+      "codeInstructions": "추가할 이메일 주소에서 이 코드를 제목이나 본문의 첫 줄에 넣어 Okou로 보내세요.",
       "connected": "이메일 연결됨",
+      "deleteAria": "{{email}} 삭제",
       "description": "Okou에 이메일을 보내고 각 대화를 별도 채팅으로 유지하세요",
+      "emailAddress": "이메일 주소",
       "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
-      "instructions": "계정 이메일 주소로 메시지를 보내세요. 새 이메일은 새 채팅을 시작하고 답장은 같은 대화를 이어갑니다. 처음 이용하시면 가입을 도와드린 후 요청을 처리합니다.",
       "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
       "loadError": "이메일 연결을 불러올 수 없습니다",
+      "loginNotice": "로그인 이메일은 항상 연결됩니다.",
       "manage": "관리",
+      "manageDescription": "추가할 이메일 주소에서 코드를 보내세요.",
+      "manageTitle": "이메일 연결",
+      "newCode": "새 코드 생성",
       "open": "이메일 열기",
+      "options": "이메일 옵션",
       "resumed": "{{email}} 연결이 완료되었습니다. 원래 요청은 같은 이메일 대화에서 답변됩니다.",
+      "sendTo": "{{address}}로 보내기",
+      "signInEmail": "로그인 이메일",
+      "source": "연결 출처",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "이메일",
       "unavailable": "이 워크스페이스에서는 아직 이메일을 사용할 수 없습니다"
     },

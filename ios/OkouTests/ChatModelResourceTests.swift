@@ -165,10 +165,56 @@ final class ChatModelResourceTests: XCTestCase {
     await models.value
     XCTAssertEqual(workspace.currentAgentName, "Shared agent")
     XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
-    XCTAssertNil(workspace.list.navigationError)
+    let agents = try await workspace.list.stateStore.get(workspace.list.navigationValue).value
+    XCTAssertEqual(agents.first?.displayName, "Shared agent")
     var expected = initialRequests
     expected["/api/agents"] = 1
     XCTAssertEqual(requests.withLock { $0 }, expected)
+  }
+
+  func testPreferenceInvalidationPreservesAnIndependentPendingNavigationRead() async throws {
+    let began = expectation(description: "The Agent response is pending")
+    let gate = ModelResponseGate()
+    let changed = Mutex(false)
+    let agentRequests = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      if path == "/api/agents" {
+        agentRequests.withLock { $0 += 1 }
+        began.fulfill()
+        await gate.wait()
+        return ChatHTTPResponse(
+          body:
+            "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"displayName\":\"Shared agent\",\"isDefaultAgent\":true}]"
+        )
+      }
+      var result = try XCTUnwrap(ModelHTTPFixtures.response(path))
+      if changed.withLock({ $0 }) && path == "/api/user-model-preference" {
+        result.body = result.body.replacingOccurrences(
+          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
+      }
+      return result
+    }
+    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    let navigation = Task { await workspace.refreshNavigation() }
+    addTeardownBlock { @MainActor in
+      workspace.close()
+      navigation.cancel()
+      gate.open()
+      await navigation.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    await workspace.newModelSelection.open()
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
+
+    changed.withLock { $0 = true }
+    await workspace.refresh([.modelPreference])
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
+    gate.open()
+    await navigation.value
+
+    XCTAssertEqual(workspace.currentAgentName, "Shared agent")
+    XCTAssertEqual(agentRequests.withLock { $0 }, 1)
   }
 
   private var initialRequests: [String: Int] {

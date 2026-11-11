@@ -90,10 +90,28 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
       _ gestureRecognizer: UIGestureRecognizer,
       shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-      // Scroll views keep scrolling alongside (gestureRecognizerShouldBegin rejects vertical
-      // drags). Anything else, such as a chat row's tap, gives way once the page swipe is
-      // recognized, so closing the sidebar over a row does not also open that chat.
+      // A closing page swipe owns the touch instead of also panning the sidebar's list.
+      // Keep SwiftUI's responder/relationship pans simultaneous; cancelling those can
+      // interrupt the page swipe itself. Row taps still give way to the page swipe.
+      if isSidebarScrollPan(otherGestureRecognizer) { return false }
       return otherGestureRecognizer is UIPanGestureRecognizer
+    }
+
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      // Decide the page swipe's direction before the list can start scrolling. Vertical
+      // and rightward drags fail our direction policy, leaving scrolling and row actions
+      // to the list; a recognized leftward drag keeps it still until the touch ends.
+      isSidebarScrollPan(otherGestureRecognizer)
+    }
+
+    private func isSidebarScrollPan(_ recognizer: UIGestureRecognizer) -> Bool {
+      guard parent.interaction.isOpen, let scrollView = recognizer.view as? UIScrollView else {
+        return false
+      }
+      return recognizer === scrollView.panGestureRecognizer
     }
   }
 }

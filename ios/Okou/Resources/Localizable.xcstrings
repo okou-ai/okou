@@ -3393,43 +3393,6 @@
         }
       }
     },
-    "Back to chat": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Zurück zum Chat" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Volver al chat" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Retour à la discussion" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट पर वापस जाएं" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kembali ke chat" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Torna alla chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットに戻る" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅으로 돌아가기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Voltar para a conversa" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "返回聊天" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "返回聊天" }
-        }
-      }
-    },
     "Build a website for my business": {
       "extractionState": "stale",
       "localizations": {
@@ -3965,40 +3928,77 @@
         }
       }
     },
-    "Chats may not be up to date": {
+    "Live updates unavailable": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Chats sind möglicherweise nicht aktuell" }
+          "stringUnit": {"state": "translated", "value": "Live-Updates nicht verfügbar"}
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Puede que los chats no estén actualizados" }
+          "stringUnit": {"state": "translated", "value": "Actualizaciones en tiempo real no disponibles"}
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Les discussions ne sont peut-être pas à jour" }
+          "stringUnit": {"state": "translated", "value": "Mises à jour en direct indisponibles"}
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट शायद अप-टू-डेट नहीं हैं" }
+          "stringUnit": {"state": "translated", "value": "लाइव अपडेट उपलब्ध नहीं हैं"}
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Chat mungkin belum terbaru" }
+          "stringUnit": {"state": "translated", "value": "Pembaruan langsung tidak tersedia"}
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Le chat potrebbero non essere aggiornate" }
+          "stringUnit": {"state": "translated", "value": "Aggiornamenti in tempo reale non disponibili"}
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットが最新でない可能性があります" }
+          "stringUnit": {"state": "translated", "value": "リアルタイム更新を利用できません"}
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅이 최신 상태가 아닐 수 있음" }
+          "stringUnit": {"state": "translated", "value": "실시간 업데이트를 사용할 수 없음"}
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As conversas podem estar desatualizadas" }
+          "stringUnit": {"state": "translated", "value": "Atualizações em tempo real indisponíveis"}
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "聊天可能不是最新的" }
+          "stringUnit": {"state": "translated", "value": "实时更新不可用"}
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "聊天可能不是最新的" }
+          "stringUnit": {"state": "translated", "value": "即時更新無法使用"}
+        }
+      }
+    },
+    "Unable to update chats": {
+      "localizations": {
+        "de": {
+          "stringUnit": {"state": "translated", "value": "Chats können nicht aktualisiert werden"}
+        },
+        "es": {
+          "stringUnit": {"state": "translated", "value": "No se pudieron actualizar los chats"}
+        },
+        "fr": {
+          "stringUnit": {"state": "translated", "value": "Impossible d’actualiser les discussions"}
+        },
+        "hi": {
+          "stringUnit": {"state": "translated", "value": "चैट अपडेट नहीं हो सकीं"}
+        },
+        "id": {
+          "stringUnit": {"state": "translated", "value": "Tidak dapat memperbarui chat"}
+        },
+        "it": {
+          "stringUnit": {"state": "translated", "value": "Impossibile aggiornare le chat"}
+        },
+        "ja": {
+          "stringUnit": {"state": "translated", "value": "チャットを更新できません"}
+        },
+        "ko": {
+          "stringUnit": {"state": "translated", "value": "채팅을 업데이트할 수 없음"}
+        },
+        "pt-BR": {
+          "stringUnit": {"state": "translated", "value": "Não foi possível atualizar as conversas"}
+        },
+        "zh-Hans": {
+          "stringUnit": {"state": "translated", "value": "无法更新聊天"}
+        },
+        "zh-Hant": {
+          "stringUnit": {"state": "translated", "value": "無法更新聊天"}
         }
       }
     },
@@ -8325,6 +8325,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "正在下載檔案" }
+        }
+      }
+    },
+    "Draft": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Entwurf" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Borrador" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Brouillon" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ड्राफ़्ट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Draf" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Bozza" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "下書き" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "초안" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Rascunho" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "草稿" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "草稿" }
         }
       }
     },

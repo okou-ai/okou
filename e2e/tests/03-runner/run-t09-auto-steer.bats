@@ -17,7 +17,9 @@ setup_file() {
     export RUNNER_AGENT_ID
     RUNNER_AGENT_ID="$(create_runner_agent \
         "e2e-auto-steer-$(date +%s%3N)-$RANDOM")"
-    set_runner_model_test_instructions "$RUNNER_AGENT_ID"
+    set_runner_agent_instructions \
+        "$RUNNER_AGENT_ID" \
+        "Auto steer test instructions."
 }
 
 teardown_file() {
@@ -29,16 +31,8 @@ teardown_file() {
 run_auto_steer() {
     local expected_output="$1"
     local after_complete_prompt="$2"
-    local initial_prompt steer_prompt successor_prompt
-    initial_prompt=$(cat <<'EOF'
-We are testing whether a follow-up user message can update a task already in progress.
-The command and reply instructions below apply only to this task and end with its final reply.
-First, use Bash to run `sleep 10` exactly once in the foreground and wait for it to finish. Do not background or replace this command.
-After the command finishes, follow the follow-up instruction delivered during this task. If no follow-up instruction was delivered, reply exactly MISSING_STEER.
-EOF
-)
-    steer_prompt="This follow-up updates only the task currently in progress. After the previously requested command finishes, reply exactly $expected_output and nothing else. This reply instruction applies only to that one final reply and ends when this task is complete."
-    successor_prompt="The previous task is complete, and its command and reply instructions no longer apply. This is a separate task. Do not use tools or repeat the earlier command. For this task only, reply exactly $after_complete_prompt and nothing else."
+    local initial_prompt='Run `sleep 10` with Bash, then follow the instruction in the next message received during this run. If no follow-up is received, reply only MISSING_STEER.'
+    local steer_prompt="Reply with only this token: $expected_output"
     local steer_result run_id thread_id steer_output successor_result
     local successor_run_id successor_output
 
@@ -59,7 +53,7 @@ EOF
         "$RUNNER_AGENT_ID" \
         "$thread_id" \
         "$run_id" \
-        "$successor_prompt" \
+        "Reply with only this token: $after_complete_prompt" \
         "$after_complete_prompt" \
         150)" || return 1
     successor_run_id="$(jq -er '.runId' <<< "$successor_result")" || return 1

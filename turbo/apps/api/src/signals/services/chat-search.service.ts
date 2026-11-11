@@ -7,7 +7,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import {
   chatSearchBigramTsquery,
@@ -46,13 +46,10 @@ type ChatSearchInput = {
   readonly orgId: string;
   readonly keyword: string;
   readonly agentId?: string;
-  readonly since?: number;
 };
 
 function chatSearchScope(
-  args: Pick<ChatSearchInput, "userId" | "orgId" | "agentId"> & {
-    readonly since?: Date;
-  },
+  args: Pick<ChatSearchInput, "userId" | "orgId" | "agentId">,
 ) {
   return and(
     eq(chatEventSearchMessages.userId, args.userId),
@@ -61,7 +58,6 @@ function chatSearchScope(
     args.agentId
       ? eq(chatEventSearchMessages.agentId, args.agentId)
       : undefined,
-    args.since ? gte(chatEventSearchMessages.createdAt, args.since) : undefined,
   );
 }
 
@@ -81,13 +77,11 @@ export function chatSearch(
   return computed(async (get) => {
     const args = get(input$);
     const db = get(db$);
-    const sinceDate = args.since ? new Date(args.since) : undefined;
     const searchArgs = {
       userId: args.userId,
       orgId: args.orgId,
       keyword: args.keyword,
       agentId: args.agentId,
-      since: sinceDate,
     };
     const matches = await (async (): Promise<ChatSearchMatchRow[]> => {
       /**

@@ -31,6 +31,7 @@ export async function fetchResendAttachment(
     download.password ||
     download.port ||
     !(
+      download.hostname === "cdn.resend.app" ||
       download.hostname.endsWith(".amazonaws.com") ||
       download.hostname.endsWith(".resend.com")
     )

@@ -141,12 +141,20 @@ const handoffContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notConfigured("Marketing handoff storage is not configured");
   }
   const sessionSubject = anonymous?.subject ?? null;
+  const subject = userId ? `user:${userId}` : sessionSubject;
   return {
     bucket,
     userId,
     orgId,
-    subject: userId ? `user:${userId}` : sessionSubject,
+    subject,
     sessionSubject,
+    subjects: [
+      ...new Set(
+        [subject, sessionSubject].filter((value): value is string => {
+          return value !== null;
+        }),
+      ),
+    ],
   };
 });
 
@@ -218,7 +226,7 @@ const upload$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   await set(
     grantMarketingContent$,
-    { resourceType: "file", resourceHash: hash, subject: context.subject },
+    { resourceType: "file", resourceHash: hash, subjects: context.subjects },
     signal,
   );
   return {
@@ -247,7 +255,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
         {
           resourceType: "file",
           resourceHash: file.hash,
-          subjects: [context.subject],
+          subjects: context.subjects,
         },
         signal,
       ))
@@ -267,7 +275,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await set(
     storeMarketingManifest$,
-    { bucket: context.bucket, manifest: body.data, subject: context.subject },
+    { bucket: context.bucket, manifest: body.data, subjects: context.subjects },
     signal,
   );
   return "status" in result ? result : { status: 200 as const, body: result };
@@ -291,15 +299,10 @@ const authorizedManifest$ = command(
       return notFound("Content not found");
     }
     const { hash: resourceHash, manifest } = stored;
-    const subjects = [context.subject, context.sessionSubject].filter(
-      (subject): subject is string => {
-        return subject !== null;
-      },
-    );
     if (
       !(await set(
         canReadMarketingContent$,
-        { resourceType: "manifest", resourceHash, subjects },
+        { resourceType: "manifest", resourceHash, subjects: context.subjects },
         signal,
       ))
     ) {

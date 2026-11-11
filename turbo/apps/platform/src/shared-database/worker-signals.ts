@@ -114,6 +114,9 @@ const executeCatchUpChatEvent$ = command(
       threadEvents.snapshot?.chatThreads ?? [],
       threadEvents.events,
     )
+      .filter((thread) => {
+        return !thread.hidden;
+      })
       .sort((left, right) => {
         const sortAt = right.sortAt.localeCompare(left.sortAt);
         return sortAt === 0 ? right.id.localeCompare(left.id) : sortAt;

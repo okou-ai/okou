@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -25,10 +26,23 @@ final class WorkspaceStore {
   private(set) var threadFeedback: ChatThreadFeedback?
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
+  @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
+  @ObservationIgnored private let selectThread: Command<Void, String?>
   var selectedThreadID: String? {
-    didSet {
+    get {
+      access(keyPath: \.selectedThreadID)
+      do { return try resources.store.get(selectedThread) } catch {
+        preconditionFailure("Cannot read workspace selection: \(error)")
+      }
+    }
+    set {
       let previous = selectedConversation
-      selectedConversation = selectedThreadID.flatMap { conversation(for: $0) }
+      withMutation(keyPath: \.selectedThreadID) {
+        do { try resources.store.set(selectThread, newValue) } catch {
+          preconditionFailure("Cannot update workspace selection: \(error)")
+        }
+      }
+      selectedConversation = newValue.flatMap { conversation(for: $0) }
       previous?.reconcileVisibility()
       selectedConversation?.reconcileVisibility()
     }
@@ -51,25 +65,30 @@ final class WorkspaceStore {
   private let draftRepository: ChatDraftRepository?
   private var draftAgentID: String?
   private var agentDraftTask: Task<Void, Never>?
+  /// Chats the API last reported with an unsent draft, updated as this device lets a chat go.
+  private var draftThreadIDs: Set<String> = []
+  @ObservationIgnored private var draftsRevision = 0
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
     if list.isLoading || selectedConversation?.isLoading == true { return .updating }
-    if list.syncError != nil || list.navigationError != nil
+    if list.syncError != nil
       || selectedConversation?.syncError != nil
     {
-      return .unavailable
+      return .updateFailed
     }
     guard realtime != nil else { return nil }
     switch connectionStatus {
     case .connecting: return .connecting
-    case .unavailable, .disconnected: return .unavailable
+    case .unavailable, .disconnected: return .liveUpdatesUnavailable
     case .connected: return nil
     }
   }
 
   func retrySynchronization() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    realtime?.retry()
     await refreshNavigation()
     await refresh()
   }
@@ -97,6 +116,9 @@ final class WorkspaceStore {
     client: client, resources: resources, sync: sync,
     didFail: { [weak self] in self?.handle($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
+  @ObservationIgnored lazy var sidebar = ChatSidebarStore(
+    store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
+    projects: projects.confirmedValue, selectedThread: selectedThread)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -127,6 +149,11 @@ final class WorkspaceStore {
     },
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
+    let selectedThread = selectedThread
+    selectThread = Command { context, value in
+      guard try context.get(selectedThread) != value else { return }
+      try context.set(selectedThread, value)
+    }
     self.client = client
     resources = WorkspaceResources(client: client, sleep: readRetrySleep)
     self.readRetrySleep = readRetrySleep
@@ -159,6 +186,7 @@ final class WorkspaceStore {
       if Task.isCancelled, startupGeneration == generation {
         realtime?.stop()
         realtime = nil
+        list.cancelNavigationPublication()
       }
     }
     await list.restoreCached()
@@ -185,6 +213,7 @@ final class WorkspaceStore {
         realtime?.stop()
         realtime = nil
         list.cancelRefresh()
+        list.cancelNavigationPublication()
       }
     }
   }
@@ -208,6 +237,17 @@ final class WorkspaceStore {
   }
 
   private(set) var selectedConversation: ConversationStore?
+
+  /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
+  /// from its own composer, so leaving a chat marks it at once; others use the API's list.
+  func hasDraft(_ threadID: String) -> Bool {
+    // A row tracks the selected owner before consulting the non-observable resident cache.
+    if let conversation = selectedConversation, conversation.thread.id == threadID {
+      return conversation.composer.hasContent
+    }
+    if let composer = conversations[threadID]?.composer { return composer.hasContent }
+    return draftThreadIDs.contains(threadID)
+  }
 
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }
@@ -238,6 +278,7 @@ final class WorkspaceStore {
 
   func close() {
     closed = true
+    sidebar.close()
     startupGeneration = UUID()
     refreshTask?.cancel()
     creationTask?.cancel()
@@ -338,11 +379,14 @@ final class WorkspaceStore {
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     // Model catch-up must stay fresh, but it does not gate the chat list or messages.
+    async let accessRefresh: Void = refreshComputerAuthorizations(batch)
     async let modelRefresh: Void = refreshModels(batch)
     async let projectRefresh: Void = refreshProjects(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
+      async let drafts: Void = refreshDrafts()
       await list.refresh()
+      await drafts
     } else if batch.contains(.readCursor)
       || batch.contains(where: {
         if case .history = $0 { return true }
@@ -356,6 +400,7 @@ final class WorkspaceStore {
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
       await selectedConversation?.refresh()
     }
+    await accessRefresh
     await modelRefresh
     await projectRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
@@ -366,6 +411,16 @@ final class WorkspaceStore {
     }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
+  }
+
+  private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
+    guard let conversation = selectedConversation else { return }
+    if batch.contains(.computerAccess) || batch.contains(.reconnected)
+      || batch.contains(.detail(threadID: conversation.thread.id))
+      || batch.contains(.history(threadID: conversation.thread.id))
+    {
+      await conversation.approvals.refreshComputers()
+    }
   }
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
@@ -425,6 +480,9 @@ final class WorkspaceStore {
       repeat {
         // Coalesce startup, indicator updates and bursts of realtime messages.
         do { try await historyWarmingSleep(.seconds(1)) } catch { return }
+        guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled,
+          refreshGeneration == generation
+        else { return }
         warmAgain = false
         let recent = list.threads.sorted {
           $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt
@@ -566,6 +624,28 @@ final class WorkspaceStore {
   }
 
   @discardableResult
+  func moveToProject(
+    _ id: String, projectID: String?, didBegin: @MainActor () -> Void = {}
+  ) async -> Bool {
+    guard !closed, !needsUpgrade else { return false }
+    return await list.setProject(
+      id, projectID: projectID,
+      onFailure: { [weak self] message in
+        guard let self, !closed, !needsUpgrade else { return }
+        threadFeedback = ChatThreadFeedback(
+          threadID: id, message: message, actionTitle: "Retry", persists: true, kind: .error
+        ) { [weak self] in
+          await self?.moveToProject(id, projectID: projectID)
+        }
+      },
+      didBegin: {
+        if threadFeedback?.threadID == id { threadFeedback = nil }
+        if let projectID { projects.expand(projectID) }
+        didBegin()
+      })
+  }
+
+  @discardableResult
   func setArchived(
     _ id: String, archived: Bool, leaveDetail: Bool = false,
     restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
@@ -663,6 +743,12 @@ final class WorkspaceStore {
   }
 
   func removeNewChatProject() { newChatProjectID = nil }
+
+  func deleteProject(_ id: String) async {
+    if await projects.delete(id), !closed, newChatProjectID == id {
+      removeNewChatProject()
+    }
+  }
 
   var canOpenNewChatFromSystem: Bool {
     isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
@@ -846,10 +932,32 @@ final class WorkspaceStore {
         chatLinkThreadID != id,
         conversation.canRelease, conversations[id] === conversation
       else { continue }
+      noteDraft(id, conversation.composer.hasContent)
       conversation.close()
       conversations[id] = nil
       lastUse[id] = nil
     }
+  }
+
+  /// The draft list never gates the chat list: a failed read keeps the last one until the
+  /// next list refresh, and a read that overlaps a local change is dropped.
+  private func refreshDrafts() async {
+    guard let draftRepository else { return }
+    let revision = draftsRevision
+    do {
+      let ids = try await draftRepository.threadIDs()
+      guard !closed, !Task.isCancelled, revision == draftsRevision else { return }
+      draftThreadIDs = ids
+    } catch {
+      handle(error)
+    }
+  }
+
+  /// What this device knew about a chat's draft when it released the chat's composer.
+  private func noteDraft(_ id: String, _ hasDraft: Bool) {
+    draftsRevision &+= 1
+    guard draftThreadIDs.contains(id) != hasDraft else { return }
+    if hasDraft { draftThreadIDs.insert(id) } else { draftThreadIDs.remove(id) }
   }
 
   private func handle(_ failure: Error) {

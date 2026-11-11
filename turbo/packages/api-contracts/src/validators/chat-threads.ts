@@ -629,7 +629,7 @@ export const userMessageInputDocumentSchema = object({
 
 const chatEventRecommendedFollowupShape = {
   prompt: string(),
-  kind: zEnum(["talk", "generate"]),
+  kind: zEnum(["talk", "generate", "workflow", "email"]),
   generationType: zEnum([
     "image",
     "video",

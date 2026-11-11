@@ -98,8 +98,7 @@ final class PersonalSubscriptionResources {
     guard !closed, !Task.isCancelled else { throw CancellationError() }
     let stale = lastRead.map { now().timeIntervalSince($0) >= 60 } ?? true
     if force || (!pending && stale && request != nil) {
-      request?.task.cancel()
-      try store.set(reload)
+      try invalidate()
     }
     while !closed {
       try Task.checkCancellation()
@@ -112,6 +111,13 @@ final class PersonalSubscriptionResources {
       return try result.get()
     }
     throw CancellationError()
+  }
+
+  /// Invalidate the shared read without replaying or acknowledging any mutation.
+  func invalidate() throws {
+    guard !closed else { throw CancellationError() }
+    request?.task.cancel()
+    try store.set(reload)
   }
 
   func close() {

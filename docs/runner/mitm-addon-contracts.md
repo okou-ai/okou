@@ -959,6 +959,49 @@ audience deletion bypass through these hooks. Old runners keep their previous
 behavior until deployed; permission catalogs that rely on this boundary must
 wait for the runner rollout.
 
+## Ordinary query-auth work boundary
+
+Ordinary connector authentication with a nonempty resolved query accepts at most
+65,536 raw request-target bytes and 8,192 aggregate query work items. These are
+inclusive input limits, checked in the shared injector before any resolved
+header mutation, complete query-pair parsing/decoding, or query writeback.
+The byte check uses `Request.data.path` before URL component extraction. Within
+that bound, the pair check counts raw `&`-separated client query segments,
+including empty and shadowed segments, plus the number of resolved query keys.
+A genuinely empty query contributes zero client segments. Semicolons and
+percent-encoded separators remain data under the pinned mitmproxy parser.
+
+The limits use the existing auth.base/SigV4 work scale, retaining ample room for
+ordinary connector requests while bounding both target scanning and pair
+materialization. Their separately named constants allow independent policies.
+Conservative counting limits pre-merge work even when duplicate credentials or
+empty segments would make the final query smaller. This is not a new limit on
+the post-injection URL length; resolved data retains the existing auth-service
+response bound.
+
+Over-budget requests receive a local 414 with
+`query_auth_request_target_too_large` or `query_auth_query_too_many_pairs` through
+both public hooks. Header-phase failures complete through native local-response
+framing without fallback, a second credential lookup, or upstream bytes. Header
+probe rollback restores raw target fields and headers without reparsing the URL,
+so native non-ASCII query bytes also retain the local error and exact target.
+Diagnostics contain limits and fixed failure text, not query values.
+
+Accepted inputs retain mitmproxy's parser/serializer and the existing single-pass
+merge: managed keys replace all decoded equivalents at their first occurrence,
+unrelated duplicates/blanks survive, absent keys append in resolved-map order,
+and path parameters/fragments remain intact. Missing or empty resolved queries
+do not invoke this policy; header-only auth and auth.base retain their separate
+behavior. These limits do not bound mitmproxy's initial native HTTP-head buffer.
+No Runner/API or persisted-state format changes; old/draining Runners retain
+their previous policy until replaced.
+
+`test_query_auth_work_limits.py` exercises exact/first-over bounds, multibyte
+targets, empty/shadowed segments, cache reuse, accepted semantics and header-only
+auth through public hooks, including partitioned native HTTP/1 admission and
+terminal cleanup. It observes the real dependency parsing/writeback boundary
+without wall-clock assertions or live provider traffic.
+
 ## WebSocket Framing Contract
 
 [`websocket_framing.py`](../../crates/runner/mitm-addon/src/websocket_framing.py)

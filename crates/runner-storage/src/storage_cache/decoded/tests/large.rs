@@ -126,7 +126,7 @@ async fn production_warming_survives_restart_and_full_guest_delivery() {
 }
 
 #[tokio::test]
-async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activation() {
+async fn previous_policy_rejection_allows_current_warming_and_delivery_after_restart() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     // This count exceeded the previous 1,024-file producer policy.
@@ -152,10 +152,28 @@ async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activ
     }))
     .unwrap();
     fs::write(rejected.join("index.json"), &index).unwrap();
-    for _ in 0..2 {
+    for pass in 0..2 {
         let cache = DecodedCache::new(home.clone());
         cache.warm_from_archive("retained", "v1").await.unwrap();
-        assert!(cache.get_ready("retained", "v1").await.unwrap().is_none());
+        let ready = cache.get_ready("retained", "v1").await.unwrap().unwrap();
+        assert_eq!(ready.files, files);
+        let target = root.path().join(format!("guest-memory-{pass}"));
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "storageMounts": [{"mountPath": target, "archiveUrl": "file:///must-not-be-opened"}]
+        }))
+        .unwrap();
+        let input =
+            storage_files::encode_input(&manifest, &[(target.to_str().unwrap(), &ready.files)])
+                .unwrap();
+        assert!(guest_storage_apply::run_storage_files_bytes(&input));
+        for file in &files {
+            let path = target.join(&file.path);
+            assert_eq!(fs::read(&path).unwrap(), file.content);
+            let metadata = fs::metadata(path).unwrap();
+            assert_eq!(metadata.mode() & 0o777, file.mode);
+            assert_eq!(metadata.mtime() as u64, file.mtime);
+        }
+        drop(ready);
         cache.warm_from_archive("fresh", "v1").await.unwrap();
         assert_eq!(
             cache.get_ready("fresh", "v1").await.unwrap().unwrap().files,
@@ -172,7 +190,7 @@ async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activ
             .unwrap(),
             archive
         );
-        assert!(!disk::paths(&home, "retained", "v1").0.exists());
+        assert!(disk::paths(&home, "retained", "v1").0.exists());
     }
 }
 

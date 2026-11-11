@@ -453,8 +453,16 @@ test("Each table exports its own real workbook with literal values and source UR
     }),
   );
   expect(artifactActions(telemetry)).toStrictEqual([
-    { action: "download", surface: "inline_table" },
-    { action: "download", surface: "inline_table" },
+    {
+      action: "download",
+      surface: "inline_table",
+      artifact_type: "spreadsheet",
+    },
+    {
+      action: "download",
+      surface: "inline_table",
+      artifact_type: "spreadsheet",
+    },
   ]);
 });
 

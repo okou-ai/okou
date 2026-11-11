@@ -30,7 +30,13 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createBddApi,
+  type ApiTestUser,
+  type ApiTestUserOptions,
+} from "./helpers/api-bdd";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -86,8 +92,10 @@ interface EntitledChatActor {
   };
 }
 
-async function entitledChatActor(): Promise<EntitledChatActor> {
-  const actor = bdd.user();
+async function entitledChatActor(
+  options: ApiTestUserOptions = {},
+): Promise<EntitledChatActor> {
+  const actor = bdd.user(options);
   const storage = chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
@@ -781,6 +789,7 @@ describe("CHAT-02: completed chat callback", () => {
       `chatThreadMessageCreated:${first.threadId}`,
       null,
     );
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toBe(
       "[Template #1: Playful Launch Presentation (presentation)]queued next turn",
@@ -801,7 +810,6 @@ describe("CHAT-02: completed chat callback", () => {
       "CLAUDE_CODE_OAUTH_TOKEN",
     );
 
-    await claimChatRunJob(runnerGroup, claimed.runId);
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
@@ -1018,6 +1026,87 @@ describe("CHAT-02: completed chat callback", () => {
       expect(followupPrompts[0]).not.toContain(value);
     }
   }, 90_000);
+
+  it.each([
+    { audience: "staff", staff: true, enabled: true },
+    { audience: "staff who opted out", staff: true, enabled: false },
+    { audience: "external members", staff: false, enabled: false },
+    {
+      audience: "external members opting in",
+      staff: false,
+      enabled: false,
+      override: true,
+    },
+  ])(
+    "gates workflow and email follow-ups for $audience",
+    async ({ staff, enabled, override }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor(
+        staff ? { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" } : {},
+      );
+      if ((staff && !enabled) || override) {
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.ChatActionFollowups]: override ?? false,
+        });
+      }
+      const followupSystemPrompts: string[] = [];
+      const workflow = {
+        prompt: "Save this reconciliation as a workflow",
+        kind: "workflow",
+      };
+      const email = {
+        prompt: "After I send it, notify me when they reply",
+        kind: "email",
+      };
+      const talk = { prompt: "Check the reconciliation totals", kind: "talk" };
+      chatCallbacks.mockVertexCompletions((body) => {
+        if (
+          body.messages[0]?.content.includes("recommended follow-up messages")
+        ) {
+          followupSystemPrompts.push(body.messages[0].content);
+          return JSON.stringify([
+            { ...workflow, generationType: "website" },
+            { prompt: "Save another workflow", kind: "workflow" },
+            { ...email, generationType: "image" },
+            { prompt: "Track another reply", kind: "email" },
+            talk,
+          ]);
+        }
+        return "Reconciliation summary";
+      });
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt:
+          "Reconcile these invoices and draft an email asking about the discrepancies",
+      });
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      chatCallbacks.mockChatOutputEvents([
+        assistantEvent(
+          0,
+          "Reconciliation complete. The email is ready for you to review and send.",
+        ),
+      ]);
+      await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+      await flushWaitUntilForTest();
+      expect(followupSystemPrompts).toHaveLength(1);
+      expect(followupSystemPrompts[0]?.includes('"kind":"workflow"')).toBe(
+        enabled,
+      );
+      expect(followupSystemPrompts[0]?.includes('"kind":"email"')).toBe(
+        enabled,
+      );
+      const events = await chat.listThreadEvents(actor, run.threadId);
+      const [recommendation] = recommendedFollowupEvents(
+        events.events,
+        run.runId,
+      );
+      expect(recommendation).toBeDefined();
+      expect(
+        resolveChatEventRecommendedFollowups({
+          content: recommendation?.content ?? null,
+        }),
+      ).toStrictEqual(enabled ? [workflow, email, talk] : [talk]);
+    },
+  );
 
   it("accepts a retried recommended follow-up send as a duplicate", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -4205,6 +4294,7 @@ describe("CHAT-02: auto-send after failures", () => {
         threadId: anchor.threadId,
         prompt: probePrompt,
       });
+      const probeClaim = await claimChatRunJob(runnerGroup, probe.runId);
       const probeContext = await waitForRunContext(actor, probe.runId);
       expect(probeContext.body.prompt).toBe(probePrompt);
       if (status === "failed") {
@@ -4224,7 +4314,6 @@ describe("CHAT-02: auto-send after failures", () => {
         await api.requestCancelRun(actor, probe.runId, [200]);
         await waitForRunStatus(actor, probe.runId, "cancelled");
       } else {
-        const probeClaim = await claimChatRunJob(runnerGroup, probe.runId);
         expect(probeClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionIdForChatRun(dense.runId),
           generationRunId: dense.runId,
@@ -4303,11 +4392,13 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: "normal incomplete context probe",
     });
+    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const normalContext = await waitForRunContext(actor, normal.runId);
     expect(normalContext.body.appendSystemPrompt).toContain(templatePrompt);
     expect(normalContext.body.appendSystemPrompt).toContain(feedbackPrompt);
     await api.requestCancelRun(actor, normal.runId, [200]);
     await waitForRunStatus(actor, normal.runId, "cancelled");
+    await failChatRun(normal.runId, normalHeaders, "Context probe cancelled");
     await flushWaitUntilForTest();
 
     const failedForQueue = await startChatRun(actor, {
@@ -4353,6 +4444,7 @@ describe("CHAT-02: auto-send after failures", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the queued probe to be promoted");
     }
+    await claimChatRunJob(runnerGroup, promoted.runId);
     const queuedContext = await waitForRunContext(actor, promoted.runId);
     expect(queuedContext.body.appendSystemPrompt).toContain(templatePrompt);
     expect(queuedContext.body.appendSystemPrompt).toContain(feedbackPrompt);
@@ -4443,6 +4535,7 @@ describe("CHAT-02: auto-send after failures", () => {
           })
         ).runId;
       }
+      await claimChatRunJob(runnerGroup, probeRunId);
       const probeContext = await waitForRunContext(actor, probeRunId);
       const appended = probeContext.body.appendSystemPrompt ?? "";
       expect(appended).toContain("# Incomplete Rounds Context");
@@ -4560,6 +4653,7 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: "probe the revoked boundary",
     });
+    await claimChatRunJob(runnerGroup, probe.runId);
     const probeContext = await waitForRunContext(actor, probe.runId);
     expect(probeContext.body.appendSystemPrompt).toContain(firstFailedPrompt);
 
@@ -4694,6 +4788,7 @@ describe("CHAT-02: auto-send after failures", () => {
         filenameSnapshot: "queued-notes.txt",
       }),
     );
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toContain("queued with files");
     expect(autoContext.body.prompt).toContain(
@@ -4853,6 +4948,7 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: normalPrompt,
     });
+    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const normalContext = await waitForRunContext(actor, normal.runId);
     const normalAppended = normalContext.body.appendSystemPrompt ?? "";
     expect(normalAppended).toContain("# Incomplete Rounds Context");
@@ -4863,7 +4959,6 @@ describe("CHAT-02: auto-send after failures", () => {
       }),
     );
 
-    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const queuedPrompt = "queued callback frontier probe";
     await queueChatEvent(actor, {
       agentId,
@@ -4894,6 +4989,7 @@ describe("CHAT-02: auto-send after failures", () => {
       throw new Error("Expected the queued frontier probe to auto-send");
     }
 
+    await claimChatRunJob(runnerGroup, autoSent.runId);
     const callbackContext = await waitForRunContext(actor, autoSent.runId);
     const callbackAppended = callbackContext.body.appendSystemPrompt ?? "";
     expect(callbackAppended).toContain("# Incomplete Rounds Context");
@@ -5069,6 +5165,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
       throw new Error("Expected the queued message to be auto-claimed");
     }
 
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(

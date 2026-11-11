@@ -372,6 +372,8 @@
         "blurComposer": "コンポーザーからフォーカスを外す",
         "changeIcon": "アイコンの変更",
         "clearIcon": "クリアアイコン",
+        "collapseProject": "Project を折りたたむ",
+        "expandProject": "Project を展開",
         "newChat": "新しいチャット",
         "nextAgent": "次のエージェント",
         "nextThread": "次のスレッド",
@@ -1431,6 +1433,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "進む",
+    "fps": "FPS",
+    "fpsOff": "非表示",
+    "fpsOn": "表示",
+    "fpsReading": "{{value}} FPS",
     "liveView": "ブラウザーのライブ画面",
     "newTab": "新しいタブ",
     "noTabs": "開いているタブはありません",
@@ -1638,8 +1644,7 @@
       "sending": "送信中…",
       "sent": "新しいチャットに送信しました",
       "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
-      "undoFeedback": "Undo",
-      "useSuggestion": "提案を使う"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "添付する",
@@ -1860,7 +1865,9 @@
         "title": "作成"
       },
       "explore": "探索",
+      "exploreWhatsNew": "新機能を見る",
       "research": {
+        "description": "トラフィック、広告、製品、トピック",
         "items": {
           "ads": "広告クリエイティブを調べる",
           "products": "商品を調べる",
@@ -1873,6 +1880,7 @@
         "title": "リサーチ"
       },
       "search": {
+        "description": "顧客、クリエイター、意思決定者",
         "items": {
           "affiliates": "アフィリエイトプログラム",
           "creators": "クリエイターとの提携",
@@ -1903,6 +1911,7 @@
           "title": "定期タスク"
         },
         "suggestions": "提案を選んで、自分に合うように調整しましょう。",
+        "summary": "スケジュールまたはトリガーで実行",
         "triggers": {
           "description": "イベントの発生をきっかけに開始。",
           "eventPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のソース、絞り込み条件、出力先を確認し、ワークフローの下書きを作成してください。設定を確認してから有効にしてください。",
@@ -2341,16 +2350,34 @@
       "untitled": "無題"
     },
     "remoteAccess": {
+      "all": "すべて",
+      "allowed": "許可済み",
+      "autoSave": "変更はこのチャットに自動保存されます",
+      "connections": "接続",
       "default": "既定",
       "defaultEnabled": "チャットで既定で有効",
-      "disabled": "無効",
-      "enabled": "有効",
+      "draft": "最初のメッセージ送信時に適用",
       "enabledCount_other": "{{count}} 件有効",
+      "enableInChat": "このチャットで有効にする",
+      "enableSsh": "このチャットで SSH {{name}} を有効にする",
+      "filterHint": "変更した接続はフィルターを切り替えるまで表示されます",
+      "fromChat": "このチャット",
       "loadFailed": "リモートアクセスを読み込めませんでした。",
       "loading": "リモートアクセスを読み込み中…",
+      "manage": "接続を管理",
+      "needsReload": "再読み込みして権限を確認",
+      "noConnections": "SSH または VNC 接続が設定されていません",
+      "noneAllowed": "このチャットで許可された接続はありません",
+      "notAllowed": "未許可",
       "off": "オフ",
       "on": "オン",
+      "reload": "再読み込み",
       "requiresSsh": "SSH が必要：{{name}}",
+      "saved": "このチャットに保存済み",
+      "saveUnconfirmed": "変更が保存されたか確認できませんでした。権限を再読み込みしてから変更してください。",
+      "saving": "保存中…",
+      "scope": "このチャットで Okou が使用できる接続を選択",
+      "showAll": "すべての接続を表示",
       "sshDisabled": "SSH をオンに：{{name}}",
       "sshEnabled": "SSH 有効：{{name}}",
       "title": "リモートアクセス",
@@ -3194,11 +3221,10 @@
     "enableByDefault": "{{account}} を既定で有効にする",
     "enabledAccounts": "{{value}} 件が有効",
     "manageAccounts": "アカウントを管理",
-    "noAccount": "アカウント未選択",
     "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "既定で有効にするアカウントと、新しいチャットの既定のアカウントを選択します。"
+    "settingsDescription": "既定で有効にするアカウントを選択します。"
   },
   "connectors": {
     "access": {
@@ -4341,6 +4367,7 @@
     "documentTitles": {
       "make": "{{brandName}} へようこそ"
     },
+    "handoffUnavailable": "リンク先のタスクを復元できませんでした。そのまま利用を続けられます。既存の下書きは保持されています。",
     "make": {
       "promptLabel": "オンボーディングプロンプト",
       "promptTitle": "タスクを自分に合わせて調整"
@@ -5062,6 +5089,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "折りたたむ",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
@@ -5071,6 +5099,7 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
+    "expand": "展開",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -5860,6 +5889,7 @@
         "learning": {
           "description": "最近の活動を確認し、個人メモリを一度更新します。夜間の実行スケジュールは変わりません。",
           "notInstalled": "先に環境設定で学習を有効にしてください。",
+          "openChat": "会話を開く",
           "queued": "学習をキューに追加しました。",
           "requestFailed": "リクエストの結果を確認できませんでした。",
           "run": "学習を実行",
@@ -6333,6 +6363,32 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
+  "sshAuthorization": {
+    "allow": "このチャットで許可",
+    "blocked": {
+      "chat_busy": "このチャットで実行中の Run が終了してから承認してください。",
+      "host_changed": "ホスト設定が変更されました。再申請してください。",
+      "permissions_required": "先に関連するコネクタの権限を承認してください。",
+      "run_active": "リクエスト元の Run が終了してから承認してください。",
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+    },
+    "continue": "タスクを続行",
+    "details": "アクセスの詳細",
+    "effect": "アクセスを無効にするまで、このリモートユーザーとしてコマンド実行とファイル転送を許可します。",
+    "failed": "操作を完了できませんでした。再試行して権限を確認し、続行してください。",
+    "retry": "再試行",
+    "scope": "このホスト · このチャットのみ",
+    "status": {
+      "approved": "SSH アクセスを許可しました",
+      "denied": "SSH アクセスを拒否しました",
+      "expired": "SSH リクエストの有効期限切れ",
+      "pending": "SSH アクセス",
+      "revoked": "SSH アクセスを取り消しました",
+      "stale": "SSH リクエストが変更されました"
+    },
+    "title": "SSH アクセス",
+    "unavailable": "このリクエストは利用できません。再申請してください。"
+  },
   "tailscale": {
     "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
     "delete": "Tailscale を削除",
@@ -6442,6 +6498,26 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "ワークフローに戻る",
+      "disabled": "無効",
+      "disabledAt": "無効化日時：{{time}}",
+      "loadFailed": "この自動化を読み込めませんでした",
+      "loadingAutomation": "自動化を読み込み中",
+      "notNow": "後で",
+      "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
+      "reason_one": "実行が {{count}} 回失敗しました。再度有効にする前に自動化を確認してください。",
+      "reason_other": "実行が {{count}} 回連続で失敗しました。再度有効にする前に自動化を確認してください。",
+      "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
+      "switchWorkspace": "ワークスペースを切り替える",
+      "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
+      "systemSource": "システム通知",
+      "title": "自動化が無効になりました",
+      "unavailable": "自動化が見つからないか、アクセス権がありません",
+      "viewAutomation": "自動化を表示",
+      "workspace": "ワークスペース",
+      "workspaceFallback": "元のワークスペース"
+    },
     "close": "閉じる",
     "countUnavailable": "未読件数を取得できません",
     "detailFailed": "この通知を読み込めませんでした",
@@ -7321,15 +7397,30 @@
     },
     "documentTitle": "連携先",
     "email": {
+      "actions": "操作",
+      "addEmail": "メールを追加",
+      "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
+      "codeInstructions": "追加するメールアドレスから、このコードを件名または本文の最初の行に入れて Okou に送信してください。",
       "connected": "メールを接続しました",
+      "deleteAria": "{{email}} を削除",
       "description": "Okou にメールを送り、会話ごとに個別のチャットでやり取りできます",
+      "emailAddress": "メールアドレス",
       "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
-      "instructions": "アカウントのメールアドレスから送信してください。新しいメールは新しいチャットになり、返信は同じ会話で続きます。初めての方には登録をご案内し、その後に依頼を処理します。",
       "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",
       "loadError": "メール接続を読み込めませんでした",
+      "loginNotice": "ログイン用メールは常に接続されます。",
       "manage": "管理",
+      "manageDescription": "追加するメールアドレスからコードを送信してください。",
+      "manageTitle": "メールの接続",
+      "newCode": "新しいコードを生成",
       "open": "メールを開く",
+      "options": "メールのオプション",
       "resumed": "{{email}} を接続しました。元の依頼には同じメールの会話内で返信します。",
+      "sendTo": "{{address}} に送信",
+      "signInEmail": "ログイン用メール",
+      "source": "接続元",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "メール",
       "unavailable": "このワークスペースではメールをまだ利用できません"
     },

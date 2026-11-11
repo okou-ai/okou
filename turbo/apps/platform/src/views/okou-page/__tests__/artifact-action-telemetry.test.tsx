@@ -1,5 +1,9 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -51,10 +55,16 @@ function artifactActions(posthog: ReturnType<typeof context.mocks.posthog>) {
     });
 }
 
-test("A generic catalog preview counts body and menu downloads, not opening them", async () => {
+test("A generic ZIP preview counts downloads but copies its link without hosted-site analytics", async () => {
   const posthog = context.mocks.posthog();
   const browser = context.mocks.browser.blobDownload();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const filename = "confidential-release-bundle.zip";
+  const fileId = "f0000000-0000-4000-a000-000000000002";
+  const ownerUrl = new URL(
+    artifactReferencePath(fileId, filename),
+    "https://app.okou.ai",
+  ).href;
   const url = `https://artifacts.example.com/${filename}?signature=private-token`;
   const summary = artifact({ title: filename });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
@@ -65,13 +75,36 @@ test("A generic catalog preview counts body and menu downloads, not opening them
       ...summary,
       kind: "file",
       file: {
-        id: "f0000000-0000-4000-a000-000000000002",
+        id: fileId,
         filename,
         contentType: "application/zip",
         size: 2048,
-        url,
+        url: ownerUrl,
         previewImageUrl: null,
       },
+    });
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url,
+      downloadUrl: url,
+      filename,
+      contentType: "application/zip",
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: fileId },
+    });
+  });
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      ownerUrl,
+      shareId: null,
+      audience: "private",
+      organization: { id: "org_test", name: "Acme" },
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+      url: null,
+      shortUrl: null,
     });
   });
 
@@ -95,13 +128,13 @@ test("A generic catalog preview counts body and menu downloads, not opening them
   expect(browser.downloads[0]).toStrictEqual({ filename, url, blob: null });
   // Exact custom properties exclude filenames, signed URLs and other file data.
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview" },
+    { action: "download", surface: "file_preview", artifact_type: "archive" },
   ]);
 
   click(getNamedButton("Download options", dialog));
   const menu = await screen.findByRole("menu");
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview" },
+    { action: "download", surface: "file_preview", artifact_type: "archive" },
   ]);
   click(await findNamedMenuItem("Download", menu));
 
@@ -109,96 +142,128 @@ test("A generic catalog preview counts body and menu downloads, not opening them
     expect(browser.downloads).toHaveLength(2);
   });
   expect(browser.downloads[1]).toStrictEqual({ filename, url, blob: null });
+
+  click(await findNamedButton("Share", dialog));
+  const share = await screen.findByRole("dialog", { name: "Share" });
+  const copy = await findNamedButton("Copy link", share);
+  expect(copy).toBeEnabled();
+  click(copy);
+
+  await expect(findNamedButton("Copied", share)).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([ownerUrl]);
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview" },
-    { action: "download", surface: "dialog" },
+    { action: "download", surface: "file_preview", artifact_type: "archive" },
+    { action: "download", surface: "dialog", artifact_type: "archive" },
   ]);
 });
 
-test("An Office chip opens a preview without intent; a generic attachment chip downloads", async () => {
-  const posthog = context.mocks.posthog();
-  const browser = context.mocks.browser.blobDownload();
-  const files = [
-    {
-      id: "intent-binary",
-      filename: "confidential-forecast.bin",
-      contentType: "application/octet-stream",
-    },
-    {
-      id: "intent-office",
-      filename: "confidential-strategy.docx",
-      contentType:
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    },
-  ];
-  const binaryUrl = "https://private-files.example/confidential-forecast.bin";
-  mockAttachmentChat(context, {
-    chatEvents: [
-      {
-        id: "artifact-intent-user-message",
-        role: "user",
-        content: null,
-        runId: ATTACHMENT_RUN_ID,
-        createdAt: CREATED_AT,
-        userMessage: userMessage([
-          ...files.map((file) => {
-            return {
-              type: "file" as const,
-              fileId: file.id,
-              filenameSnapshot: file.filename,
-              contentType: file.contentType,
-            };
-          }),
-          { type: "text", text: "Private board review materials" },
-        ]),
-      },
-    ],
-  });
-  mockPrivateUrlSequence(
-    context,
-    {
-      "intent-binary": [binaryUrl],
-      "intent-office": [
-        "https://private-files.example/confidential-strategy.docx",
-      ],
-    },
-    { "intent-office": publicArtifactUrl("confidential-strategy.docx") },
-  );
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  click(await findNamedButton("Preview confidential-strategy.docx"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  await expect(
-    within(dialog).findByTitle("confidential-strategy.docx preview"),
-  ).resolves.toHaveAttribute(
-    "src",
-    expect.stringContaining("https://view.officeapps.live.com/op/embed.aspx?"),
-  );
-  expect(artifactActions(posthog)).toStrictEqual([]);
-  expect(browser.downloads).toStrictEqual([]);
-
-  click(getNamedButton("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  });
-  click(await findNamedButton("Download confidential-forecast.bin"));
-
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]).toStrictEqual({
+test.each([
+  {
     filename: "confidential-forecast.bin",
-    url: `${binaryUrl}?download=1`,
-    blob: null,
-  });
-  expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "attachment_chip" },
-  ]);
-});
+    contentType: "application/octet-stream",
+    artifactType: "other",
+  },
+  {
+    filename: "confidential-forecast",
+    contentType:
+      "Application/Vnd.Openxmlformats-Officedocument.Spreadsheetml.Sheet; charset=binary",
+    artifactType: "spreadsheet",
+  },
+])(
+  "An Office chip opens without intent; $filename downloads with its type",
+  async ({ filename, contentType, artifactType }) => {
+    const posthog = context.mocks.posthog();
+    const browser = context.mocks.browser.blobDownload();
+    const files = [
+      {
+        id: "intent-binary",
+        filename,
+        contentType,
+      },
+      {
+        id: "intent-office",
+        filename: "confidential-strategy.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+    ];
+    const binaryUrl = "https://private-files.example/confidential-forecast.bin";
+    mockAttachmentChat(context, {
+      chatEvents: [
+        {
+          id: "artifact-intent-user-message",
+          role: "user",
+          content: null,
+          runId: ATTACHMENT_RUN_ID,
+          createdAt: CREATED_AT,
+          userMessage: userMessage([
+            ...files.map((file) => {
+              return {
+                type: "file" as const,
+                fileId: file.id,
+                filenameSnapshot: file.filename,
+                contentType: file.contentType,
+              };
+            }),
+            { type: "text", text: "Private board review materials" },
+          ]),
+        },
+      ],
+    });
+    mockPrivateUrlSequence(
+      context,
+      {
+        "intent-binary": [binaryUrl],
+        "intent-office": [
+          "https://private-files.example/confidential-strategy.docx",
+        ],
+      },
+      { "intent-office": publicArtifactUrl("confidential-strategy.docx") },
+    );
+
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    click(await findNamedButton("Preview confidential-strategy.docx"));
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    await expect(
+      within(dialog).findByTitle("confidential-strategy.docx preview"),
+    ).resolves.toHaveAttribute(
+      "src",
+      expect.stringContaining(
+        "https://view.officeapps.live.com/op/embed.aspx?",
+      ),
+    );
+    expect(artifactActions(posthog)).toStrictEqual([]);
+    expect(browser.downloads).toStrictEqual([]);
+
+    click(getNamedButton("Close", dialog));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("attachment-lightbox"),
+      ).not.toBeInTheDocument();
+    });
+    click(await findNamedButton(`Download ${filename}`));
+
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(browser.downloads[0]).toStrictEqual({
+      filename,
+      url: `${binaryUrl}?download=1`,
+      blob: null,
+    });
+    expect(artifactActions(posthog)).toStrictEqual([
+      {
+        action: "download",
+        surface: "attachment_chip",
+        artifact_type: artifactType,
+      },
+    ]);
+  },
+);
 
 test("A shared-thread viewer reports its independent download, not preview or fullscreen", async () => {
   const posthog = context.mocks.posthog();
@@ -264,7 +329,7 @@ test("A shared-thread viewer reports its independent download, not preview or fu
     blob: null,
   });
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "shared_preview" },
+    { action: "download", surface: "shared_preview", artifact_type: "video" },
   ]);
 });
 
@@ -333,6 +398,6 @@ test("An expanded diagram reports only its download, never its document or sourc
   });
   expect(browser.downloads[0]?.blob?.type).toBe("image/svg+xml");
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "diagram_preview" },
+    { action: "download", surface: "diagram_preview", artifact_type: "image" },
   ]);
 });

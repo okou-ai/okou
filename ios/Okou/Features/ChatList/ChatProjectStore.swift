@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import Foundation
 import Observation
@@ -5,10 +6,26 @@ import Observation
 /// Confirmed Project names, membership operations and native list disclosure for one workspace.
 @MainActor @Observable
 final class ChatProjectStore {
-  private(set) var projects: [ChatProject] = []
-  private(set) var hasLoaded = false
+  /// Confirmed names reconcile mutations and the durable baseline, independently of read phase.
+  @ObservationIgnored private let confirmedProjects = CCState.State<[ChatProject]>([])
+  @ObservationIgnored private let replaceProjects: Command<Void, [ChatProject]>
+  let confirmedValue: Computed<[ChatProject]>
+  private(set) var projects: [ChatProject] {
+    get {
+      access(keyPath: \.projects)
+      do { return try stateStore.get(confirmedValue) } catch {
+        preconditionFailure("Cannot read confirmed Projects: \(error)")
+      }
+    }
+    set {
+      withMutation(keyPath: \.projects) {
+        do { try stateStore.set(replaceProjects, newValue) } catch {
+          preconditionFailure("Cannot publish confirmed Projects: \(error)")
+        }
+      }
+    }
+  }
   private(set) var active = false
-  private(set) var readError: String?
   private(set) var actionError: String?
   private(set) var pending: Set<String> = []
   private(set) var expansion: [String: Bool] = [:]
@@ -18,9 +35,11 @@ final class ChatProjectStore {
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
   private let didChangeMembership: @MainActor () async -> Void
-  private var refreshTask: Task<Void, Never>?
-  private var refreshAgain = false
-  private var tasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var subscription: Subscription?
+  @ObservationIgnored private var publication: Task<Void, Never>?
+  private var readID = UUID()
+  private var restoredSnapshot = false
+  private var tasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
   private var operations: [String: (payload: String, id: String)] = [:]
   private var revision = 0
   private var closed = false
@@ -34,6 +53,12 @@ final class ChatProjectStore {
     didFail: @escaping @MainActor (Error) -> Void,
     didChangeMembership: @escaping @MainActor () async -> Void
   ) {
+    let confirmedProjects = confirmedProjects
+    confirmedValue = Computed { try $0(confirmedProjects) }
+    replaceProjects = Command { context, value in
+      guard try context.get(confirmedProjects) != value else { return }
+      try context.set(confirmedProjects, value)
+    }
     service = ChatProjects(client: client)
     self.resources = resources
     self.sync = sync
@@ -50,9 +75,9 @@ final class ChatProjectStore {
       expansion = defaults.dictionary(forKey: key) as? [String: Bool] ?? [:]
     }
     let previous = revision
-    if !hasLoaded, let cached = await sync.cachedProjects(), !closed, previous == revision {
+    if !restoredSnapshot, let cached = await sync.cachedProjects(), !closed, previous == revision {
       projects = cached
-      hasLoaded = true
+      restoredSnapshot = true
     }
   }
 
@@ -62,9 +87,18 @@ final class ChatProjectStore {
   func showMore(_ id: String) { limits[id] = limit(for: id) + 20 }
 
   func activate() async {
-    guard !active, !closed else { return }
-    active = true
-    await refresh()
+    guard !closed, !blocked, !Task.isCancelled else { return }
+    if !active {
+      do {
+        subscription = try stateStore.watch(listValue) { [weak self] in
+          self?.confirmProjects()
+        }
+        active = true
+        confirmProjects()
+      } catch is CancellationError {
+      } catch { didFail(error) }
+    }
+    await publication?.value
   }
 
   func toggle(_ id: String) {
@@ -83,113 +117,115 @@ final class ChatProjectStore {
     if let expansionKey { defaults.set(expansion, forKey: expansionKey) }
   }
 
+  var stateStore: CCState.Store { resources.store }
+  var listValue: Computed<Task<[ChatProject], Error>> { resources.projectList }
+
   func refresh() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    if let refreshTask {
-      refreshAgain = true
-      await refreshTask.value
+    guard active else {
+      await activate()
       return
     }
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer { refreshTask = nil }
-      repeat {
-        refreshAgain = false
-        let previous = revision
+    do {
+      try stateStore.set(resources.reloadProjects)
+      await publication?.value
+    } catch is CancellationError {
+    } catch { didFail(error) }
+  }
+
+  /// Only confirmed business state is published here; views observe the original Task's phase.
+  private func confirmProjects() {
+    guard !closed, !blocked else { return }
+    publication?.cancel()
+    let id = UUID()
+    readID = id
+    let previous = revision
+    do {
+      let read = try stateStore.get(listValue)
+      publication = Task { [weak self] in
+        guard let self else { return }
+        defer { if readID == id { publication = nil } }
         do {
-          let read = try resources.projectList(refresh: true)
           let result = try await read.value
           try Task.checkCancellation()
-          guard !closed else { return }
-          if previous != revision {
-            refreshAgain = true
-            continue
+          guard !closed, !blocked, readID == id, previous == revision, pending.isEmpty else {
+            return
           }
+          revision += 1
           projects = result
-          hasLoaded = true
-          readError = nil
+          restoredSnapshot = true
           let knownIDs = Set(result.map(\.id))
           expansion = expansion.filter { knownIDs.contains($0.key) }
           limits = limits.filter { knownIDs.contains($0.key) }
           persistExpansion()
           await sync.persistProjects(result)
         } catch is CancellationError {
-          return
         } catch {
-          guard !closed, !Task.isCancelled else { return }
-          readError = error.localizedDescription
+          guard !closed, !Task.isCancelled, readID == id else { return }
           blocked = (error as? APIClientError)?.statusCode == 426
           didFail(error)
         }
-      } while refreshAgain && !closed && !blocked && !Task.isCancelled
-    }
-    refreshTask = task
-    await task.value
+      }
+    } catch is CancellationError {
+      publication = nil
+    } catch { didFail(error) }
   }
 
   @discardableResult
   func create(name: String, fromThreadID: String? = nil) async -> ChatProject? {
     let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name.utf16.count <= 120 else { return nil }
-    let project = await mutate(key: "create", payload: "\(name):\(fromThreadID ?? "")") {
-      [service] eventID in
-      try await service.create(name: name, eventID: eventID, fromThreadID: fromThreadID)
-    }
-    guard let project, !closed else { return nil }
-    if !projects.contains(where: { $0.id == project.id }) { projects.append(project) }
-    hasLoaded = true
-    expand(project.id)
-    await sync.persistProjects(projects)
-    if fromThreadID != nil { await didChangeMembership() }
-    await refresh()
-    return project
+    return await mutate(
+      key: "create", payload: "\(name):\(fromThreadID ?? "")",
+      body: { [service] eventID in
+        try await service.create(name: name, eventID: eventID, fromThreadID: fromThreadID)
+      },
+      confirm: { [self] project in
+        if !projects.contains(where: { $0.id == project.id }) { projects.append(project) }
+        restoredSnapshot = true
+        expand(project.id)
+        await sync.persistProjects(projects)
+        guard !closed, !Task.isCancelled else { return }
+        if fromThreadID != nil { await didChangeMembership() }
+      })
   }
 
   @discardableResult
   func rename(_ id: String, name: String) async -> Bool {
     let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name.utf16.count <= 120 else { return false }
-    let project = await mutate(key: id, payload: "rename:\(name)") { [service] eventID in
-      try await service.rename(id, name: name, eventID: eventID)
-    }
-    guard let project, !closed else { return false }
-    if let index = projects.firstIndex(where: { $0.id == id }) { projects[index] = project }
-    await sync.persistProjects(projects)
-    await refresh()
-    return true
+    let project = await mutate(
+      key: id, payload: "rename:\(name)",
+      body: { [service] eventID in try await service.rename(id, name: name, eventID: eventID) },
+      confirm: { [self] project in
+        if let index = projects.firstIndex(where: { $0.id == id }) { projects[index] = project }
+        await sync.persistProjects(projects)
+      })
+    return project != nil
   }
 
   @discardableResult
   func delete(_ id: String) async -> Bool {
-    let result = await mutate(key: id, payload: "delete") { [service] eventID in
-      try await service.delete(id, eventID: eventID)
-    }
-    guard result != nil, !closed else { return false }
-    projects.removeAll { $0.id == id }
-    expansion[id] = nil
-    persistExpansion()
-    await sync.persistProjects(projects)
-    await didChangeMembership()
-    await refresh()
-    return true
-  }
-
-  @discardableResult
-  func move(threadID: String, projectID: String?) async -> Bool {
-    let result = await mutate(key: threadID, payload: "move:\(projectID ?? "")") {
-      [service] eventID in
-      try await service.move(threadID: threadID, projectID: projectID, eventID: eventID)
-    }
-    guard result != nil, !closed else { return false }
-    if let projectID { expand(projectID) }
-    await didChangeMembership()
-    return true
+    let result = await mutate(
+      key: id, payload: "delete",
+      body: { [service] eventID in try await service.delete(id, eventID: eventID) },
+      confirm: { [self] _ in
+        projects.removeAll { $0.id == id }
+        expansion[id] = nil
+        limits[id] = nil
+        persistExpansion()
+        await sync.persistProjects(projects)
+        guard !closed, !Task.isCancelled else { return }
+        await didChangeMembership()
+      })
+    return result != nil
   }
 
   /// Failed explicit retries retain their operation identity; a changed intent gets a new one.
   private func mutate<Value: Sendable>(
     key: String, payload: String,
-    body: @escaping @MainActor (String) async throws -> Value
+    body: @escaping @MainActor (String) async throws -> Value,
+    confirm: @escaping @MainActor (Value) async -> Void
   ) async -> Value? {
     guard !closed, !blocked, !pending.contains(key), !Task.isCancelled else { return nil }
     let previous = operations[key]
@@ -202,12 +238,16 @@ final class ChatProjectStore {
     operations[key] = (payload, id)
     pending.insert(key)
     revision += 1
+    publication?.cancel()
+    let taskID = UUID()
     var result: Value?
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        pending.remove(key)
-        tasks[key] = nil
+        if tasks[key]?.id == taskID {
+          pending.remove(key)
+          tasks[key] = nil
+        }
       }
       do {
         let value = try await body(id)
@@ -216,6 +256,12 @@ final class ChatProjectStore {
         revision += 1
         operations[key] = nil
         actionError = nil
+        // Confirmation and persistence belong to the workspace, not its departing UI waiter.
+        await confirm(value)
+        try Task.checkCancellation()
+        guard !closed else { return }
+        pending.remove(key)
+        await refresh()
         result = value
       } catch is CancellationError {
       } catch {
@@ -225,7 +271,7 @@ final class ChatProjectStore {
         didFail(error)
       }
     }
-    tasks[key] = task
+    tasks[key] = (taskID, task)
     await task.value
     return result
   }
@@ -234,7 +280,11 @@ final class ChatProjectStore {
 
   func close() {
     closed = true
-    refreshTask?.cancel()
-    for task in tasks.values { task.cancel() }
+    readID = UUID()
+    publication?.cancel()
+    publication = nil
+    do { try subscription?.cancel() } catch { didFail(error) }
+    subscription = nil
+    for entry in tasks.values { entry.task.cancel() }
   }
 }

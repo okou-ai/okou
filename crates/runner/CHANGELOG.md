@@ -1,5 +1,125 @@
 # Changelog
 
+## [0.244.69](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.68...runner-rs-v0.244.69) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** unify usage flush timer retirement ([#46559](https://github.com/okou-ai/okou/issues/46559)) ([47ab56e](https://github.com/okou-ai/okou/commit/47ab56e683d43281cefe60067198836110d32325))
+
+## [0.244.68](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.67...runner-rs-v0.244.68) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** centralize selected scalar publication ([#46540](https://github.com/okou-ai/okou/issues/46540)) ([edaa90b](https://github.com/okou-ai/okou/commit/edaa90b51353f0727662ea5112b3179182f1a883))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.67](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.66...runner-rs-v0.244.67) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.66](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.65...runner-rs-v0.244.66) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.65](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.64...runner-rs-v0.244.65) (2026-11-11)
+
+
+### Refactoring
+
+* **runner:** centralize upstream client index pruning ([#46485](https://github.com/okou-ai/okou/issues/46485)) ([a4cb451](https://github.com/okou-ai/okou/commit/a4cb451a3018099fde7936a1a8690a8b8eb8659b))
+
+## [0.244.64](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.63...runner-rs-v0.244.64) (2026-11-11)
+
+
+### Refactoring
+
+* **runner:** centralize completed sse line transitions ([#46474](https://github.com/okou-ai/okou/issues/46474)) ([c6becc5](https://github.com/okou-ai/okou/commit/c6becc5dd395574f302a9833c127a8ce6eaceb1e))
+
+## [0.244.63](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.62...runner-rs-v0.244.63) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** bind header-auth rollback to its probe ([#46444](https://github.com/okou-ai/okou/issues/46444)) ([3acdf46](https://github.com/okou-ai/okou/commit/3acdf4618210f2e608daa80ead0c142bba4aebb7))
+* **runner:** remove unused whole-host a-label validator ([#46466](https://github.com/okou-ai/okou/issues/46466)) ([8101f29](https://github.com/okou-ai/okou/commit/8101f29b144cc24a932fd4a80256839ab45a2bcc))
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
+## [0.244.62](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.61...runner-rs-v0.244.62) (2026-11-10)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.61](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.60...runner-rs-v0.244.61) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize selective json document initialization ([#46404](https://github.com/okou-ai/okou/issues/46404)) ([e9ed184](https://github.com/okou-ai/okou/commit/e9ed18452e26c033c4e1f75f0e32d843ea452a8d))
+* **runner:** remove dead delivery trigger forwarding ([#46414](https://github.com/okou-ai/okou/issues/46414)) ([11cf5ea](https://github.com/okou-ai/okou/commit/11cf5ea9cb94d1022c768304a74df3903fe07982))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.60](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.59...runner-rs-v0.244.60) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** use one cursor for usage batch admission ([#46371](https://github.com/okou-ai/okou/issues/46371)) ([6ebaed8](https://github.com/okou-ai/okou/commit/6ebaed8cb2cb8d42e3a2d7ecf40b0f7fec1626e9))
+
+## [0.244.59](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.58...runner-rs-v0.244.59) (2026-11-10)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.58](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.57...runner-rs-v0.244.58) (2026-11-10)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.57](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.56...runner-rs-v0.244.57) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** simplify best-effort body decode results ([#46299](https://github.com/okou-ai/okou/issues/46299)) ([2ea5bc5](https://github.com/okou-ai/okou/commit/2ea5bc5eed18a208d46bba2bb009c9ca8d5e6ea6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.56](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.55...runner-rs-v0.244.56) (2026-11-10)
+
+## [0.244.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.54...runner-rs-v0.244.55) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize response terminal continuation dispatch ([#46279](https://github.com/okou-ai/okou/issues/46279)) ([301db5f](https://github.com/okou-ai/okou/commit/301db5f3193bbd556cae0adf0e40b6673e6f3363))
+
+## [0.244.54](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.53...runner-rs-v0.244.54) (2026-11-10)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.52...runner-rs-v0.244.53) (2026-11-10)
 
 

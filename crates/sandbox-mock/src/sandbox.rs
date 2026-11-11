@@ -999,7 +999,14 @@ impl Sandbox for MockSandbox {
                 } else {
                     Ok(default_exec_result())
                 }
-            })?;
+            });
+        if let Some(overrides) = &self.overrides {
+            *overrides
+                .exec
+                .completed_storage_manifest_calls
+                .lock_ignoring_poison() += 1;
+        }
+        let result = result?;
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
     }
 

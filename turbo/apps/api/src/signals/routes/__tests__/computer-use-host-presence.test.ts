@@ -8,6 +8,7 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
@@ -418,6 +419,8 @@ describe("Presence-only Desktop", () => {
         .create({ headers, body: { kind: "apps.list", timeoutMs: 1000 } }),
       [200],
     );
+    // Finish notification delivery before making result reads own the timeout.
+    await flushWaitUntilForTest();
     mockNow(now() + 1001);
     const idle = await accept(
       s.api(hosts).next({

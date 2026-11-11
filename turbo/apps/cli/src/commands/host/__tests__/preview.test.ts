@@ -215,23 +215,61 @@ describe("hosted artifact previews", () => {
     },
   );
 
-  it("retries completion using the same deployment identity", async () => {
-    server.use(
-      http.post(
-        `http://localhost:3000/api/host/deployments/${deploymentId}/complete`,
-        () => {
-          return HttpResponse.json(completed);
-        },
-      ),
-    );
-    await new Command("okou")
-      .addCommand(hostCommand)
-      .parseAsync(["node", "okou", "host", "complete", deploymentId, "--json"]);
-    expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toMatchObject({
-      deploymentId,
-      previewImageUrl,
-    });
-  });
+  it.each([
+    {
+      label: "site alias",
+      address: {
+        url: completed.url,
+        aliasUrl: completed.url,
+      },
+      artifactUrl: `https://dpl-${deploymentId}.okou.app`,
+    },
+    {
+      label: "private delivery URL",
+      address: { url: "https://app.okou.ai/artifacts/abc123abcd.html" },
+      artifactUrl: "https://app.okou.ai/artifacts/abc123abcd.html",
+    },
+    {
+      label: "legacy delivery URL",
+      address: { url: completed.url },
+      artifactUrl: undefined,
+    },
+  ])(
+    "retries completion with the same deployment identity and returns the $label",
+    async ({ address, artifactUrl }) => {
+      const delivery = { ...completed, ...address };
+      server.use(
+        http.post(
+          `http://localhost:3000/api/host/deployments/${deploymentId}/complete`,
+          () => {
+            return HttpResponse.json({ ...delivery, artifactUrl });
+          },
+        ),
+      );
+      const command = new Command("okou").addCommand(hostCommand);
+      await command.parseAsync([
+        "node",
+        "okou",
+        "host",
+        "complete",
+        deploymentId,
+      ]);
+      expect(logs.mock.calls.flat().join("\n")).toBe(
+        `Hosted site deployed: ${address.url}`,
+      );
+
+      logs.mockClear();
+      await command.parseAsync([
+        "node",
+        "okou",
+        "host",
+        "complete",
+        deploymentId,
+        "--json",
+      ]);
+      expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toEqual(delivery);
+    },
+  );
 
   function installBrowser() {
     const binary = join(root, "agent-browser");

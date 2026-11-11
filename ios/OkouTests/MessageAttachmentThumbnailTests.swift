@@ -185,13 +185,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     let thumbnail = try await readThumbnail(image, viewer: viewer)
     XCTAssertNotNil(thumbnail)
     viewer.open(image)
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let url = try XCTUnwrap(viewer.preview?.file?.url)
+    let url = try await previewFile(in: viewer).url
     XCTAssertEqual(try Data(contentsOf: url), bytes)
     viewer.dismiss()
     viewer.open(image)
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let reopened = try XCTUnwrap(viewer.preview?.file?.url)
+    let reopened = try await previewFile(in: viewer).url
     XCTAssertEqual(try Data(contentsOf: reopened), bytes)
     XCTAssertEqual(lookups.withLock { $0 }, 3)
     XCTAssertEqual(transfers.withLock { $0 }, 1)
@@ -226,8 +224,7 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     XCTAssertNotNil(thumbnail)
     viewer.open(image)
     XCTAssertNotNil(viewer.preview?.thumbnail)
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let url = try XCTUnwrap(viewer.preview?.file?.url)
+    let url = try await previewFile(in: viewer).url
     XCTAssertEqual(try Data(contentsOf: url), original)
     XCTAssertEqual(paths.withLock { $0 }, ["/poster", "/download"])
   }
@@ -252,11 +249,17 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     XCTAssertNotNil(thumbnail)
     denied.withLock { $0 = true }
     viewer.open(image)
-    try await waitForBusinessResult { viewer.preview?.error != nil }
-    XCTAssertEqual(
-      viewer.preview?.error, "You do not have permission to view this attachment.")
-    XCTAssertNil(viewer.preview?.file)
-    XCTAssertEqual(viewer.preview?.canRetry, false)
+    let preview = try XCTUnwrap(viewer.preview)
+    do {
+      _ = try await preview.store.get(preview.file).value
+      XCTFail("A cached original must not bypass revoked authorization")
+    } catch {
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 403)
+      XCTAssertEqual(
+        MessageAttachmentStore.message(for: error),
+        "You do not have permission to view this attachment.")
+      XCTAssertFalse(ChatRequestFailure.canRetry(error))
+    }
   }
 
   func testSharedThumbnailFailureCanRetryWithoutReplacingItsResource() async throws {
@@ -334,6 +337,12 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
       _ = try await readThumbnail(image, viewer: viewer)
       XCTFail("A replacement detail must obtain fresh authorization")
     } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+  }
+
+  private func previewFile(in viewer: MessageAttachmentStore) async throws -> ChatAttachmentFile {
+    let preview = try XCTUnwrap(viewer.preview)
+    let result = try await preview.store.get(preview.file).value
+    return try XCTUnwrap(result)
   }
 
   private func readThumbnail(_ attachment: ChatMessageAttachment, viewer: MessageAttachmentStore)

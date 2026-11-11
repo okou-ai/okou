@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
@@ -201,7 +201,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
   );
   // Exercise Ably channel continuity through the production worker protocol.
   await openAfterSetup(false, "message-port");
-  await findFastControl("button", "Probe 1Account 11 enabled");
+  await findFastControl("button", "Probe 11 enabled");
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
     return expect(
@@ -210,10 +210,14 @@ test("Patch only the notified target while closed and fully calibrate after lost
   });
   changed = {
     ...changed,
+    currentConnectionId: null,
     accounts: changed.accounts.map((account) => {
       return {
         ...account,
-        displayName: "Renamed account",
+        defaultEnabled: false,
+        overrideEnabled: null,
+        enabled: false,
+        isDefault: false,
       };
     }),
   };
@@ -225,7 +229,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
   });
   const reopened = await openMenu();
   await waitFor(() => {
-    return expect(reopened).toHaveTextContent("Renamed account");
+    return expect(reopened).toHaveTextContent("Probe 10 enabled");
   });
   expect(full).toBe(1);
   removed = true;
@@ -249,7 +253,7 @@ test("Patch only the notified target while closed and fully calibrate after lost
   await waitFor(() => {
     return expect(full).toBeGreaterThan(1);
   });
-  await findFastControl("button", "Probe 2Account 21 enabled");
+  await findFastControl("button", "Probe 21 enabled");
 });
 
 test("Discard an older target response after a Run invalidates the full snapshot", async () => {
@@ -278,23 +282,27 @@ test("Discard an older target response after a Run invalidates the full snapshot
     },
   );
   const popup = await openAfterSetup();
-  await findFastControl("button", "Probe 1Account 11 enabled");
+  await findFastControl("button", "Probe 11 enabled");
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
   await staleStarted.promise;
   current = {
     ...current,
+    currentConnectionId: null,
     accounts: current.accounts.map((account) => {
       return {
         ...account,
-        displayName: "Run-selected name",
+        defaultEnabled: false,
+        overrideEnabled: null,
+        enabled: false,
+        isDefault: false,
       };
     }),
   };
   context.mocks.ably.trigger(`chatThreadDetailChanged:${SCOUT_THREAD_ID}`);
   await waitFor(() => {
-    return expect(popup).toHaveTextContent("Run-selected name");
+    return expect(popup).toHaveTextContent("Probe 10 enabled");
   });
   releaseStale.resolve();
   context.mocks.ably.trigger("connector:changed", {
@@ -309,7 +317,7 @@ test("Discard an older target response after a Run invalidates the full snapshot
   });
   const reopened = await openMenu();
   await waitFor(() => {
-    return expect(reopened).toHaveTextContent("Run-selected name");
+    return expect(reopened).toHaveTextContent("Probe 10 enabled");
   });
   releaseNext.resolve();
 });
@@ -330,7 +338,7 @@ test("Retry a failed initial overview without keeping an unusable cached request
   });
   const popup = await openAfterSetup();
   click(await findFastControl("button", "Try again", popup));
-  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  await findFastControl("button", "Probe 11 enabled", popup);
   expect(full).toBe(2);
 });
 
@@ -350,7 +358,7 @@ test("Recover from an initial subscription failure through the overview retry", 
   const retry = await findFastControl("button", "Try again", popup);
   expect(full).toBe(0);
   click(retry);
-  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  await findFastControl("button", "Probe 11 enabled", popup);
   expect(full).toBe(1);
 });
 
@@ -382,12 +390,12 @@ test("Expose a failed target refresh and keep notifications working after retry"
     },
   );
   const popup = await openAfterSetup(false, "message-port");
-  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  await findFastControl("button", "Probe 11 enabled", popup);
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
   await findFastControl("button", "Try again", popup);
-  expect(popup).toHaveTextContent("Account 1");
+  expect(popup).toHaveTextContent("Probe 11 enabled");
   expect({ full, targets }).toStrictEqual({ full: 1, targets: 1 });
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-02",
@@ -395,11 +403,11 @@ test("Expose a failed target refresh and keep notifications working after retry"
   await waitFor(() => {
     return expect(targets).toBe(2);
   });
-  await findFastControl("button", "Probe 2Account 21 enabled", popup);
+  await findFastControl("button", "Probe 21 enabled", popup);
   const retry = await findFastControl("button", "Try again", popup);
   fail = false;
   click(retry);
-  await findFastControl("button", "Probe 1Account 11 enabled", popup);
+  await findFastControl("button", "Probe 11 enabled", popup);
   await waitFor(() => {
     return expect(
       queryAllByRoleFast("button", popup).some((button) => {
@@ -410,18 +418,21 @@ test("Expose a failed target refresh and keep notifications working after retry"
   expect(full).toBe(2);
   current = {
     ...current,
+    currentConnectionId: null,
     accounts: current.accounts.map((account) => {
-      return { ...account, displayName: "Updated after recovery" };
+      return {
+        ...account,
+        defaultEnabled: false,
+        overrideEnabled: null,
+        enabled: false,
+        isDefault: false,
+      };
     }),
   };
   context.mocks.ably.trigger("connector:changed", {
     connectorSlug: "probe-01",
   });
-  await findFastControl(
-    "button",
-    "Probe 1Updated after recovery1 enabled",
-    popup,
-  );
+  await findFastControl("button", "Probe 10 enabled", popup);
   expect({ full, targets }).toStrictEqual({ full: 2, targets: 3 });
 });
 
@@ -472,16 +483,14 @@ test("Load full readiness only for an opened panel's selected off-page account",
     },
   );
   const popup = await openAfterSetup();
-  const row = await findFastControl(
-    "button",
-    "GitHubOff-page current2 enabled",
-    popup,
-  );
+  const row = await findFastControl("button", "GitHub2 enabled", popup);
   expect(details).toBe(0);
   click(row);
-  const radio = await findFastControl("radio", "Off-page current", popup);
-  expect(radio).toHaveAttribute("aria-disabled", "true");
-  expect(radio).toBeChecked();
+  const access = await within(popup).findByRole("combobox", {
+    name: "Off-page current access",
+  });
+  expect(access).toHaveTextContent("Default (On)");
+  expect(within(popup).getByText("Reconnect required")).toBeInTheDocument();
   expect(details).toBe(1);
 });
 
@@ -501,7 +510,7 @@ test("Release the cached subscription on navigation and reload the returning Cha
     },
   );
   await openAfterSetup();
-  await findFastControl("button", "Probe 1Account 11 enabled");
+  await findFastControl("button", "Probe 11 enabled");
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "New chat"));
   await waitFor(() => {
@@ -519,7 +528,7 @@ test("Release the cached subscription on navigation and reload the returning Cha
   });
   await findComposer();
   const reopened = await openMenu();
-  await findFastControl("button", "Probe 1Account 11 enabled", reopened);
+  await findFastControl("button", "Probe 11 enabled", reopened);
   expect({ full, targets }).toStrictEqual({ full: 2, targets: 0 });
 });
 
@@ -560,27 +569,25 @@ test("Calibrate custom account changes on focus while keeping ordinary reopening
     ]);
   });
   const popup = await openAfterSetup();
-  await findFastControl(
-    "button",
-    "CCached customBefore external change1 enabled",
-    popup,
-  );
+  await findFastControl("button", "CCached custom1 enabled", popup);
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
     return expect(
       screen.queryByRole("dialog", { name: "Connectors" }),
     ).toBeNull();
   });
-  accounts = accounts.map((account) => {
-    return { ...account, displayName: "After external change" };
-  });
+  accounts = [
+    ...accounts,
+    connectorAccount({
+      id: "f0000000-0000-4000-a000-000000000094",
+      target,
+      displayName: "Added externally",
+      isDefault: false,
+    }),
+  ];
   window.dispatchEvent(new Event("focus"));
   const reopened = await openMenu();
-  await findFastControl(
-    "button",
-    "CCached customAfter external change1 enabled",
-    reopened,
-  );
+  await findFastControl("button", "CCached custom2 enabled", reopened);
   expect(full).toBe(2);
   click(await findFastControl("button", "Connectors"));
   await waitFor(() => {
@@ -589,10 +596,6 @@ test("Calibrate custom account changes on focus while keeping ordinary reopening
     ).toBeNull();
   });
   const cached = await openMenu();
-  await findFastControl(
-    "button",
-    "CCached customAfter external change1 enabled",
-    cached,
-  );
+  await findFastControl("button", "CCached custom2 enabled", cached);
   expect(full).toBe(2);
 });

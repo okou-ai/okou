@@ -139,16 +139,17 @@ async def test_wire_partitions_preserve_lexical_state_counts_and_identities(
     wire = _encode(body, encoding)
     size = chunk_size or len(wire)
     mitm_addon.responseheaders(flow)
-    forwarded = bytearray()
+    forwarded_size = 0
     with usage_webhook_api() as webhook:
         for offset in range(0, len(wire), size):
             chunk = wire[offset : offset + size]
             emitted = response_stream(flow)(chunk)
-            assert emitted == chunk
+            assert emitted == chunk == wire[forwarded_size : forwarded_size + len(chunk)]
             assert isinstance(emitted, bytes)
-            forwarded.extend(emitted)
-            await mitm_addon.responseinspection(flow)
-        assert forwarded == wire
+            forwarded_size += len(chunk)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
+        assert forwarded_size == len(wire)
         assert metadata_keys.X_JSON_STATE not in flow.metadata
         assert response_stream(flow)(b"") == b""
         assert mitm_addon.response(flow) is None
@@ -179,7 +180,8 @@ async def test_document_budget_survives_parser_decoder_and_wire_boundaries(
         for part in parts:
             wire = _encode(part, encoding)
             assert response_stream(flow)(wire) == wire
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         if extra_space:
             # Permanent parser failure must stop the decoder before this corrupt member.
             corrupt = _encode(b"", encoding)

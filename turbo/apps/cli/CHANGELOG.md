@@ -1,5 +1,116 @@
 # Changelog
 
+## [10.20.0](https://github.com/okou-ai/okou/compare/cli-v10.19.10...cli-v10.20.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+    * @okouai/pi-agent-runtime bumped to 1.51.100
+
+## [10.19.10](https://github.com/okou-ai/okou/compare/cli-v10.19.9...cli-v10.19.10) (2026-11-11)
+
+
+### Performance Improvements
+
+* **api:** remove the chat search time filter ([#46502](https://github.com/okou-ai/okou/issues/46502)) ([baa9594](https://github.com/okou-ai/okou/commit/baa95943ef45870b92855b3974772657ca2b6711))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+    * @okouai/pi-agent-runtime bumped to 1.51.99
+
+## [10.19.9](https://github.com/okou-ai/okou/compare/cli-v10.19.8...cli-v10.19.9) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.2
+    * @okouai/core bumped to 8.826.2
+    * @okouai/pi-agent-runtime bumped to 1.51.98
+
+## [10.19.8](https://github.com/okou-ai/okou/compare/cli-v10.19.7...cli-v10.19.8) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.1
+    * @okouai/core bumped to 8.826.1
+    * @okouai/pi-agent-runtime bumped to 1.51.97
+
+## [10.19.7](https://github.com/okou-ai/okou/compare/cli-v10.19.6...cli-v10.19.7) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.0
+    * @okouai/core bumped to 8.826.0
+    * @okouai/pi-agent-runtime bumped to 1.51.96
+
+## [10.19.6](https://github.com/okou-ai/okou/compare/cli-v10.19.5...cli-v10.19.6) (2026-11-10)
+
+
+### Bug Fixes
+
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.47.0
+    * @okouai/core bumped to 8.825.5
+    * @okouai/pi-agent-runtime bumped to 1.51.95
+
+## [10.19.5](https://github.com/okou-ai/okou/compare/cli-v10.19.4...cli-v10.19.5) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.46.4
+    * @okouai/core bumped to 8.825.4
+    * @okouai/pi-agent-runtime bumped to 1.51.94
+
+## [10.19.4](https://github.com/okou-ai/okou/compare/cli-v10.19.3...cli-v10.19.4) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cli:** keep deployment links out of host delivery output ([#46269](https://github.com/okou-ai/okou/issues/46269)) ([a13dc6b](https://github.com/okou-ai/okou/commit/a13dc6b1eb43beffdd47e18e56ed66c97184f3cf))
+
+## [10.19.3](https://github.com/okou-ai/okou/compare/cli-v10.19.2...cli-v10.19.3) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.46.3
+    * @okouai/connectors bumped to 3.21.7
+    * @okouai/core bumped to 8.825.3
+    * @okouai/pi-agent-runtime bumped to 1.51.93
+
 ## [10.19.2](https://github.com/okou-ai/okou/compare/cli-v10.19.1...cli-v10.19.2) (2026-11-10)
 
 

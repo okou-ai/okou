@@ -17,6 +17,7 @@ mod apple_srp;
 mod apple_vnc_password;
 mod authentication;
 mod capture;
+mod credentials;
 mod framebuffer;
 mod input;
 mod memory;
@@ -169,8 +170,8 @@ impl VncPassword {
 
     /// Validate a password whose allocation is already zeroizing, transferring
     /// that allocation without making another plaintext copy.
-    pub fn new_zeroizing(mut password: Zeroizing<String>) -> Result<Self, Error> {
-        let bytes = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
+    pub fn new_zeroizing(password: Zeroizing<String>) -> Result<Self, Error> {
+        let bytes = credentials::into_bytes(password);
         if !(1..=8).contains(&bytes.len()) || !bytes.iter().all(|b| (0x20..=0x7e).contains(b)) {
             return Err(Error::InvalidPassword);
         }
@@ -201,15 +202,13 @@ impl PlainCredentials {
 
     /// Validate credentials whose password allocation is already zeroizing,
     /// transferring it without making another plaintext copy.
-    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
-        let username = Zeroizing::new(username.into_bytes());
-        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
-        if !(1..=1023).contains(&username.len()) || username.contains(&0) {
-            return Err(Error::InvalidPlainUsername);
-        }
-        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
-            return Err(Error::InvalidPlainPassword);
-        }
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let (username, password) = credentials::utf8_pair(
+            username,
+            password,
+            (1023, Error::InvalidPlainUsername),
+            (1023, Error::InvalidPlainPassword),
+        )?;
         Ok(Self { username, password })
     }
 }
@@ -271,15 +270,13 @@ impl AppleDhCredentials {
         Self::new_zeroizing(username, Zeroizing::new(password))
     }
 
-    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
-        let username = Zeroizing::new(username.into_bytes());
-        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
-        if !(1..=63).contains(&username.len()) || username.contains(&0) {
-            return Err(Error::InvalidAppleDhUsername);
-        }
-        if !(1..=63).contains(&password.len()) || password.contains(&0) {
-            return Err(Error::InvalidAppleDhPassword);
-        }
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let (username, password) = credentials::utf8_pair(
+            username,
+            password,
+            (63, Error::InvalidAppleDhUsername),
+            (63, Error::InvalidAppleDhPassword),
+        )?;
         Ok(Self { username, password })
     }
 }
@@ -302,15 +299,13 @@ impl AppleSrpCredentials {
         Self::new_zeroizing(username, Zeroizing::new(password))
     }
 
-    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
-        let username = Zeroizing::new(username.into_bytes());
-        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
-        if !(1..=255).contains(&username.len()) || username.contains(&0) {
-            return Err(Error::InvalidAppleSrpUsername);
-        }
-        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
-            return Err(Error::InvalidAppleSrpPassword);
-        }
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let (username, password) = credentials::utf8_pair(
+            username,
+            password,
+            (255, Error::InvalidAppleSrpUsername),
+            (1023, Error::InvalidAppleSrpPassword),
+        )?;
         Ok(Self { username, password })
     }
 }
@@ -334,15 +329,13 @@ impl AppleRsaSrpCredentials {
         Self::new_zeroizing(username, Zeroizing::new(password))
     }
 
-    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
-        let username = Zeroizing::new(username.into_bytes());
-        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
-        if !(1..=234).contains(&username.len()) || username.contains(&0) {
-            return Err(Error::InvalidAppleRsaSrpUsername);
-        }
-        if !(1..=1023).contains(&password.len()) || password.contains(&0) {
-            return Err(Error::InvalidAppleRsaSrpPassword);
-        }
+    pub fn new_zeroizing(username: String, password: Zeroizing<String>) -> Result<Self, Error> {
+        let (username, password) = credentials::utf8_pair(
+            username,
+            password,
+            (234, Error::InvalidAppleRsaSrpUsername),
+            (1023, Error::InvalidAppleRsaSrpPassword),
+        )?;
         Ok(Self { username, password })
     }
 }
@@ -548,11 +541,17 @@ where
 /// Authenticate an owned RFB 3.8 stream using one exact RSA-AES profile.
 ///
 /// The caller must acquire the complete SHA256 RSA public-key-wire pin out of
-/// band. Authentication-only `ne` modes do not protect later traffic: a future
-/// product caller must independently enforce its verified outer transport. No
-/// owner/Runner profile is enabled by this engine API. Cancellation/failure drops
-/// the owned stream; bounded CPU jobs may finish separately, retaining permits
-/// and dropping their private inputs without keeping the stream alive.
+/// band. Runner calls this entry point for saved Owner profiles resolved by the
+/// private API; this engine API itself grants no authority. Full RA2/RA2_256
+/// modes retain authenticated EAX records for the session. Authentication-only
+/// `ne` modes do not protect later traffic: Runner requires authorized,
+/// host-key-verified SSH to a literal server loopback destination, a live
+/// authenticated Tailscale peer stream, or Cloudflare Access with verified
+/// server-local origin TLS. Direct raw routes are rejected for `ne` modes.
+/// Other callers must independently enforce verified outer protection for `ne`.
+/// Cancellation/failure drops the owned stream; bounded CPU jobs may finish
+/// separately, retaining permits and dropping their private inputs without
+/// keeping the stream alive.
 /// Server keys are limited to 2048/3072/4096 bits and exponent 65537; every client
 /// handshake generates a fresh, fixed 2048-bit ephemeral key.
 pub async fn authenticate_rsa_aes<S>(

@@ -1,5 +1,93 @@
+import CCState
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
+
+/// The transcript keeps its native row owner; read phases come from the original resource Tasks.
+struct AssistantFailureRecoveryCard: View {
+  let failure: ChatFailure
+  let conversation: ConversationStore
+  let providerMessage: String?
+
+  var body: some View {
+    if let context = conversation.failureContext, context.failureID == failure.id {
+      StoreProvider(context.store) {
+        if let accounts = context.accounts {
+          FailureAccountCard(
+            failure: failure, conversation: conversation, providerMessage: providerMessage,
+            context: context, accounts: accounts)
+        } else if let billing = context.billing {
+          FailureBillingCard(
+            failure: failure, conversation: conversation, providerMessage: providerMessage,
+            context: context, billing: billing)
+        } else {
+          content
+        }
+      }.id(ObjectIdentifier(context))
+    } else {
+      content
+    }
+  }
+
+  private var content: some View {
+    AssistantFailureCard(
+      state: conversation.failureState(failure), conversation: conversation,
+      providerMessage: providerMessage)
+  }
+}
+
+private struct FailureAccountCard: View {
+  let failure: ChatFailure
+  let conversation: ConversationStore
+  let providerMessage: String?
+  let context: FailureRecoveryResources
+  @LoadableValue private var accounts: Loadable<[PersonalSubscription]>
+
+  init(
+    failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
+    context: FailureRecoveryResources, accounts: Signal<Task<[PersonalSubscription], Error>>
+  ) {
+    self.failure = failure
+    self.conversation = conversation
+    self.providerMessage = providerMessage
+    self.context = context
+    _accounts = LoadableValue(task: accounts)
+  }
+
+  var body: some View {
+    AssistantFailureCard(
+      state: conversation.failureState(
+        failure, context: context, accounts: accounts.data, accountsError: accounts.error),
+      conversation: conversation, providerMessage: providerMessage)
+  }
+}
+
+private struct FailureBillingCard: View {
+  let failure: ChatFailure
+  let conversation: ConversationStore
+  let providerMessage: String?
+  let context: FailureRecoveryResources
+  @LoadableValue private var billing: Loadable<ChatBillingRecovery>
+
+  init(
+    failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
+    context: FailureRecoveryResources, billing: Signal<Task<ChatBillingRecovery, Error>>
+  ) {
+    self.failure = failure
+    self.conversation = conversation
+    self.providerMessage = providerMessage
+    self.context = context
+    _billing = LoadableValue(task: billing)
+  }
+
+  var body: some View {
+    AssistantFailureCard(
+      state: conversation.failureState(
+        failure, context: context, billing: billing.data, billingError: billing.error),
+      conversation: conversation, providerMessage: providerMessage)
+  }
+}
 
 struct AssistantFailureCard: View {
   let state: AssistantFailureState

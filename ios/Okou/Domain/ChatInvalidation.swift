@@ -2,6 +2,7 @@ import Foundation
 
 /// Realtime signals select durable reads; their payloads are never chat state.
 enum ChatInvalidation: Hashable, Sendable {
+  case computerAccess
   case runModels
   case modelPreference
   case threadList
@@ -12,6 +13,7 @@ enum ChatInvalidation: Hashable, Sendable {
 
   init?(notification: String) {
     switch notification {
+    case "computerUseHostsChanged", "desktopShellAuthorizationChanged": self = .computerAccess
     case "runModelsChanged": self = .runModels
     case "userPreferenceChanged": self = .modelPreference
     case "threadListChanged": self = .threadList
@@ -40,13 +42,21 @@ enum RealtimeConnectionStatus: Sendable {
 }
 
 enum ChatSynchronizationState: Equatable {
-  case connecting, updating, unavailable
+  case connecting, updating, liveUpdatesUnavailable, updateFailed
+
+  var isFailure: Bool {
+    switch self {
+    case .connecting, .updating: false
+    case .liveUpdatesUnavailable, .updateFailed: true
+    }
+  }
 
   var label: String {
     switch self {
     case .connecting: String(localized: "Connecting…")
     case .updating: String(localized: "Updating chats…")
-    case .unavailable: String(localized: "Chats may not be up to date")
+    case .liveUpdatesUnavailable: String(localized: "Live updates unavailable")
+    case .updateFailed: String(localized: "Unable to update chats")
     }
   }
 }

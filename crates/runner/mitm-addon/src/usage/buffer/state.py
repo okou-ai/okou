@@ -97,7 +97,6 @@ from .models import (
     UsageFlushTrigger,
     _AggregateBucket,
     _AggregateKey,
-    _BatchAdmissionResult,
     _BufferedSourceEvent,
     _DeliveringFlush,
     _DeliveryCompletion,
@@ -368,22 +367,21 @@ class _UsageBufferState:
         )
 
     def complete_admission(
-        self, pending_flush: _PendingFlush, admission_result: _BatchAdmissionResult
+        self, pending_flush: _PendingFlush, admitted_batch_count: int
     ) -> _RetainBatchesResult:
+        """Reconcile callbacks against the admitted prefix of the original flush."""
         delivering_flush = self._delivering_flushes.get(id(pending_flush))
         retain_result = _RetainBatchesResult(retained_batches=[], dropped_batches=[])
-        if delivering_flush is not None and admission_result.retained_batches:
-            admitted_batches = pending_flush.batches[: admission_result.admitted_batch_count]
+        if delivering_flush is not None and admitted_batch_count < len(pending_flush.batches):
+            admitted_batches = pending_flush.batches[:admitted_batch_count]
             completed_outcome_count = (
                 len(pending_flush.batches) - delivering_flush.remaining_batch_count
             )
-            remaining_admitted_count = (
-                admission_result.admitted_batch_count - completed_outcome_count
-            )
+            remaining_admitted_count = admitted_batch_count - completed_outcome_count
             if admitted_batches and remaining_admitted_count > 0:
                 retain_result = self._retain_batches_for_retry(
                     pending_flush.flush_sequence,
-                    admission_result.retained_batches,
+                    pending_flush.batches[admitted_batch_count:],
                     delivering_flush.flush_generation,
                 )
                 delivering_flush.pending_flush = _pending_flush_from_pending_batches(
@@ -398,8 +396,7 @@ class _UsageBufferState:
                 batches_to_retain = [
                     pending_batch
                     for index, pending_batch in enumerate(pending_flush.batches)
-                    if index >= admission_result.admitted_batch_count
-                    or id(pending_batch) in retryable_batch_ids
+                    if index >= admitted_batch_count or id(pending_batch) in retryable_batch_ids
                 ]
                 retain_result = self._retain_batches_for_retry(
                     pending_flush.flush_sequence,

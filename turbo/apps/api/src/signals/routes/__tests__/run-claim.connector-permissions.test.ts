@@ -26,6 +26,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -368,9 +369,14 @@ describe.each([false, true])(
       },
     );
 
-    it.each([false, true])(
-      "uses the current temporary grant when expired before claim: %s",
-      async (expired) => {
+    it.each([
+      "active",
+      "expired-before-claim",
+      "expired-during-claim",
+    ] as const)(
+      "evaluates the captured permission source and temporary deadline: %s",
+      async (expiry) => {
+        const expired = expiry !== "active";
         const startedAt = Date.parse("2026-11-05T00:00:00.000Z");
         mockNow(startedAt);
         const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
@@ -421,8 +427,25 @@ describe.each([false, true])(
           agentId,
           prompt: "use the current Slack write grant and its original expiry",
         });
+        // Queued Runs retain their permission-store decision even if the
+        // member changes modes before a Runner claims them.
+        await connectors.updateFeatureSwitches(actor, {
+          connectorChatAccountAccess: !chatAccounts,
+        });
         const expiresAt = startedAt + 60 * 60 * 1000;
-        mockNow(expired ? expiresAt : startedAt + 30 * 60 * 1000);
+        mockNow(
+          expiry === "expired-before-claim"
+            ? expiresAt
+            : startedAt + 30 * 60 * 1000,
+        );
+        if (expiry === "expired-during-claim") {
+          // Claim encrypts its reconstructed secrets after hydration. Let the
+          // external KMS response cross the exact temporary-allow boundary.
+          useSecretKmsProbe(() => {
+            mockNow(expiresAt);
+            return undefined;
+          });
+        }
         const { claim, sandboxHeaders } = await claimChatRun(
           runnerGroup,
           queued.runId,
@@ -438,6 +461,11 @@ describe.each([false, true])(
         } else {
           expect(claim.networkPolicyRefreshes?.slack).toStrictEqual({
             nextRefreshAt: new Date(expiresAt).toISOString(),
+          });
+          // Active-Run sync follows current settings, independently of the
+          // captured Claim decision. Restore the mode before testing expiry.
+          await connectors.updateFeatureSwitches(actor, {
+            connectorChatAccountAccess: chatAccounts,
           });
           mockNow(expiresAt);
           const synced = await runs.syncConnectorRuntime(queued.runId, {

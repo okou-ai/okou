@@ -1337,8 +1337,9 @@ export type WorkflowAutomationUpdateRequest = zInfer<
 
 /**
  * Workflow summary. A workflow belongs to exactly one agent (`agentId`).
- * `canManage` reflects the caller's effective rights (agent write-permission
- * for public workflows; ownership for private ones).
+ * `canManage` allows editing, deletion and demotion: workflow ownership or agent
+ * write-permission for public workflows; ownership for private ones.
+ * Official workflows remain read-only.
  */
 export const workflowSummarySchema = object({
   id: uuid(),
@@ -1647,8 +1648,7 @@ export const workflowVisibilityContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary:
-      "Agent write-permission holder demotes a public workflow to private",
+    summary: "Workflow maintainer demotes a public workflow to private",
   },
 });
 

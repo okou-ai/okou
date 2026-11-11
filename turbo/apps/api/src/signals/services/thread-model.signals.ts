@@ -42,7 +42,10 @@ import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
-import type { ModelCatalog } from "./model-catalog.service";
+import {
+  catalogSubscriptionUpstreamModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import {
   isPersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
@@ -707,11 +710,19 @@ function createModelEnvironment(
       ) {
         return null;
       }
+      const upstreamModel = catalogSubscriptionUpstreamModel(
+        await get(bootstrap.modelCatalog$),
+        args.selectedModelOverride,
+        type,
+      );
+      if (!upstreamModel) {
+        return null;
+      }
       return prepareSubscriptionModelEnvironment(
         source,
         args.selectedModelOverride,
         {
-          catalog: await get(bootstrap.modelCatalog$),
+          upstreamModel,
           userId: args.userId,
           sourceId: args.modelProviderId,
           piExecution: args.piExecution,

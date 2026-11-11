@@ -42,6 +42,7 @@ function installDependencyFixture({
   kdcSshId,
   configurationReady,
   failAccessAfterVncEnabled = false,
+  failConfigurationOnce = false,
   saveReady,
   refreshReady,
   failSave = false,
@@ -54,6 +55,7 @@ function installDependencyFixture({
   kdcSshId?: string;
   configurationReady?: Promise<void>;
   failAccessAfterVncEnabled?: boolean;
+  failConfigurationOnce?: boolean;
   saveReady?: Promise<void>;
   refreshReady?: Promise<void>;
   failSave?: boolean;
@@ -200,6 +202,12 @@ function installDependencyFixture({
   });
   context.mocks.api(vncConnectionsContract.list, async ({ respond }) => {
     await configurationReady;
+    if (failConfigurationOnce) {
+      failConfigurationOnce = false;
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Configuration unavailable" },
+      });
+    }
     return respond(200, { connections: [connection] });
   });
 }
@@ -230,7 +238,6 @@ test.each([
     option: "On",
     keys: "{ArrowDown}{Enter}",
     dependency: SSH_ENABLED_NOTE,
-    headings: ["SSH", "Enabled", "Disabled"],
   },
   {
     protocol: "VNC",
@@ -238,14 +245,18 @@ test.each([
     option: "Off",
     keys: "{End}{Enter}",
     dependency: SSH_NOTE,
-    headings: ["VNC", "Disabled"],
   },
 ])(
-  "New-chat $protocol regrouping preserves keyboard focus and VNC dependency feedback",
-  async ({ protocol, name, option, keys, dependency, headings }) => {
+  "New-chat $protocol choices preserve row order, keyboard focus and VNC dependency feedback",
+  async ({ name, option, keys, dependency }) => {
     installDependencyFixture({ newChat: true });
     const menu = await openRemoteAccess(true);
     await within(menu).findByText(SSH_WARNING);
+    const originalOrder = within(menu)
+      .getAllByRole("combobox")
+      .map((control) => {
+        return control.getAttribute("aria-label");
+      });
     const user = userEvent.setup({ delay: null });
     within(menu).getByRole("combobox", { name }).focus();
     await user.keyboard("{Enter}");
@@ -257,14 +268,13 @@ test.each([
       expect(control).toHaveTextContent(option);
       expect(control).toHaveFocus();
     });
-    const section = within(menu).getByRole("region", { name: protocol });
     expect(
-      within(section)
-        .getAllByRole("heading")
-        .map((heading) => {
-          return heading.textContent;
+      within(menu)
+        .getAllByRole("combobox")
+        .map((control) => {
+          return control.getAttribute("aria-label");
         }),
-    ).toStrictEqual(headings);
+    ).toStrictEqual(originalOrder);
   },
 );
 
@@ -322,9 +332,7 @@ test.each([
     expect(screen.queryByRole("listbox")).toBeNull();
 
     save.resolve();
-    await waitFor(() => {
-      expect(control).not.toHaveAttribute("aria-busy", "true");
-    });
+    expect(control).toHaveAttribute("aria-busy", "true");
     expect(control).toHaveFocus();
     refresh.resolve();
     await waitFor(() => {
@@ -358,7 +366,7 @@ test.each([false, true])(
     });
     await user.keyboard("{Tab}");
     const destination = within(menu).getByRole("combobox", {
-      name: "SSH Directory tunnel",
+      name: "SSH Other tunnel",
     });
     expect(destination).toHaveFocus();
     await user.keyboard("{Enter}{ArrowDown}{Enter}");
@@ -369,7 +377,16 @@ test.each([false, true])(
       expect(control).toHaveTextContent(failSave ? "Default (On)" : /^On$/);
     });
     expect(destination).toHaveFocus();
-    await chooseHost("SSH Directory tunnel", "On");
+    if (failSave) {
+      await within(menu).findByText(
+        "Couldn't confirm whether your change was saved. Reload permissions before making another change.",
+      );
+      click(await findFastControl("button", "Reload", menu));
+    }
+    await waitFor(() => {
+      expect(destination).not.toHaveAttribute("aria-readonly", "true");
+    });
+    await chooseHost("SSH Other tunnel", "On");
     await waitFor(() => {
       expect(destination).not.toHaveAttribute("aria-busy", "true");
       expect(destination).toHaveTextContent(
@@ -522,12 +539,20 @@ test("VNC reports its transport and KDC SSH dependencies independently", async (
     within(menu).findByText(KDC_WARNING),
   ).resolves.toBeInTheDocument();
   expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
-  await chooseHost("SSH MacinCloud", "On");
+  click(
+    await findFastControl("button", "Enable SSH MacinCloud in this chat", menu),
+  );
   await expect(
     within(menu).findByText(SSH_ENABLED_NOTE),
   ).resolves.toBeInTheDocument();
   expect(within(menu).getByText(KDC_WARNING)).toBeInTheDocument();
-  await chooseHost("SSH Directory tunnel", "On");
+  click(
+    await findFastControl(
+      "button",
+      "Enable SSH Directory tunnel in this chat",
+      menu,
+    ),
+  );
   await expect(
     within(menu).findByText("SSH enabled: Directory tunnel"),
   ).resolves.toBeInTheDocument();
@@ -553,6 +578,29 @@ test("The same SSH host used for VNC and KDC is explained only once", async () =
   const menu = await openRemoteAccess();
   await within(menu).findByText(SSH_WARNING);
   expect(within(menu).getAllByText(SSH_WARNING)).toHaveLength(1);
+});
+
+test("A failed VNC configuration read leaves SSH choices available and can be reloaded", async () => {
+  installDependencyFixture({ failConfigurationOnce: true });
+  await setupPage({ context, path: `/chats/${SCOUT_THREAD_ID}` });
+  click(await findFastControl("button", "Connectors"));
+  click(await screen.findByText("Remote access"));
+  const menu = await screen.findByRole("dialog", { name: "Remote access" });
+  await within(menu).findByText("Could not load VNC configuration.");
+  const ssh = within(menu).getByRole("combobox", { name: "SSH Other tunnel" });
+  await chooseHost("SSH Other tunnel", "On");
+  await waitFor(() => {
+    expect(ssh).toHaveTextContent("On");
+    expect(ssh).not.toHaveAttribute("aria-readonly", "true");
+  });
+  click(await findFastControl("button", "Reload", menu));
+  await within(menu).findByText(SSH_WARNING);
+  const control = within(menu).getByRole("combobox", {
+    name: "VNC MacinCloud",
+  });
+  await waitFor(() => {
+    expect(control).not.toHaveAttribute("aria-readonly", "true");
+  });
 });
 
 test("Pending VNC configuration is not interpreted as disabled SSH access", async () => {

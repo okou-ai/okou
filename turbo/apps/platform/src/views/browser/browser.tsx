@@ -58,6 +58,10 @@ import type {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Reason } from "../../signals/utils.ts";
 import { detachBrowser as detach } from "../../signals/browser/reporting.ts";
+import {
+  BrowserFrameRate,
+  BrowserFrameRateMenu,
+} from "./browser-frame-rate.tsx";
 
 function BrowserOperationError({
   occurrences,
@@ -194,6 +198,7 @@ function BrowserSettings({
               return changeTransport(value, pageSignal);
             }}
           />
+          <BrowserFrameRateMenu signals={signals.frameRate} />
         </DropdownMenuContent>
       </DropdownMenu>
       <BrowserOperationError
@@ -1550,6 +1555,7 @@ export function Browser({
             className="block h-full w-full object-contain"
           />
           <BrowserInput signals={signals} />
+          <BrowserFrameRate signals={signals.frameRate} />
         </div>
         {placeholder ?? (
           <BrowserStatus

@@ -372,6 +372,8 @@
         "blurComposer": "Kaburkan composer",
         "changeIcon": "Ubah ikon",
         "clearIcon": "Hapus ikon",
+        "collapseProject": "Ciutkan Project",
+        "expandProject": "Luaskan Project",
         "newChat": "Chat baru",
         "nextAgent": "Agen berikutnya",
         "nextThread": "Thread berikutnya",
@@ -1431,6 +1433,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "Maju",
+    "fps": "FPS",
+    "fpsOff": "Sembunyikan",
+    "fpsOn": "Tampilkan",
+    "fpsReading": "{{value}} FPS",
     "liveView": "Tampilan browser langsung",
     "newTab": "Tab baru",
     "noTabs": "Tidak ada tab terbuka",
@@ -1638,8 +1644,7 @@
       "sending": "Mengirim…",
       "sent": "Dikirim ke chat baru",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Gunakan saran"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1860,7 +1865,9 @@
         "title": "Buat"
       },
       "explore": "Jelajahi",
+      "exploreWhatsNew": "Lihat yang baru",
       "research": {
+        "description": "Trafik, iklan, produk, topik",
         "items": {
           "ads": "Jelajahi materi iklan",
           "products": "Riset produk",
@@ -1873,6 +1880,7 @@
         "title": "Riset"
       },
       "search": {
+        "description": "Pelanggan, kreator, pengambil keputusan",
         "items": {
           "affiliates": "Program afiliasi",
           "creators": "Kemitraan kreator",
@@ -1903,6 +1911,7 @@
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
+        "summary": "Berjalan sesuai jadwal atau pemicu",
         "triggers": {
           "description": "Mulai saat suatu peristiwa terjadi.",
           "eventPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan sumber, filter, dan tujuan hasil. Siapkan draf alur kerja dan konfirmasi pengaturan sebelum mengaktifkannya.",
@@ -2341,16 +2350,34 @@
       "untitled": "Tanpa judul"
     },
     "remoteAccess": {
+      "all": "Semua",
+      "allowed": "Diizinkan",
+      "autoSave": "Perubahan disimpan otomatis untuk chat ini",
+      "connections": "Koneksi",
       "default": "Default",
       "defaultEnabled": "Aktif secara default untuk chat",
-      "disabled": "Dinonaktifkan",
-      "enabled": "Diaktifkan",
+      "draft": "Diterapkan saat mengirim pesan pertama",
       "enabledCount_other": "{{count}} aktif",
+      "enableInChat": "Aktifkan di chat ini",
+      "enableSsh": "Aktifkan SSH {{name}} di chat ini",
+      "filterHint": "Koneksi yang diubah tetap terlihat hingga filter diganti",
+      "fromChat": "Chat ini",
       "loadFailed": "Gagal memuat akses jarak jauh.",
       "loading": "Memuat akses jarak jauh…",
+      "manage": "Kelola koneksi",
+      "needsReload": "Muat ulang untuk memastikan izin",
+      "noConnections": "Belum ada koneksi SSH atau VNC yang dikonfigurasi",
+      "noneAllowed": "Belum ada koneksi yang diizinkan di chat ini",
+      "notAllowed": "Tidak diizinkan",
       "off": "Nonaktif",
       "on": "Aktif",
+      "reload": "Muat ulang",
       "requiresSsh": "Memerlukan SSH: {{name}}",
+      "saved": "Tersimpan untuk chat ini",
+      "saveUnconfirmed": "Belum dapat memastikan perubahan tersimpan. Muat ulang izin sebelum mengubah lagi.",
+      "saving": "Menyimpan…",
+      "scope": "Pilih koneksi yang dapat digunakan Okou di chat ini",
+      "showAll": "Tampilkan semua koneksi",
       "sshDisabled": "Aktifkan SSH: {{name}}",
       "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
@@ -3194,11 +3221,10 @@
     "enableByDefault": "Aktifkan {{account}} secara default",
     "enabledAccounts": "{{value}} aktif",
     "manageAccounts": "Kelola akun",
-    "noAccount": "Tidak ada akun dipilih",
     "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
-    "settingsDescription": "Pilih akun yang aktif secara default dan akun default untuk chat baru."
+    "settingsDescription": "Pilih akun yang aktif secara default."
   },
   "connectors": {
     "access": {
@@ -4341,6 +4367,7 @@
     "documentTitles": {
       "make": "Selamat datang di {{brandName}}"
     },
+    "handoffUnavailable": "Tugas dari tautan tidak dapat dipulihkan. Anda dapat melanjutkan seperti biasa; draf yang ada tetap tersimpan.",
     "make": {
       "promptLabel": "Prompt onboarding",
       "promptTitle": "Sesuaikan tugas ini"
@@ -5062,6 +5089,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "Ciutkan",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
@@ -5071,6 +5099,7 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
+    "expand": "Luaskan",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -5860,6 +5889,7 @@
         "learning": {
           "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
           "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
+          "openChat": "Buka percakapan",
           "queued": "Pembelajaran masuk antrean.",
           "requestFailed": "Permintaan belum dapat dikonfirmasi.",
           "run": "Jalankan pembelajaran",
@@ -6333,6 +6363,32 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
+  "sshAuthorization": {
+    "allow": "Izinkan di chat ini",
+    "blocked": {
+      "chat_busy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
+      "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
+      "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
+    },
+    "continue": "Lanjutkan tugas",
+    "details": "Detail akses",
+    "effect": "Mengizinkan perintah dan transfer file sebagai pengguna jarak jauh ini hingga akses dinonaktifkan.",
+    "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
+    "retry": "Coba lagi",
+    "scope": "Host ini · Hanya chat ini",
+    "status": {
+      "approved": "Akses SSH diizinkan",
+      "denied": "Akses SSH ditolak",
+      "expired": "Permintaan SSH kedaluwarsa",
+      "pending": "Akses SSH",
+      "revoked": "Akses SSH dicabut",
+      "stale": "Permintaan SSH berubah"
+    },
+    "title": "Akses SSH",
+    "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
     "delete": "Hapus Tailscale",
@@ -6442,6 +6498,26 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Kembali ke alur kerja",
+      "disabled": "Dinonaktifkan",
+      "disabledAt": "Dinonaktifkan pada {{time}}",
+      "loadFailed": "Tidak dapat memuat otomatisasi ini",
+      "loadingAutomation": "Memuat otomatisasi",
+      "notNow": "Tidak sekarang",
+      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
+      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
+      "switchWorkspace": "Ganti ruang kerja",
+      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
+      "systemSource": "Notifikasi sistem",
+      "title": "Otomatisasi dinonaktifkan",
+      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
+      "viewAutomation": "Lihat otomatisasi",
+      "workspace": "Ruang kerja",
+      "workspaceFallback": "Ruang kerja asal"
+    },
     "close": "Tutup",
     "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
     "detailFailed": "Tidak dapat memuat notifikasi ini",
@@ -7321,15 +7397,30 @@
     },
     "documentTitle": "Berfungsi",
     "email": {
+      "actions": "Tindakan",
+      "addEmail": "Tambah email",
+      "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+      "codeInstructions": "Kirim kode ini ke Okou dari alamat email yang ingin ditambahkan. Gunakan sebagai subjek atau baris pertama pesan.",
       "connected": "Email terhubung",
+      "deleteAria": "Hapus {{email}}",
       "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "emailAddress": "Alamat email",
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
-      "instructions": "Kirim pesan dari alamat email akun Anda. Email baru memulai chat baru; balasan melanjutkan percakapan yang sama. Jika Anda pengguna baru, kami akan membantu pendaftaran lalu melanjutkan permintaan Anda.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
       "loadError": "Tidak dapat memuat koneksi email Anda",
+      "loginNotice": "Email login Anda tetap terhubung.",
       "manage": "Kelola",
+      "manageDescription": "Kirim kode dari alamat email yang ingin ditambahkan.",
+      "manageTitle": "Koneksi email",
+      "newCode": "Buat kode baru",
       "open": "Buka email",
+      "options": "Opsi email",
       "resumed": "{{email}} terhubung. Permintaan awal Anda akan dijawab dalam percakapan email yang sama.",
+      "sendTo": "Kirim ke {{address}}",
+      "signInEmail": "Email login",
+      "source": "Sumber",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "Email",
       "unavailable": "Email belum tersedia untuk ruang kerja ini"
     },

@@ -28,16 +28,25 @@ enum OkouRadius {
   static let chat: CGFloat = 16
   static let card: CGFloat = 20
   static let sheet: CGFloat = 28
+  /// The chat pushed aside by the open sidebar becomes a card with large, screen-like corners.
+  static let page: CGFloat = 44
 }
 
 enum OkouControl {
+  /// The open sidebar's share of the screen's width. The rest is a strip of the chat, dimmed,
+  /// that returns to it when tapped, as chat and mail apps leave one.
+  static let sidebarShare: CGFloat = 0.85
   /// Minimum interactive area; small artwork may sit inside this area.
   static let minimumTarget: CGFloat = 44
+  /// One-line chat composer; its actions retain the full minimum target.
+  static let composerCompactHeight: CGFloat = 44
   static let largeHeight: CGFloat = 52
   static let pageInset: CGFloat = 24
   static let readableWidth: CGFloat = 440
   /// Chat rows in the sidebar.
   static let listRow: CGFloat = 48
+  /// Maximum scrollable content height for composer chat and workflow candidates.
+  static let suggestionListHeight: CGFloat = 264
   /// A row in a grouped card (Settings and every sheet): the height the system gives a row
   /// with a 28 pt icon slot or a switch, so a row of text alone is no shorter beside it.
   static let groupedRow: CGFloat = 52
@@ -133,6 +142,9 @@ enum OkouAvatarSize {
 enum OkouMotion {
   static let press = Animation.easeOut(duration: 0.15)
   static let transition = Animation.easeInOut(duration: 0.25)
+  /// A list section folding open or shut (Pinned, a project): a soft spring with no bounce, so
+  /// the rows and the chevron settle together.
+  static let disclosure = Animation.spring(response: 0.35, dampingFraction: 1)
   /// The navigation bar changing height (the search field rising into it), as UIKit moves it;
   /// a page under the bar follows in this time (`OkouUnderNavigationBar`).
   static let barMove: TimeInterval = 0.35
@@ -146,8 +158,6 @@ enum OkouMotion {
   static let waveformSample: TimeInterval = 0.05
   /// How far left the sidebar starts as it slides in, as a share of its width.
   static let sidebarParallax: CGFloat = 0.25
-  /// How much of the screen each page's leading edge fades over while the sidebar moves.
-  static let sidebarFeather: CGFloat = 0.35
   /// A skeleton's shimmer: one sweep of the light across the group, the band's width as a
   /// share of the group's, how much it lifts the grey, and its slant.
   static let shimmer: Double = 1.6
@@ -158,9 +168,11 @@ enum OkouMotion {
   /// how far it dims.
   static let skeletonPulse: Double = 2
   static let skeletonDim: Double = 0.7
-  /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
+  /// Web `--duration-running-indicator`.
   static let runningCycle: Double = 2.4
-  static let runningWaveRows: Double = 12
+  /// One sweep of a working title's band (`OkouShimmerText`): faster than the web's 3.5 s
+  /// thinking label, so a working chat is obvious in a list read at a glance.
+  static let shimmerText: Double = 2
   /// Streamed text is published at most this often so a row is not re-measured per chunk.
   static let streamFlush = Duration.milliseconds(120)
   /// Routine sync finishes sooner; only a slow sync shows its banner.
@@ -171,8 +183,13 @@ enum OkouMotion {
 
 /// Shadows are reserved for surfaces that float over content.
 enum OkouElevation {
-  /// The chat behind the open sidebar blurs to this radius as the list slides in.
-  static let sidebarBlur: CGFloat = 12
+  /// The chat pushed aside by the open sidebar, as ChatGPT leaves it: a card lightly frosted
+  /// (the thinnest material at this opacity, so its messages still show through the frost),
+  /// edged by a very faint hairline (`border` at this opacity) and a soft shadow.
+  static let sidebarFrost: Double = 0.6
+  static let sidebarEdgeLineOpacity: Double = 0.5
+  static let sidebarEdgeRadius: CGFloat = 16
+  static let sidebarEdgeOpacity: Double = 0.12
   /// Suggestion panels above the composer (slash workflows, @mentions).
   static let floatingRadius: CGFloat = 16
   static let floatingY: CGFloat = 6

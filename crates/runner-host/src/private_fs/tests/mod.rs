@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{ignored_child_test_env_guard_enabled, run_ignored_child_test};
+use cli_test_support::directory_permissions::DirectoryPermissions;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
@@ -179,11 +180,12 @@ async fn ensure_private_dir_repairs_unreadable_existing_dir() {
     let dir = tempfile::tempdir().unwrap();
     let private_dir = dir.path().join("runner");
     std::fs::create_dir(&private_dir).unwrap();
-    std::fs::set_permissions(&private_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let permissions = DirectoryPermissions::set(&private_dir, 0o000).unwrap();
 
     ensure_private_dir(&private_dir).await.unwrap();
 
     assert_eq!(mode(&private_dir), PRIVATE_DIR_MODE);
+    permissions.restore().unwrap();
 }
 
 #[test]
@@ -310,7 +312,7 @@ async fn ensure_private_dir_rejects_symlink_under_unreadable_intermediate_dir() 
     std::fs::create_dir(&intermediate).unwrap();
     std::fs::create_dir(&target).unwrap();
     symlink(&target, &link).unwrap();
-    std::fs::set_permissions(&intermediate, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let permissions = DirectoryPermissions::set(&intermediate, 0o000).unwrap();
 
     let error = ensure_private_dir(&private_dir).await.unwrap_err();
     let message = error.to_string();
@@ -326,6 +328,7 @@ async fn ensure_private_dir_rejects_symlink_under_unreadable_intermediate_dir() 
         !target.join("runner").exists(),
         "private dir should not be created through a symlink hidden by an unreadable parent"
     );
+    permissions.restore().unwrap();
 }
 
 #[tokio::test]
@@ -404,7 +407,7 @@ fn private_dir_parent_rejects_untrusted_owner() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().join("owned-by-other-user");
     std::fs::create_dir(&parent).unwrap();
-    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let permissions = DirectoryPermissions::set(&parent, 0o555).unwrap();
     if nix::unistd::geteuid().is_root() {
         chown(&parent, Some(Uid::from_raw(1)), None).unwrap();
     }
@@ -417,6 +420,7 @@ fn private_dir_parent_rejects_untrusted_owner() {
         error.to_string().contains("untrusted uid"),
         "unexpected error: {error}"
     );
+    permissions.restore().unwrap();
 }
 
 #[test]

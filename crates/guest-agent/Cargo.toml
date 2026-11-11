@@ -1,7 +1,10 @@
 [package]
 name = "guest-agent"
-version = "0.109.59"
+version = "0.109.67"
 edition.workspace = true
+
+[features]
+test-support = []
 
 [dependencies]
 aho-corasick = { workspace = true, features = ["perf-literal", "std"] }

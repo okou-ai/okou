@@ -131,6 +131,10 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     let succeeded = await read.value
     XCTAssertFalse(succeeded)
     XCTAssertTrue(store.accounts.isEmpty)
+    XCTAssertThrowsError(try store.resources.invalidate()) {
+      XCTAssertTrue($0 is CancellationError)
+    }
+    XCTAssertThrowsError(try store.stateStore.get(store.resources.value))
   }
 
   func testUsageFreshnessWindowStartsAfterSuccessfulRead() async throws {

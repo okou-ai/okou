@@ -21,6 +21,10 @@ import {
   onRejection,
 } from "./utils.ts";
 import { ROUTES } from "./route-paths.ts";
+import {
+  automationNotificationDestination,
+  automationNotificationLocation,
+} from "../lib/automation-notification-location.ts";
 
 const reload$ = state(0);
 const clerkVersion$ = state(0);
@@ -561,7 +565,17 @@ export const watchOrgSwitch$ = command(
       }
 
       if (!signal.aborted) {
-        location.href = needsOnboarding ? ONBOARDING_PATH : "/";
+        const automation = automationNotificationDestination(
+          location.pathname,
+          location.search,
+        );
+        // Preserve only a controlled automation deep link for the workspace
+        // just activated. Ordinary switches still return to the home page.
+        location.href = needsOnboarding
+          ? ONBOARDING_PATH
+          : automation?.workspaceId === newOrgId
+            ? automationNotificationLocation(automation)
+            : "/";
       }
     });
     signal.addEventListener("abort", unsubscribe);

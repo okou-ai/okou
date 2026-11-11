@@ -6,8 +6,6 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
-  static let compactHeight: CGFloat = 56
-
   @Binding var draft: String
   let isBusy: Bool
   let showsProgress: Bool
@@ -41,7 +39,6 @@ struct ChatComposerView: View {
   /// What "Add to chat" asked for; the composer opens it once the sheet has gone.
   @State private var pendingAdd: ComposerAddAction?
   @State private var showsScanner = false
-  @State private var trailingWidth: CGFloat = 106
   @State private var sendFeedback = 0
   @State private var stopFeedback = 0
   @State private var mountedVoice: ComposerVoiceInputStore?
@@ -49,9 +46,6 @@ struct ChatComposerView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.newChatActivation) private var newChatActivation
   private let actionSize = OkouControl.minimumTarget
-
-  private var cornerRadius: CGFloat { Self.compactHeight / 2 }
-  private var actionInset: CGFloat { cornerRadius - actionSize / 2 }
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var hasContent: Bool {
@@ -149,52 +143,32 @@ struct ChatComposerView: View {
       }
 
       let inputID = attachments.inputID
-      if let editor = draftState?.editor, !editor.mentionSuggestions.isEmpty {
-        ComposerMentionMenu(editor: editor, suggestions: editor.mentionSuggestions)
-      }
       // Retired native editors must leave immediately. Fading a first responder
       // through a draft reset can restart keyboard avoidance during the send flight.
-      Group {
-        if let state = draftState {
-          ChatFeedbackComposer(
-            state: state, inputID: inputID, isFocused: $isFocused,
-            acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder
-          )
-          .id(inputID)
-          .transition(.identity)
-          .disabled(!state.document.isSupported)
-        } else {
-          ChatComposerTextInput(
-            text: $draft, isFocused: $isFocused,
-            acceptsImages: !isBusy && !needsUpgrade,
-            isCurrent: { attachments.inputID == inputID },
-            pasteImages: attachments.importPastedImages,
-            placeholder: resolvedPlaceholder
-          )
-          .id(inputID)
-          .transition(.identity)
+      OkouComposerSurface(isExpanded: expandsInput) {
+        Group {
+          if let state = draftState {
+            ChatFeedbackComposer(
+              state: state, inputID: inputID, isFocused: $isFocused,
+              acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder
+            )
+            .id(inputID)
+            .transition(.identity)
+            .disabled(!state.document.isSupported)
+          } else {
+            ChatComposerTextInput(
+              text: $draft, isFocused: $isFocused,
+              acceptsImages: !isBusy && !needsUpgrade,
+              isCurrent: { attachments.inputID == inputID },
+              pasteImages: attachments.importPastedImages,
+              placeholder: resolvedPlaceholder
+            )
+            .id(inputID)
+            .transition(.identity)
+          }
         }
-      }
-      .accessibilityIdentifier("message-input")
-      .padding(
-        .leading, expandsInput ? 18 : 58
-      )
-      .padding(.trailing, expandsInput ? 18 : trailingWidth + actionInset + OkouSpace.sm)
-      .padding(.top, expandsInput ? 17 : 10)
-      .padding(.bottom, expandsInput ? 62 : 10)
-      .frame(
-        minHeight: expandsInput ? 116 : Self.compactHeight,
-        alignment: expandsInput ? .topLeading : .leading
-      )
-      .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-      .anchorPreference(key: ComposerWorkflowPresentation.self, value: .bounds) { bounds in
-        guard let workflows = draftState?.editor.workflows, workflows.query != nil else {
-          return nil
-        }
-        return ComposerWorkflowPresentation.Presentation(
-          bounds: bounds, suggestions: workflows, isDisabled: isBusy || needsUpgrade)
-      }
-      .overlay(alignment: expandsInput ? .bottomLeading : .leading) {
+        .accessibilityIdentifier("message-input")
+      } leading: {
         HStack(spacing: 0) {
           Button {
             showsAddSheet = true
@@ -216,10 +190,7 @@ struct ChatComposerView: View {
           .disabled(isBusy || needsUpgrade)
           // The model control lives in the header beside the menu (ChatWorkspaceHeader).
         }
-        .padding(.leading, actionInset)
-        .padding(.bottom, expandsInput ? actionInset : 0)
-      }
-      .overlay(alignment: expandsInput ? .bottomTrailing : .trailing) {
+      } trailing: {
         HStack(spacing: OkouSpace.xs) {
           // The mic sits beside send once there is a draft; on an empty one it takes send's place.
           if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
@@ -267,14 +238,19 @@ struct ChatComposerView: View {
             .contentShape(Circle())
           }
         }
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.width
-        } action: {
-          trailingWidth = $0
+      }
+      .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
+        guard let editor = draftState?.editor else { return nil }
+        let content: ComposerSuggestionPresentation.Content
+        if editor.workflows.query != nil {
+          content = .workflows(editor.workflows)
+        } else if editor.mentionQuery != nil {
+          content = .chats(editor)
+        } else {
+          return nil
         }
-        .padding(.leading, expandsInput ? actionSize + actionInset + OkouSpace.xs : 0)
-        .padding(.trailing, actionInset)
-        .padding(.bottom, expandsInput ? actionInset : 0)
+        return ComposerSuggestionPresentation.Presentation(
+          bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
       }
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),
@@ -286,9 +262,9 @@ struct ChatComposerView: View {
         value: hasText)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
-    .padding(.horizontal, OkouSpace.lg)
+    .padding(.horizontal, OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
-    .padding(.bottom, isFocused ? 8 : 0)
+    .padding(.bottom, isFocused ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)

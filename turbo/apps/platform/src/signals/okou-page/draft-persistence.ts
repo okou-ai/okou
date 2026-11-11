@@ -81,5 +81,11 @@ export function buildDraftPersistencePayload(
     }
   }
 
-  return { userMessage, attachments };
+  const whitespaceOnly = userMessage?.parts.every((part) => {
+    return part.type === "text" && part.text.trim().length === 0;
+  });
+  return {
+    userMessage: whitespaceOnly && attachments === null ? null : userMessage,
+    attachments,
+  };
 }

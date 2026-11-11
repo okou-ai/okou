@@ -36,6 +36,6 @@
 	<key>NotificationAppGroup</key>
 	<string>group.ai.okou.ios</string>
 	<key>ClerkKeychainAccessGroup</key>
-	<string>C5UWSXYB67.ai.okou.ios</string>
+	<string>$(OKOU_CLERK_KEYCHAIN_ACCESS_GROUP)</string>
 </dict>
 </plist>

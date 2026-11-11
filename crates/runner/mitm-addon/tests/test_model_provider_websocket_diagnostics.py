@@ -137,18 +137,17 @@ async def test_websocket_usage_diagnostic_budget_isolated_and_released(
         await completion
     run_deferred_websocket_trims(deferred_websocket_trims)
 
-    for log in (first_log, second_log):
+    for log, expected_error in (
+        (first_log, "integer value limit exceeded"),
+        (second_log, "work_limit_exceeded"),
+    ):
         warnings = [
             entry
             for entry in read_jsonl_entries_after_flush(log)
             if entry.get("message") == _PARSE_WARNING_MESSAGE
         ]
         assert len(warnings) == 4
-    assert all(
-        entry["error"] == "work_limit_exceeded"
-        for entry in read_jsonl_entries_after_flush(second_log)
-        if entry.get("message") == _PARSE_WARNING_MESSAGE
-    )
+        assert all(entry["error"] == expected_error for entry in warnings)
 
     first.error = Error("connection lost") if termination == "error" else None
     if termination == "error":

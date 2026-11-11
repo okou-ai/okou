@@ -46,6 +46,7 @@ import {
   FolderInput,
 } from "lucide-react";
 import {
+  ChatThreadStateIndicator,
   ChatThreadStateText,
   useChatThreadsTitleLabels,
 } from "./sidebar-shared.tsx";
@@ -56,7 +57,6 @@ import {
   TooltipTrigger,
   Button,
   Input,
-  RunningIndicator,
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -91,10 +91,7 @@ import {
   type SidebarChatThreadScrollSignals,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import type {
-  SidebarChatThreadIndicatorState,
-  SidebarChatThreadItemSignals,
-} from "../../signals/chat-page/sidebar-chat-thread-item.ts";
+import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { OkouChatListRow } from "./sidebar-okou-row.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
@@ -138,8 +135,6 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
 // state indicators keep their own contrast.
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
-// One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
-const RUNNING_INDICATOR_WAVE_ROWS = 12;
 
 // Labels never wrap: the menu grows past its minimum when a label shares its
 // row with a long shortcut such as Ctrl+Shift+X.
@@ -147,31 +142,6 @@ function chatThreadMenuContentClassName(touch: boolean) {
   return cn(
     "min-w-56 whitespace-nowrap",
     touch && "[&_[role=menuitem]]:min-h-11",
-  );
-}
-
-function SessionStateIndicator({
-  state,
-  rowIndex,
-}: {
-  state: SidebarChatThreadIndicatorState;
-  rowIndex: number;
-}) {
-  if (state === "running") {
-    return (
-      <RunningIndicator phaseOffset={rowIndex / RUNNING_INDICATOR_WAVE_ROWS} />
-    );
-  }
-  if (state === "muted") {
-    return <BellOff size={16} className="opacity-35" />;
-  }
-  if (state === "unread") {
-    return <span className="h-2 w-2 rounded-full bg-sky-600" />;
-  }
-  return (
-    <span className="flex items-center justify-center text-sidebar-foreground">
-      <Pencil className="opacity-35" size={16} />
-    </span>
   );
 }
 
@@ -451,7 +421,7 @@ function ChatThreadMenuGlyph({
             className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
           >
             {showStateIndicator ? (
-              <SessionStateIndicator
+              <ChatThreadStateIndicator
                 state={indicatorState}
                 rowIndex={rowIndex}
               />
@@ -1835,7 +1805,9 @@ function ChatThreadListRowContent({
   shortcuts: boolean;
 }) {
   if (row.kind === "project") {
-    return <ProjectRow row={row} touch={touch} layout={layout} />;
+    return (
+      <ProjectRow row={row} rowIndex={index} touch={touch} layout={layout} />
+    );
   }
   if (row.kind !== "thread") {
     return <ProjectStatusRow row={row} layout={layout} />;

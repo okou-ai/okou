@@ -250,7 +250,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
     defer { replacement.close() }
     await replacement.refreshNavigation()
     host.rootView = WorkflowNewChatHost(workspace: replacement)
-    try await eventually { self.inputs(in: host.view).first !== old }
+    try await eventually {
+      guard let current = self.inputs(in: host.view).first else { return false }
+      return current !== old
+    }
     let current = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(current)
     current.insertText("/")
@@ -513,7 +516,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
-    .composerWorkflowOverlay()
+    .composerSuggestionOverlay()
   }
   private func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }
@@ -563,7 +566,9 @@ private struct WorkflowNewChatHost: View {
       workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
-    .composerWorkflowOverlay()
+    .composerSuggestionOverlay()
+    // Production replaces the workspace root at its scope boundary.
+    .id(ObjectIdentifier(workspace))
   }
 }
 

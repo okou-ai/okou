@@ -216,6 +216,8 @@ export const openArtifact$ = command(
     const base = {
       catalogArtifactId: detail.id,
       filename: preview.filename,
+      contentType: preview.contentType,
+      artifactKind: preview.artifactKind,
       preview: previewSignals,
       showSizeInSubtitle: false,
       splitViewAvailable: false,

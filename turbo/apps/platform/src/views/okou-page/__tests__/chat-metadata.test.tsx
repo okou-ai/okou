@@ -387,7 +387,86 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
   });
 });
 
-test("Metadata opens a cold conversation while canonical synchronization continues", async () => {
+test.each(["snapshot", "events"] as const)(
+  "Hidden conversations open from canonical %s without appearing in chat history",
+  async (source) => {
+    configureChatPrerequisites();
+    const snapshot = context.mocks.deferred<void>();
+    const detailsRequested = context.mocks.deferred<void>();
+    const details = context.mocks.deferred<void>();
+    const title = "Hidden learning conversation";
+    const visible = snapshotThread(
+      SECOND_THREAD_ID,
+      "Available sidebar conversation",
+    );
+    context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+      await snapshot.promise;
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads:
+            source === "snapshot"
+              ? [
+                  { ...snapshotThread(FIRST_THREAD_ID, title), hidden: true },
+                  visible,
+                ]
+              : [visible],
+          latestEventId: SNAPSHOT_EVENT_ID,
+          latestSeqId: 1,
+        }),
+      );
+    });
+    context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+      return respond(200, {
+        events:
+          source === "events" && query.sinceSeqId === 1
+            ? [
+                {
+                  ...threadEvent({
+                    kind: "created",
+                    seqId: 2,
+                    threadId: FIRST_THREAD_ID,
+                    title,
+                  }),
+                  hidden: true,
+                },
+              ]
+            : [],
+        hasMore: false,
+      });
+    });
+    context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
+      detailsRequested.resolve();
+      await details.promise;
+      return respond(200, {
+        ...threadMetadata(FIRST_THREAD_ID, title),
+        hidden: true,
+      });
+    });
+
+    const page = await startPage({
+      context,
+      path: `/chats/${FIRST_THREAD_ID}`,
+      auth: isolatedAuth(),
+    });
+    await detailsRequested.promise;
+    snapshot.resolve();
+    await page.ready;
+    details.resolve();
+
+    await expectReadyChat(title);
+    await expect(
+      findLink("Available sidebar conversation"),
+    ).resolves.toHaveAttribute("href", `/chats/${SECOND_THREAD_ID}`);
+    expect(
+      queryAllByRoleFast("link").some((link) => {
+        return link.getAttribute("href") === `/chats/${FIRST_THREAD_ID}`;
+      }),
+    ).toBeFalsy();
+  },
+);
+
+test("Metadata opens a hidden conversation while canonical synchronization continues", async () => {
   configureChatPrerequisites();
   const snapshotRequested = context.mocks.deferred<AbortSignal>();
   const snapshot = context.mocks.deferred<void>();
@@ -400,7 +479,10 @@ test("Metadata opens a cold conversation while canonical synchronization continu
         200,
         mockChatThreadSnapshotResponse(context, {
           chatThreads: [
-            snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
+            {
+              ...snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
+              hidden: true,
+            },
           ],
           latestEventId: SNAPSHOT_EVENT_ID,
           latestSeqId: 1,
@@ -409,7 +491,10 @@ test("Metadata opens a cold conversation while canonical synchronization continu
     },
   );
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(200, threadMetadata(FIRST_THREAD_ID, "Quick conversation"));
+    return respond(200, {
+      ...threadMetadata(FIRST_THREAD_ID, "Quick conversation"),
+      hidden: true,
+    });
   });
 
   const page = await startPage({
@@ -425,6 +510,11 @@ test("Metadata opens a cold conversation while canonical synchronization continu
   await page.ready;
   await expectReadyChat("Canonical conversation");
   expect(document.title).toBe("Canonical conversation | Okou");
+  expect(
+    queryAllByRoleFast("link").some((link) => {
+      return link.getAttribute("href") === `/chats/${FIRST_THREAD_ID}`;
+    }),
+  ).toBeFalsy();
 });
 
 test("Canonical synchronization wins and cancels the losing metadata request", async () => {

@@ -81,6 +81,7 @@ import {
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
+import { setupSshAuthorizationPage$ } from "./ssh-authorization/ssh-authorization-page-setup.ts";
 import { setupDesktopShellAuthorizationPage$ } from "./desktop-shell-authorization/desktop-shell-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
@@ -119,6 +120,7 @@ import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
 import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
+import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
   applyFeatureSwitches$,
@@ -297,6 +299,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.computerUseAuthorize,
     setup: setupAuthPageWrapper(setupComputerUseAuthorizationPage$),
+  },
+  {
+    path: ROUTES.sshAuthorize,
+    setup: setupAuthPageWrapper(setupSshAuthorizationPage$),
   },
   {
     path: ROUTES.desktopShellAuthorize,
@@ -669,6 +675,7 @@ const completeBootstrap$ = command(
       set(setupGlobalKeyboardShortcuts$, signal),
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
+      set(setupProjectFoldShortcuts$, signal),
       set(watchOrgSwitch$, signal),
       set(syncInitialPreferences$, signal),
     ]);

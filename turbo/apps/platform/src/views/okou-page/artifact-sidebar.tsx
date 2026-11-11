@@ -264,6 +264,8 @@ export function ArtifactSidebarContent({
             artifactId={artifactId ?? syncTarget?.artifactId}
             origin={deletionOrigin}
             artifactKind={display.artifactKind}
+            contentType={display.contentType}
+            previewKind={display.kind}
             filename={display.filename}
             syncTarget={syncTarget}
             url={display.url}
@@ -348,6 +350,7 @@ function ArtifactSidebarResolvedContent({
         filename={display.filename}
         kind={display.kind}
         artifactKind={display.artifactKind}
+        contentType={display.contentType}
         subtitle={display.subtitle}
         titleLink={display.titleLink}
         shareAvailable={display.shareAvailable}
@@ -388,6 +391,7 @@ interface ArtifactDisplay {
   titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
+  contentType?: string | undefined;
 }
 
 type ArtifactKindForBody =
@@ -476,6 +480,7 @@ function resolveArtifactDisplay(
       titleLink: artifactTitleLink(ref.kind, item.file),
       shareAvailable: ref.shareAvailable ?? true,
       artifactKind: item.file.artifactKind,
+      contentType: item.file.contentType,
     };
   }
   return {
@@ -486,6 +491,7 @@ function resolveArtifactDisplay(
     subtitle: artifactFallbackSubtitle(ref.kind, ref.filename),
     titleLink: null,
     shareAvailable: ref.shareAvailable ?? true,
+    contentType: ref.contentType,
   };
 }
 
@@ -496,6 +502,7 @@ function ArtifactSidebarHeader({
   filename,
   kind,
   artifactKind,
+  contentType,
   subtitle,
   titleLink,
   shareAvailable,
@@ -512,6 +519,7 @@ function ArtifactSidebarHeader({
   filename: string;
   kind?: ArtifactKindForBody;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
+  contentType?: string | undefined;
   subtitle: string;
   titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
@@ -562,6 +570,7 @@ function ArtifactSidebarHeader({
         shareUrl={shareUrl}
         compactActions={compactActions}
         artifactKind={artifactKind}
+        contentType={contentType}
         fullscreen={fullscreen}
         kind={kind}
         onClose={onClose}
@@ -579,6 +588,7 @@ function ArtifactSidebarActions({
   managementAction,
   shareUrl,
   artifactKind,
+  contentType,
   compactActions,
   fullscreen,
   kind,
@@ -592,6 +602,7 @@ function ArtifactSidebarActions({
   managementAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
+  contentType?: string | undefined;
   compactActions: boolean;
   fullscreen: boolean;
   kind?: ArtifactKindForBody;
@@ -611,6 +622,7 @@ function ArtifactSidebarActions({
           managementAction={managementAction}
           shareUrl={shareUrl}
           artifactKind={artifactKind}
+          contentType={contentType}
           kind={kind}
           shareAvailable={shareAvailable}
           syncTarget={syncTarget}
@@ -635,6 +647,7 @@ function ArtifactSidebarPreviewActions({
   managementAction,
   shareUrl,
   artifactKind,
+  contentType,
   kind,
   shareAvailable,
   syncTarget,
@@ -644,6 +657,7 @@ function ArtifactSidebarPreviewActions({
   managementAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
+  contentType?: string | undefined;
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
@@ -673,6 +687,8 @@ function ArtifactSidebarPreviewActions({
             return $.artifacts.actions.downloadArtifact;
           })}
           artifactKind={artifactKind}
+          contentType={contentType}
+          previewKind={kind}
           filename={filename}
           syncTarget={syncTarget}
           url={url}

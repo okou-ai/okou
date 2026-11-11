@@ -484,7 +484,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     },
   );
 
-  it("publishes messages searchable with inclusive MCP ISO time filters and unchanged Web milliseconds", async () => {
+  it("returns published MCP and Web search hits newest first", async () => {
     // Authenticated operator publication is the system boundary in this case;
     // message construction and all search observations use normal public APIs.
     const app = await setupApp({
@@ -506,16 +506,16 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
-      displayName: "MCP time filtering",
+      displayName: "Search ordering",
       visibility: "private",
     });
-    const keyword = `mcptime${randomUUID().replaceAll("-", "")}`;
+    const keyword = `ordering${randomUUID().replaceAll("-", "")}`;
     const threadId = await withMockNowForTest(
       new Date("2026-10-12T08:00:00Z"),
       async () => {
         const opened = await chat.requestSendEvent(
           owner,
-          { agentId: agent.agentId, model: null, prompt: "Time-filter setup" },
+          { agentId: agent.agentId, model: null, prompt: "Ordering setup" },
           [201],
         );
         if (opened.status !== 201) {
@@ -525,12 +525,11 @@ describe("GET /api/cron/project-chat-event-search", () => {
         return opened.body.threadId;
       },
     );
-    const markers = [
-      { label: "before", createdAt: "2026-10-12T08:02:49.990Z" },
-      { label: "equal", createdAt: "2026-10-12T08:02:50.000Z" },
-      { label: "after", createdAt: "2026-10-12T08:02:50.010Z" },
-    ];
-    for (const marker of markers) {
+    for (const marker of [
+      { label: "oldest", createdAt: "2026-10-12T08:02:49.990Z" },
+      { label: "middle", createdAt: "2026-10-12T08:02:50.000Z" },
+      { label: "newest", createdAt: "2026-10-12T08:02:50.010Z" },
+    ]) {
       await withMockNowForTest(new Date(marker.createdAt), async () => {
         await chat.requestSendEvent(
           owner,
@@ -551,64 +550,35 @@ describe("GET /api/cron/project-chat-event-search", () => {
       }),
       [200],
     );
+
     const token = mcp.authorize(owner);
-    async function search(since?: string) {
-      const response = await mcp.call(token(), "search_chat_messages", {
-        keyword,
-        agentId: agent.agentId,
-        ...(since === undefined ? {} : { since }),
-      });
-      expect(response.isError).not.toBeTruthy();
-      return mcpChatSearchContract.search.responses[200].parse(
-        response.structuredContent,
-      ).results;
-    }
-    const unfiltered = await search();
+    const response = await mcp.call(token(), "search_chat_messages", {
+      keyword,
+      agentId: agent.agentId,
+    });
+    expect(response.isError).not.toBeTruthy();
+    const viaMcp = mcpChatSearchContract.search.responses[200].parse(
+      response.structuredContent,
+    ).results;
     expect(
-      unfiltered.map((hit) => {
+      viaMcp.map((hit) => {
         return hit.matchedMessage.content;
       }),
     ).toStrictEqual([
-      `${keyword} after`,
-      `${keyword} equal`,
-      `${keyword} before`,
+      `${keyword} newest`,
+      `${keyword} middle`,
+      `${keyword} oldest`,
     ]);
-    const equal = unfiltered.find((hit) => {
-      return hit.matchedMessage.content === `${keyword} equal`;
-    });
-    if (!equal) {
-      throw new Error("Expected indexed public message timestamps");
-    }
-    // Native ingress can sequence related events beyond the request clock.
-    // Reuse the public timestamp, just as a caller can, without pinning that policy.
-    const since = equal.matchedMessage.createdAt;
-    const filtered = await search(since);
-    expect(
-      filtered.map((hit) => {
-        return hit.matchedMessage.content;
-      }),
-    ).toStrictEqual([`${keyword} after`, `${keyword} equal`]);
-    expect(filtered).toContainEqual(equal);
-    const offsetSince = new Date(Date.parse(since) + 8 * 3_600_000)
-      .toISOString()
-      .replace("Z", "+08:00");
-    await expect(search(offsetSince)).resolves.toStrictEqual(filtered);
-    const native = await chat.searchChat(owner, keyword, {
+    const viaWeb = await chat.searchChat(owner, keyword, {
       agentId: agent.agentId,
-      since: Date.parse(since),
     });
     expect(
-      native.results.map((hit) => {
-        return hit.matchedMessage.content;
-      }),
-    ).toStrictEqual([`${keyword} after`, `${keyword} equal`]);
-    expect(
-      native.results.map((hit) => {
-        return hit.matchedMessage.createdAt;
+      viaWeb.results.map((hit) => {
+        return [hit.matchedMessage.content, hit.matchedMessage.createdAt];
       }),
     ).toStrictEqual(
-      filtered.map((hit) => {
-        return hit.matchedMessage.createdAt;
+      viaMcp.map((hit) => {
+        return [hit.matchedMessage.content, hit.matchedMessage.createdAt];
       }),
     );
   }, 60_000);

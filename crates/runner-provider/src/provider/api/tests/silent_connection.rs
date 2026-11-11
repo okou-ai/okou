@@ -163,8 +163,8 @@ async fn heartbeat_limits_reconciliation_to_admittable_held_inventory() {
     heartbeats.assert_calls_async(7).await;
 }
 
-// Keep all peers in this runtime and use real time: a paused Tokio clock can
-// expire a claim while the kernel is still moving an ordinary HTTP response.
+// Keep all peers in this runtime. Complete transport setup and the real UTC
+// preference expiry before advancing only the armed reconciliation timer.
 #[tokio::test]
 async fn silent_socket_reconciliation_respects_budget_and_expired_preference() {
     let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
@@ -348,6 +348,7 @@ async fn silent_socket_reconciliation_respects_budget_and_expired_preference() {
         subscription,
     );
     *provider.ably_supervisor.lock().await = Some(supervisor);
+    let timer = provider.poll_wakeups.observe_next_fast_poll_for_test(true);
     let discovering = Arc::clone(&provider);
     let claim = tokio::spawn(async move {
         let candidate = discovering.discover().await.unwrap();
@@ -392,6 +393,15 @@ async fn silent_socket_reconciliation_respects_budget_and_expired_preference() {
     );
     // Keep the actual two-second expiry: ten-second polling cannot promise
     // preferred ownership, and the competitor is allowed to win after expiry.
+    let at = tokio::time::timeout_at(eligible_since + POLL_REUSE + Duration::from_secs(4), timer)
+        .await
+        .expect("initial response and eligible heartbeat must arm reconciliation")
+        .unwrap();
+    assert!(at >= eligible_since + POLL_REUSE);
+    raw_http_test_support::clock::advance_timer_phase(
+        at.saturating_duration_since(tokio::time::Instant::now()),
+    )
+    .await;
     let reconciled_at = tokio::time::timeout_at(
         eligible_since + POLL_REUSE + Duration::from_secs(4),
         reconciled_rx,

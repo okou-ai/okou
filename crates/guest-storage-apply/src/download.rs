@@ -131,11 +131,16 @@ impl PreparedDownloadTask {
 struct PendingDownload {
     id: usize,
     task: PreparedDownloadTask,
+    estimated_work: u64,
 }
 
 impl PendingDownload {
     fn new(id: usize, task: PreparedDownloadTask) -> Self {
-        Self { id, task }
+        Self {
+            id,
+            task,
+            estimated_work: 0,
+        }
     }
 }
 
@@ -243,16 +248,19 @@ struct DownloadScheduler {
     active_attempts: usize,
     concurrency: usize,
     all_success: bool,
+    prioritize_large: bool,
 }
 
 impl DownloadScheduler {
     fn new(pending: VecDeque<PendingDownload>, concurrency: usize) -> Self {
+        let prioritize_large = pending.iter().any(|download| download.estimated_work > 0);
         Self {
             pending,
             reservations: Vec::new(),
             active_attempts: 0,
             concurrency,
             all_success: true,
+            prioritize_large,
         }
     }
 
@@ -273,6 +281,7 @@ impl DownloadScheduler {
             let Some((index, _)) = find_startable_download(
                 &self.pending,
                 &self.reservations,
+                self.prioritize_large,
                 &mut |pending_id, pending_path, active_id, active_path| {
                     telemetry.record_conflict(pending_id, pending_path, active_id, active_path);
                 },
@@ -283,6 +292,11 @@ impl DownloadScheduler {
                 log_error!(LOG_TAG, "Download scheduler selected a missing task");
                 return false;
             };
+            // Front-load one long ready archive, then retain FIFO so subsequent
+            // CPU-heavy work does not crowd that task throughout its execution.
+            if download.estimated_work > 0 {
+                self.prioritize_large = false;
+            }
             let download = StartedDownload::new(download, self.concurrency);
             self.reservations.push(DownloadReservation::new(&download));
 
@@ -361,10 +375,27 @@ fn download_with_readiness(
         .count()
         .clamp(LOCAL_CONCURRENT, MAX_CONCURRENT)
         .min(tasks.len());
+    // Local archives compete for CPU. Prefer longer ready work without changing
+    // the original pending order used to enforce logical and physical ownership.
+    let local_only = tasks.iter().all(|task| !task.task.telemetry.is_remote());
     let pending = tasks
         .into_iter()
         .enumerate()
-        .map(|(sequence, task)| PendingDownload::new(sequence, task))
+        .map(|(sequence, task)| {
+            let estimated_work = if local_only && task.task.files.is_none() {
+                task.task
+                    .url
+                    .strip_prefix("file://")
+                    .and_then(|path| fs::metadata(path).ok())
+                    .filter(|metadata| metadata.is_file())
+                    .map_or(0, |metadata| metadata.len())
+            } else {
+                0
+            };
+            let mut pending = PendingDownload::new(sequence, task);
+            pending.estimated_work = estimated_work;
+            pending
+        })
         .collect::<VecDeque<_>>();
     let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
         (
@@ -477,11 +508,21 @@ fn download_with_readiness(
 fn find_startable_download(
     pending: &VecDeque<PendingDownload>,
     reservations: &[DownloadReservation],
+    prioritize_large: bool,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
 ) -> Option<(usize, usize)> {
     // Independent tasks may bypass blocked work, but conflicting tasks must
     // retain their order even when the earlier task has not started yet.
+    let mut selected: Option<(usize, usize, u64)> = None;
     for (index, download) in pending.iter().enumerate() {
+        // Ties retain FIFO. Unknown/decoded work cannot trigger repeated path
+        // scans once a startable choice with an equal or larger hint exists.
+        if selected
+            .as_ref()
+            .is_some_and(|(_, _, work)| download.estimated_work <= *work)
+        {
+            continue;
+        }
         if download
             .task
             .source_ready
@@ -515,10 +556,13 @@ fn find_startable_download(
             continue;
         }
 
-        return Some((index, download.id));
+        if !prioritize_large {
+            return Some((index, download.id));
+        }
+        selected = Some((index, download.id, download.estimated_work));
     }
 
-    None
+    selected.map(|(index, id, _)| (index, id))
 }
 
 fn conflicting_mount_paths<'pending, 'other>(

@@ -279,32 +279,41 @@ describe("hidden thread replay", () => {
     createdAt: "2026-09-09T01:00:00.000Z",
   };
 
-  it("hides a cached ordinary thread without changing archive state or activity", () => {
+  it("retains visibility changes without changing archive state or activity", () => {
     const snapshot = replayChatThreadEvents([], [created]);
-    expect(replayChatThreadEvents(snapshot, [visibility])).toEqual([]);
+    const hidden = replayChatThreadEvents(snapshot, [visibility]);
+    expect(hidden).toEqual([{ ...snapshot[0], hidden: true }]);
     expect(
-      replayChatThreadEvents(snapshot, [
-        visibility,
-        { ...visibility, seqId: 3, hidden: false },
-      ]),
+      replayChatThreadEvents(hidden, [{ ...visibility, hidden: false }]),
     ).toEqual(snapshot);
   });
 
-  it("hides created and snapshotted threads even after ordinary activity or unarchive", () => {
+  it("retains hidden threads through snapshot activity, unarchive and model updates", () => {
     const visible = replayChatThreadEvents([], [created])[0];
     if (!visible) throw new Error("Expected visible thread");
     expect(
       replayChatThreadEvents(
-        [{ ...visible, hidden: true }],
+        [{ ...visible, hidden: true, archived: true }],
         [
           { ...created, kind: "unarchived" },
-          { ...created, kind: "sort_touched" },
+          { ...created, kind: "sort_touched", createdAt: selected.createdAt },
         ],
       ),
-    ).toEqual([]);
+    ).toEqual([{ ...visible, hidden: true, sortAt: selected.createdAt }]);
     expect(
       replayChatThreadEvents([], [{ ...created, hidden: true }, selected]),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        ...visible,
+        hidden: true,
+        updatedAt: selected.createdAt,
+        selectedModel: selected.selectedModel,
+        modelSettings: {
+          "claude-sonnet-5": { effort: "high" },
+          "claude-opus-4-8": { effort: "extra" },
+        },
+      },
+    ]);
   });
 });
 

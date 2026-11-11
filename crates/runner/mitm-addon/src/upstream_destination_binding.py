@@ -127,17 +127,21 @@ def _connected_endpoint_matches_any_binding(
     )
 
 
+def _discard_client_server_id(*, client_id: str, server_id: str) -> None:
+    server_ids = _server_ids_by_client_id.get(client_id)
+    if server_ids is not None:
+        server_ids.discard(server_id)
+        if not server_ids:
+            _server_ids_by_client_id.pop(client_id, None)
+
+
 def _associate_server_with_client(server_id: str, client: object | None) -> None:
     client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return
     existing_client_id = _client_id_by_server_id.get(server_id)
     if existing_client_id is not None and existing_client_id != client_id:
-        server_ids = _server_ids_by_client_id.get(existing_client_id)
-        if server_ids is not None:
-            server_ids.discard(server_id)
-            if not server_ids:
-                _server_ids_by_client_id.pop(existing_client_id, None)
+        _discard_client_server_id(client_id=existing_client_id, server_id=server_id)
     _client_id_by_server_id[server_id] = client_id
     _server_ids_by_client_id.setdefault(client_id, set()).add(server_id)
 
@@ -279,11 +283,7 @@ def forget_server_binding(server: object) -> None:
         _bindings_by_server_id.pop(server_id, None)
         client_id = _client_id_by_server_id.pop(server_id, None)
         if client_id is not None:
-            server_ids = _server_ids_by_client_id.get(client_id)
-            if server_ids is not None:
-                server_ids.discard(server_id)
-                if not server_ids:
-                    _server_ids_by_client_id.pop(client_id, None)
+            _discard_client_server_id(client_id=client_id, server_id=server_id)
 
 
 def forget_client_bindings(client: object) -> None:

@@ -39,6 +39,17 @@
     ]
 
     var body: some View {
+      ScrollViewReader { scroll in
+        catalog
+          .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("--composer-preview") {
+              scroll.scrollTo("composer-preview", anchor: .top)
+            }
+          }
+      }
+    }
+
+    private var catalog: some View {
       ScrollView {
         VStack(alignment: .leading, spacing: OkouSpace.xxxl) {
           OkouWordmark()
@@ -53,7 +64,7 @@
           section("Navigation & composer actions") {
             // Every glass control is drawn on the exact 44 pt shape.
             HStack(spacing: OkouSpace.md) {
-              ForEach(["menu", "chevrons-right"], id: \.self) { icon in
+              ForEach(["menu", "list-filter"], id: \.self) { icon in
                 Button {
                 } label: {
                   OkouToolbarIcon(icon)
@@ -74,7 +85,8 @@
             .modifier(OkouGlassControl(shape: .capsule))
             // The sidebar's bottom bar: account, search capsule, prominent new chat.
             HStack(spacing: OkouSpace.md) {
-              OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouControl.minimumTarget)
+              OkouProfileAvatar(
+                imageURL: nil, hasImage: false, size: OkouControl.minimumTarget, name: "Tong")
               HStack(spacing: OkouSpace.sm) {
                 OkouIcon("search", size: OkouIconSize.standard)
                 Text("Search chats")
@@ -92,33 +104,78 @@
               .buttonStyle(.plain)
               .accessibilityLabel("New chat")
             }
-            HStack(spacing: OkouSpace.xs) {
+            OkouComposerSurface {
+              Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } leading: {
               Button {
               } label: {
                 OkouToolbarIcon("plus")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
               }
               .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
-              Text("Ask Okou").font(.okou(.body)).foregroundStyle(OkouColor.mutedForeground)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } trailing: {
               Button {
               } label: {
                 OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
               }
               .buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
               .accessibilityLabel("Send message")
-            }.padding(OkouSpace.six).glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
+              .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              .contentShape(Circle())
+            }
+          }
+          .id("composer-preview")
+          section("Composer suggestions") {
+            OkouSuggestionPanel(
+              title: "Chats",
+              availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+              dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "catalog-dismiss-chats",
+              dismiss: {}
+            ) { _ in
+              VStack(alignment: .leading, spacing: 0) {
+                ForEach(["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self) {
+                  title in
+                  OkouSuggestionRow(title: title)
+                    .padding(.horizontal, OkouSpace.lg)
+                    .padding(.vertical, OkouSpace.sm)
+                }
+              }
+              .padding(.bottom, OkouSpace.sm)
+            }
+            OkouSuggestionPanel(
+              title: "Workflows",
+              availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+              dismissLabel: "Dismiss Workflow suggestions",
+              dismissIdentifier: "catalog-dismiss-workflows", dismiss: {}
+            ) { _ in
+              OkouSuggestionRow(
+                title: "Daily error review", detail: "Review production errors",
+                command: "/error-review"
+              )
+              .padding(.horizontal, OkouSpace.lg)
+              .padding(.vertical, OkouSpace.sm)
+              .padding(.bottom, OkouSpace.sm)
+            }
           }
           section("Chat rows") {
-            // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
-            // and the trailing states.
-            VStack(spacing: 0) {
+            // Chat rows, as the sidebar draws them: the folding Pinned heading, a hairline,
+            // status emoji, the quiet glyph and the trailing states in their order (unread,
+            // draft). A working chat's title shimmers, so it keeps its trailing state.
+            VStack(alignment: .leading, spacing: 0) {
+              OkouListHeading("Pinned", isExpanded: true)
+                .frame(minHeight: OkouControl.minimumTarget)
+              OkouChatRowLabel("!36076 Share in two steps", isWorking: true, trailing: .draft) {
+                OkouChatStatusMark(emoji: "✅")
+              }
+              OkouListDivider().padding(.vertical, OkouSpace.sm)
               OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
                 OkouChatStatusMark(emoji: "✅")
               }
-              OkouChatRowLabel("!36076 Share in two steps", trailing: .running(phase: 0)) {
-                OkouChatStatusMark(emoji: "✅")
+              OkouChatRowLabel("Release notes", trailing: .draft) {
+                OkouChatStatusMark(emoji: nil)
               }
-              OkouChatRowLabel("Design tokens review", trailing: .pinned) {
+              OkouChatRowLabel("Design tokens review") {
                 OkouChatStatusMark(emoji: nil)
               }
               OkouChatRowLabel("A chat in a section without statuses")
@@ -207,10 +264,8 @@
           }
           section("Running & greeting") {
             HStack(spacing: OkouSpace.md) {
-              ForEach(0..<4) { row in
-                OkouRunningIndicator(phaseOffset: Double(row) / OkouMotion.runningWaveRows)
-              }
-              Text("Rows trail by 1/12 of a cycle").font(.okou(.footnote))
+              OkouRunningIndicator()
+              Text("The transcript's working line").font(.okou(.footnote))
                 .foregroundStyle(OkouColor.mutedForeground)
             }
             NewChatGreeting(
@@ -225,7 +280,8 @@
               OkouAccountRowLabel(
                 Text(verbatim: "Tong Xing"), detail: Text(verbatim: "tong@example.com")
               ) {
-                OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouAvatarSize.account)
+                OkouProfileAvatar(
+                  imageURL: nil, hasImage: false, size: OkouAvatarSize.account, name: "Tong")
               }
               OkouRowLabel(Text(verbatim: "Max & Zoe, Inc"), slot: OkouAvatarSize.account) {
                 OkouWorkspaceLogo(
@@ -297,6 +353,16 @@
             ChatFeedbackSurface(
               message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
               dismiss: {})
+            NavigationLink {
+              ChatSyncStatusGallery()
+            } label: {
+              Text(verbatim: "Chat sync feedback")
+            }
+            NavigationLink {
+              ComputerAuthorizationGallery()
+            } label: {
+              Text(verbatim: "Computer access cards")
+            }
           }
           section("Workspace identities") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))]) {
@@ -310,10 +376,10 @@
             // The sidebar's button; the search page's system field takes the same glyphs.
             OkouSearchBar(prompt: "Search chats")
           }
-          section("Search page") {
+          section("Search sheet") {
             // `OkouSearchPage`: the system field (no clear button, the app's ✕), filters and
             // results that move with the field, and an empty state centred above the keyboard.
-            Button("Open search page") { showsSearchPage = true }
+            Button("Open search sheet") { showsSearchPage = true }
               .buttonStyle(.bordered)
           }
           section("Sign-in providers") {
@@ -470,7 +536,7 @@
         .frame(maxWidth: OkouControl.readableWidth, alignment: .leading)
         .padding(OkouControl.pageInset).frame(maxWidth: .infinity)
       }
-      .fullScreenCover(isPresented: $showsSearchPage) {
+      .sheet(isPresented: $showsSearchPage) {
         NavigationStack {
           OkouSearchPage(
             "Search", text: $catalogQuery, prompt: "Search",
@@ -496,6 +562,9 @@
             }
           }
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .okouSheetBackground(OkouColor.background)
       }
       .sheet(isPresented: $showsSheet) {
         NavigationStack {

@@ -163,7 +163,7 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
     { framework: "codex", model: "gpt-6-luna" },
     { framework: "pi", model: "gpt-6-luna" },
   ] as const)(
-    "retains the captured $framework guidance after replacement or deletion",
+    "uses current $framework guidance at Claim and rejects a deleted selected template",
     async ({ framework, model }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
@@ -201,50 +201,52 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         prompt: "Use this template",
         template: selection(kind, id),
       });
-      const nextRun =
-        kind === "user-template"
-          ? await owner.run(async () => {
-              const packageFileId = await uploadTemplateFile(
-                context,
-                owner.actor,
-                fixture,
-                {
-                  filename: "replacement.tar.gz",
-                  contentType: "application/gzip",
-                },
-                tarGz(guidance("B")),
-              );
-              await accept(
-                userClient().replacePackage({
-                  headers: authHeaders(),
-                  params: { templateId: id },
-                  body: { packageFileId },
-                }),
-                [200],
-              );
-              return await chat.sendChatRun(owner.actor, {
-                agentId: owner.agentId,
-                model,
-                prompt: "Use the replacement template",
-                template: selection(kind, id),
-              });
-            })
-          : undefined;
-      await owner.run(() => {
-        return remove(kind, id);
+      if (kind === "user-template") {
+        await owner.run(async () => {
+          const packageFileId = await uploadTemplateFile(
+            context,
+            owner.actor,
+            fixture,
+            {
+              filename: "replacement.tar.gz",
+              contentType: "application/gzip",
+            },
+            tarGz(guidance("B")),
+          );
+          await accept(
+            userClient().replacePackage({
+              headers: authHeaders(),
+              params: { templateId: id },
+              body: { packageFileId },
+            }),
+            [200],
+          );
+        });
+      }
+      const nextRun = await owner.sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        model,
+        prompt: "Use the current template",
+        template: selection(kind, id),
       });
       const first = await owner.claimChatRun(owner.runnerGroup, firstRun.runId);
       expect(first.claim.cliAgentType).toBe(framework);
+      await owner.run(() => {
+        return remove(kind, id);
+      });
+      // The already-claimed Run retains the package it received, even after deletion.
       expect(claimedFiles(fixture, first.claim, kind, id)).toStrictEqual(
-        oldFiles,
+        kind === "user-template" ? guidance("B") : oldFiles,
       );
-      if (nextRun) {
-        const next = await owner.claimChatRun(owner.runnerGroup, nextRun.runId);
-        expect(next.claim.cliAgentType).toBe(framework);
-        expect(claimedFiles(fixture, next.claim, kind, id)).toStrictEqual(
-          guidance("B"),
-        );
-      }
+      await owner.run(async () => {
+        await chat.api.requestClaimRunnerJob(true, nextRun.runId, [404]);
+        await expect(
+          chat.api.readRun(owner.actor, nextRun.runId),
+        ).resolves.toMatchObject({
+          status: "pending",
+        });
+        await chat.api.requestCancelRun(owner.actor, nextRun.runId, [200]);
+      });
     },
   );
 

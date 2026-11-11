@@ -162,6 +162,7 @@ Notes:
         : await syncCachedChatThreads();
       const agentThreads = allThreads.filter((thread) => {
         return (
+          !thread.hidden &&
           (agentId === undefined || thread.agentId === agentId) &&
           (options.project !== false || thread.projectId === null) &&
           (!options.archived || thread.archived)

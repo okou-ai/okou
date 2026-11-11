@@ -37,10 +37,14 @@ public struct ChatShellAuthorization: Decodable, Equatable, Sendable {
   }
 
   public let id: String
+  public let chatThreadId: String
+  public let computerUseHostId: String
   public let computerName: String
   public let reason: String?
   public let status: Status
   public let approvalBlockedReason: String?
+  public let requestExpiresAt: Date
+  public let grantExpiresAt: Date?
 }
 
 public enum ChatShareAudience: String, Encodable, Sendable {

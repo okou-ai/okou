@@ -199,7 +199,13 @@ public actor CommandExecutor {
     snapshots[id] = snapshot
     latest[app.lowercased()] = id
     snapshotOrder.append(id)
-    if snapshotOrder.count > 50 { snapshots.removeValue(forKey: snapshotOrder.removeFirst()) }
+    if snapshotOrder.count > 50 {
+      let removedId = snapshotOrder.removeFirst()
+      snapshots.removeValue(forKey: removedId)
+      for (app, snapshotId) in latest where snapshotId == removedId {
+        latest.removeValue(forKey: app)
+      }
+    }
     let tree = SnapshotRenderer.render(snapshot)
     snapshot["appState"] = .string(tree)
     snapshot["metrics"] = .object([

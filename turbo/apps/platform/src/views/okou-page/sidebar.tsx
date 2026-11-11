@@ -33,6 +33,8 @@ import {
 } from "../../signals/okou-page/sidebar-state.ts";
 import { OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
+import { showChatThreadInbox$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
 import {
@@ -210,6 +212,7 @@ function LabeledRailLink({
   iconImg,
   isActive,
   showBadge,
+  onNavigate,
 }: {
   id: SidebarNavId;
   navPath: string;
@@ -219,6 +222,7 @@ function LabeledRailLink({
   iconImg?: string | undefined;
   isActive: boolean;
   showBadge?: boolean;
+  onNavigate?: () => void;
 }) {
   const { t } = useTranslation();
   const caption = (() => {
@@ -247,6 +251,12 @@ function LabeledRailLink({
     <Link
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
       options={navOptions}
+      onClick={(event) => {
+        // Only a click that navigates here, not one opening a new tab.
+        if (onNavigate && shouldHandleLinkClick(event)) {
+          onNavigate();
+        }
+      }}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       className="group flex w-full shrink-0 scroll-my-1 flex-col items-center gap-0.5 rounded-lg no-underline outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -326,6 +336,7 @@ function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
+  const showInbox = useSet(showChatThreadInbox$);
   // My Okou's chat page is `/` itself.
   const agentChatId = singleAgent ? null : defaultAgentId;
   const { t } = useTranslation();
@@ -345,6 +356,7 @@ function LabeledChatRailLink() {
         ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
       }
       showBadge={false}
+      onNavigate={showInbox}
     />
   );
 }

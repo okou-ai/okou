@@ -94,6 +94,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             ('prepare-package-sources', needed == 'true' and event != 'push'),
             ('test-packages', needed == 'true' and event != 'push'),
             ('build-test', needed == 'true' and event != 'push'),
+            ('build-preview', needed == 'true' and event in ['pull_request', 'workflow_dispatch']),
             ('build-archive', needed == 'true' and event == 'merge_group'),
             ('publish-archive', needed == 'true' and event == 'merge_group'),
         ]:
@@ -101,7 +102,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
                 .replace('github.event_name', repr(event)).replace('&&', 'and'))
             assert eval(expression, {'__builtins__': {}}, {}) is expected
-for name in ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
+for name in ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
@@ -164,6 +165,8 @@ gate = ios['jobs']['ci-gate-ios']['steps'][-1]
 assert gate['env']['PACKAGES_RESULT'] == '${{ needs.test-packages.result }}'
 assert gate['env']['SCRIPT_CHECKS_RESULT'] == '${{ needs.script-checks.result }}'
 assert gate['env']['LINT_RESULT'] == '${{ needs.swiftlint.result }}'
+assert gate['env']['PREVIEW_RESULT'] == '${{ needs.build-preview.result }}'
+assert 'build-preview' in ios['jobs']['ci-gate-ios']['needs']
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']

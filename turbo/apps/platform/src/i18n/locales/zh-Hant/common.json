@@ -372,6 +372,8 @@
         "blurComposer": "退出輸入框",
         "changeIcon": "更換圖示",
         "clearIcon": "清除圖示",
+        "collapseProject": "收合 Project",
+        "expandProject": "展開 Project",
         "newChat": "新建聊天",
         "nextAgent": "下一個智能體",
         "nextThread": "下一個會話",
@@ -1431,6 +1433,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "下一頁",
+    "fps": "FPS",
+    "fpsOff": "不顯示",
+    "fpsOn": "顯示",
+    "fpsReading": "{{value}} FPS",
     "liveView": "瀏覽器即時畫面",
     "newTab": "新分頁",
     "noTabs": "沒有開啟的分頁",
@@ -1638,8 +1644,7 @@
       "sending": "正在傳送…",
       "sent": "已傳送到新聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
-      "undoFeedback": "復原",
-      "useSuggestion": "使用建議"
+      "undoFeedback": "復原"
     },
     "attachments": {
       "attach": "新增附件",
@@ -1860,7 +1865,9 @@
         "title": "創作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什麼新功能",
       "research": {
+        "description": "流量、廣告、產品、話題",
         "items": {
           "ads": "探索廣告創意",
           "products": "研究產品",
@@ -1873,6 +1880,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客戶、創作者、決策者",
         "items": {
           "affiliates": "聯盟行銷計畫",
           "creators": "創作者合作",
@@ -1903,6 +1911,7 @@
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",
+        "summary": "依排程或觸發器自動執行",
         "triggers": {
           "description": "事件發生時自動開始。",
           "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",
@@ -2341,16 +2350,34 @@
       "untitled": "未命名"
     },
     "remoteAccess": {
+      "all": "全部",
+      "allowed": "已允許",
+      "autoSave": "變更自動儲存，僅用於此對話",
+      "connections": "連線",
       "default": "預設",
       "defaultEnabled": "聊天預設啟用",
-      "disabled": "已停用",
-      "enabled": "已啟用",
+      "draft": "傳送第一則訊息時套用",
       "enabledCount_other": "已啟用 {{count}} 個",
+      "enableInChat": "在此對話開啟",
+      "enableSsh": "在此對話開啟 SSH {{name}}",
+      "filterHint": "修改過的連線會保留到切換篩選時",
+      "fromChat": "此對話",
       "loadFailed": "無法載入遠端存取權限。",
       "loading": "正在載入遠端存取…",
+      "manage": "管理連線",
+      "needsReload": "重新載入以確認權限",
+      "noConnections": "尚未設定 SSH 或 VNC 連線",
+      "noneAllowed": "此對話尚未允許任何連線",
+      "notAllowed": "未允許",
       "off": "關閉",
       "on": "開啟",
+      "reload": "重新載入",
       "requiresSsh": "需要 SSH：{{name}}",
+      "saved": "已儲存，僅用於此對話",
+      "saveUnconfirmed": "無法確認變更是否已儲存，請重新載入權限後再修改。",
+      "saving": "正在儲存…",
+      "scope": "選擇 Okou 可在此對話中使用的連線",
+      "showAll": "查看全部連線",
       "sshDisabled": "需開啟 SSH：{{name}}",
       "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
@@ -3194,11 +3221,10 @@
     "enableByDefault": "預設啟用 {{account}}",
     "enabledAccounts": "{{value}} 個已啟用",
     "manageAccounts": "管理帳號",
-    "noAccount": "未選擇帳號",
     "noEnabledAccount": "目前聊天未啟用任何帳號",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
-    "settingsDescription": "選擇預設啟用的帳號，以及新聊天的預設帳號。"
+    "settingsDescription": "選擇預設啟用的帳號。"
   },
   "connectors": {
     "access": {
@@ -4341,6 +4367,7 @@
     "documentTitles": {
       "make": "歡迎使用 {{brandName}}"
     },
+    "handoffUnavailable": "無法還原連結中的任務。你可以繼續正常使用，現有草稿已保留。",
     "make": {
       "promptLabel": "新手引導提示詞",
       "promptTitle": "依你的需求調整任務"
@@ -5062,6 +5089,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "收合",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
@@ -5071,6 +5099,7 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
+    "expand": "展開",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
@@ -5860,6 +5889,7 @@
         "learning": {
           "description": "立即回顧近期活動並更新個人記憶，不變更夜間執行排程。",
           "notInstalled": "請先在偏好設定中開啟學習，再於此執行。",
+          "openChat": "開啟對話",
           "queued": "學習已加入佇列。",
           "requestFailed": "無法確認請求結果。",
           "run": "執行學習",
@@ -6333,6 +6363,32 @@
     "unavailable": "該帳號無法使用 SSH 訪問。",
     "username": "SSH 使用者名稱"
   },
+  "sshAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
+    },
+    "continue": "繼續任務",
+    "details": "存取詳細資訊",
+    "effect": "允許以此遠端使用者執行命令和傳輸檔案，直到關閉存取。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 SSH 存取",
+      "denied": "已拒絕 SSH 存取",
+      "expired": "SSH 申請已過期",
+      "pending": "SSH 存取",
+      "revoked": "已撤銷 SSH 存取",
+      "stale": "SSH 申請已變更"
+    },
+    "title": "SSH 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
     "delete": "刪除 Tailscale",
@@ -6442,6 +6498,26 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "返回工作流程",
+      "disabled": "已停用",
+      "disabledAt": "停用時間：{{time}}",
+      "loadFailed": "無法載入此自動化",
+      "loadingAutomation": "正在載入自動化",
+      "notNow": "暫時不用",
+      "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
+      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
+      "switchWorkspace": "切換工作區",
+      "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
+      "systemSource": "系統通知",
+      "title": "自動化已停用",
+      "unavailable": "找不到此自動化，或你無權存取",
+      "viewAutomation": "查看自動化",
+      "workspace": "工作區",
+      "workspaceFallback": "原工作區"
+    },
     "close": "關閉",
     "countUnavailable": "未讀數量暫不可用",
     "detailFailed": "未能載入這則通知",
@@ -7321,15 +7397,30 @@
     },
     "documentTitle": "工作渠道",
     "email": {
+      "actions": "操作",
+      "addEmail": "新增信箱",
+      "codeError": "無法產生連線驗證碼，請重試。",
+      "codeInstructions": "從要新增的信箱將此驗證碼寄給 Okou，放在郵件主旨或內文第一行皆可。",
       "connected": "信箱已連線",
+      "deleteAria": "刪除 {{email}}",
       "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "emailAddress": "電子郵件地址",
       "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
-      "instructions": "從帳戶的信箱地址寄信。新郵件開啟新對話，郵件內的回覆保留上下文。新使用者完成註冊後，我們會繼續處理原始請求。",
       "invalidLink": "連線連結無效，請重新寄信給 Okou。",
       "loadError": "無法載入信箱連線",
+      "loginNotice": "登入信箱始終保持連接。",
       "manage": "管理",
+      "manageDescription": "從要新增的信箱寄出驗證碼。",
+      "manageTitle": "信箱連線",
+      "newCode": "產生新驗證碼",
       "open": "開啟郵件",
+      "options": "郵件選項",
       "resumed": "{{email}} 已連線，原始請求將繼續在同一個郵件會話中回覆。",
+      "sendTo": "傳送至 {{address}}",
+      "signInEmail": "登入信箱",
+      "source": "來源",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "郵件",
       "unavailable": "此工作區尚未開放郵件整合"
     },

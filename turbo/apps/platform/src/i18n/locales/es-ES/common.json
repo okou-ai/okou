@@ -386,6 +386,8 @@
         "blurComposer": "Quitar el foco del editor",
         "changeIcon": "Cambiar icono",
         "clearIcon": "Quitar icono",
+        "collapseProject": "Contraer Project",
+        "expandProject": "Expandir Project",
         "newChat": "Nuevo chat",
         "nextAgent": "Siguiente agente",
         "nextThread": "Siguiente hilo",
@@ -1458,6 +1460,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "Adelante",
+    "fps": "FPS",
+    "fpsOff": "Ocultar",
+    "fpsOn": "Mostrar",
+    "fpsReading": "{{value}} FPS",
     "liveView": "Vista en directo del navegador",
     "newTab": "Nueva pestaña",
     "noTabs": "No hay pestañas abiertas",
@@ -1665,8 +1671,7 @@
       "sending": "Enviando…",
       "sent": "Enviado a un nuevo chat",
       "unavailable": "Esa sugerencia ya no está disponible. Se han actualizado las sugerencias.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Usar sugerencia"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1894,7 +1899,9 @@
         "title": "Crear"
       },
       "explore": "Explorar",
+      "exploreWhatsNew": "Descubre las novedades",
       "research": {
+        "description": "Tráfico, anuncios, productos, temas",
         "items": {
           "ads": "Explorar creatividades publicitarias",
           "products": "Investigar productos",
@@ -1907,6 +1914,7 @@
         "title": "Investigar"
       },
       "search": {
+        "description": "Clientes, creadores, responsables",
         "items": {
           "affiliates": "Programas de afiliación",
           "creators": "Colaboraciones con creadores",
@@ -1937,6 +1945,7 @@
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",
+        "summary": "Se ejecuta con un horario o un activador",
         "triggers": {
           "description": "Empieza cuando ocurra algo.",
           "eventPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta por la fuente, los filtros y el destino del resultado. Prepara un borrador del flujo y confirma la configuración antes de activarlo.",
@@ -2388,18 +2397,36 @@
       "untitled": "Sin título"
     },
     "remoteAccess": {
+      "all": "Todas",
+      "allowed": "Permitidas",
+      "autoSave": "Los cambios se guardan automáticamente para este chat",
+      "connections": "Conexiones",
       "default": "Predeterminado",
       "defaultEnabled": "Habilitado de forma predeterminada para chats",
-      "disabled": "Desactivado",
-      "enabled": "Activado",
+      "draft": "Se aplica al enviar el primer mensaje",
       "enabledCount_one": "{{count}} activo",
       "enabledCount_many": "{{count}} activos",
       "enabledCount_other": "{{count}} activos",
+      "enableInChat": "Activar en este chat",
+      "enableSsh": "Activar SSH {{name}} en este chat",
+      "filterHint": "Las conexiones modificadas se muestran hasta que cambies de filtro",
+      "fromChat": "Este chat",
       "loadFailed": "No se pudo cargar el acceso remoto.",
       "loading": "Cargando acceso remoto…",
+      "manage": "Gestionar conexiones",
+      "needsReload": "Recarga para confirmar los permisos",
+      "noConnections": "No hay conexiones SSH o VNC configuradas",
+      "noneAllowed": "No hay conexiones permitidas en este chat",
+      "notAllowed": "No permitida",
       "off": "Desactivado",
       "on": "Activado",
+      "reload": "Recargar",
       "requiresSsh": "Requiere SSH: {{name}}",
+      "saved": "Guardado para este chat",
+      "saveUnconfirmed": "No se pudo confirmar si el cambio se guardó. Recarga los permisos antes de modificarlos.",
+      "saving": "Guardando…",
+      "scope": "Elige las conexiones que Okou puede usar en este chat",
+      "showAll": "Ver todas las conexiones",
       "sshDisabled": "Activa SSH: {{name}}",
       "sshEnabled": "SSH activado: {{name}}",
       "title": "Acceso remoto",
@@ -3257,11 +3284,10 @@
     "enableByDefault": "Activar {{account}} de forma predeterminada",
     "enabledAccounts": "{{value}} activas",
     "manageAccounts": "Gestionar cuentas",
-    "noAccount": "Ninguna cuenta seleccionada",
     "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto y la cuenta predeterminada para nuevos chats."
+    "settingsDescription": "Elige las cuentas activas por defecto."
   },
   "connectors": {
     "access": {
@@ -4414,6 +4440,7 @@
     "documentTitles": {
       "make": "Te damos la bienvenida a {{brandName}}"
     },
+    "handoffUnavailable": "No pudimos restaurar la tarea del enlace. Puedes continuar con normalidad; tu borrador se ha conservado.",
     "make": {
       "promptLabel": "Prompt de incorporación",
       "promptTitle": "Haz tuya esta tarea"
@@ -5137,6 +5164,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "Contraer",
     "create": "Create Project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
@@ -5146,6 +5174,7 @@
     "deleteTitle": "Delete Project?",
     "description": "Keep related chats together across Agents",
     "empty": "No chats here yet",
+    "expand": "Expandir",
     "fromChat": "Create a Project from this chat",
     "move": "Move to Project",
     "moveError": "Could not move chat",
@@ -5944,6 +5973,7 @@
         "learning": {
           "description": "Revisa la actividad reciente y actualiza tu memoria personal una vez. La programación nocturna no cambia.",
           "notInstalled": "Activa el aprendizaje en Preferencias antes de ejecutarlo aquí.",
+          "openChat": "Abrir conversación",
           "queued": "Aprendizaje en cola.",
           "requestFailed": "No se pudo confirmar la solicitud.",
           "run": "Ejecutar aprendizaje",
@@ -6421,6 +6451,32 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
+  "sshAuthorization": {
+    "allow": "Permitir en este chat",
+    "blocked": {
+      "chat_busy": "Espera a que termine el Run actual de este chat antes de aprobar.",
+      "host_changed": "La configuración del host ha cambiado. Solicita una nueva aprobación.",
+      "permissions_required": "Aprueba primero los permisos del conector correspondientes.",
+      "run_active": "Espera a que termine el Run que hizo la solicitud antes de aprobar.",
+      "run_unavailable": "El Run que hizo la solicitud no está disponible. Pide una nueva solicitud en este chat."
+    },
+    "continue": "Continuar tarea",
+    "details": "Detalles del acceso",
+    "effect": "Permite comandos y transferencias de archivos como este usuario remoto hasta que se desactive el acceso.",
+    "failed": "No se pudo completar la acción. Reintenta para comprobar el acceso y continuar.",
+    "retry": "Reintentar",
+    "scope": "Este host · Solo este chat",
+    "status": {
+      "approved": "Acceso SSH permitido",
+      "denied": "Acceso SSH denegado",
+      "expired": "Solicitud SSH caducada",
+      "pending": "Acceso SSH",
+      "revoked": "Acceso SSH revocado",
+      "stale": "Solicitud SSH modificada"
+    },
+    "title": "Acceso SSH",
+    "unavailable": "Esta solicitud no está disponible. Solicita una nueva."
+  },
   "tailscale": {
     "changed": "Esta red Tailscale ha cambiado. No se guardaron los cambios; tu borrador se conserva.",
     "delete": "Eliminar Tailscale",
@@ -6532,6 +6588,27 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Volver a los flujos de trabajo",
+      "disabled": "Desactivada",
+      "disabledAt": "Desactivada el {{time}}",
+      "loadFailed": "No se pudo cargar esta automatización",
+      "loadingAutomation": "Cargando automatización",
+      "notNow": "Ahora no",
+      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
+      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
+      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
+      "switchWorkspace": "Cambiar de espacio de trabajo",
+      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
+      "systemSource": "Notificación del sistema",
+      "title": "Automatización desactivada",
+      "unavailable": "No se encontró la automatización o no tienes acceso",
+      "viewAutomation": "Ver automatización",
+      "workspace": "Espacio de trabajo",
+      "workspaceFallback": "Espacio de trabajo original"
+    },
     "close": "Cerrar",
     "countUnavailable": "Recuento de notificaciones sin leer no disponible",
     "detailFailed": "No se pudo cargar esta notificación",
@@ -7421,15 +7498,30 @@
     },
     "documentTitle": "Integraciones",
     "email": {
+      "actions": "Acciones",
+      "addEmail": "Añadir correo",
+      "codeError": "No se pudo crear un código de conexión. Inténtalo de nuevo.",
+      "codeInstructions": "Envía este código a Okou desde el correo que quieres añadir. Ponlo en el asunto o en la primera línea del mensaje.",
       "connected": "Correo conectado",
+      "deleteAria": "Eliminar {{email}}",
       "description": "Escribe a Okou y mantén cada conversación en su propio chat",
+      "emailAddress": "Correo electrónico",
       "healthNotice": "No uses esta integración para información de pacientes regulada por HIPAA.",
-      "instructions": "Envía un mensaje desde el correo de tu cuenta. Los correos nuevos crean chats nuevos; las respuestas mantienen la conversación. Si eres nuevo, te ayudaremos a registrarte y continuaremos con tu solicitud.",
       "invalidLink": "Este enlace de conexión no es válido. Envía un nuevo correo a Okou.",
       "loadError": "No se pudo cargar tu conexión de correo",
-      "manage": "Gestionar",
+      "loginNotice": "Tu correo de acceso permanece conectado.",
+      "manage": "Administrar",
+      "manageDescription": "Envía el código desde el correo que quieres añadir.",
+      "manageTitle": "Conexiones de correo",
+      "newCode": "Generar un nuevo código",
       "open": "Abrir correo",
+      "options": "Opciones de correo",
       "resumed": "{{email}} está conectado. Tu solicitud original se responderá en la misma conversación de correo.",
+      "sendTo": "Enviar a {{address}}",
+      "signInEmail": "Correo de acceso",
+      "source": "Origen",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "Correo electrónico",
       "unavailable": "El correo electrónico aún no está disponible en este espacio de trabajo"
     },

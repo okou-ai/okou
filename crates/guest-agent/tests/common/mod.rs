@@ -69,8 +69,6 @@ pub const CLEAN_EXIT: i32 = 0;
 pub const MOCK_TERMINATION_READY_EVENT: &str = "claude_mock_termination_ready";
 pub const MOCK_CODEX_TURN_START_READY_FILE: &str = ".codex-mock-turn-start-ready";
 pub const MOCK_CODEX_TURN_START_READY_EVENT: &str = "codex_mock_turn_start_ready";
-pub const MOCK_CODEX_TURN_COMPLETE_BEFORE_HEARTBEAT_READY_FILE: &str =
-    ".codex-mock-turn-complete-before-heartbeat-ready";
 pub const MOCK_CODEX_SESSION_HISTORY_READY_FILE: &str = ".codex-mock-session-history-ready";
 pub const MOCK_CODEX_SESSION_HISTORY_READY_EVENT: &str = "codex_mock_session_history_ready";
 pub const MOCK_CODEX_TURN_STEER_READY_FILE: &str = ".codex-mock-turn-steer-ready";

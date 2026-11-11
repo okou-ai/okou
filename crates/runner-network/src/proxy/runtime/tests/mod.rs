@@ -355,13 +355,25 @@ async fn close_launch_rejects_environment_error_for_live_process() {
     std::fs::create_dir(&launch).unwrap();
     let mut child = ProbeChild::spawn(Some((CANONICAL_RUNTIME_MARKER_ENV, &launch)));
     let pid = child.pid();
-    runtime.set_test_environment_read_error(pid, || {
-        std::io::Error::from_raw_os_error(nix::libc::EACCES)
-    });
+    let gate = gate_live_environment_error(&runtime, pid);
 
-    let error = runtime
-        .close_launch_path(launch.clone())
+    let close = runtime.close_launch_path(launch.clone());
+    tokio::pin!(close);
+    tokio::select! {
+        result = &mut close => panic!("cleanup completed before the live recheck gate: {result:?}"),
+        entered = tokio::time::timeout(Duration::from_secs(2), gate.entered.notified()) => entered.unwrap(),
+    }
+    gate.release.add_permits(1);
+    assert!(futures_util::poll!(close.as_mut()).is_pending());
+
+    // The retained pidfd wait is armed; keep it unpolled while only its timer advances.
+    tokio::time::pause();
+    tokio::time::advance(PROCESS_EXIT_TIMEOUT).await;
+    tokio::time::resume();
+
+    let error = tokio::time::timeout(Duration::from_secs(2), close)
         .await
+        .expect("armed pidfd exit wait must complete after its original budget")
         .unwrap_err()
         .to_string();
 

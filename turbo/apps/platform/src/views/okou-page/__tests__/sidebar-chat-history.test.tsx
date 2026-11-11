@@ -1023,6 +1023,12 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
     ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
+  // The icon-only button names itself on hover like its header neighbours.
+  await userEvent
+    .setup()
+    .hover(within(header).getByLabelText("Create Project"));
+  await expect(screen.findByText("Create Project")).resolves.toBeVisible();
+
   click(within(header).getByLabelText("Create Project"));
   await expect(
     screen.findByRole("textbox", { name: "Project name" }),
@@ -1107,6 +1113,47 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
   await waitFor(() => {
     expect(pathname()).toBe("/");
   });
+});
+
+test("My Okou's Chat link returns a filtered chat list to the inbox", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  const titles = ["Release plan", "Archived context"];
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Release plan"]);
+  });
+  const header = within(sidebar())
+    .getByLabelText("Hide chat list")
+    .closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+
+  openChatListMenu();
+  click(menuItemByText("Archived"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Archived context"]);
+  });
+  expect(header).toHaveTextContent("Archived");
+
+  click(within(rail).getByLabelText("Chat"));
+
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Release plan"]);
+  });
+  expect(header).toHaveTextContent(/^$/);
 });
 
 test("Mark all current-agent chats read from the chat-list menu", async () => {

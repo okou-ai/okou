@@ -15,6 +15,7 @@ import { createZoomableImageCanvasSignals } from "./zoomable-image-canvas.ts";
 
 export interface SharedArtifactPreview {
   readonly filename: string;
+  readonly contentType: string;
   readonly preview: AttachmentLightboxState;
   readonly publicUrl: string | null;
   readonly sharedThreadSnapshot: boolean;
@@ -80,6 +81,7 @@ export function createSharedArtifactPreview(
   }
   return {
     filename: artifact.filename,
+    contentType: artifact.contentType,
     preview,
     publicUrl: artifact.expiresAt === undefined ? contentUrl.href : null,
     sharedThreadSnapshot: artifact.sharedThreadSnapshot === true,

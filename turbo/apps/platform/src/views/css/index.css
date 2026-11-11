@@ -93,6 +93,10 @@
   --color-chart-gold: #eda100;
   --color-chart-red: #e34948;
 
+  /* Browser image-update diagnostic, intentionally stable across themes. */
+  --color-browser-fps-foreground: #8fff8c;
+  --color-browser-fps-background: #000000;
+
   /* Artifact-type icon foregrounds, shared by type choices, selected labels,
      and their menus. These glyph colors retain contrast on light and dark
      surfaces; they are not body-text colors. */
@@ -202,6 +206,55 @@
   --animate-avatar-preview-pop: avatar-preview-pop 0.35s ease-out;
   --animate-avatar-dice-spin: avatar-dice-spin 0.6s ease-out;
   --animate-avatar-firework: avatar-firework 0.6s ease-out forwards;
+
+  /* Capability home line drawings. A drawing wipes in from the left when it
+     mounts or when a Create or Workflow choice swaps it in. Hovering or
+     focusing its card then plays each drawing's motion once, on one 1.2s
+     timeline shared by every drawing: an element's delay plus duration ends
+     by 1.2s, and every keyframe ends on the resting drawing, so nothing jumps
+     when the pointer leaves and nothing loops. An element shifts its slot on
+     that timeline through `--capability-delay` and `--capability-duration`,
+     because `animate-*` compiles to the `animation` shorthand, which would
+     reset a separate `animation-delay` rule back to zero. Consumers reach
+     every entry through `motion-safe:animate-*`, so reduced motion drops the
+     class and the drawing is simply present. Keyframes stay below. */
+  --animate-capability-art-in: capability-art-in 550ms
+    cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-capability-run: capability-run var(--capability-duration, 900ms)
+    cubic-bezier(0.77, 0, 0.175, 1) var(--capability-delay, 0ms) both;
+  --animate-capability-pulse: capability-pulse 500ms
+    cubic-bezier(0.23, 1, 0.32, 1);
+  --animate-capability-lit: capability-lit 600ms cubic-bezier(0.4, 0, 0.2, 1)
+    var(--capability-delay, 0ms) backwards;
+  --animate-capability-scan: capability-scan 1200ms
+    cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-capability-sweep: capability-sweep var(--capability-duration, 800ms)
+    cubic-bezier(0.77, 0, 0.175, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-fan-a: capability-fan-a 1200ms
+    cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-capability-fan-b: capability-fan-b 1200ms
+    cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-capability-grow: capability-grow var(--capability-duration, 700ms)
+    cubic-bezier(0.23, 1, 0.32, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-tilt: capability-tilt 1200ms
+    cubic-bezier(0.23, 1, 0.32, 1);
+  --animate-capability-sun: capability-sun 1000ms cubic-bezier(0.23, 1, 0.32, 1)
+    var(--capability-delay, 0ms) backwards;
+  --animate-capability-draw: capability-draw var(--capability-duration, 900ms)
+    cubic-bezier(0.77, 0, 0.175, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-rise: capability-rise 750ms
+    cubic-bezier(0.23, 1, 0.32, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-spin: capability-spin 1200ms
+    cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-capability-ring: capability-ring 600ms
+    cubic-bezier(0.23, 1, 0.32, 1) var(--capability-delay, 0ms);
+  --animate-capability-travel: capability-travel 1200ms
+    cubic-bezier(0.77, 0, 0.175, 1);
+  --animate-capability-receive: capability-receive 1200ms
+    cubic-bezier(0.23, 1, 0.32, 1);
+  /* A capability's choices slide up from behind the composer they feed. */
+  --animate-capability-tray-in: capability-tray-in 360ms
+    cubic-bezier(0.23, 1, 0.32, 1) both;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -671,6 +724,169 @@ body {
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
+  }
+}
+
+/* Capability home drawings. The wipe reveals the drawing the way its lines
+   read, left to right. Every motion keyframe ends on the resting drawing, so a
+   finished or interrupted run leaves nothing out of place. Shapes animate
+   `transform` from the origin the consumer pins with `transform-fill`. */
+@keyframes capability-art-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* A dash runs the length of a wire drawn with `pathLength="1"`. */
+@keyframes capability-run {
+  from {
+    opacity: 1;
+    stroke-dashoffset: 0.22;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: -1;
+  }
+}
+
+@keyframes capability-pulse {
+  40% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes capability-lit {
+  35%,
+  60% {
+    fill: var(--color-brand-subtle);
+    stroke: var(--color-primary);
+  }
+}
+
+@keyframes capability-scan {
+  45% {
+    transform: translate(-34px, 14px);
+  }
+}
+
+@keyframes capability-sweep {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes capability-fan-a {
+  45%,
+  65% {
+    transform: translate(18px, -14px) rotate(4deg);
+  }
+}
+
+@keyframes capability-fan-b {
+  45%,
+  65% {
+    transform: translate(8px, -6px) rotate(2deg);
+  }
+}
+
+@keyframes capability-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes capability-tilt {
+  from {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes capability-sun {
+  from {
+    fill: var(--color-brand-subtle);
+    transform: translateY(90px);
+  }
+}
+
+/* Lines drawn with `pathLength="1"` write themselves out. */
+@keyframes capability-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes capability-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+
+@keyframes capability-spin {
+  from {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes capability-ring {
+  from {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* The signal crosses the connector, fades at the action, then the dot is
+   back at rest in the middle of the wire. */
+@keyframes capability-travel {
+  0% {
+    opacity: 0;
+    transform: translateX(-76px);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(70px);
+  }
+  65% {
+    opacity: 0;
+    transform: translateX(70px);
+  }
+  66% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+@keyframes capability-receive {
+  55% {
+    transform: none;
+  }
+  68% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes capability-tray-in {
+  from {
+    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+    transform: translateY(24px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
   }
 }
 

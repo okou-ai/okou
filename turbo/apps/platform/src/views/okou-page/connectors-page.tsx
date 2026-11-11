@@ -227,8 +227,8 @@ function CustomScopeCount() {
 }
 
 function RemoteControlScopeCount() {
-  const ssh = useLoadable(sshSummary$);
-  const vnc = useLoadable(vncSummary$);
+  const ssh = useLastLoadable(sshSummary$);
+  const vnc = useLastLoadable(vncSummary$);
   return (
     <ConnectorsScopeCount
       value={
@@ -240,7 +240,7 @@ function RemoteControlScopeCount() {
 }
 
 function PrivateNetworkScopeCount() {
-  const summary = useLoadable(privateNetworkDirectorySummary$);
+  const summary = useLastLoadable(privateNetworkDirectorySummary$);
   return (
     <ConnectorsScopeCount value={configuredRemoteAccessResources(summary)} />
   );

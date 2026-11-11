@@ -372,6 +372,8 @@
         "blurComposer": "退出输入框",
         "changeIcon": "更换图标",
         "clearIcon": "清除图标",
+        "collapseProject": "收起 Project",
+        "expandProject": "展开 Project",
         "newChat": "新建聊天",
         "nextAgent": "下一个智能体",
         "nextThread": "下一个会话",
@@ -1431,6 +1433,10 @@
     "formatPng": "PNG",
     "formatWebp": "WebP",
     "forward": "前进",
+    "fps": "FPS",
+    "fpsOff": "不显示",
+    "fpsOn": "显示",
+    "fpsReading": "{{value}} FPS",
     "liveView": "浏览器实时画面",
     "newTab": "新标签页",
     "noTabs": "没有打开的标签页",
@@ -1638,8 +1644,7 @@
       "sending": "正在发送…",
       "sent": "已发送到新聊天",
       "unavailable": "这条建议已不可用，建议列表已刷新。",
-      "undoFeedback": "撤销",
-      "useSuggestion": "使用建议"
+      "undoFeedback": "撤销"
     },
     "attachments": {
       "attach": "添加附件",
@@ -1860,7 +1865,9 @@
         "title": "创作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什么新功能",
       "research": {
+        "description": "流量、广告、产品、话题",
         "items": {
           "ads": "探索广告创意",
           "products": "研究产品",
@@ -1873,6 +1880,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客户、创作者、决策者",
         "items": {
           "affiliates": "联盟营销计划",
           "creators": "创作者合作",
@@ -1903,6 +1911,7 @@
           "title": "定时任务"
         },
         "suggestions": "从一条建议开始，按你的需要调整。",
+        "summary": "按计划或触发器自动运行",
         "triggers": {
           "description": "事件发生时自动开始。",
           "eventPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认具体来源、筛选条件和输出位置，准备工作流草稿，确认设置后再启用。",
@@ -2341,16 +2350,34 @@
       "untitled": "未命名"
     },
     "remoteAccess": {
+      "all": "全部",
+      "allowed": "已允许",
+      "autoSave": "更改自动保存，仅用于此对话",
+      "connections": "连接",
       "default": "默认",
       "defaultEnabled": "聊天默认启用",
-      "disabled": "已禁用",
-      "enabled": "已启用",
+      "draft": "发送第一条消息时应用",
       "enabledCount_other": "已启用 {{count}} 个",
+      "enableInChat": "在此对话开启",
+      "enableSsh": "在此对话开启 SSH {{name}}",
+      "filterHint": "修改过的连接会保留到切换筛选时",
+      "fromChat": "此对话",
       "loadFailed": "无法加载远程访问权限。",
       "loading": "正在加载远程访问…",
+      "manage": "管理连接",
+      "needsReload": "重新加载以确认权限",
+      "noConnections": "尚未配置 SSH 或 VNC 连接",
+      "noneAllowed": "此对话尚未允许任何连接",
+      "notAllowed": "未允许",
       "off": "关闭",
       "on": "开启",
+      "reload": "重新加载",
       "requiresSsh": "需要 SSH：{{name}}",
+      "saved": "已保存，仅用于此对话",
+      "saveUnconfirmed": "未能确认更改是否已保存，请重新加载权限后再修改。",
+      "saving": "正在保存…",
+      "scope": "选择 Okou 可在此对话中使用的连接",
+      "showAll": "查看全部连接",
       "sshDisabled": "需开启 SSH：{{name}}",
       "sshEnabled": "已开启 SSH：{{name}}",
       "title": "远程访问",
@@ -3194,11 +3221,10 @@
     "enableByDefault": "默认启用 {{account}}",
     "enabledAccounts": "{{value}} 个已启用",
     "manageAccounts": "管理账号",
-    "noAccount": "未选择账号",
     "noEnabledAccount": "当前聊天未启用任何账号",
     "permissions": "权限",
     "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
-    "settingsDescription": "选择默认启用的账号，以及新聊天的默认账号。"
+    "settingsDescription": "选择默认启用的账号。"
   },
   "connectors": {
     "access": {
@@ -4341,6 +4367,7 @@
     "documentTitles": {
       "make": "欢迎使用 {{brandName}}"
     },
+    "handoffUnavailable": "无法恢复链接中的任务。你可以继续正常使用，已有草稿已保留。",
     "make": {
       "promptLabel": "新手引导提示词",
       "promptTitle": "按你的需要调整任务"
@@ -5062,6 +5089,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "收起",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
@@ -5071,6 +5099,7 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
+    "expand": "展开",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
@@ -5860,6 +5889,7 @@
         "learning": {
           "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
           "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
+          "openChat": "打开对话",
           "queued": "学习已加入队列。",
           "requestFailed": "无法确认请求结果。",
           "run": "运行学习",
@@ -6333,6 +6363,32 @@
     "unavailable": "该账号无法使用 SSH 访问。",
     "username": "SSH 用户名"
   },
+  "sshAuthorization": {
+    "allow": "允许当前聊天访问",
+    "blocked": {
+      "chat_busy": "当前聊天正在运行，结束后即可批准。",
+      "host_changed": "主机配置已变更，请重新申请。",
+      "permissions_required": "请先批准配套的连接器权限。",
+      "run_active": "发起申请的运行尚未结束，结束后即可批准。",
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
+    },
+    "continue": "继续任务",
+    "details": "访问详情",
+    "effect": "允许以此远程用户执行命令和传输文件，直到关闭访问。",
+    "failed": "操作未完成，请重试以检查权限并继续。",
+    "retry": "重试",
+    "scope": "仅此主机 · 仅当前聊天",
+    "status": {
+      "approved": "已允许 SSH 访问",
+      "denied": "已拒绝 SSH 访问",
+      "expired": "SSH 申请已过期",
+      "pending": "SSH 访问",
+      "revoked": "已撤销 SSH 访问",
+      "stale": "SSH 申请已变更"
+    },
+    "title": "SSH 访问",
+    "unavailable": "此申请不可用，请重新申请。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 网络已发生变化。更改未保存，草稿已保留。",
     "delete": "删除 Tailscale",
@@ -6442,6 +6498,26 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "返回工作流",
+      "disabled": "已停用",
+      "disabledAt": "停用时间：{{time}}",
+      "loadFailed": "无法加载此自动化",
+      "loadingAutomation": "正在加载自动化",
+      "notNow": "暂时不用",
+      "otherWorkspace": "此自动化位于 {{workspace}}。请切换工作区以查看。",
+      "reason_one": "执行失败 {{count}} 次。请在重新启用前检查此自动化。",
+      "reason_other": "连续执行失败 {{count}} 次。请在重新启用前检查此自动化。",
+      "switchFailed": "无法切换工作区。请重试或使用工作区切换器。",
+      "switchWorkspace": "切换工作区",
+      "systemManaged": "此自动化由系统管理。下方显示其当前状态。",
+      "systemSource": "系统通知",
+      "title": "自动化已停用",
+      "unavailable": "找不到此自动化，或你无权访问",
+      "viewAutomation": "查看自动化",
+      "workspace": "工作区",
+      "workspaceFallback": "原工作区"
+    },
     "close": "关闭",
     "countUnavailable": "未读数量暂不可用",
     "detailFailed": "未能加载这条通知",
@@ -7321,15 +7397,30 @@
     },
     "documentTitle": "工作渠道",
     "email": {
+      "actions": "操作",
+      "addEmail": "添加邮箱",
+      "codeError": "无法生成连接验证码，请重试。",
+      "codeInstructions": "从待添加的邮箱给 Okou 发送此验证码，放在邮件主题或正文首行均可。",
       "connected": "邮箱已连接",
+      "deleteAria": "删除 {{email}}",
       "description": "给 Okou 发邮件，每个邮件会话对应一个独立对话",
+      "emailAddress": "邮箱地址",
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
-      "instructions": "从账户的邮箱地址发送邮件。新邮件开启新对话，邮件内的回复保留上下文。新用户完成注册后，我们会继续处理原始请求。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
       "loadError": "无法加载邮箱连接",
+      "loginNotice": "登录邮箱始终保持连接。",
       "manage": "管理",
+      "manageDescription": "从要添加的邮箱发送验证码。",
+      "manageTitle": "邮箱连接",
+      "newCode": "生成新验证码",
       "open": "打开邮件",
+      "options": "邮件选项",
       "resumed": "{{email}} 已连接，原始请求将继续在同一个邮件会话中回复。",
+      "sendTo": "发送至 {{address}}",
+      "signInEmail": "登录邮箱",
+      "source": "来源",
+      "sourceGmail": "Gmail",
+      "sourceOutlook": "Outlook",
       "title": "邮件",
       "unavailable": "此工作区暂未开放邮件集成"
     },

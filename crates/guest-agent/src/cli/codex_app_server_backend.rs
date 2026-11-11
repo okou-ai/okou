@@ -272,11 +272,12 @@ async fn interrupt_active_turn(
             .await
             .map_err(|error| app_server_error(sink.masker, error))?;
         let is_turn_completed = notification.method == "turn/completed";
-        let ingest_result = ingest_run_notification(
+        let ingest_result = ingest_notification(
             notification,
             sink,
-            active_input,
-            &notification_scope,
+            notification_scope.thread_id,
+            notification_scope.turn_id,
+            Some(active_input),
             notification_state,
         )
         .await?;
@@ -343,6 +344,8 @@ async fn run_codex_app_server(
         pi_startup: _,
         workload_containment,
         session_metadata,
+        #[cfg(feature = "test-support")]
+        codex_turn_start_gate,
     } = controls;
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
     let mut ingestor = CliEventIngestor::new_with_session_metadata(
@@ -404,7 +407,7 @@ async fn run_codex_app_server(
                 should_send_events,
                 event_tx,
             };
-            let ingest_result = ingest_notification(
+            ingest_notification(
                 notification,
                 &mut sink,
                 &thread_identity.canonical_id,
@@ -413,8 +416,6 @@ async fn run_codex_app_server(
                 &mut notification_state,
             )
             .await?;
-            notification_state.thread_started_emitted =
-                notification_state.thread_started_emitted || ingest_result.emitted_thread_started;
         }
 
         if !notification_state.thread_started_emitted {
@@ -454,6 +455,19 @@ async fn run_codex_app_server(
         let mut turn_started_observed = false;
         notification_state.allow_historical_usage = can_replay_historical_usage;
 
+        #[cfg(feature = "test-support")]
+        if let Some(gate) = codex_turn_start_gate {
+            let terminal_buffered = client.buffered_notifications().any(|notification| {
+                notification_to_codex_event(notification).is_ok_and(|event| {
+                    event.is_some_and(|event| {
+                        terminal_exit_code(&event, &thread_identity.canonical_id, &turn_id)
+                            == Some(0)
+                    })
+                })
+            });
+            gate.wait(terminal_buffered, heartbeat_monitor).await?;
+        }
+
         let exit_code = loop {
             let event = next_codex_run_event(
                 &mut client,
@@ -479,11 +493,12 @@ async fn run_codex_app_server(
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
                     };
-                    let ingest_result = ingest_run_notification(
+                    let ingest_result = ingest_notification(
                         notification,
                         &mut sink,
-                        &active_input,
-                        &notification_scope,
+                        notification_scope.thread_id,
+                        notification_scope.turn_id,
+                        Some(&active_input),
                         &mut notification_state,
                     )
                     .await?;
@@ -1102,50 +1117,12 @@ async fn drain_queued_notifications(
         }
     }
     for prepared in prepared_notifications {
-        record_output_item_start(prepared.output_item_start.as_ref(), sink);
-        for event in prepared.events {
-            ingest_event(event, sink).await?;
-        }
-        notification_state.thread_started_emitted =
-            notification_state.thread_started_emitted || prepared.emitted_thread_started;
-        if let Some(exit_code) = prepared.terminal_exit_code {
+        let result = prepared.ingest(sink, None, notification_state).await?;
+        if let Some(exit_code) = result.terminal_exit_code {
             return Ok(Some(exit_code));
         }
     }
     Ok(None)
-}
-
-async fn ingest_run_notification(
-    notification: ServerNotification,
-    sink: &mut EventIngestSink<'_, '_>,
-    active_input: &ActiveInputWriter,
-    scope: &CodexTurnScope<'_>,
-    notification_state: &mut CodexNotificationState,
-) -> Result<NotificationIngestResult, AgentError> {
-    let prepared = prepare_notification_ingest(
-        notification,
-        notification_state.thread_started_emitted,
-        scope.thread_id,
-        scope.turn_id,
-        notification_state,
-    )?;
-    record_output_item_start(prepared.output_item_start.as_ref(), sink);
-    // Close before any ingest await so the control path cannot accept input
-    // after this run has already observed a terminal turn event.
-    if prepared.terminal_exit_code.is_some() {
-        active_input.close_terminal();
-    }
-    let result = NotificationIngestResult {
-        emitted_thread_started: prepared.emitted_thread_started,
-        active_input_ready: prepared.active_input_ready,
-        terminal_exit_code: prepared.terminal_exit_code,
-    };
-    for event in prepared.events {
-        ingest_event(event, sink).await?;
-    }
-    notification_state.thread_started_emitted =
-        notification_state.thread_started_emitted || prepared.emitted_thread_started;
-    Ok(result)
 }
 
 fn app_server_error(masker: &SecretMasker, error: CodexAppServerError) -> AgentError {
@@ -1221,6 +1198,35 @@ fn heartbeat_error(result: Result<HeartbeatStatus, oneshot::error::RecvError>) -
     }
 }
 
+impl PreparedNotificationIngest {
+    async fn ingest(
+        self,
+        sink: &mut EventIngestSink<'_, '_>,
+        terminal_active_input: Option<&ActiveInputWriter>,
+        notification_state: &mut CodexNotificationState,
+    ) -> Result<NotificationIngestResult, AgentError> {
+        record_output_item_start(self.output_item_start.as_ref(), sink);
+        // Close before any ingest await so the control path cannot accept input
+        // after this run has already observed a terminal turn event.
+        if self.terminal_exit_code.is_some()
+            && let Some(active_input) = terminal_active_input
+        {
+            active_input.close_terminal();
+        }
+        let result = NotificationIngestResult {
+            emitted_thread_started: self.emitted_thread_started,
+            active_input_ready: self.active_input_ready,
+            terminal_exit_code: self.terminal_exit_code,
+        };
+        for event in self.events {
+            ingest_event(event, sink).await?;
+        }
+        notification_state.thread_started_emitted =
+            notification_state.thread_started_emitted || result.emitted_thread_started;
+        Ok(result)
+    }
+}
+
 async fn ingest_notification(
     notification: ServerNotification,
     sink: &mut EventIngestSink<'_, '_>,
@@ -1236,21 +1242,9 @@ async fn ingest_notification(
         active_turn_id,
         notification_state,
     )?;
-    record_output_item_start(prepared.output_item_start.as_ref(), sink);
-    if prepared.terminal_exit_code.is_some()
-        && let Some(active_input) = terminal_active_input
-    {
-        active_input.close_terminal();
-    }
-    let result = NotificationIngestResult {
-        emitted_thread_started: prepared.emitted_thread_started,
-        active_input_ready: prepared.active_input_ready,
-        terminal_exit_code: prepared.terminal_exit_code,
-    };
-    for event in prepared.events {
-        ingest_event(event, sink).await?;
-    }
-    Ok(result)
+    prepared
+        .ingest(sink, terminal_active_input, notification_state)
+        .await
 }
 
 fn prepare_notification_ingest(

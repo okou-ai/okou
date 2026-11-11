@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.24.10",
+  "version": "2.27.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -77,7 +77,11 @@
     "test:registry-resource-backfill": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
     "test:registry-resource-publication": "node scripts/test-registry-publication.mjs",
     "test:template-guidance-backfill": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-    "test:template-guidance-production": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts"
+    "test:template-guidance-production": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts",
+    "single-agent:prepare": "tsx scripts/migrations/030-single-agent/cli.ts",
+    "single-agent:rehearse": "tsx scripts/migrations/030-single-agent/execute.ts",
+    "test:single-agent-migration": "node --import tsx scripts/migrations/030-single-agent/test-tool.ts && node --import tsx scripts/migrations/030-single-agent/test-execution.ts",
+    "test:single-agent-execution": "node --import tsx scripts/migrations/030-single-agent/test-execution.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",

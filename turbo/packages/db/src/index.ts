@@ -25,7 +25,6 @@ import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as storageSchema from "./schema/storage";
 import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
-import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
 
@@ -124,6 +123,7 @@ import * as claimedWorkflowAttachmentSchema from "./schema/claimed-workflow-atta
 import * as workflowAutomationRuntime from "./runtime/workflow-automation";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
+import * as sshAuthorizationSchema from "./schema/ssh-authorization";
 import * as desktopShellAuthorizationSchema from "./schema/desktop-shell-authorization";
 import * as computerUseHostRuntime from "./runtime/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
@@ -201,7 +201,6 @@ export const schema = {
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...storageSchema,
   ...registryResourceArchiveSchema,
-  ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,
 
@@ -303,6 +302,7 @@ export const schema = {
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...desktopShellAuthorizationSchema,
+  ...sshAuthorizationSchema,
   ...computerUseHostRuntime,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,

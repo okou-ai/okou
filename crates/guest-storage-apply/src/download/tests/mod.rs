@@ -26,6 +26,114 @@ fn pending_at(id: usize, path: &str) -> PendingDownload {
 }
 
 #[test]
+fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
+    let pending = [1, 90, 10, 100, 80, 20]
+        .into_iter()
+        .enumerate()
+        .map(|(id, hint)| {
+            let mut download = pending_at(id, &format!("/independent-{id}"));
+            download.estimated_work = hint;
+            download
+        })
+        .collect::<VecDeque<_>>();
+    let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+        (
+            download.task.task.telemetry,
+            download.task.logical_mount_path(),
+        )
+    }));
+    let mut scheduler = DownloadScheduler::new(pending, 4);
+    let (send, receive) = mpsc::sync_channel(4);
+    assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+    let first = (0..4)
+        .map(|_| receive.try_recv().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        first.iter().map(|task| task.id).collect::<Vec<_>>(),
+        [3, 0, 1, 2]
+    );
+    for download in first {
+        scheduler.record_completion(DownloadCompletion {
+            download,
+            outcome: AttemptOutcome::Finished(Ok(())),
+        });
+    }
+    assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+    for expected in [4, 5] {
+        let download = receive.try_recv().unwrap();
+        assert_eq!(download.id, expected);
+        scheduler.record_completion(DownloadCompletion {
+            download,
+            outcome: AttemptOutcome::Finished(Ok(())),
+        });
+    }
+    assert!(!scheduler.has_work());
+    telemetry.finish();
+}
+
+#[test]
+fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
+    for (hints, gated, prioritize_large, expected) in [
+        ([0, 0, 0], false, true, 0),
+        ([100, 100, 100], false, true, 0),
+        ([1, 100, 10], false, true, 1),
+        ([1, 100, 10], true, true, 2),
+        ([1, 100, 10], false, false, 0),
+        ([1, 100, 10], true, false, 0),
+    ] {
+        let pending = hints
+            .into_iter()
+            .enumerate()
+            .map(|(id, hint)| {
+                let mut download = pending_at(id, &format!("/independent-{id}"));
+                download.estimated_work = hint;
+                if gated && id == 1 {
+                    download.task.source_ready = Some(Arc::new(AtomicBool::new(false)));
+                }
+                download
+            })
+            .collect();
+        assert_eq!(
+            find_startable_download(&pending, &[], prioritize_large, &mut |_, _, _, _| {}),
+            Some((expected, expected))
+        );
+    }
+}
+
+#[test]
+fn large_archive_priority_respects_logical_and_physical_reservations() {
+    for physical_alias in [false, true] {
+        let first = pending_at(0, "/independent");
+        let mut large = pending_at(
+            1,
+            if physical_alias {
+                "/alias"
+            } else {
+                "/data/child"
+            },
+        );
+        large.estimated_work = 100;
+        if physical_alias {
+            large.task.effective_mount_path = normalized_path("/data/child");
+        }
+        let reservations = [DownloadReservation {
+            id: 2,
+            logical_mount_path: normalized_path("/data"),
+            effective_mount_path: normalized_path("/data"),
+        }];
+        assert_eq!(
+            find_startable_download(
+                &VecDeque::from([first, large]),
+                &reservations,
+                true,
+                &mut |_, _, _, _| {},
+            ),
+            Some((0, 0))
+        );
+    }
+}
+
+#[test]
 fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_work() {
     for physical_alias in [false, true] {
         let gate = Arc::new(AtomicBool::new(false));
@@ -42,14 +150,15 @@ fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_wor
         if physical_alias {
             child.task.effective_mount_path = normalized_path("/data/parent/child");
         }
+        child.estimated_work = 100;
         let pending = VecDeque::from([first, child, pending_at(2, "/independent")]);
         assert_eq!(
-            find_startable_download(&pending, &[], &mut |_, _, _, _| {}),
+            find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
             Some((2, 2))
         );
         gate.store(true, Ordering::Release);
         assert_eq!(
-            find_startable_download(&pending, &[], &mut |_, _, _, _| {}),
+            find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
             Some((0, 0))
         );
     }
@@ -160,6 +269,7 @@ fn find_startable_download_observes_conflict_and_selects_later_task() {
     let selected = find_startable_download(
         &pending,
         &reservations,
+        false,
         &mut |pending_id, _, active_id, _| {
             conflicts.push((pending_id, active_id));
         },
@@ -190,6 +300,7 @@ fn find_startable_download_reports_first_active_conflict_on_each_scan() {
         let selected = find_startable_download(
             &pending,
             &reservations,
+            false,
             &mut |pending_id, _, active_id, _| {
                 conflicts.push((pending_id, active_id));
             },

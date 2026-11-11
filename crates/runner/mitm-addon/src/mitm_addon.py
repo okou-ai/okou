@@ -1299,10 +1299,24 @@ async def _try_firewall_request_stream_from_headers(
     allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
     request_headers_snapshot = http.Headers(flow.request.headers.fields)
-    request_url_snapshot = flow.request.url
+    request_target_snapshot = (
+        flow.request.data.scheme,
+        flow.request.data.host,
+        flow.request.data.port,
+        flow.request.data.authority,
+        flow.request.data.path,
+    )
 
     def restore_request_state() -> None:
-        flow.request.url = request_url_snapshot
+        # Restore raw fields without the URL setter's ASCII reparsing: even a
+        # rejected query can contain native non-ASCII bytes.
+        (
+            flow.request.data.scheme,
+            flow.request.data.host,
+            flow.request.data.port,
+            flow.request.data.authority,
+            flow.request.data.path,
+        ) = request_target_snapshot
         flow.request.headers = http.Headers(request_headers_snapshot.fields)
 
     def fall_back() -> None:
@@ -2015,31 +2029,20 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
     firewall_action = flow_metadata.firewall_action(flow.metadata)
 
     connector_diagnostics.maybe_replace_response(flow, original_url=original_url)
+    pending_work: Awaitable[None] | None
     if flow_metadata.firewall_name(flow.metadata) == data_router.OWNER:
+        pending_work = data_router.register_response(flow)
+    else:
+        pending_work = codex_model_catalog_cache.finalize_response(flow)
+        if pending_work is None:
+            # Preserve network latency's sampling point before newly deferred parsing.
+            response_streaming.start_buffered_response_inspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                pending_work = responseinspection(flow)
+    if pending_work is not None:
         return _finish_response_after_terminal_work(
             flow,
-            data_router.register_response(flow),
-            run_id=run_id,
-            latency_ms=latency_ms,
-            original_url=original_url,
-            firewall_action=firewall_action,
-        )
-    validation = codex_model_catalog_cache.finalize_response(flow)
-    if validation is not None:
-        return _finish_response_after_terminal_work(
-            flow,
-            validation,
-            run_id=run_id,
-            latency_ms=latency_ms,
-            original_url=original_url,
-            firewall_action=firewall_action,
-        )
-    # Preserve network latency's sampling point before newly deferred parsing.
-    response_streaming.start_buffered_response_inspection(flow)
-    if response_streaming.has_pending_response_inspection(flow):
-        return _finish_response_after_terminal_work(
-            flow,
-            responseinspection(flow),
+            pending_work,
             run_id=run_id,
             latency_ms=latency_ms,
             original_url=original_url,

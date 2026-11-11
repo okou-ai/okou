@@ -164,7 +164,8 @@ final class ChatSearchUnreadTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
-    let manual = Task { await store.setRead(thread, read: false) }
+    let menu = ChatThreadMenu(workspace: store, threadID: thread.id, moveToProject: { _ in })
+    let manual = Task { await menu.perform(.markUnread) }
     addTeardownBlock {
       manual.cancel()
       gate.open()
@@ -679,16 +680,21 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { store.close() }
     await store.refreshNavigation()
     await store.refresh()
-    store.list.onlyUnread = true
+    store.sidebar.select(.unread)
     let agent = SearchUnreadFixture.agent
     XCTAssertEqual(
-      store.list.threads(agentID: agent, archived: false).map(\.id), [SearchUnreadFixture.id(5)])
+      store.list.threads(
+        agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
+      ).map(\.id), [SearchUnreadFixture.id(5)])
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
     await store.list.markAgentRead(agent)
     XCTAssertEqual(fixture.state.value.withLock { $0.bulkAgent }, agent)
-    XCTAssertTrue(store.list.threads(agentID: agent, archived: false).isEmpty)
+    XCTAssertTrue(
+      store.list.threads(
+        agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
+      ).isEmpty)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)

@@ -51,7 +51,7 @@
 //! staged under `GUEST_STAGE_DIR`. `guest-storage-apply` supports that scheme and
 //! treats missing local archives as a broken staging contract.
 
-use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::fmt;
 use std::io;
 use std::os::unix::fs::MetadataExt;
@@ -61,13 +61,17 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures_util::{FutureExt, StreamExt};
+use futures_util::StreamExt;
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
 use tokio::io::AsyncReadExt as _;
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, TryAcquireError, mpsc, oneshot};
-use tokio::task::{JoinHandle, JoinSet};
+#[cfg(test)]
+use tokio::sync::Notify;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError, oneshot};
+#[cfg(test)]
+use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::{TaskTracker, task_tracker::TaskTrackerToken};
 use tracing::{info, warn};
@@ -85,15 +89,23 @@ use crate::object_download_policy::{
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 #[cfg(test)]
 use crate::telemetry::StorageTelemetry;
-use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord, SandboxOpReporter};
+use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord};
 use runner_host::lock;
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
+mod background_fill;
 pub mod decoded;
 mod guest_application;
 mod population;
 
-pub use guest_application::{GuestApplication, GuestStorageInput, populate_cache_for_guest};
+use background_fill::BackgroundFillAction;
+#[cfg(test)]
+use background_fill::*;
+pub use background_fill::{DeferredBackgroundFill, StorageCacheBackgroundFillCoordinator};
+
+pub use guest_application::{
+    GuestApplication, GuestStorageBatch, GuestStorageInput, populate_cache_for_guest,
+};
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -101,18 +113,10 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 
 /// Parallel (probe GET / full GET / flock / vsock) operations per `populate_cache` call.
 const CONCURRENCY: usize = 4;
-/// Maximum number of cache-fill groups that may be active across the runner.
-const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
 /// Idle transport retention, independent of the per-object request deadline.
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
 const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
-/// Maximum number of unique cache-fill groups waiting for a worker across the runner.
-const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
-/// Bound the number of missing archives dispatched while maintenance is waiting.
-const BACKGROUND_FILL_MISSING_BURST: usize = 3;
-/// Maximum number of completed telemetry tasks reaped between scheduler polls.
-const BACKGROUND_FILL_REPORT_REAP_BATCH: usize = 32;
 const FRESH_DELIVERY_SCAN_LIMIT: usize = 64;
 const FRESH_DELIVERY_PER_RUN_LIMIT: usize = 4;
 const FRESH_DELIVERY_RUNNER_LIMIT: usize = 8;
@@ -143,23 +147,6 @@ const STORAGE_CACHE_ARTIFACT_ARCHIVE_HIT: &str = "storage_cache_artifact_archive
 const STORAGE_CACHE_ARTIFACT_MISS_PASSTHROUGH: &str = "storage_cache_artifact_miss_passthrough";
 const STORAGE_CACHE_ARTIFACT_LOCK_BUSY_PASSTHROUGH: &str =
     "storage_cache_artifact_lock_busy_passthrough";
-const STORAGE_CACHE_BACKGROUND_FILL_FILLED: &str = "storage_cache_background_fill_filled";
-const STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED: &str =
-    "storage_cache_background_fill_already_cached";
-const STORAGE_CACHE_BACKGROUND_FILL_BUSY: &str = "storage_cache_background_fill_busy";
-const STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE: &str = "storage_cache_background_fill_unavailable";
-const STORAGE_CACHE_BACKGROUND_FILL_SKIPPED: &str = "storage_cache_background_fill_skipped";
-const STORAGE_CACHE_BACKGROUND_FILL_FAILED: &str = "storage_cache_background_fill_failed";
-const STORAGE_CACHE_BACKGROUND_FILL_FAILED_ERROR: &str = "background-fill-failed";
-const STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED: &str =
-    "storage_cache_background_fill_deduplicated";
-const STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED: &str =
-    "storage_cache_background_fill_queue_saturated";
-const STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED: &str =
-    "storage_cache_background_fill_shutdown_cancelled";
-const STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR: &str = "background-fill-shutdown";
-const STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY: &str =
-    "storage_cache_background_fill_deferred_delay";
 const STORAGE_CACHE_FRESH_DELIVERY_ADMITTED: &str = "storage_cache_fresh_delivery_admitted";
 const STORAGE_CACHE_FRESH_DELIVERY_WARM: &str = "storage_cache_fresh_delivery_warm";
 const STORAGE_CACHE_FRESH_DELIVERY_OVERSIZED: &str = "storage_cache_fresh_delivery_oversized";
@@ -415,7 +402,7 @@ impl FreshArchiveDeliveryAdmission {
         }
         // Construction remains lazy after admission and failures are not
         // cached. There is no await while holding this initialization lock.
-        let client = Client::builder()
+        let client = archive_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
             .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
@@ -440,690 +427,14 @@ impl Default for FreshArchiveDeliveryAdmission {
     }
 }
 
-/// Admission result for one deferred cache-fill group.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BackgroundFillAdmission {
-    Accepted,
-    Deduplicated,
-    QueueSaturated,
-    Closed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BackgroundFillEntryState {
-    Queued,
-    Active,
-}
-
-#[derive(Clone)]
-enum BackgroundFillAction {
-    /// An archive miss observed during preparation; execution revalidates it.
-    Fill(Option<decoded::DecodedCache>),
-    /// An archive hit observed during preparation; it may be evicted before execution.
-    WarmDecoded(decoded::DecodedCache),
-    RetireArchive(decoded::DecodedCache),
-}
-
-impl BackgroundFillAction {
-    fn is_missing(&self) -> bool {
-        matches!(self, Self::Fill(_))
-    }
-}
-
-struct BackgroundFillEntry {
-    group: CacheTargetGroup,
-    home: HomePaths,
-    action: BackgroundFillAction,
-    subscribers: Vec<SandboxOpReporter>,
-    state: BackgroundFillEntryState,
-}
-
-struct BackgroundFillAdmissionState {
-    entries: HashMap<(String, String), BackgroundFillEntry>,
-    pending: VecDeque<(String, String)>,
-    closed: bool,
-}
-
-enum BackgroundFillCommand {
-    Shutdown(oneshot::Sender<()>),
-    #[cfg(any(test, feature = "test-support"))]
-    Checkpoint(oneshot::Sender<(usize, usize)>),
-}
-
-struct BackgroundFillCoordinatorInner {
-    state: Mutex<BackgroundFillAdmissionState>,
-    commands: mpsc::Sender<BackgroundFillCommand>,
-    ready: Notify,
-    http: Client,
-    active_limit: usize,
-    queue_capacity: usize,
-    shutdown: CancellationToken,
-    classifiers: TaskTracker,
-    classification_slot: Arc<Semaphore>,
-}
-
-struct BackgroundFillCoordinatorLifecycle {
-    inner: Arc<BackgroundFillCoordinatorInner>,
-    supervisor: tokio::sync::Mutex<Option<JoinHandle<()>>>,
-}
-
-/// Runner-owned coordinator for deferred storage-cache warming.
-///
-/// All executor handles clone the same coordinator. The coordinator bounds
-/// active and queued work across jobs, deduplicates keys while work is queued
-/// or active, and owns the supervisor task until explicit runner shutdown.
-#[derive(Clone)]
-pub struct StorageCacheBackgroundFillCoordinator {
-    lifecycle: Arc<BackgroundFillCoordinatorLifecycle>,
-}
-
-struct BackgroundFillWork {
-    key: (String, String),
-    group: CacheTargetGroup,
-    home: HomePaths,
-    action: BackgroundFillAction,
-}
-
-struct BackgroundFillWorkerResult {
-    key: (String, String),
-    report: BackgroundFillReport,
-}
-
-impl StorageCacheBackgroundFillCoordinator {
-    pub fn new() -> RunnerResult<Self> {
-        Self::new_with_limits(BACKGROUND_FILL_ACTIVE_LIMIT, BACKGROUND_FILL_QUEUE_CAPACITY)
-    }
-
-    fn new_with_limits(active_limit: usize, queue_capacity: usize) -> RunnerResult<Self> {
-        assert!(
-            active_limit > 0,
-            "background fill active limit must be positive"
-        );
-        assert!(
-            queue_capacity > 0,
-            "background fill queue capacity must be positive"
-        );
-        let http = Client::builder().build().map_err(|error| {
-            RunnerError::Internal(format!("build background fill http client: {error}"))
-        })?;
-        let (commands, receiver) = mpsc::channel(queue_capacity);
-        let inner = Arc::new(BackgroundFillCoordinatorInner {
-            state: Mutex::new(BackgroundFillAdmissionState {
-                entries: HashMap::new(),
-                pending: VecDeque::new(),
-                closed: false,
-            }),
-            commands,
-            ready: Notify::new(),
-            http,
-            active_limit,
-            queue_capacity,
-            shutdown: CancellationToken::new(),
-            classifiers: TaskTracker::new(),
-            classification_slot: Arc::new(Semaphore::new(1)),
-        });
-        let supervisor = tokio::spawn(run_background_fill_supervisor(Arc::clone(&inner), receiver));
-        let lifecycle = Arc::new(BackgroundFillCoordinatorLifecycle {
-            inner,
-            supervisor: tokio::sync::Mutex::new(Some(supervisor)),
-        });
-        Ok(Self { lifecycle })
-    }
-
-    fn submit(
-        &self,
-        group: CacheTargetGroup,
-        home: HomePaths,
-        reporter: SandboxOpReporter,
-        action: BackgroundFillAction,
-    ) -> BackgroundFillAdmission {
-        Self::submit_inner(&self.lifecycle.inner, group, home, reporter, action)
-    }
-
-    fn submit_inner(
-        inner: &BackgroundFillCoordinatorInner,
-        group: CacheTargetGroup,
-        home: HomePaths,
-        reporter: SandboxOpReporter,
-        action: BackgroundFillAction,
-    ) -> BackgroundFillAdmission {
-        let key = group.key();
-        let mut state = inner
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if state.closed {
-            return BackgroundFillAdmission::Closed;
-        }
-        if let Some(entry) = state.entries.get_mut(&key) {
-            if entry.state == BackgroundFillEntryState::Queued {
-                // Archive consumers take precedence over queued retirement.
-                // Active work is already owned; a later run may retry optional
-                // maintenance after it finishes.
-                match (&mut entry.action, action) {
-                    (BackgroundFillAction::Fill(cache), BackgroundFillAction::Fill(next)) => {
-                        if cache.is_none() {
-                            *cache = next;
-                        }
-                    }
-                    (
-                        BackgroundFillAction::Fill(cache),
-                        BackgroundFillAction::WarmDecoded(next),
-                    ) => {
-                        if cache.is_none() {
-                            *cache = Some(next);
-                        }
-                    }
-                    (
-                        BackgroundFillAction::WarmDecoded(cache),
-                        BackgroundFillAction::Fill(next),
-                    ) => {
-                        let next = next.or_else(|| Some(cache.clone()));
-                        entry.action = BackgroundFillAction::Fill(next);
-                        entry.group = group;
-                        entry.home = home;
-                    }
-                    (
-                        current @ BackgroundFillAction::RetireArchive(_),
-                        next @ BackgroundFillAction::Fill(_),
-                    ) => {
-                        *current = next;
-                        entry.group = group;
-                        entry.home = home;
-                    }
-                    (
-                        current @ BackgroundFillAction::RetireArchive(_),
-                        next @ BackgroundFillAction::WarmDecoded(_),
-                    ) => {
-                        *current = next;
-                        entry.group = group;
-                        entry.home = home;
-                    }
-                    _ => {}
-                }
-            }
-            entry.subscribers.push(reporter);
-            return BackgroundFillAdmission::Deduplicated;
-        }
-        // Leave one worker wave of waiting positions for the other class.
-        // Already accepted same-key promotions above keep ownership even when
-        // they exceed this class cap; no entry is evicted to make room.
-        let reserved = inner.active_limit.min(inner.queue_capacity / 2);
-        let same_class = state
-            .entries
-            .values()
-            .filter(|entry| {
-                entry.state == BackgroundFillEntryState::Queued
-                    && entry.action.is_missing() == action.is_missing()
-            })
-            .count();
-        if state.pending.len() >= inner.queue_capacity
-            || same_class >= inner.queue_capacity - reserved
-        {
-            return BackgroundFillAdmission::QueueSaturated;
-        }
-        state.entries.insert(
-            key.clone(),
-            BackgroundFillEntry {
-                group,
-                home,
-                action,
-                subscribers: vec![reporter],
-                state: BackgroundFillEntryState::Queued,
-            },
-        );
-        state.pending.push_back(key);
-        // The queue owns every accepted key before the supervisor is notified.
-        // Coalesced wakeups carry no separate FIFO or overflow work ownership.
-        drop(state);
-        inner.ready.notify_one();
-        BackgroundFillAdmission::Accepted
-    }
-
-    /// At most one bounded batch runs classification; it consumes an
-    /// existing decoded worker rather than creating another classifier queue.
-    fn try_classify_warming(
-        &self,
-        groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
-        home: HomePaths,
-        reporter: SandboxOpReporter,
-    ) -> Result<(), Vec<(CacheTargetGroup, BackgroundFillAction)>> {
-        let Some((_, BackgroundFillAction::WarmDecoded(cache))) = groups.first() else {
-            return Err(groups);
-        };
-        let keys = groups.iter().map(|(group, _)| group.key()).collect();
-        let inner = &self.lifecycle.inner;
-        let state = inner
-            .state
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if state.closed {
-            return Err(groups);
-        }
-        let Ok(slot) = Arc::clone(&inner.classification_slot).try_acquire_owned() else {
-            return Err(groups);
-        };
-        let check = match cache.try_rejected_archives(keys) {
-            Ok(Some(check)) => check,
-            Ok(None) => return Err(groups),
-            Err(error) => {
-                warn!(%error, "storage_cache: rejection classification unavailable");
-                return Err(groups);
-            }
-        };
-        // Register completion and reporting under the same lock as shutdown.
-        let task = inner.classifiers.token();
-        let inner = Arc::clone(inner);
-        drop(state);
-        tokio::spawn(async move {
-            let (_task, _slot) = (task, slot);
-            // The blocking task releases decoded memory/workers before these
-            // results can admit useful warming that needs those same permits.
-            let rejected = match check.await {
-                Ok(Ok(rejected)) => rejected,
-                result => {
-                    warn!(?result, "storage_cache: rejection classification failed");
-                    vec![false; groups.len()]
-                }
-            };
-            let mut accepted = 0;
-            let mut records = Vec::new();
-            for ((group, action), rejected) in groups.into_iter().zip(rejected) {
-                if rejected {
-                    continue;
-                }
-                let admission =
-                    Self::submit_inner(&inner, group, home.clone(), reporter.clone(), action);
-                record_background_admission(admission, &mut accepted, &mut records);
-            }
-            if accepted > 0 {
-                records.push(SandboxOpRecord::new(
-                    background_fill_scheduled_count_action(accepted),
-                    Duration::ZERO,
-                    true,
-                    None,
-                ));
-            }
-            if !records.is_empty() {
-                reporter.report(records).await;
-            }
-        });
-        Ok(())
-    }
-
-    /// Close admissions, cancel queued work, drain active atomic operations,
-    /// and join all terminal telemetry reports before returning.
-    ///
-    /// Cancelling one observer leaves the original supervisor join owned here.
-    /// Concurrent and replacement observers wait for the same accepted work.
-    pub async fn shutdown(&self) {
-        {
-            let mut state = self
-                .lifecycle
-                .inner
-                .state
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            state.closed = true;
-            self.lifecycle.inner.classifiers.close();
-        }
-        {
-            let mut owner = self.lifecycle.supervisor.lock().await;
-            if let Some(supervisor) = owner.as_mut() {
-                let (complete, completed) = oneshot::channel();
-                if self
-                    .lifecycle
-                    .inner
-                    .commands
-                    .send(BackgroundFillCommand::Shutdown(complete))
-                    .await
-                    .is_ok()
-                {
-                    let _ = completed.await;
-                } else {
-                    self.lifecycle.inner.shutdown.cancel();
-                }
-                if let Err(error) = supervisor.await {
-                    warn!(%error, "storage_cache: background fill supervisor failed during shutdown");
-                }
-                *owner = None;
-            }
-        }
-        self.lifecycle.inner.classifiers.wait().await;
-    }
-
-    #[cfg(test)]
-    fn is_closed_for_test(&self) -> bool {
-        self.lifecycle
-            .inner
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .closed
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn wait_idle_for_test(&self) {
-        loop {
-            let (send, receive) = oneshot::channel();
-            let sent = self
-                .lifecycle
-                .inner
-                .commands
-                .send(BackgroundFillCommand::Checkpoint(send))
-                .await;
-            assert!(
-                sent.is_ok(),
-                "background fill supervisor stopped before checkpoint"
-            );
-            let counts = receive.await;
-            assert!(
-                counts.is_ok(),
-                "background fill supervisor dropped checkpoint"
-            );
-            if matches!(counts, Ok((0, 0))) {
-                return;
-            }
-            // Observe a coordinator checkpoint without busy-spinning while a
-            // blocking filesystem worker is active. This is test-only polling.
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    }
-}
-
-impl Drop for BackgroundFillCoordinatorLifecycle {
-    fn drop(&mut self) {
-        // Classification may finish after the last executor owner disappears.
-        // Close admission before aborting the only supervisor that can drain it.
-        self.inner
-            .state
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .closed = true;
-        self.inner.classifiers.close();
-        self.inner.shutdown.cancel();
-        if let Some(supervisor) = self.supervisor.get_mut().take() {
-            supervisor.abort();
-        }
-    }
-}
-
-async fn run_background_fill_supervisor(
-    inner: Arc<BackgroundFillCoordinatorInner>,
-    mut receiver: mpsc::Receiver<BackgroundFillCommand>,
-) {
-    let mut missing_streak = 0;
-    let mut workers = JoinSet::new();
-    let mut reports = JoinSet::new();
-    let mut shutdown_complete: Option<oneshot::Sender<()>> = None;
-    let mut shutdown_requested = false;
-
-    loop {
-        // Command and worker branches are intentionally prioritized below.
-        // Reap a bounded batch here so a sustained stream of either branch
-        // cannot retain completed reporter tasks indefinitely.
-        reap_completed_background_fill_reports(&mut reports);
-
-        while workers.len() < inner.active_limit {
-            let Some(work) = take_background_fill_work(&inner, &mut missing_streak) else {
-                break;
-            };
-            let worker_key = work.key.clone();
-            let http = inner.http.clone();
-            workers.spawn(async move {
-                match std::panic::AssertUnwindSafe(run_background_fill_work(work, http))
-                    .catch_unwind()
-                    .await
-                {
-                    Ok(result) => result,
-                    Err(_) => {
-                        warn!(
-                            key = ?worker_key,
-                            "storage_cache: background fill worker panicked"
-                        );
-                        BackgroundFillWorkerResult {
-                            key: worker_key,
-                            report: BackgroundFillReport::failed(Duration::ZERO),
-                        }
-                    }
-                }
-            });
-        }
-
-        if shutdown_requested {
-            let cancelled = cancel_queued_background_fills(&inner);
-            spawn_background_fill_reports(
-                &mut reports,
-                cancelled,
-                BackgroundFillReport::shutdown_cancelled().into_records(),
-            );
-            while let Some(result) = workers.join_next().await {
-                handle_background_fill_worker_result(&inner, &mut reports, Some(result));
-            }
-            while let Some(result) = reports.join_next().await {
-                if let Err(error) = result {
-                    warn!(%error, "storage_cache: background fill telemetry task failed during shutdown");
-                }
-            }
-            inner.shutdown.cancel();
-            if let Some(complete) = shutdown_complete.take() {
-                let _ = complete.send(());
-            }
-            return;
-        }
-
-        tokio::select! {
-            biased;
-            command = receiver.recv() => {
-                match command {
-                    #[cfg(any(test, feature = "test-support"))]
-                    Some(BackgroundFillCommand::Checkpoint(complete)) => {
-                        let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
-                        let _ = complete.send((workers.len() + inner.classifiers.len(), state.pending.len()));
-                    }
-                    Some(BackgroundFillCommand::Shutdown(complete)) => {
-                        let mut state = inner
-                            .state
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        state.closed = true;
-                        shutdown_complete = Some(complete);
-                        shutdown_requested = true;
-                    }
-                    None => {
-                        let mut state = inner
-                            .state
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        state.closed = true;
-                        shutdown_requested = true;
-                    }
-                }
-            }
-            () = inner.shutdown.cancelled(), if !shutdown_requested => {
-                let mut state = inner
-                    .state
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                state.closed = true;
-                shutdown_requested = true;
-            }
-            result = workers.join_next(), if !workers.is_empty() => {
-                handle_background_fill_worker_result(&inner, &mut reports, result);
-            }
-            () = inner.ready.notified() => {}
-            result = reports.join_next(), if !reports.is_empty() => {
-                if let Some(Err(error)) = result {
-                    warn!(%error, "storage_cache: background fill telemetry task failed");
-                }
-            }
-        }
-    }
-}
-
-fn take_background_fill_work(
-    inner: &BackgroundFillCoordinatorInner,
-    missing_streak: &mut usize,
-) -> Option<BackgroundFillWork> {
-    let mut state = inner
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // Shutdown closes admission before its command reaches the supervisor;
-    // never promote queued work after that point.
-    if state.closed {
-        return None;
-    }
-    // FIFO within each class. Once the missing burst is spent, dispatch the
-    // oldest maintenance item; an empty class never leaves a worker idle.
-    let prefer_missing = *missing_streak < BACKGROUND_FILL_MISSING_BURST;
-    let position = state
-        .pending
-        .iter()
-        .position(|key| {
-            state
-                .entries
-                .get(key)
-                .is_some_and(|entry| entry.action.is_missing() == prefer_missing)
-        })
-        .unwrap_or(0);
-    let key = state.pending.remove(position)?;
-    let (group, home, action) = {
-        let entry = state.entries.get_mut(&key)?;
-        if entry.state != BackgroundFillEntryState::Queued {
-            return None;
-        }
-        entry.state = BackgroundFillEntryState::Active;
-        (
-            entry.group.clone(),
-            entry.home.clone(),
-            entry.action.clone(),
-        )
-    };
-    *missing_streak = if action.is_missing() {
-        (*missing_streak + 1).min(BACKGROUND_FILL_MISSING_BURST)
-    } else {
-        0
-    };
-    Some(BackgroundFillWork {
-        key,
-        group,
-        home,
-        action,
-    })
-}
-
-fn reap_completed_background_fill_reports(reports: &mut JoinSet<()>) {
-    for _ in 0..BACKGROUND_FILL_REPORT_REAP_BATCH {
-        let Some(result) = reports.try_join_next() else {
-            break;
-        };
-        if let Err(error) = result {
-            warn!(%error, "storage_cache: background fill telemetry task failed");
-        }
-    }
-}
-
-fn cancel_queued_background_fills(
-    inner: &BackgroundFillCoordinatorInner,
-) -> Vec<SandboxOpReporter> {
-    let mut state = inner
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut subscribers = Vec::new();
-    while let Some(key) = state.pending.pop_front() {
-        if let Some(entry) = state.entries.remove(&key) {
-            subscribers.extend(entry.subscribers);
-        }
-    }
-    subscribers
-}
-
-async fn run_background_fill_work(
-    work: BackgroundFillWork,
-    http: Client,
-) -> BackgroundFillWorkerResult {
-    let started_at = Instant::now();
-    let outcome = async {
-        if let BackgroundFillAction::RetireArchive(cache) = &work.action {
-            return cache
-                .retire_archive(&work.key.0, &work.key.1)
-                .await
-                .map(|retired| BackgroundFillOutcome::ArchiveRetirement { retired })
-                .map_err(|error| {
-                    RunnerError::Internal(format!("retire storage archive: {error}"))
-                });
-        }
-        let outcome = process_group_background_fill(&work.group, &http, &work.home).await?;
-        if matches!(
-            outcome,
-            BackgroundFillOutcome::Filled { .. } | BackgroundFillOutcome::AlreadyCached { .. }
-        ) && let BackgroundFillAction::Fill(Some(decoded))
-        | BackgroundFillAction::WarmDecoded(decoded) = &work.action
-        {
-            decoded
-                .warm_from_archive(&work.key.0, &work.key.1)
-                .await
-                .map_err(|error| {
-                    RunnerError::Internal(format!("warm extracted storage cache: {error}"))
-                })?;
-        }
-        Ok::<_, RunnerError>(outcome)
-    }
-    .await;
-    let report = match outcome {
-        Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
-        Err(error) => {
-            warn!(%error, "storage_cache: background fill failed");
-            BackgroundFillReport::failed(started_at.elapsed())
-        }
-    };
-    BackgroundFillWorkerResult {
-        key: work.key,
-        report,
-    }
-}
-
-fn handle_background_fill_worker_result(
-    inner: &BackgroundFillCoordinatorInner,
-    reports: &mut JoinSet<()>,
-    result: Option<Result<BackgroundFillWorkerResult, tokio::task::JoinError>>,
-) {
-    let Some(result) = result else {
-        return;
-    };
-    let worker = match result {
-        Ok(worker) => worker,
-        Err(error) => {
-            warn!(%error, "storage_cache: background fill worker failed");
-            return;
-        }
-    };
-    let subscribers = {
-        let mut state = inner
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(entry) = state.entries.remove(&worker.key) else {
-            return;
-        };
-        entry.subscribers
-    };
-    spawn_background_fill_reports(reports, subscribers, worker.report.into_records());
-}
-
-fn spawn_background_fill_reports(
-    reports: &mut JoinSet<()>,
-    subscribers: Vec<SandboxOpReporter>,
-    records: Vec<SandboxOpRecord>,
-) {
-    for reporter in subscribers {
-        let records = records.clone();
-        reports.spawn(async move {
-            reporter.report(records).await;
-        });
-    }
+// Archives are already compressed and their hashes identify the original bytes.
+// Preserve that contract even when another crate enables a reqwest codec.
+fn archive_client_builder() -> reqwest::ClientBuilder {
+    Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
 }
 
 struct FreshArchivePhaseRecord {
@@ -1505,215 +816,160 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut CacheProcessMetrics,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
+        // Complete-plan callers retain the original collection order. Only
+        // mixed preparation consumes publication progress between fetches.
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
-
-        let mut resolved = Vec::new();
         while let Some(task) = self.fetches.join_next().await {
-            match task.map_err(|error| {
+            let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
-            })? {
-                FreshArchiveFetchTaskResult::Downloaded(downloaded) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_COMPLETE,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    let FreshArchiveDownloaded {
-                        group,
-                        bytes,
-                        size_source,
-                        writer,
-                        permit,
-                    } = downloaded;
-                    telemetry.record(
-                        match size_source {
-                            FreshArchiveSizeSource::Manifest => {
-                                STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST
-                            }
-                            FreshArchiveSizeSource::Response => {
-                                STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE
-                            }
-                        },
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    let target = &group.representative;
-                    let cache_dir = home.storage_cache_dir(&target.name, &target.version);
-                    let phase_records = self.phase_records.clone();
-                    self.publications.spawn(async move {
-                        let _writer = writer;
-                        let phase = FreshArchivePhaseGuard::new(
-                            &phase_records,
-                            STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
-                        );
-                        let result = write_to_cache(&cache_dir, &bytes)
-                            .await
-                            .map(|()| FreshArchivePublished { bytes, permit });
-                        phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
-                        FreshArchivePublicationTaskResult { group, result }
-                    });
-                }
-                FreshArchiveFetchTaskResult::Terminal { error } => {
-                    let reason = error.reason;
-                    let action = if reason == "cancelled" {
-                        STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
-                    } else {
-                        STORAGE_CACHE_FRESH_DELIVERY_FAILED
-                    };
-                    telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    return Err(if reason == "cancelled" {
-                        RunnerError::Cancelled
-                    } else {
-                        RunnerError::Internal(format!(
-                            "runner-owned archive download failed: {error}"
-                        ))
-                    });
-                }
-            }
+            })?;
+            self.accept_fetched(task, home, telemetry)?;
         }
-
+        let mut resolved = Vec::new();
         while let Some(task) = self.publications.join_next().await {
             let task = task.map_err(|error| {
                 RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
             })?;
-            match task.result {
-                Ok(archive) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED,
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    resolved.push(FreshArchiveResolved {
-                        group: task.group,
-                        archive,
-                    });
-                }
-                Err(error) => {
-                    telemetry.record(
-                        STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
-                        Duration::ZERO,
-                        false,
-                        Some("publication"),
-                    );
-                    return Err(error);
-                }
-            }
+            resolved.push(Self::accept_published(task, telemetry)?);
         }
         Ok(resolved)
     }
-}
 
-/// Background cache work selected during cache population after guest staging
-/// outcomes are known, but not yet started. Depending on those outcomes, the
-/// selected actions may fill a missing archive, warm the extracted-file cache
-/// from an archive hit, or retire a redundant archive after an extracted-file hit.
-///
-/// Before [`Self::start`], this value holds selection data, including archive
-/// URLs and optional decoded-cache handles. Creating it does not start an HTTP
-/// request or task, acquire a cache lock, or open a file, so dropping it on a
-/// pre-spawn failure requires no asynchronous cleanup for this deferred work.
-#[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
-pub struct DeferredBackgroundFill {
-    groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
-    home: HomePaths,
-    selected_at: Instant,
-}
-
-impl DeferredBackgroundFill {
-    #[cfg(test)]
-    async fn run(self) -> Vec<SandboxOpRecord> {
-        run_background_fill_groups(self.groups, self.home).await
-    }
-
-    pub fn start(
-        self,
-        coordinator: &StorageCacheBackgroundFillCoordinator,
-        telemetry: &mut JobTelemetry,
-    ) {
-        telemetry.record(
-            STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY,
-            self.selected_at.elapsed(),
-            true,
-            None,
-        );
-        let reporter = telemetry.reporter();
-        let mut accepted = 0;
-        let mut records = Vec::new();
-        let mut groups = self.groups.into_iter().peekable();
-        while let Some((group, action)) = groups.next() {
-            let batch = if matches!(action, BackgroundFillAction::WarmDecoded(_)) {
-                let mut batch = vec![(group, action)];
-                while batch.len() < decoded::REJECTION_BATCH_SIZE
-                    && groups.peek().is_some_and(|(_, action)| {
-                        matches!(action, BackgroundFillAction::WarmDecoded(_))
-                    })
-                {
-                    if let Some(next) = groups.next() {
-                        batch.push(next);
-                    }
-                }
-                match coordinator.try_classify_warming(batch, self.home.clone(), reporter.clone()) {
-                    Ok(()) => continue,
-                    Err(batch) => batch,
-                }
-            } else {
-                vec![(group, action)]
-            };
-            for (group, action) in batch {
-                let admission =
-                    coordinator.submit(group, self.home.clone(), reporter.clone(), action);
-                record_background_admission(admission, &mut accepted, &mut records);
+    fn accept_fetched(
+        &mut self,
+        task: FreshArchiveFetchTaskResult,
+        home: &HomePaths,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<()> {
+        match task {
+            FreshArchiveFetchTaskResult::Downloaded(downloaded) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_COMPLETE,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                let FreshArchiveDownloaded {
+                    group,
+                    bytes,
+                    size_source,
+                    writer,
+                    permit,
+                } = downloaded;
+                telemetry.record(
+                    match size_source {
+                        FreshArchiveSizeSource::Manifest => {
+                            STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST
+                        }
+                        FreshArchiveSizeSource::Response => {
+                            STORAGE_CACHE_FRESH_DELIVERY_SIZE_RESPONSE
+                        }
+                    },
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                let target = &group.representative;
+                let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+                let phase_records = self.phase_records.clone();
+                self.publications.spawn(async move {
+                    let _writer = writer;
+                    let phase = FreshArchivePhaseGuard::new(
+                        &phase_records,
+                        STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION,
+                    );
+                    let result = write_to_cache(&cache_dir, &bytes)
+                        .await
+                        .map(|()| FreshArchivePublished { bytes, permit });
+                    phase.finish(result.as_ref().map(|_| ()).map_err(|_| "publication"));
+                    FreshArchivePublicationTaskResult { group, result }
+                });
+            }
+            FreshArchiveFetchTaskResult::Terminal { error } => {
+                let reason = error.reason;
+                let action = if reason == "cancelled" {
+                    STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
+                } else {
+                    STORAGE_CACHE_FRESH_DELIVERY_FAILED
+                };
+                telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
+                return Err(if reason == "cancelled" {
+                    RunnerError::Cancelled
+                } else {
+                    RunnerError::Internal(format!("runner-owned archive download failed: {error}"))
+                });
             }
         }
-        for record in records {
-            telemetry.record(
-                record.action_type,
-                record.duration,
-                record.success,
-                record.error,
-            );
+        Ok(())
+    }
+
+    /// Joining a task is cancellation-safe. Accepted publication remains in
+    /// this delivery even if its caller stops polling between completions.
+    async fn next_resolved(
+        &mut self,
+        home: &HomePaths,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<Option<FreshArchiveResolved>> {
+        for apply in self.apply.drain(..) {
+            let _ = apply.send(());
         }
-        if accepted > 0 {
-            telemetry.record(
-                background_fill_scheduled_count_action(accepted),
-                Duration::ZERO,
-                true,
-                None,
-            );
+
+        loop {
+            let published = tokio::select! {
+                // Drain already-ready downloads before deciding that useful
+                // network overlap remains. Complete downloads retain batching.
+                biased;
+                Some(task) = self.fetches.join_next(), if !self.fetches.is_empty() => {
+                    let task = task.map_err(|error| {
+                        RunnerError::Internal(format!("runner-owned archive fetch task: {error}"))
+                    })?;
+                    self.accept_fetched(task, home, telemetry)?;
+                    None
+                },
+                Some(task) = self.publications.join_next(), if !self.publications.is_empty() => {
+                    Some(task.map_err(|error| {
+                        RunnerError::Internal(format!("runner-owned archive publication task: {error}"))
+                    })?)
+                },
+                else => return Ok(None),
+            };
+            let Some(task) = published else {
+                continue;
+            };
+            return Self::accept_published(task, telemetry).map(Some);
         }
     }
-}
 
-fn record_background_admission(
-    admission: BackgroundFillAdmission,
-    accepted: &mut usize,
-    records: &mut Vec<SandboxOpRecord>,
-) {
-    let (action, success, error) = match admission {
-        BackgroundFillAdmission::Accepted => {
-            *accepted += 1;
-            return;
+    fn accept_published(
+        task: FreshArchivePublicationTaskResult,
+        telemetry: &mut CacheProcessMetrics,
+    ) -> RunnerResult<FreshArchiveResolved> {
+        match task.result {
+            Ok(archive) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+                Ok(FreshArchiveResolved {
+                    group: task.group,
+                    archive,
+                })
+            }
+            Err(error) => {
+                telemetry.record(
+                    STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
+                    Duration::ZERO,
+                    false,
+                    Some("publication"),
+                );
+                Err(error)
+            }
         }
-        BackgroundFillAdmission::Deduplicated => {
-            (STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED, true, None)
-        }
-        BackgroundFillAdmission::QueueSaturated => (
-            STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED,
-            true,
-            Some("queue-capacity"),
-        ),
-        BackgroundFillAdmission::Closed => (
-            STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
-            false,
-            Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
-        ),
-    };
-    records.push(SandboxOpRecord::new(action, Duration::ZERO, success, error));
+    }
 }
 
 struct ProcessedGroup {
@@ -1962,78 +1218,6 @@ enum BackgroundFillOutcome {
     Busy,
     Skipped,
     Unavailable,
-}
-
-struct BackgroundFillReport {
-    outcome: SandboxOpRecord,
-    size_bucket: Option<SandboxOpRecord>,
-}
-
-impl BackgroundFillReport {
-    fn from_outcome(outcome: BackgroundFillOutcome, duration: Duration) -> Self {
-        let (action_type, size) = match outcome {
-            BackgroundFillOutcome::ArchiveRetirement { retired } => (
-                if retired {
-                    "storage_cache_archive_retired"
-                } else {
-                    "storage_cache_archive_retirement_skipped"
-                },
-                None,
-            ),
-            BackgroundFillOutcome::Filled { size } => {
-                (STORAGE_CACHE_BACKGROUND_FILL_FILLED, Some(size))
-            }
-            BackgroundFillOutcome::AlreadyCached { size } => {
-                (STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED, Some(size))
-            }
-            BackgroundFillOutcome::Busy => (STORAGE_CACHE_BACKGROUND_FILL_BUSY, None),
-            BackgroundFillOutcome::Unavailable => (STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, None),
-            BackgroundFillOutcome::Skipped => (STORAGE_CACHE_BACKGROUND_FILL_SKIPPED, None),
-        };
-        Self {
-            outcome: SandboxOpRecord::new(action_type, duration, true, None),
-            size_bucket: size.map(|size| {
-                SandboxOpRecord::new(
-                    background_fill_size_bucket_action(size),
-                    Duration::ZERO,
-                    true,
-                    None,
-                )
-            }),
-        }
-    }
-
-    fn failed(duration: Duration) -> Self {
-        Self {
-            outcome: SandboxOpRecord::new(
-                STORAGE_CACHE_BACKGROUND_FILL_FAILED,
-                duration,
-                false,
-                Some(STORAGE_CACHE_BACKGROUND_FILL_FAILED_ERROR),
-            ),
-            size_bucket: None,
-        }
-    }
-
-    fn shutdown_cancelled() -> Self {
-        Self {
-            outcome: SandboxOpRecord::new(
-                STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
-                Duration::ZERO,
-                false,
-                Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
-            ),
-            size_bucket: None,
-        }
-    }
-
-    fn into_records(self) -> Vec<SandboxOpRecord> {
-        let mut records = vec![self.outcome];
-        if let Some(size_bucket) = self.size_bucket {
-            records.push(size_bucket);
-        }
-        records
-    }
 }
 
 #[derive(Default)]
@@ -2480,7 +1664,7 @@ async fn populate_cache_inner(
             // admission until staging, including bodies already downloaded.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
             if !owned_keys.is_empty() && ordinary_concurrency > 0 && !target_groups.is_empty() {
-                let (resolved, ordinary) = population::prepare_mixed(
+                let prepared = population::prepare_mixed(
                     delivery,
                     home,
                     target_groups,
@@ -2496,9 +1680,11 @@ async fn populate_cache_inner(
                         }),
                 )
                 .await?;
-                let mut outcomes = stage_fresh_archives(resolved, &mut stage).await?;
+                // Deferred background admission is bounded. Preserve its
+                // fresh, decoded, ordinary order despite earlier staging.
+                let mut outcomes = prepared.fresh;
                 outcomes.extend(decoded_outcomes);
-                outcomes.extend(ordinary);
+                outcomes.extend(prepared.ordinary);
                 return Ok(outcomes);
             }
             let resolved = delivery.resolve(home, stage.telemetry).await?;
@@ -2600,72 +1786,6 @@ fn defer_background_fill_groups(
 
 fn should_background_fill(outcome: &TargetOutcome) -> bool {
     matches!(outcome, TargetOutcome::MissPassthrough { .. })
-}
-
-#[cfg(test)]
-async fn run_background_fill_groups(
-    groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
-    home: HomePaths,
-) -> Vec<SandboxOpRecord> {
-    let http = match Client::builder().build() {
-        Ok(http) => http,
-        Err(error) => {
-            warn!(%error, "storage_cache: failed to build background fill http client");
-            return (0..groups.len())
-                .map(|_| {
-                    SandboxOpRecord::new(
-                        STORAGE_CACHE_BACKGROUND_FILL_FAILED,
-                        Duration::ZERO,
-                        false,
-                        Some(STORAGE_CACHE_BACKGROUND_FILL_FAILED_ERROR),
-                    )
-                })
-                .collect();
-        }
-    };
-
-    let mut fills = JoinSet::new();
-    let mut reports = Vec::new();
-    for (group, action) in groups {
-        while fills.len() >= CONCURRENCY {
-            if let Some(report) = join_next_background_fill(&mut fills).await {
-                reports.extend(report.into_records());
-            }
-        }
-
-        let http = http.clone();
-        let home = home.clone();
-        fills.spawn(async move {
-            let work = BackgroundFillWork {
-                key: group.key(),
-                group,
-                home,
-                action,
-            };
-            run_background_fill_work(work, http).await.report
-        });
-    }
-
-    while !fills.is_empty() {
-        if let Some(report) = join_next_background_fill(&mut fills).await {
-            reports.extend(report.into_records());
-        }
-    }
-    reports
-}
-
-#[cfg(test)]
-async fn join_next_background_fill(
-    fills: &mut JoinSet<BackgroundFillReport>,
-) -> Option<BackgroundFillReport> {
-    match fills.join_next().await {
-        Some(Ok(report)) => Some(report),
-        None => None,
-        Some(Err(error)) => {
-            warn!(%error, "storage_cache: background fill task failed");
-            Some(BackgroundFillReport::failed(Duration::ZERO))
-        }
-    }
 }
 
 fn group_targets(targets: Vec<CacheTarget>) -> Vec<CacheTargetGroup> {
@@ -4357,18 +3477,6 @@ fn passthrough_lock_busy_count_action(count: usize) -> &'static str {
     }
 }
 
-fn background_fill_scheduled_count_action(count: usize) -> &'static str {
-    match count_bucket(count) {
-        CountBucket::Zero => "storage_cache_background_fill_scheduled_count_0",
-        CountBucket::One => "storage_cache_background_fill_scheduled_count_1",
-        CountBucket::Two => "storage_cache_background_fill_scheduled_count_2",
-        CountBucket::ThreeToFour => "storage_cache_background_fill_scheduled_count_3_4",
-        CountBucket::FiveToEight => "storage_cache_background_fill_scheduled_count_5_8",
-        CountBucket::NineToSixteen => "storage_cache_background_fill_scheduled_count_9_16",
-        CountBucket::SeventeenPlus => "storage_cache_background_fill_scheduled_count_17_plus",
-    }
-}
-
 fn background_fill_deferred_count_action(count: usize) -> &'static str {
     match count_bucket(count) {
         CountBucket::Zero => "storage_cache_background_fill_deferred_count_0",
@@ -4378,22 +3486,6 @@ fn background_fill_deferred_count_action(count: usize) -> &'static str {
         CountBucket::FiveToEight => "storage_cache_background_fill_deferred_count_5_8",
         CountBucket::NineToSixteen => "storage_cache_background_fill_deferred_count_9_16",
         CountBucket::SeventeenPlus => "storage_cache_background_fill_deferred_count_17_plus",
-    }
-}
-
-fn background_fill_size_bucket_action(size: u64) -> &'static str {
-    if size < 64 * 1024 {
-        "storage_cache_background_fill_size_lt_64_kib"
-    } else if size < 256 * 1024 {
-        "storage_cache_background_fill_size_64_256_kib"
-    } else if size < 1024 * 1024 {
-        "storage_cache_background_fill_size_256_kib_1_mib"
-    } else if size < 4 * 1024 * 1024 {
-        "storage_cache_background_fill_size_1_4_mib"
-    } else if size <= CACHE_MAX_SIZE {
-        "storage_cache_background_fill_size_4_8_mib"
-    } else {
-        "storage_cache_background_fill_size_gt_8_mib"
     }
 }
 

@@ -3,8 +3,7 @@ import ChatData
 import ChatDomain
 import SwiftUI
 
-/// Workspace search as a full page, as ChatGPT, Claude and Perplexity open theirs: it grows
-/// out of the sidebar's search capsule and fills the screen, the field at the top. Under the
+/// Workspace search in the app's native sheet, with the field focused on opening. Under the
 /// field the web's filter row (`ThreeColumnSearchDialog`): All, Chats, Messages,
 /// Workflows and Artifacts. A chat or message opens its chat; a workflow starts a default
 /// Agent chat with `/name` in the draft; an artifact opens in the app's preview.
@@ -78,7 +77,9 @@ private struct ChatSearchContent: View {
 
   private var titleThreads: [ChatThread] {
     search.keyword.isEmpty
-      ? workspace.list.threads(agentID: workspace.selectedAgentID, archived: showsArchived)
+      ? workspace.list.threads(
+        agentID: workspace.selectedAgentID, archived: showsArchived,
+        onlyUnread: workspace.sidebar.filter == .unread)
       : workspace.list.threads
   }
 
