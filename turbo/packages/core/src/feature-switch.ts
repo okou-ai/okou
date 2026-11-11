@@ -250,11 +250,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
   },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",

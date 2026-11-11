@@ -51,10 +51,7 @@ import {
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
 import type { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import type { ApiDispatchTimingActionType } from "./api-dispatch-timing.service";
-import {
-  connectorAuthMethodFeatureSwitch,
-  connectorAuthMethodHiddenFeatureSwitch,
-} from "./connector-auth-method-feature-switches";
+import { connectorAuthMethodFeatureSwitch } from "./connector-auth-method-feature-switches";
 import {
   CONNECTOR_DISCOVERY_PER_CATEGORY,
   CONNECTOR_SEARCH_LIMIT,
@@ -468,18 +465,6 @@ function featureSwitchEnabled(
   return featureSwitch === undefined || featureStates?.[featureSwitch] === true;
 }
 
-function featureSwitchHidesAuthMethod(
-  connectorSlug: string,
-  authMethodId: string,
-  featureStates: ConnectorFeatureStates,
-): boolean {
-  const featureSwitch = connectorAuthMethodHiddenFeatureSwitch(
-    connectorSlug,
-    authMethodId,
-  );
-  return featureSwitch !== undefined && featureStates?.[featureSwitch] === true;
-}
-
 export function catalogSource<Connector extends CompatibleCatalogConnector>(
   catalog: AcceptedCatalogSnapshot<Connector>,
 ): ConnectorCatalogSlugSource<Connector> {
@@ -509,15 +494,6 @@ function effectiveConnectors<
       }
       if (
         !featureSwitchEnabled(connector.slug, method.id, args.featureStates)
-      ) {
-        return false;
-      }
-      if (
-        featureSwitchHidesAuthMethod(
-          connector.slug,
-          method.id,
-          args.featureStates,
-        )
       ) {
         return false;
       }
