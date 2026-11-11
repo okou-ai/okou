@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -120,13 +121,28 @@ private fun AppearanceFeedback(status: AppearanceStatus, retry: () -> Unit) {
         Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (!failed) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (!failed) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         Text(
             stringResource(message),
             color =
                 if (failed) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (failed) TextButton(onClick = retry) { Text(stringResource(R.string.retry)) }
+        if (failed) {
+            TextButton(
+                onClick = retry,
+                colors =
+                    ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+            ) {
+                Text(stringResource(R.string.retry))
+            }
+        }
     }
 }
