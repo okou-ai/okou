@@ -72,6 +72,8 @@ with (root/'systemctl.log').open('a') as log:log.write(json.dumps(args)+'\n')
 roots=['etc/systemd/system','run/systemd/system','run/systemd/transient']
 files={p.name:'/'+str(p.relative_to(root)) for d in roots for p in (root/d).glob('*.service')}
 names=[a for a in args[1:] if a.endswith('.service')]
+if os.environ.get('MUTATION_ERROR') and op in ('stop','disable','reset-failed'):
+ print('manager rejected '+op,file=sys.stderr);sys.exit(1)
 if op=='list-units':
  import fnmatch
  patterns=[a for a in args[1:] if not a.startswith('-')]
@@ -103,7 +105,9 @@ elif op=='disable':
  for d in roots:
   for directory in (root/d).glob('*.wants'):
    for name in names:(directory/name).unlink(missing_ok=True)
-elif op=='daemon-reload':pass
+elif op=='daemon-reload':
+ if os.environ.get('RELOAD_ERROR'):
+  print('manager rejected daemon-reload',file=sys.stderr);sys.exit(1)
 else:raise SystemExit('unexpected systemctl call')
 """
 
@@ -285,6 +289,55 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["42"]["outcome"], "unverified")
         self.assertTrue(unit.exists())
         self.assertTrue(config.exists())
+
+    def test_unresolved_teardown_retains_command_errors_but_converged_pr_is_clean(self):
+        name = "vm0-runner-pr-42-api.service"
+        self.state(name, LoadState="loaded", ActiveState="failed")
+        sibling = self.resource("etc/systemd/system/vm0-runner-pr-43-api.service")
+        result = self.controller(MUTATION_ERROR="1")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        records = [
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.startswith("{")
+        ]
+        decisions = {record["pr"]: record for record in records if "pr" in record}
+        failed = decisions[42]["hosts"]["metal-a"]
+        self.assertEqual(failed["outcome"], "failed")
+        self.assertIn("remaining", failed)
+        self.assertIn("manager rejected reset-failed", json.dumps(failed))
+        self.assertIn(
+            {
+                "operation": "reset-failed",
+                "returncode": 1,
+                "stderr": "manager rejected reset-failed",
+            },
+            failed["command_errors"],
+        )
+        converged = decisions[43]["hosts"]["metal-a"]
+        self.assertEqual(converged["outcome"], "cleaned")
+        self.assertFalse(sibling.exists())
+        self.assertNotIn("command_errors", converged)
+
+    def test_reload_failure_retains_completed_operations_without_claiming_success(self):
+        unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        result = self.controller(RELOAD_ERROR="1")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse(unit.exists())
+        self.assertFalse(config.exists())
+        records = [
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.startswith("{")
+        ]
+        decision = next(record for record in records if record.get("pr") == 42)
+        self.assertEqual(decision["outcome"], "unverified")
+        failed = decision["hosts"]["metal-a"]
+        self.assertIn("manager rejected daemon-reload", failed["error"])
+        self.assertEqual(failed["operation_result"]["outcome"], "cleaned")
+        self.assertEqual(failed["operation_result"]["units"], 1)
+        self.assertEqual(failed["operation_result"]["directories"], 1)
 
     def test_pending_systemd_job_is_not_an_empty_manager_record(self):
         name = "vm0-runner-pr-42-api.service"

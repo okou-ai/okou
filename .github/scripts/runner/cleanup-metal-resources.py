@@ -277,30 +277,35 @@ class Host:
     def cleanup(self, selected):
         before = self.inventory(selected)
         outcomes = {}
+        command_errors = {pr: [] for pr in selected}
         dirty = False
+
+        def teardown(pr, operation, *args):
+            result = command("systemctl", operation, *args, allow_failure=True)
+            if result.returncode:
+                command_errors[pr].append(
+                    {
+                        "operation": operation,
+                        "returncode": result.returncode,
+                        "stderr": result.stderr.strip(),
+                    }
+                )
+
         for pr in selected:
             resource = before.get(pr, {"units": [], "directories": []})
             try:
                 names = [unit["name"] for unit in resource["units"]]
                 if names:
-                    command(
-                        "systemctl", "stop", "--no-block", *names, allow_failure=True
-                    )
+                    teardown(pr, "stop", "--no-block", *names)
                     deadline = time.monotonic() + 60
                     while any(state["busy"] for state in self.states(names).values()):
                         if time.monotonic() >= deadline:
                             raise TimeoutError("service execution remains after stop")
                         time.sleep(0.5)
-                    command(
-                        "systemctl",
-                        "disable",
-                        "--no-reload",
-                        *names,
-                        allow_failure=True,
-                    )
+                    teardown(pr, "disable", "--no-reload", *names)
                     # Clearing failed metadata allows systemd to collect units
                     # whose files were already removed by a previous teardown.
-                    command("systemctl", "reset-failed", *names, allow_failure=True)
+                    teardown(pr, "reset-failed", *names)
                 for unit in resource["units"]:
                     for path in unit["paths"]:
                         dirty = True
@@ -321,28 +326,31 @@ class Host:
                 subprocess.SubprocessError,
             ) as error:
                 outcomes[pr] = {"outcome": "failed", "error": str(error)}
-        if dirty:
-            try:
+        try:
+            if dirty:
                 with self.reload_lock():
                     command("systemctl", "daemon-reload")
-            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-                return {
-                    pr: {"outcome": "unverified", "error": str(error)}
-                    for pr in selected
-                }
-        try:
             remaining = self.inventory(selected)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
-            return {
-                pr: {"outcome": "unverified", "error": str(error)} for pr in selected
-            }
-        for pr, resource in remaining.items():
-            if outcomes[pr]["outcome"] != "failed":
-                outcomes[pr] = {
-                    "outcome": "failed",
-                    "error": "resources remain after cleanup",
+            outcomes = {
+                pr: {
+                    "outcome": "unverified",
+                    "error": str(error),
+                    "operation_result": outcomes[pr],
                 }
-            outcomes[pr]["remaining"] = resource
+                for pr in selected
+            }
+        else:
+            for pr, resource in remaining.items():
+                if outcomes[pr]["outcome"] != "failed":
+                    outcomes[pr] = {
+                        "outcome": "failed",
+                        "error": "resources remain after cleanup",
+                    }
+                outcomes[pr]["remaining"] = resource
+        for pr, result in outcomes.items():
+            if result["outcome"] in {"failed", "unverified"} and command_errors[pr]:
+                result["command_errors"] = command_errors[pr]
         return outcomes
 
     def session(self, numbers):

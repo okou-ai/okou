@@ -82,6 +82,9 @@ Absent resources are counted separately from actual cleanup. Persistent and
 transient files, directory-only and Stripe-only leftovers participate in discovery;
 inactive manager records with no execution, queued job or files do not repeatedly
 enter it.
+Unresolved results retain nonzero systemctl action diagnostics. If reload or
+final inventory fails, `operation_result` retains completed steps; the overall
+outcome remains `unverified` rather than claiming verified cleanup.
 SSH response loss is not permission to replay a destructive command. EOF or
 heartbeat lease expiry stops the remote mutation before its own lock descriptors
 close. The worker source is paired with the controller and requires no persistent
