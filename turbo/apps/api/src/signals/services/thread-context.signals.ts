@@ -1,4 +1,3 @@
-import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
@@ -18,10 +17,6 @@ import {
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import { createRunTemplates } from "./run-templates.service";
-import {
-  type ConnectedAccounts,
-  createConnectedAccountsSignals,
-} from "./thread-connected-accounts.signals";
 import { createThreadAutomationContext } from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
 import {
@@ -69,9 +64,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly teamsContext$: ReturnType<typeof createTeamsThreadContext>;
   readonly telegramContext$: ReturnType<typeof createTelegramThreadContext>;
   readonly emailContext$: ReturnType<typeof createEmailThreadContext>;
-  readonly emailMailboxConnections$: ReturnType<
-    typeof createEmailMailboxConnections
-  >;
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
@@ -89,11 +81,8 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly runIds$: Computed<{
     readonly runId: string;
   }>;
-  /** Connector accounts chosen from thread, source and default selections. */
-  readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
-  readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
-  readonly connectorThreadSelections$: ConnectedAccounts["threadSelections$"];
-  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
+  /** Integration account intent; accounts are resolved only at Claim. */
+  readonly connectorSourceId$: Computed<Promise<string | undefined>>;
 }
 
 export function createThreadContext(
@@ -113,7 +102,10 @@ export function createThreadContext(
   );
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
-  const emailContext$ = createEmailThreadContext(pickedEvent$, orgId);
+  const emailOrgId$ = computed(() => {
+    return Promise.resolve(orgId);
+  });
+  const emailContext$ = createEmailThreadContext(pickedEvent$, emailOrgId$);
   const agentPhoneContext$ = createAgentPhoneThreadContext(pickedEvent$, orgId);
   const wechatContext$ = createWechatThreadContext(
     pickedEvent$,
@@ -180,17 +172,6 @@ export function createThreadContext(
     automationContext$,
     feishuContext$,
   );
-  const connectedAccounts = createConnectedAccountsSignals(
-    bootstrap,
-    pickedEvent$,
-    connectorSourceId$,
-    model.dispatchTiming$,
-  );
-  const emailMailboxConnections$ = createEmailMailboxConnections(
-    pickedEvent$,
-    connectedAccounts.selectedStoredConnectorSources$,
-    orgId,
-  );
   return {
     threadContinuation$,
     computerUseHostGrant$,
@@ -199,7 +180,6 @@ export function createThreadContext(
     teamsContext$,
     telegramContext$,
     emailContext$,
-    emailMailboxConnections$,
     agentPhoneContext$,
     wechatContext$,
     discordContext$,
@@ -217,11 +197,7 @@ export function createThreadContext(
     providerFramework$: model.providerFramework$,
     dispatchTiming$: model.dispatchTiming$,
     runIds$,
-    connectorSelection$: connectedAccounts.connectorSelection$,
-    connectorSnapshot$: connectedAccounts.connectorSnapshot$,
-    connectorThreadSelections$: connectedAccounts.threadSelections$,
-    selectedConnectorSources$:
-      connectedAccounts.selectedStoredConnectorSources$,
+    connectorSourceId$,
   };
 }
 

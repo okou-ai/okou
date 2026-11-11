@@ -71,6 +71,7 @@ const claimInputsDecoder = zodDriverValueDecoder(
 function claimInputProjection(
   run: ClaimExecutionContextRun,
   modelSources: SQLWrapper,
+  admittedBindings: boolean,
 ) {
   const builder = new QueryBuilder();
   const features = builder
@@ -105,7 +106,11 @@ function claimInputProjection(
         .as("payload"),
     })
     .from(agentRunConnectorDiagnosticRegistrations)
-    .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
+    .where(
+      admittedBindings
+        ? eq(agentRunConnectorDiagnosticRegistrations.runId, run.id)
+        : sql`false`,
+    );
   const selections = builder
     .select({
       payload: contextJsonProjection(selectionColumns)
@@ -116,7 +121,7 @@ function claimInputProjection(
     })
     .from(chatThreadConnectorSelections)
     .where(
-      run.chatThreadId === null
+      !admittedBindings || run.chatThreadId === null
         ? sql`false`
         : eq(chatThreadConnectorSelections.chatThreadId, run.chatThreadId),
     );
@@ -149,9 +154,13 @@ function claimInputProjection(
 /** Fresh, authorized Claim input only; never persisted or shared with another Run. */
 export function createClaimSourceContext(
   run$: Computed<Promise<ClaimExecutionContextRun>>,
+  admittedBindings$: Computed<Promise<boolean>>,
 ) {
   return computed(async (get) => {
-    const run = await get(run$);
+    const [run, admittedBindings] = await Promise.all([
+      get(run$),
+      get(admittedBindings$),
+    ]);
     const db = get(db$);
     if (run.agentId === null) {
       const [row] = await db
@@ -169,7 +178,7 @@ export function createClaimSourceContext(
       };
     }
     // run.vars is authoritative; only connector values need fresh reconstruction.
-    const source = connectorEnvironmentRead(run, false);
+    const source = connectorEnvironmentRead(run);
     const needsMemberModel =
       run.modelProvider !== null && run.modelProvider !== "built-in";
     const modelSources = memberModelSourcesAggregate(
@@ -190,11 +199,10 @@ export function createClaimSourceContext(
       return await db
         .select({
           account: source.account,
-          variableValues: source.variableValues,
           connectorVariables: source.connectorVariables,
           credentials: source.credentials,
           automaticOAuthBindingId: source.automaticOAuthBindingId,
-          inputs: claimInputProjection(run, modelProjection),
+          inputs: claimInputProjection(run, modelProjection, admittedBindings),
         })
         .from(source);
     });

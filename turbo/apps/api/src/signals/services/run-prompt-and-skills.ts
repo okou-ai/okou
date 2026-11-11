@@ -1,22 +1,12 @@
 import type { StoredTemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
 
-export interface SystemPromptVariables {
-  readonly agentIdentity?: string;
-  readonly executionLimit?: string;
-  readonly tools?: string;
-  readonly userIdentity?: string;
-  readonly channelUserIdentity?: string;
-  readonly integrationContext?: string;
-  readonly continuationContext?: string;
-  readonly generationTemplatePrompt?: string;
-  readonly computerUseContext?: string;
-  readonly suggestionFeedback?: string;
+export type SystemPromptVariables = NonNullable<
+  StoredExecutionContext["connectorPreparation"]
+>["systemPromptVariables"] & {
   readonly connectors?: string;
-  readonly codexImageUpload?: string;
-  readonly builtInImageModel?: string;
-  readonly restrictedExplicitContent?: string;
-}
+};
 
 export interface UserPromptVariables {
   readonly message?: string;

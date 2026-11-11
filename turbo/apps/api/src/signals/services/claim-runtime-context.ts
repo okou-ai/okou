@@ -31,6 +31,8 @@ import type { ClaimExecutionContextRun } from "./claim-execution-context";
 import { createClaimSourceContext } from "./claim-source-context.service";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorsContext } from "./connectors-context.service";
+import { createEmailThreadContext } from "./email-queued-launch-context.service";
+import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
@@ -114,6 +116,9 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     computed(async (get) => {
       return (await get(input$)).run;
     }),
+    computed(async (get) => {
+      return (await get(input$)).context.connectorPreparation === undefined;
+    }),
   );
   const identities = createClaimIdentities(input$, sourceContext$);
   const { run$, identity$, features$, selectionFeatures$ } = identities;
@@ -151,7 +156,15 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
       };
     },
   );
-  const global = createGlobalModelContext();
+  const globalRequest$ = computed(async (get) => {
+    const run = await get(run$);
+    return {
+      kind: "claim" as const,
+      modelKeyId:
+        run.modelProvider === "built-in" ? run.builtInModelKeyId : null,
+    };
+  });
+  const global = createGlobalModelContext(globalRequest$);
   const preferences$ = computed(async (get) => {
     return { timezone: (await get(sourceContext$)).timezone };
   });
@@ -177,7 +190,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     initialInput$,
     disabledTools$,
     sources,
-    { global, storage$ },
+    { global, storage$, selection$: connectors.connected.connectorSelection$ },
   );
   const platform$ = createClaimPlatform(
     input$,
@@ -191,7 +204,15 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     modelEnvironment$,
     platform$,
   );
+  const prompt$ = createClaimPrompt(
+    input$,
+    initialInput$,
+    connectors,
+    sources,
+    { features$, packages$ },
+  );
   return createClaimPreparedContext(input$, {
+    prompt$,
     sourceContext$,
     model$,
     initialInput$,
@@ -202,6 +223,72 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     connectorTiming$: connectors.timing$,
     networkPolicyInputs$,
   });
+}
+
+function createClaimPrompt(
+  input$: ClaimInput$,
+  initialInput$: InitialInput$,
+  connectors: ReturnType<typeof createClaimConnectorContext>,
+  sources: ClaimSources,
+  dependencies: {
+    readonly features$: ClaimIdentities["features$"];
+    readonly packages$: ReturnType<typeof createClaimPackages>;
+  },
+) {
+  const { features$, packages$ } = dependencies;
+  const emailOrgId$ = computed(async (get) => {
+    return (await get(input$)).run.orgId;
+  });
+  const emailInput$ = computed(async (get) => {
+    return (await get(input$)).context.connectorPreparation
+      ? await get(initialInput$)
+      : null;
+  });
+  const email$ = createEmailThreadContext(emailInput$, emailOrgId$);
+  const mailboxes$ = createEmailMailboxConnections(
+    emailInput$,
+    connectors.connected.selectedStoredConnectorSources$,
+    emailOrgId$,
+  );
+  const prompt$ = computed(async (get) => {
+    const { run, context } = await get(input$);
+    if (!context.connectorPreparation) {
+      return undefined;
+    }
+    const [packages, email] = await Promise.all([get(packages$), get(email$)]);
+    const systemPromptVariables = {
+      ...context.connectorPreparation.systemPromptVariables,
+      connectors: packages.connectorPrompt,
+    };
+    if (!email) {
+      return { systemPromptVariables, email: null };
+    }
+    const mailboxes = await get(mailboxes$);
+    if (mailboxes.length === 0) {
+      return { systemPromptVariables, email: null };
+    }
+    const [snapshot, policies, featureSwitchContext] = await Promise.all([
+      get(sources.signals.catalog$),
+      get(sources.signals.permissionPolicies$),
+      get(features$),
+    ]);
+    if (!snapshot) {
+      throw new Error("Email prompt requires its authorized catalog");
+    }
+    return {
+      systemPromptVariables,
+      email: {
+        email,
+        mailboxes,
+        snapshot,
+        policies,
+        featureSwitchContext,
+        orgId: run.orgId,
+        userId: run.userId,
+      },
+    };
+  });
+  return prompt$;
 }
 
 function createClaimStorage(input$: ClaimInput$) {
@@ -327,6 +414,9 @@ function createClaimConnectorContext(
 ) {
   const { run$, identity$, features$ } = identities;
   const targets$ = computed(async (get) => {
+    if ((await get(input$)).context.connectorPreparation) {
+      return [];
+    }
     const context = await get(sourceContext$);
     if (context.kind !== "agent") {
       throw new Error("Connector registrations require an admitted Agent");
@@ -352,7 +442,17 @@ function createClaimConnectorContext(
     return new ApiDispatchTimingCollector();
   });
   const connected = createClaimConnectedAccounts({
+    claimOwned$: computed(async (get) => {
+      return (await get(input$)).context.connectorPreparation !== undefined;
+    }),
+    sourceId$: computed(async (get) => {
+      return (await get(input$)).context.connectorPreparation?.sourceId;
+    }),
     selections$: computed(async (get) => {
+      const intent = (await get(input$)).context.connectorPreparation;
+      if (intent) {
+        return intent.threadSelections;
+      }
       const context = await get(sourceContext$);
       if (context.kind !== "agent") {
         throw new Error("Connector selections require an admitted Agent");
@@ -397,7 +497,7 @@ function createClaimConnectorContext(
       dispatchTiming$: timing$,
     },
   );
-  return { bodyEnvironment$, connectorEnvironment$, timing$ };
+  return { bodyEnvironment$, connectorEnvironment$, timing$, connected };
 }
 
 function createClaimModel(
@@ -521,6 +621,8 @@ function createClaimInitialInput(run$: ClaimRun$) {
       .select({
         userMessage: canonicalChatEventUserMessage(),
         contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        chatThreadId: chatEvents.chatThreadId,
         captureId: chatNetworkBodyCaptures.chatEventId,
         phoneChannel: chatAgentphoneContext.channel,
         feishuPlatform: feishuOrgInstallations.platform,
@@ -576,9 +678,13 @@ function createClaimPackages(
   {
     global,
     storage$,
+    selection$,
   }: {
     readonly global: GlobalModels;
     readonly storage$: ReturnType<typeof createClaimStorage>;
+    readonly selection$: ReturnType<
+      typeof createClaimConnectedAccounts
+    >["connectorSelection$"];
   },
 ) {
   const templateInput$ = computed(async (get) => {
@@ -594,7 +700,29 @@ function createClaimPackages(
   );
   const seeds$ = createSystemSkillsContext(disabledTools$, global.seedSkills$);
   const connectorSkills$ = createConnectorsContext(
-    sources.signals.authorizedConnectors$,
+    computed(async (get) => {
+      const authorized = await get(sources.signals.authorizedConnectors$);
+      if (
+        (await get(input$)).context.featureFlags?.[
+          FeatureSwitchKey.ConnectorChatAccountAccess
+        ] !== true
+      ) {
+        return authorized;
+      }
+      const selection = await get(selection$);
+      if ("status" in selection) {
+        throw new ClaimRuntimeUnavailableError();
+      }
+      return authorized.filter((connector) => {
+        return connector.kind === "builtin"
+          ? selection.connectorScope.allowedConnectorSlugs.includes(
+              connector.connectorSlug,
+            )
+          : selection.connectorScope.allowedCustomConnectorIds.includes(
+              connector.customConnectorId,
+            );
+      });
+    }),
     computed(async (get) => {
       return (
         (await get(input$)).context.featureFlags?.[
@@ -651,7 +779,12 @@ function createClaimPackages(
           ]
         : [];
     });
-    return { seedSkillBundles, templateGuidanceBundles, skillRoot };
+    return {
+      seedSkillBundles,
+      templateGuidanceBundles,
+      skillRoot,
+      connectorPrompt: connectors?.systemPromptVariables.connectors,
+    };
   });
 }
 
@@ -801,6 +934,12 @@ function createClaimEnvironment(
 function createClaimPreparedContext(
   input$: ClaimInput$,
   dependencies: {
+    readonly prompt$: Computed<
+      Promise<
+        | import("./claim-connector-prompt.service").ClaimPromptPreparation
+        | undefined
+      >
+    >;
     readonly sourceContext$: ClaimSourceContext$;
     readonly model$: ClaimModel$;
     readonly initialInput$: InitialInput$;
@@ -870,6 +1009,7 @@ function createClaimPreparedContext(
     };
     return {
       context: prepared,
+      prompt: await get(dependencies.prompt$),
       secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
       connectorOperationTimings: get(dependencies.connectorTiming$).snapshot(),

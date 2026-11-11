@@ -76,7 +76,10 @@ import { monotonicNow, now, nowDate } from "../../lib/time";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
-import { generateSandboxToken } from "../auth/tokens";
+import {
+  generateSandboxToken,
+  bindOkouTokenConnectorSources,
+} from "../auth/tokens";
 import { authorization$, request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
@@ -148,6 +151,7 @@ import {
   decodeClaimTransitionResult,
   type ClaimTransitionResult,
 } from "../services/runner-claim-transition";
+import { prepareClaimSystemPrompt$ } from "../services/claim-connector-prompt.service";
 
 import {
   activeNetworkPolicyRefreshesFromGrants,
@@ -1385,6 +1389,10 @@ const transitionClaimedJobToRunning$ = command(
     { set },
     args: {
       readonly runId: string;
+      readonly prepared: Pick<
+        PreparedExecutionContext,
+        "connectorRuntimeTargets" | "appendSystemPrompt"
+      >;
       readonly workflowInput: WorkflowClaimInput;
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly timing: ClaimRouteTimingCollector;
@@ -1409,6 +1417,7 @@ const transitionClaimedJobToRunning$ = command(
         },
         workflowInput,
         args.bundleUrlCache,
+        args.prepared,
       );
       const startedAt = now();
       const result = await (async () => {
@@ -1612,7 +1621,8 @@ function claimResponseBody(args: {
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
-    appendSystemPrompt: args.run.appendSystemPrompt,
+    appendSystemPrompt:
+      args.storedContext.appendSystemPrompt ?? args.run.appendSystemPrompt,
     vars: mergeClaimVars({
       runVars: (args.run.vars as Record<string, string> | null) ?? null,
       connectorVars: args.storedContext.vars,
@@ -2252,6 +2262,14 @@ const resolveStoredExecutionContextForClaim$ = command(
         ),
       };
     }
+    const token = storedContextResult.data.platformEnvironment.OKOU_TOKEN;
+    const boundToken =
+      materialized.prompt && token
+        ? bindOkouTokenConnectorSources(
+            token,
+            storedContextResult.data.connectorRuntimeTargets,
+          )
+        : token;
     return {
       compatible: true as const,
       storageCacheWrites,
@@ -2260,8 +2278,23 @@ const resolveStoredExecutionContextForClaim$ = command(
       secretNames: Object.keys(secrets ?? {}),
       value: {
         ...storedContextResult.data,
+        platformEnvironment: {
+          ...storedContextResult.data.platformEnvironment,
+          ...(boundToken === undefined ? {} : { OKOU_TOKEN: boundToken }),
+        },
+        appendSystemPrompt: await set(
+          prepareClaimSystemPrompt$,
+          materialized.prompt,
+          signal,
+        ),
         piModelConfig: piModelConfigResolution.modelConfig,
-        encryptedSecrets: await set(encryptExecutionSecrets$, secrets, signal),
+        encryptedSecrets: await set(
+          encryptExecutionSecrets$,
+          secrets === null || boundToken === undefined
+            ? secrets
+            : { ...secrets, OKOU_TOKEN: boundToken },
+          signal,
+        ),
       },
     };
   },
@@ -2328,6 +2361,7 @@ const claimAuthorizedJob$ = command(
       transitionClaimedJobToRunning$,
       {
         runId,
+        prepared: storedContext,
         workflowInput,
         runnerAttribution: args.runnerAttribution,
         timing: claimRouteTiming,

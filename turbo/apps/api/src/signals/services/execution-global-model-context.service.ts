@@ -1,5 +1,5 @@
-import { computed } from "ccstate";
-import { asc, inArray, sql } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
@@ -36,8 +36,23 @@ function seedSkillRows(builder: QueryBuilder) {
     .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
 }
 
-/** One statement snapshot makes every global read gate enqueue with the catalog. */
-export function createGlobalModelContext() {
+type GlobalModelRequest =
+  | { readonly kind: "admission" }
+  | { readonly kind: "claim"; readonly modelKeyId: string | null };
+
+function globalModelKeyCondition(request: GlobalModelRequest) {
+  if (request.kind === "admission") {
+    return undefined;
+  }
+  return request.modelKeyId === null
+    ? sql`false`
+    : eq(builtInModelKeys.id, request.modelKeyId);
+}
+
+/** Capture only the model facts and runtime packages this owner consumes. */
+export function createGlobalModelContext(
+  request$: Computed<Promise<GlobalModelRequest>>,
+) {
   const keys = {
     id: builtInModelKeys.id,
     vendor: builtInModelKeys.vendor,
@@ -74,13 +89,15 @@ export function createGlobalModelContext() {
   };
   const builder = new QueryBuilder();
   const globalRaw$ = computed(async (get) => {
+    const request = await get(request$);
     const keyRows = builder
       .select({
         payload: contextJsonProjection(keys)
           .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
       })
-      .from(builtInModelKeys);
+      .from(builtInModelKeys)
+      .where(globalModelKeyCondition(request));
     const prices = builder
       .select({
         payload: contextJsonProjection(pricing)
@@ -114,18 +131,20 @@ export function createGlobalModelContext() {
         keys: contextJsonRows(keyRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
-        pricing: contextJsonRows(prices).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
+        pricing: (request.kind === "admission"
+          ? contextJsonRows(prices)
+          : sql`'[]'::jsonb`
+        ).mapWith(zodDriverValueDecoder(zUnknown())),
         models: contextJsonRows(modelRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
         routes: contextJsonRows(routeRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
-        seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
+        seedSkills: (request.kind === "claim"
+          ? contextJsonRows(seedSkillRows(builder))
+          : sql`'[]'::jsonb`
+        ).mapWith(zodDriverValueDecoder(zUnknown())),
       })
       .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {

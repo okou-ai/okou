@@ -24,34 +24,15 @@ export function createOkouTokenInputSignals(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<OkouTokenInput> => {
-    const [event, features, hostGrant, snapshot, agent] = await Promise.all([
+    const [event, features, hostGrant, agent] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.featureSwitches$),
       get(threadContext.computerUseHostGrant$),
-      get(threadContext.connectorSnapshot$),
       get(bootstrap.agent$),
     ]);
     if (!event) {
       throw new Error("The Okou run token requires a picked event");
     }
-    if ("status" in snapshot) {
-      throw new Error("The Okou run token requires a connector snapshot");
-    }
-    const customConnectorSourceIds = Object.fromEntries(
-      snapshot.customConnectorContext.targets.flatMap((target) => {
-        return target.kind === "custom" && target.sourceId
-          ? [[target.customConnectorId, target.sourceId] as const]
-          : [];
-      }),
-    );
-    const { mcpConnectorSlugs, connectorSourceIdBySlug } =
-      snapshot.storedConnectorMetadataContext;
-    const builtinConnectorSourceIds = Object.fromEntries(
-      mcpConnectorSlugs.flatMap((connectorSlug) => {
-        const sourceId = connectorSourceIdBySlug[connectorSlug];
-        return sourceId === undefined ? [] : [[connectorSlug, sourceId]];
-      }),
-    );
     return {
       userId: bootstrap.userId,
       runId: get(threadContext.runIds$).runId,
@@ -62,12 +43,6 @@ export function createOkouTokenInputSignals(
         isDefaultAgent: agent !== null && agent.id === agent.defaultAgentId,
         ...(hostGrant ? { computerUseHostId: hostGrant.hostId } : {}),
         cloudBrowserEnabled: event.thread.cloudBrowserEnabled,
-        ...(Object.keys(customConnectorSourceIds).length === 0
-          ? {}
-          : { customConnectorSourceIds }),
-        ...(Object.keys(builtinConnectorSourceIds).length === 0
-          ? {}
-          : { builtinConnectorSourceIds }),
       },
     };
   });

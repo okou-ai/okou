@@ -123,8 +123,13 @@ export const loadEmailQueuedLaunchMaterial$ = command(
 );
 
 export function createEmailThreadContext(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  orgId: string,
+  pickedEvent$: Computed<
+    Promise<Pick<
+      PickedThreadInputEvent,
+      "contextType" | "contextId" | "chatThreadId" | "userId"
+    > | null>
+  >,
+  orgId$: Computed<Promise<string>>,
 ) {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
@@ -134,6 +139,7 @@ export function createEmailThreadContext(
     if (!event.contextId) {
       throw new Error("Email input is missing its canonical context identity");
     }
+    const orgId = await get(orgId$);
     const db = get(db$);
     const [row] = await db
       .select({

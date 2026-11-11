@@ -68,7 +68,19 @@ export function createStorageSignals(
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
   const plan = createStoragePlanSignals(index);
-  return createStorageMetadataSignal(plan);
+  const storage$ = createStorageMetadataSignal(plan);
+  const output$ = computed(
+    async (
+      get,
+    ): Promise<{
+      readonly metadata: ReturnType<typeof prepareRunOutputMetadata>;
+      readonly piSandbox: ReturnType<typeof resolvePreparedPiModelConfig>;
+    }> => {
+      const input = await get(storageInput$);
+      return { metadata: input.metadata, piSandbox: input.piSandbox };
+    },
+  );
+  return { storage$, output$ };
 }
 
 function createStorageInputSignal(
@@ -77,7 +89,7 @@ function createStorageInputSignal(
   threadContext: ThreadContext,
   skillVolumeSources: readonly SkillVolumeSource[],
 ) {
-  return computed(async (get): Promise<AgentRunStorageInput> => {
+  return computed(async (get) => {
     const [
       event,
       agent,
@@ -133,6 +145,8 @@ function createStorageInputSignal(
     });
     get(db$);
     return {
+      metadata,
+      piSandbox,
       args: {
         agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
@@ -144,6 +158,9 @@ function createStorageInputSignal(
         timing: get(threadContext.dispatchTiming$),
         stats: new StorageManifestBuildStats(),
       },
+    } satisfies AgentRunStorageInput & {
+      readonly metadata: typeof metadata;
+      readonly piSandbox: typeof piSandbox;
     };
   });
 }

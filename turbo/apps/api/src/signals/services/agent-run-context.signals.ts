@@ -70,7 +70,10 @@ import type {
   AgentConnectorSelection,
   AgentConnectorSelectionScope,
 } from "./execution-agent-connectors.service";
-import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
+import {
+  createAgentSelectionContext,
+  createAgentWorkflowContext,
+} from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
 import {
@@ -89,7 +92,7 @@ import {
   executionOrgSlots,
 } from "./execution-org-context.service";
 import {
-  createAgentEnvironment,
+  createAgentRunVariables,
   connectorContextDuration,
   type BootstrapEnvironmentSnapshot,
   type BootstrapEnvironmentObservation,
@@ -136,33 +139,34 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
+  /** The Run body's own variables and placeholder secrets for this Agent. */
+  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
+  readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
+  /** The accepted global Official Workflow catalog, shared across contexts. */
+  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
+  readonly storage$: Computed<Promise<AgentStorageContext>>;
+  readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
+  readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
+  readonly environment$: Computed<Promise<BootstrapEnvironment>>;
+}
+
+/** Connector sources belong to a single Claim, separate from admission. */
+export interface ExecutionConnectorSignals {
   readonly connectorSelection$: Computed<Promise<AgentConnectorSelection>>;
   /** Connectors the Agent may use, derived from its connector selection. */
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
   /** The Agent's permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
-  /** The Run body's own variables and placeholder secrets for this Agent. */
-  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
-  readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
-  /** The accepted global Official Workflow catalog, shared across contexts. */
-  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
-  /** Seed Skill rows read with the model catalog; shared across contexts. */
-  readonly seedSkills$: ReturnType<
-    typeof createGlobalModelContext
-  >["seedSkills$"];
-  readonly storage$: Computed<Promise<AgentStorageContext>>;
-  readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
-  readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
-  readonly environment$: Computed<Promise<BootstrapEnvironment>>;
   readonly customConnectorDefinitions$: Computed<
     Promise<readonly CustomConnectorExecutionDefinition[]>
   >;
   readonly catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>;
   readonly connectors$: Computed<Promise<BootstrapConnectorData>>;
+  readonly featureSwitches$: AgentRunContextSignals["featureSwitches$"];
 }
 
 export interface BootstrapConnectorObservation extends BootstrapEnvironmentObservation {
@@ -308,6 +312,9 @@ function createOrgContextReferences(
   scope: { readonly orgId: string; readonly userId: string },
   supplied: AgentRunContextSignals | undefined,
 ) {
+  const globalRequest$ = computed(() => {
+    return Promise.resolve({ kind: "admission" as const });
+  });
   const sharedOrg = supplied?.orgId === scope.orgId ? supplied : undefined;
   const sharedMember =
     sharedOrg?.userId === scope.userId ? sharedOrg : undefined;
@@ -317,10 +324,9 @@ function createOrgContextReferences(
           managedModelKeys$: supplied.managedModelKeys$,
           modelPricing$: supplied.modelPricing$,
           catalog$: supplied[globalModelOwner],
-          seedSkills$: supplied.seedSkills$,
         }
       : undefined
-    : createGlobalModelContext();
+    : createGlobalModelContext(globalRequest$);
   if (!globalReferences) {
     throw new Error("Agent run context has no global reference owner");
   }
@@ -473,12 +479,6 @@ function createIdentityContext(
           ]);
           return capturedFeatureSwitchContext(scope, member, overrides, agent);
         });
-  const connectorContext = createConnectorContextGroups(
-    userId,
-    orgId,
-    agentId,
-    featureSwitchContext$,
-  );
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
     const requests = agentStorageReadPlan(scope);
     const db = get(db$);
@@ -504,8 +504,20 @@ function createIdentityContext(
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const environment$ = computed(async (get) => {
     requirePreparedContextAgent(await get(agent$));
-    const snapshot = await get(connectorContext.environmentSnapshot$);
-    return { variables: snapshot.variables };
+    return { variables: await get(runVariables$) };
+  });
+  const runIdentity$ = computed(() => {
+    return Promise.resolve(scope);
+  });
+  const runVariables$ = createAgentRunVariables(runIdentity$);
+  const workflows$ = createAgentWorkflowContext(runIdentity$);
+  const bodyEnvironment$ = computed(async (get) => {
+    return resolveRunBodyEnvironment({
+      runVars: selectedAgentRunVariables(scope.agentId),
+      runSecrets: pendingOkouTokenSecrets(undefined),
+      persistedEnvironment: { variables: await get(runVariables$) },
+      canonicalOkouRuntime: true,
+    });
   });
   return {
     [globalModelOwner]: globalReferences.catalog$,
@@ -523,9 +535,9 @@ function createIdentityContext(
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
-    ...connectorContext.signals,
+    workflows$,
+    bodyEnvironment$,
     officialCatalog$: reusedOfficialCatalog(supplied),
-    seedSkills$: globalReferences.seedSkills$,
     storage$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
@@ -544,9 +556,6 @@ export const preloadAgentRunContext$ = command(
     // Start the launch-critical dependency chains before independent projections.
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
-      signals.catalog$,
-      signals.authorizedConnectors$,
-      signals.connectors$,
       signals.storage$,
       signals.agent$,
       signals.orgRows$,
@@ -560,13 +569,10 @@ export const preloadAgentRunContext$ = command(
       signals.memberRoutes$,
       signals.memberMetadata$,
       signals.selectedImageModel$,
-      signals.connectorSelection$,
-      signals.permissionGrants$,
       signals.workflows$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.environment$,
-      signals.customConnectorDefinitions$,
       signals.managedModelKeys$,
       signals.modelPricing$,
     ];
@@ -705,24 +711,6 @@ export function createEagerConnectorCredentialContext(
   return { credentials$ };
 }
 
-/** Connector groups share one account/environment statement and one catalog capture. */
-function createConnectorContextGroups(
-  userId: string,
-  orgId: string,
-  agentId: string,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-) {
-  const identity$ = computed(() => {
-    return Promise.resolve({ userId, orgId, agentId });
-  });
-  const environmentSnapshot$ = createAgentEnvironment(identity$);
-  return createExecutionConnectorSources(
-    identity$,
-    featureSwitches$,
-    environmentSnapshot$,
-  );
-}
-
 /**
  * Read current sources for an already-authorized execution identity.
  * Keep connector revisions and credential values in the same statement.
@@ -732,7 +720,7 @@ export function createExecutionConnectorSources(
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
   environmentSnapshot$: Computed<Promise<BootstrapEnvironmentSnapshot>>,
 ) {
-  const { connectorSelection$, permissionGrants$, workflows$ } =
+  const { connectorSelection$, permissionGrants$ } =
     createAgentSelectionContext(identity$, featureSwitches$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
@@ -783,16 +771,6 @@ export function createExecutionConnectorSources(
       observation: snapshot.observation,
     };
   });
-  const bodyEnvironment$ = computed(async (get) => {
-    const { agentId } = await get(identity$);
-    const snapshot = await get(environmentSnapshot$);
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agentId),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: { variables: snapshot.variables },
-      canonicalOkouRuntime: true,
-    });
-  });
   const permissionPolicies$ = computed(async (get) => {
     const [grants, scope, catalog] = await Promise.all([
       get(permissionGrants$),
@@ -826,11 +804,9 @@ export function createExecutionConnectorSources(
       connectorScope$,
       authorizedConnectors$,
       permissionGrants$,
-      workflows$,
       customConnectorDefinitions$,
       catalog$,
       connectors$,
-      bodyEnvironment$,
       permissionPolicies$,
     },
   };

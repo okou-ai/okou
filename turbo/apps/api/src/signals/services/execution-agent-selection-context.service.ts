@@ -130,29 +130,10 @@ function agentSelectionQueries(
       asc(userPermissionGrants.connectorSlug),
       asc(userPermissionGrants.permission),
     );
-  const definitions = builder
-    .select({
-      payload: contextJsonProjection(workflowColumns)
-        .mapWith(zodDriverValueDecoder(zUnknown()))
-        .as("payload"),
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, scope.orgId),
-        eq(workflows.agentId, scope.agentId),
-        isNull(workflows.officialDefinitionName),
-        or(
-          eq(workflows.visibility, "public"),
-          eq(workflows.ownerUserId, scope.userId),
-        ),
-      ),
-    );
   return {
     ...(chatAccounts
       ? memberConnectorSelectionQueries(scope, at)
       : { builtin, custom, permissions }),
-    definitions,
   };
 }
 
@@ -166,7 +147,7 @@ export function createAgentSelectionContext(
       FeatureSwitchKey.ConnectorChatAccountAccess,
       await get(featureSwitches$),
     );
-    const { builtin, custom, permissions, definitions } = agentSelectionQueries(
+    const { builtin, custom, permissions } = agentSelectionQueries(
       scope,
       nowDate(),
       chatAccounts,
@@ -180,9 +161,6 @@ export function createAgentSelectionContext(
           zodDriverValueDecoder(zUnknown()),
         ),
         permissions: contextJsonRows(permissions).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
-        workflows: contextJsonRows(definitions).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
       })
@@ -215,14 +193,29 @@ export function createAgentSelectionContext(
       (await get(raw$)).permissions,
     );
   });
-  const workflows$ = computed(async (get) => {
+  return { connectorSelection$, permissionGrants$ };
+}
+
+/** Workflow admission has no connector source dependency. */
+export function createAgentWorkflowContext(
+  scope$: Computed<Promise<AgentConnectorSelectionScope>>,
+) {
+  return computed(async (get) => {
     const scope = await get(scope$);
-    return workflowsForRunFromRows(
-      array(contextProjectionSchema(workflowColumns)).parse(
-        (await get(raw$)).workflows,
-      ),
-      scope.userId,
-    );
+    const rows = await get(db$)
+      .select(workflowColumns)
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, scope.orgId),
+          eq(workflows.agentId, scope.agentId),
+          isNull(workflows.officialDefinitionName),
+          or(
+            eq(workflows.visibility, "public"),
+            eq(workflows.ownerUserId, scope.userId),
+          ),
+        ),
+      );
+    return workflowsForRunFromRows(rows, scope.userId);
   });
-  return { connectorSelection$, permissionGrants$, workflows$ };
 }

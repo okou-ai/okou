@@ -1,4 +1,6 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
+import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -165,6 +167,36 @@ function buildClaimAdmissionSql(workflowInput: WorkflowClaimInput): SQL {
     )`;
 }
 
+/** This CTE can publish only the Run returned by the winning transition. */
+function claimConnectorRegistrationSql(
+  targets: PreparedExecutionContext["connectorRuntimeTargets"],
+): SQL {
+  return sql`registered_connectors AS (
+    INSERT INTO ${agentRunConnectorDiagnosticRegistrations} (run_id, payload, created_at)
+    SELECT updated_run."id", ${JSON.stringify({ version: 1, targets })}::jsonb, updated_run."claimedAt"
+    FROM updated_run
+    ON CONFLICT (run_id) DO UPDATE SET payload = EXCLUDED.payload
+    RETURNING run_id
+  )`;
+}
+
+function claimLockedRunSql(runId: string): SQL {
+  return sql`locked_run AS MATERIALIZED (
+            SELECT
+              ${agentRuns.id} AS "id",
+              ${agentRuns.status} AS "status",
+              ${agentRuns.chatThreadId} AS "chatThreadId",
+              ${agentRuns.agentId} AS "agentId",
+              ${agentRuns.userId} AS "userId",
+              ${agentRuns.orgId} AS "orgId",
+              ${agentRuns.triggerSource} AS "triggerSource",
+              ${agentRuns.workflowAutomationId} AS "workflowAutomationId"
+            FROM ${agentRuns}
+            WHERE ${eq(agentRuns.id, runId)}
+            FOR UPDATE
+          )`;
+}
+
 export function buildClaimTransitionSql(
   runId: string,
   runner: {
@@ -178,23 +210,14 @@ export function buildClaimTransitionSql(
     readonly context: ContentBundleUrlCacheContext;
     readonly additionalHashes: readonly string[];
   },
+  prepared: Pick<
+    PreparedExecutionContext,
+    "connectorRuntimeTargets" | "appendSystemPrompt"
+  >,
 ): SQL {
   // Materialized outputs make the row locks depend on run, then queue.
   return sql`
-          WITH locked_run AS MATERIALIZED (
-            SELECT
-              ${agentRuns.id} AS "id",
-              ${agentRuns.status} AS "status",
-              ${agentRuns.chatThreadId} AS "chatThreadId",
-              ${agentRuns.agentId} AS "agentId",
-              ${agentRuns.userId} AS "userId",
-              ${agentRuns.orgId} AS "orgId",
-              ${agentRuns.triggerSource} AS "triggerSource",
-              ${agentRuns.workflowAutomationId} AS "workflowAutomationId"
-            FROM ${agentRuns}
-            WHERE ${eq(agentRuns.id, runId)}
-            FOR UPDATE
-          ),
+          WITH ${claimLockedRunSql(runId)},
           locked_job AS MATERIALIZED (
             SELECT
               ${runnerJobQueue.runId} AS "runId",
@@ -216,7 +239,8 @@ export function buildClaimTransitionSql(
               runner_id = ${runner.id},
               runner_heartbeat_generation = ${runner.heartbeatGeneration},
               runner_hostname = ${runner.hostname},
-              runner_version = ${runner.version}
+              runner_version = ${runner.version},
+              append_system_prompt = COALESCE(${prepared.appendSystemPrompt ?? null}, ${agentRuns.appendSystemPrompt})
             FROM locked_run
             INNER JOIN locked_job
               ON locked_job."runId" = locked_run."id"
@@ -232,6 +256,7 @@ export function buildClaimTransitionSql(
             )}
             RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
           ),
+          ${claimConnectorRegistrationSql(prepared.connectorRuntimeTargets)},
           deleted_job AS (
             DELETE FROM ${runnerJobQueue}
             USING locked_run, locked_job
@@ -267,6 +292,7 @@ export function buildClaimTransitionSql(
                 )
                 THEN 'job-not-found'
               WHEN EXISTS (SELECT 1 FROM updated_run)
+                AND EXISTS (SELECT 1 FROM registered_connectors)
                 AND EXISTS (SELECT 1 FROM deleted_job)
                 THEN 'claimed'
               WHEN EXISTS (

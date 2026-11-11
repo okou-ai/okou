@@ -7,6 +7,7 @@ import { badRequestMessage } from "../../lib/error";
 import { safeSync, settle } from "../utils";
 import {
   type AgentRunContextSignals,
+  type ExecutionConnectorSignals,
   createEagerConnectorCredentialContext,
   type EagerConnectorCredentialObservation,
 } from "./agent-run-context.signals";
@@ -28,6 +29,7 @@ import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
   type ConnectedAccountsError,
+  type ConnectedAccounts,
   type EffectiveConnectorScope,
   emptyBuiltinConnectorRuntimeContext,
   storedConnectorContextFromSnapshot,
@@ -37,8 +39,13 @@ import {
   type StoredConnectorSecretRow,
   storedConnectorTimingDimensions,
 } from "./thread-connected-accounts.signals";
-import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
+interface ClaimConnectorSignals {
+  readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
+  readonly connectorSnapshot$: ConnectedAccounts["connectorSnapshot$"];
+  readonly selectedConnectorSources$: ConnectedAccounts["selectedStoredConnectorSources$"];
+  readonly dispatchTiming$: import("ccstate").Computed<ApiDispatchTimingCollector>;
+}
 
 type ConnectorRuntimeError =
   | ReturnType<typeof badRequestMessage>
@@ -58,10 +65,11 @@ function isConnectorRuntimeError(
 export function createConnectorEnvironmentSignals(
   bootstrap: Pick<
     AgentRunContextSignals,
-    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
-  >,
+    "bodyEnvironment$" | "featureSwitches$"
+  > &
+    Pick<ExecutionConnectorSignals, "permissionPolicies$">,
   threadContext: Pick<
-    ThreadContext,
+    ClaimConnectorSignals,
     | "connectorSelection$"
     | "connectorSnapshot$"
     | "selectedConnectorSources$"
@@ -84,45 +92,14 @@ type ConnectorRuntimeInputSignals = ReturnType<
   typeof createConnectorRuntimeInputSignals
 >;
 
-/** Admission validates policies and fixes diagnostic account bindings without
- * decrypting credentials or assembling a runtime environment. */
-export function createConnectorAdmissionSignals(
-  bootstrap: Parameters<typeof createConnectorRuntimeInputSignals>[0],
-  threadContext: Parameters<typeof createConnectorRuntimeInputSignals>[1],
-) {
-  const inputs = createConnectorRuntimeInputSignals(bootstrap, threadContext);
-  return computed(async (get) => {
-    const input = await get(inputs.inputs$);
-    if (isConnectorRuntimeError(input)) {
-      return input;
-    }
-    const permissions = await input.timing.measure(
-      "api_dispatch_prepare_context_build_permission_manifest",
-      "nested",
-      async () => {
-        return await buildPreparedPermissionManifest(input);
-      },
-    );
-    if (isConnectorRuntimeError(permissions)) {
-      return permissions;
-    }
-    return {
-      permissions,
-      runtimeTargets: [
-        ...(permissions?.builtinRuntimeTargets ?? []),
-        ...input.customConnectorContext.targets,
-      ],
-    };
-  });
-}
-
 function createConnectorRuntimeInputSignals(
   execution: Pick<
     AgentRunContextSignals,
-    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
-  >,
+    "bodyEnvironment$" | "featureSwitches$"
+  > &
+    Pick<ExecutionConnectorSignals, "permissionPolicies$">,
   threadContext: Pick<
-    ThreadContext,
+    ClaimConnectorSignals,
     "connectorSelection$" | "connectorSnapshot$" | "dispatchTiming$"
   >,
 ) {
@@ -221,7 +198,7 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
 type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
 function createConnectorSecretSignals(
-  threadContext: Pick<ThreadContext, "selectedConnectorSources$">,
+  threadContext: Pick<ClaimConnectorSignals, "selectedConnectorSources$">,
   plan: EagerSecretPlanSignals,
 ) {
   const { selectedConnectorSources$ } = threadContext;
@@ -329,7 +306,7 @@ function createConnectorSecretSignals(
 
 /** The connector source's contribution to the Run environment. */
 function createConnectorEnvironmentSignal(
-  threadContext: Pick<ThreadContext, "connectorSnapshot$">,
+  threadContext: Pick<ClaimConnectorSignals, "connectorSnapshot$">,
   connectorSecrets: ConnectorSecretSignals,
 ) {
   const { connectorSnapshot$ } = threadContext;

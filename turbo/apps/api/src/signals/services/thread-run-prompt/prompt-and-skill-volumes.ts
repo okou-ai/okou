@@ -5,14 +5,12 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
-import { createConnectorsContext } from "../connectors-context.service";
 import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
   type SkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
-import { createSystemSkillsContext } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
 import { createAgentPhoneThreadPrompt } from "./agentphone";
@@ -91,7 +89,6 @@ function createIntegrationPrompts(
     email: createEmailThreadPrompt(
       threadContext.emailContext$,
       featureSwitches$,
-      threadContext.emailMailboxConnections$,
     ),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
@@ -111,10 +108,7 @@ function createIntegrationPrompts(
   };
 }
 
-function createExecutionPromptSources(
-  bootstrap: AgentRunContextSignals,
-  threadContext: ThreadContext,
-) {
+function createExecutionPromptSources(bootstrap: AgentRunContextSignals) {
   const agent$ = computed((get) => {
     return get(bootstrap.agent$);
   });
@@ -138,35 +132,11 @@ function createExecutionPromptSources(
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);
   });
-  const authorizedConnectors$ = computed(async (get) => {
-    const [connectors, features] = await Promise.all([
-      get(bootstrap.authorizedConnectors$),
-      get(bootstrap.featureSwitches$),
-    ]);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
-    ) {
-      return connectors;
-    }
-    const selection = await get(threadContext.connectorSelection$);
-    if ("status" in selection) {
-      throw new Error("Connector prompt requires an available Chat");
-    }
-    const scope = selection.connectorScope;
-    return connectors.filter((connector) => {
-      return connector.kind === "builtin"
-        ? scope.allowedConnectorSlugs.includes(connector.connectorSlug)
-        : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
-    });
-  });
   const selectedImageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
   const disabledPaidTools$ = computed((get) => {
     return get(bootstrap.disabledPaidTools$);
-  });
-  const seedSkills$ = computed((get) => {
-    return get(bootstrap.seedSkills$);
   });
   return {
     agent$,
@@ -174,10 +144,8 @@ function createExecutionPromptSources(
     memberMetadata$,
     featureSwitches$,
     memberRoutes$,
-    authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
-    seedSkills$,
   };
 }
 
@@ -187,16 +155,14 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(bootstrap, threadContext);
+  const sources = createExecutionPromptSources(bootstrap);
   const {
     agent$,
     singleAgent$,
     memberMetadata$,
     featureSwitches$,
-    authorizedConnectors$,
     selectedImageModel$,
     disabledPaidTools$,
-    seedSkills$,
   } = sources;
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
@@ -230,17 +196,9 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
   );
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
-  const connectors$ = createConnectorsContext(
-    authorizedConnectors$,
-    singleAgent$,
-  );
   const runtimePrompt$ = createRuntimePrompt(
     selectedImageModel$,
     disabledPaidTools$,
-  );
-  const systemSkills$ = createSystemSkillsContext(
-    disabledPaidTools$,
-    seedSkills$,
   );
 
   return computed(async (get): Promise<PromptAndSkillVolumes> => {
@@ -259,8 +217,6 @@ export function createPromptAndSkillVolumesSignals(
       agent,
       user,
       computerUse,
-      connectors,
-      systemSkills,
       runtime,
       suggestions,
     ] = await Promise.all([
@@ -270,8 +226,6 @@ export function createPromptAndSkillVolumesSignals(
       get(agentPrompt$),
       get(userPrompt$),
       get(computerUsePrompt$),
-      get(connectors$),
-      get(systemSkills$),
       get(runtimePrompt$),
       get(suggestionsPrompt$),
     ]);
@@ -296,8 +250,6 @@ export function createPromptAndSkillVolumesSignals(
       ...(templates ? [templates] : []),
       user,
       computerUse,
-      connectors,
-      systemSkills,
       runtime,
       suggestions,
     ]);

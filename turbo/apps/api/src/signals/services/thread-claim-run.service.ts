@@ -1,16 +1,10 @@
-import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
-import { buildEmailPrompt } from "./email-prompt";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import { renderRunPrompts } from "./run-prompt-and-skills";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
   type PreparedExecutionContext,
   type StoredExecutionContext,
-  type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   autoRunBillingProvider,
@@ -19,13 +13,6 @@ import {
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import {
-  type ConnectorScopeSource,
-  type EffectiveConnectorScope,
-  isEmptyRunConnectorScope,
-  type RunConnectorCatalogSelection,
-  runConnectorCatalogSelection,
-} from "./thread-connected-accounts.signals";
 import { pendingOkouTokenSecrets } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
@@ -33,12 +20,8 @@ import {
   createOkouTokenInputSignals,
   prepareOkouToken$,
 } from "./thread-okou-token.signals";
-import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
-import {
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-} from "@okouai/connectors/firewall-types";
+import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { previewAutomationBypass$ } from "../context/hono";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
@@ -95,7 +78,6 @@ import {
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
-import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -180,10 +162,6 @@ import {
 } from "./pending-launch-admission-plan";
 import { pendingLaunchInsertSql } from "./pending-launch-sql";
 import {
-  type PiModelPreparationInput,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
-import {
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
   type RunAdmissionInput,
@@ -226,9 +204,7 @@ import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
@@ -260,7 +236,6 @@ import type {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 
@@ -332,12 +307,11 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import {
-  type AdditionalVolumeSources,
-  type AgentRunCreateAdditionalVolume,
-  prepareRunOutputMetadata,
-  type ResolvedAgentExecution,
-  type ResolvedRunExecution,
+import type {
+  AdditionalVolumeSources,
+  AgentRunCreateAdditionalVolume,
+  ResolvedAgentExecution,
+  ResolvedRunExecution,
 } from "./run-storage-manifest.service";
 import { createStorageSignals, type Storage } from "./thread-storage.signals";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
@@ -1101,22 +1075,6 @@ type RunErrorResponse = {
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
-}
-
-function withEmailSystemPrompt(
-  plan: RunPlan,
-  appendSystemPrompt: string | null,
-): RunPlan {
-  if (appendSystemPrompt === null) {
-    return plan;
-  }
-  const body = { ...plan.persisted.body, appendSystemPrompt };
-  return {
-    ...plan,
-    args: { ...plan.args, body: { ...plan.args.body, appendSystemPrompt } },
-    persisted: { ...plan.persisted, body },
-    runner: { ...plan.runner, body },
-  };
 }
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
@@ -2581,66 +2539,24 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const preCreateConnectorCatalogConnectorCatalog$ = computed(
-    async (get): Promise<RunConnectorCatalogSelection> => {
-      const [scope, catalog] = await Promise.all([
-        get(bootstrap.connectorScope$),
-        get(bootstrap.catalog$),
-      ]);
-      return runConnectorCatalogSelection(scope, catalog);
-    },
-  );
-  const preCreatePermissionPoliciesPermissionPolicies$ = computed(
-    async (get) => {
-      const timing = get(threadContext.dispatchTiming$);
-      const startedAt = performance.now();
-      return await (async () => {
-        return await get(bootstrap.permissionPolicies$);
-      })().finally(() => {
-        timing.recordDuration(
-          "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-          "nested",
-          performance.now() - startedAt,
-          now(),
-        );
-      });
-    },
-  );
   const preCreatePostAuthorizationPostAuthorization$ = computed(
-    async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
+    async (get): Promise<AgentRunAfterBootstrap | CreateRunErrorResult> => {
       const { timing } = await get(preCreateInput$);
-      const [
-        connectorScope,
-        featureSwitchContext,
-        agentResult,
-        accountResult,
-        catalogResult,
-        policiesResult,
-      ] = await Promise.all([
-        get(bootstrap.connectorScope$),
+      const [featureSwitchContext, agent, account] = await Promise.all([
         get(bootstrap.featureSwitches$),
         get(preCreateAgentAgent$),
         get(preCreateSubscriptionAccountSubscriptionAccount$),
-        get(preCreateConnectorCatalogConnectorCatalog$),
-        get(preCreatePermissionPoliciesPermissionPolicies$),
       ]);
-      const agent = agentResult;
-      const account = accountResult;
       if ("status" in account) {
         return account;
       }
-      const catalog = catalogResult;
-      const policies = policiesResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        ...connectorScope,
         ...account,
         agent,
         timing,
-        connectorCatalogSelection: catalog,
-        runPermissionPolicies: policies,
         authorizedRequestObservation: {
           userId: account.command.owner.userId,
           orgId: account.command.owner.orgId,
@@ -2724,22 +2640,11 @@ export function createThreadClaimRunObjects(
     framework$: runFramework$,
     modelRoute$: modelRoute$,
   };
-  const connectorSelection$ = threadContext.connectorSelection$;
-  const connectorSnapshot$ = threadContext.connectorSnapshot$;
-  const preCreateExecutionConnectors = {
-    connectorSelection$,
-    connectorSnapshot$,
-  };
   const preCreateBodyEnvironmentEnvironment$ = bootstrap.bodyEnvironment$;
-  const connectorAdmission$ = createConnectorAdmissionSignals(
-    bootstrap,
-    threadContext,
-  );
   const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
   const { officialWorkflow$ } = workflow;
   const shared = {
     ...model,
-    ...preCreateExecutionConnectors,
     ...workflow,
     bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
   };
@@ -2753,12 +2658,13 @@ export function createThreadClaimRunObjects(
     shared: shared,
   };
   const skillVolumeSources = [promptAndSkillVolumes$];
-  const storage$ = createStorageSignals(
+  const storage = createStorageSignals(
     bootstrap,
     pickedEvent$,
     threadContext,
     skillVolumeSources,
   );
+  const storage$ = storage.storage$;
   const {
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
@@ -2820,9 +2726,8 @@ export function createThreadClaimRunObjects(
     return { ...initialRunBody(input.args), ...bodyEnvironment };
   });
   const runBodyBodyContext$ = computed(async (get) => {
-    const [input, resolved, body, requestedFramework, featureSwitchContext] =
+    const [resolved, body, requestedFramework, featureSwitchContext] =
       await Promise.all([
-        get(contextInput$),
         get(execution$),
         get(body$),
         get(runFramework$),
@@ -2842,43 +2747,19 @@ export function createThreadClaimRunObjects(
       body,
       requestedFramework,
       featureSwitchContext,
-      connectorScope: connectorScopeFromCreateArgs(input.args),
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
   const runRuntimeRuntimeContext$ = computed(async (get) => {
-    const [
-      bodyResult,
-      modelResult,
-      selectionResult,
-      snapshotResult,
-      connectorResult,
-    ] = await Promise.all([
+    const [bodyContext, modelProvider] = await Promise.all([
       get(runBodyBodyContext$),
       get(modelRoute$),
-      get(connectorSelection$),
-      get(connectorSnapshot$),
-      get(connectorAdmission$),
     ]);
-    const selection = selectionResult;
-    const bodyContext = bodyResult;
-    const modelProvider = modelResult;
-    const snapshot = snapshotResult;
-    const connector = connectorResult;
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
     if (isRouteError(modelProvider)) {
       return modelProvider;
-    }
-    if (isRouteError(selection)) {
-      return selection;
-    }
-    if (isRouteError(snapshot)) {
-      return snapshot;
-    }
-    if (isRouteError(connector)) {
-      return connector;
     }
     const providerPermissions = safeSync(() => {
       return modelProviderPermissionManifest(
@@ -2897,11 +2778,8 @@ export function createThreadClaimRunObjects(
       catalog,
       modelProvider,
       permissionManifest: {
-        firewalls: [
-          ...(providerPermissions.ok?.firewalls ?? []),
-          ...(connector.permissions?.firewalls ?? []),
-        ],
-        billableFirewalls: connector.permissions?.billableFirewalls ?? [],
+        firewalls: [...(providerPermissions.ok?.firewalls ?? [])],
+        billableFirewalls: [],
       },
       routePricing: runRoutePricingFromSnapshot(
         {
@@ -2919,9 +2797,6 @@ export function createThreadClaimRunObjects(
         ? modelProviderFramework(modelProvider)
         : bodyContext.requestedFramework,
       modelProvider,
-      connectorRuntimeTargets: connector.runtimeTargets,
-      connectorScope: selection.connectorScope,
-      connectorCatalogSelection: selection.connectorCatalogSelection,
     };
   });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
@@ -2963,28 +2838,18 @@ export function createThreadClaimRunObjects(
     }
     const { body } = bodyContext;
     const { modelProvider, framework } = runtimeContext;
-    const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
-      modelProvider,
-    });
     const { resolved } = bodyContext;
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
     }
-    const metadata = prepareRunOutputMetadata({
-      skillVolumes: promptAndSkills.skillVolumes,
-      officialWorkflow: officialWorkflowRun,
-      framework,
-      piSandbox,
-    });
+    const { metadata, piSandbox } = await get(storage.output$);
     return {
       body,
       resolved,
       framework,
       piSandbox,
       modelProvider,
-      connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       ...metadata,
       officialWorkflowFacts: await get(
         selectedRunContextShared.officialWorkflowFacts$,
@@ -3487,6 +3352,14 @@ export function createThreadClaimRunObjects(
         okouToken,
         disabledPaidTools,
         previewBypassAuthorized: !!get(previewAutomationBypass$),
+        connectorPreparation: {
+          systemPromptVariables: (await get(promptAndSkillVolumes$))
+            .systemPromptVariables,
+          threadSelections:
+            (await get(pickedEvent$))?.preparation.threadConnectorSelections ??
+            [],
+          sourceId: await get(threadContext.connectorSourceId$),
+        },
       });
     },
   );
@@ -3701,75 +3574,11 @@ export function createThreadClaimRunObjects(
       return head;
     },
   );
-  const prepareEmailSystemPrompt$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
-      const email = await get(threadContext.emailContext$);
-      signal.throwIfAborted();
-      if (!email) {
-        return null;
-      }
-      const mailboxes = await get(threadContext.emailMailboxConnections$);
-      signal.throwIfAborted();
-      if (mailboxes.length === 0) {
-        return null;
-      }
-      const [snapshot, policies, featureSwitchContext, promptAndSkills] =
-        await Promise.all([
-          get(bootstrap.catalog$),
-          get(bootstrap.permissionPolicies$),
-          get(bootstrap.featureSwitches$),
-          get(promptAndSkillVolumes$),
-        ]);
-      signal.throwIfAborted();
-      if (!snapshot) {
-        throw new Error(
-          "Email mailbox context requires its authorized catalog",
-        );
-      }
-      const messageContext = await set(
-        loadEmailSourceMessageContext$,
-        {
-          email,
-          mailboxes,
-          snapshot,
-          policies,
-          featureSwitchContext,
-          orgId: bootstrap.orgId,
-          userId: bootstrap.userId,
-        },
-        signal,
-      );
-      return renderRunPrompts({
-        systemPromptVariables: {
-          ...promptAndSkills.systemPromptVariables,
-          integrationContext: buildEmailPrompt(
-            email,
-            resolveIntegrationNotePrompt({
-              triggerSource: "email",
-              featureSwitchContext,
-              emailHasConnectedMailbox: true,
-            }),
-            mailboxes,
-            messageContext,
-          ),
-        },
-        userPromptVariables: { message: promptAndSkills.userPrompt },
-        skillVolumes: promptAndSkills.skillVolumes,
-      }).systemPrompt;
-    },
-  );
   /** Runner input owns the random token; storage then reads its result. */
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const original = await get(runPlan$);
+      const plan = await get(runPlan$);
       signal.throwIfAborted();
-      const plan =
-        original && !isRouteError(original)
-          ? withEmailSystemPrompt(
-              original,
-              await set(prepareEmailSystemPrompt$, signal),
-            )
-          : original;
       const storage = await set(
         prepareRunnerStorage$,
         plan && !isRouteError(plan) ? plan.runner.body : undefined,
@@ -3836,10 +3645,6 @@ export function createThreadClaimRunObjects(
         set(checkClaimAdmission$, signal),
         set(prepareLaunchResources$, head, signal),
         get(storageMounts$),
-        // Connector reads start independently of prompt/model material. A
-        // prefetch miss joins the same loader once for this selected identity.
-        get(bootstrap.connectors$),
-        get(threadContext.connectorThreadSelections$),
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
@@ -4313,13 +4118,6 @@ interface AgentExecutionRequestObservation {
   readonly agentOrgId: string;
 }
 
-interface ExplicitConnectorScope {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants?: readonly AgentCustomConnectorGrant[];
-  readonly source?: Exclude<ConnectorScopeSource, "empty">;
-}
-
 function runnerReuseKey(chatThreadId: string | undefined): string | null {
   return chatThreadId ? `thread:${chatThreadId}` : null;
 }
@@ -4345,7 +4143,6 @@ interface PersistedAtomicLaunchRows {
 interface PreparedRunnerLaunch {
   readonly runnerJobPayload: RunnerJobPayload;
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 type AgentRunCallbackInsert = typeof agentRunCallbacks.$inferInsert;
@@ -4668,9 +4465,6 @@ interface PreparedAtomicLaunchRows {
 interface PreparedAtomicLaunchPersistence {
   readonly payload: RunnerJobPayload;
   readonly rows: PreparedAtomicLaunchRows;
-  readonly diagnosticRegistrationPayload: zInfer<
-    typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
-  >;
 }
 
 export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
@@ -4694,11 +4488,6 @@ function prepareAtomicLaunchPersistence(
   return {
     payload,
     rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
-    diagnosticRegistrationPayload:
-      agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
-        version: 1,
-        targets: commit.launch.connectorRuntimeTargets,
-      }),
   };
 }
 
@@ -4815,24 +4604,6 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     );
   ctes.push(insertedRun);
 
-  const insertedDiagnosticRegistration = new QueryBuilder()
-    .$with("inserted_launch_connector_diagnostic_registration", {})
-    .as(
-      pendingLaunchInsertSql(
-        agentRunConnectorDiagnosticRegistrations,
-        {
-          runId: returnedCteId(insertedRun),
-          payload: args.commit.persistence.diagnosticRegistrationPayload,
-          createdAt,
-        },
-        ["runId"],
-        sql`EXISTS (SELECT 1 FROM ${insertedRun})`,
-      ),
-    );
-  // The insert executes with the statement and depends on insertedRun's ID.
-  // Its returned row need not participate in the final result join.
-  ctes.push(insertedDiagnosticRegistration);
-
   appendLaunchCallbackCte({
     ctes,
     callbacks: rowsArgs.callbackRows,
@@ -4937,22 +4708,6 @@ function committedAtomicLaunchResponse(args: {
       }
     : { ...response, pendingActivation };
 }
-// --- Thread-private implementation: connector context ---
-
-function connectorScopeFromCreateArgs(args: {
-  readonly connectorScope: ExplicitConnectorScope;
-}): EffectiveConnectorScope {
-  const source = isEmptyRunConnectorScope(args.connectorScope)
-    ? "empty"
-    : (args.connectorScope.source ?? "explicit");
-  return {
-    allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
-    allowedCustomConnectorIds: args.connectorScope.allowedCustomConnectorIds,
-    customConnectorGrants: args.connectorScope.customConnectorGrants,
-    source,
-  };
-}
-
 // --- Thread-private implementation: model provider environment ---
 
 function modelProviderFramework(
@@ -5069,21 +4824,6 @@ function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
   return command.piExecution;
 }
 
-/** The plain facts of a Thread run that Pi model preparation reads. */
-function piModelPreparationInput(
-  args: Pick<
-    RunModelProviderArgs,
-    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
-  >,
-): PiModelPreparationInput {
-  return {
-    catalog: args.catalog,
-    piExecution: args.piExecution,
-    codexServiceTier: args.codexServiceTier,
-    reasoningEffort: args.agentRunMetadata?.reasoningEffort,
-  };
-}
-
 function selectedRunModelProviderArgs(
   command: ThreadRunIdentity,
 ): Omit<RunModelProviderArgs, "catalog"> {
@@ -5118,7 +4858,6 @@ interface BuildRunnerJobPayloadInput {
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly chatThreadId: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
 function protectedWorkflowMountPaths(
@@ -5139,6 +4878,9 @@ function prepareRunnerLaunchInput(input: {
   readonly okouToken: string;
   readonly disabledPaidTools: readonly string[];
   readonly previewBypassAuthorized: boolean;
+  readonly connectorPreparation: NonNullable<
+    StoredExecutionContext["connectorPreparation"]
+  >;
 }) {
   const { args } = input;
   const nativeContinuation = args.resolved.nativeContinuation;
@@ -5149,6 +4891,7 @@ function prepareRunnerLaunchInput(input: {
   }
   const context: StoredExecutionContext = {
     nativeContinuation,
+    connectorPreparation: input.connectorPreparation,
     ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
     ...(args.resolved.agentId !== null
       ? {
@@ -5213,7 +4956,6 @@ function finalizeRunnerLaunch(
       executionContext: context,
     },
     runStorageMounts: storage.runStorageMounts,
-    connectorRuntimeTargets: args.connectorRuntimeTargets,
   };
 }
 
@@ -5382,7 +5124,6 @@ function agentRunOrigin(args: {
 function createRunBody(args: {
   readonly body: Omit<AgentRunCreateBody, "prompt">;
   readonly agent: AgentRunRecord;
-  readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly prompt: Pick<
     PromptAndSkillVolumes,
@@ -5395,23 +5136,17 @@ function createRunBody(args: {
     agentId: args.agent.id,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
-    permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
   };
 }
 
-interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {
+interface AgentRunAfterBootstrap {
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
   readonly command: ThreadRunIdentity;
   readonly threadContinuation?: ChatThreadContinuation;
-}
-
-interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
 
 interface ProductRunArgsInput {
@@ -5420,11 +5155,6 @@ interface ProductRunArgsInput {
   readonly command: ThreadRunCommand;
   readonly agent: AgentRunRecord;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
   readonly threadContinuation?: ChatThreadContinuation;
 }
@@ -5456,7 +5186,6 @@ interface ProductRunArgs {
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly enforceBuiltInCredits?: boolean;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly connectorScope: ExplicitConnectorScope;
   readonly agentRunModelPin?: AgentRunModelPin;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
@@ -5473,7 +5202,6 @@ function buildProductRunArgs(
     body: createRunBody({
       body: command.body,
       agent: args.agent,
-      permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       prompt,
     }),
@@ -5500,12 +5228,6 @@ function buildProductRunArgs(
       : {}),
     enforceBuiltInCredits: true,
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
-    connectorScope: {
-      allowedConnectorSlugs: args.allowedConnectorSlugs,
-      allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-      customConnectorGrants: args.customConnectorGrants,
-      source: "stored_agent",
-    },
     agentRunMetadata: {
       ...command.agentRunMetadata,
       codexServiceTier: command.codexServiceTier,

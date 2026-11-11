@@ -72,6 +72,7 @@ export function createClaimExecutionContext(
         storageCacheWrites: [],
         connectorOperationTimings: [],
         networkPolicyInputs: null,
+        prompt: undefined,
       };
     }
     const startedAt = monotonicNow();
@@ -95,6 +96,7 @@ export function createClaimExecutionContext(
       storageCacheWrites: runtime.value.storageCacheWrites,
       connectorOperationTimings: runtime.value.connectorOperationTimings,
       networkPolicyInputs: runtime.value.networkPolicyInputs,
+      prompt: runtime.value.prompt,
     };
   });
 }

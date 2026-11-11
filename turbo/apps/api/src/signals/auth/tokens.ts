@@ -399,6 +399,33 @@ export function generateOkouToken(
   );
 }
 
+/** Bind Claim's selected accounts without refreshing admitted authorization. */
+export function bindOkouTokenConnectorSources(
+  token: string,
+  targets: readonly import("@okouai/api-contracts/contracts/runners").ConnectorRuntimeTargetRegistration[],
+): string {
+  const { scope: _scope, ...claims } = okouTokenPayloadSchema.parse(
+    verifyPrefixedToken(token, SANDBOX_TOKEN_PREFIX),
+  );
+  return signOkouToken({
+    ...claims,
+    builtinConnectorSourceIds: Object.fromEntries(
+      targets.flatMap((target) => {
+        return target.kind === "builtin" && target.sourceId
+          ? [[target.connectorSlug, target.sourceId]]
+          : [];
+      }),
+    ),
+    customConnectorSourceIds: Object.fromEntries(
+      targets.flatMap((target) => {
+        return target.kind === "custom" && target.sourceId
+          ? [[target.customConnectorId, target.sourceId]]
+          : [];
+      }),
+    ),
+  });
+}
+
 function buildOkouTokenClaims(
   userId: string,
   runId: string,

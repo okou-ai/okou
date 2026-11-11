@@ -8,9 +8,11 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 /** Describe only the mailbox accounts already selected for this Run. */
 export function createEmailMailboxConnections(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  pickedEvent$: Computed<
+    Promise<Pick<PickedThreadInputEvent, "contextType" | "userId"> | null>
+  >,
   selectedSources$: Computed<Promise<readonly ConnectorSourceResult[]>>,
-  orgId: string,
+  orgId$: Computed<Promise<string>>,
 ): Computed<Promise<readonly EmailMailboxConnection[]>> {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
@@ -39,6 +41,7 @@ export function createEmailMailboxConnections(
     if (mailboxes.length === 0) {
       return [];
     }
+    const orgId = await get(orgId$);
     const rows = await get(db$)
       .select({
         connectionId: connectors.id,

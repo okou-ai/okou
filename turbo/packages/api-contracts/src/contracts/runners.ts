@@ -943,6 +943,8 @@ const storedSkillBundleSchema = contentBundleSchema
  * ownership. The stored queue contract below captures only irrecoverable input.
  */
 const preparedExecutionContextBaseSchema = object({
+  // Claim renders the accepted prompt with its current connector selection.
+  appendSystemPrompt: string().optional(),
   // Exact Official content is selected at admission, never refreshed at claim.
   officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
   // Current authorized Seed references selected at Claim.
@@ -1036,6 +1038,34 @@ export const storedExecutionContextSchema = preparedExecutionContextBaseSchema
     apiStartTime: true,
   })
   .extend({
+    // Accepted input only. Connector catalogs, grants and credentials remain live.
+    connectorPreparation: object({
+      systemPromptVariables: object({
+        agentIdentity: string().optional(),
+        executionLimit: string().optional(),
+        tools: string().optional(),
+        userIdentity: string().optional(),
+        channelUserIdentity: string().optional(),
+        integrationContext: string().optional(),
+        continuationContext: string().optional(),
+        generationTemplatePrompt: string().optional(),
+        computerUseContext: string().optional(),
+        suggestionFeedback: string().optional(),
+        codexImageUpload: string().optional(),
+        builtInImageModel: string().optional(),
+        restrictedExplicitContent: string().optional(),
+      }).strict(),
+      threadSelections: array(
+        object({
+          connectorId: uuid(),
+          connectorSlug: string().nullable(),
+          customConnectorId: uuid().nullable(),
+        }).strict(),
+      ),
+      sourceId: uuid().optional(),
+    })
+      .strict()
+      .optional(),
     // Preview-only admission authorization; absence grants no bypass.
     previewBypassAuthorized: boolean().optional(),
     platformEnvironment: object({

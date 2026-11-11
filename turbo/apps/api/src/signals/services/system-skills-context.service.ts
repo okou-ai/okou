@@ -2,12 +2,12 @@ import { computed, type Computed } from "ccstate";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import type { createGlobalModelContext } from "./execution-global-model-context.service";
 import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
 export function createSystemSkillsContext(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-  seedSkills$: AgentRunContextSignals["seedSkills$"],
+  seedSkills$: ReturnType<typeof createGlobalModelContext>["seedSkills$"],
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
     const [disabledPaidTools, published] = await Promise.all([

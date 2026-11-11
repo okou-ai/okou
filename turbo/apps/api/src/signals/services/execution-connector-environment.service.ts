@@ -7,11 +7,7 @@ import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { performance } from "node:perf_hooks";
 import { array, object, record, string } from "zod";
-import {
-  withPgPoolAcquisitionCapture,
-  type PgPoolAcquisition,
-  type PgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
+import type { PgPoolAcquisition } from "../../lib/db-instrumentation";
 import {
   nullableDriverValueDecoder,
   pgInt8ToBigIntDecoder,
@@ -27,6 +23,35 @@ export interface BootstrapVariable {
   readonly name: string;
   readonly value: string;
   readonly userId: string;
+}
+
+/** Admission needs user variables, independently of connector accounts. */
+export function createAgentRunVariables(
+  identity$: Computed<
+    Promise<{ readonly orgId: string; readonly userId: string }>
+  >,
+) {
+  return computed(async (get) => {
+    const identity = await get(identity$);
+    return get(db$)
+      .select({
+        name: variables.name,
+        value: variables.value,
+        userId: variables.userId,
+      })
+      .from(variables)
+      .where(
+        and(
+          eq(variables.orgId, identity.orgId),
+          eq(variables.type, "user"),
+          isNull(variables.connectorId),
+          or(
+            eq(variables.userId, identity.userId),
+            eq(variables.userId, ORG_SENTINEL_USER_ID),
+          ),
+        ),
+      );
+  });
 }
 
 export interface ConnectorContextDuration {
@@ -80,16 +105,6 @@ function bootstrapEnvironmentObservation(args: {
   return "ok" in result ? result.ok : undefined;
 }
 
-const bootstrapVariablesDecoder = zodDriverValueDecoder(
-  array(
-    object({
-      name: string(),
-      value: string(),
-      userId: string(),
-      connectorId: string().nullable(),
-    }),
-  ),
-);
 const bootstrapConnectorVariablesDecoder = zodDriverValueDecoder(
   record(string(), string()),
 );
@@ -126,42 +141,33 @@ function bootstrapConnectorAccountColumns() {
   };
 }
 
-export type BootstrapEnvironmentSnapshot =
-  ReturnType<typeof createAgentEnvironment> extends Computed<Promise<infer T>>
-    ? T
-    : never;
+export type BootstrapEnvironmentSnapshot = ReturnType<
+  typeof materializeConnectorEnvironment
+>;
 
-export function connectorEnvironmentRead(
-  { userId, orgId }: { readonly userId: string; readonly orgId: string },
-  includeRunVariables = true,
-) {
-  const variableRows = bootstrapVariableRows(
-    userId,
-    orgId,
-    includeRunVariables,
-  );
-  const variableSnapshot = bootstrapVariableSnapshot(variableRows);
+export function connectorEnvironmentRead({
+  userId,
+  orgId,
+}: {
+  readonly userId: string;
+  readonly orgId: string;
+}) {
+  const variableRows = bootstrapVariableRows(userId, orgId);
   const connectorVariableSnapshot =
     bootstrapConnectorVariableSnapshot(variableRows);
   const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
   // A single statement owns the account revision and its credential values.
-  // It also supplies Agent variables, including the empty-account case.
+  // Keep one seed row even when this member has no connector accounts.
   return new QueryBuilder()
-    .with(
-      variableRows,
-      variableSnapshot,
-      connectorVariableSnapshot,
-      credentialSnapshot,
-    )
+    .with(variableRows, connectorVariableSnapshot, credentialSnapshot)
     .select({
       account: bootstrapConnectorAccountColumns(),
-      variableValues: variableSnapshot.values,
       connectorVariables: connectorVariableSnapshot.values,
       credentials: credentialSnapshot.values,
       automaticOAuthBindingId:
         customConnectorAccountOauthBindings.connectorAccountId,
     })
-    .from(variableSnapshot)
+    .from(sql`(values (1)) as connector_seed(value)`)
     .leftJoin(
       connectors,
       and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)),
@@ -202,7 +208,6 @@ export interface ConnectorEnvironmentRow {
   readonly account:
     | { readonly [K in keyof EnvironmentAccount]: EnvironmentAccount[K] | null }
     | null;
-  readonly variableValues: readonly BootstrapVariable[] | null;
   readonly connectorVariables: Readonly<Record<string, string>> | null;
   readonly credentials:
     | readonly {
@@ -276,7 +281,6 @@ export function materializeConnectorEnvironment(
     throw new Error("Bootstrap environment aggregate returned no row");
   }
   const snapshot = {
-    variables: first.variableValues ?? [],
     accounts: rows.flatMap((row) => {
       const account = environmentAccount(row.account);
       return account
@@ -322,30 +326,7 @@ export function materializeConnectorEnvironment(
   };
 }
 
-export function createAgentEnvironment(
-  identity$: Computed<
-    Promise<{ readonly userId: string; readonly orgId: string }>
-  >,
-) {
-  return computed(async (get) => {
-    const source = connectorEnvironmentRead(await get(identity$));
-    const capture: PgPoolAcquisitionCapture = { acquisitions: [] };
-    const startedAt = performance.now();
-    const rows = await withPgPoolAcquisitionCapture(capture, async () => {
-      return await get(db$).select().from(source);
-    });
-    return materializeConnectorEnvironment(rows, {
-      query: connectorContextDuration(startedAt),
-      acquisitions: capture.acquisitions,
-    });
-  });
-}
-
-function bootstrapVariableRows(
-  userId: string,
-  orgId: string,
-  includeRunVariables: boolean,
-) {
+function bootstrapVariableRows(userId: string, orgId: string) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
     db
@@ -359,39 +340,10 @@ function bootstrapVariableRows(
       .where(
         and(
           eq(variables.orgId, orgId),
-          or(
-            includeRunVariables
-              ? and(
-                  eq(variables.type, "user"),
-                  or(
-                    eq(variables.userId, ORG_SENTINEL_USER_ID),
-                    eq(variables.userId, userId),
-                  ),
-                )
-              : undefined,
-            and(eq(variables.type, "connector"), eq(variables.userId, userId)),
-          ),
+          eq(variables.type, "connector"),
+          eq(variables.userId, userId),
         ),
       ),
-  );
-}
-
-function bootstrapVariableSnapshot(
-  rows: ReturnType<typeof bootstrapVariableRows>,
-) {
-  const db = new QueryBuilder();
-  return db.$with("bootstrap_user_variables").as(
-    db
-      .select({
-        values: sql`jsonb_agg(jsonb_build_object(
-        'name', ${rows.name}, 'value', ${rows.value},
-        'userId', ${rows.userId}, 'connectorId', ${rows.connectorId}
-      ))`
-          .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
-          .as("user_variable_values"),
-      })
-      .from(rows)
-      .where(isNull(rows.connectorId)),
   );
 }
 
