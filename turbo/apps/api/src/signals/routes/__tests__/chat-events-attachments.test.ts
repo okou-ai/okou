@@ -1510,6 +1510,11 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
       {
+        id: "document-template:meeting-notes",
+        source:
+          "nexu-io/open-design/3fb620af423534643677c7c6fae76be088fa770a/design-templates/meeting-notes/example.html",
+      },
+      {
         id: "document-template:sidebar-report",
         source:
           "RelaxedJS/ReLaXed-examples/378a2d4f34ffe8ffd61e956e02a50b15564fc9f6/examples/report/report.pug",

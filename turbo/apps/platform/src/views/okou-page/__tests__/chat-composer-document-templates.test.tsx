@@ -59,7 +59,7 @@ test("Document category and scroll survive preview", async () => {
     }),
   ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
   click(control(dialog, "tab", "Document"));
-  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(46);
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(47);
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(
@@ -125,6 +125,45 @@ test("Using a document template preserves the draft until the user sends it", as
     template: {
       type: "document",
       selection: { documentTemplateId: "document-template:sidebar-report" },
+    },
+  });
+});
+
+test("Meeting notes can be previewed and attached without sending the draft", async () => {
+  const { user, capture } = await setup();
+  const draft = "Summarize these meeting notes.";
+  await fill(await findComposerEditor(), draft);
+  const dialog = await openTemplatePicker(user);
+  click(control(dialog, "tab", "Document"));
+  click(control(dialog, "button", "Business records"));
+  click(control(dialog, "button", "Preview Meeting notes"));
+  const pageUrl = within(dialog).getByAltText("Page 1").getAttribute("src");
+  expect(pageUrl).toContain("/document-meeting-notes/page-01.png");
+  expect(control(dialog, "link", "Open larger preview")).toHaveAttribute(
+    "href",
+    pageUrl,
+  );
+  expect(
+    within(dialog).queryByLabelText("Next sample page"),
+  ).not.toBeInTheDocument();
+  click(control(dialog, "button", "Use this template"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await expect(findComposerEditor()).resolves.toHaveTextContent(draft);
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Meeting notes");
+  expect(capture.sentMessages).toHaveLength(0);
+  click(await findComposerEditor());
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "template",
+    titleSnapshot: "Meeting notes",
+    template: {
+      type: "document",
+      selection: { documentTemplateId: "document-template:meeting-notes" },
     },
   });
 });
