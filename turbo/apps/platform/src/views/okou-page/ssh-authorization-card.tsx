@@ -17,7 +17,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 
-type SshAction = "approve" | "deny" | "revoke";
+type SshAction = "approve" | "revoke";
 
 function SshAuthorizationDetails({ data }: { data: SshAuthorization }) {
   const { t } = useTranslation();
@@ -186,21 +186,6 @@ function SshAuthorizationActions({
     (data.status === "approved" && data.continuationPending);
   return (
     <>
-      {data.status === "pending" && (
-        <Button
-          variant="quiet"
-          size="sm"
-          className="h-9"
-          disabled={busy}
-          onClick={() => {
-            onAction("deny");
-          }}
-        >
-          {t(($) => {
-            return $.desktopShellAuthorization.deny;
-          })}
-        </Button>
-      )}
       {canApprove && (
         <Button
           variant="neutral"

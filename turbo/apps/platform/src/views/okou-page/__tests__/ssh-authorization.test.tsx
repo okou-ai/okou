@@ -111,8 +111,8 @@ test("The direct page waits for connector approvals and requesting Run completio
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, current);
   });
-  context.mocks.api(contract.deny, ({ respond }) => {
-    current = request({ status: "denied" });
+  context.mocks.api(contract.approve, ({ respond }) => {
+    current = request({ status: "approved", enabled: true });
     return respond(200, current);
   });
   await setupPage({ context, path, host: "app.okou.ai" });
@@ -132,8 +132,8 @@ test("The direct page waits for connector approvals and requesting Run completio
   await waitFor(() => {
     return expect(button(card, "Allow in this chat")).toBeEnabled();
   });
-  click(button(card, "Deny"));
-  await within(card).findByText("SSH access denied");
+  click(button(card, "Allow in this chat"));
+  await within(card).findByText("SSH access allowed");
 });
 
 test("A forwarded card cannot approve a request belonging to a different chat", async () => {
