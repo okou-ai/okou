@@ -1,0 +1,1 @@
+ALTER TABLE "runner_state" ADD COLUMN "ingress" jsonb;

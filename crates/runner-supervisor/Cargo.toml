@@ -9,6 +9,11 @@ test-support = []
 
 [dependencies]
 api-contracts.workspace = true
+bytes.workspace = true
+hmac = { workspace = true }
+http-body-util = { version = "0.1", default-features = false }
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 async-trait.workspace = true
 guest-contracts.workspace = true
 hex = { workspace = true, features = ["std"] }

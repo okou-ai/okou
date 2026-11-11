@@ -489,6 +489,8 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
+    let ingress_settings = (!args.local && server.token.starts_with("vm0_official_"))
+        .then(|| (hostname.clone(), server.token.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -797,7 +799,23 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
+    let ingress = if let Some((Some(hostname), token)) = ingress_settings {
+        Some(
+            runner_supervisor::ingress::IngressRuntime::start(
+                home.ingress_dir(),
+                runner_identity,
+                hostname,
+                &token,
+            )
+            .await,
+        )
+    } else {
+        None
+    };
     let config = RunConfig {
+        ingress: ingress
+            .as_ref()
+            .map(runner_supervisor::ingress::IngressRuntime::state),
         sandbox_op_reporter: host_telemetry
             .as_ref()
             .map(|telemetry| telemetry.reporter()),
@@ -855,6 +873,9 @@ async fn run_start_observed(
     };
 
     let run_result = reactor::run(config).await.map_err(Into::into);
+    if let Some(ingress) = ingress {
+        ingress.shutdown().await;
+    }
     drop(resource_locks);
     if let Err(e) = live_runner_instance_handle.remove_if_current().await {
         tracing::warn!(error = %e, "failed to remove live runner instance record");

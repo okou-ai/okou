@@ -237,6 +237,7 @@ async fn abort_signal_handler_task(handler_task: SignalHandlerTask, context: &'s
 /// Test observation state is deliberately private and compiled only for this
 /// owner's unit target; dependency callers never inherit it through cfg(test).
 pub struct RunConfig {
+    pub ingress: Option<Arc<crate::ingress::IngressState>>,
     pub runner: RunnerInfo,
     pub paths: RunPaths,
     pub sandbox_runtime: SandboxRuntimeConfig,
@@ -888,6 +889,7 @@ async fn handle_mitm_recovery_failure(
 /// Run the concrete retained reactor and perform its ordered resource teardown.
 pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let RunConfig {
+        ingress,
         runner,
         paths,
         sandbox_runtime,
@@ -910,6 +912,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let home_cache_snapshot = HomeCacheStateSnapshot::new();
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
+        ingress,
         idle_pool: &shared.idle_pool,
         runner_hostname: exec_config.runner_hostname.as_deref(),
         runner_identity: runner.identity,

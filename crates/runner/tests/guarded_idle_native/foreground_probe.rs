@@ -129,6 +129,7 @@ impl Probe {
         )]);
         let active = ActiveRuns::new(Arc::new(Notify::new()));
         let controller = HeartbeatController::new(HeartbeatContext::new(HeartbeatContextInit {
+            ingress: None,
             idle_pool: pool,
             runner_identity: runner,
             runner_hostname: None,

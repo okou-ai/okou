@@ -66,6 +66,7 @@ pub struct HeartbeatContext {
 /// Original snapshot authority shared by ordinary and terminal publication.
 #[derive(Clone)]
 struct BaseHeartbeatContext {
+    ingress: Option<Arc<crate::ingress::IngressState>>,
     idle_pool: Arc<tokio::sync::Mutex<IdlePool>>,
     runner_identity: RunnerProcessIdentity,
     runner_hostname: Option<String>,
@@ -76,6 +77,7 @@ struct BaseHeartbeatContext {
 }
 
 pub struct HeartbeatContextInit<'a> {
+    pub ingress: Option<Arc<crate::ingress::IngressState>>,
     pub idle_pool: &'a Arc<tokio::sync::Mutex<IdlePool>>,
     pub runner_identity: RunnerProcessIdentity,
     pub runner_hostname: Option<&'a str>,
@@ -92,6 +94,7 @@ impl HeartbeatContext {
     pub fn new(init: HeartbeatContextInit<'_>) -> Self {
         Self {
             base: BaseHeartbeatContext {
+                ingress: init.ingress,
                 idle_pool: Arc::clone(init.idle_pool),
                 runner_identity: init.runner_identity,
                 runner_hostname: init.runner_hostname.map(str::to_owned),
@@ -123,6 +126,13 @@ impl BaseHeartbeatContext {
         );
         drop(pool);
         state.runner_hostname = self.runner_hostname.clone();
+        // A terminal snapshot withdraws availability without waiting on a host
+        // probe. Ordinary observation runs after releasing the resource lock.
+        if !matches!(mode, RunnerMode::Stopping | RunnerMode::Stopped)
+            && let Some(ingress) = &self.ingress
+        {
+            state.ingress = Some(ingress.observe().await);
+        }
         state
     }
 }
@@ -570,6 +580,7 @@ pub fn collect_heartbeat_state(
     let running_count = budget_running.saturating_sub(idle_count);
     let admittable_profiles = admittable_profiles_for_heartbeat(profiles, budget, idle_pool, mode);
     HeartbeatState {
+        ingress: None,
         runner_id: snapshot.runner_identity.runner_id().to_string(),
         runner_hostname: None,
         group: snapshot.group.to_string(),

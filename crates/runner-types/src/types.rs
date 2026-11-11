@@ -1796,6 +1796,8 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ingress: Option<api_contracts::generated::types::runners::RunnerIngressObservation>,
     /// Configured advisory host identity, independent of cache contents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_hostname: Option<String>,
