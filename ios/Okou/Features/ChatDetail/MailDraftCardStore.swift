@@ -126,7 +126,7 @@ final class MailDraftCardStore {
     guard !isWorking else { return }
     do {
       _ = try await read()
-      if case .remote = try stateStore.get(source) { requiresReadback = false }
+      if !isWorking, case .remote = try stateStore.get(source) { requiresReadback = false }
     } catch {
       // The original Task retains the failure and the native card offers explicit retry.
     }
@@ -136,6 +136,7 @@ final class MailDraftCardStore {
     guard !isWorking else { return }
     do {
       _ = try await read(refresh: true)
+      guard !isWorking, case .remote = try stateStore.get(source) else { return }
       requiresReadback = false
       error = nil
     } catch {
