@@ -117,6 +117,7 @@ pub struct GuestApplication {
     wait_timeout_ms: u32,
     host_failed: Arc<AtomicBool>,
     pending: Option<ArchiveReadiness>,
+    published: HashSet<usize>,
 }
 
 impl GuestApplication {
@@ -147,6 +148,7 @@ impl GuestApplication {
             wait_timeout_ms,
             host_failed,
             pending: None,
+            published: HashSet::new(),
         })
     }
 
@@ -164,12 +166,12 @@ impl GuestApplication {
         pending: &[CacheTargetGroup],
         decoded: &[(CacheTargetGroup, TargetOutcome)],
         ordinary: &[(CacheTargetGroup, TargetOutcome)],
-    ) -> RunnerResult<()> {
+    ) -> RunnerResult<bool> {
         let archive_ready = ordinary
             .iter()
             .any(|(_, outcome)| matches!(outcome, TargetOutcome::Hit));
         if pending.is_empty() || (!archive_ready && decoded.is_empty()) {
-            return Ok(());
+            return Ok(false);
         }
 
         // This clone is consumed immediately into transport bytes/owned file
@@ -213,7 +215,7 @@ impl GuestApplication {
             check_only: true,
         };
         let Some((mut input, query)) = input.prepare_early(&readiness)? else {
-            return Ok(());
+            return Ok(false);
         };
         let checked = sandbox
             .apply_storage_manifest(&sandbox::StorageManifestRequest {
@@ -242,13 +244,62 @@ impl GuestApplication {
             RunnerError::Internal(format!("invalid Guest archive eligibility: {error}"))
         })?;
         if !eligible {
-            return Ok(());
+            return Ok(false);
         }
         let mut readiness = readiness;
         readiness.check_only = false;
         input.initial.manifest.archive_readiness = Some(readiness.clone());
         self.pending = Some(readiness);
-        self.send(input)
+        self.send(input).map(|()| true)
+    }
+
+    /// Publish one complete staging batch only for an already active handoff.
+    pub(super) async fn publish_staged(
+        &mut self,
+        sandbox: &dyn Sandbox,
+        staged: &[(CacheTargetGroup, TargetOutcome)],
+    ) -> RunnerResult<()> {
+        let Some(readiness) = &self.pending else {
+            return Ok(());
+        };
+        let mut indices = Vec::new();
+        for (group, _) in staged {
+            let target = &group.representative;
+            let url = format!(
+                "file://{}",
+                guest_archive_path(&target.name, &target.version)
+            );
+            let index = readiness
+                .sources
+                .iter()
+                .position(|source| source == &url)
+                .ok_or_else(|| {
+                    RunnerError::Internal("staged source lost its readiness binding".into())
+                })?;
+            if !self.published.contains(&index) && !indices.contains(&index) {
+                indices.push(index);
+            }
+        }
+        let paths = indices
+            .iter()
+            .map(|index| readiness.ready_path(&self.runtime, *index))
+            .collect::<Vec<_>>();
+        let writes = paths
+            .iter()
+            .map(|path| {
+                Ok(WriteFileEntry {
+                    path: path.to_str().ok_or_else(|| {
+                        RunnerError::Internal("invalid Guest readiness path".into())
+                    })?,
+                    content: &[],
+                })
+            })
+            .collect::<RunnerResult<Vec<_>>>()?;
+        if !writes.is_empty() {
+            sandbox.write_private_files(&writes).await?;
+            self.published.extend(indices);
+        }
+        Ok(())
     }
 }
 
@@ -290,6 +341,7 @@ pub async fn populate_cache_for_guest(
             Ok(deferred) => {
                 if let Some(readiness) = &application.pending {
                     let paths = (0..readiness.sources.len())
+                        .filter(|index| !application.published.contains(index))
                         .map(|index| readiness.ready_path(&application.runtime, index))
                         .collect::<Vec<_>>();
                     let paths = paths
@@ -304,6 +356,9 @@ pub async fn populate_cache_for_guest(
                         .iter()
                         .map(|path| WriteFileEntry { path, content: &[] })
                         .collect::<Vec<_>>();
+                    if writes.is_empty() {
+                        return Ok(deferred);
+                    }
                     match sandbox.write_private_files(&writes).await {
                         Ok(()) => Ok(deferred),
                         Err(error) => Err(error.into()),
