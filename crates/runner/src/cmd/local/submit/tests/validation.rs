@@ -187,7 +187,7 @@ async fn serialized_job_at_size_limit_is_accepted() {
 
     assert_eq!(exit_code, ExitCode::SUCCESS);
     assert_eq!(
-        serde_json::to_vec(&request).unwrap().len(),
+        cli_test_support::json_fixture::serialized_len(&request).unwrap(),
         local_queue::LOCAL_JOB_MAX_BYTES
     );
 }
