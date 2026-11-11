@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -191,4 +192,34 @@ test("Sign out from the account menu", async () => {
       }),
     );
   });
+});
+
+test("Help opens keyboard shortcuts and links to the docs", async () => {
+  prepareDefaultAgent();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Alex Rivera",
+        email: "alex.rivera@example.test",
+      },
+    },
+    featureSwitches: { [FeatureSwitchKey.HelpMenu]: true },
+  });
+
+  const menu = await openAccountMenu();
+  click(within(menu).getByText("Help"));
+
+  const docs = (await screen.findByText("Docs")).closest("a");
+  expect(docs).toHaveAttribute("href", "https://docs.okou.ai");
+  expect(docs).toHaveAttribute("target", "_blank");
+
+  click(screen.getByText("Keyboard shortcuts"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Keyboard Shortcuts",
+  });
+  expect(within(dialog).getByText("Show shortcuts")).toBeInTheDocument();
 });

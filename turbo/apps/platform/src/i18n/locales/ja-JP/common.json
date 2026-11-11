@@ -5490,6 +5490,11 @@
       "creditBalance_one": "{{value}} クレジット",
       "creditBalance_other": "{{value}} クレジット",
       "exportData": "データのエクスポート",
+      "help": {
+        "docs": "ドキュメント",
+        "keyboardShortcuts": "キーボードショートカット",
+        "label": "ヘルプ"
+      },
       "lab": "研究室",
       "settings": "設定",
       "signOut": "サインアウト",

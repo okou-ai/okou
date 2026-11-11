@@ -5508,6 +5508,11 @@
       "creditBalance_one": "{{value}} Credit",
       "creditBalance_other": "{{value}} Credits",
       "exportData": "Daten exportieren",
+      "help": {
+        "docs": "Dokumentation",
+        "keyboardShortcuts": "Tastaturkürzel",
+        "label": "Hilfe"
+      },
       "lab": "Lab",
       "settings": "Einstellungen",
       "signOut": "Abmelden",

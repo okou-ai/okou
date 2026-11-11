@@ -5570,6 +5570,11 @@
       "creditBalance_many": "{{value}} crediti",
       "creditBalance_other": "{{value}} crediti",
       "exportData": "Esporta dati",
+      "help": {
+        "docs": "Documentazione",
+        "keyboardShortcuts": "Scorciatoie da tastiera",
+        "label": "Aiuto"
+      },
       "lab": "Laboratorio",
       "settings": "Impostazioni",
       "signOut": "Esci",

@@ -5490,6 +5490,11 @@
       "creditBalance_one": "{{value}} 积分",
       "creditBalance_other": "{{value}} 积分",
       "exportData": "导出数据",
+      "help": {
+        "docs": "文档",
+        "keyboardShortcuts": "键盘快捷键",
+        "label": "帮助"
+      },
       "lab": "实验室",
       "settings": "设置",
       "signOut": "退出登录",

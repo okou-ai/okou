@@ -5508,6 +5508,11 @@
       "creditBalance_one": "{{value}} क्रेडिट",
       "creditBalance_other": "{{value}} क्रेडिट",
       "exportData": "डेटा निर्यात करें",
+      "help": {
+        "docs": "दस्तावेज़",
+        "keyboardShortcuts": "कीबोर्ड शॉर्टकट",
+        "label": "सहायता"
+      },
       "lab": "प्रयोगशाला",
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
