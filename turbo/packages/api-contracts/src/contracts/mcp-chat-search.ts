@@ -1,4 +1,4 @@
-import { array, iso, object, type infer as zInfer } from "zod";
+import { array, object, type infer as zInfer } from "zod";
 
 import { agentResponseSchema } from "../validators/agents";
 import { initContract } from "./base";
@@ -9,18 +9,6 @@ const c = initContract();
 const nativeSearch = chatSearchContract.search;
 const nativeResult = nativeSearch.responses[200].shape.results.element;
 const nativeRange = nativeResult.shape.matchedRanges.element;
-
-// Extra fractional precision would silently truncate when converted to Date.
-const mcpSearchSinceSchema = iso
-  .datetime({ offset: true })
-  .regex(
-    /T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/,
-    "Use seconds, at most three fractional digits, and Z or a ±HH:MM timezone",
-  )
-  .meta({ format: "date-time" })
-  .describe(
-    "Inclusive lower bound: matchedMessage.createdAt >= since. Use an ISO 8601 datetime with seconds, at most three fractional digits, and an explicit Z or ±HH:MM timezone, for example 2026-10-12T08:02:50Z. Omit to search without a time filter.",
-  );
 
 const mcpChatSearchResultSchema = nativeResult
   .omit({ agentName: true, chatThreadId: true })
@@ -55,7 +43,6 @@ export const mcpChatSearchContract = c.router({
       keyword: nativeSearch.query.shape.keyword.describe(
         "Lexical search: CJK runs use adjacent two-character (bigram) tokens; any single-character CJK run returns no results, including in mixed queries. Other letter/number runs match whole-word tokens after lowercasing; token groups are combined with AND. Non-token characters such as emoji and punctuation are ignored; queries with no indexable tokens return no results. For example, 中文 🧪 searches 中文, and 1️⃣ contributes the digit 1. No Unicode normalization, semantic matching or general substring guarantee.",
       ),
-      since: mcpSearchSinceSchema.optional(),
     }),
     responses: {
       ...nativeSearch.responses,
