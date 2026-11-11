@@ -175,7 +175,7 @@ struct ChatComposerView: View {
         }
         .accessibilityIdentifier("message-input")
       } leading: {
-        HStack(spacing: 0) {
+        HStack(spacing: OkouSpace.xs) {
           Button {
             showsAddSheet = true
           } label: {
@@ -202,9 +202,6 @@ struct ChatComposerView: View {
           if let modelSelection {
             ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
               .disabled(needsUpgrade)
-              .padding(.trailing, OkouSpace.xs)
-              .frame(width: showsModelPicker ? nil : 0, alignment: .trailing)
-              .clipped()
               .opacity(showsModelPicker ? 1 : 0)
               .allowsHitTesting(showsModelPicker)
               .accessibilityHidden(!showsModelPicker)
@@ -213,9 +210,6 @@ struct ChatComposerView: View {
           if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-              .padding(.trailing, replacesSendWithMic ? 0 : OkouSpace.xs)
-              .frame(width: showsVoiceInput ? nil : 0, alignment: .trailing)
-              .clipped()
               .opacity(showsVoiceInput ? 1 : 0)
               .allowsHitTesting(showsVoiceInput)
               .accessibilityHidden(!showsVoiceInput)
