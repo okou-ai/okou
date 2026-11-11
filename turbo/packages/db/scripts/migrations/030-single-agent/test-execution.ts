@@ -43,6 +43,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { applyPendingMigrations } from "../../migration-runner";
+import { BRANCH, PROJECT, STAFF_ORG } from "./production-model";
 
 const connection = process.env.DATABASE_URL;
 assert.ok(connection, "Disposable DATABASE_URL required");
@@ -510,6 +511,42 @@ try {
     ];
   };
   const writeFlags = ["--rehearsal", "--writers-drained", "--migrate"];
+  const productionDirectory = join(directory, "production-purpose");
+  await mkdir(productionDirectory, { mode: 0o700 });
+  const productionImage = {
+    ...JSON.parse(
+      await readFile(join(prepared.destination, "execution.json"), "utf8"),
+    ),
+    format: "single-agent-production-execution-v1",
+    purpose: "production-cutover",
+    production: {
+      projectId: PROJECT,
+      branchId: BRANCH,
+      endpointId: "fixture",
+      commit: "a".repeat(40),
+      planRunId: "1",
+      orgId: STAFF_ORG,
+    },
+  };
+  const productionBytes = JSON.stringify(productionImage);
+  await writeFile(
+    join(productionDirectory, "execution.json"),
+    productionBytes,
+    { mode: 0o600 },
+  );
+  assert.match(
+    (
+      await invoke(
+        commandArgs("verify", {
+          destination: productionDirectory,
+          hash: contentBundleDigest(Buffer.from(productionBytes)),
+        }),
+        false,
+      )
+    ).stderr,
+    /ExecutionPurposeMismatch/u,
+  );
+
   assert.match(
     (await invoke(commandArgs("verify"))).stdout,
     /"state":"before"/u,

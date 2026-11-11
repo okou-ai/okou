@@ -1,7 +1,7 @@
-# Single Agent migration preparation
+# Single Agent migration operators
 
 Read-only inventory and offline dry-run planning for #45474, under Epic #45400.
-These commands do not implement `apply` or recovery. Every generated plan has
+The `single-agent:prepare` commands do not implement `apply` or recovery. Every generated plan has
 `executable: false`, including plans with no detected blockers. A plan is an
 operator review artifact, not authorization or an executable migration manifest.
 
@@ -180,8 +180,8 @@ lists the remaining gates:
   dependent rows, inspect foreign-key effects and queued work, and preserve Chat
   and Run history. Inventory fingerprints/revisions alone cannot restore deleted
   configuration; the future apply/recovery protocol must own that journal.
-- Implement a versioned, drift-checked `apply` and recovery protocol, then finish
-  integrated acceptance #45473 before the staff cutover rehearsal.
+- Complete integrated acceptance #45473 and exercise the versioned, drift-checked
+  copy operator below before the staff production cutover.
 
 Use the same reviewed tool revision for an isolated production-child-branch
 rehearsal and subsequent review. A staff production cutover needs a fresh plan,
@@ -271,6 +271,133 @@ This verifies persisted migration behavior, not native continuation, live
 authorization, listener delivery or production rollout. Those remain explicit
 acceptance gates under #45473/#45474. Agent retirement remains #45476.
 
+## Protected staff production cutover
+
+`.github/workflows/single-agent-migration.yml` is the manual production entry
+point. It runs only from `main`, requires the existing `production` environment
+review, and serializes all its modes without cancelling an in-flight operator.
+It does not merge, deploy, change feature switches, stop writers, resize compute,
+clear queues, retire Agents, or enable another organization.
+
+The first cohort is exactly `org_3ANttyrbWYJk6JKRSTRLEsbsDLe`. The operator
+resolves the default, protected, ready production branch in Neon project
+`hidden-lab-39609750`, requires a unique read-write endpoint, validates every
+connection identity, and checks the fixed production R2 bucket and endpoint.
+Both configured compute bounds must be at least **8 CU**. The rehearsal passed
+at fixed 8 CU; 1 CU failed with PostgreSQL `53200`. This is a conservative
+prerequisite for this image, not a measured minimum for every organization.
+The existing 60-second SQL statement timeout is unchanged.
+
+Before the first dispatch:
+
+1. Keep #45473 acceptance, the successful staff-copy migration/verification/
+   recovery evidence, serving permission-policy identity and supported rollback
+   compatibility recorded in #45474.
+2. An authorized owner provisions `SINGLE_AGENT_MIGRATION_IMAGE_KEY` in the
+   protected production environment: 32 cryptographically random bytes encoded
+   as 64 lowercase hexadecimal characters. This is a dedicated AES-256-GCM key,
+   never an R2 key. Retain an owner-private copy for review and recovery. Keep
+   the key available and unchanged until the cutover and recovery window close.
+   This PR does not create or read that secret.
+3. Confirm authorized production Neon, Clerk and R2 credentials and the existing
+   bucket/account variables are configured for the workflow. The coding and
+   review process must not retrieve production credentials.
+4. Dispatch `target` with the exact staff org ID. This fetches branch/compute
+   metadata only: it does not request a database connection URI or read rows.
+   Arrange any capacity change separately, then repeat this inspection.
+5. Arrange a real maintenance window. Stop API ingress, scheduler dispatch,
+   listener/webhook/worker delivery and every other database writer; drain
+   running and queued work; freeze membership/role changes. Record who stopped
+   what and the evidence in #45474. `writers_drained` is an operator attestation,
+   not an automatic service-control mechanism. Database zero-work and full
+   source/schema/drift checks are additional gates, not proof that ingress has
+   stopped. The production operator never deletes active/queued indexes to
+   manufacture an idle database.
+
+Review the fixed prefix map from the rehearsal against the current source
+Agents. Encrypt that owner-only JSON file before dispatch; private Agent IDs and
+names must not appear in workflow inputs. From `turbo/packages/db`:
+
+```sh
+pnpm single-agent:package seal-prefixes \
+  --input /private/agent-prefixes.json \
+  --key-file /private/migration-image-key \
+  --output /private/prefixes.base64
+```
+
+Both input files must have mode `0600`; their containing directory must be
+owner-private. The command prints only the plaintext map digest and an output
+path. Supply the encrypted file's single base64 line as `prefixes_base64` and
+its printed digest as `prefixes_sha256` for `plan`, with `writers_drained=true`.
+
+The `plan` mode obtains the explicit `RO` database role and verifies SELECT-only
+privileges. Inventory, plan and preparation use read-only sessions. Live Clerk
+membership and roles must exactly match the cached census; pages, duplicate
+members and incomplete results fail closed. A complete fixed map, zero blockers,
+zero running/queued work, immutable source archive validation and drift checks
+must pass. Preparation only reads immutable production objects.
+
+A successful plan retains `single-agent-plan-<run-id>` for 30 days:
+
+- `execution.enc`: authenticated encrypted recovery rows, source inventory,
+  reviewed plan, immutable archive bytes and attempt receipts;
+- `metadata.json`: non-content scope, source commit/run, hashes and counts;
+- `audit.json`: redacted operation identity and outcome.
+
+Plaintext rows, Agent names, source bodies, credentials and archive bytes are
+never uploaded as artifacts. Download the original plan artifact to a private
+local directory and inspect it using the privately retained key:
+
+```sh
+chmod 600 /private/review/metadata.json
+pnpm single-agent:package open \
+  --input /private/review/execution.enc \
+  --metadata /private/review/metadata.json \
+  --key-file /private/migration-image-key \
+  --output /private/new-review-directory
+```
+
+Review `execution.json`, including its `inventoryBytes`, `planBytes`, before/after
+rows and bundle manifests. Keep all decrypted material outside Git and delete it
+when no longer needed. Confirm the printed image hash and the metadata plan
+hash; record approval of these exact hashes and the source run in #45474.
+
+Dispatch `apply` with `plan_run_id`, `plan_sha256`, `image_sha256` and a renewed
+truthful writer-drain attestation. The source must be a successful first-attempt
+`plan` dispatch of this workflow on the **same exact main commit**. If main has
+advanced, prepare and review a new plan. The operator downloads the original
+artifact by exact run/name, authenticates it, checks its production-only purpose,
+org/project/branch/endpoint/revision bindings and current live membership, then
+uses the same immutable publication and atomic SQL checkpoint as the rehearsed
+copy operator. The original encrypted plan must already be durably uploaded
+before apply can start. Shared SQL source-value conditions, row-count assertions,
+schema and complete image drift checks remain enforced.
+
+Use `verify` with the original plan run and hashes to distinguish authoritative
+`before`/`after` data from drift, especially after cancellation, timeout or an
+uncertain outcome. Never infer failure from a missing completion receipt. Do not
+use GitHub's rerun button: every dispatch must be attempt 1. Investigate the
+existing outcome before dispatching a new operation; there is no automatic
+apply retry or rollback.
+
+`recover` requires writers to remain stopped, the original plan run/hashes and
+the exact after image. It refuses later edits, restores complete source rows,
+retains immutable shared objects and preserves monotonic event sequences.
+Verification and recovery may run after main advances: the workflow verifies
+that the producer commit is still an ancestor of main, checks out that original
+reviewed commit and uses its operator and dependencies. Apply cannot use this
+exception. A missing original artifact or package key blocks recovery; retain
+both throughout the recovery window. Cleanup removes plaintext and credentials
+on success/failure; cancellation also has shell/always-step cleanup, and the
+original encrypted plan remains the durable recovery source if a runner dies.
+
+Before resuming writers, verify persisted data and source/target object
+references. Then record production runtime checks for personal Instructions,
+Workflow permissions, Project/Chat continuation and retained Automation delivery
+in #45474. Persisted migration success alone does not establish runtime
+acceptance or authorize the next organization. Each later cohort needs its own
+fresh inventory, reviewed plan and explicit rollout decision.
+
 ## Verification
 
 ```sh
@@ -303,3 +430,13 @@ bytes/modes, private-Agent ownership, personal empty/preserved values, uncertain
 committed PostgreSQL responses, idempotent resume, cascading-row/Run-reference
 recovery, later-edit rejection and concurrent first saves. It does not run a
 staff-copy rehearsal or execute a Workflow.
+
+`test-production.ts` invokes the production CLI with MSW protocol fixtures at
+the external Neon/GitHub/Clerk boundary, without production credentials or network
+access. It checks target-only inspection, 8 CU admission, exact-plan source
+verification, retained-source recovery selection, authenticated encrypted package
+round trips, tamper/unexpected-entry rejection, private file modes, encrypted
+prefix submission and paginated live membership drift. The shared real-Postgres
+execution test also rejects production-purpose images at the copy CLI boundary.
+These tests do not execute a production cutover or establish staff runtime
+acceptance.
