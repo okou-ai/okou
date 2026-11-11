@@ -237,7 +237,9 @@ private struct WorkspaceRootView: View {
     _store = State(
       initialValue: WorkspaceStore(
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
+        draftStorage: ChatDraftStorage(scope: cacheScope),
+        projectDisclosure: ProjectDisclosureStorage(scope: cacheScope),
+        measurementScope: cacheScope,
         didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 
