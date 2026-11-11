@@ -9,7 +9,9 @@ use crate::host_memory_operations::{MemoryOperation, MemoryOperationError};
 use crate::resource_budget::BudgetLease;
 use crate::storage_fingerprints::StorageFingerprints;
 
-use super::entry::{IdleSandboxMetadata, IdleSandboxResources};
+use super::entry::{
+    HomePromotionPolicy, IdleDestroyJob, IdleSandboxMetadata, IdleSandboxResources,
+};
 use super::inventory_retirement::CapturedBacking;
 use super::{IdleActivationOwner, IdleActivationState, IdlePoolIncoming, ParkedIdleCandidate};
 
@@ -116,6 +118,46 @@ impl BlankPreparationResource {
 
     pub fn prepared(&self) -> bool {
         self.prepared
+    }
+
+    /// Foreground preparation hands a parked tenant-free VM directly to its
+    /// admission owner, without publishing it as shared idle inventory.
+    pub fn into_parked(self: Box<Self>) -> Result<ParkedIdleCandidate, Box<Self>> {
+        if !self.prepared {
+            return Err(self);
+        }
+        let metadata = match self.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => return Err(self),
+        };
+        let resource = *self;
+        Ok(ParkedIdleCandidate {
+            resources: IdleSandboxResources {
+                sandbox: resource.sandbox,
+                factory: resource.factory,
+                home_promotion: None,
+            },
+            metadata,
+            budget_lease: resource.lease,
+            retirement_backing: resource.backing,
+        })
+    }
+
+    /// Partial preparation is not a parked candidate. Transfer its actual
+    /// resource and full lease to the ordinary joined physical cleanup owner.
+    pub fn into_destroy_job(self: Box<Self>) -> IdleDestroyJob {
+        let resource = *self;
+        IdleDestroyJob {
+            payload: IdleSandboxResources {
+                sandbox: resource.sandbox,
+                factory: resource.factory,
+                home_promotion: None,
+            }
+            .into_destroy_payload(HomePromotionPolicy::Promote),
+            budget_lease: resource.lease,
+            reuse_key: None,
+            profile_name: resource.profile_name,
+        }
     }
 
     fn metadata(&self) -> Result<IdleSandboxMetadata, MemoryOperationError> {

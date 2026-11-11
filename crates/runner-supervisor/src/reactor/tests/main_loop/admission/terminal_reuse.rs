@@ -334,16 +334,17 @@ async fn assert_finalizing_preference_consumes_home_cache(waiting: bool, predece
     assert!(env.handle.deferred_poll_deadlines().is_empty());
     let created = overrides.create_configs();
     assert_eq!(created.len(), if predecessor_home { 2 } else { 1 });
+    let replacements = overrides.home_drive_replacements();
+    let home = if waiting {
+        assert!(replacements.is_empty());
+        created.last().unwrap().home_drive.as_ref().unwrap()
+    } else {
+        assert_eq!(replacements.len(), 1);
+        &replacements[0]
+    };
     assert!(
-        created
-            .last()
-            .unwrap()
-            .home_drive
-            .as_ref()
-            .unwrap()
-            .seed_image
-            .is_some(),
-        "the admitted successor must pass the actual cached home into sandbox creation"
+        home.seed_image.is_some(),
+        "the admitted successor must consume the actual cached home"
     );
     drop(guard);
     shutdown(&env, run_handle).await;

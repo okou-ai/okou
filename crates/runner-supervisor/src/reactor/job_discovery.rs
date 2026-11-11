@@ -198,6 +198,7 @@ impl AdmissionContext {
             idle_destroy_tracker: &self.spawn_ctx.idle_destroy_tracker,
             reuse_state_notify: &self.spawn_ctx.reuse_state_notify,
             blank_pool_diagnostics: &self.spawn_ctx.blank_pool_diagnostics,
+            pre_spawn_admission: &self.spawn_ctx.exec_config.pre_spawn_admission,
         }
     }
 }
@@ -296,6 +297,7 @@ fn pre_claim_resources<'a>(ctx: &'a DiscoveredJobContext<'_>) -> PreClaimResourc
         idle_destroy_tracker: &ctx.spawn_ctx.idle_destroy_tracker,
         reuse_state_notify: ctx.spawn_ctx.reuse_state_notify.as_ref(),
         blank_pool_diagnostics: &ctx.spawn_ctx.blank_pool_diagnostics,
+        pre_spawn_admission: &ctx.spawn_ctx.exec_config.pre_spawn_admission,
     }
 }
 
@@ -805,6 +807,25 @@ pub(super) async fn recover_unconsumed_finalizing_claim(
     .await;
     // Keep the finalizing predecessor proof owned through provider completion.
     drop(admission);
+    completion.flush_telemetry().await;
+}
+
+/// Settle an accepted Claim before an uncertain preparation producer stops the
+/// reactor. Never start a replacement on an unconfirmed physical result.
+pub(super) async fn complete_failed_preparation(
+    claimed: ClaimedJob,
+    cancellation: RunCancellationRegistration,
+    error: &str,
+    ctx: &SpawnContext,
+) {
+    let completion = complete_claimed_failure(
+        claimed,
+        cancellation,
+        ClaimedFailureDiagnostics::without_timing(),
+        crate::executor::ExecutionFailure::from_error(error),
+        ctx,
+    )
+    .await;
     completion.flush_telemetry().await;
 }
 

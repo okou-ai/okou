@@ -81,6 +81,7 @@ pub struct IdleDestroyTracker {
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
+    uncertain_preparation_leases: Arc<std::sync::Mutex<Vec<BudgetLease>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
 }
@@ -93,6 +94,7 @@ impl IdleDestroyTracker {
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            uncertain_preparation_leases: Arc::new(std::sync::Mutex::new(Vec::new())),
             #[cfg(any(test, feature = "test-support"))]
             pressure_pool_waits: tokio::sync::watch::channel(0).0,
         }
@@ -137,6 +139,16 @@ impl IdleDestroyTracker {
     ) -> IdleCleanupTask<RetainedIdleDestroyResult> {
         let (payload, lease) = job.into_retiring_parts();
         self.spawn_payload_retaining_lease(payload, lease, context)
+    }
+
+    /// Failed foreground preparation stops Reactor. Keep its unconfirmed
+    /// capacity charged until the joined shutdown owner itself is released,
+    /// including while another admission task can still be running.
+    pub(crate) fn retain_uncertain_preparation_lease(&self, lease: BudgetLease) {
+        self.uncertain_preparation_leases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(lease);
     }
 
     /// Pressure reclamation requires the captured original backing's positive exit.

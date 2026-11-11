@@ -310,7 +310,14 @@ async fn assert_home_selection(
         candidate_kind,
         HomeCandidate::GenericAdvertisedExactDuringClaim
     );
-    if during_claim || exact_during_claim {
+    let preferred_home = matches!(
+        candidate_kind,
+        HomeCandidate::GenericAdvertised
+            | HomeCandidate::PredecessorLocation
+            | HomeCandidate::PredecessorAdvertised
+            | HomeCandidate::GenericAdvertisedExactDuringClaim
+    );
+    if during_claim || exact_during_claim || preferred_home {
         env.handle.block_claim(successor);
     }
     let candidate = match candidate_kind {
@@ -383,8 +390,18 @@ async fn assert_home_selection(
         assert_eq!(budget.allocated(), (0, 0, 0));
         return;
     }
-    if during_claim || exact_during_claim {
+    if during_claim || exact_during_claim || preferred_home {
         assert!(env.handle.wait_run_claim_in_flight(successor, WAIT).await);
+        if preferred_home && !blank_available {
+            assert!(
+                overrides.wait_home_drive_mount_call_count(1, WAIT).await,
+                "preferred Runner must boot and verify a generic VM while Claim is blocked"
+            );
+            assert_eq!(overrides.create_configs().len(), 1);
+            assert!(overrides.run_control_bind_calls().is_empty());
+            assert!(overrides.home_drive_replacements().is_empty());
+            assert!(overrides.start_agent_process_calls().is_empty());
+        }
         if during_claim {
             publish_home(&publisher, &paths, key, source).await;
         }
@@ -415,11 +432,16 @@ async fn assert_home_selection(
     );
     let replacements = overrides.home_drive_replacements();
     if restore {
-        let drive = if blank_available {
-            assert!(
-                created.is_empty(),
-                "cached Home must retain the available blank VM"
-            );
+        let drive = if blank_available || preferred_home {
+            if blank_available {
+                assert!(
+                    created.is_empty(),
+                    "cached Home must retain the available blank VM"
+                );
+            } else {
+                assert_eq!(created.len(), 1);
+                assert!(created[0].home_drive.as_ref().unwrap().seed_image.is_none());
+            }
             assert_eq!(replacements.len(), 1);
             &replacements[0]
         } else {

@@ -29,6 +29,8 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     let tracker = IdleDestroyTracker::new(Arc::clone(&notify));
     let active_runs = ActiveRuns::new(Arc::clone(&notify));
     let home = HomeCacheStateSnapshot::new();
+    let admission_gate = runner_executor::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap();
+    let factory: crate::SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
     let diagnostics =
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
@@ -47,6 +49,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
         blank_pool_diagnostics: &diagnostics,
+        pre_spawn_admission: &admission_gate,
     };
     let first_holder = pool.lock().await;
     let (ready, mut admission_ready) = oneshot::channel();
@@ -59,6 +62,8 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
             job_memory: 4096,
             home_disk_mb: 1,
             device_rate_limits: &None,
+            factory: &factory,
+            rootfs_hash: "fixture-rootfs",
         },
         &ctx,
         ready,

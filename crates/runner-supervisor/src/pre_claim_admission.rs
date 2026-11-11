@@ -3,6 +3,7 @@
 //! The successful claim transfers a typed resource to Runner's existing post-claim activation.
 //! Claim rejection and a mismatched returned run ID keep rollback with the admission owner.
 
+mod fresh;
 mod guarded;
 pub use guarded::{GuardedSpeculativeAdmission, GuardedSpeculativeRollback};
 
@@ -64,6 +65,7 @@ pub struct PreClaimResources<'a> {
     pub idle_destroy_tracker: &'a IdleDestroyTracker,
     pub reuse_state_notify: &'a Notify,
     pub blank_pool_diagnostics: &'a BlankPoolDiagnostics,
+    pub pre_spawn_admission: &'a runner_executor::pre_spawn_admission::PreSpawnAdmission,
 }
 
 struct LocalAdmission {
@@ -82,6 +84,7 @@ enum LocalAdmissionResource {
 /// One owned resource transferred with a successful claim to Runner activation.
 pub enum AdmittedResource {
     Fresh(BudgetLease),
+    PreparationFailed(String),
     /// This Runner's ordinary capacity retained through the source publication wait.
     HomeWait {
         lease: BudgetLease,
@@ -150,6 +153,8 @@ pub struct PreClaimRequest<'a> {
     pub job_memory: u32,
     pub home_disk_mb: u32,
     pub device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
+    pub factory: &'a crate::SharedFactory,
+    pub rootfs_hash: &'a str,
 }
 
 /// Only a successful claim transfers local resource ownership to Runner.
@@ -157,6 +162,7 @@ pub enum PreClaimOutcome {
     Claimed(Box<AdmittedClaim>),
     Pending(Box<JobCandidate>),
     Deferred,
+    Failed(String),
 }
 
 struct PreparedCandidate {
@@ -191,6 +197,8 @@ struct ClaimAdmissionRequest<'a> {
     job_memory: u32,
     home_disk_mb: u32,
     device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
+    factory: &'a crate::SharedFactory,
+    rootfs_hash: &'a str,
 }
 
 struct PreferenceCandidateRequest<'a> {
@@ -234,6 +242,8 @@ pub async fn admit_and_claim(
         job_memory,
         home_disk_mb,
         device_rate_limits,
+        factory,
+        rootfs_hash,
     } = request;
     let run_id = candidate.run_id();
     let prepared = match prepare_preference_candidate(
@@ -262,14 +272,17 @@ pub async fn admit_and_claim(
             job_memory,
             home_disk_mb,
             device_rate_limits,
+            factory,
+            rootfs_hash,
         },
         ctx,
         admission_ready,
     )
     .await
     {
-        Some(claimed) => PreClaimOutcome::Claimed(Box::new(claimed)),
-        None => PreClaimOutcome::Deferred,
+        Ok(Some(claimed)) => PreClaimOutcome::Claimed(Box::new(claimed)),
+        Ok(None) => PreClaimOutcome::Deferred,
+        Err(error) => PreClaimOutcome::Failed(error),
     }
 }
 
@@ -277,7 +290,7 @@ async fn claim_with_local_admission(
     request: ClaimAdmissionRequest<'_>,
     ctx: &PreClaimResources<'_>,
     admission_ready: oneshot::Sender<()>,
-) -> Option<AdmittedClaim> {
+) -> Result<Option<AdmittedClaim>, String> {
     let ClaimAdmissionRequest {
         prepared,
         run_id,
@@ -286,6 +299,8 @@ async fn claim_with_local_admission(
         job_memory,
         home_disk_mb,
         device_rate_limits,
+        factory,
+        rootfs_hash,
     } = request;
     let PreparedCandidate {
         required_home_source_run_id,
@@ -316,7 +331,7 @@ async fn claim_with_local_admission(
             .await
             else {
                 record_home_admission_deferral(&candidate, ctx, "capacity_exhausted");
-                return None;
+                return Ok(None);
             };
             blank_pool_selection = selection;
             resource
@@ -330,7 +345,7 @@ async fn claim_with_local_admission(
         Ok(registration) => registration,
         Err(_) => {
             rollback_untracked_resource(resource, ctx).await;
-            return None;
+            return Ok(None);
         }
     };
 
@@ -348,18 +363,18 @@ async fn claim_with_local_admission(
         RunnerMode::Running => {}
         RunnerMode::Starting => {
             admission.rollback(ctx).await;
-            return None;
+            return Ok(None);
         }
         RunnerMode::Draining => {
             admission.rollback(ctx).await;
-            return None;
+            return Ok(None);
         }
         RunnerMode::Stopping => {
             admission.cancellation.request_hard_cancellation().await;
         }
         RunnerMode::Stopped => {
             admission.rollback(ctx).await;
-            return None;
+            return Ok(None);
         }
     }
     // The admission task is not aborted during normal shutdown. A valid
@@ -376,12 +391,81 @@ async fn claim_with_local_admission(
     let claim_started_at = Instant::now();
     let (claimed, admitted_resource, claim_returned_at) = match resource {
         LocalAdmissionResource::Fresh(budget_lease) => {
-            let claimed = ctx.provider.claim(candidate).await;
-            (
-                claimed,
-                AdmittedResource::Fresh(budget_lease),
-                Instant::now(),
-            )
+            let preferred = candidate
+                .runner_preference()
+                .filter(|preference| {
+                    preference.targets(ctx.runner_identity)
+                        && !preference.is_expired()
+                        && home_readiness_wait.is_none()
+                })
+                .cloned();
+            if let Some(preference) = preferred {
+                let cancel = cancellation.token().child_token();
+                let claim = async {
+                    let claimed = AssertUnwindSafe(ctx.provider.claim(candidate))
+                        .catch_unwind()
+                        .await;
+                    let returned_at = Instant::now();
+                    if !matches!(&claimed, Ok(Some(job)) if job.context().run_id == run_id) {
+                        cancel.cancel();
+                    }
+                    (claimed, returned_at)
+                };
+                let preparation = fresh::prepare(
+                    fresh::FreshProfile {
+                        factory,
+                        rootfs_hash,
+                        profile_name,
+                        vcpu: job_vcpu,
+                        memory_mb: job_memory,
+                        home_disk_mb,
+                        device_rate_limits,
+                    },
+                    budget_lease,
+                    preference,
+                    ctx.pre_spawn_admission,
+                    &cancel,
+                    ctx.idle_destroy_tracker,
+                );
+                let ((claimed, returned_at), preparation) = tokio::join!(claim, preparation);
+                let preparation = match preparation {
+                    fresh::Preparation::Ready(reservation) if !matches!(&claimed, Ok(Some(job)) if job.context().run_id == run_id) => {
+                        fresh::retire((*reservation).into_destroy_job(), ctx.idle_destroy_tracker)
+                            .await
+                    }
+                    preparation => preparation,
+                };
+                let resource = match preparation {
+                    fresh::Preparation::Ready(reservation) => {
+                        // This VM never entered shared inventory. Persist the current
+                        // snapshot during ordinary Preparing/activation, after Claim.
+                        let snapshot = ctx.idle_pool.lock().await.status_snapshot();
+                        AdmittedResource::Reusable(ReservedIdleActivation::new(
+                            *reservation,
+                            snapshot,
+                        ))
+                    }
+                    fresh::Preparation::Unprepared(lease) => AdmittedResource::Fresh(lease),
+                    fresh::Preparation::Uncertain(error) => {
+                        AdmittedResource::PreparationFailed(error)
+                    }
+                };
+                match claimed {
+                    Ok(claimed) => (claimed, resource, returned_at),
+                    Err(panic) => {
+                        rollback_admitted_resource(resource, run_id, home_disk_mb, ctx).await;
+                        cancellation.unregister().await;
+                        std::panic::resume_unwind(panic)
+                    }
+                }
+            } else {
+                let claimed = ctx.provider.claim(candidate).await;
+                (
+                    claimed,
+                    AdmittedResource::Fresh(budget_lease),
+                    Instant::now(),
+                )
+            }
         }
         LocalAdmissionResource::Reusable(reservation) => {
             let claimed = ctx.provider.claim(candidate).await;
@@ -451,8 +535,11 @@ async fn claim_with_local_admission(
         // runner, or the provider rejected the job. Release the reservation and
         // cancellation registration so the runner can continue.
         cancellation.unregister().await;
+        if let AdmittedResource::PreparationFailed(error) = admitted_resource {
+            return Err(error);
+        }
         rollback_admitted_resource(admitted_resource, run_id, home_disk_mb, ctx).await;
-        return None;
+        return Ok(None);
     };
     if claimed.context().run_id != run_id {
         warn!(
@@ -461,8 +548,11 @@ async fn claim_with_local_admission(
             "provider returned claimed job with mismatched run_id"
         );
         cancellation.unregister().await;
+        if let AdmittedResource::PreparationFailed(error) = admitted_resource {
+            return Err(error);
+        }
         rollback_admitted_resource(admitted_resource, run_id, home_disk_mb, ctx).await;
-        return None;
+        return Ok(None);
     }
 
     let admitted_resource = match (admitted_resource, home_readiness_wait) {
@@ -479,14 +569,14 @@ async fn claim_with_local_admission(
         },
         (resource, _) => resource,
     };
-    Some(AdmittedClaim {
+    Ok(Some(AdmittedClaim {
         required_home_source_run_id,
         claimed,
         resource: admitted_resource,
         cancellation,
         claim_returned_at,
         blank_pool_selection,
-    })
+    }))
 }
 
 async fn prepare_exact_speculation(
@@ -1120,6 +1210,7 @@ async fn rollback_admitted_resource(
         AdmittedResource::Fresh(lease) | AdmittedResource::HomeWait { lease, .. } => {
             SandboxAdmittedResource::Fresh(lease)
         }
+        AdmittedResource::PreparationFailed(_) => return,
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
         AdmittedResource::ExactSpeculation(speculation) => {
             SandboxAdmittedResource::ExactSpeculation(speculation)

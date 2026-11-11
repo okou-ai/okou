@@ -173,6 +173,12 @@ pub struct FinalizingHandoffCandidate {
 }
 
 impl ParkedIdleCandidate {
+    /// Reserve an exclusively prepared resource without a shared inventory
+    /// round trip. The caller retains activation or explicit destroy ownership.
+    pub fn into_reservation(self) -> ReservedIdleSandbox {
+        ReservedIdleSandbox::parked(self.into_idle_entry(Instant::now()))
+    }
+
     /// Capture this resource's exact backing while exclusively caller-owned,
     /// outside inventory/accounting locks. Failure preserves the candidate and
     /// clears any earlier proof; guarded pool retirement never falls back.

@@ -104,14 +104,9 @@ async fn selected_exact_candidate_rechecks_busy_home_after_unlock_without_event(
     let claims = env.handle.claim_candidates();
     assert_eq!(claims.len(), 1);
     assert_eq!(claims[0].runner_preference().unwrap().deadline(), deadline);
-    let configs = overrides.create_configs();
-    let seed = configs[0]
-        .home_drive
-        .as_ref()
-        .unwrap()
-        .seed_image
-        .as_ref()
-        .unwrap();
+    let replacements = overrides.home_drive_replacements();
+    assert_eq!(replacements.len(), 1);
+    let seed = replacements[0].seed_image.as_ref().unwrap();
     let seed_path = match seed {
         sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => path,
     };
@@ -306,8 +301,9 @@ async fn assert_source_continuity(published: bool, capacity_blocked: bool, lose_
         claimed.runner_preference().unwrap().deadline(),
         original_deadline
     );
-    let configurations = overrides.create_configs();
-    let home = configurations.last().unwrap().home_drive.as_ref().unwrap();
+    let replacements = overrides.home_drive_replacements();
+    assert_eq!(replacements.len(), 1);
+    let home = &replacements[0];
     let seed = match home
         .seed_image
         .as_ref()

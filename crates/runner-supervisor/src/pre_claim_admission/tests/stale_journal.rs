@@ -80,6 +80,8 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
     let tracker = IdleDestroyTracker::new(Arc::clone(&notify));
     let active_runs = ActiveRuns::new(Arc::clone(&notify));
     let home = HomeCacheStateSnapshot::new();
+    let admission_gate = runner_executor::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap();
+    let factory: crate::SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
     let diagnostics =
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
@@ -98,6 +100,7 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
         blank_pool_diagnostics: &diagnostics,
+        pre_spawn_admission: &admission_gate,
     };
     let PreferencePreparation::Ready(prepared) = exact_speculative_preparation(
         JobCandidate::new(run_id, "vm0/default".into()).with_reuse_key(Some("first".into())),
@@ -115,6 +118,8 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
             job_memory: 4096,
             home_disk_mb: 1,
             device_rate_limits: &None,
+            factory: &factory,
+            rootfs_hash: "fixture-rootfs",
         },
         &ctx,
         ready,
@@ -152,7 +157,7 @@ async fn stale_exact_journal_waits_for_the_newer_inventory_to_be_durable() {
         handle.unblock_claim(run_id);
     };
     let (outcome, ()) = tokio::join!(admission, observer);
-    assert!(outcome.is_none());
+    assert!(outcome.unwrap().is_none());
     assert_eq!(overrides.unpark_call_count(), 1);
     assert!(handle.completions.lock().unwrap().is_empty());
     rollback_reserved_idle_for_spawn(second, &pool, &status, &notify, &tracker).await;

@@ -17,8 +17,8 @@ use super::error::ReactorError;
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_discovery::{
     AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
-    DiscoveredJobResult, SandboxAdmittedJob, prepare_admitted_job, prepare_discovered_job,
-    recover_unconsumed_finalizing_claim,
+    DiscoveredJobResult, SandboxAdmittedJob, complete_failed_preparation, prepare_admitted_job,
+    prepare_discovered_job, recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
 use super::pending_candidate::PendingRetry;
@@ -119,6 +119,8 @@ impl ClaimTasks {
                     job_memory: job.profile.memory_mb,
                     home_disk_mb: job.profile.home_disk_mb,
                     device_rate_limits: &context.spawn_ctx.device_rate_limits,
+                    factory: &job.profile.factory,
+                    rootfs_hash: &job.profile.rootfs_hash,
                 },
                 &resources,
                 admission_ready,
@@ -130,6 +132,9 @@ impl ClaimTasks {
                 }
                 PreClaimOutcome::Pending(candidate) => ClaimTaskOutcome::Pending(candidate),
                 PreClaimOutcome::Deferred => ClaimTaskOutcome::Deferred,
+                PreClaimOutcome::Failed(error) => {
+                    ClaimTaskOutcome::Failed(ReactorError::Internal(error))
+                }
             };
             ClaimTaskResult {
                 run_id,
@@ -278,6 +283,10 @@ async fn prepare_claimed(
             }));
         }
         AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
+        AdmittedResource::PreparationFailed(error) => {
+            complete_failed_preparation(claimed, cancellation, &error, &context.spawn_ctx).await;
+            return ClaimTaskOutcome::Failed(ReactorError::Internal(error));
+        }
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
         AdmittedResource::ExactSpeculation(speculation) => {
             SandboxAdmittedResource::ExactSpeculation(speculation)

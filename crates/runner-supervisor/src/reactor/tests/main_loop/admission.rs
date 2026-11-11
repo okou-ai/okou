@@ -3933,16 +3933,20 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
     assert!(!parked_ids.contains(&completion.sandbox_id.unwrap()));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
     assert_eq!(destroy_gate.entered_count(), 1);
-    assert_eq!(
+    assert!(
         fresh_overrides.create_configs()[0]
             .home_drive
             .as_ref()
             .unwrap()
             .seed_image
-            .is_some(),
-        home_preferred,
-        "home-preferred replacement must create from the retained home"
+            .is_none(),
+        "creation is tenant-free before the preferred Claim succeeds"
     );
+    let replacements = fresh_overrides.home_drive_replacements();
+    assert_eq!(replacements.len(), usize::from(home_preferred));
+    if home_preferred {
+        assert!(replacements[0].seed_image.is_some());
+    }
 
     let snapshot = idle_pool.lock().await.status_snapshot();
     let remaining = snapshot
