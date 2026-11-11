@@ -6345,6 +6345,31 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
+  "sshAuthorization": {
+    "allow": "このチャットで許可",
+    "blocked": {
+      "chat_busy": "このチャットで実行中の Run が終了してから承認してください。",
+      "host_changed": "ホスト設定が変更されました。再申請してください。",
+      "permissions_required": "先に関連するコネクタの権限を承認してください。",
+      "run_active": "リクエスト元の Run が終了してから承認してください。",
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+    },
+    "continue": "タスクを続行",
+    "effect": "アクセスを無効にするまで、このリモートユーザーとしてコマンド実行とファイル転送を許可します。",
+    "failed": "操作を完了できませんでした。再試行して権限を確認し、続行してください。",
+    "retry": "再試行",
+    "scope": "このホスト · このチャットのみ",
+    "status": {
+      "approved": "SSH アクセスを許可しました",
+      "denied": "SSH アクセスを拒否しました",
+      "expired": "SSH リクエストの有効期限切れ",
+      "pending": "SSH アクセス",
+      "revoked": "SSH アクセスを取り消しました",
+      "stale": "SSH リクエストが変更されました"
+    },
+    "title": "SSH アクセス",
+    "unavailable": "このリクエストは利用できません。再申請してください。"
+  },
   "tailscale": {
     "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
     "delete": "Tailscale を削除",
