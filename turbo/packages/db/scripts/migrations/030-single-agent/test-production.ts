@@ -69,6 +69,13 @@ const baseContext: ProductionContext = {
   runAttempt: 1,
   actor: "operator",
   writersDrained: false,
+  planRunId: "",
+  planSha256: "",
+  imageSha256: "",
+  prefixesSha256: "",
+};
+const reviewedContext: ProductionContext = {
+  ...baseContext,
   planRunId: "100",
   planSha256: "a".repeat(64),
   imageSha256: "b".repeat(64),
@@ -219,7 +226,7 @@ try {
   );
 
   const apply = await request({
-    ...baseContext,
+    ...reviewedContext,
     mode: "apply",
     writersDrained: true,
   });
@@ -247,7 +254,7 @@ try {
 
   const olderCommit = "d".repeat(40);
   const changedMain = await request(
-    { ...baseContext, mode: "apply", writersDrained: true },
+    { ...reviewedContext, mode: "apply", writersDrained: true },
     8,
     olderCommit,
   );
@@ -269,7 +276,7 @@ try {
     /ProductionPlanOriginRejected/u,
   );
   const recovery = await request(
-    { ...baseContext, mode: "recover", writersDrained: true },
+    { ...reviewedContext, mode: "recover", writersDrained: true },
     8,
     olderCommit,
   );

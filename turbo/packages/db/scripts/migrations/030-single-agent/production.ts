@@ -180,14 +180,6 @@ async function executeProduction(
   meta: ProductionMetadata | undefined,
 ) {
   const target = await resolveProductionTarget(context.mode, credentials.neon);
-  const binding = productionBindingSchema.parse({
-    projectId: PROJECT,
-    branchId: BRANCH,
-    endpointId: target.endpointId,
-    commit: context.commit,
-    planRunId: context.mode === "plan" ? context.runId : context.planRunId,
-    orgId: context.orgId,
-  });
   if (context.mode === "target") {
     await writePrivate(
       join(files.output, "audit.json"),
@@ -206,6 +198,14 @@ async function executeProduction(
     );
     return undefined;
   }
+  const binding = productionBindingSchema.parse({
+    projectId: PROJECT,
+    branchId: BRANCH,
+    endpointId: target.endpointId,
+    commit: context.commit,
+    planRunId: context.mode === "plan" ? context.runId : context.planRunId,
+    orgId: context.orgId,
+  });
   if (!target.connection || !target.role)
     throw new PlanningError("ExplicitProductionConnectionRequired");
   if (meta && !isDeepStrictEqual(meta.binding, binding))
