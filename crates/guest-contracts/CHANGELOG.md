@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.1...guest-contracts-v0.32.2) (2026-11-11)
+
+
+### Refactoring
+
+* **test-support:** own restrictive directory permissions ([#46500](https://github.com/okou-ai/okou/issues/46500)) ([4a5cbda](https://github.com/okou-ai/okou/commit/4a5cbdab942908086d3190f678556b93d55f8eb1))
+
 ## [0.32.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.0...guest-contracts-v0.32.1) (2026-11-09)
 
 

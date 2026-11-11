@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1113.0](https://github.com/okou-ai/okou/compare/app-v0.1112.2...app-v0.1113.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+* **app:** redesign the capability home cards and choice tray ([#46432](https://github.com/okou-ai/okou/issues/46432)) ([590283f](https://github.com/okou-ai/okou/commit/590283f4984a42888949d15b00a3ad84ead3b221))
+
+
+### Bug Fixes
+
+* **platform:** keep connector scope counts stable during refresh ([#46506](https://github.com/okou-ai/okou/issues/46506)) ([1906e7c](https://github.com/okou-ai/okou/commit/1906e7c70193d78f61960c376f4516c3e1cf3e49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+
 ## [0.1112.2](https://github.com/okou-ai/okou/compare/app-v0.1112.1...app-v0.1112.2) (2026-11-11)
 
 

@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.58.0](https://github.com/okou-ai/okou/compare/api-v2.57.3...api-v2.58.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+
+
+### Bug Fixes
+
+* **api:** silently skip deleted chat snapshot candidates ([#46499](https://github.com/okou-ai/okou/issues/46499)) ([1e55f00](https://github.com/okou-ai/okou/commit/1e55f00a05f7a6fe60fb7ed6440d75e3f1fe906e))
+
+
+### Performance Improvements
+
+* **api:** remove the chat search time filter ([#46502](https://github.com/okou-ai/okou/issues/46502)) ([baa9594](https://github.com/okou-ai/okou/commit/baa95943ef45870b92855b3974772657ca2b6711))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+    * @okouai/db bumped to 2.26.1
+    * @okouai/pi-agent-runtime bumped to 1.51.99
+
 ## [2.57.3](https://github.com/okou-ai/okou/compare/api-v2.57.2...api-v2.57.3) (2026-11-11)
 
 
