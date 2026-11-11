@@ -47,38 +47,45 @@ final class ConversationReadResources {
     }
   }
 
-  private lazy var history = Computed<Task<ChatHistory, Error>> { [weak self] get, options in
-    guard let self, !closed, try get(lifetime) else { throw CancellationError() }
-    _ = try get(revision)
-    let signal = options.signal
-    let task = Task { @MainActor [sync, threadID, sleep] in
-      let value = try await ChatReadRecovery.read("chat history", sleep: sleep) {
-        try await sync.eventHistory(threadID: threadID)
+  private lazy var history = makeHistory()
+  private lazy var recovery = makeRecovery()
+
+  private func makeHistory() -> Computed<Task<ChatHistory, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !closed, try get(lifetime) else { throw CancellationError() }
+      _ = try get(revision)
+      let signal = options.signal
+      let task = Task<ChatHistory, Error> { @MainActor [sync, threadID, sleep] in
+        let value = try await ChatReadRecovery.read("chat history", sleep: sleep) {
+          try await sync.eventHistory(threadID: threadID)
+        }
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        return value
       }
-      try Task.checkCancellation()
-      try signal.checkCancellation()
-      return value
+      historyTask = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    historyTask = task
-    signal.onCancel { task.cancel() }
-    return task
   }
 
-  private lazy var recovery = Computed<Task<Bool, Error>> { [weak self] get, options in
-    guard let self, !closed, try get(lifetime) else { throw CancellationError() }
-    _ = try get(revision)
-    let signal = options.signal
-    let task = Task { @MainActor [sync, threadID, sleep] in
-      let value = try await ChatReadRecovery.read("cancellation recovery", sleep: sleep) {
-        try await sync.cancellationRecoveryPending(threadID: threadID)
+  private func makeRecovery() -> Computed<Task<Bool, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !closed, try get(lifetime) else { throw CancellationError() }
+      _ = try get(revision)
+      let signal = options.signal
+      let task = Task<Bool, Error> { @MainActor [sync, threadID, sleep] in
+        let value = try await ChatReadRecovery.read("cancellation recovery", sleep: sleep) {
+          try await sync.cancellationRecoveryPending(threadID: threadID)
+        }
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        return value
       }
-      try Task.checkCancellation()
-      try signal.checkCancellation()
-      return value
+      recoveryTask = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    recoveryTask = task
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   /// Semantic refresh/realtime/foreground entry points request a new cycle. Merely
