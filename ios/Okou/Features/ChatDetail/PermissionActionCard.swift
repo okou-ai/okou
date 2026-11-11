@@ -5,9 +5,16 @@ import SwiftUI
 struct PermissionActionCard: View {
   let store: PermissionActionStore
   let loadsState: Bool
+  private let read: PermissionCardRead<ChatPermissionSnapshot>
+
+  init(store: PermissionActionStore, loadsState: Bool) {
+    self.store = store
+    self.loadsState = loadsState
+    read = store.read
+  }
 
   var body: some View {
-    PermissionCardReadView(read: store.read) { phase in
+    PermissionCardReadView(read: read) { phase in
       PermissionActionCardContent(store: store, phase: phase)
     }
     .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
@@ -126,9 +133,15 @@ private struct PermissionActionCardContent: View {
 
 struct PermissionActionDetails: View {
   let store: PermissionActionStore
+  private let read: PermissionCardRead<ChatPermissionSnapshot>
+
+  init(store: PermissionActionStore) {
+    self.store = store
+    read = store.read
+  }
 
   var body: some View {
-    PermissionCardReadView(read: store.read) { phase in
+    PermissionCardReadView(read: read) { phase in
       PermissionActionDetailsContent(store: store, phase: phase)
     }
   }

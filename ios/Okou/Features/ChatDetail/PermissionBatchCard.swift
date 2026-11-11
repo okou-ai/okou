@@ -5,10 +5,17 @@ import SwiftUI
 struct PermissionBatchCard: View {
   let store: PermissionBatchStore
   let loadsState: Bool
+  private let read: PermissionCardRead<ChatPermissionBatchSnapshot>
+
+  init(store: PermissionBatchStore, loadsState: Bool) {
+    self.store = store
+    self.loadsState = loadsState
+    read = store.read
+  }
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
-    PermissionCardReadView(read: store.read) { phase in
+    PermissionCardReadView(read: read) { phase in
       PermissionBatchCardContent(store: store, phase: phase)
     }
     .task(id: store.isActive) {
@@ -85,15 +92,20 @@ private struct PermissionBatchCardContent: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
-
   }
 }
 
 struct PermissionBatchDetails: View {
   let store: PermissionBatchStore
+  private let read: PermissionCardRead<ChatPermissionBatchSnapshot>
+
+  init(store: PermissionBatchStore) {
+    self.store = store
+    read = store.read
+  }
 
   var body: some View {
-    PermissionCardReadView(read: store.read) { phase in
+    PermissionCardReadView(read: read) { phase in
       PermissionBatchDetailsContent(store: store, phase: phase)
     }
     .task { await store.refresh() }
