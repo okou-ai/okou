@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.12...runner-storage-v0.10.13) (2026-11-11)
+
+
+### Bug Fixes
+
+* **runner-storage:** retain flock through missing-cache cleanup ([#46591](https://github.com/okou-ai/okou/issues/46591)) ([82fe2d2](https://github.com/okou-ai/okou/commit/82fe2d28e3fde16d581f0d70aab878b0b9237eb4))
+
 ## [0.10.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.11...runner-storage-v0.10.12) (2026-11-11)
 
 ## [0.10.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.10...runner-storage-v0.10.11) (2026-11-11)
