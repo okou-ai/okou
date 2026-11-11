@@ -77,12 +77,14 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
             ("restored.md", "candidate restores"),
             ("own/new.md", "candidate addition"),
         ];
+        let deep_head_path = format!("{}/kept.md", vec!["x".repeat(100); 45].join("/"));
         let head_trees = [
             vec![
                 ("shared.md", "first head"),
                 ("inherited.md", "first head"),
                 ("remove.md", "head edited deletion"),
                 ("foreign.md", "first head"),
+                (deep_head_path.as_str(), "deep first head"),
             ],
             vec![
                 ("shared.md", "second head"),
@@ -90,6 +92,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
                 ("remove.md", "newer head edit"),
                 ("foreign.md", "second head"),
                 ("fresh.md", "new while retrying"),
+                (deep_head_path.as_str(), "deep second head"),
             ],
         ];
         let base_version = version(&base_files);
@@ -101,6 +104,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
             ("own/new.md", "candidate addition"),
             ("foreign.md", "second head"),
             ("fresh.md", "new while retrying"),
+            (deep_head_path.as_str(), "deep second head"),
         ];
         let final_version = version(&entries(&expected));
         let base_url = server.base_url();
@@ -184,7 +188,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
                 let body: serde_json::Value = serde_json::from_slice(request.body_ref()).unwrap();
                 if body["versionId"] == successful_version {
                     HttpMockResponse::builder().status(200).body(json!({"success": true,
-                        "versionId": successful_version, "storageName": "memory", "size": successful_size, "fileCount": 6}).to_string()).build()
+                        "versionId": successful_version, "storageName": "memory", "size": successful_size, "fileCount": 7}).to_string()).build()
                 } else {
                     if body["parentVersionId"] != captured_base {
                         fs::write(&live_file, "late local modification").unwrap();

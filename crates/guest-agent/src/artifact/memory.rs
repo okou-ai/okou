@@ -329,6 +329,8 @@ fn copy_archive_files(archive_path: &Path, files: &Files, root: &Path) -> Result
     if files.is_empty() {
         return Ok(());
     }
+    #[cfg(target_os = "linux")]
+    let root = crate::nofollow_fs::Dir::open_absolute(root)?;
     let input = MultiGzDecoder::new(File::open(archive_path)?).take(MAX_ARCHIVE_BYTES + 1);
     let mut archive = tar::Archive::new(input);
     let mut found = BTreeSet::new();
@@ -358,18 +360,14 @@ fn copy_archive_files(archive_path: &Path, files: &Files, root: &Path) -> Result
         {
             return Err(invalid("archive file does not match its hash"));
         }
-        let output = root.join(path);
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&output, bytes)?;
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(
-                output,
-                fs::Permissions::from_mode(entry.header().mode()? & 0o777),
-            )?;
+            write_archive_file(&root, &path, &bytes, entry.header().mode()? & 0o777)?;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = root;
+            return Err(invalid("archive reconstruction requires Linux"));
         }
     }
     let mut input = archive.into_inner();
@@ -378,6 +376,36 @@ fn copy_archive_files(archive_path: &Path, files: &Files, root: &Path) -> Result
         return Err(invalid("archive is incomplete or exceeds the size limit"));
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn write_archive_file(
+    root: &crate::nofollow_fs::Dir,
+    path: &str,
+    bytes: &[u8],
+    mode: u32,
+) -> Result<(), AgentError> {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Component;
+
+    // Like the snapshot producer, resolve one component at a time. A valid
+    // manifest path can exceed the kernel's full-path syscall limit.
+    let mut parent = root.try_clone()?;
+    let mut components = Path::new(path).components().peekable();
+    while let Some(component) = components.next() {
+        let Component::Normal(name) = component else {
+            return Err(invalid("archive path contains a non-normal component"));
+        };
+        if components.peek().is_none() {
+            let mut file = parent.create_child_file(name)?;
+            file.write_all(bytes)?;
+            file.set_permissions(fs::Permissions::from_mode(mode))?;
+            return Ok(());
+        }
+        parent = parent.create_child_dir(name)?;
+    }
+    Err(invalid("archive path is empty"))
 }
 
 #[cfg(all(test, unix))]
