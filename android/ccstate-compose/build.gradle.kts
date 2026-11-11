@@ -9,6 +9,7 @@ android {
     compileSdk = 35
     defaultConfig { minSdk = 24 }
     buildFeatures { compose = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -24,4 +25,9 @@ dependencies {
     api(libs.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.compose.ui.test)
+    testImplementation(libs.compose.foundation)
+    testImplementation(libs.activity.compose)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

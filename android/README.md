@@ -106,6 +106,10 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 [Kotlin CCState](../docs/android/android-ccstate.md) records the pinned TS
 contract and intentional Kotlin/JVM differences. Preserve the upstream MIT
 notice in [ccstate/THIRD_PARTY_NOTICES.md](ccstate/THIRD_PARTY_NOTICES.md).
+The [CCState test map](ccstate/TESTING.md) links upstream scenarios to the
+core/adapter suites and records native-only coverage and intentional exclusions.
+Compose adapter integration tests belong to `ccstate-compose`; the app's
+own test covers the consuming draft screen.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`.

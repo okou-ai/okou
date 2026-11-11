@@ -29,6 +29,8 @@ Close native subscriptions and stores and await/cancel owned producer jobs.
 
 Core tests run without an Android SDK using the alternative settings entry.
 Adapter JVM tests exercise the same observation functions consumed by Compose.
+Robolectric Compose adapter tests live in `ccstate-compose` and exercise its
+provider, target/action replacement, equality and disposal without app code.
 App Robolectric tests use Android API 35 and the real theme/resources. Keep
 formatting/lint separate from behavioral evidence. Changing a valid assertion
 or suppressing a diagnostic is not a remedy for a production failure.
