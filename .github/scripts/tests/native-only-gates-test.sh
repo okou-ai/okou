@@ -69,7 +69,9 @@ def gate(jobs, name, values, expected):
     env = dict(os.environ)
     env.update({key: render(value) for key, value in step.get('env', {}).items()})
     result = subprocess.run(['bash', '-c', render(step['run'])], env=env, text=True, capture_output=True)
-    assert (result.returncode == 0) == expected, result.stdout + result.stderr
+    assert (result.returncode == 0) == expected, (
+        f'{name}: expected success={expected}, got status={result.returncode}, context={values}\n'
+        + result.stdout + result.stderr)
 
 native = context()
 for event in ['pull_request', 'merge_group', 'push']:
@@ -203,6 +205,29 @@ for event in ['pull_request', 'merge_group', 'push']:
             values['needs.action-pins.result'] = result
             assert condition(security['action-pins'], values)
             gate(security, 'ci-gate-security', values, False)
+
+# Android must publish a result even when detection fails or native work is skipped.
+android = workflow('android')
+android_gate = android['ci-gate-android']
+assert {'detect', 'build-test'} <= set(android_gate['needs'])
+for needed in ['true', 'false']:
+    values = {
+        'needs.detect.result': 'success',
+        'needs.detect.outputs.needed': needed,
+        'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
+    }
+    assert condition(android_gate, values, cancelled=True)
+    gate(android, 'ci-gate-android', values, True)
+    for failure in ['failure', 'cancelled', 'skipped']:
+        blocked = values | {'needs.detect.result': failure}
+        assert condition(android_gate, blocked)
+        gate(android, 'ci-gate-android', blocked, False)
+    for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
+        blocked = values | {'needs.build-test.result': result}
+        assert condition(android_gate, blocked)
+        gate(android, 'ci-gate-android', blocked, False)
+    for invalid in ['', 'unknown']:
+        gate(android, 'ci-gate-android', values | {'needs.detect.outputs.needed': invalid}, False)
 
 print('native-only workflow selection and gates: ok')
 PY

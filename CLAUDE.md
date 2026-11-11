@@ -38,19 +38,20 @@ Use [the documentation index](docs/docs.md) to select relevant guidance.
 For Platform requests, async ownership, module state, or runtime loading, read
 [Platform ccstate](docs/app/platform-ccstate.md).
 
-| Changed surface                               | Read                                                                                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tests or test failures                        | [Testing](docs/testing.md), then the matching application guide                                                                                               |
-| GitHub Actions or CI scripts                  | [GitHub scripts](docs/github-scripts.md)                                                                                                                      |
-| React/TypeScript signals or async ownership   | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/react.md#effects-and-ownership), [cache](docs/react.md#cache-and-resource-lifetimes) as applicable |
-| Native iOS development or state ownership     | [iOS development](docs/ios/ios-development.md), [iOS ccstate](docs/ios/ios-ccstate.md) for graphs/async work, and [iOS instructions](ios/AGENTS.md)           |
-| Browser App/shared UI styling or interactions | [Styles](docs/app/styles.md), [UI interaction contracts](#ui-interaction-contracts)                                                                           |
-| Database schema or queries                    | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)                                             |
-| New user-facing features or switch changes    | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                                                    |
-| CLI commands                                  | [CLI design](.claude/skills/cli-design/SKILL.md)                                                                                                              |
-| Fallbacks or compatibility removal            | [Fallbacks](docs/fallback.md)                                                                                                                                 |
-| Persistent or optimistic events               | [Event sourcing](docs/chat.md#event-sourcing-and-optimistic-events)                                                                                           |
-| PR review                                     | [Review instructions](REVIEW.md)                                                                                                                              |
+| Changed surface                               | Read                                                                                                                                                                        |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tests or test failures                        | [Testing](docs/testing.md), then the matching application guide                                                                                                             |
+| GitHub Actions or CI scripts                  | [GitHub scripts](docs/github-scripts.md)                                                                                                                                    |
+| React/TypeScript signals or async ownership   | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/react.md#effects-and-ownership), [cache](docs/react.md#cache-and-resource-lifetimes) as applicable               |
+| Native iOS development or state ownership     | [iOS development](docs/ios/ios-development.md), [iOS ccstate](docs/ios/ios-ccstate.md) for graphs/async work, and [iOS instructions](ios/AGENTS.md)                         |
+| Native Android development or state ownership | [Android development](docs/android/android-development.md), [CCState principles on Android](docs/android/android-ccstate.md), and [Android instructions](android/AGENTS.md) |
+| Browser App/shared UI styling or interactions | [Styles](docs/app/styles.md), [UI interaction contracts](#ui-interaction-contracts)                                                                                         |
+| Database schema or queries                    | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)                                                           |
+| New user-facing features or switch changes    | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                                                                  |
+| CLI commands                                  | [CLI design](.claude/skills/cli-design/SKILL.md)                                                                                                                            |
+| Fallbacks or compatibility removal            | [Fallbacks](docs/fallback.md)                                                                                                                                               |
+| Persistent or optimistic events               | [Event sourcing](docs/chat.md#event-sourcing-and-optimistic-events)                                                                                                         |
+| PR review                                     | [Review instructions](REVIEW.md)                                                                                                                                            |
 
 Business UI uses Tailwind utilities and shared semantic tokens. First-party
 selectors, CSS modules, runtime stylesheets, and CSS-in-JS are prohibited in

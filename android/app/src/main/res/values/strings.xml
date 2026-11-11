@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Okou</string>
+    <string name="foundation_title">Okou for Android</string>
+    <string name="foundation_description">Native Android foundation. Account sign-in and remote chat are not connected yet.</string>
+    <string name="draft_label">Local draft</string>
+    <string name="local_preview">Preview draft</string>
+    <string name="draft_preview">Draft preview: %1$s</string>
+</resources>
