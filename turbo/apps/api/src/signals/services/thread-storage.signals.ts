@@ -130,8 +130,6 @@ function createStorageInputSignal(
       officialWorkflow,
       framework,
       piSandbox,
-      body: {},
-      resolved,
     });
     get(db$);
     return {

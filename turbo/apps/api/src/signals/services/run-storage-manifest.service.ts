@@ -1129,11 +1129,6 @@ function skillsRootForRun(
     : PI_SKILLS_ROOT;
 }
 
-type RunStorageExecution = Pick<
-  ResolvedRunExecution,
-  "orgId" | "additionalVolumes"
->;
-
 export interface AgentRunCreateAdditionalVolume {
   readonly name: string;
   readonly version?: string;
@@ -1155,7 +1150,6 @@ export interface ResolvedAgentExecution {
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
-  readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
   readonly nativeContinuation?: PreparedExecutionContext["nativeContinuation"];
 }
 
@@ -1210,31 +1204,9 @@ function artifactsForRun(args: {
 function preparedRunAdditionalVolumes(args: {
   readonly skillVolumes: readonly SkillVolume[];
   readonly skillsRoot: string;
-  readonly body: {
-    readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  };
-  readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
 }): PreparedAdditionalVolumes {
-  const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const rendered = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
-  const hasTemplateVolumes = args.skillVolumes.some((volume) => {
-    return volume.source === "request_additional_volume";
-  });
-  const additionalVolumes =
-    bodyAdditionalVolumes ??
-    (hasTemplateVolumes ? [] : (args.resolved.additionalVolumes ?? []));
+  const candidates = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
   // Select the winning mount before separating Storage and bundle delivery.
-  const candidates = [
-    ...rendered,
-    ...additionalVolumes.map((volume) => {
-      return {
-        ...volume,
-        source: bodyAdditionalVolumes
-          ? ("request_additional_volume" as const)
-          : ("unknown" as const),
-      };
-    }),
-  ];
   const winners = normalizeMountOverlay(candidates);
   const templateGuidanceBundles = winners.flatMap((volume, index) => {
     return "templateGuidanceBundle" in volume
@@ -1283,10 +1255,6 @@ export function prepareRunOutputMetadata(args: {
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-  readonly body: {
-    readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  };
-  readonly resolved: RunStorageExecution;
 }): {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly additionalVolumes:
@@ -1300,8 +1268,6 @@ export function prepareRunOutputMetadata(args: {
   const additionalVolumes = preparedRunAdditionalVolumes({
     skillVolumes: args.skillVolumes,
     skillsRoot,
-    body: args.body,
-    resolved: args.resolved,
   });
   const artifacts = artifactsForRun({
     framework: args.framework,

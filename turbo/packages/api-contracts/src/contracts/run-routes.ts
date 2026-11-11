@@ -35,13 +35,12 @@ export {
  * Product-owned disallowedTools restrictions are applied at Claim; callers
  * cannot override them through this request.
  * Fields not used by unattended workflow runs are omitted:
- * triggerSource, vars, secrets, volumeVersions, permissionPolicies.
+ * triggerSource, vars, secrets, permissionPolicies.
  */
 export const runCreateBodySchema = unifiedRunRequestSchema
   .omit({
     triggerSource: true,
     disallowedTools: true,
-    volumeVersions: true,
     vars: true,
     secrets: true,
     appendSystemPrompt: true,
