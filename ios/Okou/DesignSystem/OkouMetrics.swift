@@ -145,9 +145,6 @@ enum OkouMotion {
   /// A list section folding open or shut (Pinned, a project): a soft spring with no bounce, so
   /// the rows and the chevron settle together.
   static let disclosure = Animation.spring(response: 0.35, dampingFraction: 1)
-  /// The navigation bar changing height (the search field rising into it), as UIKit moves it;
-  /// a page under the bar follows in this time (`OkouUnderNavigationBar`).
-  static let barMove: TimeInterval = 0.35
 
   /// Web `chat-greeting-token`: each word fades in from an 8 pt blur and a 14 pt rise.
   static let greetingWord = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.72)

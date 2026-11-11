@@ -392,12 +392,12 @@
             }
           }
           section("Search bar") {
-            // The sidebar's button; the search page's system field takes the same glyphs.
+            // The same capsule wraps the search page's native input.
             OkouSearchBar(prompt: "Search chats")
           }
           section("Search sheet") {
-            // `OkouSearchPage`: the system field (no clear button, the app's ✕), filters and
-            // results that move with the field, and an empty state centred above the keyboard.
+            // A fixed native field, one-action close, pinned filters, and an empty state
+            // centred above the keyboard.
             Button("Open search sheet") { showsSearchPage = true }
               .buttonStyle(.bordered)
           }
@@ -558,7 +558,7 @@
       .sheet(isPresented: $showsSearchPage) {
         NavigationStack {
           OkouSearchPage(
-            "Search", text: $catalogQuery, prompt: "Search",
+            text: $catalogQuery, prompt: "Search",
             close: {
               showsSearchPage = false
               catalogQuery = ""
