@@ -73,7 +73,7 @@ pub(crate) async fn create_memory_snapshot(
 async fn merge_context(
     http: &HttpClient,
     request: &CreateSnapshotRequest<'_>,
-) -> Result<Option<ResponseMemoryMerge>, AgentError> {
+) -> Result<ResponseMemoryMerge, AgentError> {
     let prepared = prepare_snapshot(
         http,
         PrepareSnapshotRequest {
@@ -86,7 +86,9 @@ async fn merge_context(
     )
     .await
     .map_err(|error| error.into_parts().0)?;
-    Ok(prepared.memory_merge)
+    prepared
+        .memory_merge
+        .ok_or_else(|| invalid("merge inputs are missing from the prepare response"))
 }
 
 async fn recover_memory(
@@ -94,13 +96,7 @@ async fn recover_memory(
     request: &CreateSnapshotRequest<'_>,
     mut original: SnapshotResult,
 ) -> Result<SnapshotResult, AgentError> {
-    let Some(mut context) = merge_context(http, request).await? else {
-        // A draining/rolled-back old API has no merge capability. Preserve its
-        // existing retained-conflict outcome without claiming publication.
-        // Remove when APIs without merge inputs neither serve nor remain valid
-        // rollback targets; #46528 tracks that release/drain/rollback gate.
-        return Ok(original);
-    };
+    let mut context = merge_context(http, request).await?;
     if context.base.version_id != request.parent_version_id {
         return Err(invalid(
             "captured base differs from the Run's mounted version",
@@ -219,9 +215,7 @@ async fn recover_memory(
         if attempt == MAX_MERGE_ATTEMPTS {
             break;
         }
-        context = merge_context(http, request)
-            .await?
-            .ok_or_else(|| invalid("merge capability disappeared during publication"))?;
+        context = merge_context(http, request).await?;
         if context.base.version_id != request.parent_version_id {
             return Err(invalid("captured base changed during publication"));
         }
