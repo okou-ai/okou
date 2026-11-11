@@ -414,6 +414,150 @@ class StoreTest {
     }
 
     @Test
+    fun cancellationFailuresDoNotPoisonReplacementComputations() {
+        Store().use { store ->
+            val revision = state(0)
+            val failure = IllegalStateException("cleanup failed")
+            var otherCleanupRan = false
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) {
+                    evaluation.signal.onCancel { throw failure }
+                    evaluation.signal.onCancel { otherCleanupRan = true }
+                }
+                value * 2
+            }
+            val seen = mutableListOf<Int>()
+            store
+                .watch(target) { seen.add(store.get(target)) }
+                .use {
+                    val aggregate =
+                        assertThrows(ListenerException::class.java) { store.set(revision, 1) }
+                    assertEquals(listOf(failure), aggregate.failures)
+                    assertTrue(otherCleanupRan)
+                    assertEquals(listOf(2), seen)
+                    assertEquals(2, store.get(target))
+                    store.set(revision, 2)
+                    assertEquals(listOf(2, 4), seen)
+                }
+        }
+    }
+
+    @Test
+    fun escapedWritersReportCancellationFailuresAfterNotifying() {
+        Store().use { store ->
+            val revision = state(0)
+            val failure = IllegalStateException("cleanup failed")
+            val writer = store.set(command<Unit, CommandContext> { context, _ -> context }, Unit)
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) evaluation.signal.onCancel { throw failure }
+                value
+            }
+            val seen = mutableListOf<Int>()
+            store
+                .watch(target) { seen.add(store.get(target)) }
+                .use {
+                    val aggregate =
+                        assertThrows(ListenerException::class.java) { writer.set(revision, 1) }
+                    assertEquals(listOf(failure), aggregate.failures)
+                    assertEquals(listOf(1), seen)
+                    writer.set(revision, 2)
+                    assertEquals(listOf(1, 2), seen)
+                }
+        }
+    }
+
+    @Test
+    fun lateGettersReportTheirOwnCancellationFailures() {
+        Store().use { store ->
+            val revision = state(0)
+            val failure = IllegalStateException("cleanup failed")
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) evaluation.signal.onCancel { throw failure }
+                value
+            }
+            val accessor = computed { get, _ -> get }
+            val getter = store.get(accessor)
+            assertEquals(0, store.get(target))
+            store.set(revision, 1)
+            val aggregate = assertThrows(ListenerException::class.java) { getter.get(target) }
+            assertEquals(listOf(failure), aggregate.failures)
+            assertEquals(1, store.get(target))
+            store.set(revision, 2)
+            assertEquals(2, getter.get(target))
+        }
+    }
+
+    @Test
+    fun aFailedLazyInvalidationRetainsItsReplacementAndDependencies() {
+        Store().use { store ->
+            val revision = state(0)
+            val failure = IllegalStateException("cleanup failed")
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) evaluation.signal.onCancel { throw failure }
+                value
+            }
+            assertEquals(0, store.get(target))
+            store.set(revision, 1)
+            val aggregate = assertThrows(ListenerException::class.java) { store.get(target) }
+            assertEquals(listOf(failure), aggregate.failures)
+            assertEquals(1, store.get(target))
+            store.set(revision, 2)
+            assertEquals(2, store.get(target))
+        }
+    }
+
+    @Test
+    fun failedWatchSetupReleasesItsNewListener() {
+        Store().use { store ->
+            val revision = state(0)
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) evaluation.signal.onCancel { error("cleanup failed") }
+                value
+            }
+            assertEquals(0, store.get(target))
+            store.set(revision, 1)
+            val seen = mutableListOf<Int>()
+            assertThrows(ListenerException::class.java) {
+                store.watch(target) { seen.add(store.get(target)) }
+            }
+            store.set(revision, 2)
+            assertEquals(2, store.get(target))
+            assertTrue(seen.isEmpty())
+        }
+    }
+
+    @Test
+    fun cleanupAndReplacementReadFailuresBothRemainVisible() {
+        Store().use { store ->
+            val revision = state(0)
+            val cleanupFailure = IllegalStateException("cleanup failed")
+            val readFailure = IllegalArgumentException("read failed")
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) evaluation.signal.onCancel { throw cleanupFailure }
+                if (value == 1) throw readFailure
+                value
+            }
+            assertEquals(0, store.get(target))
+            store.set(revision, 1)
+            val aggregate = assertThrows(ListenerException::class.java) { store.get(target) }
+            assertTrue(aggregate.failures.any { it === cleanupFailure })
+            assertTrue(aggregate.failures.any { it === readFailure })
+            assertSame(
+                readFailure,
+                assertThrows(IllegalArgumentException::class.java) { store.get(target) },
+            )
+            store.set(revision, 2)
+            assertEquals(2, store.get(target))
+        }
+    }
+
+    @Test
     fun lateSignalAccessCannotCancelTheCurrentEvaluation() {
         Store().use { store ->
             val revision = state(0)

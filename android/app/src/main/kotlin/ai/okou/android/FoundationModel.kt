@@ -17,8 +17,8 @@ class FoundationModel : ViewModel() {
     val replaceDraft = command<String, Unit> { context, value -> context.set(text, value) }
     val previewDraft =
         command<Unit, Unit> { context, _ ->
-            val value = context.get(text).trim()
-            if (value.isNotEmpty()) context.set(preview, value)
+            val value = context.get(text)
+            if (value.isNotBlank()) context.set(preview, value)
         }
 
     override fun onCleared() {

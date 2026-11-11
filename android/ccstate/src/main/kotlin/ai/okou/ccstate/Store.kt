@@ -38,15 +38,37 @@ class Store : Getter, AutoCloseable {
     private var writeVersion = 0L
     private var mutation: Mutation? = null
     private var closed = false
+    private var entryDepth = 0
+    private val cancellationFailures = mutableListOf<Throwable>()
 
     private fun checkAccess() {
         check(Thread.currentThread() === thread) { "CCState Store accessed from another thread" }
         check(!closed) { "CCState Store is closed" }
     }
 
-    override fun <T> get(signal: Signal<T>): T {
+    override fun <T> get(signal: Signal<T>): T = publicEntry { value(read(signal)) }
+
+    // Cancellation handlers belong to the retired evaluation. Report their errors only
+    // after the current operation/notifications finish; never cache them as a read result.
+    // This depth owns error reporting, not write batching or public-set checkpoints.
+    private inline fun <T> publicEntry(operation: () -> T): T {
         checkAccess()
-        return value(read(signal))
+        entryDepth += 1
+        var failure: Throwable? = null
+        try {
+            return operation()
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            entryDepth -= 1
+            if (entryDepth == 0 && cancellationFailures.isNotEmpty()) {
+                val failures = cancellationFailures.toMutableList()
+                cancellationFailures.clear()
+                failure?.let(failures::add)
+                throw ListenerException(failures)
+            }
+        }
     }
 
     // Heterogeneous cache erasure is confined here. Nodes are written only by the typed
@@ -106,8 +128,7 @@ class Store : Getter, AutoCloseable {
         val weakNode = WeakReference(node)
         val getter =
             object : Getter {
-                override fun <T> get(signal: Signal<T>): T {
-                    checkAccess()
+                override fun <T> get(signal: Signal<T>): T = publicEntry {
                     val dependency = read(signal)
                     val owner = weakNode.get()
                     val definition = weakSignal.get()
@@ -115,13 +136,13 @@ class Store : Getter, AutoCloseable {
                         dependencies[signal] = dependency.epoch
                         if (owner.mounted != null) mount(signal).dependents.add(definition)
                     }
-                    return value(dependency)
+                    value(dependency)
                 }
             }
         var result: Any? = null
         var failure: Throwable? = null
+        previousEvaluation?.let { cancellationFailures.addAll(it.invalidate()) }
         try {
-            previousEvaluation?.invalidate()
             result = signal.read(getter, evaluation)
         } catch (error: Throwable) {
             failure = error
@@ -157,11 +178,10 @@ class Store : Getter, AutoCloseable {
 
     fun <I, O> set(command: Command<I, O>, input: I): O = publicWrite { invoke(command, input) }
 
-    private fun <T> publicWrite(write: () -> T): T {
-        checkAccess()
+    private fun <T> publicWrite(write: () -> T): T = publicEntry {
         val size = changed.size
         try {
-            return write()
+            write()
         } finally {
             if (changed.size != size) flush()
         }
@@ -199,10 +219,9 @@ class Store : Getter, AutoCloseable {
                     invoke(command, input)
                 }
 
-                private fun <T> write(operation: () -> T): T {
-                    checkAccess()
+                private fun <T> write(operation: () -> T): T = publicEntry {
                     try {
-                        return operation()
+                        operation()
                     } finally {
                         if (!synchronous) flush()
                     }
@@ -284,19 +303,30 @@ class Store : Getter, AutoCloseable {
 
     /** Establishes dependencies, without an initial listener notification. */
     fun watch(signal: Signal<*>, listener: () -> Unit): Subscription {
-        checkAccess()
-        val mounted = mount(signal)
-        mounted.listeners.add(listener)
-        flush()
-        return Subscription {
-            check(Thread.currentThread() === thread) {
-                "CCState subscription closed from another thread"
-            }
-            if (!closed) {
-                mounted.listeners.remove(listener)
-                unmount(signal)
+        var created: Subscription? = null
+        try {
+            return publicEntry {
+                val mounted = mount(signal)
+                mounted.listeners.add(listener)
+                val subscription = Subscription {
+                    if (!closed)
+                        publicEntry {
+                            mounted.listeners.remove(listener)
+                            unmount(signal)
+                            flush()
+                        }
+                }
+                created = subscription
                 flush()
+                subscription
             }
+        } catch (failure: Throwable) {
+            try {
+                created?.close()
+            } catch (cleanupFailure: Throwable) {
+                failure.addSuppressed(cleanupFailure)
+            }
+            throw failure
         }
     }
 
@@ -347,13 +377,10 @@ class Store : Getter, AutoCloseable {
         changed.clear()
         evaluating.clear()
         mutation = null
-        val failures = mutableListOf<Throwable>()
+        val failures = cancellationFailures.toMutableList()
+        cancellationFailures.clear()
         for (evaluation in evaluations) {
-            try {
-                evaluation.invalidate()
-            } catch (failure: Throwable) {
-                failures.add(failure)
-            }
+            failures.addAll(evaluation.invalidate())
         }
         if (failures.isNotEmpty()) throw ListenerException(failures)
     }

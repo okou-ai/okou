@@ -48,10 +48,21 @@ fun OkouTheme(content: @Composable () -> Unit) {
         colorScheme = colors,
         typography =
             Typography(
+                displayLarge = defaults.displayLarge.copy(fontFamily = font),
+                displayMedium = defaults.displayMedium.copy(fontFamily = font),
+                displaySmall = defaults.displaySmall.copy(fontFamily = font),
                 headlineLarge = defaults.headlineLarge.copy(fontFamily = font),
+                headlineMedium = defaults.headlineMedium.copy(fontFamily = font),
+                headlineSmall = defaults.headlineSmall.copy(fontFamily = font),
+                titleLarge = defaults.titleLarge.copy(fontFamily = font),
+                titleMedium = defaults.titleMedium.copy(fontFamily = font),
+                titleSmall = defaults.titleSmall.copy(fontFamily = font),
                 bodyLarge = defaults.bodyLarge.copy(fontFamily = font),
                 bodyMedium = defaults.bodyMedium.copy(fontFamily = font),
+                bodySmall = defaults.bodySmall.copy(fontFamily = font),
                 labelLarge = defaults.labelLarge.copy(fontFamily = font),
+                labelMedium = defaults.labelMedium.copy(fontFamily = font),
+                labelSmall = defaults.labelSmall.copy(fontFamily = font),
             ),
         content = content,
     )

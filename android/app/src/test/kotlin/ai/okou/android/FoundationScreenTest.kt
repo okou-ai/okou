@@ -24,9 +24,9 @@ class FoundationScreenTest {
         try {
             compose.setContent { OkouTheme { FoundationScreen(model) } }
             compose.onNodeWithText("Preview draft").assertIsNotEnabled()
-            compose.onNodeWithText("Local draft").performTextInput("Hello Okou")
+            compose.onNodeWithText("Local draft").performTextInput("  Hello Okou\n")
             compose.onNodeWithText("Preview draft").assertIsEnabled().performClick()
-            compose.onNodeWithText("Draft preview: Hello Okou").assertExists()
+            compose.onNodeWithText("Draft preview:   Hello Okou\n").assertExists()
             compose.onNodeWithText("Local draft").performTextReplacement("   ")
             compose.onNodeWithText("Preview draft").assertIsNotEnabled()
         } finally {

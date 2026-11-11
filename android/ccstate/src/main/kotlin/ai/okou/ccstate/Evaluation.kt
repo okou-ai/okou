@@ -15,9 +15,9 @@ class Evaluation internal constructor() {
                     if (!current) it.abort()
                 }
 
-    internal fun invalidate() {
+    internal fun invalidate(): List<Throwable> {
         current = false
-        cancellation?.abort()
+        return cancellation?.abort() ?: emptyList()
     }
 }
 
@@ -40,8 +40,8 @@ class EvaluationSignal internal constructor() {
         return Subscription { callbacks.remove(callback) }
     }
 
-    internal fun abort() {
-        if (aborted) return
+    internal fun abort(): List<Throwable> {
+        if (aborted) return emptyList()
         aborted = true
         val pending = callbacks.toList()
         callbacks.clear()
@@ -53,6 +53,6 @@ class EvaluationSignal internal constructor() {
                 failures.add(failure)
             }
         }
-        if (failures.isNotEmpty()) throw ListenerException(failures)
+        return failures
     }
 }

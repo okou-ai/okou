@@ -43,7 +43,7 @@ it is a native owner API beyond TS's public Store surface.
 | Synchronous writes             | Internal command writes batch notifications; intermediate reads remain fresh; nested commands share the invocation boundary         |
 | Public checkpoints             | Nested public `Store.set` follows the pinned changed-source checkpoint behavior; it is not a global transaction-depth counter       |
 | Returned/escaped context       | The command's synchronous boundary ends when its callback returns; later writes flush individually                                  |
-| Errors                         | Original Throwable identity is cached/rethrown until relevant inputs change; writes before a throwing command remain applied        |
+| Read errors                    | Original Throwable identity is cached/rethrown until relevant inputs change; writes before a throwing command remain applied        |
 | Listener failures              | Other callbacks still execute; `ListenerException.failures` and suppressed causes expose aggregate failures                         |
 | Core equality                  | JS-style scalar equality and object/error identity; floating NaN changes, signed zero compares equal                                |
 | Evaluation signal              | Stable/lazy per evaluation; invalidated on actual reevaluation, not merely on an unobserved dependency write                        |
@@ -64,6 +64,15 @@ share the cached handle while dependencies remain unchanged. Native coroutine
 scopes own producer work. An explicit `evaluation.signal.onCancel { ... }` can
 opt that work into reevaluation cancellation; core does not cancel arbitrary
 returned tasks. Release callback registrations with the work that owns them.
+
+Cancellation callbacks belong to the retired evaluation. A failing callback
+must not become the replacement computed's cached error or detach its new
+dependencies. Unlike browser AbortSignal event dispatch, native cleanup errors
+are reported as `ListenerException` when the outer public Store/accessor
+operation finishes, after graph updates and notifications. Actual read failures
+retain their own cached identity. This error-reporting boundary does not defer
+public write checkpoints or extend command batching. Failed watch setup
+releases the listener before reporting its error.
 
 Kotlin `await()` of a completed Deferred may not suspend. JavaScript Promise
 await always crosses a microtask boundary. This port supplies no hidden JS
