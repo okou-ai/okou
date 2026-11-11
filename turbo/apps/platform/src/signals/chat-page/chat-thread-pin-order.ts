@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/client/chat-threads";
 import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { apiClient$ } from "../api-client.ts";
-import { chatThreads$ } from "../agent-chat.ts";
+import { currentChatThreadList$ } from "../agent-chat.ts";
 import { accept } from "../../lib/accept.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
@@ -24,6 +24,8 @@ interface PinMove {
   readonly threadId: string;
   readonly targetId: string;
   readonly side: "before" | "after";
+  /** The Project whose chats list the pin, or null outside Projects. */
+  readonly projectId: string | null;
 }
 
 const movePinnedThread$ = command(
@@ -39,10 +41,15 @@ const movePinnedThread$ = command(
     if (!thread) {
       return;
     }
+    // A pin ranks against the pins listed with it: the chats of its Project,
+    // which can belong to several Agents, or else the chats of its Agent.
+    const ranked = threads.filter((item) => {
+      return move.projectId === null
+        ? item.agentId === thread.agentId
+        : item.projectId === move.projectId;
+    });
     const updates = moveChatThreadPinOrder(
-      threads.filter((item) => {
-        return item.agentId === thread.agentId;
-      }),
+      ranked,
       move.threadId,
       move.targetId,
       move.side,
@@ -50,11 +57,14 @@ const movePinnedThread$ = command(
       return { ...update, eventId: crypto.randomUUID() };
     });
     for (const update of updates) {
+      const updated = ranked.find((item) => {
+        return item.id === update.threadId;
+      });
       set(registerOptimisticChatThreadEvent$, {
         id: update.eventId,
         kind: "sort_touched",
         chatThreadId: update.threadId,
-        agentId: thread.agentId,
+        agentId: updated?.agentId ?? thread.agentId,
         pinOrder: update.pinOrder,
       });
     }
@@ -82,9 +92,22 @@ export const stepPinnedThread$ = command(
     direction: -1 | 1,
     signal: AbortSignal,
   ) => {
-    const threads = await get(chatThreads$);
+    const list = await get(currentChatThreadList$);
     signal.throwIfAborted();
-    const pins = threads.filter((item) => {
+    // A pin steps over the pins listed with it: the other chats of its
+    // Project, or else the chats outside Projects.
+    const projectThreads = get(list.projectThreads$);
+    const projectId =
+      projectThreads.find((item) => {
+        return item.id === threadId;
+      })?.projectId ?? null;
+    const listed =
+      projectId === null
+        ? get(list.threads$)
+        : projectThreads.filter((item) => {
+            return item.projectId === projectId;
+          });
+    const pins = listed.filter((item) => {
       return item.pinnedAt !== null;
     });
     const index = pins.findIndex((item) => {
@@ -101,6 +124,7 @@ export const stepPinnedThread$ = command(
           threadId,
           targetId: target.id,
           side: direction < 0 ? "before" : "after",
+          projectId,
         },
         signal,
       );

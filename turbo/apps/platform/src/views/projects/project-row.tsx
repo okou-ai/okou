@@ -41,7 +41,6 @@ import {
 import {
   collapseProject$,
   expandProject$,
-  showMoreProjectThreads$,
   toggleProject$,
 } from "../../signals/projects/project-expansion.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
@@ -51,6 +50,8 @@ import type {
   ProjectChatThreadListRow,
 } from "../../signals/chat-page/chat-thread-list-rows.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import {
   clickProjectName$,
@@ -62,14 +63,6 @@ import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
 } from "../okou-page/sidebar-shared.tsx";
-import {
-  cancelProjectInlineRename$,
-  commitProjectInlineRename$,
-  projectInlineRename$,
-  projectInlineRenameInputRef$,
-  startProjectInlineRename$,
-  type ProjectInlineRename,
-} from "../../signals/projects/project-inline-rename.ts";
 
 export type ProjectRowLayout = "sidebar" | "list";
 
@@ -268,83 +261,6 @@ function ProjectActions({
   );
 }
 
-function ProjectRenameForm({
-  project,
-  touch,
-  layout,
-  expanded,
-  edit,
-}: ProjectRowProps & {
-  readonly expanded: boolean;
-  readonly edit: ProjectInlineRename;
-}) {
-  const { t } = useTranslation();
-  const commit = useSet(commitProjectInlineRename$);
-  const cancel = useSet(cancelProjectInlineRename$);
-  const inputRef = useSet(projectInlineRenameInputRef$);
-  // Clicking another chat can end the route before the blur's save is sent.
-  const signal = useGet(rootSignal$);
-  const Icon = expanded ? FolderOpen : Folder;
-
-  function returnFocusToProject(form: HTMLFormElement) {
-    form.parentElement
-      ?.querySelector<HTMLElement>("[data-project-trigger]")
-      ?.focus();
-  }
-
-  return (
-    <form
-      className={cn(
-        "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-sm text-nav-copy ring-2 ring-inset ring-ring",
-        layout === "list" ? "h-14 px-3 text-base leading-5" : "h-8",
-      )}
-      onSubmit={(event) => {
-        event.preventDefault();
-        returnFocusToProject(event.currentTarget);
-      }}
-      onKeyDown={(event) => {
-        // Safari can end composition before its confirming Enter keydown.
-        if (
-          event.nativeEvent.isComposing ||
-          event.nativeEvent.keyCode === 229
-        ) {
-          if (event.key === "Enter") {
-            event.preventDefault();
-          }
-          return;
-        }
-        if (event.key === "Escape") {
-          cancel(edit);
-          returnFocusToProject(event.currentTarget);
-        }
-      }}
-    >
-      <Icon size={16} className="shrink-0 opacity-70" />
-      <input
-        ref={inputRef}
-        name="name"
-        type="text"
-        aria-label={t(($) => {
-          return $.projects.name;
-        })}
-        defaultValue={project.name}
-        maxLength={120}
-        autoComplete="off"
-        className={cn(
-          "min-w-0 flex-1 bg-transparent p-0 outline-none",
-          touch && "text-base",
-        )}
-        onBlur={(event) => {
-          detach(
-            commit(edit, event.currentTarget.value, signal),
-            Reason.DomCallback,
-          );
-        }}
-      />
-    </form>
-  );
-}
-
 /**
  * The folder folds the Project's chats. Hovering the row turns it into the fold
  * arrow, and its tooltip names the action and shortcut.
@@ -425,78 +341,45 @@ function ProjectFoldToggle({
 
 function ProjectTrigger({
   project,
-  touch,
   layout,
   expanded,
   active,
-  rowId,
   indicator,
-}: ProjectRowProps & {
+}: {
+  readonly project: Project;
+  readonly layout: ProjectRowLayout;
   readonly expanded: boolean;
   readonly active: boolean;
-  readonly rowId: string;
   readonly indicator: ProjectIndicatorState | null;
 }) {
   const clickName = useSet(clickProjectName$);
-  const edit = useGet(projectInlineRename$);
-  const renaming = edit?.rowId === rowId;
-  const startRename = useSet(startProjectInlineRename$);
-  const rowHeight = layout === "list" ? "h-14" : "h-8";
   return (
-    <div className="grid min-w-0 flex-1">
-      <div
+    <div className="flex min-w-0 flex-1 items-center">
+      {/* The folder folds the Project's chats. The name opens its page and
+          unfolds its chats; on that page, clicking it again folds or
+          unfolds them. */}
+      <ProjectFoldToggle
+        project={project}
+        layout={layout}
+        expanded={expanded}
+      />
+      <Link
+        pathname="/projects/:projectId"
+        options={{ pathParams: { projectId: project.id } }}
+        data-project-trigger=""
+        aria-current={active ? "page" : undefined}
+        onClick={(event) => {
+          clickName(project.id, event);
+        }}
         className={cn(
-          "col-start-1 row-start-1 flex min-w-0 items-center",
-          renaming && "invisible",
+          "flex min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          layout === "list" ? "h-14 pl-2 text-base leading-5" : "h-8",
+          active && "font-medium",
         )}
       >
-        {/* The folder folds the Project's chats. The name opens its page and
-            unfolds its chats; on that page, clicking it again folds or
-            unfolds them. */}
-        <ProjectFoldToggle
-          project={project}
-          layout={layout}
-          expanded={expanded}
-        />
-        <Link
-          pathname="/projects/:projectId"
-          options={{ pathParams: { projectId: project.id } }}
-          data-project-trigger=""
-          aria-current={active ? "page" : undefined}
-          onClick={(event) => {
-            clickName(project.id, event);
-          }}
-          onDoubleClick={(event) => {
-            if (
-              event.metaKey ||
-              event.ctrlKey ||
-              event.shiftKey ||
-              event.altKey
-            ) {
-              return;
-            }
-            startRename(project.id, rowId);
-          }}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            rowHeight,
-            layout === "list" && "pl-2 text-base leading-5",
-            active && "font-medium",
-          )}
-        >
-          <span className="truncate">{project.name}</span>
-          <ChatThreadStateText state={indicator} />
-        </Link>
-      </div>
-      {renaming && (
-        <ProjectRenameForm
-          project={project}
-          touch={touch}
-          layout={layout}
-          expanded={expanded}
-          edit={edit}
-        />
-      )}
+        <span className="truncate">{project.name}</span>
+        <ChatThreadStateText state={indicator} />
+      </Link>
     </div>
   );
 }
@@ -539,11 +422,9 @@ export function ProjectRow({
     >
       <ProjectTrigger
         project={project}
-        touch={touch}
         layout={layout}
         expanded={expanded}
         active={active}
-        rowId={`project-${touch ? "touch" : "sidebar"}-${project.id}`}
         indicator={indicator}
       />
       {creation.state === "hasError" && (
@@ -567,19 +448,23 @@ export function ProjectRow({
   );
 }
 
-/** The empty notice or "show more" control that closes a Project's chats. */
+/**
+ * What an unfolded Project shows in place of its chats when the list has none:
+ * the empty notice, then the way to its archived chats when it holds any.
+ */
 export function ProjectStatusRow({
   row,
   layout,
 }: {
   readonly row: Extract<
     ChatThreadListRow,
-    { readonly kind: "project-more" | "project-empty" }
+    { readonly kind: "project-empty" | "project-archived" }
   >;
   readonly layout: ProjectRowLayout;
 }) {
   const { t } = useTranslation();
-  const showMore = useSet(showMoreProjectThreads$);
+  const selectFilter = useSet(selectChatThreadFilter$);
+  const signal = useGet(pageSignal$);
   if (row.kind === "project-empty") {
     return (
       <p
@@ -603,11 +488,11 @@ export function ProjectStatusRow({
         layout === "list" ? "h-14 px-3" : "h-8 px-2",
       )}
       onClick={() => {
-        return showMore(row.projectId);
+        detach(selectFilter("archived", signal), Reason.DomCallback);
       }}
     >
       {t(($) => {
-        return $.projects.showMore;
+        return $.chat.sidebar.showArchivedChats;
       })}
     </Button>
   );
