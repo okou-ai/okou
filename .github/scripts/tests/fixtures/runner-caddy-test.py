@@ -26,6 +26,17 @@ class EchoHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
+        if self.path.endswith("/stream-response"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            self.write_chunk(self.server.label + b":first")
+            assert self.server.continue_response.wait(5), "first response chunk was buffered"
+            self.write_chunk(b"second")
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+            return
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self.reply_http(self.server.label + b":" + self.path.encode())
             return
@@ -55,11 +66,75 @@ class EchoHandler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_POST(self):
-        body = self.rfile.read(int(self.headers["Content-Length"]))
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            chunks = []
+            while chunk := read_chunk(self.rfile):
+                chunks.append(chunk)
+                self.server.received_chunk.set()
+            body = b"".join(chunks)
+        else:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
         self.reply_http(self.server.label + b":" + self.path.encode() + b":" + body)
+
+    def write_chunk(self, body):
+        self.wfile.write(f"{len(body):x}\r\n".encode() + body + b"\r\n")
+        self.wfile.flush()
 
     def log_message(self, *_args):
         pass
+
+
+def response_headers(reader):
+    status = int(reader.readline().split()[1])
+    headers = {}
+    while (line := reader.readline()) != b"\r\n":
+        assert line, "unexpected EOF in response headers"
+        name, value = line.decode().split(":", 1)
+        headers[name.lower()] = value.strip()
+    return status, headers
+
+
+def read_chunk(reader):
+    size = int(reader.readline().split(b";", 1)[0], 16)
+    body = reader.read(size)
+    assert len(body) == size and reader.read(2) == b"\r\n"
+    return body
+
+
+def streamed_http(context, port, path, server):
+    with (
+        socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
+        context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer,
+    ):
+        peer.sendall(
+            f"GET {path}/stream-response HTTP/1.1\r\nHost: runner-wss.example.org\r\n"
+            "Connection: close\r\n\r\n".encode()
+        )
+        reader = peer.makefile("rb")
+        status, headers = response_headers(reader)
+        assert status == 200 and headers["transfer-encoding"].lower() == "chunked"
+        assert read_chunk(reader) == server.label + b":first"
+        # The backend cannot finish until this caller has received its first chunk.
+        server.continue_response.set()
+        assert read_chunk(reader) == b"second"
+        assert read_chunk(reader) == b""
+    with (
+        socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
+        context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer,
+    ):
+        peer.sendall(
+            f"POST {path}/stream-request HTTP/1.1\r\nHost: runner-wss.example.org\r\n"
+            "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\none\r\n".encode()
+        )
+        # Real upstream receipt must precede publishing the remaining request body.
+        assert server.received_chunk.wait(5), "first request chunk was buffered"
+        peer.sendall(b"3\r\ntwo\r\n0\r\n\r\n")
+        reader = peer.makefile("rb")
+        status, headers = response_headers(reader)
+        assert status == 200
+        assert reader.read(int(headers["content-length"])) == (
+            server.label + b":" + path.encode() + b"/stream-request:onetwo"
+        )
 
 
 def response(context, port, path, websocket=False, method="GET", body=b""):
@@ -80,12 +155,7 @@ def response(context, port, path, websocket=False, method="GET", body=b""):
             ).encode() + body
         )
         reader = peer.makefile("rb")
-        status = int(reader.readline().split()[1])
-        headers = {}
-        while (line := reader.readline()) != b"\r\n":
-            assert line, "unexpected EOF in response headers"
-            name, value = line.decode().split(":", 1)
-            headers[name.lower()] = value.strip()
+        status, headers = response_headers(reader)
         if status == 101:
             assert headers["sec-websocket-accept"] == WEBSOCKET_ACCEPT
             peer.sendall(
@@ -291,6 +361,8 @@ def main():
                         path = namespace / f"{runner_id}.sock"
                         server = ThreadingUnixStreamServer(str(path), EchoHandler)
                         server.label = label
+                        server.continue_response = threading.Event()
+                        server.received_chunk = threading.Event()
                         server.daemon_threads = True
                         os.chown(path, 0, consumer)
                         path.chmod(0o660)
@@ -306,8 +378,8 @@ def main():
                     }
                     # Late socket creation becomes usable in the same process.
                     assert process.poll() is None
-                    for runner_id, label in zip(
-                        ids, [b"first", b"second"], strict=True
+                    for runner_id, label, backend in zip(
+                        ids, [b"first", b"second"], servers, strict=True
                     ):
                         assert response(context, port, f"/runners/{runner_id}", True) == (
                             101,
@@ -321,6 +393,7 @@ def main():
                         assert response(context, port, path, method="POST", body=payload) == (
                             200, label + b":" + path.encode() + b":" + payload
                         )
+                        streamed_http(context, port, path, backend)
                     for path in [
                         "/",
                         "/runners/not-a-uuid",

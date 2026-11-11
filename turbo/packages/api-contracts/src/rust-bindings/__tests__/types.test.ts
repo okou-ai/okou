@@ -38,6 +38,11 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["runners"],
+    rustTypeName: "RunnerIngressObservation",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners", "runs", "startup"],
     rustTypeName: "Request",
     direction: "request",
