@@ -19,24 +19,24 @@ struct ConversationActivityLabel: View {
 private struct ConversationActivityContent: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
-  @LoadableValue private var messages: Loadable<ChatActivitySummary?>
+  @LoadableValue private var summaryValue: Loadable<ChatActivitySummary?>
 
   init(summary: ConversationActivitySummary, state: ChatExecutionState) {
     self.summary = summary
     self.state = state
-    _messages = LoadableValue(task: summary.value, keepLast: true)
+    _summaryValue = LoadableValue(task: summary.value, keepLast: true)
   }
 
   @ScaledMetric(relativeTo: .subheadline) private var lineHeight = 24
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
+  private var executionText: String {
+    guard state == .running, case .hasData(let batch) = summaryValue else { return state.label }
+    return summary.text(in: batch) ?? state.label
+  }
+
   var body: some View {
-    let text: String
-    if state == .running, case .hasData(let batch) = messages {
-      text = summary.text(in: batch) ?? state.label
-    } else {
-      text = state.label
-    }
+    let text = executionText
     HStack(spacing: OkouSpace.sm) {
       OkouRunningIndicator().frame(width: 16)
       Text(verbatim: text)
