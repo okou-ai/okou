@@ -89,12 +89,16 @@ function HostedSiteBannerSetting({
         {rows && (
           <PanelTop size={16} className="shrink-0 text-muted-foreground" />
         )}
-        <span className={cn("text-sm", rows && "min-w-0 flex-1 truncate")}>
-          {t(($) => {
-            return $.artifacts.siteBanner.label;
-          })}
+        <span
+          className={cn("flex items-center gap-2", rows && "min-w-0 flex-1")}
+        >
+          <span className={cn("text-sm", rows && "min-w-0 truncate")}>
+            {t(($) => {
+              return $.artifacts.siteBanner.label;
+            })}
+          </span>
+          {paywallLocked && <ProBadge />}
         </span>
-        {paywallLocked && <ProBadge />}
         {!current ? (
           <Skeleton className="h-5 w-9 rounded-full" />
         ) : (
