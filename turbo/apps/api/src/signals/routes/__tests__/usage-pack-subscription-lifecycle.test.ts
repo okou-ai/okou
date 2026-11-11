@@ -457,6 +457,7 @@ async function checkoutUsagePackLifecycle(
   );
   expect(response.body).toStrictEqual({
     url: `https://checkout.stripe.test/${checkoutSessionId}`,
+    checkoutSessionId,
   });
   const usagePackSubscriptionId = checkoutSubscriptionId(
     context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],

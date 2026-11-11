@@ -1476,6 +1476,7 @@ describe("usage pack allocation management", () => {
         });
         expect(checkout.body).toStrictEqual({
           url: `https://checkout.stripe.test/${checkoutSessionId}`,
+          checkoutSessionId,
         });
         const metadata = checkoutMetadata;
         if (!metadata) {

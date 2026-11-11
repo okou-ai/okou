@@ -147,6 +147,7 @@ describe("BILL-01: billing status and Stripe-backed actions through public API",
     });
     expect(checkout.body).toStrictEqual({
       url: "https://checkout.stripe.test/subscription",
+      checkoutSessionId: subscriptionSessionId,
     });
 
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
