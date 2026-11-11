@@ -67,6 +67,10 @@ struct ChatComposerView: View {
   }
   /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var showsSecondaryVoiceInput: Bool {
+    expandsInput && !replacesSendWithMic && !voiceActive
+  }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
@@ -192,17 +196,29 @@ struct ChatComposerView: View {
           .disabled(isBusy || needsUpgrade)
         }
       } trailing: {
-        HStack(spacing: OkouSpace.xs) {
+        HStack(spacing: 0) {
           // The chat's model, only while the composer is open, where the next message is written.
-          if let modelSelection, expandsInput && !voiceActive {
+          // Keep controls mounted so they enter with the moving toolbar, not at its final position.
+          if let modelSelection {
             ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
               .disabled(needsUpgrade)
-              .transition(.opacity)
+              .padding(.trailing, OkouSpace.xs)
+              .frame(width: showsModelPicker ? nil : 0, alignment: .trailing)
+              .clipped()
+              .opacity(showsModelPicker ? 1 : 0)
+              .allowsHitTesting(showsModelPicker)
+              .accessibilityHidden(!showsModelPicker)
           }
           // The mic sits beside send once there is a draft; on an empty one it takes send's place.
-          if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
+          if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
+              .padding(.trailing, OkouSpace.xs)
+              .frame(width: showsSecondaryVoiceInput ? nil : 0, alignment: .trailing)
+              .clipped()
+              .opacity(showsSecondaryVoiceInput ? 1 : 0)
+              .allowsHitTesting(showsSecondaryVoiceInput)
+              .accessibilityHidden(!showsSecondaryVoiceInput)
           }
           if replacesSendWithMic, let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)

@@ -24,11 +24,11 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
         alignment: isExpanded ? .topLeading : .leading
       )
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-      .overlay(alignment: isExpanded ? .bottomLeading : .leading) {
+      .overlay(alignment: .bottomLeading) {
         leading()
           .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
-      .overlay(alignment: isExpanded ? .bottomTrailing : .trailing) {
+      .overlay(alignment: .bottomTrailing) {
         trailing()
           .onGeometryChange(for: CGFloat.self) {
             $0.size.width
