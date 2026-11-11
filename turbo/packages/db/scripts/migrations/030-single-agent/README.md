@@ -44,7 +44,7 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
-Plans use `single-agent-plan-v6`; inventories remain
+Plans use `single-agent-plan-v7`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
 apply the approved naming, private-Agent-owner and publication policies. No
 executable consumer of any plan version is implemented.
@@ -121,7 +121,11 @@ Exit codes:
   check does not establish runtime eligibility or trigger delivery.
   Non-default Official Workflow installations block pending their own mapping.
 - Compare Workflow view/manage/publish rights before and after the host change
-  using the current host visibility/owner rules and cached org membership.
+  using the current Workflow-owner/host-writer rules and cached org membership.
+  `workflowMaintenancePolicy: workflow-owner-or-host-writer` applies to both
+  source and target: public Workflow owners may maintain their own content,
+  as may writers on a visible host Agent. Private Workflows remain owner-only,
+  Official Workflows remain read-only, and publication eligibility is unchanged.
   Record all per-member differences. For private-Agent Workflows, view/manage
   changes are accepted by the explicit private-Agent-owner policy: the Agent
   owner receives owner-only access and a different former Workflow owner loses
@@ -130,12 +134,14 @@ Exit codes:
   the private Workflow owner. Record gains and losses as `acceptedChanges`,
   retaining their before/after rights; there is no migration-specific publish
   grant or grandfathered eligibility. Public-Agent view/manage differences
-  remain `unresolvedChanges` and block. Converted Instructions also block
-  changed maintenance rights. The public Workflow owner maintenance fix in
-  #46438 must be deployed/verified before the planner adopts that policy;
-  this version retains its maintenance blockers. No runtime permissions or
-  actual Workflow visibility are changed by planning. The cache is preliminary
-  evidence, not live membership authority.
+  remain `unresolvedChanges` and block. Converted public Instructions retain
+  their source owner's maintenance rights as Workflow owners. Other maintenance
+  changes, including a non-admin target Agent owner gaining access or a former
+  host owner losing access to another author's public Workflow, still block.
+  The modeled policy follows #46438; verify it on serving and supported rollback
+  APIs before execution. An offline plan does not establish deployed behavior.
+  No runtime permissions or actual Workflow visibility are changed by planning.
+  The cache is preliminary evidence, not live membership authority.
 - Initialize members with no personal Instructions row once from the public
   default Agent's snapshotted Instructions. Preserve every saved row, including
   deliberately empty content. Earlier automatically seeded rows also remain

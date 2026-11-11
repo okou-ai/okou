@@ -107,7 +107,7 @@ export function plan(
         workflow.official === null &&
         (workflow.visibility === "private"
           ? workflow.owner === userId
-          : canWriteAgent(agent, userId)),
+          : workflow.owner === userId || canWriteAgent(agent, userId)),
       publish:
         visible &&
         workflow.official === null &&
@@ -213,7 +213,7 @@ export function plan(
         const after =
           source.visibility === "private"
             ? source.owner === userId
-            : canWriteAgent(destination, userId);
+            : source.owner === userId || canWriteAgent(destination, userId);
         return before !== after;
       });
       if (maintenanceChanges.length)
@@ -342,8 +342,9 @@ export function plan(
       return [{ ...thread, workflowAccess }];
     });
   return {
-    format: "single-agent-plan-v6",
+    format: "single-agent-plan-v7",
     executable: false,
+    workflowMaintenancePolicy: "workflow-owner-or-host-writer",
     workflowPublicationPolicy: "use-existing-target-permissions",
     privateAgentWorkflowPolicy: "private-use-agent-owner",
     privateAgentAssociationPolicy: "delete-non-owner-associations",
@@ -384,6 +385,7 @@ export function plan(
       return a.key.localeCompare(b.key) || a.code.localeCompare(b.code);
     }),
     requiredBeforeApply: [
+      "Verify serving and supported rollback APIs enforce workflow-owner-or-host-writer maintenance; a plan is not runtime permission acceptance",
       "Live membership, per-member mode and converted-Instruction publication rights verification; cache is not authority",
       "Source bundle download and byte/content-limit verification; references alone are not acceptance",
       "Provenance review of earlier automatic personal seed rows; all saved rows are preserved in this plan",
