@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { int, iso, object, uuid } from "zod";
 import { and, eq, gte, lt } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cloudflareAccessCredentialsSchema } from "@okouai/api-contracts/validators/cloudflare-access-credentials";
@@ -57,21 +58,66 @@ export interface CustomConnectorNetworkSnapshot {
 
 export const customConnectorNetworkSnapshotSchema = object({
   configId: uuid(),
-  generation: int().positive().max(2147483647),
+  generation: int().positive().max(2_147_483_647),
   definitionUpdatedAt: iso.datetime(),
 }).strict();
 
+interface NetworkFetchSetup {
+  readonly connector: CustomConnectorRow;
+  readonly userId: string;
+  /** null is a legacy/unbound setup; undefined starts a new setup. */
+  readonly setupSnapshot?: CustomConnectorNetworkSnapshot | null;
+}
+
+function validateNetworkFetchSetup(args: NetworkFetchSetup, enabled: boolean) {
+  const { connector, setupSnapshot } = args;
+  const binding = connector.networkBinding;
+  if (binding && (!enabled || binding.status !== "available")) {
+    throw new CustomConnectorNetworkError("unavailable");
+  }
+  if (setupSnapshot === null && binding) {
+    throw new CustomConnectorNetworkError("changed");
+  }
+  if (
+    setupSnapshot &&
+    (!binding ||
+      binding.configId !== setupSnapshot.configId ||
+      connector.updatedAt.toISOString() !== setupSnapshot.definitionUpdatedAt)
+  ) {
+    throw new CustomConnectorNetworkError("changed");
+  }
+}
+
+function customConnectorSetupFirewall(connector: CustomConnectorRow) {
+  const mcp =
+    connector.kind === "mcp"
+      ? parseCustomMcpEndpoint(connector.endpoint)
+      : undefined;
+  if (mcp && "error" in mcp) {
+    throw new CustomConnectorNetworkError("scope");
+  }
+  const bases =
+    connector.kind === "http"
+      ? connector.prefixTemplates.flatMap((template) => {
+          const base = renderCustomConnectorRuntimePrefix({
+            template,
+            values: {},
+          });
+          return base ? [base] : [];
+        })
+      : mcp && "ok" in mcp
+        ? [mcp.ok.firewallBase]
+        : [];
+  return {
+    name: `custom:${connector.id}`,
+    apis: bases.map((base, index) => {
+      return { id: String(index), base, auth: {} };
+    }),
+  };
+}
+
 export const prepareCustomConnectorNetworkFetch$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly connector: CustomConnectorRow;
-      readonly userId: string;
-      /** null is a legacy/unbound setup; undefined starts a new setup. */
-      readonly setupSnapshot?: CustomConnectorNetworkSnapshot | null;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, args: NetworkFetchSetup, signal: AbortSignal) => {
     const { connector } = args;
     const feature = await get(
       userFeatureSwitchContext(connector.orgId, args.userId),
@@ -82,20 +128,10 @@ export const prepareCustomConnectorNetworkFetch$ = command(
       feature,
     );
     const binding = connector.networkBinding;
-    if (binding && (!enabled || binding.status !== "available"))
-      throw new CustomConnectorNetworkError("unavailable");
-    if (args.setupSnapshot === null && binding)
-      throw new CustomConnectorNetworkError("changed");
-    if (
-      args.setupSnapshot &&
-      (!binding ||
-        binding.configId !== args.setupSnapshot.configId ||
-        connector.updatedAt.toISOString() !==
-          args.setupSnapshot.definitionUpdatedAt)
-    )
-      throw new CustomConnectorNetworkError("changed");
-    if (!enabled && !binding)
+    validateNetworkFetchSetup(args, enabled);
+    if (!enabled && !binding) {
       return { fetch: mcpOAuthSafeFetch, snapshot: undefined };
+    }
     const [config] = binding
       ? await set(writeDb$)
           .select({ generation: cloudflareAccessConfigs.generation })
@@ -110,13 +146,15 @@ export const prepareCustomConnectorNetworkFetch$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
-    if (binding && !config)
+    if (binding && !config) {
       throw new CustomConnectorNetworkError("unavailable");
+    }
     if (
       args.setupSnapshot &&
       config?.generation !== args.setupSnapshot.generation
-    )
+    ) {
       throw new CustomConnectorNetworkError("changed");
+    }
     const snapshot =
       binding && config
         ? {
@@ -128,33 +166,7 @@ export const prepareCustomConnectorNetworkFetch$ = command(
     const intent: CustomConnectorNetworkIntent = binding
       ? { kind: "cloudflare_access", configId: binding.configId }
       : { kind: "direct" };
-    const mcp =
-      connector.kind === "mcp"
-        ? parseCustomMcpEndpoint(connector.endpoint)
-        : undefined;
-    if (mcp && "error" in mcp) throw new CustomConnectorNetworkError("scope");
-    const bases =
-      connector.kind === "http"
-        ? connector.prefixTemplates.flatMap((template) => {
-            const base = renderCustomConnectorRuntimePrefix({
-              template,
-              values: {},
-            });
-            return base ? [base] : [];
-          })
-        : mcp && "ok" in mcp
-          ? [mcp.ok.firewallBase]
-          : [];
-    const firewall = {
-      name: `custom:${connector.id}`,
-      apis: bases.map((base, index) => {
-        return {
-          id: String(index),
-          base,
-          auth: {},
-        };
-      }),
-    };
+    const firewall = customConnectorSetupFirewall(connector);
     return {
       snapshot,
       fetch: createMcpOAuthSafeFetch(async ({ url, method }, requestSignal) => {
@@ -183,74 +195,84 @@ export const prepareCustomConnectorNetworkFetch$ = command(
   },
 );
 
+interface NetworkAdmissionArgs extends CustomConnectorNetworkIdentity {
+  readonly expected: CustomConnectorNetworkIntent;
+  readonly definitionUpdatedAt?: Date;
+  readonly generation?: number;
+}
+
+function customConnectorNetworkAdmissionReadQuery(args: NetworkAdmissionArgs) {
+  return new QueryBuilder()
+    .select({
+      definitionUpdatedAt: orgCustomConnectors.updatedAt,
+      configId: orgCustomConnectorCloudflareBindings.configId,
+      availableConfigId: cloudflareAccessConfigs.id,
+      generation: cloudflareAccessConfigs.generation,
+      clientId: cloudflareAccessConfigs.encryptedClientId,
+      clientSecret: cloudflareAccessConfigs.encryptedClientSecret,
+    })
+    .from(orgCustomConnectors)
+    .leftJoin(
+      orgCustomConnectorCloudflareBindings,
+      and(
+        eq(
+          orgCustomConnectorCloudflareBindings.connectorId,
+          orgCustomConnectors.id,
+        ),
+        eq(
+          orgCustomConnectorCloudflareBindings.orgId,
+          orgCustomConnectors.orgId,
+        ),
+      ),
+    )
+    .leftJoin(
+      cloudflareAccessConfigs,
+      and(
+        eq(
+          cloudflareAccessConfigs.id,
+          orgCustomConnectorCloudflareBindings.configId,
+        ),
+        eq(cloudflareAccessConfigs.orgId, orgCustomConnectors.orgId),
+        eq(cloudflareAccessConfigs.scope, "organization"),
+      ),
+    )
+    .where(
+      and(
+        eq(orgCustomConnectors.id, args.connectorId),
+        eq(orgCustomConnectors.orgId, args.orgId),
+        eq(orgCustomConnectors.enabled, true),
+        args.definitionUpdatedAt === undefined
+          ? undefined
+          : and(
+              gte(orgCustomConnectors.updatedAt, args.definitionUpdatedAt),
+              lt(
+                orgCustomConnectors.updatedAt,
+                new Date(args.definitionUpdatedAt.getTime() + 1),
+              ),
+            ),
+      ),
+    )
+    .limit(1);
+}
+
 /** Current storage is the network credential owner, never an application cache. */
 export const resolveCustomConnectorNetworkAdmission$ = command(
   async (
     { get, set },
-    args: CustomConnectorNetworkIdentity & {
-      readonly expected: CustomConnectorNetworkIntent;
-      readonly definitionUpdatedAt?: Date;
-      readonly generation?: number;
-    },
+    args: NetworkAdmissionArgs,
     signal: AbortSignal,
   ): Promise<CustomConnectorNetworkAdmission> => {
-    const [row] = await set(writeDb$)
-      .select({
-        connectorId: orgCustomConnectors.id,
-        definitionUpdatedAt: orgCustomConnectors.updatedAt,
-        configId: orgCustomConnectorCloudflareBindings.configId,
-        availableConfigId: cloudflareAccessConfigs.id,
-        generation: cloudflareAccessConfigs.generation,
-        clientId: cloudflareAccessConfigs.encryptedClientId,
-        clientSecret: cloudflareAccessConfigs.encryptedClientSecret,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorCloudflareBindings,
-        and(
-          eq(
-            orgCustomConnectorCloudflareBindings.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(
-            orgCustomConnectorCloudflareBindings.orgId,
-            orgCustomConnectors.orgId,
-          ),
-        ),
-      )
-      .leftJoin(
-        cloudflareAccessConfigs,
-        and(
-          eq(
-            cloudflareAccessConfigs.id,
-            orgCustomConnectorCloudflareBindings.configId,
-          ),
-          eq(cloudflareAccessConfigs.orgId, orgCustomConnectors.orgId),
-          eq(cloudflareAccessConfigs.scope, "organization"),
-        ),
-      )
-      .where(
-        and(
-          eq(orgCustomConnectors.id, args.connectorId),
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.enabled, true),
-          args.definitionUpdatedAt === undefined
-            ? undefined
-            : and(
-                gte(orgCustomConnectors.updatedAt, args.definitionUpdatedAt),
-                lt(
-                  orgCustomConnectors.updatedAt,
-                  new Date(args.definitionUpdatedAt.getTime() + 1),
-                ),
-              ),
-        ),
-      )
-      .limit(1);
+    const admissionQuery =
+      customConnectorNetworkAdmissionReadQuery(args).as("network_authority");
+    const [row] = await set(writeDb$).select().from(admissionQuery);
     signal.throwIfAborted();
-    if (!row) throw new CustomConnectorNetworkError("unavailable");
+    if (!row) {
+      throw new CustomConnectorNetworkError("unavailable");
+    }
     if (row.configId === null) {
-      if (args.expected.kind !== "direct")
+      if (args.expected.kind !== "direct") {
         throw new CustomConnectorNetworkError("changed");
+      }
       return { kind: "direct" };
     }
     if (
@@ -336,7 +358,9 @@ export const resolveCustomConnectorNetworkAdmission$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!current) throw new CustomConnectorNetworkError("changed");
+    if (!current) {
+      throw new CustomConnectorNetworkError("changed");
+    }
     return {
       kind: "cloudflare_access",
       configId: row.configId,

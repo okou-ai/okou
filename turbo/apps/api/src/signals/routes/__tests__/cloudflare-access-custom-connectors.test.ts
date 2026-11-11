@@ -147,7 +147,7 @@ test.each(["http", "mcp"] as const)(
           [200],
         )
       ).body;
-      expect(preview.customConnectors).toEqual([
+      expect(preview.customConnectors).toStrictEqual([
         expect.objectContaining({ id: created.id }),
       ]);
       const body = {
@@ -202,7 +202,7 @@ test.each(["http", "mcp"] as const)(
         [200],
       )
     ).body;
-    expect(preview.customConnectors).toEqual([]);
+    expect(preview.customConnectors).toStrictEqual([]);
     await accept(
       configs().delete({
         headers,

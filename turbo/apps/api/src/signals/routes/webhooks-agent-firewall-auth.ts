@@ -102,7 +102,9 @@ const firewallAuthRoute$ = command(
         signal,
       );
     }
-    if (!bodyResult.data.encryptedSecrets) return invalidBodyResponse;
+    if (!bodyResult.data.encryptedSecrets) {
+      return invalidBodyResponse;
+    }
     const billableCacheExpiry = await set(
       resolveBillableFirewallCacheExpiry$,
       { auth, firewallBillable: bodyResult.data.firewallBillable },

@@ -135,7 +135,9 @@ async function scenario(
       );
       expect(authorization.href).not.toContain("network-secret");
       const state = authorization.searchParams.get("state");
-      if (!state) throw new Error("Expected an OAuth state");
+      if (!state) {
+        throw new Error("Expected an OAuth state");
+      }
       if (operation === "rotate") {
         await accept(
           configs.update({
@@ -153,8 +155,9 @@ async function scenario(
           [200],
         );
       }
-      if (operation === "private-dns")
+      if (operation === "private-dns") {
         context.mocks.dns.resolve4.mockResolvedValue(["127.0.0.1"]);
+      }
       const callback =
         await connectors.completeCustomConnectorOAuth2CallbackResult(
           { code: "synthetic-code", state },
@@ -166,23 +169,25 @@ async function scenario(
         operation === "redirect"
       ) {
         expect(callback.body.status).toBe("error");
-        expect(
-          await connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).toEqual([]);
+        await expect(
+          connectors.listCustomConnectorAccounts(actor, connector.id),
+        ).resolves.toStrictEqual([]);
         expect(received).toHaveLength(operation === "redirect" ? 1 : 0);
       } else {
         expect(callback.body.status).toBe("success");
-        expect(
-          await connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).toMatchObject([{ connectionStatus: "connected" }]);
+        await expect(
+          connectors.listCustomConnectorAccounts(actor, connector.id),
+        ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
         expect(received).toHaveLength(1);
         const request = received[0];
-        if (!request) throw new Error("Expected a token request");
+        if (!request) {
+          throw new Error("Expected a token request");
+        }
         expect(request.form.get("code_verifier")).toBeTruthy();
         expect(request.form.get("code")).toBe("synthetic-code");
         if (operation === "inside-basic") {
           expect(request.headers.get("authorization")).toMatch(/^Basic /u);
-          expect(request.form.has("client_secret")).toBe(false);
+          expect(request.form.has("client_secret")).toBeFalsy();
         } else {
           expect(request.form.get("client_secret")).toBe("application-secret");
         }
@@ -222,7 +227,9 @@ async function scenario(
       }),
       [204],
     );
-    if (!tested.ok) throw tested.error;
+    if (!tested.ok) {
+      throw tested.error;
+    }
   });
 }
 
@@ -234,12 +241,12 @@ test.each([
   "private-dns",
   "redirect",
 ] as const)(
-  "Cloudflare OAuth setup preserves app authentication and current network authority: %s",
+  "cloudflare OAuth setup preserves app authentication and current network authority: %s",
   scenario,
 );
 
 test.each(["none", "cimd", "dcr"] as const)(
-  "MCP %s uses Access for initialization and keeps public OAuth credentials separate",
+  "initializes MCP %s with Access and keeps public OAuth credentials separate",
   async (registration) => {
     const owner = createPublicConnectorActor(context);
     owner.ownsFeatureSwitches();
@@ -295,8 +302,9 @@ test.each(["none", "cimd", "dcr"] as const)(
           connector.id,
           [200],
         );
-        if (start.status !== 200)
+        if (start.status !== 200) {
           throw new Error("Expected successful MCP setup");
+        }
         expect(provider.endpointHeaders.length).toBeGreaterThan(0);
         expect(
           provider.endpointHeaders.every((requestHeaders) => {
@@ -304,16 +312,19 @@ test.each(["none", "cimd", "dcr"] as const)(
               requestHeaders.get("CF-Access-Client-Secret") === "network-secret"
             );
           }),
-        ).toBe(true);
+        ).toBeTruthy();
         if (registration === "none") {
           expect(start.body.result).toBe("connected");
         } else {
-          if (start.body.result !== "authorization")
+          if (start.body.result !== "authorization") {
             throw new Error("Expected OAuth authorization");
+          }
           const state = new URL(start.body.authorizationUrl).searchParams.get(
             "state",
           );
-          if (!state) throw new Error("Expected an OAuth state");
+          if (!state) {
+            throw new Error("Expected an OAuth state");
+          }
           const callback =
             await connectors.completeCustomConnectorOAuth2CallbackResult({
               code: randomUUID(),
@@ -325,13 +336,13 @@ test.each(["none", "cimd", "dcr"] as const)(
             registration === "dcr" ? 1 : 0,
           );
           expect(provider.tokenHeaders).toHaveLength(1);
-          expect(provider.tokenHeaders[0]?.has("CF-Access-Client-Secret")).toBe(
-            false,
-          );
+          expect(
+            provider.tokenHeaders[0]?.has("CF-Access-Client-Secret"),
+          ).toBeFalsy();
         }
-        expect(
-          await connectors.listCustomConnectorAccounts(actor, connector.id),
-        ).toMatchObject([{ connectionStatus: "connected" }]);
+        await expect(
+          connectors.listCustomConnectorAccounts(actor, connector.id),
+        ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
         expect(
           JSON.stringify(
             await connectors.listCustomConnectorAccounts(actor, connector.id),
@@ -348,7 +359,9 @@ test.each(["none", "cimd", "dcr"] as const)(
         }),
         [204],
       );
-      if (!tested.ok) throw tested.error;
+      if (!tested.ok) {
+        throw tested.error;
+      }
     });
   },
 );

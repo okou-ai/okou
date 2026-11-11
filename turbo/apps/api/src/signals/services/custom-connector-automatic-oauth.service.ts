@@ -459,6 +459,9 @@ const createCustomDcrRegistration$ = command(
       .select(
         db
           .select({
+            id: sql`gen_random_uuid()`
+              .mapWith(orgCustomConnectorDcrRegistrations.id)
+              .as("id"),
             orgId: sql`${args.orgId}`
               .mapWith(orgCustomConnectorDcrRegistrations.orgId)
               .as("org_id"),
@@ -493,6 +496,12 @@ const createCustomDcrRegistration$ = command(
               sql`${sql.param(registration.expiresAt, orgCustomConnectorDcrRegistrations.expiresAt)}`
                 .mapWith(orgCustomConnectorDcrRegistrations.expiresAt)
                 .as("expires_at"),
+            createdAt: sql`now()`
+              .mapWith(orgCustomConnectorDcrRegistrations.createdAt)
+              .as("created_at"),
+            updatedAt: sql`now()`
+              .mapWith(orgCustomConnectorDcrRegistrations.updatedAt)
+              .as("updated_at"),
           })
           .from(definition),
       )

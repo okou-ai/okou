@@ -1,5 +1,14 @@
 import { command } from "ccstate";
-import { and, eq, exists, gte, lt, notExists } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  lt,
+  notExists,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
@@ -79,6 +88,36 @@ export type PreparedCustomConnectorNetworkBinding =
       readonly metadata: NonNullable<CustomConnectorResponse["networkBinding"]>;
     };
 
+/** Publishes the edge in the same statement as its owning definition update. */
+export function customConnectorNetworkBindingUpdateCte(args: {
+  readonly orgId: string;
+  readonly connectorId: string;
+  readonly change: PreparedCustomConnectorNetworkBinding | undefined;
+  readonly updatedConnector: SQLWrapper;
+  readonly updatedConnectorId: SQLWrapper;
+}) {
+  const query = new QueryBuilder();
+  if (args.change?.kind === "bind") {
+    return query.$with("updated_connector_network_binding", {}).as(sql`
+      insert into ${orgCustomConnectorCloudflareBindings}
+        (connector_id, org_id, config_id, config_scope)
+      select ${args.updatedConnectorId}, ${args.orgId}, ${args.change.configId}, 'organization'
+      from ${args.updatedConnector}
+      on conflict (connector_id) do update set config_id = excluded.config_id
+      returning connector_id
+    `);
+  }
+  if (args.change?.kind === "clear") {
+    return query.$with("removed_connector_network_binding", {}).as(sql`
+      delete from ${orgCustomConnectorCloudflareBindings}
+      where connector_id = ${args.connectorId} and org_id = ${args.orgId}
+        and exists (select 1 from ${args.updatedConnector})
+      returning connector_id
+    `);
+  }
+  return undefined;
+}
+
 export const prepareCustomConnectorNetworkBinding$ = command(
   async (
     { get },
@@ -120,8 +159,12 @@ export const prepareCustomConnectorNetworkBinding$ = command(
         );
       }
     }
-    if (args.requested === undefined) return { kind: "preserve" };
-    if (args.requested === null) return { kind: "clear" };
+    if (args.requested === undefined) {
+      return { kind: "preserve" };
+    }
+    if (args.requested === null) {
+      return { kind: "clear" };
+    }
     const feature = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
@@ -151,10 +194,11 @@ export const prepareCustomConnectorNetworkBinding$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!config)
+    if (!config) {
       return badRequestMessage(
         "Cloudflare Access must be an available organization configuration from this organization",
       );
+    }
     return {
       kind: "bind",
       configId: config.id,

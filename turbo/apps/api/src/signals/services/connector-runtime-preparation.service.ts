@@ -346,6 +346,24 @@ function customRuntimePermissionPolicy(args: {
   return permissionPolicy;
 }
 
+function customRuntimeAuthUnavailable(args: {
+  readonly row: CustomConnectorRuntimeDataRows[number];
+  readonly headers: Record<string, string>;
+  readonly query: Record<string, string>;
+}) {
+  return (
+    Object.keys(args.headers).length === 0 &&
+    Object.keys(args.query).length === 0 &&
+    args.row.connector.kind === "mcp" &&
+    args.row.connector.authMode !== "none" &&
+    !(
+      args.row.connector.authMode === "automatic" &&
+      args.row.credentialAccess.kind === "current" &&
+      args.row.credentialAccess.resolvedAuthMethod === "none"
+    )
+  );
+}
+
 async function buildCustomConnectorRuntimeRow(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
   readonly context: BuildCustomConnectorRuntimeContextArgs;
@@ -369,18 +387,8 @@ async function buildCustomConnectorRuntimeRow(args: {
   const { headers, query } = customConnectorRuntimeAuth({
     row: args.row,
   });
-  if (Object.keys(headers).length === 0 && Object.keys(query).length === 0) {
-    if (
-      args.row.connector.kind === "mcp" &&
-      args.row.connector.authMode !== "none" &&
-      !(
-        args.row.connector.authMode === "automatic" &&
-        args.row.credentialAccess.kind === "current" &&
-        args.row.credentialAccess.resolvedAuthMethod === "none"
-      )
-    ) {
-      return unavailableCustomConnectorRuntimeRow();
-    }
+  if (customRuntimeAuthUnavailable({ row: args.row, headers, query })) {
+    return unavailableCustomConnectorRuntimeRow();
   }
   if (baseUrlVars === undefined) {
     return unavailableCustomConnectorRuntimeRow();
@@ -409,19 +417,14 @@ async function buildCustomConnectorRuntimeRow(args: {
     }
     return unavailableCustomConnectorRuntimeRow();
   }
+  const networkIntent = customConnectorRuntimeNetworkIntent(
+    networkEnabled,
+    binding,
+  );
   const apis = apisResult.ok.map((api) => {
     return {
       ...api,
-      ...(networkEnabled
-        ? {
-            networkIntent: binding
-              ? {
-                  kind: "cloudflare_access" as const,
-                  configId: binding.configId,
-                }
-              : { kind: "direct" as const },
-          }
-        : {}),
+      ...(networkIntent ? { networkIntent } : {}),
     };
   });
   if (apis.length === 0) {
@@ -446,6 +449,18 @@ async function buildCustomConnectorRuntimeRow(args: {
       permissionBundle,
     }),
   };
+}
+
+function customConnectorRuntimeNetworkIntent(
+  enabled: boolean,
+  binding: CustomConnectorExecutionDefinition["networkBinding"],
+) {
+  if (!enabled) {
+    return undefined;
+  }
+  return binding
+    ? { kind: "cloudflare_access" as const, configId: binding.configId }
+    : { kind: "direct" as const };
 }
 
 export function orderedCustomConnectorRuntimeRows(

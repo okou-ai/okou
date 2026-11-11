@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
+import type { ConnectorRuntimeSyncResult } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
@@ -24,6 +25,77 @@ interface NetworkRunAuthority {
   readonly status: string;
   readonly definitionUpdatedAt: Date;
   readonly grantId: string | null;
+}
+
+interface NetworkRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly intent: CustomConnectorNetworkIntent;
+}
+
+interface NetworkMatch {
+  readonly name: string;
+  readonly apiId: string;
+  readonly customConnectorId: string;
+  readonly sourceId?: string;
+  readonly routingVariables: Record<string, string>;
+}
+
+type AvailableCustomRuntime = Extract<
+  ConnectorRuntimeSyncResult,
+  {
+    readonly state: "available";
+    readonly target: { readonly kind: "custom" };
+  }
+>;
+
+function validateNetworkRequestScope(args: {
+  readonly request: NetworkRequest;
+  readonly matched: NetworkMatch;
+  readonly firewall: AvailableCustomRuntime["firewall"]["firewall"];
+  readonly policy: AvailableCustomRuntime["networkPolicy"];
+}) {
+  const { firewall, request, matched } = args;
+  const api = firewall.apis.find((candidate) => {
+    return candidate.id === matched.apiId;
+  });
+  if (
+    !api ||
+    firewall.name !== matched.name ||
+    api.networkIntent === undefined ||
+    JSON.stringify(api.networkIntent) !== JSON.stringify(request.intent)
+  ) {
+    return {
+      error: resourceUnavailable(
+        "Custom connector network intent changed; synchronize before retrying",
+      ),
+    };
+  }
+  const decision = matchFirewallRequestDecision(
+    [firewall],
+    request.method,
+    request.url,
+    { [firewall.name]: args.policy },
+  );
+  if (decision.kind !== "allow" || decision.base !== api.base) {
+    return {
+      error: resourceUnavailable(
+        "The request does not match the current custom connector firewall permission",
+      ),
+    };
+  }
+  if (
+    api.networkIntent.kind === "cloudflare_access" &&
+    (new URL(request.url).protocol !== "https:" ||
+      ["CONNECT", "TRACE"].includes(request.method.toUpperCase()))
+  ) {
+    return {
+      error: badRequestMessage(
+        "Cloudflare Access requires HTTPS and a method that can carry managed credentials",
+      ),
+    };
+  }
+  return { intent: api.networkIntent };
 }
 
 function activeNetworkRun(
@@ -82,18 +154,8 @@ export const admitCustomConnectorNetworkRequest$ = command(
     { get, set },
     args: {
       readonly auth: SandboxAuth;
-      readonly request: {
-        readonly method: string;
-        readonly url: string;
-        readonly intent: CustomConnectorNetworkIntent;
-      };
-      readonly matched: {
-        readonly name: string;
-        readonly apiId: string;
-        readonly customConnectorId: string;
-        readonly sourceId?: string;
-        readonly routingVariables: Record<string, string>;
-      };
+      readonly request: NetworkRequest;
+      readonly matched: NetworkMatch;
     },
     signal: AbortSignal,
   ) => {
@@ -142,39 +204,14 @@ export const admitCustomConnectorNetworkRequest$ = command(
         "Custom connector is unavailable for this Run",
       );
     }
-    const firewall = runtime.firewall.firewall;
-    const api = firewall.apis.find((a) => {
-      return a.id === args.matched.apiId;
+    const scope = validateNetworkRequestScope({
+      request: args.request,
+      matched: args.matched,
+      firewall: runtime.firewall.firewall,
+      policy: runtime.networkPolicy,
     });
-    if (
-      !api ||
-      firewall.name !== args.matched.name ||
-      api.networkIntent === undefined ||
-      JSON.stringify(api.networkIntent) !== JSON.stringify(args.request.intent)
-    ) {
-      return resourceUnavailable(
-        "Custom connector network intent changed; synchronize before retrying",
-      );
-    }
-    const decision = matchFirewallRequestDecision(
-      [firewall],
-      args.request.method,
-      args.request.url,
-      { [firewall.name]: runtime.networkPolicy },
-    );
-    if (decision.kind !== "allow" || decision.base !== api.base) {
-      return resourceUnavailable(
-        "The request does not match the current custom connector firewall permission",
-      );
-    }
-    if (
-      api.networkIntent.kind === "cloudflare_access" &&
-      (new URL(args.request.url).protocol !== "https:" ||
-        ["CONNECT", "TRACE"].includes(args.request.method.toUpperCase()))
-    ) {
-      return badRequestMessage(
-        "Cloudflare Access requires HTTPS and a method that can carry managed credentials",
-      );
+    if (scope.error) {
+      return scope.error;
     }
     const admission = await settle(
       set(
@@ -183,7 +220,7 @@ export const admitCustomConnectorNetworkRequest$ = command(
           orgId: args.auth.orgId,
           userId: args.auth.userId,
           connectorId: args.matched.customConnectorId,
-          expected: api.networkIntent,
+          expected: scope.intent,
           definitionUpdatedAt: run.definitionUpdatedAt,
         },
         signal,
@@ -192,8 +229,9 @@ export const admitCustomConnectorNetworkRequest$ = command(
     );
     signal.throwIfAborted();
     if (!admission.ok) {
-      if (!(admission.error instanceof CustomConnectorNetworkError))
+      if (!(admission.error instanceof CustomConnectorNetworkError)) {
         throw admission.error;
+      }
       return resourceUnavailable(admission.error.message);
     }
     const networkAdmission = admission.value;
@@ -204,8 +242,9 @@ export const admitCustomConnectorNetworkRequest$ = command(
       current.agentId !== run.agentId ||
       current.definitionUpdatedAt.getTime() !==
         run.definitionUpdatedAt.getTime()
-    )
+    ) {
       return resourceUnavailable("Run is no longer active");
+    }
     return {
       status: 200 as const,
       body: {

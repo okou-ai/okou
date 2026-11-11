@@ -248,7 +248,7 @@ test("custom network admission is explicitly opted in and leaves installed Runne
   });
 });
 
-test("Run network admission uses current bindings and rotation independently of application OAuth", async () => {
+test("run network admission uses current bindings and rotation independently of application OAuth", async () => {
   const fixture = createPublicFirewallFixture(context, {
     orgRole: "org:admin",
   });
@@ -419,9 +419,9 @@ test("Run network admission uses current bindings and rotation independently of 
       [200],
       "add",
     );
-    expect(
-      await firewall.requestFirewallAuth(custom.headers, networkBody, [200]),
-    ).toMatchObject({
+    await expect(
+      firewall.requestFirewallAuth(custom.headers, networkBody, [200]),
+    ).resolves.toMatchObject({
       status: 200,
       body: {
         headers: {},
@@ -456,12 +456,11 @@ test("Run network admission uses current bindings and rotation independently of 
     expect((await custom.request(custom.account.id, false, true)).status).toBe(
       200,
     );
-    expect(
-      await custom.connectors.listCustomConnectorAccounts(
-        custom.actor,
-        connector.id,
-      ),
-    ).toMatchObject([{ id: custom.account.id, connectionStatus: "connected" }]);
+    await expect(
+      custom.connectors.listCustomConnectorAccounts(custom.actor, connector.id),
+    ).resolves.toMatchObject([
+      { id: custom.account.id, connectionStatus: "connected" },
+    ]);
   });
 });
 

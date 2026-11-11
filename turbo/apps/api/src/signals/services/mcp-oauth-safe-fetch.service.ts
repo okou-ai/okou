@@ -63,18 +63,21 @@ async function hasApplicationChallenge(response: Response): Promise<boolean> {
     /^(?:Bearer|Basic)\s/iu.test(
       response.headers.get("www-authenticate")?.trim() ?? "",
     )
-  )
+  ) {
     return true;
-  if (!response.headers.get("content-type")?.includes("application/json"))
+  }
+  if (!response.headers.get("content-type")?.includes("application/json")) {
     return false;
+  }
   const parsed = await settle(response.clone().json());
   if (
     !parsed.ok ||
     typeof parsed.value !== "object" ||
     parsed.value === null ||
     !("error" in parsed.value)
-  )
+  ) {
     return false;
+  }
   return [
     "invalid_client",
     "invalid_grant",
@@ -206,17 +209,21 @@ async function validateObservedPublicDestination(
   if (
     url.hostname.startsWith("[") ||
     /^\d+\.\d+\.\d+\.\d+$/u.test(url.hostname)
-  )
+  ) {
     return;
+  }
   const lookup = await settle(
     Promise.allSettled([resolve4(url.hostname), resolve6(url.hostname)]),
     signal,
   );
-  if (!lookup.ok) throw lookup.error;
+  if (!lookup.ok) {
+    throw lookup.error;
+  }
   const addresses: string[] = [];
   for (const answer of lookup.value) {
-    if (answer.status === "fulfilled") addresses.push(...answer.value);
-    else if (
+    if (answer.status === "fulfilled") {
+      addresses.push(...answer.value);
+    } else if (
       !(answer.reason instanceof Error) ||
       !("code" in answer.reason) ||
       (answer.reason.code !== "ENODATA" && answer.reason.code !== "ENOTFOUND")
@@ -224,9 +231,12 @@ async function validateObservedPublicDestination(
       throw new McpOAuthUnsafeUrlError();
     }
   }
-  if (addresses.length === 0) throw new McpOAuthUnsafeUrlError();
-  for (const address of addresses)
+  if (addresses.length === 0) {
+    throw new McpOAuthUnsafeUrlError();
+  }
+  for (const address of addresses) {
     validate(`https://${address.includes(":") ? `[${address}]` : address}`);
+  }
   signal.throwIfAborted();
   // Workers performs its own DNS resolution for HTTPS. This validates observed
   // answers; it does not pin the eventual connection to one of those answers.
@@ -392,8 +402,9 @@ export function createMcpOAuthSafeFetch(
           signal,
         );
         signal.throwIfAborted();
-        for (const [name, value] of Object.entries(headers))
+        for (const [name, value] of Object.entries(headers)) {
           requestData.headers.set(name, value);
+        }
       }
       const response = await boundedRequest(url, requestData, signal);
       if (

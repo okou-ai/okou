@@ -1,6 +1,8 @@
-import type { FetchLike } from "@modelcontextprotocol/client";
+import {
+  buildDiscoveryUrls,
+  type FetchLike,
+} from "@modelcontextprotocol/client";
 import { accept } from "@okouai/connectors/accept";
-import { buildDiscoveryUrls } from "@modelcontextprotocol/client";
 import {
   createLocalJWKSet,
   decodeJwt,

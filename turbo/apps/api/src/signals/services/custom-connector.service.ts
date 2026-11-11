@@ -34,6 +34,7 @@ import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
 import {
   prepareCustomConnectorNetworkBinding$,
+  customConnectorNetworkBindingUpdateCte,
   publishedCustomConnectorNetworkBinding,
   type PreparedCustomConnectorNetworkBinding,
 } from "./custom-connector-network-publication";
@@ -64,6 +65,7 @@ import {
   lt,
   sql,
   type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { WithSubquery } from "drizzle-orm/subquery";
@@ -2149,8 +2151,7 @@ export const createCustomConnector$ = command(
     },
     signal: AbortSignal,
   ): Promise<CustomConnectorRow | BadRequestResponse> => {
-    const canonicalInput = definitionFromCreateInput(args.input);
-    const v = validateDefinition(canonicalInput);
+    const v = validateDefinition(definitionFromCreateInput(args.input));
     if (isBadRequest(v)) {
       return v;
     }
@@ -2166,7 +2167,9 @@ export const createCustomConnector$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (isBadRequest(networkBindingChange)) return networkBindingChange;
+    if (isBadRequest(networkBindingChange)) {
+      return networkBindingChange;
+    }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
       v.permissionBundleRef,
@@ -2430,6 +2433,11 @@ function customConnectorUpdatePublicationPlan(
     locked,
     ctes: [locked],
     ready,
+    definition: and(
+      eq(orgCustomConnectors.id, args.id),
+      eq(orgCustomConnectors.orgId, args.orgId),
+      ready,
+    ),
     bindings: and(
       eq(customConnectorAccountOauthBindings.customConnectorId, args.id),
       ready,
@@ -2496,12 +2504,22 @@ const failedCustomConnectorUpdate$ = command(
 function publishedCustomConnectorUpdate(
   row: CustomConnectorDefinitionRow | null,
   oauthConfig: CustomConnectorOAuthConfigRow | null,
+  networkBindingChange: PreparedCustomConnectorNetworkBinding | undefined,
 ) {
   if (!row) {
     throw new Error("Expected locked custom connector to be updated");
   }
   requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-  return { row, oauthConfig };
+  return {
+    row: {
+      ...row,
+      networkBinding: publishedCustomConnectorNetworkBinding(
+        networkBindingChange,
+        row.networkBinding,
+      ),
+    },
+    oauthConfig,
+  };
 }
 
 function customConnectorOAuthUpdateValues(
@@ -2532,6 +2550,22 @@ function customConnectorSnapshotOAuthPlan(
           args.oauthConfigUpdate.kind === "preserve" ? undefined : sql`false`,
         ),
       ),
+  );
+}
+
+function customConnectorOAuthUpdateCreateSource(
+  args: PersistCustomConnectorUpdateArgs,
+  connectorId: SQLWrapper,
+) {
+  const oauth = args.oauthConfigUpdate;
+  if (oauth.kind !== "upsert" || !args.encryptedClientSecret) {
+    throw new Error("Expected a prepared OAuth client configuration");
+  }
+  return customConnectorOAuthCreateSource(
+    sql`${connectorId}`.mapWith(orgCustomConnectorOauthConfigs.connectorId),
+    args.orgId,
+    oauth.config,
+    args.encryptedClientSecret,
   );
 }
 
@@ -2586,69 +2620,25 @@ const persistCustomConnectorUpdate$ = command(
         0,
       );
     }
-    const updated = db.$with("updated_custom_connector").as(
-      db
-        .update(orgCustomConnectors)
-        .set(customConnectorDefinitionUpdateValues(args, nowDate()))
-        .where(
-          and(
-            eq(orgCustomConnectors.id, args.id),
-            eq(orgCustomConnectors.orgId, args.orgId),
-            plan.ready,
-            cleanupCompleted,
-          ),
-        )
-        .returning(customConnectorDefinitionSelection()),
-    );
+    const updated = db
+      .$with("updated_custom_connector")
+      .as(
+        db
+          .update(orgCustomConnectors)
+          .set(customConnectorDefinitionUpdateValues(args, nowDate()))
+          .where(and(plan.definition, cleanupCompleted))
+          .returning(customConnectorDefinitionSelection()),
+      );
     ctes.push(updated);
-    if (args.networkBindingChange?.kind === "bind") {
-      const change = args.networkBindingChange;
-      ctes.push(
-        db.$with("updated_connector_network_binding").as(
-          db
-            .insert(orgCustomConnectorCloudflareBindings)
-            .select(
-              db
-                .select({
-                  connectorId: updated.id,
-                  orgId: sql`${args.orgId}`
-                    .mapWith(orgCustomConnectorCloudflareBindings.orgId)
-                    .as("org_id"),
-                  configId: sql`${change.configId}`
-                    .mapWith(orgCustomConnectorCloudflareBindings.configId)
-                    .as("config_id"),
-                  configScope: sql`'organization'`
-                    .mapWith(orgCustomConnectorCloudflareBindings.configScope)
-                    .as("config_scope"),
-                })
-                .from(updated),
-            )
-            .onConflictDoUpdate({
-              target: orgCustomConnectorCloudflareBindings.connectorId,
-              set: { configId: change.configId },
-            })
-            .returning({
-              id: orgCustomConnectorCloudflareBindings.connectorId,
-            }),
-        ),
-      );
-    } else if (args.networkBindingChange?.kind === "clear") {
-      ctes.push(
-        db.$with("removed_connector_network_binding").as(
-          db
-            .delete(orgCustomConnectorCloudflareBindings)
-            .where(
-              and(
-                eq(orgCustomConnectorCloudflareBindings.connectorId, args.id),
-                eq(orgCustomConnectorCloudflareBindings.orgId, args.orgId),
-                exists(db.select({ id: updated.id }).from(updated)),
-              ),
-            )
-            .returning({
-              id: orgCustomConnectorCloudflareBindings.connectorId,
-            }),
-        ),
-      );
+    const networkBinding = customConnectorNetworkBindingUpdateCte({
+      orgId: args.orgId,
+      connectorId: args.id,
+      change: args.networkBindingChange,
+      updatedConnector: updated,
+      updatedConnectorId: updated.id,
+    });
+    if (networkBinding) {
+      ctes.push(networkBinding);
     }
     const config =
       oauth.kind === "upsert" && args.encryptedClientSecret
@@ -2658,14 +2648,7 @@ const persistCustomConnectorUpdate$ = command(
               .select(
                 db
                   .select(
-                    customConnectorOAuthCreateSource(
-                      sql`${updated.id}`.mapWith(
-                        orgCustomConnectorOauthConfigs.connectorId,
-                      ),
-                      args.orgId,
-                      oauth.config,
-                      args.encryptedClientSecret,
-                    ),
+                    customConnectorOAuthUpdateCreateSource(args, updated.id),
                   )
                   .from(updated),
               )
@@ -2707,16 +2690,9 @@ const persistCustomConnectorUpdate$ = command(
     signal.throwIfAborted();
     return result
       ? publishedCustomConnectorUpdate(
-          result.updated_custom_connector
-            ? {
-                ...result.updated_custom_connector,
-                networkBinding: publishedCustomConnectorNetworkBinding(
-                  args.networkBindingChange,
-                  result.updated_custom_connector.networkBinding,
-                ),
-              }
-            : null,
+          result.updated_custom_connector,
           result.custom_connector_oauth_result,
+          args.networkBindingChange,
         )
       : await set(failedCustomConnectorUpdate$, args, signal);
   },
@@ -2736,7 +2712,9 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
     );
     if (signal.aborted) {
       // A successful publication still completes its runtime wakeup below.
-      if (!publication.ok) signal.throwIfAborted();
+      if (!publication.ok) {
+        signal.throwIfAborted();
+      }
     }
     if (!publication.ok) {
       signal.throwIfAborted();
@@ -2920,7 +2898,9 @@ export const updateCustomConnectorDefinition$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (isBadRequest(networkBindingChange)) return networkBindingChange;
+    if (isBadRequest(networkBindingChange)) {
+      return networkBindingChange;
+    }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
       prepared.definition.permissionBundleRef,

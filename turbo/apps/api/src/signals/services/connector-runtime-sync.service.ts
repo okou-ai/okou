@@ -431,6 +431,17 @@ const loadCustomSnapshot$ = command(
   },
 );
 
+function customTargetIsAccountless(
+  sourceId: string | undefined,
+  row: CustomConnectorRuntimeDataRows[number],
+) {
+  return (
+    sourceId === undefined &&
+    row.connector.authMode === "none" &&
+    row.credentialAccess.kind === "absent"
+  );
+}
+
 async function resolveCustomTarget(args: {
   readonly registration: Extract<
     ConnectorRuntimeTargetRegistration,
@@ -461,10 +472,10 @@ async function resolveCustomTarget(args: {
   if (!custom) {
     return customAbsentResult(target, "connector-unavailable");
   }
-  const accountless =
-    args.registration.sourceId === undefined &&
-    custom.row.connector.authMode === "none" &&
-    custom.row.credentialAccess.kind === "absent";
+  const accountless = customTargetIsAccountless(
+    args.registration.sourceId,
+    custom.row,
+  );
   if (accountResolution?.kind !== "resolved" && !accountless) {
     return customAbsentResult(target, "connector-unavailable");
   }

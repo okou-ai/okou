@@ -1455,6 +1455,17 @@ function automaticReauthorizationClient() {
   return { clientMetadata, redirectUri };
 }
 
+function automaticOAuthConnectionUsable(
+  connection: StoredConnection | null,
+): connection is StoredConnection {
+  return (
+    connection !== null &&
+    !connection.needsReconnect &&
+    Boolean(connection.encryptedAccessToken) &&
+    connectionAccessTokenIsCurrent(connection)
+  );
+}
+
 export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
   async (
     { get, set },
@@ -1486,11 +1497,11 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     };
     const connection = await (async (): Promise<StoredConnection | null> => {
       const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
-      const query = db
+      const rows = await db
         .select(plan.columns)
         .from(connectors)
-        .where(plan.condition);
-      const rows = await query.limit(1);
+        .where(plan.condition)
+        .limit(1);
       const connection = rows[0];
       if (!connection) {
         return null;
@@ -1510,12 +1521,7 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
       return storedConnectionFromRows(connection, tokenRows);
     })();
     signal.throwIfAborted();
-    if (
-      !connection ||
-      connection.needsReconnect ||
-      !connection.encryptedAccessToken ||
-      !connectionAccessTokenIsCurrent(connection)
-    ) {
+    if (!automaticOAuthConnectionUsable(connection)) {
       return automaticOAuthReauthorizationUnavailable("account");
     }
     const binding = await (async () => {
