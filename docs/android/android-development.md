@@ -63,6 +63,23 @@ The feature owner receives semantic text/document edits; rendering must not crea
 new business owners or imperatively start duplicate requests. Maintain accessibility
 names, font scaling, contrast and system inset/keyboard handling.
 
+Retain editable text together with its native selection/composition value at
+the presentation owner. A business preview or submission is a separate immutable
+snapshot; do not synchronize two continuously editable strings with an effect.
+Navigation/configuration retention does not establish durable process restoration.
+
+Keep device-local preferences with one process-owned store and explicit
+presentation read/write/retry states. Observe disk asynchronously without making
+unrelated content wait for it. A completed write and the UI's observation of
+that value can arrive separately; preserve pending intent until confirmation
+instead of accepting a newer action against an obsolete value. IO failure must
+not masquerade as a saved preference, and cancellation retains its native meaning.
+
+Resolve an explicit app appearance from the correct generated day/night
+resources, independently of the phone's mode. Keep the Activity context and its
+owners intact; a configuration-specific Resources instance is sufficient for
+token lookup. Native system-bar presentation follows the resolved app mode.
+
 ## Service and Release Boundaries
 
 ### Public Android Entry Points

@@ -38,6 +38,7 @@ tasks.named("preBuild") { dependsOn(generateBrandFonts) }
 val generateLicenseAssets by
     tasks.registering(Sync::class) {
         from("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") }
+        from("../../ios/Okou/DesignSystem/Lucide-LICENSE.txt")
         into(layout.buildDirectory.dir("generated/brand/assets/licenses"))
     }
 
@@ -50,6 +51,8 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.navigation.compose)
+    implementation(libs.datastore.preferences)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

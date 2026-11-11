@@ -1,9 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Okou</string>
-    <string name="foundation_title">Okou for Android</string>
-    <string name="foundation_description">Native Android foundation. Account sign-in and remote chat are not connected yet.</string>
-    <string name="draft_label">Local draft</string>
+    <string name="app_name" translatable="false">Okou</string>
+    <string name="home">Home</string>
+    <string name="settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="home_title">Make space for your next idea</string>
+    <string name="home_description">Write a draft and preview it on this device.</string>
+    <string name="draft_label">Draft</string>
+    <string name="draft_hint">What are you thinking about?</string>
     <string name="local_preview">Preview draft</string>
-    <string name="draft_preview">Draft preview: %1$s</string>
+    <string name="preview_title">Preview</string>
+    <string name="appearance">Appearance</string>
+    <string name="appearance_description">Choose how Okou looks on this device.</string>
+    <string name="appearance_system">Follow system</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
+    <string name="on_this_device">On this device</string>
+    <string name="appearance_local">Appearance is saved only on this device.</string>
+    <string name="appearance_loading">Loading appearance…</string>
+    <string name="appearance_saving">Saving appearance…</string>
+    <string name="appearance_read_failed">Could not load appearance. Try again.</string>
+    <string name="appearance_write_failed">Could not save appearance. Try again.</string>
+    <string name="retry">Try again</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
 </resources>

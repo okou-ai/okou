@@ -1,11 +1,21 @@
 # Okou for Android
 
-Native Kotlin/Jetpack Compose foundation inside the Okou monorepo. Open this
+Native Kotlin/Jetpack Compose client shell inside the Okou monorepo. Open this
 directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
-The application currently provides an editable **local draft preview** backed
-by a Kotlin state holder, read-only StateFlow and a lifecycle-aware Compose route.
+The application currently provides native **Home and Settings** destinations,
+an editable local draft preview, and device-local Light/Dark/Follow system
+appearance. Compact windows use bottom navigation; wider windows use a rail.
+Home remains usable while Preferences DataStore loads or reports an IO error;
+Settings exposes loading, saving and retry states. Appearance is confirmed from
+the stored data stream and restored across relaunch/configuration changes.
+Owned UI resources cover the twelve current Web locales, following the device
+language with distinct Simplified/Traditional Chinese resources. Account-backed
+palette/language selection is separate future work.
+
+The Activity retains native text, selection and IME state across navigation
+and configuration changes; previews are independent immutable text snapshots.
 It does not authenticate, send chats, contact
 production, register push, or publish to a store. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
@@ -99,8 +109,9 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 
 ## Components and Authority
 
-- `app`: native Activity, ViewModel owner, Kotlin state holders/immutable UI
-  models, reusable theme and local draft surface. Plain business logic can stay
+- `app`: native Activity, Home/Settings routes, retained presentation owners,
+  pure preview snapshots, local preference storage and the shared native theme.
+  Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
 
@@ -109,14 +120,22 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-DraftStateHolderTest covers draft validation, content/snapshot preservation and
-owner isolation. FoundationScreenTest covers actual input/actions, lifecycle
-stop/resume and owner replacement through the real route. Both live in app's
-local test source set. Add modules/shared helpers only for actual application
-boundaries; this scaffold does not start background requests or model fake tasks.
+DraftPreviewStateHolderTest covers validation, verbatim snapshots and owner
+isolation. AppearanceModelTest exercises real presentation/decoding against the
+DataStore IO boundary, including read/write recovery, confirmation ordering,
+cancellation and actual file-backed reopen. OkouAppTest and MainActivityTest
+exercise real routes, native editor selection, back/configuration retention,
+appearance and adaptive navigation. LocalizedResourcesTest verifies native
+locale/script matching on APIs 24 and 35. These are local tests; they do not
+establish physical-device IME/rendering or startup budgets.
+Add modules/shared helpers only for actual application boundaries. Preferences
+DataStore has one lazy process owner; its observation starts asynchronously at
+the retained presentation owner and does not gate Home on disk IO.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
-vector retains the geometry from `ios/Assets/AppIcon.svg`.
+vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation
+vectors use Lucide geometry; its shared license is also packaged under
+`assets/licenses`. No runtime font or icon download is needed.
 
 ## CI and Distribution
 
