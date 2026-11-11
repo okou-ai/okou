@@ -1111,11 +1111,13 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  test-browser-extension:
+  test-browser-extension-package:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      dist-artifact-id: ${{ steps.dist.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -1126,18 +1128,40 @@ jobs:
         run: node --test .github/scripts/release/browser-extension-release.test.mjs
       - name: Build extension
         run: pnpm --dir turbo --filter @okouai/browser-extension build
-      - name: Test native extension behavior
-        # Match @playwright/test in the extension package. The immutable image
-        # supplies full Chromium, system libraries and the native font fixtures.
-        run: |
-          docker run --rm --init --ipc=host \
-            --env CI=true \
-            --volume "$PWD:/work" \
-            --workdir /work/turbo/apps/browser-extension \
-            mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f \
-            node node_modules/@playwright/test/cli.js test
       - name: Verify deterministic extension package
         run: pnpm --dir turbo --filter @okouai/browser-extension verify-package
+      - name: Upload verified extension build
+        id: dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-extension-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          path: turbo/apps/browser-extension/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  test-browser-extension:
+    needs: [detect-turbo-ts-checks, test-browser-extension-package]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      # Match @playwright/test in the extension package. This image supplies
+      # full Chromium, system libraries and the native font fixtures.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.33.4
+      - uses: ./.github/actions/toolchain-init
+      - name: Download verified extension build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.test-browser-extension-package.outputs.dist-artifact-id }}
+          path: turbo/apps/browser-extension/dist
+      - name: Test native extension behavior
+        run: pnpm --dir turbo/apps/browser-extension exec playwright test
 
   test-other:
     needs: [detect-turbo-ts-checks]
@@ -2984,6 +3008,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-browser-extension-package
       - test-browser-extension
       - test-discord-gateway
       - test-link-approval
@@ -3114,6 +3139,7 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-browser-extension-package" "${{ needs.test-browser-extension-package.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-browser-extension" "${{ needs.test-browser-extension.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-link-approval" "${{ needs.test-link-approval.result }}" "$TS_CHECK_SKIP_ALLOWED"
