@@ -35,9 +35,12 @@ enum OkouWidgetMoment {
   }
 }
 
-/// The mascot's moods, one asset each (`Mascot-<mood>`).
+/// The mascot's moods, each the hero frame of one of Liangyou's 21 Okou moods, rendered from
+/// the avatar rig: ready 发呆, evening 开心, working 思考, needs 拜托, done 庆祝, oops 汗颜,
+/// sleep 困困. Every mood has a hero asset for large faces and a mini one for small faces
+/// (`Mascot-<mood>-hero` / `-mini`), each drawn with lines weighted for its size.
 enum OkouWidgetMood: String {
-  case ready, working, needs, done, oops, sleep
+  case ready, evening, working, needs, done, oops, sleep
 }
 
 /// What one widget entry shows: the chats by state, in the order the widget lists them.
@@ -93,7 +96,7 @@ struct OkouWidgetModel {
     if !finished.isEmpty { return .done }
     switch moment {
     case .night: return .sleep
-    case .evening: return .done
+    case .evening: return .evening
     case .morning, .day: return .ready
     }
   }

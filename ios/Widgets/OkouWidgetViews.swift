@@ -45,7 +45,9 @@ struct OkouMascot: View {
   var yields = false
 
   var body: some View {
-    let image = Image("Mascot-" + mood.rawValue)
+    // Below 50 pt the mini rendering keeps the face's lines from thinning out.
+    let variant = size < 50 ? "mini" : "hero"
+    let image = Image("Mascot-" + mood.rawValue + "-" + variant)
       .resizable()
       .widgetAccentedRenderingMode(.desaturated)
       .scaledToFit()
