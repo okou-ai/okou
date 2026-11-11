@@ -250,61 +250,66 @@ final class MailDraftCardTests: XCTestCase {
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "POST" }.count }, 1)
   }
 
-  func testLateDraftReadCannotOverwriteAConfirmedSendResponse() async throws {
-    let sendBegan = expectation(description: "Send is pending")
-    let readBegan = expectation(description: "A concurrent read captured the old draft")
-    let readCancelled = expectation(description: "The old original HTTP was cancelled")
-    let sendGate = ModelResponseGate()
-    let readGate = ModelResponseGate()
-    let reads = Mutex(0)
-    let fixture = MailDraftHTTPFixture { request, _ in
-      if request.httpMethod == "POST" {
-        sendBegan.fulfill()
-        await sendGate.wait()
-      } else if request.httpMethod == "GET" {
-        let delayed = reads.withLock { value in
-          value += 1
-          return value == 2
-        }
-        if delayed {
-          await withTaskCancellationHandler {
-            readBegan.fulfill()
-            await readGate.wait()
-          } onCancel: {
-            readCancelled.fulfill()
+  func testLateDraftReadCannotOverwriteSendOrPostDiscardReadback() async throws {
+    for sending in [true, false] {
+      let writeBegan = expectation(description: "Mail operation is pending")
+      let readBegan = expectation(description: "A concurrent read captured the old draft")
+      let readCancelled = expectation(description: "The old original HTTP was cancelled")
+      let writeGate = ModelResponseGate()
+      let readGate = ModelResponseGate()
+      let reads = Mutex(0)
+      let fixture = MailDraftHTTPFixture { request, _ in
+        if request.httpMethod != "GET" {
+          writeBegan.fulfill()
+          await writeGate.wait()
+        } else {
+          let delayed = reads.withLock { value in
+            value += 1
+            return value == 2
+          }
+          if delayed {
+            await withTaskCancellationHandler {
+              readBegan.fulfill()
+              await readGate.wait()
+            } onCancel: {
+              readCancelled.fulfill()
+            }
           }
         }
       }
-    }
-    let (conversation, card) = setup(fixture)
-    defer { conversation.close() }
-    let draft = try await card.read()
-    XCTAssertEqual(draft?.status, .draft)
-    let sending = Task { await card.send() }
-    addTeardownBlock { @MainActor in
-      sending.cancel()
-      sendGate.open()
+      let (conversation, card) = setup(fixture)
+      defer { conversation.close() }
+      let draft = try await card.read()
+      XCTAssertEqual(draft?.status, .draft)
+      let writing = Task {
+        if sending { await card.send() } else { await card.discard() }
+      }
+      addTeardownBlock { @MainActor in
+        writing.cancel()
+        writeGate.open()
+        readGate.open()
+        await writing.value
+      }
+      await fulfillment(of: [writeBegan], timeout: 3)
+      // This HTTP response was captured before the provider's mutation response arrived.
+      fixture.state.withLock { $0.status = "draft" }
+      let oldRead = Task { try await card.read(refresh: true) }
+      addTeardownBlock { @MainActor in
+        oldRead.cancel()
+        readGate.open()
+        _ = await oldRead.result
+      }
+      await fulfillment(of: [readBegan], timeout: 3)
+      fixture.state.withLock { $0.status = sending ? "sent" : "deleted" }
+      writeGate.open()
+      await writing.value
+      await fulfillment(of: [readCancelled], timeout: 3)
       readGate.open()
-      await sending.value
+      let latest = try await oldRead.value
+      XCTAssertEqual(latest?.status, sending ? .sent : .deleted)
+      let confirmed = try await card.read()
+      XCTAssertEqual(confirmed?.status, sending ? .sent : .deleted)
     }
-    await fulfillment(of: [sendBegan], timeout: 3)
-    // The external read captured a draft before the provider's Send response arrived.
-    fixture.state.withLock { $0.status = "draft" }
-    let oldRead = Task { try await card.read(refresh: true) }
-    addTeardownBlock { @MainActor in
-      oldRead.cancel()
-      readGate.open()
-      _ = await oldRead.result
-    }
-    await fulfillment(of: [readBegan], timeout: 3)
-    sendGate.open()
-    await sending.value
-    await fulfillment(of: [readCancelled], timeout: 3)
-    readGate.open()
-    let latest = try await oldRead.value
-    XCTAssertEqual(latest?.status, .sent)
-    let confirmed = try await card.read()
-    XCTAssertEqual(confirmed?.status, .sent)
   }
 
   func testReconciliationFetchesHTTPWhileTheConfirmedPresentationTaskIsPending() async throws {

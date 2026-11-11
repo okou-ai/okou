@@ -189,7 +189,7 @@ final class MailDraftCardStore {
         } else {
           try await client.discardMailDraft(id: id)
           try checkOwner(generation)
-          _ = try await read(refresh: true)
+          try await readbackAfterMutation()
           try checkOwner(generation)
           requiresReadback = false
         }
@@ -210,7 +210,7 @@ final class MailDraftCardStore {
           failure.statusCode == 400 || failure.statusCode == 409
         {
           do {
-            _ = try await read(refresh: true)
+            try await readbackAfterMutation()
             try checkOwner(generation)
             requiresReadback = false
           } catch {}
@@ -219,6 +219,13 @@ final class MailDraftCardStore {
     }
     operation = task
     await task.value
+  }
+
+  private func readbackAfterMutation() async throws {
+    // Readback must start after the write response, not reuse an older in-flight GET.
+    current?.cancel()
+    pending = nil
+    _ = try await read(refresh: true)
   }
 
   private func checkOwner(_ generation: UUID) throws {
