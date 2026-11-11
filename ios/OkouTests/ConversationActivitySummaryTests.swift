@@ -31,58 +31,86 @@ final class ConversationActivitySummaryTests: XCTestCase {
     await observation.value
     _ = try XCTUnwrap(scenario.state.requests.withLock { $0 } > count ? true : nil)
   }
+  private func read(_ conversation: ConversationStore) async throws -> ChatActivitySummary? {
+    let summary = conversation.activitySummary
+    return try await summary.stateStore.get(summary.value).value
+  }
+
+  private func assertHidden(
+    _ conversation: ConversationStore, batch: ChatActivitySummary?,
+    file: StaticString = #filePath, line: UInt = #line
+  ) {
+    XCTAssertNil(conversation.activitySummary.text(in: batch), file: file, line: line)
+  }
+
   func testRefreshRotationAndFailureDegradationDoNotChangeTranscript() async throws {
     let scenario = ActivityScenario()
     let clock = ActivityClock()
     let conversation = scenario.conversation(clock: clock)
     defer { conversation.close() }
     await conversation.refresh()
-    XCTAssertNil(conversation.activitySummary.text)
+    let hidden = try await read(conversation)
+    assertHidden(conversation, batch: hidden)
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
+    let initial = try await read(conversation)
+    XCTAssertEqual(conversation.activitySummary.text(in: initial), "Checking the sources")
     let messages = conversation.messages
     let items = conversation.visibleItems
     let history = conversation.history
     try await waitForSleep(clock, .seconds(5))
     clock.advance(.seconds(5))
-    try await waitForBusinessResult { conversation.activitySummary.text == "Comparing the results" }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 1)
+    try await waitForBusinessResult {
+      conversation.activitySummary.text(in: initial) == "Comparing the results"
+    }
     try await waitForSleep(clock, .seconds(15))
     clock.advance(.seconds(15))
     try await waitForRequest(scenario, after: 1)
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
-    XCTAssertEqual(conversation.activitySummary.text, "Comparing the results")
+    let refreshed = try await read(conversation)
+    XCTAssertEqual(conversation.activitySummary.text(in: refreshed), "Comparing the results")
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertEqual(conversation.visibleItems, items)
     XCTAssertEqual(conversation.history, history)
 
-    for response in [
-      ChatHTTPResponse(
-        body: "{\"runId\":\"\(ActivityScenario.run)\",\"status\":\"available\",\"messages\":[]}"),
-      ChatHTTPResponse(
-        body: "{\"runId\":\"\(ActivityScenario.run)\",\"status\":\"ineligible\",\"messages\":[]}"),
-      ChatHTTPResponse(
-        body: "{\"runId\":\"\(ActivityScenario.run)\",\"status\":\"unavailable\",\"messages\":[]}"),
-      ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Denied\"}}"),
-      ChatHTTPResponse(status: 500, body: "{\"error\":{\"message\":\"Unavailable\"}}"),
-    ] {
-      scenario.state.response.withLock { $0 = response }
-      let previous = scenario.state.requests.withLock { $0 }
-      try await waitForSleep(clock, .seconds(15))
-      clock.advance(.seconds(15))
-      try await waitForRequest(scenario, after: previous)
-      try await waitForBusinessResult { conversation.activitySummary.text == nil }
+    for status in ["available", "ineligible", "unavailable"] {
+      scenario.state.response.withLock {
+        $0 = ChatHTTPResponse(
+          body: "{\"runId\":\"\(ActivityScenario.run)\",\"status\":\"\(status)\",\"messages\":[]}")
+      }
+      conversation.activitySummary.retry()
+      let empty = try await read(conversation)
+      assertHidden(conversation, batch: empty)
       XCTAssertNil(conversation.error)
       XCTAssertEqual(conversation.history, history)
-
-      // Restore visible content so the next empty/error response must be consumed.
-      scenario.state.response.withLock { $0 = nil }
-      try await waitForSleep(clock, .seconds(15))
-      clock.advance(.seconds(15))
-      try await waitForBusinessResult {
-        conversation.activitySummary.text == "Checking the sources"
+    }
+    for status in [401, 403, 500] {
+      scenario.state.response.withLock {
+        $0 = ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
       }
+      conversation.activitySummary.retry()
+      let original = try conversation.activitySummary.stateStore.get(
+        conversation.activitySummary.value)
+      guard case .failure(let error) = await original.result else {
+        return XCTFail("The original resource must retain its HTTP failure")
+      }
+      XCTAssertEqual((error as? APIClientError)?.statusCode, status)
+      XCTAssertNil(conversation.error)
+      XCTAssertEqual(conversation.history, history)
+      XCTAssertEqual(conversation.messages, messages)
+    }
+    scenario.state.response.withLock { $0 = nil }
+    conversation.activitySummary.retry()
+    let recovered = try await read(conversation)
+    try await waitForSleep(clock, .seconds(5))
+    XCTAssertEqual(conversation.activitySummary.text(in: recovered), "Checking the sources")
+    conversation.activitySummary.setRotates(false)
+    try await waitForNoSleep(clock, duration: .seconds(5))
+    XCTAssertEqual(conversation.activitySummary.text(in: recovered), "Checking the sources")
+    conversation.activitySummary.setRotates(true)
+    try await waitForSleep(clock, .seconds(5))
+    clock.advance(.seconds(5))
+    try await waitForBusinessResult {
+      conversation.activitySummary.text(in: recovered) == "Comparing the results"
     }
   }
 
@@ -94,35 +122,37 @@ final class ConversationActivitySummaryTests: XCTestCase {
     defer { conversation.close() }
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    let initial = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: initial))
     let replacementOwner = UUID()
     conversation.setDetailVisible(true, owner: replacementOwner)
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
-    XCTAssertNotNil(conversation.activitySummary.text)
+    XCTAssertNotNil(conversation.activitySummary.text(in: initial))
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     visible.active = false
     conversation.reconcileActivitySummary()
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: initial)
     try await waitForNoSleep(clock)
     visible.active = true
     conversation.reconcileActivitySummary()
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
+    let foreground = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: foreground))
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: foreground)
     try await waitForNoSleep(clock)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 3)
+    let reopened = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: reopened))
     scenario.append(type: "run.completed")
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .completed)
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: reopened)
     try await waitForNoSleep(clock)
     conversation.close()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    XCTAssertNil(conversation.activitySummary.text)
-    try await waitForNoSleep(clock)
+    assertHidden(conversation, batch: reopened)
+    XCTAssertThrowsError(
+      try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
   }
 
   func testRunReplacementCancelsOldHTTPAndStoppedStateKeepsItsLabel() async throws {
@@ -131,16 +161,19 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let started = expectation(description: "Old run HTTP started")
     let cancelled = expectation(description: "Old HTTP cancelled")
     let release = ActivityClock()
+    let conversation = scenario.conversation(clock: clock)
+    defer { conversation.close() }
+    await conversation.refresh()
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    let stale = try await read(conversation)
     scenario.state.hold.withLock {
       $0 = {
         started.fulfill()
         do { try await release.sleep(.seconds(1)) } catch { cancelled.fulfill() }
       }
     }
-    let conversation = scenario.conversation(clock: clock)
-    defer { conversation.close() }
-    await conversation.refresh()
-    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    conversation.activitySummary.retry()
+    let old = try conversation.activitySummary.stateStore.get(conversation.activitySummary.value)
     await fulfillment(of: [started], timeout: 3)
     try await waitForSleep(release, .seconds(1))
     scenario.state.hold.withLock { $0 = nil }
@@ -148,13 +181,84 @@ final class ConversationActivitySummaryTests: XCTestCase {
     scenario.append(type: "input.prompt", run: newer)
     await conversation.refresh()
     await fulfillment(of: [cancelled], timeout: 3)
-    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
+    let replacement = try await read(conversation)
+    XCTAssertEqual(replacement?.runId, newer)
+    XCTAssertEqual(conversation.activitySummary.text(in: replacement), "Checking the sources")
+    guard case .failure = await old.result else {
+      return XCTFail("A replaced Run must cancel the original resource Task")
+    }
+    // Even a retained old phase cannot be displayed for the new demand.
+    assertHidden(conversation, batch: stale)
     XCTAssertEqual(conversation.history?.activityRunID, newer)
     release.advance(.seconds(1))
     scenario.append(type: "control.interrupt", run: newer)
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .stopping)
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: replacement)
+    try await waitForNoSleep(clock)
+  }
+
+  func testHidingAndClosingCancelTheOriginalInFlightHTTP() async throws {
+    for closesScope in [false, true] {
+      let scenario = ActivityScenario()
+      let clock = ActivityClock()
+      let release = ActivityClock()
+      let started = expectation(description: "Visible Run HTTP started")
+      let cancelled = expectation(description: "Visibility retirement cancelled HTTP")
+      scenario.state.hold.withLock {
+        $0 = {
+          started.fulfill()
+          do { try await release.sleep(.seconds(1)) } catch { cancelled.fulfill() }
+        }
+      }
+      let conversation = scenario.conversation(clock: clock)
+      defer { conversation.close() }
+      await conversation.refresh()
+      conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+      let original = try conversation.activitySummary.stateStore.get(
+        conversation.activitySummary.value)
+      await fulfillment(of: [started], timeout: 3)
+      try await waitForSleep(release, .seconds(1))
+      if closesScope {
+        conversation.close()
+      } else {
+        conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
+      }
+      await fulfillment(of: [cancelled], timeout: 3)
+      guard case .failure = await original.result else {
+        return XCTFail("Retirement must cancel the original HTTP Task")
+      }
+      try await waitForNoSleep(clock)
+      if closesScope {
+        conversation.activitySummary.demand(ActivityScenario.run)
+        XCTAssertThrowsError(
+          try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
+      } else {
+        let hidden = try await read(conversation)
+        XCTAssertNil(hidden)
+      }
+    }
+  }
+
+  func testUpgradeFailureReachesTheConversationWithoutChangingTranscript() async throws {
+    let scenario = ActivityScenario()
+    let clock = ActivityClock()
+    let conversation = scenario.conversation(clock: clock)
+    defer { conversation.close() }
+    await conversation.refresh()
+    let messages = conversation.messages
+    scenario.state.response.withLock {
+      $0 = ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
+    }
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    let original = try conversation.activitySummary.stateStore.get(
+      conversation.activitySummary.value)
+    guard case .failure(let error) = await original.result else {
+      return XCTFail("Upgrade failure must remain in the original resource")
+    }
+    XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
+    try await waitForBusinessResult { conversation.needsUpgrade }
+    XCTAssertEqual(conversation.messages, messages)
     try await waitForNoSleep(clock)
   }
 
@@ -170,18 +274,22 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    let initial = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: initial))
     workspace.setForeground(false)
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: initial)
     workspace.setForeground(true)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    let foreground = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: foreground))
     workspace.selectedThreadID = nil
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: foreground)
     workspace.selectedThreadID = ActivityScenario.thread
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    let reselected = try await read(conversation)
+    XCTAssertNotNil(conversation.activitySummary.text(in: reselected))
     workspace.close()
-    XCTAssertNil(conversation.activitySummary.text)
+    assertHidden(conversation, batch: reselected)
   }
+
 }
 
 @MainActor private final class ActivityVisibility { var active = true }
