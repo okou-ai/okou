@@ -29,7 +29,6 @@ final class ChatProjectStore {
   private(set) var actionError: String?
   private(set) var pending: Set<String> = []
   private(set) var expansion: [String: Bool] = [:]
-  private(set) var limits: [String: Int] = [:]
   private let service: ChatProjects
   private let resources: WorkspaceResources
   private let sync: ChatSync
@@ -97,9 +96,6 @@ final class ChatProjectStore {
   }
 
   func isExpanded(_ id: String) -> Bool { expansion[id] ?? false }
-  func limit(for id: String) -> Int { limits[id] ?? 20 }
-
-  func showMore(_ id: String) { limits[id] = limit(for: id) + 20 }
 
   func activate() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
@@ -193,7 +189,6 @@ final class ChatProjectStore {
           hasConfirmedProjects = true
           let knownIDs = Set(result.map(\.id))
           expansion = expansion.filter { knownIDs.contains($0.key) }
-          limits = limits.filter { knownIDs.contains($0.key) }
           if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
           await sync.persistProjects(result)
         } catch is CancellationError {
@@ -250,7 +245,6 @@ final class ChatProjectStore {
         projects.removeAll { $0.id == id }
         // Retain a collapse overlay until an in-flight preference restore finishes.
         expansion[id] = restoredDisclosure ? nil : false
-        limits[id] = nil
         persistDisclosure(id, expanded: false)
         await sync.persistProjects(projects)
         guard !closed, !Task.isCancelled else { return }

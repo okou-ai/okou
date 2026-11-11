@@ -9,7 +9,7 @@ use guest_agent::masker::SecretMasker;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use serde_json::{Value, json};
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -735,8 +735,22 @@ async fn deliver_pi_rpc_with_skips(
                     .map(|sequence| sequence as u32)
         );
     }
-    assert_eq!(std::fs::read_to_string(&events_path)?, original);
-    assert_eq!(std::fs::read_to_string(session_path)?, session);
+    // Compare each complete canonical file without allocating an observed copy.
+    let mut buffer = vec![0; 64 * 1024];
+    for (path, expected) in [
+        (events_path.as_path(), original.as_bytes()),
+        (session_path, session.as_bytes()),
+    ] {
+        let mut file = std::fs::File::open(path)?;
+        for expected in expected.chunks(buffer.len()) {
+            let actual = buffer
+                .get_mut(..expected.len())
+                .ok_or("canonical chunk exceeds comparison buffer")?;
+            file.read_exact(actual)?;
+            assert!(actual == expected, "{} changed", path.display());
+        }
+        assert_eq!(file.read(&mut [0])?, 0, "{}: extra bytes", path.display());
+    }
     let local = std::fs::read_to_string(runtime.paths.agent_log_file())?;
     let local_lines = local.lines().collect::<Vec<_>>();
     for expected in original.lines() {

@@ -528,16 +528,14 @@ class UsageEventBuffer:
     ) -> tuple[_PendingFlush | None, bool]:
         if self._state.has_active_enqueue():
             return None, False
-        if self._state.has_available_pending_flushes(flush_generation):
-            timer = self._pop_timer_locked()
-            if timer is not None:
-                timer.cancel()
-            return self._state.pop_pending_flush(flush_generation), False
-        if not snapshot_live:
+        has_pending_flush = self._state.has_available_pending_flushes(flush_generation)
+        if not has_pending_flush and not snapshot_live:
             return None, False
         timer = self._pop_timer_locked()
         if timer is not None:
             timer.cancel()
+        if has_pending_flush:
+            return self._state.pop_pending_flush(flush_generation), False
         return self._state.snapshot_live_flush(), True
 
     @staticmethod

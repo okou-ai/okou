@@ -26,6 +26,7 @@ import {
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 
 import { prepareTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundle";
+import { parseMigrationCliStderr } from "../../migration-cli-stderr";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("A disposable DATABASE_URL is required");
@@ -103,6 +104,8 @@ const run = async (id: string, ...args: string[]) => {
   const { stdout } = await promisify(execFile)(
     process.execPath,
     [
+      "--import",
+      new URL("../../fixtures/migration-cli-warning.mjs", import.meta.url).href,
       "--import",
       "tsx",
       "scripts/migrations/025-presentation-template-copy/copy.ts",
@@ -338,13 +341,12 @@ try {
       const failed = zObject({ code: literal(1), stderr: string() }).safeParse(
         error,
       );
-      return (
-        failed.success &&
-        zObject({
-          result: literal("failed"),
-          classification: literal("ZodError"),
-        }).safeParse(JSON.parse(failed.data.stderr.trim())).success
-      );
+      if (!failed.success) return false;
+      assert.match(failed.data.stderr, /\[MIGRATION_CLI_TEST\]/u);
+      return zObject({
+        result: literal("failed"),
+        classification: literal("ZodError"),
+      }).safeParse(parseMigrationCliStderr(failed.data.stderr)).success;
     });
     assert.deepEqual(await snapshot(fixture.orgId), before);
     assert.equal(putCount, writesBefore);

@@ -174,7 +174,9 @@ function CapabilityCopy({
           />
         )}
       </Title>
-      <span className="mt-0.5 text-sm leading-5 text-muted-foreground">
+      {/* Balanced, so a description that wraps never leaves one word alone
+          on its last line ("share.", "topics"). */}
+      <span className="mt-0.5 text-sm leading-5 text-balance text-muted-foreground">
         {description}
       </span>
     </span>
@@ -942,9 +944,16 @@ export function CapabilityHomeContent({
         // Reserve greeting space in empty chats, whose desktop thread header
         // already occupies 56px.
         heading === undefined ? "pt-24 md:pt-14" : "pt-6 md:pt-20",
-        // An open tray runs under the composer's top edge: the composer's
-        // footer, which paints above this scroller, overlaps its last 24px.
-        open && "-mb-6",
+        // The scroller runs 36px under the composer's footer, which paints
+        // above it: through the footer's transparent 12px top padding and
+        // past the composer's 24px corner radius. Content that overflows
+        // therefore slides under the composer instead of being sliced flat
+        // 12px above it with a white band between. The resting distance is
+        // padding inside the scroller, so at rest the cards still end 12px
+        // above the composer, and an open tray still tucks 12px under its
+        // top edge.
+        "-mb-9",
+        open ? "pb-3" : "pb-9",
       )}
     >
       <div

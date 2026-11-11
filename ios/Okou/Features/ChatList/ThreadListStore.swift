@@ -512,6 +512,53 @@ final class ThreadListStore {
     await task.value
   }
 
+  /// Places a pinned chat beside another pin listed with it, as the PWA's Move up / Move down.
+  /// A pin ranks against the pins listed with it: its project's chats, which can belong to
+  /// several Agents, or else its Agent's chats. Only the moved rank (and a tied run) changes.
+  func movePinned(
+    _ id: String, beside targetID: String, placement: ChatThreadReplay.PinPlacement,
+    projectID: String? = nil
+  ) async {
+    guard canUpdate(id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == id }), current.pinnedAt != nil
+    else { return }
+    let ranked = threads.filter { thread in
+      if let projectID { return thread.projectId == projectID }
+      return thread.agentID == current.agentID
+    }
+    let updates: [ChatThreadReplay.PinOrderUpdate]
+    do {
+      updates = try ChatThreadReplay.movePinOrder(
+        ranked, threadID: id, targetID: targetID, placement: placement)
+    } catch {
+      show(error)
+      return
+    }
+    guard !updates.isEmpty else { return }
+    let agents = Dictionary(uniqueKeysWithValues: ranked.map { ($0.id, $0.agentID) })
+    // Match PostgreSQL's canonical UUID text in the persistent event stream.
+    let writes = updates.map { (eventID: UUID().uuidString.lowercased(), update: $0) }
+    for write in writes {
+      optimisticChanges.append(
+        (
+          write.eventID,
+          // A re-ranked tie keeps its own Agent.
+          ChatThreadChange(
+            kind: .sortTouched, chatThreadId: write.update.threadID,
+            agentId: agents[write.update.threadID] ?? current.agentID,
+            pinOrder: write.update.pinOrder, createdAt: .now)
+        ))
+    }
+    projectThreads(threads)
+    await updateThread(id) { [commands] in
+      for write in writes {
+        try await commands.setPinOrder(
+          threadID: write.update.threadID, pinOrder: write.update.pinOrder,
+          eventID: write.eventID)
+      }
+    }
+  }
+
   private func projectThreads(_ snapshot: [ChatThread]) {
     let result = ChatThreadReplay.sidebarOrder(
       ChatThreadReplay.replay(snapshot: snapshot, events: optimisticChanges.map(\.change)))

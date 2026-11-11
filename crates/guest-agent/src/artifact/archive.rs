@@ -23,10 +23,8 @@ const LOG_TAG: &str = "sandbox:guest-agent";
 #[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_ENTRIES: u64 = 100_000;
 /// Maximum directory levels traversed below the configured artifact root.
-#[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_DEPTH: u64 = 256;
 /// Maximum bytes in the active UTF-8 path relative to the artifact root.
-#[cfg(target_os = "linux")]
 pub(crate) const ARTIFACT_TRAVERSAL_MAX_PATH_BYTES: u64 = 64 * 1024;
 
 /// Collect a best-effort manifest of regular files readable at finalization time.

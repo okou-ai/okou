@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.89](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.88...guest-control-client-v0.23.89) (2026-11-11)
+
+## [0.23.88](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.87...guest-control-client-v0.23.88) (2026-11-11)
+
+
+### Refactoring
+
+* **guest-control:** share fixed-helper capture admission ([#46561](https://github.com/okou-ai/okou/issues/46561)) ([2ea8784](https://github.com/okou-ai/okou/commit/2ea878476e0bb928e4f5ea9f136b6a181ad24ca2))
+
 ## [0.23.87](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.86...guest-control-client-v0.23.87) (2026-11-11)
 
 ## [0.23.86](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.85...guest-control-client-v0.23.86) (2026-11-09)

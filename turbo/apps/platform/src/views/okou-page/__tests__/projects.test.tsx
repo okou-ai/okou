@@ -778,6 +778,18 @@ test("A Project's folder names its fold action and shortcut", async () => {
   );
 });
 
+test("A Project name's emoji sits on its folder, and the name shows the rest", async () => {
+  const coffee = "30000000-0000-4000-8000-000000000271";
+  await setupProjectNavigation(227, "/chats/:b", [
+    { id: coffee, name: "☕ Coffee" },
+  ]);
+
+  expect(projectToggle("☕ Coffee", coffee)).toHaveTextContent("☕");
+  expect(projectLink("Coffee", coffee)).toBeInTheDocument();
+  expect(projectToggle("Launch").textContent).toBe("");
+  expect(projectLink("Launch")).toBeInTheDocument();
+});
+
 test("Opening a Project's name in a new tab leaves its chats folded", async () => {
   await setupProjectNavigation(224, "/chats/:b");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
@@ -2517,6 +2529,85 @@ test("Project rename closes immediately and yields to persisted events", async (
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
+  await waitFor(() => {
+    expect(projectToggle("Launch confirmed")).toBeInTheDocument();
+  });
+});
+
+test("A rejected Project name does not replace the confirmed name of a later save", async () => {
+  const ordinary = continuityThread(229, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 229,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  let rejected = false;
+  context.mocks.api(projectsContract.update, ({ body, respond }) => {
+    if (!rejected) {
+      rejected = true;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Project state changed" },
+      });
+    }
+    events.push(
+      {
+        id: body.eventId,
+        seqId: 2,
+        projectId: id,
+        kind: "renamed",
+        name: body.name,
+        createdAt: at,
+      },
+      {
+        id: crypto.randomUUID(),
+        seqId: 3,
+        projectId: id,
+        kind: "renamed",
+        name: "Launch confirmed",
+        createdAt: at,
+      },
+    );
+    return respond(200, {
+      id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Options for Launch", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch draft",
+  );
+  click(button("Save"));
+  await expect(
+    screen.findByText("Project state changed"),
+  ).resolves.toBeInTheDocument();
+
+  // The rejected name stays visible until reload; the next save supersedes it.
+  click(button("Options for Launch draft", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch plan",
+  );
+  click(button("Save"));
   await waitFor(() => {
     expect(projectToggle("Launch confirmed")).toBeInTheDocument();
   });

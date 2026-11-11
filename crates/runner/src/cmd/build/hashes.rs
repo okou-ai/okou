@@ -9,7 +9,7 @@ use crate::ca;
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
 
-use super::scripts::{CUSTOMIZE_SCRIPT, TEMPLATE_BUILD_SCRIPT};
+use super::scripts::{CUSTOMIZE_SCRIPT, TEMPLATE_BUILD_SCRIPT, rootfs_environment};
 
 /// Bump to invalidate all shared template images in R2.
 ///
@@ -82,9 +82,10 @@ fn update_rootfs_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) -> 
 ///
 /// The canonical encoding is a sequence of fields, each encoded as its fixed ASCII
 /// label, the value's byte length as a big-endian `u64`, then the value bytes. The
-/// fields are ordered as version, paired home layout, template hash, customization script, rootfs disk
-/// size, CA fingerprint, DNS resolver, then one destination/content pair per guest
-/// binary in inventory order, then, only when an Okou CLI artifact is installed,
+/// fields are ordered as version, paired home layout, template hash, customization
+/// script, runtime environment, rootfs disk size, CA fingerprint, DNS resolver,
+/// then one destination/content pair per guest binary in inventory order,
+/// then, only when an Okou CLI artifact is installed,
 /// its verified package SHA-256. Packed identity determines the installed manifest;
 /// metadata and byte integrity are validated at compilation, not rechecked or hashed twice.
 /// Fixed-width integers use big-endian
@@ -112,6 +113,11 @@ async fn compute_rootfs_hash(
         &mut hasher,
         b"customize_script:",
         CUSTOMIZE_SCRIPT.as_bytes(),
+    )?;
+    update_rootfs_hash_field(
+        &mut hasher,
+        b"runtime_environment:",
+        rootfs_environment().as_bytes(),
     )?;
     update_rootfs_hash_field(
         &mut hasher,

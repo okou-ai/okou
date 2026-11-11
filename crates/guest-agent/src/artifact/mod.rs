@@ -24,10 +24,12 @@ use crate::error::AgentError;
 use crate::http::HttpClient;
 use guest_telemetry::telemetry::record_sandbox_op;
 use guest_telemetry::{log_error, log_info, log_warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 mod api;
 mod archive;
+mod memory;
+pub(crate) use memory::create_memory_snapshot;
 
 use api::{
     CommitSnapshotRequest, PrepareSnapshotRequest, PreparedSnapshot, PreparedUploads,
@@ -45,7 +47,7 @@ use std::sync::Arc;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct FileEntry {
     /// UTF-8 relative protocol path used in prepare/commit payloads, manifests,
     /// and archive creation. Do not derive this from lossy filesystem conversion.
@@ -57,6 +59,7 @@ pub(crate) struct FileEntry {
 pub(crate) struct SnapshotResult {
     pub(crate) version_id: String,
     pub(crate) publication: SnapshotPublication,
+    archive: Option<ArchiveBundle>,
 }
 
 pub(crate) enum SnapshotPublication {
@@ -240,6 +243,7 @@ pub(crate) async fn create_snapshot(
         return Ok(SnapshotResult {
             version_id,
             publication,
+            archive: None,
         });
     }
 
@@ -254,6 +258,7 @@ pub(crate) async fn create_snapshot(
 
     Ok(SnapshotResult {
         version_id,
+        archive: matches!(publication, SnapshotPublication::Conflict(_)).then_some(archive),
         publication,
     })
 }
@@ -277,6 +282,7 @@ async fn prepare_snapshot_step(
             storage_id: request.storage_id,
             files: request.files.as_ref(),
             parent_version_id: request.parent_version_id,
+            include_memory_merge: false,
         },
     )
     .await

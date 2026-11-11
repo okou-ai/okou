@@ -4,7 +4,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -214,8 +214,8 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
   await expectReopenedRemoteAccessCount("2 enabled");
 });
 
-test("Remote host choices stay read-only across reopen until a save completes", async () => {
-  context.mocks.browser.matchMedia(true);
+test("Remote host choices stay read-only across responsive remount and reopen until a save completes", async () => {
+  const media = context.mocks.browser.matchMedia(true);
   const saveResponse = context.mocks.deferred<void>();
   const { first, second } = await prepareRemoteDefaults(
     "override-first",
@@ -227,6 +227,19 @@ test("Remote host choices stay read-only across reopen until a save completes", 
     expect(first).toHaveAttribute("aria-readonly", "true");
     expect(second).toHaveAttribute("aria-readonly", "true");
   });
+
+  act(() => {
+    media.setMatches(false);
+  });
+  await waitFor(() => {
+    expect(first).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByRole("combobox", { name: "SSH SSH host 1" }),
+  ).toHaveAttribute("aria-readonly", "true");
+  expect(
+    screen.getByRole("combobox", { name: "SSH SSH host 2" }),
+  ).toHaveAttribute("aria-readonly", "true");
 
   await closeRemoteAccess();
   click(await findFastControl("button", "Connectors"));
@@ -644,6 +657,9 @@ test.each([
     context.mocks.browser.matchMedia(desktop);
     const { trigger, first, user } = await prepareDraftHostChoices();
     const dialog = screen.getByRole("dialog", { name: "Remote access" });
+    expect(
+      within(dialog).getByText("Applied when you send the first message"),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(dialog.contains(document.activeElement)).toBeTruthy();
     });

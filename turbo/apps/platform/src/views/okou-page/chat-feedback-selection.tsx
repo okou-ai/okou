@@ -122,7 +122,6 @@ export function ChatFeedbackSelection({
   readonly feedback: ChatThreadFeedbackSignals;
 }) {
   const selection = useGet(feedback.selection$);
-  const forwardSelection = useGet(feedback.forwardSelection$);
   const rootSignal = useGet(rootSignal$);
   const pageSignal = useGet(pageSignal$);
   const setFeedbackSelectionListenersRef = useSet(feedback.setListenersRef$);
@@ -131,7 +130,6 @@ export function ChatFeedbackSelection({
   const closeSelectionToolbar = useSet(feedback.close$);
   const copy = useSet(feedback.copy$);
   const startForward = useSet(feedback.startForward$);
-  const closeForward = useSet(feedback.closeForward$);
 
   return (
     <>
@@ -185,15 +183,22 @@ export function ChatFeedbackSelection({
           </PopoverContent>
         </Popover>
       ) : null}
-      {forwardSelection ? (
-        <ChatForwardDialog
-          selection={forwardSelection}
-          feedback={feedback}
-          onDismiss={() => {
-            closeForward();
-          }}
-        />
-      ) : null}
     </>
   );
+}
+
+export function ChatForwardDialogMount({
+  feedback,
+}: {
+  readonly feedback: ChatThreadFeedbackSignals;
+}) {
+  const selection = useGet(feedback.forwardSelection$);
+  const close = useSet(feedback.closeForward$);
+  return selection ? (
+    <ChatForwardDialog
+      selection={selection}
+      feedback={feedback}
+      onDismiss={close}
+    />
+  ) : null;
 }

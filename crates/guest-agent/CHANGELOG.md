@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.109.68](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.67...guest-agent-v0.109.68) (2026-11-11)
+
+
+### Bug Fixes
+
+* **memory:** merge concurrent run changes before publication ([#46529](https://github.com/okou-ai/okou/issues/46529)) ([fef343e](https://github.com/okou-ai/okou/commit/fef343edcb076caa33115a724820f5e5c2faf83c))
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
+## [0.109.67](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.66...guest-agent-v0.109.67) (2026-11-11)
+
 ## [0.109.66](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.65...guest-agent-v0.109.66) (2026-11-11)
 
 ## [0.109.65](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.64...guest-agent-v0.109.65) (2026-11-11)

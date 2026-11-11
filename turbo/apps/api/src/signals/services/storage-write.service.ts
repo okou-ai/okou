@@ -3,6 +3,8 @@ import {
   type FileEntryWithHash,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
+import type { MemoryMergeContext } from "@okouai/api-contracts/contracts/webhooks";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
@@ -17,6 +19,7 @@ import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
 import {
   downloadManifest,
+  generatePresignedGetUrl,
   generatePresignedPutUrl,
   s3ObjectExists,
   s3ObjectHead,
@@ -43,6 +46,7 @@ interface PrepareStorageUploadInput {
   readonly parentVersionId?: string;
   readonly baseVersion?: string;
   readonly changes?: StorageChanges;
+  readonly includeMemoryMerge?: boolean;
 }
 
 interface PrepareStorageInput extends PrepareStorageUploadInput {
@@ -78,6 +82,7 @@ export type StorageVersionRow = typeof storageVersions.$inferSelect;
 interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
   readonly storage: StorageRow;
+  readonly capturedVersionId: string | undefined;
 }
 
 function storageRowSelection() {
@@ -123,6 +128,7 @@ type PrepareStorageResponse =
       readonly body: {
         readonly versionId: string;
         readonly existing: boolean;
+        readonly memoryMerge?: MemoryMergeContext;
         readonly uploads?: {
           readonly archive: {
             readonly key: string;
@@ -181,6 +187,7 @@ const readMountedWritebackStorage$ = command(
     const [mounted] = await get(db$)
       .select({
         runStatus: agentRuns.status,
+        storageMounts: agentRuns.storageMounts,
         storage: storageRowSelection(),
       })
       .from(agentRuns)
@@ -217,6 +224,9 @@ const readMountedWritebackStorage$ = command(
       ? {
           runStatus: mounted.runStatus,
           storage: mounted.storage,
+          capturedVersionId: mounted.storageMounts?.find((mount) => {
+            return mount.storageId === args.storageId && mount.writeback;
+          })?.version,
         }
       : notFound("Writeback storage not found");
   },
@@ -263,6 +273,65 @@ const findStorageById$ = command(
 
     signal.throwIfAborted();
     return storage;
+  },
+);
+
+/** Keep Memory's immutable download capabilities inside its existing publication owner. */
+const prepareMemoryMergeContext$ = command(
+  async (
+    { get, set },
+    args: { readonly storage: StorageRow; readonly baseVersionId: string },
+    signal: AbortSignal,
+  ): Promise<MemoryMergeContext> => {
+    const headVersionId = args.storage.headVersionId;
+    if (!headVersionId) {
+      throw new Error("Memory has no HEAD version");
+    }
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const snapshots = await Promise.all(
+      [args.baseVersionId, headVersionId].map(async (versionId) => {
+        const version = await set(
+          findStorageVersion$,
+          { storageId: args.storage.id, versionId },
+          signal,
+        );
+        if (
+          !version ||
+          version.s3Key !== `${args.storage.s3Prefix}/${versionId}`
+        ) {
+          throw new Error("Memory merge version is unavailable");
+        }
+        if (version.fileCount === 0) {
+          return { versionId, empty: true };
+        }
+        const [manifestUrl, archiveUrl] = await Promise.all([
+          get(
+            generatePresignedGetUrl(
+              bucket,
+              `${version.s3Key}/manifest.json`,
+              undefined,
+              true,
+            ),
+          ),
+          get(
+            generatePresignedGetUrl(
+              bucket,
+              `${version.s3Key}/archive.tar.gz`,
+              undefined,
+              true,
+            ),
+          ),
+        ]);
+        signal.throwIfAborted();
+        return { versionId, empty: false, manifestUrl, archiveUrl };
+      }),
+    );
+    signal.throwIfAborted();
+    const [base, head] = snapshots;
+    if (!base || !head) {
+      throw new Error("Memory merge snapshots are unavailable");
+    }
+    return { base, head };
   },
 );
 
@@ -649,6 +718,21 @@ export const prepareStorageUploadForAuth$ = command(
       return response;
     }
 
+    let memoryMerge: MemoryMergeContext | undefined;
+    if (
+      args.includeMemoryMerge &&
+      mounted.storage.name === MEMORY_ARTIFACT_NAME
+    ) {
+      if (!mounted.capturedVersionId) {
+        throw new Error("Memory mount has no captured base version");
+      }
+      memoryMerge = await set(
+        prepareMemoryMergeContext$,
+        { storage: mounted.storage, baseVersionId: mounted.capturedVersionId },
+        signal,
+      );
+    }
+
     // This final observation authorizes only the response. Commit revalidates
     // under its own run/storage authorization before any publication.
     const current = await set(
@@ -660,7 +744,12 @@ export const prepareStorageUploadForAuth$ = command(
       "status" in current || !sandboxStorageRunIsActive(current.runStatus)
     );
     signal.throwIfAborted();
-    return admitted ? response : notFound("Active agent run not found");
+    return admitted
+      ? {
+          ...response,
+          body: { ...response.body, ...(memoryMerge ? { memoryMerge } : {}) },
+        }
+      : notFound("Active agent run not found");
   },
 );
 

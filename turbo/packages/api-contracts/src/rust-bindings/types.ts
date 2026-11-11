@@ -805,6 +805,9 @@ export const rustTypeBindings = [
           parentVersionId: [
             "Optional parent version used when preparing an incremental upload.",
           ],
+          includeMemoryMerge: [
+            "Request immutable inputs for recovering a Memory publication conflict.",
+          ],
           force: ["Whether to bypass deduplication checks for this upload."],
           baseVersion: [
             "Optional base version identifier for an incremental upload.",
@@ -820,6 +823,38 @@ export const rustTypeBindings = [
     rustTypeName: "Response",
     direction: "response",
     declarations: [
+      ...["ResponseMemoryMergeBase", "ResponseMemoryMergeHead"].map(
+        (rustTypeName) => {
+          return {
+            rustTypeName,
+            rustDoc: [
+              "An authorized immutable Memory snapshot used for file merging.",
+            ],
+            fields: {
+              versionId: ["Content-addressed snapshot version identifier."],
+              empty: [
+                "Whether this snapshot has no files and needs no downloads.",
+              ],
+              manifestUrl: [
+                "Presigned manifest download URL for a nonempty snapshot.",
+              ],
+              archiveUrl: [
+                "Presigned archive download URL for a nonempty snapshot.",
+              ],
+            },
+          };
+        },
+      ),
+      {
+        rustTypeName: "ResponseMemoryMerge",
+        rustDoc: [
+          "Immutable inputs for replaying a Run's Memory file changes.",
+        ],
+        fields: {
+          base: ["The Run's originally captured Memory snapshot."],
+          head: ["The current published Memory snapshot."],
+        },
+      },
       {
         rustTypeName: "ResponseUploadsArchive",
         rustDoc: ["Presigned upload target for the storage archive object."],
@@ -859,6 +894,7 @@ export const rustTypeBindings = [
           uploads: [
             "Presigned upload targets when archive and manifest uploads are required.",
           ],
+          memoryMerge: ["Optional negotiated Memory conflict recovery inputs."],
         },
       },
     ],

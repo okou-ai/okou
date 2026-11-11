@@ -10,6 +10,38 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.59.2](https://github.com/okou-ai/okou/compare/api-v2.59.1...api-v2.59.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **api:** route event flyers to the dedicated skill ([#46567](https://github.com/okou-ai/okou/issues/46567)) ([00cbcc7](https://github.com/okou-ai/okou/commit/00cbcc7a5be376000e80535a2fa4fa8bc4ac3b85))
+* **email:** align enriched message context with slack ([#46542](https://github.com/okou-ai/okou/issues/46542)) ([fda06e0](https://github.com/okou-ai/okou/commit/fda06e0f66824a2b7657b22ea9c8b4399631c6cb))
+* **memory:** merge concurrent run changes before publication ([#46529](https://github.com/okou-ai/okou/issues/46529)) ([fef343e](https://github.com/okou-ai/okou/commit/fef343edcb076caa33115a724820f5e5c2faf83c))
+
+
+### Refactoring
+
+* **api:** remove unreachable captured storage preparation ([#46569](https://github.com/okou-ai/okou/issues/46569)) ([dca259d](https://github.com/okou-ai/okou/commit/dca259d8ffb725ebf80c0837dc9f19f60e4e142e))
+* remove mercuryConnector feature switch ([#46576](https://github.com/okou-ai/okou/issues/46576)) ([2f848b1](https://github.com/okou-ai/okou/commit/2f848b148ae68294a462925699420763682bd086))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.1
+    * @okouai/core bumped to 8.828.1
+    * @okouai/db bumped to 2.27.1
+    * @okouai/pi-agent-runtime bumped to 1.51.101
+
+## [2.59.1](https://github.com/okou-ai/okou/compare/api-v2.59.0...api-v2.59.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **email:** allow resend cdn attachment downloads ([#46548](https://github.com/okou-ai/okou/issues/46548)) ([d37f02d](https://github.com/okou-ai/okou/commit/d37f02da66990f4d03226b6932232c4c707243d3))
+
 ## [2.59.0](https://github.com/okou-ai/okou/compare/api-v2.58.0...api-v2.59.0) (2026-11-11)
 
 
