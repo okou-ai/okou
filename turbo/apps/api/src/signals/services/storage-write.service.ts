@@ -3,6 +3,8 @@ import {
   type FileEntryWithHash,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
+import type { MemoryMergeContext } from "@okouai/api-contracts/contracts/webhooks";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
@@ -23,6 +25,7 @@ import {
   type S3ObjectHead,
 } from "../external/s3";
 import { storageCommitLineageCondition } from "./storage-write-conditions";
+import { prepareMemoryMergeContext$ } from "./memory-merge-context.service";
 import {
   sandboxStorageRunIsActive,
   storageCommitPublicationStatement,
@@ -43,6 +46,7 @@ interface PrepareStorageUploadInput {
   readonly parentVersionId?: string;
   readonly baseVersion?: string;
   readonly changes?: StorageChanges;
+  readonly includeMemoryMerge?: boolean;
 }
 
 interface PrepareStorageInput extends PrepareStorageUploadInput {
@@ -78,6 +82,7 @@ export type StorageVersionRow = typeof storageVersions.$inferSelect;
 interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
   readonly storage: StorageRow;
+  readonly capturedVersionId: string | undefined;
 }
 
 function storageRowSelection() {
@@ -123,6 +128,7 @@ type PrepareStorageResponse =
       readonly body: {
         readonly versionId: string;
         readonly existing: boolean;
+        readonly memoryMerge?: MemoryMergeContext;
         readonly uploads?: {
           readonly archive: {
             readonly key: string;
@@ -181,6 +187,7 @@ const readMountedWritebackStorage$ = command(
     const [mounted] = await get(db$)
       .select({
         runStatus: agentRuns.status,
+        storageMounts: agentRuns.storageMounts,
         storage: storageRowSelection(),
       })
       .from(agentRuns)
@@ -217,6 +224,9 @@ const readMountedWritebackStorage$ = command(
       ? {
           runStatus: mounted.runStatus,
           storage: mounted.storage,
+          capturedVersionId: mounted.storageMounts?.find((mount) => {
+            return mount.storageId === args.storageId && mount.writeback;
+          })?.version,
         }
       : notFound("Writeback storage not found");
   },
@@ -649,6 +659,21 @@ export const prepareStorageUploadForAuth$ = command(
       return response;
     }
 
+    let memoryMerge: MemoryMergeContext | undefined;
+    if (
+      args.includeMemoryMerge &&
+      mounted.storage.name === MEMORY_ARTIFACT_NAME
+    ) {
+      if (!mounted.capturedVersionId) {
+        throw new Error("Memory mount has no captured base version");
+      }
+      memoryMerge = await set(
+        prepareMemoryMergeContext$,
+        { storage: mounted.storage, baseVersionId: mounted.capturedVersionId },
+        signal,
+      );
+    }
+
     // This final observation authorizes only the response. Commit revalidates
     // under its own run/storage authorization before any publication.
     const current = await set(
@@ -660,7 +685,12 @@ export const prepareStorageUploadForAuth$ = command(
       "status" in current || !sandboxStorageRunIsActive(current.runStatus)
     );
     signal.throwIfAborted();
-    return admitted ? response : notFound("Active agent run not found");
+    return admitted
+      ? {
+          ...response,
+          body: { ...response.body, ...(memoryMerge ? { memoryMerge } : {}) },
+        }
+      : notFound("Active agent run not found");
   },
 );
 

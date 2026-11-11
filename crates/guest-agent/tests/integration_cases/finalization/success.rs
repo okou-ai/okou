@@ -4,7 +4,7 @@ use httpmock::prelude::*;
 use serde_json::json;
 
 #[tokio::test]
-async fn memory_publication_conflict_completes_with_captured_parent_and_other_outputs() {
+async fn old_api_memory_conflict_completes_with_captured_parent_and_other_outputs() {
     for existing in [true, false] {
         let api = SharedApiMock::new().await;
         let server = api.server();

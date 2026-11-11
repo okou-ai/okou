@@ -149,18 +149,19 @@ async fn snapshot_artifact_plan(
         entry.name
     );
     let message = format!("Artifact snapshot from run {run_id}");
-    let snapshot = vas::create_snapshot(
-        http,
-        vas::CreateSnapshotRequest {
-            mount_path: &entry.mount_path,
-            files,
-            storage_id: &entry.storage_id,
-            run_id,
-            message: &message,
-            parent_version_id: &entry.version_id,
-        },
-    )
-    .await?;
+    let request = vas::CreateSnapshotRequest {
+        mount_path: &entry.mount_path,
+        files,
+        storage_id: &entry.storage_id,
+        run_id,
+        message: &message,
+        parent_version_id: &entry.version_id,
+    };
+    let snapshot = if entry.name == MEMORY_ARTIFACT_NAME {
+        vas::create_memory_snapshot(http, request).await?
+    } else {
+        vas::create_snapshot(http, request).await?
+    };
     if let vas::SnapshotPublication::Conflict(error) = snapshot.publication {
         if entry.name != MEMORY_ARTIFACT_NAME {
             return Err(error);
