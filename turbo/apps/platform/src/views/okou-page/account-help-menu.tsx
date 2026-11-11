@@ -8,13 +8,12 @@ import {
   DropdownMenuSubTrigger,
 } from "@okouai/ui";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { publicSiteUrl } from "../../lib/public-site-url.ts";
 import { setChatShortcutHelpOpen$ } from "../../signals/chat-page/chat-shortcut-help.ts";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
 
-const DOCS_URL = "https://docs.okou.ai";
-
 /**
- * Keyboard shortcuts opens the dialog that the global shortcut opens. Only the
+ * Shortcuts opens the dialog that the global shortcut opens. Only the
  * workspace shell mounts that dialog, so other surfaces list the docs alone.
  */
 export function AccountHelpMenu({
@@ -22,7 +21,7 @@ export function AccountHelpMenu({
 }: {
   readonly showKeyboardShortcuts: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const { showShortcuts } = GLOBAL_KEYBOARD_SHORTCUTS;
 
@@ -57,7 +56,14 @@ export function AccountHelpMenu({
         )}
         <DropdownMenuItem
           render={
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" />
+            <a
+              href={publicSiteUrl(
+                i18n.resolvedLanguage ?? i18n.language,
+                "docs",
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
           }
           className="gap-3 px-3"
         >

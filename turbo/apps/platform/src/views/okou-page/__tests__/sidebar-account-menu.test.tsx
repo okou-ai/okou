@@ -194,7 +194,7 @@ test("Sign out from the account menu", async () => {
   });
 });
 
-test("Help opens keyboard shortcuts and links to the docs", async () => {
+test("Help opens shortcuts and links to the docs", async () => {
   prepareDefaultAgent();
   await setupPage({
     context,
@@ -213,10 +213,10 @@ test("Help opens keyboard shortcuts and links to the docs", async () => {
   click(within(menu).getByText("Help"));
 
   const docs = (await screen.findByText("Docs")).closest("a");
-  expect(docs).toHaveAttribute("href", "https://docs.okou.ai");
+  expect(docs).toHaveAttribute("href", "https://www.okou.ai/en/docs");
   expect(docs).toHaveAttribute("target", "_blank");
 
-  click(screen.getByText("Keyboard shortcuts"));
+  click(screen.getByText("Shortcuts"));
 
   const dialog = await screen.findByRole("dialog", {
     name: "Keyboard Shortcuts",

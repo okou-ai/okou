@@ -205,7 +205,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     displayName: "Help menu",
     description:
-      "Add a Help submenu above Sign out in the account menu, with Keyboard shortcuts and a link to the docs.",
+      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
