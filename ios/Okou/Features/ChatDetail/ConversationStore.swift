@@ -113,15 +113,9 @@ final class ConversationStore {
     return String(localized: "Delivery not confirmed")
   }
   private(set) var isRecoveringFailure = false
-  private var failureAccountsReadyID: String?
-  private var failureAccountBaseline: Int?
-  private var failureAccountError: String?
-  private var failureContextRevision = UUID()
-  private var failureAccountsRequestedID: String?
-  private var failureAccountsTask: Task<Void, Never>?
+  private(set) var failureContext: FailureRecoveryResources?
+  private var failureReadsEnabled = true
   private var failureRecoveryTask: Task<Void, Never>?
-  private var failureBilling: ChatBillingRecovery?
-  private var failureBillingError: String?
   private let didRequestNewChat: @MainActor () -> Void
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
@@ -439,23 +433,54 @@ final class ConversationStore {
     await submit(message)
   }
 
-  func failureState(_ failure: ChatFailure) -> AssistantFailureState {
+  func failureState(
+    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
+    accounts: [PersonalSubscription]? = nil,
+    accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
+  ) -> AssistantFailureState {
     var state = AssistantFailureState.make(
       failure: failure,
-      current: !closed && !needsUpgrade && pending.isEmpty
-        && history?.latestFailureID == failure.id,
-      selection: modelSelection,
-      accountsReady: failureAccountsReadyID == failure.id
-        || (failureAccountsRequestedID == failure.id
-          && failureAccountBaseline.map {
-            (modelSelection?.models.subscriptions.accountRevision ?? 0) > $0
-          } == true),
-      busy: isRecoveringFailure || isSending, accountsError: failureAccountError)
+      current: !closed && !needsUpgrade && failureReadsEnabled && pending.isEmpty
+        && history?.latestFailureID == failure.id
+        && (context == nil || failureContext === context),
+      selection: modelSelection, accounts: accounts,
+      busy: isRecoveringFailure || isSending,
+      accountsError: accountsError.map(ChatRequestFailure.message(for:)))
     if state.isCurrent {
-      state.billing = failureBilling
-      state.billingError = failureBillingError
+      state.billing = billing
+      state.billingError = billingError.map(ChatRequestFailure.message(for:))
     }
     return state
+  }
+
+  /// Commands await the same original reads as the card, then recheck the failure owner.
+  func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {
+    guard let context = failureContext, context.failureID == failure.id else {
+      return failureState(failure)
+    }
+    do {
+      if context.accounts != nil {
+        let accounts = try await context.readAccounts()
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        return failureState(failure, context: context, accounts: accounts)
+      }
+      if let signal = context.billing {
+        let result = await (try context.store.get(signal)).result
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        switch result {
+        case .success(let billing): return failureState(failure, context: context, billing: billing)
+        case .failure(let error):
+          return failureState(failure, context: context, billingError: error)
+        }
+      }
+    } catch {
+      guard failureContext === context else { return failureState(failure) }
+      if context.accounts != nil {
+        return failureState(failure, context: context, accountsError: error)
+      }
+      return failureState(failure, context: context, billingError: error)
+    }
+    return failureState(failure)
   }
 
   func newChatAfterFailure(_ id: String) {
@@ -464,53 +489,20 @@ final class ConversationStore {
   }
 
   func refreshFailureAccounts() async {
-    guard !closed, let id = history?.latestFailureID else { return }
-    let request = UUID()
-    failureContextRevision = request
-    failureAccountsReadyID = nil
-    failureAccountError = nil
-    if let failure = messages.first(where: { $0.id == id })?.failure,
-      failure.recovery(personalFramework: nil).kind == .billing
-    {
-      do {
-        let result = try await commands.billingRecovery()
-        guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-          failureContextRevision == request
-        else { return }
-        failureBilling = result
-        failureBillingError = nil
-      } catch {
-        guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-          failureContextRevision == request
-        else { return }
-        failureBillingError = error.localizedDescription
-        report(error)
-      }
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    requestFailureAccounts()
+    guard let context = failureContext else { return }
+    do { try context.retry() } catch is CancellationError {} catch { report(error) }
+    guard let failure = messages.first(where: { $0.id == context.failureID })?.failure else {
       return
     }
-    guard let modelSelection,
-      let failure = messages.first(where: { $0.id == id })?.failure,
-      failure.recovery(personalFramework: nil).kind == .usage
-    else { return }
-    failureAccountBaseline = modelSelection.models.subscriptions.accountRevision
-    do {
-      _ = try await modelSelection.models.subscriptions.readAccounts(force: true)
-      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-        failureContextRevision == request
-      else { return }
-      failureAccountsReadyID = id
-      failureAccountError = nil
-    } catch is CancellationError {} catch {
-      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-        failureContextRevision == request
-      else { return }
-      failureAccountError = ChatRequestFailure.message(for: error)
-    }
+    _ = await readFailureState(failure)
   }
 
   /// Execution recovery appends a new input. Uncertain delivery still uses retry(_:).
   func recoverFailure(_ id: String, resetUsage: Bool = false) async {
-    guard !closed, !needsUpgrade, !isRecoveringFailure, !isSending, pending.isEmpty,
+    guard !closed, !needsUpgrade, failureReadsEnabled, !Task.isCancelled,
+      !isRecoveringFailure, !isSending, pending.isEmpty,
       history?.latestFailureID == id, let failure = messages.first(where: { $0.id == id })?.failure,
       failureState(failure).recovery.canRetry,
       modelSelection?.canSendConfirmedSelection != false, modelSelection?.isMutating != true
@@ -538,7 +530,7 @@ final class ConversationStore {
         await modelSelection?.refresh()
         guard modelSelection?.canSend != false else { return }
         await refreshFailureAccounts()
-        let state = failureState(failure)
+        let state = await readFailureState(failure)
         guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
           history?.latestFailureID == id, modelSelection?.canSendConfirmedSelection != false,
           let accountID = state.resetAccountID,
@@ -650,6 +642,11 @@ final class ConversationStore {
 
   func setDetailVisible(_ visible: Bool, owner: UUID) {
     if visible {
+      if detailOwner != owner {
+        failureContext?.close()
+        failureContext = nil
+      }
+      failureReadsEnabled = true
       detailOwner = owner
       permissionActions.activate(owner: owner)
       approvals.activate()
@@ -660,9 +657,9 @@ final class ConversationStore {
       detailOwner = nil
       attachmentViewer.deactivate()
       artifacts.deactivate()
-      failureAccountsTask?.cancel()
-      failureAccountsTask = nil
-      failureAccountsRequestedID = nil
+      failureReadsEnabled = false
+      failureContext?.close()
+      failureContext = nil
       failureRecoveryTask?.cancel()
       if isRecoveringFailure { sendTask?.cancel() }
       permissionActions.deactivate()
@@ -756,7 +753,8 @@ final class ConversationStore {
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
-    failureAccountsTask?.cancel()
+    failureContext?.close()
+    failureContext = nil
     failureRecoveryTask?.cancel()
     measurements.clear()
     composer.close()
@@ -925,14 +923,18 @@ final class ConversationStore {
   }
 
   private func requestFailureAccounts() {
-    let id = pending.isEmpty ? history?.latestFailureID : nil
-    guard let id, id != failureAccountsRequestedID else { return }
-    failureAccountsTask?.cancel()
-    failureAccountsRequestedID = id
-    failureAccountsReadyID = nil
-    failureBilling = nil
-    failureBillingError = nil
-    failureAccountsTask = Task { [weak self] in await self?.refreshFailureAccounts() }
+    let id =
+      !closed && !needsUpgrade && failureReadsEnabled && pending.isEmpty
+      ? history?.latestFailureID : nil
+    guard id != failureContext?.failureID else { return }
+    failureContext?.close()
+    failureContext = nil
+    guard let id, let failure = messages.first(where: { $0.id == id })?.failure else { return }
+    let context = FailureRecoveryResources(
+      failure: failure, subscriptions: modelSelection?.models.subscriptions.resources,
+      commands: commands, didFail: { [weak self] in self?.report($0) })
+    failureContext = context
+    do { try context.start() } catch is CancellationError {} catch { report(error) }
   }
 
   private func publishWindow() {
