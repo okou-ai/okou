@@ -4,7 +4,6 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 barrier_script="${repo_root}/.github/scripts/cancel-superseded-merge-group-runs.sh"
 lock_script="${repo_root}/.github/scripts/runner/with-runner-lifecycle-lock.sh"
-namespace_cleanup_script="${repo_root}/.github/scripts/runner/cleanup-pr-runner-namespace.sh"
 tmp_dir=$(mktemp -d)
 background_pids=()
 
@@ -82,7 +81,7 @@ fi
 exec bash -c "$local_command"
 SH
 
-cat >"${fake_bin}/ansible-playbook" <<'SH'
+cat >"${fake_bin}/cleanup-critical" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 if [ -n "${MOCK_ANSIBLE_LOG:-}" ]; then
@@ -101,7 +100,7 @@ set -euo pipefail
 printf 'start\n' >>"$MOCK_ORDER_LOG"
 SH
 chmod +x "${fake_bin}/gh" "${fake_bin}/ssh" \
-  "${fake_bin}/ansible-playbook" "${fake_bin}/late-start-critical"
+  "${fake_bin}/cleanup-critical" "${fake_bin}/late-start-critical"
 
 barrier_output=$(
   env -i \
@@ -119,27 +118,8 @@ barrier_output=$(
 grep -q "No active runner-owner CI runs found for PR #42" <<<"$barrier_output" ||
   fail "expected the stabilized discovery barrier to return an empty owner set"
 
-# The protected cleanup helper must fail before Ansible when current GitHub
-# state no longer authorizes deletion or cannot be resolved.
-authority_ansible_log="${tmp_dir}/authority-ansible.log"
-for rejected_state in open error; do
-  if PATH="${fake_bin}:$PATH" \
-    JOB_REF=pr-42 \
-    GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=okou-ai/okou \
-    GITHUB_RUN_ID=900 \
-    METAL_HOSTS=metal-a.example.test \
-    METAL_USER=runner \
-    PR_NUMBER=42 \
-    MOCK_ANSIBLE_LOG="$authority_ansible_log" \
-    MOCK_PR_STATE="$rejected_state" \
-    "$namespace_cleanup_script" >/dev/null 2>"${tmp_dir}/authority-${rejected_state}.err"; then
-    fail "cleanup accepted rejected PR state ${rejected_state}"
-  fi
-done
-[ ! -e "$authority_ansible_log" ] ||
-  fail "cleanup reached Ansible without closed-PR authority"
-
+# PR authority is exercised through the shared cleanup CLI suite. This suite
+# retains the actual all-host lock, lease and late-start ordering contract.
 cleanup_ready_fifo="${tmp_dir}/cleanup-ready"
 cleanup_release_fifo="${tmp_dir}/cleanup-release"
 late_attempt_fifo="${tmp_dir}/late-attempt"
@@ -160,7 +140,7 @@ PATH="${fake_bin}:$PATH" \
   MOCK_LOCK_ROOT="$lock_root" \
   MOCK_ORDER_LOG="$order_log" \
   RUNNER_LIFECYCLE_LOCK_TIMEOUT_SECONDS=5 \
-  "$lock_script" "$namespace_cleanup_script" \
+  "$lock_script" "$fake_bin/cleanup-critical" \
   >"${tmp_dir}/cleanup.out" 2>"${tmp_dir}/cleanup.err" &
 cleanup_pid=$!
 background_pids+=("$cleanup_pid")
