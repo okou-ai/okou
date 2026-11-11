@@ -778,6 +778,18 @@ test("A Project's folder names its fold action and shortcut", async () => {
   );
 });
 
+test("A Project name's emoji sits on its folder, and the name shows the rest", async () => {
+  const coffee = "30000000-0000-4000-8000-000000000271";
+  await setupProjectNavigation(227, "/chats/:b", [
+    { id: coffee, name: "☕ Coffee" },
+  ]);
+
+  expect(projectToggle("☕ Coffee", coffee)).toHaveTextContent("☕");
+  expect(projectLink("Coffee", coffee)).toBeInTheDocument();
+  expect(projectToggle("Launch").textContent).toBe("");
+  expect(projectLink("Launch")).toBeInTheDocument();
+});
+
 test("Opening a Project's name in a new tab leaves its chats folded", async () => {
   await setupProjectNavigation(224, "/chats/:b");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
