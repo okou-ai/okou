@@ -1,8 +1,6 @@
 import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockNow } from "../../../lib/time";
 import { browserUserActionRoutes } from "../browser-user-actions";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { randomUUID } from "node:crypto";
@@ -326,19 +324,7 @@ async function prepareScenario() {
       }
     },
   });
-  const orgId = owned.actor.orgId;
-  if (!orgId) {
-    throw new Error("Browser action creation requires an organization");
-  }
   return await owned.run(async () => {
-    owned.ownsFeatureSwitches();
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...owned.actor, orgId },
-      {
-        [FeatureSwitchKey.BrowserNativeInput]: true,
-      },
-    );
     const sent = await chat.sendAndLaunch(owned.actor, {
       agentId: owned.agentId,
       prompt: "Enter the website password",

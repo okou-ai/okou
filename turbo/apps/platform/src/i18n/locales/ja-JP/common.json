@@ -6345,6 +6345,32 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
+  "sshAuthorization": {
+    "allow": "このチャットで許可",
+    "blocked": {
+      "chat_busy": "このチャットで実行中の Run が終了してから承認してください。",
+      "host_changed": "ホスト設定が変更されました。再申請してください。",
+      "permissions_required": "先に関連するコネクタの権限を承認してください。",
+      "run_active": "リクエスト元の Run が終了してから承認してください。",
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+    },
+    "continue": "タスクを続行",
+    "details": "アクセスの詳細",
+    "effect": "アクセスを無効にするまで、このリモートユーザーとしてコマンド実行とファイル転送を許可します。",
+    "failed": "操作を完了できませんでした。再試行して権限を確認し、続行してください。",
+    "retry": "再試行",
+    "scope": "このホスト · このチャットのみ",
+    "status": {
+      "approved": "SSH アクセスを許可しました",
+      "denied": "SSH アクセスを拒否しました",
+      "expired": "SSH リクエストの有効期限切れ",
+      "pending": "SSH アクセス",
+      "revoked": "SSH アクセスを取り消しました",
+      "stale": "SSH リクエストが変更されました"
+    },
+    "title": "SSH アクセス",
+    "unavailable": "このリクエストは利用できません。再申請してください。"
+  },
   "tailscale": {
     "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
     "delete": "Tailscale を削除",
@@ -6456,16 +6482,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "ワークフローに戻る",
+      "disabled": "無効",
       "disabledAt": "無効化日時：{{time}}",
       "loadFailed": "この自動化を読み込めませんでした",
       "loadingAutomation": "自動化を読み込み中",
+      "notNow": "後で",
       "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
-      "reason_one": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
-      "reason_other": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
+      "reason_one": "実行が {{count}} 回失敗しました。再度有効にする前に自動化を確認してください。",
+      "reason_other": "実行が {{count}} 回連続で失敗しました。再度有効にする前に自動化を確認してください。",
       "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
       "switchWorkspace": "ワークスペースを切り替える",
       "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
       "systemSource": "システム通知",
+      "title": "自動化が無効になりました",
       "unavailable": "自動化が見つからないか、アクセス権がありません",
       "viewAutomation": "自動化を表示",
       "workspace": "ワークスペース",

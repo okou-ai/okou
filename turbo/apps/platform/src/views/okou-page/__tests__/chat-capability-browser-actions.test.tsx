@@ -753,7 +753,6 @@ test.each([true, false])(
       context,
       path: RUN_PATH,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     await readyChat();
 
@@ -847,7 +846,6 @@ test("Closing an inline form clears password and code drafts while preserving or
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const opener = await findButton("Enter information");
@@ -906,7 +904,6 @@ test("Shared inline forms retain sensitive drafts until their final owner closes
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   await waitFor(() => {
@@ -1027,7 +1024,6 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   click(await findButton("Enter information"));
@@ -1098,7 +1094,6 @@ test("An inline Browser input dialog confirms a required native checkbox", async
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const currentUrl = window.location.href;
@@ -1186,7 +1181,6 @@ test("An inline Browser slider confirms the observed website position without na
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const currentUrl = window.location.href;
@@ -1265,7 +1259,6 @@ test("An inline Browser color picker confirms the observed website selection wit
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const currentUrl = window.location.href;
@@ -1379,7 +1372,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const currentUrl = window.location.href;
@@ -1490,7 +1482,6 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   const url = window.location.href;
@@ -1526,7 +1517,6 @@ test("A pending transcript card becomes consumed when the standalone form comple
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   await findButton("Enter information");
@@ -1569,7 +1559,6 @@ test.each(["apply", "cancel"] as const)(
       context,
       path: RUN_PATH,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     await readyChat();
     await browserUserActionSubscribed();
@@ -1615,7 +1604,6 @@ test("Duplicate initially applying cards recover after a thread change signal", 
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
   await browserUserActionSubscribed();
@@ -1653,7 +1641,6 @@ test.each([
       context,
       path: "/connectors",
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
     click(
       await waitFor(() => {
@@ -1710,7 +1697,6 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
 
@@ -1739,7 +1725,6 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
 
@@ -1761,7 +1746,7 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
   ).resolves.toBeVisible();
 });
 
-test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {
+test("Keep unavailable and foreign Browser actions inert without hiding the ordinary Browser card", async () => {
   const trustedBrowserUrl = `https://app.okou.ai/browsers/${RUN_THREAD_ID}`;
   const browser = managedBrowserSession({
     status: "suspended",
@@ -1772,7 +1757,7 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
     cloudBrowserEnabled: true,
     events: completedConversation(
       [
-        `[Disabled input](${browserInputUrl()})`,
+        `[Unavailable input](${browserInputUrl()})`,
         `[Foreign input](${browserInputUrl({ threadId: OTHER_THREAD_ID })})`,
         `[Research session](${trustedBrowserUrl})`,
       ].join("\n\n"),
@@ -1782,11 +1767,15 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
     expect(params.threadId).toBe(RUN_THREAD_ID);
     return respond(200, { browser });
   });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "BROWSER_USER_ACTION_NOT_FOUND", message: "Not found" },
+    });
+  });
   await setupPage({
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: false },
   });
   await readyChat();
   await waitFor(() => {

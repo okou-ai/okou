@@ -12,7 +12,6 @@ import type {
   BrowserUserActionPrepareFileUploadRequest,
   BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   command,
   computed,
@@ -26,7 +25,6 @@ import { accept } from "../../lib/accept.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { onRef, settle } from "../utils.ts";
 import {
@@ -357,9 +355,6 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
   const request$ = computed(
     async (get): Promise<BrowserUserActionRequestState> => {
       get(revision$);
-      if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
-        return { kind: "unavailable" };
-      }
       return await readBrowserUserAction(get(apiClient$), descriptor);
     },
   );

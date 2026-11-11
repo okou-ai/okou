@@ -123,6 +123,7 @@ import * as claimedWorkflowAttachmentSchema from "./schema/claimed-workflow-atta
 import * as workflowAutomationRuntime from "./runtime/workflow-automation";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
+import * as sshAuthorizationSchema from "./schema/ssh-authorization";
 import * as desktopShellAuthorizationSchema from "./schema/desktop-shell-authorization";
 import * as computerUseHostRuntime from "./runtime/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
@@ -301,6 +302,7 @@ export const schema = {
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...desktopShellAuthorizationSchema,
+  ...sshAuthorizationSchema,
   ...computerUseHostRuntime,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,

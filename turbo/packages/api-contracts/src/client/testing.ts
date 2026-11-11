@@ -660,6 +660,8 @@ import { slackOauthContract as OriginalSlackOauthContract } from "../contracts/s
 import { slackOauthContract } from "./slack-oauth";
 import { sshHostsContract as OriginalSshHostsContract } from "../contracts/ssh-access";
 import { sshHostsContract } from "./ssh-access";
+import { sshAuthorizationContract as OriginalSshAuthorizationContract } from "../contracts/ssh-authorization";
+import { sshAuthorizationContract } from "./ssh-authorization";
 import { sshConnectionsContract as OriginalSshConnectionsContract } from "../contracts/ssh-connections";
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
@@ -1289,6 +1291,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [slackOauthCallbackContract, OriginalSlackOauthCallbackContract],
   [slackOauthContract, OriginalSlackOauthContract],
   [sshHostsContract, OriginalSshHostsContract],
+  [sshAuthorizationContract, OriginalSshAuthorizationContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
   [suggestionsContract, OriginalSuggestionsContract],

@@ -1688,6 +1688,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "ssh-authorization",
+    contracts: ["sshAuthorizationContract"],
+    bindings: [],
+  },
+  {
     module: "ssh-connections",
     contracts: ["sshConnectionsContract"],
     bindings: [

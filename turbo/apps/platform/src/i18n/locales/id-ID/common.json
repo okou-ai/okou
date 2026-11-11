@@ -6345,6 +6345,32 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
+  "sshAuthorization": {
+    "allow": "Izinkan di chat ini",
+    "blocked": {
+      "chat_busy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
+      "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
+      "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
+    },
+    "continue": "Lanjutkan tugas",
+    "details": "Detail akses",
+    "effect": "Mengizinkan perintah dan transfer file sebagai pengguna jarak jauh ini hingga akses dinonaktifkan.",
+    "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
+    "retry": "Coba lagi",
+    "scope": "Host ini · Hanya chat ini",
+    "status": {
+      "approved": "Akses SSH diizinkan",
+      "denied": "Akses SSH ditolak",
+      "expired": "Permintaan SSH kedaluwarsa",
+      "pending": "Akses SSH",
+      "revoked": "Akses SSH dicabut",
+      "stale": "Permintaan SSH berubah"
+    },
+    "title": "Akses SSH",
+    "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
     "delete": "Hapus Tailscale",
@@ -6456,16 +6482,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Kembali ke alur kerja",
+      "disabled": "Dinonaktifkan",
       "disabledAt": "Dinonaktifkan pada {{time}}",
       "loadFailed": "Tidak dapat memuat otomatisasi ini",
       "loadingAutomation": "Memuat otomatisasi",
+      "notNow": "Tidak sekarang",
       "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
-      "reason_one": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
-      "reason_other": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
       "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
       "switchWorkspace": "Ganti ruang kerja",
       "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
       "systemSource": "Notifikasi sistem",
+      "title": "Otomatisasi dinonaktifkan",
       "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
       "viewAutomation": "Lihat otomatisasi",
       "workspace": "Ruang kerja",

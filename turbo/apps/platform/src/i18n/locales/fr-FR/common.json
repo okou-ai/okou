@@ -6433,6 +6433,32 @@
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
+  "sshAuthorization": {
+    "allow": "Autoriser dans cette conversation",
+    "blocked": {
+      "chat_busy": "Attendez la fin du Run en cours dans ce chat avant d’approuver.",
+      "host_changed": "La configuration de l’hôte a changé. Demandez un nouvel accès.",
+      "permissions_required": "Approuvez d’abord les autorisations du connecteur associées.",
+      "run_active": "Attendez la fin du Run à l’origine de la demande avant d’approuver.",
+      "run_unavailable": "Le Run à l’origine de la demande est indisponible. Demandez une nouvelle demande dans ce chat."
+    },
+    "continue": "Continuer la tâche",
+    "details": "Détails de l’accès",
+    "effect": "Autorise les commandes et transferts de fichiers avec cet utilisateur distant jusqu’à la désactivation de l’accès.",
+    "failed": "Impossible de terminer l’action. Réessayez pour vérifier l’accès et continuer.",
+    "retry": "Réessayer",
+    "scope": "Cet hôte · Cette conversation uniquement",
+    "status": {
+      "approved": "Accès SSH autorisé",
+      "denied": "Accès SSH refusé",
+      "expired": "Demande SSH expirée",
+      "pending": "Accès SSH",
+      "revoked": "Accès SSH révoqué",
+      "stale": "Demande SSH modifiée"
+    },
+    "title": "Accès SSH",
+    "unavailable": "Cette demande est indisponible. Demandez un nouvel accès."
+  },
   "tailscale": {
     "changed": "Ce réseau Tailscale a changé. Vos changements n'ont pas été enregistrés ; votre brouillon est conservé.",
     "delete": "Supprimer Tailscale",
@@ -6546,17 +6572,20 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Retour aux workflows",
+      "disabled": "Désactivée",
       "disabledAt": "Désactivée le {{time}}",
       "loadFailed": "Impossible de charger cette automatisation",
       "loadingAutomation": "Chargement de l’automatisation",
+      "notNow": "Pas maintenant",
       "otherWorkspace": "Cette automatisation se trouve dans {{workspace}}. Changez d’espace de travail pour la consulter.",
-      "reason_one": "Désactivée automatiquement après {{count}} échec d’exécution consécutif.",
-      "reason_many": "Désactivée automatiquement après {{count}} échecs d’exécution consécutifs.",
-      "reason_other": "Désactivée automatiquement après {{count}} échecs d’exécution consécutifs.",
+      "reason_one": "{{count}} exécution a échoué. Vérifiez l’automatisation avant de la réactiver.",
+      "reason_many": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
+      "reason_other": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
       "switchFailed": "Impossible de changer d’espace de travail. Réessayez ou utilisez le sélecteur d’espace de travail.",
       "switchWorkspace": "Changer d’espace de travail",
       "systemManaged": "Cette automatisation est gérée par le système. Son état actuel est indiqué ci-dessous.",
       "systemSource": "Notification système",
+      "title": "Automatisation désactivée",
       "unavailable": "Automatisation introuvable ou accès non autorisé",
       "viewAutomation": "Voir l’automatisation",
       "workspace": "Espace de travail",

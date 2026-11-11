@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { delay } from "signal-timers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/client/workflows";
 import { accept } from "../../lib/accept.ts";
 import { automationNotificationDestination } from "../../lib/automation-notification-location.ts";
@@ -6,8 +7,18 @@ import { apiClient$ } from "../api-client.ts";
 import { clerk$, currentOrgInfo$ } from "../auth.ts";
 import { pathname$, searchParams$ } from "../route.ts";
 import { pageVersion$ } from "../page-signal.ts";
+import { onRef } from "../utils.ts";
 import { workflowReloadVersion$ } from "./workflow-reload.ts";
 import { currentWorkflowDetail$ } from "./workflows-signals.ts";
+
+export const revealAutomationNotificationLoadingRef$ = onRef(
+  command(async (_context, element: HTMLElement, signal: AbortSignal) => {
+    element.hidden = true;
+    await delay(200, { signal });
+    signal.throwIfAborted();
+    element.hidden = false;
+  }),
+);
 
 export const automationNotificationTarget$ = computed((get) => {
   return automationNotificationDestination(

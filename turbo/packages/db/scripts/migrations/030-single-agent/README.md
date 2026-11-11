@@ -44,10 +44,10 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
-Plans use `single-agent-plan-v6`; inventories remain
+Plans use `single-agent-plan-v7`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
 apply the approved naming, private-Agent-owner and publication policies. No
-executable consumer of any plan version is implemented.
+plan version can be passed directly to a write command.
 
 Each plan embeds a complete `agentPrefixes` object. Save that object as an
 owner-only JSON file to review, edit short English aliases, and reuse it:
@@ -121,7 +121,11 @@ Exit codes:
   check does not establish runtime eligibility or trigger delivery.
   Non-default Official Workflow installations block pending their own mapping.
 - Compare Workflow view/manage/publish rights before and after the host change
-  using the current host visibility/owner rules and cached org membership.
+  using the current Workflow-owner/host-writer rules and cached org membership.
+  `workflowMaintenancePolicy: workflow-owner-or-host-writer` applies to both
+  source and target: public Workflow owners may maintain their own content,
+  as may writers on a visible host Agent. Private Workflows remain owner-only,
+  Official Workflows remain read-only, and publication eligibility is unchanged.
   Record all per-member differences. For private-Agent Workflows, view/manage
   changes are accepted by the explicit private-Agent-owner policy: the Agent
   owner receives owner-only access and a different former Workflow owner loses
@@ -130,12 +134,14 @@ Exit codes:
   the private Workflow owner. Record gains and losses as `acceptedChanges`,
   retaining their before/after rights; there is no migration-specific publish
   grant or grandfathered eligibility. Public-Agent view/manage differences
-  remain `unresolvedChanges` and block. Converted Instructions also block
-  changed maintenance rights. The public Workflow owner maintenance fix in
-  #46438 must be deployed/verified before the planner adopts that policy;
-  this version retains its maintenance blockers. No runtime permissions or
-  actual Workflow visibility are changed by planning. The cache is preliminary
-  evidence, not live membership authority.
+  remain `unresolvedChanges` and block. Converted public Instructions retain
+  their source owner's maintenance rights as Workflow owners. Other maintenance
+  changes, including a non-admin target Agent owner gaining access or a former
+  host owner losing access to another author's public Workflow, still block.
+  The modeled policy follows #46438; verify it on serving and supported rollback
+  APIs before execution. An offline plan does not establish deployed behavior.
+  No runtime permissions or actual Workflow visibility are changed by planning.
+  The cache is preliminary evidence, not live membership authority.
 - Initialize members with no personal Instructions row once from the public
   default Agent's snapshotted Instructions. Preserve every saved row, including
   deliberately empty content. Earlier automatically seeded rows also remain
@@ -182,6 +188,89 @@ rehearsal and subsequent review. A staff production cutover needs a fresh plan,
 followed by persisted-data and runtime acceptance. Other orgs need separate fresh
 inventories/plans. Legacy Agent deletion belongs to #45476.
 
+## Isolated-copy execution and recovery
+
+`single-agent:rehearse` is a separate operator for a stopped, isolated database
+and object-store copy. It is not a production cutover entry point. The original
+`inventory`/`plan` commands remain read-only and their reports remain
+non-executable. This operator creates a different, hash-bound execution image
+after validating the reviewed report, current rows, complete source archives,
+canonical Workflow documents and attachment manifests.
+
+Before a staff-copy rehearsal, complete #45473, verify the deployed permission
+policy, resolve every plan blocker, verify the copy's lineage and stop its API,
+schedulers, listeners and other writers. The operator checks active/queued work,
+but cannot stop remote ingress or establish live Clerk membership. A database
+name, endpoint or target label does not prove that a database is a copy. Record
+those operational prerequisites in #45474; do not invent acceptance evidence to
+pass the command's explicit writer-drain acknowledgement.
+
+Use an owner-only connection file and explicitly configured **copy** object
+store. Populate that store with the source's immutable archive objects before
+preparation. Never point a rehearsal at production credentials or publish its
+test objects to a production bucket.
+
+```sh
+# DATABASE_URL_FILE is a mode-0600 file containing the isolated copy's URL.
+# Set R2_ENDPOINT, R2_USER_STORAGES_BUCKET_NAME, R2_ACCESS_KEY_ID and
+# R2_SECRET_ACCESS_KEY through the authorized copy environment.
+pnpm single-agent:rehearse prepare \
+  --org-id <org-id> --target <copy-label> \
+  --inventory /private/inventory.json --plan /private/plan.json \
+  --expect-plan-sha256 <reviewed-plan-hash> \
+  --directory /private/new-execution
+
+pnpm single-agent:rehearse apply \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash> \
+  --rehearsal --writers-drained --migrate
+
+pnpm single-agent:rehearse verify \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash>
+
+pnpm single-agent:rehearse recover \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash> \
+  --rehearsal --writers-drained --migrate
+```
+
+Preparation writes a new mode-0700 directory with mode-0600 `execution.json`
+and prepared archive files. Unlike the metadata inventory, this recovery image
+contains complete private source rows, Instructions, Chat metadata and affected
+Automation configuration/dependent records. Keep it owner-private, durable and
+outside Git. PostgreSQL JSON text stays intact to preserve wide numeric values
+and microsecond timestamps. The image pins the org, database endpoint/name,
+object-store endpoint/bucket, schema, source revisions, inventory/report hashes,
+source identities and exact before/after values. It never unions grants or
+changes member overrides.
+
+Apply flushes an exclusive attempt receipt before its first external effect,
+verifies/publishes immutable hash objects, then publishes the database changes
+and Project/Chat metadata events in one atomic SQL statement. Every affected
+write has its source-value condition; a failed admission or row count aborts
+the whole statement. No explicit transaction, advisory lock or coordination
+table is introduced. Automation deletion recovery includes known cascading
+children and historical Run references; unknown deletion dependencies block.
+
+There is one database checkpoint per org image. An absent completion receipt
+does not prove failure: `verify` reads authoritative rows and reports `before`,
+`after` or drift. Repeating apply on the exact after image verifies objects and
+returns `already-applied` without duplicate rows/events. Recovery only accepts
+the exact after image, restores full source data and publishes compensating
+Project/Chat events. It rejects later edits instead of overwriting them.
+Repeating recovery returns `already-recovered`. Event sequences remain
+monotonic, PostgreSQL row revisions are not rewound, and immutable shared
+objects are retained. Prepare a fresh inventory/report/image to rehearse again
+after recovery.
+
+This verifies persisted migration behavior, not native continuation, live
+authorization, listener delivery or production rollout. Those remain explicit
+acceptance gates under #45473/#45474. Agent retirement remains #45476.
+
 ## Verification
 
 ```sh
@@ -206,3 +295,11 @@ Naming coverage includes bounded/deduplicated readable prefixes, non-Latin
 aliases, complete fixed-map replay, map scope/duplicate rejection, deterministic
 long-name shortening with preserved override grouping, and separate same-name
 Agent Projects with stable source suffixes.
+
+The same CI command also runs `test-execution.ts` against a second owned
+database and an isolated HTTP object-store fixture. It exercises actual CLI
+subprocesses, complete before/after data, immutable bundle publication, attachment
+bytes/modes, private-Agent ownership, personal empty/preserved values, uncertain
+committed PostgreSQL responses, idempotent resume, cascading-row/Run-reference
+recovery, later-edit rejection and concurrent first saves. It does not run a
+staff-copy rehearsal or execute a Workflow.

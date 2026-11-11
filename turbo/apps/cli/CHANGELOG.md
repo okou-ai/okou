@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.20.0](https://github.com/okou-ai/okou/compare/cli-v10.19.10...cli-v10.20.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+    * @okouai/pi-agent-runtime bumped to 1.51.100
+
 ## [10.19.10](https://github.com/okou-ai/okou/compare/cli-v10.19.9...cli-v10.19.10) (2026-11-11)
 
 

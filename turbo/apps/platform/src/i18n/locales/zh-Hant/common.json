@@ -6345,6 +6345,32 @@
     "unavailable": "該帳號無法使用 SSH 訪問。",
     "username": "SSH 使用者名稱"
   },
+  "sshAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
+    },
+    "continue": "繼續任務",
+    "details": "存取詳細資訊",
+    "effect": "允許以此遠端使用者執行命令和傳輸檔案，直到關閉存取。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 SSH 存取",
+      "denied": "已拒絕 SSH 存取",
+      "expired": "SSH 申請已過期",
+      "pending": "SSH 存取",
+      "revoked": "已撤銷 SSH 存取",
+      "stale": "SSH 申請已變更"
+    },
+    "title": "SSH 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
     "delete": "刪除 Tailscale",
@@ -6456,16 +6482,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "返回工作流程",
+      "disabled": "已停用",
       "disabledAt": "停用時間：{{time}}",
       "loadFailed": "無法載入此自動化",
       "loadingAutomation": "正在載入自動化",
+      "notNow": "暫時不用",
       "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
-      "reason_one": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
-      "reason_other": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
+      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
       "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
       "switchWorkspace": "切換工作區",
       "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
       "systemSource": "系統通知",
+      "title": "自動化已停用",
       "unavailable": "找不到此自動化，或你無權存取",
       "viewAutomation": "查看自動化",
       "workspace": "工作區",

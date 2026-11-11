@@ -1153,112 +1153,130 @@ describe("Email integration", () => {
     expect(sentEmails()).toStrictEqual([]);
   });
 
-  it("imports an email attachment privately without forwarding the Resend credential to its download host", async () => {
-    const { actor } = await entitledActor();
-    const attachmentId = randomUUID();
-    const receipt = incoming({
-      sender: actor.email,
-      attachments: [{ id: attachmentId, filename: "comparison.txt" }],
-    });
-    const downloadUrl = `https://resend-attachments.s3.amazonaws.com/${attachmentId}/comparison.txt`;
-    server.use(
-      http.get(
-        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
-        ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer test-resend-key",
-          );
-          return HttpResponse.json({
-            id: attachmentId,
-            download_url: downloadUrl,
+  it.each([
+    "https://resend-attachments.s3.amazonaws.com",
+    "https://cdn.resend.app",
+  ])(
+    "imports an email attachment privately from %s without forwarding the Resend credential",
+    async (downloadOrigin) => {
+      const { actor } = await entitledActor();
+      const attachmentId = randomUUID();
+      const receipt = incoming({
+        sender: actor.email,
+        attachments: [{ id: attachmentId, filename: "comparison.txt" }],
+      });
+      const downloadUrl = `${downloadOrigin}/${attachmentId}/comparison.txt`;
+      server.use(
+        http.get(
+          `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+          ({ request }) => {
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer test-resend-key",
+            );
+            return HttpResponse.json({
+              id: attachmentId,
+              download_url: downloadUrl,
+            });
+          },
+        ),
+        http.get(downloadUrl, ({ request }) => {
+          expect(request.headers.get("authorization")).toBeNull();
+          return new HttpResponse("A private comparison", {
+            headers: { "Content-Type": "text/plain" },
           });
-        },
-      ),
-      http.get(downloadUrl, ({ request }) => {
-        expect(request.headers.get("authorization")).toBeNull();
-        return new HttpResponse("A private comparison", {
-          headers: { "Content-Type": "text/plain" },
-        });
-      }),
-    );
-    await receipt.send();
-    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
-    if (!threadId) {
-      throw new Error("Expected an email chat with an attachment");
-    }
-    const { events } = await files.listThreadEvents(actor, threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt";
-    });
-    if (prompt?.eventType !== "input.prompt") {
-      throw new Error("Expected the email input");
-    }
-    const attachment = prompt.userMessage.parts.find((part) => {
-      return part.type === "file";
-    });
-    if (attachment?.type !== "file") {
-      throw new Error("Expected the imported attachment");
-    }
-    expect(attachment).toMatchObject({
-      filenameSnapshot: "comparison.txt",
-      contentType: "text/plain",
-    });
-    const resolved = await files.resolveWebFileUrl(actor, attachment.fileId);
-    expect(resolved.publicUrl).toBeNull();
-    expect(resolved.url).not.toBe(downloadUrl);
-    const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
-    await files.requestWebFileUrl(outsider, attachment.fileId, [404]);
-  });
+        }),
+      );
+      await receipt.send();
+      expect(context.mocks.s3.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Body: Buffer.from("A private comparison"),
+            ContentType: "text/plain",
+          }),
+        }),
+        expect.anything(),
+      );
+      const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+      if (!threadId) {
+        throw new Error("Expected an email chat with an attachment");
+      }
+      const { events } = await files.listThreadEvents(actor, threadId);
+      const prompt = events.find((event) => {
+        return event.eventType === "input.prompt";
+      });
+      if (prompt?.eventType !== "input.prompt") {
+        throw new Error("Expected the email input");
+      }
+      const attachment = prompt.userMessage.parts.find((part) => {
+        return part.type === "file";
+      });
+      if (attachment?.type !== "file") {
+        throw new Error("Expected the imported attachment");
+      }
+      expect(attachment).toMatchObject({
+        filenameSnapshot: "comparison.txt",
+        contentType: "text/plain",
+      });
+      const resolved = await files.resolveWebFileUrl(actor, attachment.fileId);
+      expect(resolved.publicUrl).toBeNull();
+      expect(resolved.url).not.toBe(downloadUrl);
+      const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+      await files.requestWebFileUrl(outsider, attachment.fileId, [404]);
+    },
+  );
 
-  it("rejects untrusted attachment download hosts while preserving the email text", async () => {
-    const { actor } = await entitledActor();
-    const attachmentId = randomUUID();
-    const receipt = incoming({
-      sender: actor.email,
-      attachments: [{ id: attachmentId, filename: "untrusted.txt" }],
-    });
-    const downloadUrl = `https://untrusted.example/${attachmentId}/untrusted.txt`;
-    let untrustedHostRequested = false;
-    server.use(
-      http.get(
-        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
-        () => {
-          return HttpResponse.json({
-            id: attachmentId,
-            download_url: downloadUrl,
-          });
-        },
-      ),
-      http.get(downloadUrl, () => {
-        untrustedHostRequested = true;
-        return new HttpResponse("Untrusted attachment");
-      }),
-    );
-    await receipt.send();
-    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
-    if (!threadId) {
-      throw new Error("Expected the email text to remain available");
-    }
-    const { events } = await files.listThreadEvents(actor, threadId);
-    const prompt = events.find((event) => {
-      return event.eventType === "input.prompt";
-    });
-    if (prompt?.eventType !== "input.prompt") {
-      throw new Error("Expected the email input");
-    }
-    const attachment = prompt.userMessage.parts.find((part) => {
-      return part.type === "file";
-    });
-    if (attachment?.type !== "file") {
-      throw new Error("Expected the unavailable attachment reference");
-    }
-    expect(attachment.filenameSnapshot).toBe("untrusted.txt");
-    expect(prompt.userMessage.parts).toContainEqual({
-      type: "text",
-      text: expect.stringContaining("Please compare these options"),
-    });
-    expect(untrustedHostRequested).toBeFalsy();
-  });
+  it.each(["untrusted.example", "cdn.resend.app.evil.example"])(
+    "rejects untrusted attachment download host %s while preserving the email text",
+    async (downloadHost) => {
+      const { actor } = await entitledActor();
+      const attachmentId = randomUUID();
+      const receipt = incoming({
+        sender: actor.email,
+        attachments: [{ id: attachmentId, filename: "untrusted.txt" }],
+      });
+      const downloadUrl = `https://${downloadHost}/${attachmentId}/untrusted.txt`;
+      let untrustedHostRequested = false;
+      server.use(
+        http.get(
+          `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+          () => {
+            return HttpResponse.json({
+              id: attachmentId,
+              download_url: downloadUrl,
+            });
+          },
+        ),
+        http.get(downloadUrl, () => {
+          untrustedHostRequested = true;
+          return new HttpResponse("Untrusted attachment");
+        }),
+      );
+      await receipt.send();
+      const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+      if (!threadId) {
+        throw new Error("Expected the email text to remain available");
+      }
+      const { events } = await files.listThreadEvents(actor, threadId);
+      const prompt = events.find((event) => {
+        return event.eventType === "input.prompt";
+      });
+      if (prompt?.eventType !== "input.prompt") {
+        throw new Error("Expected the email input");
+      }
+      const attachment = prompt.userMessage.parts.find((part) => {
+        return part.type === "file";
+      });
+      if (attachment?.type !== "file") {
+        throw new Error("Expected the unavailable attachment reference");
+      }
+      expect(attachment.filenameSnapshot).toBe("untrusted.txt");
+      expect(prompt.userMessage.parts).toContainEqual({
+        type: "text",
+        text: expect.stringContaining("Please compare these options"),
+      });
+      expect(untrustedHostRequested).toBeFalsy();
+    },
+  );
 
   it("keeps email chats readable through both installed-iOS event endpoints", async () => {
     const { actor } = await entitledActor();

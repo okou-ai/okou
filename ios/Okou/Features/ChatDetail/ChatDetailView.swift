@@ -373,8 +373,8 @@ struct ChatDetailView: View {
   {
     switch row {
     case .failure(let message, let state, let topSpacing, let providerMessage):
-      AssistantFailureCard(
-        state: state, conversation: conversation, providerMessage: providerMessage
+      AssistantFailureRecoveryCard(
+        failure: state.failure, conversation: conversation, providerMessage: providerMessage
       )
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }

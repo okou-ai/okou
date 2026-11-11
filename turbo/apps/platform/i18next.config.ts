@@ -28,6 +28,9 @@ export default defineConfig({
     defaultNS: "common",
     functions: ["i18n.t"],
     preservePatterns: [
+      // SSH review cards select server-declared request states and blockers.
+      "sshAuthorization.status.*",
+      "sshAuthorization.blocked.*",
       // VNC settings select one allow-listed connection failure at runtime.
       "vnc.connectionStatus.reasons.*",
       "activity.network.details.*",
