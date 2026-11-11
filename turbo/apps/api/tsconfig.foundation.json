@@ -36,6 +36,7 @@
     "src/signals/services/concurrency-subscription-write.ts",
     "src/signals/services/connector-account-mutation.service.ts",
     "src/signals/services/context-rowset.ts",
+    "src/signals/services/execution-connector-environment.service.ts",
     "src/signals/services/conversation-history-deletion.service.ts",
     "src/signals/services/custom-connector-oauth-write.service.ts",
     "src/signals/services/custom-oauth-connection-publication.ts",
