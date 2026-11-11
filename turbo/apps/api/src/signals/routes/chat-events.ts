@@ -14,7 +14,11 @@ import {
 } from "../../lib/error";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { handleSendChatEvent$ } from "../services/chat-events.command";
+import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
+import {
+  handleSendChatEvent$,
+  chatEnqueueTiming$,
+} from "../services/chat-events.command";
 import { projectReferencesAvailable } from "../services/project-reference.service";
 import {
   hasEmptySuggestionNote,
@@ -37,7 +41,12 @@ export const sendValidatedChatEvent$ = command(
     if (auth.tokenType === "oauth" && !auth.scopes.includes(scope)) {
       return resourceUnavailable("Insufficient scope");
     }
-    if (!(await get(projectReferencesAvailable(auth, data.userMessage)))) {
+    const timing = get(chatEnqueueTiming$);
+    if (
+      !(await measureChatEnqueue(timing, "references", () => {
+        return get(projectReferencesAvailable(auth, data.userMessage));
+      }))
+    ) {
       return notFound("Project or conversation not found");
     }
     signal.throwIfAborted();
@@ -45,7 +54,11 @@ export const sendValidatedChatEvent$ = command(
       auth.tokenType === "session" &&
       data.userMessage &&
       suggestionFeedbacks(data.userMessage).length > 0;
-    const access = candidate ? await set(suggestionAccess$, signal) : null;
+    const access = candidate
+      ? await measureChatEnqueue(timing, "suggestion_access", () => {
+          return set(suggestionAccess$, signal);
+        })
+      : null;
     const custom = access !== null && !("status" in access);
     if (custom && data.userMessage) {
       if (
@@ -57,16 +70,22 @@ export const sendValidatedChatEvent$ = command(
           "Add your question or direction before sending this suggestion.",
         );
       }
-      const invalid = await set(
-        validateSuggestionFollowup$,
-        auth,
-        {
-          threadId: data.threadId,
-          eventId: data.clientEventId,
-          document: data.userMessage,
+      const threadId = data.threadId;
+      const eventId = data.clientEventId;
+      const document = data.userMessage;
+      const invalid = await measureChatEnqueue(
+        timing,
+        "suggestion_validation",
+        () => {
+          return set(
+            validateSuggestionFollowup$,
+            auth,
+            { threadId, eventId, document },
+            signal,
+          );
         },
-        signal,
       );
+      signal.throwIfAborted();
       if (invalid) {
         return invalid;
       }
@@ -87,26 +106,57 @@ export const sendValidatedChatEvent$ = command(
 
 const sendChatEventInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const body = await get(sendEventBody$);
+    const timing = get(chatEnqueueTiming$);
+    timing?.recordAuth(true);
+    const body = await measureChatEnqueue(timing, "body", () => {
+      return get(sendEventBody$);
+    });
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
     }
+    timing?.setKind(
+      typeof body.data.prompt === "string"
+        ? "normal"
+        : "interruptsRunId" in body.data
+          ? "interrupt"
+          : "recall",
+    );
+    timing?.setSendContext(
+      get(organizationAuthContext$).tokenType,
+      body.data.threadId !== undefined,
+    );
     return await set(sendValidatedChatEvent$, body.data, signal);
+  },
+);
+
+const authenticatedSendChatEvent$ = authRoute(
+  {
+    requireOrganization: true,
+    missingOrganizationStatus: 401,
+    requiredCapability: "chat-event:write",
+    oauthScope: ["okou:chat:send", "okou:run:cancel"],
+  },
+  sendChatEventInner$,
+);
+
+const observedSendChatEvent$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const timing = get(chatEnqueueTiming$);
+    if (!timing) {
+      throw new Error(
+        "Chat enqueue observer requires the canonical send route",
+      );
+    }
+    return await timing.observeResponse(async () => {
+      return await set(authenticatedSendChatEvent$, signal);
+    }, signal);
   },
 );
 
 export const chatEventsRoutes: readonly RouteEntry[] = [
   {
     route: chatEventsContract.send,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "chat-event:write",
-        oauthScope: ["okou:chat:send", "okou:run:cancel"],
-      },
-      sendChatEventInner$,
-    ),
+    handler: observedSendChatEvent$,
   },
 ];
