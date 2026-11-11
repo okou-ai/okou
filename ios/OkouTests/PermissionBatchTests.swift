@@ -151,8 +151,8 @@ final class PermissionBatchTests: XCTestCase {
     await card.confirm()
     XCTAssertTrue(card.needsContinuation)
     let owner = UUID()
-    conversation.setDetailVisible(true, owner: owner)
-    conversation.setDetailVisible(false, owner: owner)
+    conversation.permissionActions.activate(owner: owner)
+    conversation.permissionActions.deactivate()
     for _ in 0..<80 {
       let action = try XCTUnwrap(
         ChatPermissionBatchAction(
@@ -160,7 +160,7 @@ final class PermissionBatchTests: XCTestCase {
           threadID: UUID().uuidString))
       _ = conversation.permissionActions.resources.read(action)
     }
-    conversation.setDetailVisible(true, owner: UUID())
+    conversation.permissionActions.activate(owner: UUID())
     await card.loadIfNeeded()
     await card.confirm()
     XCTAssertNil(card.error)
@@ -395,7 +395,8 @@ final class PermissionBatchTests: XCTestCase {
       thread: thread, sync: sync, commands: commands, webURL: fixture.http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.http.baseURL),
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
-    conversation.setDetailVisible(true, owner: UUID())
+    // Exercise the production permission scope without starting unrelated chat summary demand.
+    conversation.permissionActions.activate(owner: UUID())
     let action = try XCTUnwrap(
       ChatPermissionBatchAction(
         value: F.actionURL(), webURL: fixture.http.baseURL, agentID: F.agentID, threadID: F.threadID

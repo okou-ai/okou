@@ -150,8 +150,8 @@ final class PermissionActionTests: XCTestCase {
     XCTAssertNotNil(card.error)
     XCTAssertTrue(card.needsContinuation)
     let owner = UUID()
-    conversation.setDetailVisible(true, owner: owner)
-    conversation.setDetailVisible(false, owner: owner)
+    conversation.permissionActions.activate(owner: owner)
+    conversation.permissionActions.deactivate()
     for _ in 0..<80 {
       let url = try XCTUnwrap(
         URL(
@@ -162,7 +162,7 @@ final class PermissionActionTests: XCTestCase {
           url: url, agentID: PermissionHTTPFixture.agentID, threadID: UUID().uuidString))
       _ = conversation.permissionActions.resources.read(action)
     }
-    conversation.setDetailVisible(true, owner: UUID())
+    conversation.permissionActions.activate(owner: UUID())
     await card.loadIfNeeded()
     await card.confirm()
     XCTAssertNil(card.error)
@@ -411,7 +411,8 @@ final class PermissionActionTests: XCTestCase {
   {
     let conversation = makeConversation(fixture)
     await conversation.refresh()
-    conversation.setDetailVisible(true, owner: UUID())
+    // Exercise the production permission scope without starting unrelated chat summary demand.
+    conversation.permissionActions.activate(owner: UUID())
     let card = conversation.permissionActions.card(
       try descriptor(fixture, action: action, callback: callback))
     await card.refresh()
