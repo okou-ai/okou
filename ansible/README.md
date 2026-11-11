@@ -61,6 +61,12 @@ are implemented; native fixture backends establish proxy transport support only.
 by Runner build/release/preview provisioning. Its cache covers the complete
 `ansible/` tree.
 
+Native Caddy installation, routing and systemd activation fixtures live in
+`tests/`. Run them through `.github/scripts/tests/provision-runner-caddy-test.sh`
+from the repository root; the CI adapter resolves and verifies the pinned Caddy
+binary before invoking these fixtures. The complete suite requires Linux,
+Ansible, passwordless sudo and a running systemd instance.
+
 ```bash
 ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
   -e 'ansible_user=ubuntu'

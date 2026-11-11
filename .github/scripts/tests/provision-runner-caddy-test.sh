@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
+native_tests="$repo_root/ansible/tests"
 playbook="$repo_root/ansible/playbooks/provision-runner.yml"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -64,7 +65,7 @@ if [[ "$("$caddy_bin" version)" != "v${version} "* ]]; then
   exit 1
 fi
 
-python3 -B "$script_dir/fixtures/runner-caddy-install-test.py" \
+python3 -B "$native_tests/runner-caddy-install-test.py" \
   "$repo_root" "$caddy_archive" "$tmp/install"
 
 printf 'runner-wss.example.org ansible_connection=local\n' >"$tmp/inventory"
@@ -78,9 +79,9 @@ done
 # Run only owned loopback/Unix fixtures under an unprivileged synthetic consumer.
 # Root is needed for realistic root-owned filesystem permissions, not deployment.
 sudo -n -- "$(command -v python3)" -B \
-  "$script_dir/fixtures/runner-caddy-test.py" \
+  "$native_tests/runner-caddy-test.py" \
   "$repo_root" "$tmp/runner-caddy.Caddyfile" "$caddy_bin"
 sudo -n --preserve-env=PYTHONPATH -- "$(command -v python3)" -B \
-  "$script_dir/fixtures/runner-caddy-activation-test.py" \
+  "$native_tests/runner-caddy-activation-test.py" \
   "$repo_root" "$caddy_bin" "$(command -v ansible-playbook)" "$tmp/caddy-tasks.json"
 echo 'provision-runner-caddy-test: ok'

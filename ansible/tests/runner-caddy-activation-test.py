@@ -1,4 +1,4 @@
-"""Exercise interrupted native Caddy activation through the real provision tasks."""
+"""Exercise native Caddy activation recovery through the owning Ansible tasks."""
 
 import copy
 import grp

@@ -1,4 +1,4 @@
-"""Check real install-task recovery and idempotency in owned paths."""
+"""Check the owning Ansible install tasks' recovery and idempotency."""
 
 import copy
 import hashlib

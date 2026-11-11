@@ -1,4 +1,4 @@
-"""Exercise generated Caddy routes and the real Unix permission boundary."""
+"""Exercise Ansible-generated Caddy routes and the real Unix permission boundary."""
 
 import importlib.util
 import json
