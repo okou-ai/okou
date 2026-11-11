@@ -107,7 +107,7 @@ describe("builtin MCP Run admission", () => {
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("pins the admitted accounts and keeps MCP credentials behind firewall auth", async () => {
+  it("pins the accounts chosen at Claim and keeps MCP credentials behind firewall auth", async () => {
     const { actor, agentId, runnerGroup } = await runActor();
     const publicAccountId = await connectPublic(actor, agentId);
     await connectors.connectManualGrant(
@@ -162,7 +162,11 @@ describe("builtin MCP Run admission", () => {
     expect(claim.firewalls).toStrictEqual(
       expect.arrayContaining([
         { kind: "builtin", name: "public-mcp", sourceId: publicAccountId },
-        { kind: "builtin", name: "manual-mcp", sourceId: admittedAccount.id },
+        {
+          kind: "builtin",
+          name: "manual-mcp",
+          sourceId: replacementAccount.id,
+        },
       ]),
     );
     expect(claim.networkPolicies?.["manual-mcp"]).toStrictEqual({
@@ -199,7 +203,7 @@ describe("builtin MCP Run admission", () => {
       expect.arrayContaining([
         expect.objectContaining({
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
-          connectionId: admittedAccount.id,
+          connectionId: replacementAccount.id,
           runtimeAvailable: true,
         }),
         expect.objectContaining({
@@ -218,7 +222,7 @@ describe("builtin MCP Run admission", () => {
         name: "manual-mcp",
         apiId: "manual-mcp:0",
         connectorSlug: "manual-mcp",
-        sourceId: admittedAccount.id,
+        sourceId: replacementAccount.id,
         routingVariables: {},
       },
     };
@@ -230,7 +234,7 @@ describe("builtin MCP Run admission", () => {
       [200],
     );
     expect(auth.body).toMatchObject({
-      headers: { Authorization: "Bearer admitted-mcp-token" },
+      headers: { Authorization: "Bearer new-default-mcp-token" },
       expiresAt: Math.floor(authorizationTime / 1000) + 30,
     });
 
@@ -247,13 +251,13 @@ describe("builtin MCP Run admission", () => {
       [200],
     );
     expect(collidingAliasAuth.body).toMatchObject({
-      headers: { Authorization: "Bearer admitted-mcp-token" },
+      headers: { Authorization: "Bearer new-default-mcp-token" },
     });
 
     await connectors.deleteBuiltinConnectorAccount(
       actor,
       "manual-mcp",
-      admittedAccount.id,
+      replacementAccount.id,
     );
     const missingAccountAuth = await firewall.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },

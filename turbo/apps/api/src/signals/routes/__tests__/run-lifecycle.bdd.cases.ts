@@ -10129,23 +10129,59 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(cancelled.status).toBe("cancelled");
       });
 
-      it("rejects stored connector base URL vars outside their host policy", async () => {
+      it("keeps an invalid connector URL pending until Claim can resolve an authorized host", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
-
-        await connectors.connectManualGrant(actor, "jira", "api-token", {
-          apiToken: "jira-token-bdd",
-          domain: "attacker.example",
-          email: "connector@example.com",
-        });
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const account = await connectors.connectManualGrant(
+          actor,
+          "jira",
+          "api-token",
+          {
+            apiToken: "jira-token-bdd",
+            domain: "attacker.example",
+            email: "connector@example.com",
+          },
+        );
         await api.enableAgentConnectors(actor, agentId, ["jira"]);
-
-        // The pick rejects the input without a run; the exact host-policy message
-        // is asserted by packages/connectors firewall-expander.test.ts.
-        await expect(
-          api.readThreadRunRejection(actor, { agentId, prompt: "use jira" }),
-        ).resolves.toBe("bad_request");
+        const run = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "use jira",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const unavailable = await api.requestClaimRunnerJob(
+          true,
+          run.runId,
+          [404],
+        );
+        expect(unavailable.body).toMatchObject({
+          error: {
+            code: "NOT_FOUND",
+            message: "Run execution sources are unavailable",
+          },
+        });
+        expect((await api.readRun(actor, run.runId)).status).toBe("pending");
+        await connectors.connectManualGrant(
+          actor,
+          "jira",
+          "api-token",
+          {
+            apiToken: "jira-token-bdd",
+            domain: "customer.atlassian.net",
+            email: "connector@example.com",
+          },
+          agentId,
+          { intent: "reconnect", connectionId: account.id },
+        );
+        const claim = await api.claimRunnerJob(run.runId);
+        expect(claim.connectorRuntimeTargets).toContainEqual(
+          expect.objectContaining({
+            kind: "builtin",
+            connectorSlug: "jira",
+            sourceId: account.id,
+          }),
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
       });
 
       it("refreshes queued connector grants from current permissions", async () => {
