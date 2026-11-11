@@ -190,7 +190,11 @@ function useFooterNavItems() {
 function AccountDropdownContainer() {
   const onAccountAction = useSet(handleAccountAction$);
   return (
-    <AccountDropdown onAccountAction={onAccountAction} showSubscriptionEntry />
+    <AccountDropdown
+      onAccountAction={onAccountAction}
+      showSubscriptionEntry
+      showKeyboardShortcuts
+    />
   );
 }
 

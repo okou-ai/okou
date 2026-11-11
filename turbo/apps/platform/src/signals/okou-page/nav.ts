@@ -192,7 +192,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
             await set(navigateAdjacentPinnedAgent$, "next", signal);
           },
         },
-        "shift+/": {
+        [GLOBAL_KEYBOARD_SHORTCUTS.showShortcuts.binding]: {
           run: () => {
             set(setChatShortcutHelpOpen$, true);
           },

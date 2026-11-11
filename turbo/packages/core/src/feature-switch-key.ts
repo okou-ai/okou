@@ -49,4 +49,5 @@ export enum FeatureSwitchKey {
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
+  HelpMenu = "helpMenu",
 }

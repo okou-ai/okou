@@ -5587,6 +5587,11 @@
       "creditBalance_many": "{{value}} créditos",
       "creditBalance_other": "{{value}} créditos",
       "exportData": "Exportar dados",
+      "help": {
+        "docs": "Documentação",
+        "keyboardShortcuts": "Atalhos",
+        "label": "Ajuda"
+      },
       "lab": "Lab",
       "settings": "Configurações",
       "signOut": "Sair",
