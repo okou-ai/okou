@@ -5,6 +5,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use guest_contracts::runtime_environment::{SYSTEM_PATH, TRUSTED_ROOTFS_ENVIRONMENT};
 use nix::fcntl::Flock;
 
 use crate::error::{RunnerError, RunnerResult};
@@ -17,6 +18,17 @@ mod process_tests;
 pub(super) const TEMPLATE_BUILD_SCRIPT: &str = include_str!("../../../scripts/build-template.sh");
 const VERIFY_SCRIPT: &str = include_str!("../../../scripts/verify-rootfs.sh");
 pub(super) const CUSTOMIZE_SCRIPT: &str = include_str!("../../../scripts/customize-rootfs.sh");
+
+pub(super) fn rootfs_environment() -> String {
+    let mut environment = format!("PATH={SYSTEM_PATH}\n");
+    for (key, value) in TRUSTED_ROOTFS_ENVIRONMENT {
+        environment.push_str(key);
+        environment.push('=');
+        environment.push_str(value);
+        environment.push('\n');
+    }
+    environment
+}
 
 pub(super) struct RootfsScripts {
     temp_dir: Option<Arc<tempfile::TempDir>>,
@@ -123,6 +135,9 @@ async fn create_rootfs_scripts_dir() -> RunnerResult<tempfile::TempDir> {
     tokio::fs::write(dir.path().join("customize-rootfs.sh"), CUSTOMIZE_SCRIPT)
         .await
         .map_err(|e| RunnerError::Internal(format!("write customize script: {e}")))?;
+    tokio::fs::write(dir.path().join("rootfs-environment"), rootfs_environment())
+        .await
+        .map_err(|e| RunnerError::Internal(format!("write rootfs environment: {e}")))?;
     Ok(dir)
 }
 

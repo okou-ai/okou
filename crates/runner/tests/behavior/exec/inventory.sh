@@ -49,7 +49,7 @@ sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- sh -c '
 echo "PASS: runtime inventory"
 
 # Test 10: verify /etc/environment is loaded for both user and root
-# [sync:etc-environment] Keep in sync with: crates/runner/scripts/customize-rootfs.sh
+# Independent expectations for guest-contracts/src/runtime_environment.rs.
 echo "--- Test: environment variables ---"
 EXPECTED_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 declare -A EXPECTED_ENV=(
