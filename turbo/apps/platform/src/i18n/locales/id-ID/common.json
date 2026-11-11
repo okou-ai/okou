@@ -1318,9 +1318,11 @@
           "just_checking_price": "Hanya ingin melihat harga",
           "needs_approval": "Perlu persetujuan orang lain",
           "not_ready_yet": "Belum siap berlangganan",
+          "not_seeing_value": "Belum melihat manfaatnya",
           "other": "Lainnya",
           "payment_issue": "Ada masalah saat membayar",
-          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan"
+          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan",
+          "results_not_good_enough": "Tidak puas dengan hasilnya"
         },
         "description": "Hanya satu pertanyaan. Jawaban Anda membantu kami menjadi lebih baik.",
         "question": "Apa yang membuat Anda tidak menyelesaikan pembelian?"

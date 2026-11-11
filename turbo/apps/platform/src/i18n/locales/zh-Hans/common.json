@@ -1318,9 +1318,11 @@
           "just_checking_price": "只是看看价格",
           "needs_approval": "需要其他人审批",
           "not_ready_yet": "还没准备好付费",
+          "not_seeing_value": "还没看到它的价值",
           "other": "其他原因",
           "payment_issue": "付款时遇到问题",
-          "price_higher_than_expected": "价格比预期高"
+          "price_higher_than_expected": "价格比预期高",
+          "results_not_good_enough": "对产出结果不满意"
         },
         "description": "只有一个问题，你的回答会帮助我们改进。",
         "question": "是什么让你没有完成购买？"

@@ -1318,9 +1318,11 @@
           "just_checking_price": "価格を確認したかっただけ",
           "needs_approval": "他の人の承認が必要",
           "not_ready_yet": "まだ決めきれていない",
+          "not_seeing_value": "まだ価値を感じられなかった",
           "other": "その他",
           "payment_issue": "支払いで問題があった",
-          "price_higher_than_expected": "思っていたより価格が高かった"
+          "price_higher_than_expected": "思っていたより価格が高かった",
+          "results_not_good_enough": "結果に満足できなかった"
         },
         "description": "質問は 1 つだけです。今後の改善に役立てます。",
         "question": "購入を完了しなかった理由は何ですか？"

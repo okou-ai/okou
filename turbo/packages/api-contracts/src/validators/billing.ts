@@ -22,6 +22,8 @@ export const CREDITS_EXHAUSTED_SURVEY_ANSWERS = [
 
 export const CHECKOUT_ABANDONED_SURVEY_ANSWERS = [
   "price_higher_than_expected",
+  "not_seeing_value",
+  "results_not_good_enough",
   "not_ready_yet",
   "payment_issue",
   "needs_approval",

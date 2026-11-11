@@ -1344,9 +1344,11 @@
           "just_checking_price": "Je voulais seulement voir le prix",
           "needs_approval": "J'ai besoin de l'accord de quelqu'un d'autre",
           "not_ready_yet": "Je ne suis pas encore prêt à m'engager",
+          "not_seeing_value": "Je n'en ai pas encore vu l'intérêt",
           "other": "Autre chose",
           "payment_issue": "J'ai eu un problème de paiement",
-          "price_higher_than_expected": "Le prix était plus élevé que prévu"
+          "price_higher_than_expected": "Le prix était plus élevé que prévu",
+          "results_not_good_enough": "Je n'étais pas satisfait des résultats"
         },
         "description": "Une seule question. Votre réponse nous aide à nous améliorer.",
         "question": "Qu'est-ce qui vous a empêché de finaliser votre achat ?"

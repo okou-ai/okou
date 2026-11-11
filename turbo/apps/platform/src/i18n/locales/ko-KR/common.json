@@ -1318,9 +1318,11 @@
           "just_checking_price": "가격만 확인하고 있었어요",
           "needs_approval": "다른 사람의 승인이 필요해요",
           "not_ready_yet": "아직 결정할 준비가 안 됐어요",
+          "not_seeing_value": "아직 가치를 느끼지 못했어요",
           "other": "기타",
           "payment_issue": "결제 중 문제가 있었어요",
-          "price_higher_than_expected": "가격이 예상보다 높았어요"
+          "price_higher_than_expected": "가격이 예상보다 높았어요",
+          "results_not_good_enough": "결과가 만족스럽지 않았어요"
         },
         "description": "질문은 하나뿐이에요. 답변은 서비스 개선에 도움이 됩니다.",
         "question": "구매를 완료하지 않은 이유가 무엇인가요?"

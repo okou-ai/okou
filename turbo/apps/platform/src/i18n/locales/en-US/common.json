@@ -1321,9 +1321,11 @@
           "just_checking_price": "I was just checking the price",
           "needs_approval": "I need approval from someone else",
           "not_ready_yet": "I'm not ready to commit yet",
+          "not_seeing_value": "I didn't see the value yet",
           "other": "Something else",
           "payment_issue": "I had trouble paying",
-          "price_higher_than_expected": "The price was higher than I expected"
+          "price_higher_than_expected": "The price was higher than I expected",
+          "results_not_good_enough": "I wasn't happy with the results"
         },
         "description": "One quick question. Your answer helps us improve.",
         "question": "What stopped you from completing your purchase?"
