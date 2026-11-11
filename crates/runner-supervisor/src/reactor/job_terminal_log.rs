@@ -5,8 +5,8 @@
 //! emitted relative to executor completion and sandbox finalization.
 
 use guest_contracts::diagnostics::{
-    CliObservedExitDiagnostic, CliObservedExitKind, CliTerminationDiagnostic,
-    EventDeliveryDiagnostic, FailureClass, FailureDiagnostic, FailureReason,
+    AgentFramework, CliObservedExitDiagnostic, CliObservedExitKind, CliTerminationDiagnostic,
+    EventDeliveryDiagnostic, FailureClass, FailureDetailSource, FailureDiagnostic, FailureReason,
     HeartbeatFailureDiagnostic, WorkloadResourceLimitDiagnostic,
 };
 use tracing::info;
@@ -58,9 +58,6 @@ fn log_job_execution_failed(
         diagnostic.and_then(|diagnostic| diagnostic.workload_resource_limit.as_ref()),
     );
     let resource_fields = JobResourceLogFields::from(failure.resource_diagnostics);
-    let model_request = diagnostic.and_then(|diagnostic| diagnostic.model_request.as_ref());
-    let request_evidence = model_request.and_then(|request| request.request);
-    let response_evidence = model_request.and_then(|request| request.response.as_ref());
     let (timeout_ms, elapsed_ms, guest_duration_ms) = match failure.kind {
         ExecutionFailureKind::Generic => (None, None, None),
         ExecutionFailureKind::RunnerJobTimeout {
@@ -94,7 +91,7 @@ fn log_job_execution_failed(
                 failure_reason = diagnostic
                     .and_then(|diagnostic| diagnostic.failure_reason)
                     .map(|reason| reason.as_str()),
-                model_http_status = model_request
+                model_http_status = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.http_status),
                 codex_reported_failure_stage = diagnostic.and_then(|diagnostic| diagnostic.codex_failure)
                     .and_then(|evidence| evidence.reported_stage)
@@ -104,42 +101,30 @@ fn log_job_execution_failed(
                     .map(|kind| kind.as_str()),
                 codex_http_status = diagnostic.and_then(|diagnostic| diagnostic.codex_failure)
                     .and_then(|evidence| evidence.http_status),
-                model_transport_attempts = model_request
+                model_transport_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .map(|request| request.transport_attempts),
-                model_retry_attempts = model_request
+                model_retry_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .map(|request| request.retry_attempts),
-                model_retry_limit = model_request
+                model_retry_limit = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.retry_limit),
-                model_transport_failure_phase = model_request
+                model_transport_failure_phase = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.transport_failure)
                     .and_then(|failure| failure.phase.as_str()),
-                model_transport_signal_aborted = model_request
+                model_transport_signal_aborted = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.transport_failure)
                     .map(|failure| failure.signal_aborted),
-                model_transport_error_name = model_request
+                model_transport_error_name = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.transport_failure)
                     .and_then(|failure| failure.error_name)
                     .and_then(|name| name.as_str()),
-                model_transport_error_code = model_request
+                model_transport_error_code = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.transport_failure)
                     .and_then(|failure| failure.error_code)
                     .and_then(|code| code.as_str()),
-                model_transport_cause_code = model_request
+                model_transport_cause_code = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.transport_failure)
                     .and_then(|failure| failure.cause_code)
                     .and_then(|code| code.as_str()),
-                model_request_api = request_evidence.and_then(|request| request.api)
-                    .and_then(|api| api.as_str()),
-                model_request_wire_body_bytes = request_evidence.and_then(|request| request.wire_body_bytes),
-                model_request_content_encoding = request_evidence.and_then(|request| request.content_encoding)
-                    .and_then(|encoding| encoding.as_str()),
-                model_request_input_items = request_evidence.and_then(|request| request.input_items),
-                model_request_tools = request_evidence.and_then(|request| request.tools),
-                model_request_instructions_bytes = request_evidence.and_then(|request| request.instructions_bytes),
-                model_request_reasoning_effort = request_evidence.and_then(|request| request.reasoning_effort)
-                    .and_then(|effort| effort.as_str()),
-                model_response_request_id = response_evidence.and_then(|response| response.request_id()),
-                model_response_cf_ray = response_evidence.and_then(|response| response.cf_ray()),
                 cli_termination_initiator = cli_termination_fields.initiator,
                 cli_termination_reason = cli_termination_fields.reason,
                 cli_termination_signal_sent = cli_termination_fields.signal_sent,
@@ -261,7 +246,9 @@ fn log_job_execution_failed(
                 .resource_diagnostics
                 .and_then(|diagnostics| diagnostics.failure_kind)
                 .is_some_and(executor::ResourceFailureKind::is_filesystem_full)
-                || diagnostic.is_some_and(is_info_level_job_failure) =>
+                || diagnostic.is_some_and(|diagnostic| {
+                    is_info_level_job_failure(diagnostic, &failure.error)
+                }) =>
         {
             emit_job_execution_failed!(tracing::Level::INFO, "job execution failed");
         }
@@ -527,36 +514,50 @@ impl From<Option<&WorkloadResourceLimitDiagnostic>> for JobWorkloadResourceLogFi
     }
 }
 
-fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
+fn is_info_level_job_failure(diagnostic: &FailureDiagnostic, error: &str) -> bool {
     match diagnostic.failure_class {
         FailureClass::CliExecutionError => {
             diagnostic.failure_reason == Some(FailureReason::InputTooLarge)
         }
-        FailureClass::CliNonzero => matches!(
-            diagnostic.failure_reason,
-            Some(
-                FailureReason::InsufficientCredits
-                    | FailureReason::ProviderInsufficientCredits
-                    | FailureReason::InvalidApiKey
-                    | FailureReason::InvalidCredentials
-                    | FailureReason::TermsAcceptanceRequired
-                    | FailureReason::AccountVerificationRequired
-                    | FailureReason::ContextWindowExceeded
-                    | FailureReason::ProviderImageTooLarge
-                    | FailureReason::OutputTokenLimit
-                    | FailureReason::ProviderRateLimited
-                    | FailureReason::ProviderOverloaded
-                    | FailureReason::ProviderStreamTimeout
-                    | FailureReason::ProviderQueueTimeout
-                    | FailureReason::ProviderServerError
-                    | FailureReason::ResponseConnectionLost
-                    | FailureReason::SafetyPolicyRefusal
-                    | FailureReason::ReconnectRequired
-                    | FailureReason::CodexAccessProgramUnavailable
-                    | FailureReason::UnsupportedModel
-                    | FailureReason::UsageLimit
+        FailureClass::CliNonzero => {
+            matches!(
+                diagnostic.failure_reason,
+                Some(
+                    FailureReason::InsufficientCredits
+                        | FailureReason::ProviderInsufficientCredits
+                        | FailureReason::InvalidApiKey
+                        | FailureReason::InvalidCredentials
+                        | FailureReason::TermsAcceptanceRequired
+                        | FailureReason::AccountVerificationRequired
+                        | FailureReason::ContextWindowExceeded
+                        | FailureReason::ProviderImageTooLarge
+                        | FailureReason::OutputTokenLimit
+                        | FailureReason::ProviderRateLimited
+                        | FailureReason::ProviderOverloaded
+                        | FailureReason::ProviderStreamTimeout
+                        | FailureReason::ProviderQueueTimeout
+                        | FailureReason::ProviderServerError
+                        | FailureReason::ProviderBadRequest
+                        | FailureReason::ProviderModelRestricted
+                        | FailureReason::ResponseConnectionLost
+                        | FailureReason::SafetyPolicyRefusal
+                        | FailureReason::ReconnectRequired
+                        | FailureReason::CodexAccessProgramUnavailable
+                        | FailureReason::UnsupportedModel
+                        | FailureReason::UsageLimit
+                )
+            ) || (
+                // The SDK emits this exact fallback for an upstream-declared stream
+                // error without detail. HTTP200 alone also precedes local failures.
+                diagnostic.framework == AgentFramework::Pi
+                    && diagnostic.failure_detail_source == Some(FailureDetailSource::PiResult)
+                    && diagnostic.failure_reason.is_none()
+                    && diagnostic.model_request.is_some_and(|request| {
+                        request.http_status == Some(200) && request.transport_failure.is_none()
+                    })
+                    && error == "Provider finish_reason: error"
             )
-        ),
+        }
         FailureClass::ClaudeZeroTurnNoHistory => true,
         _ => false,
     }

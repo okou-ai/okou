@@ -859,7 +859,7 @@ impl<'a> PiRpcProjection<'a> {
                 ),
             ),
         ]);
-        if let Some(request) = assistant.model_request.as_ref() {
+        if let Some(request) = assistant.model_request {
             result.insert("modelRequest".to_owned(), json!(request));
         }
         if let Some(reason) = assistant.failure_reason {

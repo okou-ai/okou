@@ -174,7 +174,7 @@ impl SystemLogOverrideGuard {
 
 #[test]
 fn successful_post_result_cleanup_preserves_semantic_success_only_for_narrow_case() {
-    let success_result = || cli::JsonlResultSummary {
+    let success_result = cli::JsonlResultSummary {
         num_turns: Some(1),
         status: cli::JsonlResultStatus::Success,
         model_request: None,
@@ -200,8 +200,8 @@ fn successful_post_result_cleanup_preserves_semantic_success_only_for_narrow_cas
         }
     };
     let successful_cleanup = make_result(
-        success_result(),
-        success_result(),
+        success_result,
+        success_result,
         CliTerminationReason::PostResultReap,
     );
 
@@ -220,7 +220,7 @@ fn successful_post_result_cleanup_preserves_semantic_success_only_for_narrow_cas
             status: cli::JsonlResultStatus::Error,
             model_request: None,
         },
-        success_result(),
+        success_result,
         CliTerminationReason::PostResultReap,
     );
     assert!(preserves_successful_post_result_cleanup(
@@ -229,7 +229,7 @@ fn successful_post_result_cleanup_preserves_semantic_success_only_for_narrow_cas
     ));
 
     let error_cleanup = make_result(
-        success_result(),
+        success_result,
         cli::JsonlResultSummary {
             num_turns: Some(1),
             status: cli::JsonlResultStatus::Error,
@@ -243,8 +243,8 @@ fn successful_post_result_cleanup_preserves_semantic_success_only_for_narrow_cas
     ));
 
     let stronger_termination = make_result(
-        success_result(),
-        success_result(),
+        success_result,
+        success_result,
         CliTerminationReason::StuckToolWatchdog,
     );
     assert!(!preserves_successful_post_result_cleanup(

@@ -748,7 +748,6 @@ fn preserves_successful_post_result_cleanup(
         && cli_result.exit_code != 0
         && cli_result
             .post_result_cleanup_jsonl_result
-            .as_ref()
             .is_some_and(|result| result.status == cli::JsonlResultStatus::Success)
         && cli_result
             .cli_termination

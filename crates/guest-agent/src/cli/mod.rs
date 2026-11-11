@@ -1659,7 +1659,7 @@ async fn execute_cli_inner(
                             // Print the terminal JSONL result to stdout if applicable.
                             if is_terminal_result_event {
                                 let result_summary = JsonlResultSummary::from_event(&event);
-                                jsonl_result = Some(result_summary.clone());
+                                jsonl_result = Some(result_summary);
                                 if let Some(diagnostic) =
                                     events::masked_jsonl_result_failure_diagnostic(&event, masker)
                                 {
@@ -2144,10 +2144,7 @@ async fn execute_cli_inner(
         );
     }
     let (mut exit_code, cli_observed_exit) = cli_exit_summary_from_status(&status);
-    if pi_execution
-        && jsonl_result
-            .as_ref()
-            .is_some_and(|result| result.status == JsonlResultStatus::Error)
+    if pi_execution && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
     {
         exit_code = 1;
     }

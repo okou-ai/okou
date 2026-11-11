@@ -165,9 +165,7 @@ fn opaque_codex_bad_request_preserves_original_error_and_failed_outcome() {
         "role": "assistant", "api": "openai-codex-responses", "stopReason": "error",
         "errorMessage": error,
         "diagnostics": [{"type": "okou_model_request", "details": {
-            "httpStatus": 400, "transportAttempts": 1, "failureReason": "provider_bad_request",
-            "request": {"api": "openai-codex-responses", "inputItems": 2, "tools": 0, "wireBodyBytes": 348, "contentEncoding": "zstd"},
-            "response": {"requestId": "req_0123456789abcdef0123456789abcdef", "cfRay": "0123456789abcdef-SJC"}
+            "httpStatus": 400, "transportAttempts": 1, "failureReason": "provider_bad_request"
         }}]
     }});
     let (responses, _rx) = response_channel();
@@ -184,12 +182,6 @@ fn opaque_codex_bad_request_preserves_original_error_and_failed_outcome() {
     assert_eq!(result["modelRequest"]["httpStatus"], 400);
     assert_eq!(result["modelRequest"]["transportAttempts"], 1);
     assert_eq!(result["modelRequest"]["retryAttempts"], 0);
-    assert_eq!(result["modelRequest"]["request"]["inputItems"], 2);
-    assert_eq!(result["modelRequest"]["request"]["wireBodyBytes"], 348);
-    assert_eq!(
-        result["modelRequest"]["response"]["requestId"],
-        "req_0123456789abcdef0123456789abcdef"
-    );
 }
 
 #[test]

@@ -119,16 +119,12 @@ export function piAgentStreamForConfig(
       // The immutable route owns tier even when standard omits it.
       serviceTier: config.serviceTier,
     };
-    const start = (
-      fetch: NonNullable<PiAgentStreamOptions["fetch"]>,
-      onPayload: NonNullable<PiAgentStreamOptions["onPayload"]>,
-    ) => {
+    const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
       // Observe transport evidence before a body guard can consume or reject it.
       // Every public route still drops markup and bounds opaque upstream errors.
       const responseOptions = {
         ...configuredOptions,
         fetch,
-        onPayload,
       };
       if (config.dialect === "openai-completions") {
         if (!isCompletionsModel(model)) {
@@ -175,7 +171,6 @@ export function piAgentStreamForConfig(
       start,
       fetch,
       configuredOptions.signal,
-      configuredOptions.onPayload,
     );
   };
 }
