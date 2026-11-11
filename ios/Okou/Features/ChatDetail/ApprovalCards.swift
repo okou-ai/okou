@@ -26,7 +26,28 @@ final class ApprovalCardRegistry {
   private let commands: ChatCommands
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
-  private var computers: [ChatComputerAuthorizationAction: ComputerAuthorizationStore] = [:]
+  private final class ComputerKey: NSObject {
+    let action: ChatComputerAuthorizationAction
+    init(_ action: ChatComputerAuthorizationAction) { self.action = action }
+    override var hash: Int { action.hashValue }
+    override func isEqual(_ object: Any?) -> Bool { (object as? ComputerKey)?.action == action }
+  }
+
+  private final class WeakComputer {
+    weak var value: ComputerAuthorizationStore?
+    init(_ value: ComputerAuthorizationStore) { self.value = value }
+  }
+
+  // Preserve the full descriptor's callback intent and case-sensitive tokens. Read retention
+  // is advisory; native selections and explicit grant/continuation attempts survive until close.
+  private let computers: NSCache<ComputerKey, ComputerAuthorizationStore> = {
+    let cache = NSCache<ComputerKey, ComputerAuthorizationStore>()
+    cache.countLimit = 64
+    return cache
+  }()
+  private var liveComputers: [ChatComputerAuthorizationAction: WeakComputer] = [:]
+  private var computerInteractions: [ChatComputerAuthorizationAction: ComputerAuthorizationStore] =
+    [:]
   private var active = false
   private var closed = false
 
@@ -65,12 +86,24 @@ final class ApprovalCardRegistry {
   }
 
   func computer(_ action: ChatComputerAuthorizationAction) -> ComputerAuthorizationStore {
-    if let existing = computers[action] { return existing }
+    let key = ComputerKey(action)
+    if let existing = computerInteractions[action] ?? computers.object(forKey: key)
+      ?? liveComputers[action]?.value
+    {
+      return existing
+    }
+    liveComputers = liveComputers.filter { $0.value.value != nil }
     let store = ComputerAuthorizationStore(
       action: action, thread: thread, commands: commands, sync: sync,
-      didFail: didFail, didContinue: didContinue)
-    computers[action] = store
-    if closed { store.close() } else if active { store.activate() }
+      didFail: didFail, didContinue: didContinue,
+      didRetainInteraction: { [weak self] card in self?.computerInteractions[action] = card })
+    if closed {
+      store.close()
+    } else {
+      liveComputers[action] = WeakComputer(store)
+      computers.setObject(store, forKey: key)
+      if active { store.activate() }
+    }
     return store
   }
 
@@ -79,18 +112,22 @@ final class ApprovalCardRegistry {
     active = true
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.activate() }
-    for card in computers.values { card.activate() }
+    liveComputers = liveComputers.filter { $0.value.value != nil }
+    for card in liveComputers.values.compactMap(\.value) { card.activate() }
   }
 
   func deactivate() {
     active = false
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.deactivate() }
-    for card in computers.values { card.deactivate() }
+    liveComputers = liveComputers.filter { $0.value.value != nil }
+    for card in liveComputers.values.compactMap(\.value) { card.deactivate() }
   }
 
   func refreshComputers() async {
-    for card in computers.values { await card.refresh() }
+    guard !closed else { return }
+    liveComputers = liveComputers.filter { $0.value.value != nil }
+    for card in liveComputers.values.compactMap(\.value) { await card.refresh() }
   }
 
   func close() {
@@ -100,7 +137,10 @@ final class ApprovalCardRegistry {
     mailDrafts.removeAllObjects()
     liveMailDrafts = [:]
     mailOperations = [:]
-    for card in computers.values { card.close() }
+    for card in liveComputers.values.compactMap(\.value) { card.close() }
+    computers.removeAllObjects()
+    liveComputers = [:]
+    computerInteractions = [:]
   }
 
 }
