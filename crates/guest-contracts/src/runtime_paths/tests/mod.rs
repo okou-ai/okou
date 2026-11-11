@@ -428,7 +428,8 @@ fn chmod_proc_fd_path_updates_o_path_directory() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("run");
     std::fs::create_dir(&path).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let permissions =
+        cli_test_support::directory_permissions::DirectoryPermissions::set(&path, 0o000).unwrap();
     let path_c = CString::new(path.as_os_str().as_bytes()).unwrap();
     // SAFETY: `path_c` is NUL-terminated and points to the test directory.
     let raw_fd = unsafe {
@@ -444,6 +445,7 @@ fn chmod_proc_fd_path_updates_o_path_directory() {
     chmod_proc_fd_path(&fd, OsStr::new("run"), &path).unwrap();
 
     assert_eq!(mode(&path), 0o700);
+    permissions.restore().unwrap();
 }
 
 #[test]

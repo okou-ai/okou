@@ -16,5 +16,8 @@ uuid = { workspace = true, features = ["std", "v4", "serde"] }
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true
