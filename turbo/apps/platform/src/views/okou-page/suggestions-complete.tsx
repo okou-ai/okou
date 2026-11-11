@@ -1,37 +1,36 @@
-import { CircleCheck } from "lucide-react";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
+import { playSuggestionFireworksOnRef$ } from "../../signals/okou-page/suggestions-complete.ts";
 
-import { playSuggestionConfettiOnRef$ } from "../../signals/okou-page/suggestions-complete.ts";
-
+/** Completion stays on home rather than keeping the review open. */
 export function SuggestionsComplete() {
   const { t } = useTranslation();
-  const focusTitle = useSet(focusSuggestionTitleOnRef$);
-  const playConfetti = useSet(playSuggestionConfettiOnRef$);
+  const playFireworks = useSet(playSuggestionFireworksOnRef$);
   return (
-    <div className="relative flex min-h-72 flex-col items-center justify-center gap-5 overflow-hidden py-10 text-center sm:min-h-80">
+    <>
       <canvas
-        ref={playConfetti}
+        ref={playFireworks}
         aria-hidden
-        width={1280}
-        height={720}
-        className="pointer-events-none absolute inset-0 size-full motion-reduce:hidden"
+        className="pointer-events-none absolute inset-0 z-0 size-full rounded-[inherit] motion-reduce:hidden"
       />
-      <CircleCheck
-        aria-hidden
-        strokeWidth={1.5}
-        className="size-14 text-muted-foreground"
-      />
-      <h3
-        ref={focusTitle}
-        tabIndex={-1}
-        className="text-xl font-medium focus:outline-none"
+      <span
+        data-suggestion-copy
+        className="relative z-10 flex min-w-0 flex-col"
       >
-        {t(($) => {
-          return $.chat.agentSuggestions.homeCard.completeTitle;
-        })}
-      </h3>
-    </div>
+        <span className="text-xs leading-4 text-muted-foreground">
+          {t(($) => {
+            return $.chat.agentSuggestions.label;
+          })}
+        </span>
+        <p
+          role="status"
+          className="text-sm font-medium leading-5 text-foreground"
+        >
+          {t(($) => {
+            return $.chat.agentSuggestions.homeCard.completeTitle;
+          })}
+        </p>
+      </span>
+    </>
   );
 }

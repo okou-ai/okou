@@ -275,6 +275,7 @@ function createSuggestionSession() {
     previewId$: state<string | null>(null),
     detailId$: state<string | null>(null),
     detailQueue$: state<readonly AgentSuggestionEntry[] | null>(null),
+    completed$: state(false),
     // The handled card whose feedback reason is being edited.
     reasonOpen$: state<AgentSuggestionEntry | null>(null),
   };
@@ -313,7 +314,7 @@ export const homeSuggestionCard$ = computed(async (get) => {
       return entry.item.id === detailId;
     }),
     detailsOpen: queue !== null,
-    complete: queue !== null && detailId === null,
+    complete: get(session.completed$) && waiting.length === 0,
     detailCount: queue?.length ?? 0,
     detailIndex:
       queue?.findIndex((entry) => {
@@ -365,7 +366,8 @@ export const setHomeSuggestionDetailsOpen$ = command(
           return entry;
         }),
     );
-    set(session.detailId$, card.item?.id ?? null);
+    set(session.completed$, false);
+    set(session.detailId$, card.item.id);
   },
 );
 
@@ -403,6 +405,10 @@ export const advanceHomeSuggestion$ = command(
     });
     set(session.detailId$, next?.item.id ?? null);
     set(session.previewId$, next?.item.id ?? null);
+    if (!next) {
+      set(session.detailQueue$, null);
+      set(session.completed$, !get(entry.unavailable$));
+    }
   },
 );
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
@@ -561,6 +567,7 @@ export const linkAgentSuggestionThread$ = command(
 export const restoreAgentSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);
+    set(session.completed$, false);
     set(entry.hidden$, false);
     set(
       session.settled$,

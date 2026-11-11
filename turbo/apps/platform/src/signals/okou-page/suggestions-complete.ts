@@ -1,9 +1,9 @@
 import { command } from "ccstate";
-import { playSuggestionConfetti } from "../../lib/suggestion-confetti.ts";
+import { playSuggestionFireworks } from "../../lib/suggestion-fireworks.ts";
 import { onRef } from "../utils.ts";
 
-export const playSuggestionConfettiOnRef$ = onRef(
+export const playSuggestionFireworksOnRef$ = onRef(
   command((_context, canvas: HTMLCanvasElement, signal: AbortSignal) => {
-    playSuggestionConfetti(canvas, signal);
+    playSuggestionFireworks(canvas, signal);
   }),
 );

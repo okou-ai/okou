@@ -395,7 +395,7 @@ test("My Okou's home previews one suggestion inside its capabilities and opens i
   click(button("Next suggestion", "button", list));
   await within(list).findByRole("heading", { name: "Suggested action 3" });
   expect(button("Next suggestion", "button", list)).toBeDisabled();
-  click(button("Suggested action 3", "button", list));
+  await userEvent.setup().click(button("Suggested action 3", "button", list));
   const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
   await within(dialog).findByRole("article", { name: "Suggested action 3" });
   expect(button("Review decision", "button", dialog)).toBeInTheDocument();
@@ -405,7 +405,8 @@ test("My Okou's home previews one suggestion inside its capabilities and opens i
   await within(dialog).findByRole("article", { name: "Suggested action 3" });
   click(button("Close", "button", dialog));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(button("Suggested action 3", "button", list)).toHaveFocus();
   });
   expect(pathname()).toBe("/");
   await waitFor(() => {
@@ -489,6 +490,59 @@ test("A homepage suggestion keeps custom directions and sends inside its detail 
   await within(dialog).findByRole("article", { name: items[1].title });
 });
 
+test.each(["option", "custom direction"] as const)(
+  "The final %s send closes the review and focuses the completed homepage",
+  async (action) => {
+    const item = makeSuggestion();
+    mockPool([item]);
+    const sent = captureSend();
+    await setupPage({
+      context,
+      path: "/",
+      featureSwitches: {
+        ...features,
+        [FeatureSwitchKey.HomeCapabilities]: true,
+        [FeatureSwitchKey.SingleAgent]: true,
+      },
+    });
+    await fill(composer(), "Keep my home draft");
+    const card = await screen.findByRole("region", { name: "Suggestions" });
+    await within(card).findByRole("heading", { name: item.title });
+    click(button(item.title, "button", card));
+    const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+    await within(dialog).findByRole("article", { name: item.title });
+    let send: HTMLElement;
+    if (action === "custom direction") {
+      click(button("I’d like to…", "button", dialog));
+      const note = await screen.findByRole("textbox", {
+        name: "What do you have in mind?",
+      });
+      const customDialog = note.closest('[role="dialog"]');
+      if (!customDialog) {
+        throw new Error("Missing custom direction dialog");
+      }
+      await writeDirection(note, "Check the context first");
+      send = button("Send", "button", customDialog);
+    } else {
+      send = button(item.options[0].label, "button", dialog);
+    }
+    await waitFor(() => {
+      expect(send).toBeEnabled();
+    });
+    click(send);
+    await screen.findByText(SENT);
+    await sent;
+    await within(card).findByText("All caught up");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(card).toHaveFocus();
+    });
+    expect(screen.getAllByText("All caught up")).toHaveLength(1);
+    expect(composer()).toHaveTextContent("Keep my home draft");
+    expect(pathname()).toBe("/");
+  },
+);
+
 test("The review advances in its original order, returns to earlier waiting suggestions and completes", async () => {
   mockPool(numberedSuggestions(8));
   const sent = captureSend();
@@ -525,13 +579,20 @@ test("The review advances in its original order, returns to earlier waiting sugg
     );
   }
   await sent;
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
+  await within(card).findByText("All caught up");
+  expect(card).toHaveAttribute("tabindex", "-1");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(card).toHaveFocus();
   });
-  expect(completeTitle).toHaveFocus();
+  await screen.findByText("Noted — this is already done");
+  expect(screen.getAllByText("All caught up")).toHaveLength(1);
   click(button("Undo"));
-  await within(dialog).findByRole("article", { name: "Suggested action 1" });
-  expect(within(dialog).getByText("1 / 8")).toBeInTheDocument();
+  await within(card).findByRole("heading", { name: "Suggested action 1" });
+  click(button("Suggested action 1", "button", card));
+  const reopened = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(reopened).findByRole("article", { name: "Suggested action 1" });
+  expect(within(reopened).getByText("1 / 1")).toBeInTheDocument();
 });
 
 test("An unsuccessful feedback save stays in the review and advances after retry", async () => {
@@ -568,7 +629,109 @@ test("An unsuccessful feedback save stays in the review and advances after retry
   await within(dialog).findByRole("article", { name: "Suggested action 2" });
 });
 
-test("The open review completes when an unavailable-card refresh withdraws its remaining cards", async () => {
+test("The final feedback keeps the review open until its save succeeds", async () => {
+  const item = makeSuggestion();
+  const pool = mockPool([item]);
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    suggestionsContract.feedback,
+    async ({ respond, withSignal }) => {
+      requested.resolve();
+      await withSignal(release.promise);
+      pool.withdrawAll();
+      notifySuggestionsChanged();
+      return respond(200, { restored: false });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: item.title });
+  click(button(item.title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(dialog).findByRole("article", { name: item.title });
+  click(button("Already done", "button", dialog));
+  await requested.promise;
+  await within(dialog).findByText("Noted — this is already done");
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+
+  release.resolve();
+  await within(card).findByText("All caught up");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(card).toHaveFocus();
+  });
+});
+
+test("A failed final feedback save stays in the review until a successful retry", async () => {
+  const item = makeSuggestion();
+  const pool = mockPool([item]);
+  let failing = true;
+  const retryRequested = context.mocks.deferred<void>();
+  const releaseRetry = context.mocks.deferred<void>();
+  context.mocks.api(
+    suggestionsContract.feedback,
+    async ({ respond, withSignal }) => {
+      if (failing) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Feedback temporarily unavailable",
+          },
+        });
+      }
+      retryRequested.resolve();
+      await withSignal(releaseRetry.promise);
+      pool.withdrawAll();
+      notifySuggestionsChanged();
+      return respond(200, { restored: false });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: item.title });
+  click(button(item.title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(dialog).findByRole("article", { name: item.title });
+  click(button("Already done", "button", dialog));
+  const error = await within(dialog).findByRole("alert");
+  expect(error).toHaveTextContent("Feedback temporarily unavailable");
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+
+  failing = false;
+  click(button("Try again", "button", error));
+  await retryRequested.promise;
+  expect(dialog).toBeInTheDocument();
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+  releaseRetry.resolve();
+  await within(card).findByText("All caught up");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(card).toHaveFocus();
+  });
+});
+
+test("An unavailable-card refresh closes the exhausted review and leaves newly offered suggestions on home", async () => {
   const items = numberedSuggestions(2);
   const pool = mockPool(items);
   await setupPage({
@@ -590,18 +753,17 @@ test("The open review completes when an unavailable-card refresh withdraws its r
   pool.publish(offered);
   click(button("Already done", "button", dialog));
   await screen.findByText(SUGGESTION_UNAVAILABLE);
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
-  });
-  expect(completeTitle).toHaveFocus();
-  click(button("Close", "button", dialog));
   await within(card).findByRole("heading", { name: offered.title });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
   click(button(offered.title, "button", card));
   const nextReview = await screen.findByRole("dialog", { name: "Suggestions" });
   await within(nextReview).findByRole("article", { name: offered.title });
 });
 
-test("Retrying unavailable feedback completes the review after the server pool empties", async () => {
+test("Retrying unavailable feedback closes the exhausted review without marking it caught up", async () => {
   const items = numberedSuggestions(2);
   const pool = mockPool(items);
   let failing = true;
@@ -640,10 +802,12 @@ test("Retrying unavailable feedback completes the review after the server pool e
   failing = false;
   click(button("Try again", "button", error));
   await screen.findByText(SUGGESTION_UNAVAILABLE);
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
+  await within(card).findByText("No new suggestions");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(card).toHaveFocus();
   });
-  expect(completeTitle).toHaveFocus();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
 });
 
 test("Homepage feedback menu supports Undo from the empty state", async () => {

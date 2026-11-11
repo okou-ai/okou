@@ -176,6 +176,9 @@
   --animate-chat-greeting-token: chat-greeting-token 720ms
     cubic-bezier(0.22, 1, 0.36, 1) both;
 
+  --animate-completion-pop: completion-pop 450ms cubic-bezier(0.2, 0.9, 0.3, 1)
+    both;
+
   /* The composer's second level. The panel settles once when a type is picked,
      then each row's items resolve left to right, which is the order they are
      read in. Opacity has exactly one owner - the items - so the two do not
@@ -642,6 +645,18 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes completion-pop {
+  0% {
+    transform: scale(0.75);
+  }
+  55% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 

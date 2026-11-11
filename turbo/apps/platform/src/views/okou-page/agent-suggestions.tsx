@@ -806,6 +806,14 @@ function HomeSuggestionDetails() {
     <DialogContent
       maxWidth={640}
       hideWhenNestedOpen
+      // The final trigger disappears; return focus to its persistent card.
+      finalFocus={() => {
+        return card?.item
+          ? true
+          : document.querySelector<HTMLElement>(
+              '[data-slot="home-suggestions"]',
+            );
+      }}
       aria-describedby={undefined}
       contentClassName="@container/suggestion flex flex-col gap-4 p-5 sm:p-6"
     >
@@ -821,9 +829,7 @@ function HomeSuggestionDetails() {
           </span>
         )}
       </DialogHeader>
-      {card?.complete ? (
-        <SuggestionsComplete />
-      ) : card?.detail ? (
+      {card?.detail ? (
         <div key={card.detail.entry.item.id}>
           {card.detail.outcome ? (
             <SettledSuggestion
@@ -876,11 +882,13 @@ export function HomeSuggestionsCard() {
     >
       <section
         aria-label={label}
+        data-slot="home-suggestions"
+        tabIndex={-1}
         className={surfaceVariants({
           radius: "compact",
           interactive: Boolean(item),
           className:
-            "relative isolate flex h-14 min-w-0 items-center gap-3 pr-2 pl-2.5 motion-reduce:transition-none pointer-coarse:h-16",
+            "relative isolate flex h-14 min-w-0 items-center gap-3 overflow-hidden pr-2 pl-2.5 focus:outline-none motion-reduce:transition-none pointer-coarse:h-16",
         })}
       >
         {/* The mark sits on a 36px tile, the height of the two lines beside
@@ -892,9 +900,14 @@ export function HomeSuggestionsCard() {
             would vanish into the row. */}
         <span
           aria-hidden
+          data-suggestion-icon
           className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-brand-text"
         >
-          <Sparkles className="size-4" />
+          {card?.complete ? (
+            <CircleCheck className="size-5 motion-safe:animate-completion-pop" />
+          ) : (
+            <Sparkles className="size-4" />
+          )}
         </span>
         {result.state === "hasError" ? (
           <>
@@ -936,6 +949,8 @@ export function HomeSuggestionsCard() {
             count={card.count}
             label={label}
           />
+        ) : card.complete ? (
+          <SuggestionsComplete />
         ) : (
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="text-xs leading-4 text-muted-foreground">
