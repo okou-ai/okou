@@ -4,7 +4,7 @@ import { HttpResponse } from "msw";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { expect, test, vi } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { initSentry } from "../../../lib/sentry.ts";
@@ -180,7 +180,7 @@ test("does not report an upload error when the user cancels", async () => {
   );
   await screen.findByRole("progressbar", { name: `Loading ${FILENAME}` });
   await started.promise;
-  await userEvent.click(fastButton(`Cancel upload ${FILENAME}`));
+  click(fastButton(`Cancel upload ${FILENAME}`));
   await waitFor(() => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
