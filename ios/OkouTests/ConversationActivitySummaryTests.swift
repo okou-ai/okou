@@ -250,26 +250,43 @@ final class ConversationActivitySummaryTests: XCTestCase {
     }
   }
 
-  func testUpgradeFailureReachesTheConversationWithoutChangingTranscript() async throws {
+  func testUpgradeFailureRetiresTheWorkspaceWithoutChangingTranscript() async throws {
     let scenario = ActivityScenario()
-    let clock = ActivityClock()
-    let conversation = scenario.conversation(clock: clock)
-    defer { conversation.close() }
+    let workspace = scenario.workspace()
+    defer { workspace.close() }
+    await workspace.refreshNavigation()
+    await workspace.refresh()
+    workspace.setForeground(true)
+    workspace.selectedThreadID = ActivityScenario.thread
+    let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
     let messages = conversation.messages
+    let release = ActivityClock()
+    let started = expectation(description: "The summary upgrade request reached HTTP")
+    scenario.state.hold.withLock {
+      $0 = {
+        started.fulfill()
+        try? await release.sleep(.seconds(1))
+      }
+    }
     scenario.state.response.withLock {
       $0 = ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
     }
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     let original = try conversation.activitySummary.stateStore.get(
       conversation.activitySummary.value)
+    await fulfillment(of: [started], timeout: 3)
+    try await waitForSleep(release, .seconds(1))
+    release.advance(.seconds(1))
     guard case .failure(let error) = await original.result else {
       return XCTFail("Upgrade failure must remain in the original resource")
     }
     XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
-    try await waitForBusinessResult { conversation.needsUpgrade }
+    try await waitForBusinessResult { workspace.needsUpgrade }
     XCTAssertEqual(conversation.messages, messages)
-    try await waitForNoSleep(clock)
+    XCTAssertThrowsError(
+      try conversation.activitySummary.stateStore.get(conversation.activitySummary.value))
+    XCTAssertNil(workspace.conversation(for: ActivityScenario.thread))
   }
 
   func testWorkspaceSelectionForegroundAndCloseOwnTheDemand() async throws {
