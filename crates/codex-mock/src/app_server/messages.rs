@@ -544,25 +544,7 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
             ])),
         ),
     )?;
-    write_json_line(
-        output,
-        &plan_update_notification(
-            thread_id,
-            turn_id,
-            (0..75_000)
-                .map(|index| {
-                    Value::Object(serde_json::Map::from_iter([
-                        (
-                            "step".into(),
-                            format!("step-{index:06}-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz")
-                                .into(),
-                        ),
-                        ("status".into(), "pending".into()),
-                    ]))
-                })
-                .collect(),
-        ),
-    )?;
+    write_numbered_plan_notification(output, thread_id, turn_id, 0..75_000)?;
     write_json_line(
         output,
         &item_notification(
@@ -788,8 +770,45 @@ pub(super) fn historical_token_usage_notification(thread_id: &str) -> Value {
     )
 }
 
+// Encode the fixed row once; retain serde_json's canonical object order and
+// escaping while writing every original step through the real protocol pipe.
+fn write_numbered_plan_notification<W: Write>(
+    output: &mut W,
+    thread_id: &str,
+    turn_id: &str,
+    steps: std::ops::Range<usize>,
+) -> io::Result<()> {
+    let notification = serde_json::to_string(&plan_update_notification(thread_id, turn_id, vec![]))
+        .map_err(io::Error::other)?;
+    let (prefix, suffix) = notification
+        .split_once("\"plan\":[]")
+        .ok_or_else(|| io::Error::other("plan fixture omitted its empty array"))?;
+    let row = json!({
+        "step": "step-000000-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz",
+        "status": "pending",
+    });
+    let row = serde_json::to_string(&row).map_err(io::Error::other)?;
+    let (row_prefix, row_suffix) = row
+        .split_once("000000")
+        .ok_or_else(|| io::Error::other("plan fixture omitted its step number"))?;
+    output.write_all(prefix.as_bytes())?;
+    output.write_all(b"\"plan\":[")?;
+    for (position, index) in steps.enumerate() {
+        if position != 0 {
+            output.write_all(b",")?;
+        }
+        output.write_all(row_prefix.as_bytes())?;
+        write!(output, "{index:06}")?;
+        output.write_all(row_suffix.as_bytes())?;
+    }
+    output.write_all(b"]")?;
+    output.write_all(suffix.as_bytes())?;
+    writeln!(output)?;
+    output.flush()
+}
+
 fn plan_update_notification(thread_id: &str, turn_id: &str, plan: Vec<Value>) -> Value {
-    // json! would borrow and rebuild all 75,000 already-owned plan entries.
+    // Move the supplied plan into its canonical envelope without re-encoding it.
     let params = Value::Object(serde_json::Map::from_iter([
         ("threadId".into(), thread_id.into()),
         ("turnId".into(), turn_id.into()),
