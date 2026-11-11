@@ -238,6 +238,29 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
   }
 
+  func testConfirmUsesTheDisplayedSharedScopeAfterAnotherBatchCardRefreshes() async throws {
+    let fixture = fixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    let action = try XCTUnwrap(
+      ChatPermissionBatchAction(
+        value: F.actionURL(callback: false, duration: "24h"), webURL: fixture.http.baseURL,
+        agentID: F.agentID, threadID: F.threadID))
+    fixture.state.withLock { $0.shared = true }
+    await conversation.permissionActions.card(action).refresh()
+    let displayed = try await card.read.load()
+    XCTAssertTrue(displayed.connectorScoped)
+    XCTAssertTrue(card.canConfirm(reviewing: displayed))
+    await card.confirm(reviewing: displayed)
+    XCTAssertNil(card.error)
+    let saved = try await ChatBatchPermissions(client: fixture.http.client).load(card.action)
+    XCTAssertTrue(saved.allAllowed)
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
+    let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }
+    XCTAssertEqual(writes.count, 2)
+    XCTAssertTrue(writes.allSatisfy { $0.url!.path == "/api/connector-permissions" })
+  }
+
   func testEquivalentBatchReadsSurviveOneCancelledWaiterAndKeepSeparateDuration() async throws {
     let blocks = Mutex(false)
     let began = expectation(description: "Shared batch grant HTTP began")
