@@ -51,10 +51,12 @@ struct OkouSearchPage<Filters: View, Results: View, Empty: View>: View {
             OkouCloseButton(action: close)
               .buttonStyle(.plain)
               .modifier(OkouGlassControl(shape: .circle))
+              .accessibilityLabel("Close")
               .accessibilityIdentifier("close-search")
           }
           .padding(.horizontal, OkouSpace.lg)
-          .padding(.vertical, OkouSpace.sm)
+          .padding(.top, OkouSpace.xl)
+          .padding(.bottom, OkouSpace.sm)
           filters.padding(.vertical, OkouSpace.sm)
         }
         .background(OkouColor.background)

@@ -13,6 +13,10 @@ struct OkouSearchField: UIViewControllerRepresentable {
 
   func updateUIViewController(_ controller: Controller, context: Context) {
     controller.text = $text
+    controller.field.accessibilityLabel = String(localized: prompt)
+    let traits = UITraitCollection(
+      preferredContentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize))
+    controller.field.font = OkouTypography.font(forTextStyle: .body, compatibleWith: traits)
     controller.field.attributedPlaceholder = NSAttributedString(
       string: String(localized: prompt),
       attributes: [.foregroundColor: UIColor(OkouColor.placeholder)])
