@@ -8,27 +8,18 @@ struct ChatThreadPreview: View {
   let workspace: WorkspaceStore
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: OkouSpace.sm) {
-        if let emoji = thread.titleParts.emoji { Text(verbatim: emoji) }
-        Text(verbatim: thread.titleParts.text)
-          .font(.okou(.headline)).lineLimit(1)
-      }
-      .padding(OkouSpace.lg)
-      OkouListDivider()
-      Group {
-        if let resource = workspace.threadPreview, resource.threadID == thread.id {
-          StoreProvider(resource.store) {
-            ChatThreadPreviewBody(resource: resource)
-          }
-          .id(ObjectIdentifier(resource))
-        } else {
-          OkouLoadingRow("Loading chat")
+    Group {
+      if let resource = workspace.threadPreview, resource.threadID == thread.id {
+        StoreProvider(resource.store) {
+          ChatThreadPreviewBody(resource: resource)
         }
+        .id(ObjectIdentifier(resource))
+      } else {
+        OkouLoadingRow("Loading chat")
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(OkouSpace.lg)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(OkouSpace.lg)
     // Leave room for the existing menu on compact iPhones. The system may scale the whole preview.
     .frame(width: 320, height: 300)
     .foregroundStyle(OkouColor.foreground)
@@ -97,7 +88,7 @@ private struct ChatThreadPreviewMessage: View {
       if !message.copyText.isEmpty {
         Text(previewText)
           .font(.okou(.body))
-          .lineLimit(message.role == .user ? 2 : 4)
+          .lineLimit(message.role == .user ? 2 : 6)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
       if let attachment = message.attachments.first {
