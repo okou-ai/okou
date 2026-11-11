@@ -40,8 +40,8 @@ struct ChatListFilterMenu: UIViewRepresentable {
 
   func updateUIView(_ button: SidebarMenuButton, context: Context) {
     let filter = selection
-    var configuration = UIButton.Configuration.glass()
-    configuration.cornerStyle = .capsule
+    // The header's glass group draws the glass around this and the back button.
+    var configuration = UIButton.Configuration.plain()
     configuration.image = OkouIcon.uiImage("list-filter")
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: 0, leading: filter == .recent ? 0 : OkouSpace.lg,

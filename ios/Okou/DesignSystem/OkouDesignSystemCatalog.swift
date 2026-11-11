@@ -427,9 +427,10 @@
             ResultStylesGallery()
           }
           section("Workspace menu") {
-            // The sidebar's switcher: the workspace's logo as a glass button, its name beside
-            // it with no arrow; the menu lists each workspace's logo beside its name, a check
-            // on the current one.
+            // The sidebar's header: the switcher, the workspace's logo as a glass button with
+            // its name beside it and no arrow (the menu lists each workspace's logo beside its
+            // name, a check on the current one), then the chat list menu and back to the chat
+            // grouped in one glass capsule.
             let name = Self.sampleWorkspaces.first { $0.id == catalogWorkspace }?.name ?? ""
             HStack(spacing: OkouSpace.md) {
               Menu {
@@ -451,6 +452,23 @@
               }
               .buttonStyle(.plain)
               Text(verbatim: name).font(.okou(.headline))
+                .frame(maxWidth: .infinity, alignment: .leading)
+              HStack(spacing: 0) {
+                Button {
+                } label: {
+                  OkouToolbarIcon("list-filter")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .accessibilityLabel("Chat list")
+                Button {
+                } label: {
+                  OkouToolbarIcon("arrow-right")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .accessibilityLabel("Close sidebar")
+              }
+              .buttonStyle(.plain)
+              .modifier(OkouGlassControl(shape: .capsule))
             }
           }
           section("Agent identities") {
