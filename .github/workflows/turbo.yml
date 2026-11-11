@@ -1114,7 +1114,7 @@ jobs:
   test-browser-extension:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1124,10 +1124,18 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test extension release boundaries
         run: node --test .github/scripts/release/browser-extension-release.test.mjs
-      - name: Install full Chromium
-        run: pnpm --dir turbo/apps/browser-extension exec playwright install --with-deps chromium
+      - name: Build extension
+        run: pnpm --dir turbo --filter @okouai/browser-extension build
       - name: Test native extension behavior
-        run: pnpm --dir turbo --filter @okouai/browser-extension test
+        # Match @playwright/test in the extension package. The immutable image
+        # supplies full Chromium, system libraries and the native font fixtures.
+        run: |
+          docker run --rm --init --ipc=host \
+            --env CI=true \
+            --volume "$PWD:/work" \
+            --workdir /work/turbo/apps/browser-extension \
+            mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f \
+            node node_modules/@playwright/test/cli.js test
       - name: Verify deterministic extension package
         run: pnpm --dir turbo --filter @okouai/browser-extension verify-package
 
