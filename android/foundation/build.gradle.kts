@@ -8,6 +8,7 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
+    implementation(libs.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }
@@ -16,5 +17,3 @@ tasks.test {
     maxHeapSize = "512m"
     maxParallelForks = 1
 }
-
-tasks.processResources { from("THIRD_PARTY_NOTICES.md") { into("META-INF") } }

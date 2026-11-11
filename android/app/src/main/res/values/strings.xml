@@ -6,5 +6,4 @@
     <string name="draft_label">Local draft</string>
     <string name="local_preview">Preview draft</string>
     <string name="draft_preview">Draft preview: %1$s</string>
-    <string name="state_error">Unable to read local state.</string>
 </resources>

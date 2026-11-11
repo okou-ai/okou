@@ -5,7 +5,8 @@ directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
 The application currently provides an editable **local draft preview** backed
-by the real Kotlin CCState graph. It does not authenticate, send chats, contact
+by a Kotlin state holder, read-only StateFlow and a lifecycle-aware Compose route.
+It does not authenticate, send chats, contact
 production, register push, or publish to a store. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
@@ -53,16 +54,16 @@ From the repository root:
 bash android/scripts/check.sh
 ```
 
-This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting, core tests, native
-observer tests, a Robolectric Compose interaction, Android lint, and debug APK
+This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
+state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
 assembly. It uses two Gradle workers, a 1536 MB build heap and in-process Kotlin
 compilation by default for small sandboxes.
 
-The core can be tested without configuring Android projects or an SDK:
+Pure Kotlin state holders can be tested without configuring Android projects or an SDK:
 
 ```bash
 cd android
-./gradlew --settings-file core.settings.gradle.kts :ccstate:test spotlessCheck --no-daemon
+./gradlew --settings-file core.settings.gradle.kts :foundation:test spotlessCheck --no-daemon
 ```
 
 The alternate settings flag is supported by pinned Gradle 8.11.1 and emits a
@@ -73,8 +74,8 @@ Other focused commands, from `android/`:
 
 ```bash
 ./gradlew spotlessApply
-./gradlew :ccstate-compose:testDebugUnitTest :app:testDebugUnitTest
-./gradlew :ccstate-compose:lintDebug :app:lintDebug :app:assembleDebug
+./gradlew :foundation:test :app:testDebugUnitTest
+./gradlew :app:lintDebug :app:assembleDebug
 python3 scripts/sync-design-tokens.py --check
 python3 scripts/ci-changed.test.py
 ```
@@ -97,19 +98,19 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 
 ## Components and Authority
 
-- `ccstate`: Kotlin/JVM graph, independent of Android and coroutines libraries.
-- `ccstate-compose`: Compose provider, observation/loadable and command adapters;
-  Deferred resolution uses a caller-owned coroutine scope.
+- `foundation`: plain Kotlin feature state holders and immutable UI models,
+  using native coroutines/Flow without Android UI dependencies.
 - `app`: native Activity, ViewModel owner, reusable theme, local draft surface.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
 
-[Kotlin CCState](../docs/android/android-ccstate.md) records the pinned TS
-contract and intentional Kotlin/JVM differences. Preserve the upstream MIT
-notice in [ccstate/THIRD_PARTY_NOTICES.md](ccstate/THIRD_PARTY_NOTICES.md).
-The [CCState test map](ccstate/TESTING.md) links upstream scenarios to the
-core/adapter suites and records native-only coverage and intentional exclusions.
-Compose adapter integration tests belong to `ccstate-compose`; the app's
-own test covers the consuming draft screen.
+[CCState principles on Android](../docs/android/android-ccstate.md) covers
+single sources of truth, derivation, semantic actions and async ownership using
+native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
+ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
+Store, dependency graph, command visitor or cancellation signal.
+The [foundation test map](foundation/TESTING.md) records current feature outcomes
+and native integration coverage. Add shared helpers only for actual application
+contracts; this scaffold does not start background requests or model fake tasks.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`.

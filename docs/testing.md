@@ -23,7 +23,7 @@ changes should not break a test when that contract is preserved.
   on demand. See [iOS testing](ios/ios-testing.md).
 - **Desktop, Runner, and addon:** use the production boundary described in the
   matching guide below, including IPC, protocols, and process outcomes.
-- **Android:** test the public Kotlin graph/observer contracts and real Compose
+- **Android:** test public Kotlin state-holder actions/outcomes and real Compose
   interactions on the JVM; separate these from device and system acceptance.
   See [Android testing](android/android-testing.md).
 

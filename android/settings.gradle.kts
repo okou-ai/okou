@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "OkouAndroid"
 
-include(":ccstate", ":ccstate-compose", ":app")
+include(":foundation", ":app")

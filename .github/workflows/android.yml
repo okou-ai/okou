@@ -57,9 +57,9 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
-      - name: Check Kotlin and test the SDK-independent graph
+      - name: Check Kotlin and test SDK-independent state holders
         working-directory: android
-        run: ./gradlew --settings-file core.settings.gradle.kts spotlessCheck :ccstate:test --no-daemon
+        run: ./gradlew --settings-file core.settings.gradle.kts spotlessCheck :foundation:test --no-daemon
 
   build-test:
     needs: detect
@@ -75,7 +75,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
-      - name: Test native adapters and application, lint, and assemble
+      - name: Test native state and application, lint, and assemble
         run: bash android/scripts/check.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

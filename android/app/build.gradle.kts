@@ -38,22 +38,23 @@ tasks.named("preBuild") { dependsOn(generateBrandFonts) }
 val generateLicenseAssets by
     tasks.registering(Sync::class) {
         from("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") }
-        from("../ccstate/THIRD_PARTY_NOTICES.md") { rename { "CCState-LICENSE.txt" } }
         into(layout.buildDirectory.dir("generated/brand/assets/licenses"))
     }
 
 tasks.named("preBuild") { dependsOn(generateLicenseAssets) }
 
 dependencies {
-    implementation(project(":ccstate-compose"))
+    implementation(project(":foundation"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.compose.ui.test)
+    testImplementation(libs.lifecycle.runtime.testing)
     debugImplementation(libs.compose.ui.test.manifest)
 }

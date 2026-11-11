@@ -1,129 +1,106 @@
-# Kotlin CCState
+# CCState Principles on Android
 
-The behavior authority is [TypeScript CCState 6.1.0](https://github.com/e7h4n/ccstate/tree/86f95f2841c15474f08fcfc8e040c078dd2ab093),
-commit `86f95f2841c15474f08fcfc8e040c078dd2ab093`, including its core and React
-adapter implementation/tests. Swift CCState and outdated upstream README watch
-examples do not override that contract. Kotlin source and native tests live in
-[`android/ccstate`](../../android/ccstate) and
-[`android/ccstate-compose`](../../android/ccstate-compose).
+Use CCState as architectural discipline: one source of truth, derived values,
+semantic actions, render purity and explicit asynchronous/resource ownership.
+Implement those principles using Kotlin and Jetpack APIs. TypeScript runtime
+details are not a compatibility target for the native client.
 
-## Definitions and Ownership
+## State And Derivation
 
-`state` defines writable input, `computed` defines a readable derivation, and
-`command` defines a semantic action with read/write capability. Definitions
-are stable identities; each `Store` owns independent values, errors and graph
-dependencies. Construct them outside composable bodies and command execution.
-Pass runtime action inputs to a stable command.
+Keep mutable state private to its actual domain/screen owner. Expose immutable
+models through read-only StateFlow, Flow or Compose State. Plain Kotlin state
+holders can own feature logic; Android ViewModels retain screen state across
+configuration changes. Neither is durable storage or an account-wide owner
+merely because it exists.
 
-```kotlin
-private val text = state("")
-val canSubmit = computed { get, _ -> get.get(text).isNotBlank() }
-val replace = command<String, Unit> { context, value -> context.set(text, value) }
-```
+Derive values determined by existing state. Use pure Kotlin functions or
+properties for cheap local derivation, map/combine for data streams and Compose
+derivedStateOf only when its recomposition savings justify its cost. Do not
+copy a derived value into another mutable field and maintain it with an effect.
 
-Invoke `store.get(canSubmit)` and `store.set(replace, value)` from the owning
-thread. `store.update(state) { previous -> next }` is distinct from `set(state,
-functionValue)`: Kotlin does not use the JS function/updater ambiguity. This is
-a syntax adaptation, not a different derived-state model.
+StateFlow uses Kotlin equals-based conflation and collectors can skip
+intermediate values. Use immutable values; an equal new object need not trigger
+a UI update. Business identity or revision should be represented explicitly
+when meaningful. Do not recreate JS reference equality or Object.is semantics
+as a universal native rule.
 
-Stores and all their accessors, continuations and cleanup are confined to their
-creating thread. Close subscriptions and Stores explicitly. `close()` rejects
-future reads/writes, invalidates evaluations and releases the Store's cache;
-it is a native owner API beyond TS's public Store surface.
+## Consistent Transitions
 
-## Parity Inventory
+One business action owns the complete transition. Update coupled fields in one
+immutable state value with MutableStateFlow.update. Its updater may be evaluated
+multiple times under contention, so keep the lambda pure; perform IO outside it.
+Derive validation from that same snapshot.
 
-| Contract                       | Kotlin behavior and evidence                                                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Store isolation and lazy cache | Same definitions in different Stores have independent values/results; unobserved computations validate only when read               |
-| Dynamic dependency tracking    | Explicit reads establish edges, including reads after suspension; branch replacement detaches obsolete edges                        |
-| Late obsolete evaluations      | Old work may complete for its caller, but cannot reattach obsolete edges or replace the current handle                              |
-| Direct readable watch          | `watch(signal, listener)` mounts/reads the signal, does not invoke the listener initially, and returns an idempotent `Subscription` |
-| Listener reads                 | They do not add graph dependencies; express all observed dependencies in computed                                                   |
-| Synchronous writes             | Internal command writes batch notifications; intermediate reads remain fresh; nested commands share the invocation boundary         |
-| Public checkpoints             | Nested public `Store.set` follows the pinned changed-source checkpoint behavior; it is not a global transaction-depth counter       |
-| Returned/escaped context       | The command's synchronous boundary ends when its callback returns; later writes flush individually                                  |
-| Read errors                    | Original Throwable identity is cached/rethrown until relevant inputs change; writes before a throwing command remain applied        |
-| Listener failures              | Other callbacks still execute; `ListenerException.failures` and suppressed causes expose aggregate failures                         |
-| Core equality                  | JS-style scalar equality and object/error identity; floating NaN changes, signed zero compares equal                                |
-| Evaluation signal              | Stable/lazy per evaluation; invalidated on actual reevaluation, not merely on an unobserved dependency write                        |
-| Subscription lifetime          | Unsubscription does not cancel a computed evaluation or shared Deferred producer                                                    |
-| Async values                   | Core stores the original value/Deferred handle without wrapping, inspecting, starting or cancelling it                              |
-| Adapter state                  | Compose alone projects loading/data/error, initializes observations and fences stale results                                        |
-| Refresh retention              | `keepLast` retains the previous phase while pending; a new error replaces prior data                                                |
+combine joins the latest emitted values from its inputs; it is not a transaction
+across independently updated flows. Avoid splitting a coupled invariant across
+separate mutable streams and assuming recombination makes it atomic. Independently
+owned data can still use separate streams.
 
-The public-entry JVM tests translate behavioral scenarios from upstream
-`batch-command`, `abort`, `watch-listener-prototype`, result, dependency and
-glitch tests. They establish the covered contracts, not an assertion that every
-upstream test or all performance/GC properties have been ported.
+For Compose-owned state, Snapshot.withMutableSnapshot can publish related changes
+atomically when needed. The block must not suspend. Do not hold a state transaction
+across network work or build a Promise-style computed scheduler.
 
-## Native Async Mapping
+## Semantic Actions
 
-A computed may return a caller-owned `Deferred<T>`. Consumers in one Store
-share the cached handle while dependencies remain unchanged. Native coroutine
-scopes own producer work. An explicit `evaluation.signal.onCancel { ... }` can
-opt that work into reevaluation cancellation; core does not cancel arbitrary
-returned tasks. Release callback registrations with the work that owns them.
-Closing a registration before its dispatch turn prevents invocation, including
-when another cancellation callback removes it during reevaluation or Store close.
+Use named methods or suspend functions such as saveDraft, connectAccount or
+cancelUpload. The view forwards an event; the owner handles ordered state
+changes, IO and the result. A generic Command object or get/set visitor is not
+required to enforce that boundary.
 
-Cancellation callbacks belong to the retired evaluation. A failing callback
-must not become the replacement computed's cached error or detach its new
-dependencies. Unlike browser AbortSignal event dispatch, native cleanup errors
-are reported as `ListenerException` when the outer public Store/accessor
-operation finishes, after graph updates and notifications. Actual read failures
-retain their own cached identity. This error-reporting boundary does not defer
-public write checkpoints or extend command batching. Failed watch setup
-releases the listener before reporting its error.
+Keep business actions separate from render-time derivation. Native effects such
+as LaunchedEffect and DisposableEffect are appropriate for composition-owned
+synchronization/resources; they do not replace the owner of a business operation.
+Ordinary pure helpers and shared use cases do not need a state-framework wrapper.
 
-Kotlin `await()` of a completed Deferred may not suspend. JavaScript Promise
-await always crosses a microtask boundary. This port supplies no hidden JS
-scheduler or `asyncCommand` translation: the documented batching boundary is
-the synchronous command callback's return. Use native coroutine APIs with
-explicit ownership and test the actual resumed-write ordering. Independent
-read failures may need supervision; cancellation and non-cancellation failures
-must remain distinguishable.
+## Async Ownership And Errors
 
-A cancelled UI waiter is not a cancelled shared producer. A native owner
-closing is not cancellation of a remote authorization or rollback of a Send.
-Preserve late remote cleanup and confirmed-write/readback protocols outside core.
+Finite repository/business operations expose main-safe suspend APIs; changing
+data exposes Flow. Use structured concurrency, viewModelScope for screen-owned
+work and an explicitly injected longer-lived scope when work must outlive that
+screen. Move blocking/CPU work to an appropriate injected dispatcher.
 
-## Compose Adapters
+Use native Job cancellation and cooperative suspend APIs. Propagate
+CancellationException and release resources in finally/owned teardown. Adapt
+external callbacks at the boundary with cancellable APIs and paired cleanup.
+Do not introduce a separate AbortSignal analogue for ordinary coroutine work.
 
-Inject an existing Store with `StoreProvider`; the provider creates no Store
-and owns no business cache. `observeAsState` observes synchronous signals;
-`observeDeferredAsState` resolves shared Deferred signals. Both return
-`State<Loadable<T>>` with `Loading`, `Data(value)`, or `Error(cause)`.
+Choose latest-wins cancellation for replaceable queries, not automatically for
+business writes such as Send. A cancelled coroutine is not proof that a remote
+write failed or was rolled back; preserve operation identity and authoritative
+readback for integrated features.
 
-`rememberSetter` and `rememberCommand` bind stable actions to the provided
-Store/definition. Target replacement creates a new observation. Disposing the
-composition detaches observation and cancels only its waiter. The owner still
-closes producer work and the Store at the correct boundary. A missing provider
-fails explicitly; never substitute a process-global Store.
+StateFlow cannot carry an upstream failure by itself. Materialize relevant
+loading/data/error phases in a typed UI/request state before sharing the stream.
+Do not catch every Throwable, consume coroutine cancellation, duplicate an
+existing request phase in independent booleans or replace domain state machines
+with generic loading flags.
 
-The non-Compose `observe` and `observeDeferred` entry points share those real
-subscription paths and can be used by native adapters. Call them and close
-their returned Subscription on the Store's owner thread. Default UI equality
-follows React's `Object.is`: reference values use identity, NaN compares equal,
-and signed zero differs. Do not put a structural-equality StateFlow between the
-core and its observer; it can hide a fresh equal-looking reference.
+## Collection And Sharing
 
-## JVM Memory and Type Boundaries
+Collect Flow in Android UI through collectAsStateWithLifecycle. Composition
+presence, lifecycle STARTED/STOPPED, ViewModel clearing and account replacement
+are different boundaries. Native editing, focus and scrolling stay with their
+native controls/plain UI state holders at the lowest suitable owner.
 
-The cache uses weak signal keys and avoids retaining the computed definition
-through its own async Getter. Dynamic branches release old dependency edges;
-disposed subscriptions clear their retained captures. Java WeakHashMap does
-not implement JS WeakMap ephemeron collection: values or arbitrary payload
-cycles referring to keys can retain them. Do not claim full GC equivalence.
-Bound actual feature owners and close their Stores, and investigate retention
-with live-owner/obsolete-branch fixtures rather than clearing the whole graph
-to make a memory test pass. Do not add TTL eviction that changes memoization.
+A collector does not necessarily own the shared producer. stateIn/shareIn scope
+and SharingStarted policy jointly determine upstream lifetime. WhileSubscribed
+is suitable for work that should stop without consumers; it can cancel upstream
+after its timeout. Lazily/Eagerly or explicit domain-owned work can be appropriate
+for other lifetimes. Do not apply one timeout to all requests or move persistent
+business writes into a composition-owned collector.
 
-The heterogeneous node cache requires one localized erased-value cast. Writes
-are protected by signal identity and typed State/Computed constructors. Do not
-export that erasure or introduce unchecked business casts. Kotlin failures are
-Throwables, unlike JS arbitrary thrown values. Float/Double use the corresponding
-IEEE equality rules; native integer primitives preserve exact values, including
-Long values beyond JS Number precision. Different Kotlin numeric types remain
-distinct; custom Number subclasses are reference payloads. This native type
-extension must not introduce lossy conversions into graph or UI equality.
+Construct shared pipelines once at their owner boundary. Replace identity-scoped
+owners on account/workspace changes and reject obsolete publication. Avoid
+unbounded keyed caches and process-global mutable feature state. Persist drafts
+or resumable operations through their actual storage contract when required.
+
+## References
+
+- [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations)
+- [UI state production](https://developer.android.com/topic/architecture/ui-layer/state-production)
+- [Coroutine best practices](https://developer.android.com/kotlin/coroutines/coroutines-best-practices)
+- [State hoisting](https://developer.android.com/develop/ui/compose/state-hoisting)
+- [StateFlow contracts](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/-state-flow/)
+- [Android testing](android-testing.md)
+
+Setup and executable checks belong in the [Android README](../../android/README.md).

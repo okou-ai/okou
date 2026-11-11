@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OkouCCState"
+rootProject.name = "OkouAndroidFoundation"
 
-include(":ccstate")
+include(":foundation")
