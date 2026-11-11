@@ -288,7 +288,6 @@ test("run network admission uses current bindings and rotation independently of 
       fields: connector.fields,
       headerInjections: connector.headerInjections,
       queryInjections: connector.queryInjections,
-      authMode: connector.authMode,
       storageVersion: connector.storageVersion,
       ...(connector.kind === "mcp"
         ? {
