@@ -251,7 +251,7 @@ const sendAgentSuggestionOption$ = command(
     option: SuggestionOption,
     agentId: string,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const userMessage = option.draft.draftUserMessage;
     if (!userMessage) {
       throw new Error("Missing suggestion composer document");
@@ -285,7 +285,6 @@ const sendAgentSuggestionOption$ = command(
         generationTemplate: undefined,
         editorDocument: createMessageDocumentSnapshot(userMessage),
         onOptimisticSend: (threadId) => {
-          showSuggestionSent();
           set(linkAgentSuggestionThread$, entry, threadId);
         },
       },
@@ -294,9 +293,10 @@ const sendAgentSuggestionOption$ = command(
     if (!sent) {
       // Nothing was sent, so the card stays available for another choice.
       set(restoreAgentSuggestion$, entry);
-      return;
+      return false;
     }
-    await set(entry.enqueue$, { type: "consume", optionId: option.id }, signal);
+    showSuggestionSent();
+    return true;
   },
 );
 
@@ -381,7 +381,13 @@ export const startAgentSuggestion$ = command(
         signal,
       );
       set(entry.sending$, sending);
-      await sending;
+      if (!(await sending)) {
+        return;
+      }
+      await set(entry.enqueue$, { type: "consume", optionId }, signal);
+      if (!pageSignal.aborted) {
+        set(advanceHomeSuggestion$, entry);
+      }
       return;
     }
     set(entry.hidden$, true);

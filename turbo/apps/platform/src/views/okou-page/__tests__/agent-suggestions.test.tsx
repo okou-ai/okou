@@ -543,6 +543,162 @@ test.each(["option", "custom direction"] as const)(
   },
 );
 
+test("The final preset send keeps the review open until input and consumption are accepted", async () => {
+  const option = makeOption({
+    draft: {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Review the pending decision" }],
+      },
+      draftAttachments: null,
+    },
+  });
+  const item = { ...makeSuggestion(), options: [option] };
+  const pool = mockPool([item]);
+  mockChatLifecycle(context);
+  const sendRequested = context.mocks.deferred<void>();
+  const acceptSend = context.mocks.deferred<void>();
+  const consumptionRequested = context.mocks.deferred<void>();
+  const acceptConsumption = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatEventsContract.send,
+    async ({ body, respond, withSignal }) => {
+      sendRequested.resolve();
+      await withSignal(acceptSend.promise);
+      return respond(201, {
+        threadId: body.threadId ?? threadId,
+        createdAt: nowDate().toISOString(),
+      });
+    },
+  );
+  context.mocks.api(
+    suggestionsContract.consume,
+    async ({ body, respond, withSignal }) => {
+      consumptionRequested.resolve();
+      await withSignal(acceptConsumption.promise);
+      pool.withdrawAll();
+      notifySuggestionsChanged();
+      return respond(200, {
+        ...item,
+        status: "consumed",
+        selectedOptionId: body.optionId,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: item.title });
+  click(button(item.title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(dialog).findByRole("article", { name: item.title });
+  click(button(option.label, "button", dialog));
+  await sendRequested.promise;
+  await expect(
+    within(dialog).findByText("Sending…"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByRole("dialog", { name: "Suggestions" }),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+  expect(screen.queryByText(SENT)).not.toBeInTheDocument();
+
+  acceptSend.resolve();
+  await consumptionRequested.promise;
+  await screen.findByText(SENT);
+  expect(
+    screen.getByRole("dialog", { name: "Suggestions" }),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+
+  acceptConsumption.resolve();
+  await within(card).findByText("All caught up");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(card).toHaveFocus();
+  });
+  expect(pathname()).toBe("/");
+});
+
+test("A rejected final preset send stays in the review with its error and chat link", async () => {
+  const option = makeOption({
+    draft: {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Review the pending decision" }],
+      },
+      draftAttachments: null,
+    },
+  });
+  const item = { ...makeSuggestion(), options: [option] };
+  mockPool([item]);
+  mockChatLifecycle(context);
+  const sendRequested = context.mocks.deferred<string | undefined>();
+  const rejectSend = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatEventsContract.send,
+    async ({ body, respond, withSignal }) => {
+      sendRequested.resolve(body.threadId);
+      await withSignal(rejectSend.promise);
+      return respond(503, {
+        error: {
+          code: "EVENT_DELIVERY_UNAVAILABLE",
+          message: "Input temporarily unavailable",
+        },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: item.title });
+  click(button(item.title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(dialog).findByRole("article", { name: item.title });
+  click(button(option.label, "button", dialog));
+  const sentThreadId = await sendRequested.promise;
+  await expect(
+    within(dialog).findByText("Sending…"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByRole("dialog", { name: "Suggestions" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+  expect(screen.queryByText(SENT)).not.toBeInTheDocument();
+
+  rejectSend.resolve();
+  const error = await within(dialog).findByRole("alert");
+  expect(error).toHaveTextContent("Input temporarily unavailable");
+  expect(
+    screen.getByRole("dialog", { name: "Suggestions" }),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByText("1 / 1")).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("link", dialog).find((candidate) => {
+      return candidate.textContent?.trim() === "Open chat";
+    }),
+  ).toHaveAttribute("href", `/chats/${sentThreadId}`);
+  expect(screen.queryByText("All caught up")).not.toBeInTheDocument();
+  expect(screen.queryByText(SENT)).not.toBeInTheDocument();
+  expect(pathname()).toBe("/");
+});
+
 test("The review advances in its original order, returns to earlier waiting suggestions and completes", async () => {
   mockPool(numberedSuggestions(8));
   const sent = captureSend();

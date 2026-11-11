@@ -121,7 +121,7 @@ function createSuggestionEntry(item: Suggestion) {
   // default Agent's composer is neither read nor replaced.
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
-  const sending$ = state<Promise<void> | undefined>(undefined);
+  const sending$ = state<Promise<boolean> | undefined>(undefined);
   return {
     item,
     hidden$,
@@ -559,7 +559,6 @@ const updateSettledSuggestion$ = command(
 export const linkAgentSuggestionThread$ = command(
   ({ set }, entry: AgentSuggestionEntry, threadId: string) => {
     set(updateSettledSuggestion$, entry, { type: "sent", threadId });
-    set(advanceHomeSuggestion$, entry);
   },
 );
 

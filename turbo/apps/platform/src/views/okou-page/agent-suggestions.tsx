@@ -316,11 +316,12 @@ function SuggestionSentNotice({
 }) {
   const { t } = useTranslation();
   const sending = useLoadable(entry.sending$);
-  const failed = threadId === null && sending.state === "hasError";
+  const failed = sending.state === "hasError";
+  const pending = sending.state === "loading" || (threadId === null && !failed);
   return (
     <div className="rounded-xl border border-border bg-card p-3">
       <div className="flex items-center gap-2">
-        {threadId === null && !failed ? (
+        {pending ? (
           <Loader2
             aria-hidden
             className="size-4 shrink-0 animate-spin text-muted-foreground"
@@ -343,7 +344,7 @@ function SuggestionSentNotice({
               : t(($) => {
                   return $.global.errors.requestFailed;
                 })
-            : threadId === null
+            : pending
               ? t(($) => {
                   return $.chat.agentSuggestions.sending;
                 })
