@@ -5,6 +5,31 @@ import json
 import sys
 from pathlib import Path
 
+from android_launcher import reviewed_launcher
+
+
+def reviewed_json_finding(launcher, result):
+    return launcher is not None and launcher.covers(
+        result.get("check_id"),
+        result.get("path"),
+        result.get("start", {}).get("line"),
+        result.get("end", {}).get("line"),
+    )
+
+
+def reviewed_sarif_finding(launcher, result):
+    locations = result.get("locations", [])
+    if launcher is None or len(locations) != 1:
+        return False
+    location = locations[0].get("physicalLocation", {})
+    region = location.get("region", {})
+    return launcher.covers(
+        result.get("ruleId"),
+        location.get("artifactLocation", {}).get("uri"),
+        region.get("startLine"),
+        region.get("endLine"),
+    )
+
 
 def load_json(path):
     with Path(path).open() as source:
@@ -21,7 +46,11 @@ def count_findings(results):
 
 def check_findings(mode, baseline_path, results_path):
     baseline = load_json(baseline_path)
-    current = count_findings(load_json(results_path))
+    launcher = reviewed_launcher(Path.cwd())
+    results = load_json(results_path).get("results", [])
+    unreviewed = [result for result in results if not reviewed_json_finding(launcher, result)]
+    current = count_findings({"results": unreviewed})
+    print(f"Reviewed Android launcher audit findings: {len(results) - len(unreviewed)}")
 
     errors = []
     for rule_id, count in sorted(current.items()):
@@ -58,15 +87,21 @@ def check_findings(mode, baseline_path, results_path):
 def filter_sarif(mode, baseline_path, input_path, output_path):
     baseline = load_json(baseline_path)
     sarif = load_json(input_path)
+    launcher = reviewed_launcher(Path.cwd())
 
     total_results = 0
     uploaded_results = 0
+    reviewed_results = 0
     for run in sarif.get("runs", []):
         results = run.get("results", [])
         total_results += len(results)
+        unreviewed = [result for result in results if not reviewed_sarif_finding(launcher, result)]
+        reviewed_results += len(results) - len(unreviewed)
+        results = unreviewed
 
         if mode == "diff":
             uploaded_results += len(results)
+            run["results"] = results
             continue
 
         filtered = []
@@ -83,6 +118,7 @@ def filter_sarif(mode, baseline_path, input_path, output_path):
     with Path(output_path).open("w") as destination:
         json.dump(sarif, destination)
 
+    print(f"Reviewed Android launcher audit findings: {reviewed_results}")
     if mode == "diff":
         print(
             "Semgrep SARIF upload includes "

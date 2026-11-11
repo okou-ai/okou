@@ -310,6 +310,40 @@ test("Pinned chats in a Project move among themselves", async () => {
   });
 });
 
+test("A pinned chat moves past another Agent's pin in the same Project", async () => {
+  const pinnedAt = "2026-09-01T00:00:00Z";
+  const ordinary = continuityThread(307, 1, "Ordinary chat");
+  const first = {
+    ...continuityThread(307, 2, "Other Agent pin"),
+    projectId: launchId,
+    agentId: "c7000000-0000-4000-a000-000000000009",
+    pinnedAt,
+    pinOrder: "a0",
+  };
+  const second = {
+    ...continuityThread(307, 3, "Second pin"),
+    projectId: launchId,
+    pinnedAt,
+    pinOrder: "a1",
+  };
+  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
+    return respond(204);
+  });
+  await openChatList(307, [ordinary, first, second], `/chats/${ordinary.id}`);
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  expect(projectChatTitles()).toStrictEqual(["Other Agent pin", "Second pin"]);
+
+  click(chatMenuButton(second.id));
+  await screen.findByRole("menu");
+  click(menuItemByText("Move up"));
+  await waitFor(() => {
+    expect(projectChatTitles()).toStrictEqual([
+      "Second pin",
+      "Other Agent pin",
+    ]);
+  });
+});
+
 test("Double-clicking a Project's name opens its page and leaves its chats unfolded", async () => {
   const ordinary = continuityThread(306, 1, "Ordinary chat");
   const member = {

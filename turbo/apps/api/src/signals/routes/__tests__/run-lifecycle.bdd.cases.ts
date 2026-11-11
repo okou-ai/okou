@@ -11006,6 +11006,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou connector custom -h",
           "okou connector check --help",
           "An attached generation template takes precedence",
+          "When creating event flyers, read and follow https://github.com/okou-ai/okou-skills/blob/main/event-flyer-pack/SKILL.md, loading only the supporting resources needed for the requested deliverables.",
           "Without an attached generation template",
           "okou generate -h",
           "plus connector-backed music, text, code, or document",

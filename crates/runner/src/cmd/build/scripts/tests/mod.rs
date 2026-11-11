@@ -227,6 +227,32 @@ async fn rootfs_scripts_writes_embedded_scripts_once() {
     assert!(first.join("build-template.sh").exists());
     assert!(first.join("verify-rootfs.sh").exists());
     assert!(first.join("customize-rootfs.sh").exists());
+
+    let environment = tokio::fs::read_to_string(first.join("rootfs-environment"))
+        .await
+        .unwrap();
+    let mut entries = environment
+        .lines()
+        .map(|line| line.split_once('=').unwrap());
+    assert_eq!(
+        entries.next(),
+        Some((
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ))
+    );
+    assert_eq!(entries.collect::<Vec<_>>(), TRUSTED_ROOTFS_ENVIRONMENT);
+    for &(key, value) in TRUSTED_ROOTFS_ENVIRONMENT {
+        assert!(guest_contracts::env::is_shell_identifier_env_key(key));
+        assert!(!guest_contracts::env::is_runner_owned_env_key(key));
+        assert!(!value.is_empty());
+        assert!(
+            value
+                .bytes()
+                .all(|byte| { byte.is_ascii_alphanumeric() || b"/_-.=:".contains(&byte) }),
+            "{key} must be literal unquoted /etc/environment data"
+        );
+    }
 }
 
 /// Guard the `[sync:ca-constants]` contract between customize-rootfs.sh
@@ -251,6 +277,11 @@ fn ca_constants_in_sync_across_scripts() {
     assert!(
         VERIFY_SCRIPT.contains(ca_dest_line),
         "verify-rootfs.sh missing CA_ROOTFS_DEST constant — sync with other scripts"
+    );
+    let ca_destination = shell_quoted_var(CUSTOMIZE_SCRIPT, "CA_ROOTFS_DEST").unwrap();
+    assert!(
+        TRUSTED_ROOTFS_ENVIRONMENT
+            .contains(&("NODE_EXTRA_CA_CERTS", format!("/{ca_destination}").as_str(),))
     );
 }
 

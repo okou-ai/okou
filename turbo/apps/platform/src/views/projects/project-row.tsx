@@ -53,6 +53,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { getChatThreadTitleParts } from "../../signals/chat-page/chat-thread-title.ts";
 import {
   clickProjectName$,
   selectedProjectId$,
@@ -70,6 +71,16 @@ interface ProjectRowProps {
   readonly project: Project;
   readonly touch: boolean;
   readonly layout: ProjectRowLayout;
+}
+
+/**
+ * A Project's name carries its emoji the way a chat title does. The folder
+ * wears it as a badge, so the row's title shows the rest of the name. A name
+ * that is only an emoji keeps it as the title.
+ */
+function projectNameParts(name: string) {
+  const { emoji, text } = getChatThreadTitleParts(name);
+  return emoji && text ? { emoji, text } : { emoji: null, text: name };
 }
 
 function ProjectFoldMenuItem({
@@ -263,7 +274,9 @@ function ProjectActions({
 
 /**
  * The folder folds the Project's chats. Hovering the row turns it into the fold
- * arrow, and its tooltip names the action and shortcut.
+ * arrow, and its tooltip names the action and shortcut. The name's emoji sits
+ * on the folder's lower right corner, and the folder is cut away around it so
+ * the gap holds on any row background.
  */
 function ProjectFoldToggle({
   project,
@@ -278,6 +291,7 @@ function ProjectFoldToggle({
   const toggle = useSet(toggleProject$);
   const Icon = expanded ? FolderOpen : Folder;
   const Chevron = expanded ? ChevronDown : ChevronRight;
+  const { emoji } = projectNameParts(project.name);
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -311,14 +325,28 @@ function ProjectFoldToggle({
                 layout === "list" ? "h-14 w-10 pl-3 pr-1" : "h-8 w-8 px-1",
               )}
             >
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-md opacity-70 group-hover/project-fold:bg-nested-fill group-hover/project-fold:opacity-100">
+              <span className="relative flex size-6 shrink-0 items-center justify-center rounded-md group-hover/project-fold:bg-nested-fill">
                 <Icon
                   size={16}
-                  className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+                  className={cn(
+                    "opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:hidden group-focus-visible/project-fold:hidden",
+                    // A circle around the badge's centre, which sits 13px
+                    // into the 16px folder.
+                    emoji &&
+                      "[mask-image:radial-gradient(circle_at_13px_13px,transparent_7.25px,#000_7.75px)]",
+                  )}
                 />
+                {emoji && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-px right-px flex size-3 items-center justify-center font-family-emoji text-xs leading-none md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+                  >
+                    {emoji}
+                  </span>
+                )}
                 <Chevron
                   size={16}
-                  className="hidden md:group-hover/project:block group-focus-visible/project-fold:block"
+                  className="hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block"
                 />
               </span>
             </button>
@@ -377,7 +405,7 @@ function ProjectTrigger({
           active && "font-medium",
         )}
       >
-        <span className="truncate">{project.name}</span>
+        <span className="truncate">{projectNameParts(project.name).text}</span>
         <ChatThreadStateText state={indicator} />
       </Link>
     </div>
@@ -484,7 +512,7 @@ export function ProjectStatusRow({
       variant="ghost"
       size="sm"
       className={cn(
-        "w-full justify-start text-nav-copy-muted",
+        "w-full justify-start font-normal text-nav-copy-muted",
         layout === "list" ? "h-14 px-3" : "h-8 px-2",
       )}
       onClick={() => {

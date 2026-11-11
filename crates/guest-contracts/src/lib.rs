@@ -31,6 +31,7 @@ pub mod okou_cli;
 pub mod oom_evidence;
 pub mod process_containment;
 pub mod reuse_preparation;
+pub mod runtime_environment;
 pub mod runtime_paths;
 pub mod sandbox_startup;
 pub mod session_history_identity;

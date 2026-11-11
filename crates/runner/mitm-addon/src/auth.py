@@ -114,7 +114,21 @@ AWS_SIGV4_REQUEST_BODY_TOO_LARGE_ERROR = "aws_sigv4_request_body_too_large"
 # behavior can evolve independently, while the shared 64 KiB scale remains well
 # above ordinary connector request targets.
 MAX_AUTH_BASE_REQUEST_TARGET_BYTES = 64 * 1024
+# Ordinary query injection retains mitmproxy's parser/serializer, but bounds its
+# input work first. Match the existing auth-base/SigV4 scale while keeping this
+# policy independent. Count raw client segments (even empty/shadowed ones) plus
+# resolved keys, rather than only the smaller merged output.
+MAX_QUERY_AUTH_REQUEST_TARGET_BYTES = 64 * 1024
+MAX_QUERY_AUTH_QUERY_PAIRS = 8 * 1024
 _FIREWALL_AUTH_IDENTITY_CACHE_KEY = "_firewallAuthIdentityCache"
+
+
+class _QueryAuthRequestTargetTooLargeError(ValueError):
+    """The incoming target exceeds ordinary query injection's byte budget."""
+
+
+class _QueryAuthQueryTooManyPairsError(ValueError):
+    """The incoming segments and resolved keys exceed query injection's budget."""
 
 
 @dataclass(frozen=True)
@@ -576,6 +590,18 @@ def _apply_header_query_injection(
     headers: dict[str, str],
     resolved_query: dict | None,
 ) -> None:
+    if resolved_query:
+        # Check raw bytes before converting/parsing the target, then count the
+        # same query component and separator as mitmproxy before decoding pairs.
+        # Validate before any header mutation so rejection cannot apply partial
+        # credentials in either public hook.
+        if len(flow.request.data.path) > MAX_QUERY_AUTH_REQUEST_TARGET_BYTES:
+            raise _QueryAuthRequestTargetTooLargeError
+        query = urllib.parse.urlparse(flow.request.url).query
+        client_pairs = query.count("&") + 1 if query else 0
+        if client_pairs + len(resolved_query) > MAX_QUERY_AUTH_QUERY_PAIRS:
+            raise _QueryAuthQueryTooManyPairsError
+
     auth_pairs = resolved_auth_header_pairs(headers)
     if auth_pairs:
         resolved_fields_by_name: dict[bytes, tuple[bytes, bytes]] = {}
@@ -787,6 +813,36 @@ def _set_auth_base_query_too_many_pairs(
         error_code="auth_base_query_too_many_pairs",
         message="auth.base rewritten query has too many parameters",
         permission=allow.name,
+    )
+
+
+def _set_query_auth_limit_response(
+    flow: http.HTTPFlow,
+    context: _FirewallAuthContext,
+    error: _QueryAuthRequestTargetTooLargeError | _QueryAuthQueryTooManyPairsError,
+) -> None:
+    if isinstance(error, _QueryAuthRequestTargetTooLargeError):
+        error_code = "query_auth_request_target_too_large"
+        message = "query authentication request target is too large"
+    else:
+        error_code = "query_auth_query_too_many_pairs"
+        message = "query authentication has too many parameters"
+    log_proxy_entry(
+        context.proxy_log_path,
+        "warn",
+        message,
+        type="firewall",
+        firewall_base=context.firewall_base,
+        request_target_limit_bytes=MAX_QUERY_AUTH_REQUEST_TARGET_BYTES,
+        query_pair_limit=MAX_QUERY_AUTH_QUERY_PAIRS,
+    )
+    _set_matched_firewall_failure_response(
+        flow,
+        status=414,
+        action="ALLOW",
+        error_code=error_code,
+        message=message,
+        permission=context.allow.name,
     )
 
 
@@ -1417,6 +1473,9 @@ async def _apply_resolved_firewall_auth(
             headers=resolved_auth.headers,
             resolved_query=resolved_auth.query,
         )
+    except (_QueryAuthRequestTargetTooLargeError, _QueryAuthQueryTooManyPairsError) as exc:
+        _set_query_auth_limit_response(flow, context, exc)
+        return FirewallAuthHandlingResult.LOCAL_RESPONSE
     except InvalidResolvedAuthHeaderError as e:
         _set_invalid_resolved_auth_header_response(
             flow,
@@ -1582,12 +1641,26 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     """
     metadata_snapshot = dict(flow.metadata)
     request_headers_snapshot = http.Headers(flow.request.headers.fields)
-    request_url_snapshot = flow.request.url
+    request_target_snapshot = (
+        flow.request.data.scheme,
+        flow.request.data.host,
+        flow.request.data.port,
+        flow.request.data.authority,
+        flow.request.data.path,
+    )
 
     def restore_probe_state() -> None:
         flow.metadata.clear()
         flow.metadata.update(metadata_snapshot)
-        flow.request.url = request_url_snapshot
+        # The URL setter reparses as ASCII and cannot restore native non-ASCII
+        # query bytes. Rollback must preserve the exact admitted target instead.
+        (
+            flow.request.data.scheme,
+            flow.request.data.host,
+            flow.request.data.port,
+            flow.request.data.authority,
+            flow.request.data.path,
+        ) = request_target_snapshot
         flow.request.headers = http.Headers(request_headers_snapshot.fields)
 
     plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
@@ -1627,6 +1700,9 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         )
         if resolved_auth.aws_sigv4 is not None:
             aws_sigv4_flow.sign_flow_request(flow, resolved_auth.aws_sigv4)
+    except (_QueryAuthRequestTargetTooLargeError, _QueryAuthQueryTooManyPairsError) as exc:
+        _set_query_auth_limit_response(flow, context, exc)
+        return FirewallHeaderPhaseAuthResult.REJECTED
     except Exception:
         restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK

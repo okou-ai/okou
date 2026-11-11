@@ -48,32 +48,39 @@ const movePinnedThread$ = command(
         ? item.agentId === thread.agentId
         : item.projectId === move.projectId;
     });
-    const updates = moveChatThreadPinOrder(
-      ranked,
-      move.threadId,
-      move.targetId,
-      move.side,
-    ).map((update) => {
-      return { ...update, eventId: crypto.randomUUID() };
+    const pinOrders = new Map(
+      moveChatThreadPinOrder(
+        ranked,
+        move.threadId,
+        move.targetId,
+        move.side,
+      ).map((update) => {
+        return [update.threadId, update.pinOrder] as const;
+      }),
+    );
+    // A move between equal ranks also re-ranks the chats tied with it, and
+    // each of them keeps its own Agent.
+    const reranked = ranked.flatMap((item) => {
+      const pinOrder = pinOrders.get(item.id);
+      return pinOrder === undefined
+        ? []
+        : [{ thread: item, pinOrder, eventId: crypto.randomUUID() }];
     });
-    for (const update of updates) {
-      const updated = ranked.find((item) => {
-        return item.id === update.threadId;
-      });
+    for (const update of reranked) {
       set(registerOptimisticChatThreadEvent$, {
         id: update.eventId,
         kind: "sort_touched",
-        chatThreadId: update.threadId,
-        agentId: updated?.agentId ?? thread.agentId,
+        chatThreadId: update.thread.id,
+        agentId: update.thread.agentId,
         pinOrder: update.pinOrder,
       });
     }
     const client = get(apiClient$)(chatThreadPinOrderContract);
     await Promise.all(
-      updates.map((update) => {
+      reranked.map((update) => {
         return accept(
           client.reorder({
-            params: { id: update.threadId },
+            params: { id: update.thread.id },
             body: { pinOrder: update.pinOrder, eventId: update.eventId },
             fetchOptions: { signal },
           }),

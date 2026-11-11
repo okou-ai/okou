@@ -4,6 +4,8 @@ use std::process::Command;
 #[cfg(not(any(debug_assertions, feature = "test-support")))]
 use std::sync::{Mutex, OnceLock};
 
+use guest_contracts::runtime_environment::{SYSTEM_PATH, TRUSTED_ROOTFS_ENVIRONMENT};
+
 #[cfg(not(any(debug_assertions, feature = "test-support")))]
 const SANDBOX_USER: &str = "user";
 #[cfg(not(any(debug_assertions, feature = "test-support")))]
@@ -11,27 +13,7 @@ static SANDBOX_USER_CREDENTIALS: OnceLock<UserCredentials> = OnceLock::new();
 #[cfg(not(any(debug_assertions, feature = "test-support")))]
 static SANDBOX_USER_CREDENTIALS_INIT: Mutex<()> = Mutex::new(());
 
-// Keep the system prefix aligned with customize-rootfs.sh's /etc/environment
-// and guest-agent/src/cli/child_env.rs's fallback PATH.
-const SANDBOX_USER_BASE_PATH: &str =
-    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games";
 const AGENT_SHELL: &str = "/bin/bash";
-// [sync:etc-environment] Keep in sync with:
-// - crates/runner/scripts/customize-rootfs.sh
-// - crates/runner/tests/behavior/exec/inventory.sh
-const TRUSTED_ROOTFS_ENVIRONMENT: [(&str, &str); 8] = [
-    ("LANG", "C.UTF-8"),
-    ("RUSTUP_HOME", "/usr/local/rustup"),
-    ("NPM_CONFIG_UPDATE_NOTIFIER", "false"),
-    (
-        "NODE_EXTRA_CA_CERTS",
-        "/usr/local/share/ca-certificates/vm0-proxy-ca.crt",
-    ),
-    ("AGENT_BROWSER_USE_SYSTEM_CA", "1"),
-    ("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"),
-    ("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt"),
-    ("CARGO_HTTP_CAINFO", "/etc/ssl/certs/ca-certificates.crt"),
-];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct UserCredentials {
@@ -92,12 +74,12 @@ pub(crate) fn configure_guest_agent_command_environment(
     command: &mut crate::contained_command::ContainedCommand,
 ) -> io::Result<()> {
     command
-        .envs(TRUSTED_ROOTFS_ENVIRONMENT)
+        .envs(TRUSTED_ROOTFS_ENVIRONMENT.iter().copied())
         .env("SHELL", AGENT_SHELL);
 
     #[cfg(any(debug_assertions, feature = "test-support"))]
     {
-        command.env("PATH", SANDBOX_USER_BASE_PATH);
+        command.env("PATH", sandbox_user_base_path());
         Ok(())
     }
 
@@ -109,12 +91,17 @@ pub(crate) fn configure_guest_agent_command_environment(
     }
 }
 
+fn sandbox_user_base_path() -> String {
+    format!("{SYSTEM_PATH}:/usr/local/games:/usr/games")
+}
+
 #[cfg(any(test, not(any(debug_assertions, feature = "test-support"))))]
 fn sandbox_user_path(home: &std::path::Path) -> String {
     // Keep system and existing language-tool precedence, while also finding
     // user tools installed after the agent starts without sourcing profiles.
     format!(
-        "{SANDBOX_USER_BASE_PATH}:{}/go/bin:{}/.cargo/bin:{}/.local/bin:{}/bin",
+        "{}:{}/go/bin:{}/.cargo/bin:{}/.local/bin:{}/bin",
+        sandbox_user_base_path(),
         home.display(),
         home.display(),
         home.display(),

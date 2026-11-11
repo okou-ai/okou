@@ -144,6 +144,7 @@ function buildGenerationToolsPrompt(
   );
   return [
     "- An attached generation template takes precedence for content, style, and QA. Follow platform instructions for publishing and delivery. Use the template's commands and resources; do not run `okou generate -h` or list providers unless the template names them as a fallback.",
+    "- When creating event flyers, read and follow https://github.com/okou-ai/okou-skills/blob/main/event-flyer-pack/SKILL.md, loading only the supporting resources needed for the requested deliverables.",
     `- Without an attached generation template, when the user asks to generate anything (supported generation content: ${imageGenerationEnabled ? "built-in image, " : ""}presentation, website, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, code, or document), run \`okou generate -h\`. Run \`okou generate <type>\` with no generation input to list every provider available for that type.`,
     `- Before executing a generation command, run \`okou generate <type> -h\` and follow its type-specific input flags. Image accepts ${imageGenerationEnabled ? "`--provider built-in` or " : ""}\`--provider <connector>\`; music, text, code, and document require \`--provider <connector>\` and the returned connector skill guidance; the other types run on Okou without \`--provider\`.`,
     "- If you choose an Okou generation command, wait for it to finish and use its returned artifact.",

@@ -79,7 +79,7 @@ test("Remote connections use natural name order", async () => {
 });
 
 test.each([false, true])(
-  "A chat groups remote choices by effective access and name with existing thread %s",
+  "A chat keeps remote choices in natural name order across access states with existing thread %s",
   async (existing) => {
     installComposerConnectorFixture(
       existing ? { threadId: SCOUT_THREAD_ID } : {},
@@ -106,33 +106,18 @@ test.each([false, true])(
     click(await screen.findByText("Remote access"));
     const dialog = screen.getByRole("dialog", { name: "Remote access" });
     await within(dialog).findByRole("combobox", { name: "SSH android" });
-    const sshSection = within(dialog).getByRole("region", { name: "SSH" });
-    const vncSection = within(dialog).getByRole("region", { name: "VNC" });
+    const list = within(dialog).getByRole("list", {
+      name: "Connections",
+    });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(10);
     expect(
-      within(sshSection)
-        .getAllByRole("heading")
-        .map((heading) => {
-          return heading.textContent;
-        }),
-    ).toStrictEqual(["SSH", "Enabled", "Disabled"]);
-    expect(
-      within(vncSection)
-        .getAllByRole("heading")
-        .map((heading) => {
-          return heading.textContent;
-        }),
-    ).toStrictEqual(["VNC", "Disabled"]);
-    const groupedSshNames = existing
-      ? ["dev-2", "dev-11", "android", "DEV-1", "dev-1"]
-      : ["dev-11", "android", "DEV-1", "dev-1", "dev-2"];
-    expect(
-      within(dialog)
+      within(list)
         .getAllByRole("combobox")
         .map((control) => {
           return control.getAttribute("aria-label");
         }),
     ).toStrictEqual([
-      ...groupedSshNames.map((name) => {
+      ...orderedNames.map((name) => {
         return `SSH ${name}`;
       }),
       ...orderedVncNames.map((name) => {
