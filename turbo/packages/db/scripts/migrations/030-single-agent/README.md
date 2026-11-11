@@ -47,7 +47,7 @@ operator input; its hash detects different input, not forgery or stale state.
 Plans use `single-agent-plan-v6`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
 apply the approved naming, private-Agent-owner and publication policies. No
-executable consumer of any plan version is implemented.
+plan version can be passed directly to a write command.
 
 Each plan embeds a complete `agentPrefixes` object. Save that object as an
 owner-only JSON file to review, edit short English aliases, and reuse it:
