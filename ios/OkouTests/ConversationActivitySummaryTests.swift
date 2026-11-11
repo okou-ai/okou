@@ -31,13 +31,15 @@ final class ConversationActivitySummaryTests: XCTestCase {
     await observation.value
     _ = try XCTUnwrap(scenario.state.requests.withLock { $0 } > count ? true : nil)
   }
-  private func read(_ conversation: ConversationStore) async throws -> ChatActivitySummary? {
+  private func read(_ conversation: ConversationStore) async throws
+    -> ConversationActivitySummaryValue?
+  {
     let summary = conversation.activitySummary
     return try await summary.stateStore.get(summary.value).value
   }
 
   private func assertHidden(
-    _ conversation: ConversationStore, batch: ChatActivitySummary?,
+    _ conversation: ConversationStore, batch: ConversationActivitySummaryValue?,
     file: StaticString = #filePath, line: UInt = #line
   ) {
     XCTAssertNil(conversation.activitySummary.text(in: batch), file: file, line: line)
@@ -105,7 +107,13 @@ final class ConversationActivitySummaryTests: XCTestCase {
     XCTAssertEqual(conversation.activitySummary.text(in: recovered), "Checking the sources")
     conversation.activitySummary.setRotates(false)
     try await waitForNoSleep(clock, duration: .seconds(5))
-    XCTAssertEqual(conversation.activitySummary.text(in: recovered), "Checking the sources")
+    let previous = scenario.state.requests.withLock { $0 }
+    try await waitForSleep(clock, .seconds(15))
+    clock.advance(.seconds(15))
+    try await waitForRequest(scenario, after: previous)
+    let accessible = try await read(conversation)
+    XCTAssertEqual(conversation.activitySummary.text(in: accessible), "Checking the sources")
+    try await waitForNoSleep(clock, duration: .seconds(5))
     conversation.activitySummary.setRotates(true)
     try await waitForSleep(clock, .seconds(5))
     clock.advance(.seconds(5))
@@ -135,6 +143,8 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await waitForNoSleep(clock)
     visible.active = true
     conversation.reconcileActivitySummary()
+    // Reopening the same Run is a new visible demand, not a reuse of its retained phase.
+    assertHidden(conversation, batch: initial)
     let foreground = try await read(conversation)
     XCTAssertNotNil(conversation.activitySummary.text(in: foreground))
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
@@ -182,7 +192,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     await conversation.refresh()
     await fulfillment(of: [cancelled], timeout: 3)
     let replacement = try await read(conversation)
-    XCTAssertEqual(replacement?.runId, newer)
+    XCTAssertEqual(replacement?.summary.runId, newer)
     XCTAssertEqual(conversation.activitySummary.text(in: replacement), "Checking the sources")
     guard case .failure = await old.result else {
       return XCTFail("A replaced Run must cancel the original resource Task")

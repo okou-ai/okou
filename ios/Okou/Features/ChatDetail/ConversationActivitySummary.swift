@@ -3,14 +3,24 @@ import ChatData
 import Foundation
 import Observation
 
+struct ConversationActivitySummaryValue: Equatable, Sendable {
+  fileprivate let demandID: UUID
+  let summary: ChatActivitySummary
+}
+
 /// A visible Run owns the original read Task; phrase selection is native presentation state.
 @MainActor @Observable
 final class ConversationActivitySummary {
+  private struct Demand: Equatable, Sendable {
+    let runID: String
+    let id = UUID()
+  }
+
   let stateStore = CCState.Store()
-  @ObservationIgnored private let activeRun = CCState.State<String?>(nil)
+  @ObservationIgnored private let activeRun = CCState.State<Demand?>(nil)
   @ObservationIgnored private let revision = CCState.State(0)
   @ObservationIgnored private let lifetime = CCState.State(true)
-  @ObservationIgnored private let selectRun: Command<Void, String?>
+  @ObservationIgnored private let selectRun: Command<Void, Demand?>
   @ObservationIgnored private let reload: Command<Void, Void>
   @ObservationIgnored private let retire: Command<Void, Void>
   private var currentID: String?
@@ -20,14 +30,14 @@ final class ConversationActivitySummary {
   private let threadID: String
   private let sleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored private var subscription: Subscription?
-  @ObservationIgnored private var current: Task<ChatActivitySummary?, Error>?
+  @ObservationIgnored private var current: Task<ConversationActivitySummaryValue?, Error>?
   @ObservationIgnored private var publication: Task<Void, Never>?
   private var generation = UUID()
   private var readID = UUID()
   private var polling: Task<Void, Never>?
   private var rotation: Task<Void, Never>?
   // The original successful Task supplies the native carousel during a pending refresh.
-  @ObservationIgnored private var rotationRead: Task<ChatActivitySummary?, Error>?
+  @ObservationIgnored private var rotationRead: Task<ConversationActivitySummaryValue?, Error>?
   private var phraseCount = 0
   private var rotates = true
   private var closed = false
@@ -53,20 +63,20 @@ final class ConversationActivitySummary {
 
   @ObservationIgnored lazy var value = makeValue()
 
-  private func makeValue() -> Computed<Task<ChatActivitySummary?, Error>> {
+  private func makeValue() -> Computed<Task<ConversationActivitySummaryValue?, Error>> {
     Computed { [weak self] get, options in
       guard let self, try get(lifetime) else { throw CancellationError() }
-      let runID = try get(activeRun)
+      let demand = try get(activeRun)
       _ = try get(revision)
       let signal = options.signal
       let task = Task.immediate { @MainActor [sync, threadID] in
         try Task.checkCancellation()
         try signal.checkCancellation()
-        guard let runID else { return nil as ChatActivitySummary? }
-        let summary = try await sync.activitySummary(threadID: threadID, runID: runID)
+        guard let demand else { return nil as ConversationActivitySummaryValue? }
+        let summary = try await sync.activitySummary(threadID: threadID, runID: demand.runID)
         try Task.checkCancellation()
         try signal.checkCancellation()
-        return summary
+        return ConversationActivitySummaryValue(demandID: demand.id, summary: summary)
       }
       current = task
       signal.onCancel { task.cancel() }
@@ -74,22 +84,23 @@ final class ConversationActivitySummary {
     }
   }
 
-  func text(in summary: ChatActivitySummary?) -> String? {
+  func text(in value: ConversationActivitySummaryValue?) -> String? {
     // keepLast is only a same-demand presentation; an old Run cannot supply its phrase.
     _ = generation
-    guard !closed, let summary, summary.status == .available else { return nil }
+    guard !closed, let value, value.summary.status == .available else { return nil }
     do {
-      guard try stateStore.get(activeRun) == summary.runId else { return nil }
+      guard try stateStore.get(activeRun)?.id == value.demandID else { return nil }
     } catch { preconditionFailure("Cannot read the local activity demand: \(error)") }
+    let summary = value.summary
     return (summary.messages.first { $0.id == currentID } ?? summary.messages.first)?.text
   }
 
   func demand(_ next: String?) {
     guard !closed else { return }
     do {
-      guard try stateStore.get(activeRun) != next else { return }
+      guard try stateStore.get(activeRun)?.runID != next else { return }
       stopWork()
-      try stateStore.set(selectRun, next)
+      try stateStore.set(selectRun, next.map { Demand(runID: $0) })
       guard next != nil else { return }
       subscription = try stateStore.watch(value) { [weak self] in self?.reconcileRead() }
       reconcileRead()
@@ -161,12 +172,12 @@ final class ConversationActivitySummary {
       let read = try stateStore.get(value)
       publication = Task { [weak self] in
         do {
-          let summary = try await read.value
+          let value = try await read.value
           try Task.checkCancellation()
           guard let self, !closed, readID == id else { return }
           let messages: [ChatActivitySummary.Message]
-          if let summary, summary.status == .available {
-            messages = summary.messages
+          if let value, value.summary.status == .available {
+            messages = value.summary.messages
           } else {
             messages = []
           }
@@ -202,12 +213,12 @@ final class ConversationActivitySummary {
           try Task.checkCancellation()
           guard let self, !self.closed, self.generation == owner else { return }
           guard let read = self.rotationRead else { return }
-          let summary = try await read.value
+          let value = try await read.value
           try Task.checkCancellation()
-          guard self.generation == owner, let summary, summary.status == .available,
-            summary.messages.count > 1
+          guard self.generation == owner, let value, value.summary.status == .available,
+            value.summary.messages.count > 1
           else { return }
-          let messages = summary.messages
+          let messages = value.summary.messages
           let index = messages.firstIndex { $0.id == self.currentID } ?? 0
           self.currentID = messages[(index + 1) % messages.count].id
         }

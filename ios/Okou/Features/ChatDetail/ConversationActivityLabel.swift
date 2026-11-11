@@ -1,5 +1,4 @@
 import CCStateSwiftUI
-import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -19,7 +18,7 @@ struct ConversationActivityLabel: View {
 private struct ConversationActivityContent: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
-  @LoadableValue private var summaryValue: Loadable<ChatActivitySummary?>
+  @LoadableValue private var summaryValue: Loadable<ConversationActivitySummaryValue?>
 
   init(summary: ConversationActivitySummary, state: ChatExecutionState) {
     self.summary = summary
