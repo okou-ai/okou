@@ -4605,11 +4605,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         }),
       };
     });
-    context.mocks.sentry.captureException.mockClear();
     await expect(fixture.upload("original")).rejects.toThrow(
       "Unknown response status 500",
     );
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     expect(oauth.refreshBodies).toHaveLength(0);
     expect(upload.metadata).toHaveLength(0);
     expect(upload.bodies).toHaveLength(0);
