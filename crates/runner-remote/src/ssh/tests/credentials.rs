@@ -295,6 +295,44 @@ async fn malformed_sensitive_handoffs_never_reach_credentials_or_network() {
 }
 
 #[tokio::test]
+async fn ssh_credential_authority_enforces_declared_and_streamed_response_bounds() {
+    use crate::authority_response::tests::scenarios;
+    use crate::test_fixtures::raw_http::RawHttpTestServer;
+
+    for case in scenarios() {
+        let mut api = RawHttpTestServer::spawn(vec![case.action]).await;
+        let mut h = Harness::with_api(
+            Reply::default(),
+            key(Algorithm::Ed25519),
+            key(Algorithm::Ed25519),
+            Some(api.url()),
+        )
+        .await;
+        let frames = h.request(params()).await;
+        assert_eq!(
+            terminal(&frames)["failure_reason"],
+            case.reason,
+            "{}",
+            case.name
+        );
+        assert_eq!(terminal(&frames)["effects"], "not_started");
+        assert!(
+            !serde_json::to_string(&frames)
+                .unwrap()
+                .contains("authority-response-secret-canary")
+        );
+        assert!(h.observed.queries.lock().unwrap().is_empty());
+        assert!(h.observed.attempts.lock().unwrap().is_empty());
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+        let request = api.next_request("credential authority resolve").await;
+        assert!(request.starts_with("POST /api/runners/runs/"));
+        assert!(request.contains("/ssh/resolve HTTP/1.1"));
+        h.shutdown().await;
+        api.assert_finished().await;
+    }
+}
+
+#[tokio::test]
 async fn wrong_user_key_fails_authentication_without_exec() {
     let h = Harness::new(Reply::default()).await;
     let mut credential = h.credential(true);

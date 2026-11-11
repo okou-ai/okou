@@ -21,7 +21,6 @@ use runner_types::ids::RunId;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::HttpClient;
 
-const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
 const MAX_CA_CERTIFICATES: usize = 8;
 const MAX_PLAIN_USERNAME_BYTES: usize = 255;
@@ -598,34 +597,13 @@ impl Authority {
             .http
             .json_request(route, &self.token, &body)
             .map_err(|_| Failure::Authority)?;
-        let mut response = self
+        let response = self
             .transport
             .execute(request)
             .await
             .map_err(|_| Failure::Authority)?;
-        if response.status() != reqwest::StatusCode::OK
-            || response
-                .content_length()
-                .is_some_and(|length| length > MAX_API_BYTES as u64)
-        {
-            return Err(Failure::Authority);
-        }
-        let created_at = response
-            .headers()
-            .get("x-vnc-connection-created-at")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-            .map(|value| value.with_timezone(&chrono::Utc));
-        // A fixed capacity avoids leaving reallocated plaintext buffers behind.
-        let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_API_BYTES));
-        while let Some(chunk) = response.chunk().await.map_err(|_| Failure::Authority)? {
-            if chunk.len() > MAX_API_BYTES - bytes.len() {
-                return Err(Failure::Authority);
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        serde_json::from_slice(&bytes)
-            .map(|body| (body, created_at))
+        crate::authority_response::decode(response, "x-vnc-connection-created-at")
+            .await
             .map_err(|_| Failure::Authority)
     }
 
