@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
@@ -482,6 +483,105 @@ describe("GET /api/cron/project-chat-event-search", () => {
       );
     },
   );
+
+  it("returns published MCP and Web search hits newest first", async () => {
+    // Authenticated operator publication is the system boundary in this case;
+    // message construction and all search observations use normal public APIs.
+    const app = await setupApp({
+      context,
+      routes: cronProjectChatEventSearchRoutes,
+      isolatePg: true,
+    });
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const mcp = createMcpWebApi(context);
+    createRunsApi(context).configureRunnerGroup();
+    bdd.acceptAgentStorageWrites();
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      return Promise.resolve(
+        request instanceof ListObjectsV2Command
+          ? { Contents: [], IsTruncated: false }
+          : { ContentLength: 1024 },
+      );
+    });
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "Search ordering",
+      visibility: "private",
+    });
+    const keyword = `ordering${randomUUID().replaceAll("-", "")}`;
+    const threadId = await withMockNowForTest(
+      new Date("2026-10-12T08:00:00Z"),
+      async () => {
+        const opened = await chat.requestSendEvent(
+          owner,
+          { agentId: agent.agentId, model: null, prompt: "Ordering setup" },
+          [201],
+        );
+        if (opened.status !== 201) {
+          throw new Error("Expected public conversation creation");
+        }
+        await flushWaitUntilForTest();
+        return opened.body.threadId;
+      },
+    );
+    for (const marker of [
+      { label: "oldest", createdAt: "2026-10-12T08:02:49.990Z" },
+      { label: "middle", createdAt: "2026-10-12T08:02:50.000Z" },
+      { label: "newest", createdAt: "2026-10-12T08:02:50.010Z" },
+    ]) {
+      await withMockNowForTest(new Date(marker.createdAt), async () => {
+        await chat.requestSendEvent(
+          owner,
+          {
+            agentId: agent.agentId,
+            threadId,
+            prompt: `${keyword} ${marker.label}`,
+          },
+          [201],
+        );
+        await flushWaitUntilForTest();
+      });
+    }
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    await accept(
+      app(cronProjectChatEventSearchContract).project({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+
+    const token = mcp.authorize(owner);
+    const response = await mcp.call(token(), "search_chat_messages", {
+      keyword,
+      agentId: agent.agentId,
+    });
+    expect(response.isError).not.toBeTruthy();
+    const viaMcp = mcpChatSearchContract.search.responses[200].parse(
+      response.structuredContent,
+    ).results;
+    expect(
+      viaMcp.map((hit) => {
+        return hit.matchedMessage.content;
+      }),
+    ).toStrictEqual([
+      `${keyword} newest`,
+      `${keyword} middle`,
+      `${keyword} oldest`,
+    ]);
+    const viaWeb = await chat.searchChat(owner, keyword, {
+      agentId: agent.agentId,
+    });
+    expect(
+      viaWeb.results.map((hit) => {
+        return [hit.matchedMessage.content, hit.matchedMessage.createdAt];
+      }),
+    ).toStrictEqual(
+      viaMcp.map((hit) => {
+        return [hit.matchedMessage.content, hit.matchedMessage.createdAt];
+      }),
+    );
+  }, 60_000);
 
   it.each([
     {
