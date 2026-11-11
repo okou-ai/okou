@@ -118,7 +118,10 @@ async function readJson(
   }
   const parsed = await settle(response.json(), signal);
   if (!parsed.ok) {
-    if (parsed.error instanceof SyntaxError) {
+    if (
+      parsed.error instanceof SyntaxError ||
+      parsed.error instanceof TypeError
+    ) {
       throw new EmailMessageReadError("provider-unavailable");
     }
     throw parsed.error;

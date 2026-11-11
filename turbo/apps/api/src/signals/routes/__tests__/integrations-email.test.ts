@@ -1253,6 +1253,38 @@ describe("Email integration", () => {
     );
   });
 
+  it("retains the received email when the mailbox response stream terminates", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "outlook-mail", actor.email);
+    verifiedDirectory(actor);
+    server.use(
+      http.get("https://graph.microsoft.com/v1.0/me/messages", () => {
+        return new HttpResponse(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"value":'));
+            },
+            pull(controller) {
+              controller.error(new TypeError("Provider response terminated"));
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    await incoming({
+      sender: actor.email,
+      text: "Continue despite the interrupted mailbox response",
+    }).send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.prompt).toContain(
+      "Continue despite the interrupted mailbox response",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"provider-unavailable"',
+    );
+  });
+
   it("does not append a provider message with a different RFC Message-ID", async () => {
     const { actor, group } = await entitledActor();
     await connectorsApi.updateFeatureSwitches(actor, {
