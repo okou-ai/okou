@@ -11,11 +11,13 @@ import {
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { array, record, string } from "zod";
@@ -28,13 +30,12 @@ import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ClaimExecutionContextRun } from "./claim-execution-context";
-import { createClaimSourceContext } from "./claim-source-context.service";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorsContext } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
-import { featureSwitchContextFromRows } from "./feature-switch-scope";
+import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   createRunModelSources,
   managedSourceFromSnapshot,
@@ -99,7 +100,6 @@ type InitialInput$ = ReturnType<typeof createClaimInitialInput>;
 type InitialInput =
   InitialInput$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
-type ClaimSourceContext$ = ReturnType<typeof createClaimSourceContext>;
 
 /** An expected source removal or cancellation, distinct from dependency failures. */
 export class ClaimRuntimeUnavailableError extends Error {
@@ -110,25 +110,9 @@ export class ClaimRuntimeUnavailableError extends Error {
 
 /** All dependencies belong to this Claim; no captured runtime snapshot participates. */
 export function createClaimRuntimeContext(input$: ClaimInput$) {
-  const sourceContext$ = createClaimSourceContext(
-    computed(async (get) => {
-      return (await get(input$)).run;
-    }),
-  );
-  const identities = createClaimIdentities(input$, sourceContext$);
-  const { run$, identity$, features$, selectionFeatures$ } = identities;
-  const environmentSnapshot$ = computed(async (get) => {
-    const captured = await get(sourceContext$);
-    if (captured.kind !== "agent") {
-      throw new Error("Connector sources require an admitted Agent");
-    }
-    return captured.environment;
-  });
-  const sources = createExecutionConnectorSources(
-    identity$,
-    selectionFeatures$,
-    environmentSnapshot$,
-  );
+  const identities = createClaimIdentities(input$);
+  const { run$, identity$, features$ } = identities;
+  const sources = createExecutionConnectorSources(identity$, features$);
   const networkPolicyInputs$ = computed(
     async (get): Promise<ClaimNetworkPolicyInputs> => {
       const [catalog, grants, features] = await Promise.all([
@@ -152,17 +136,10 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     },
   );
   const global = createGlobalModelContext();
-  const preferences$ = computed(async (get) => {
-    return { timezone: (await get(sourceContext$)).timezone };
-  });
+  const preferences$ = createClaimPreferences(run$);
   const disabledTools$ = createClaimDisabledTools(input$);
-  const connectors = createClaimConnectorContext(
-    input$,
-    identities,
-    sources,
-    sourceContext$,
-  );
-  const model$ = createClaimModel(run$, global, sourceContext$);
+  const connectors = createClaimConnectorContext(input$, identities, sources);
+  const model$ = createClaimModel(run$, global);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$))?.provider ?? null;
   });
@@ -192,7 +169,6 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     platform$,
   );
   return createClaimPreparedContext(input$, {
-    sourceContext$,
     model$,
     initialInput$,
     preferences$,
@@ -243,12 +219,13 @@ function createClaimStorage(input$: ClaimInput$) {
   });
 }
 
-function createClaimIdentities(
-  input$: ClaimInput$,
-  sourceContext$: ClaimSourceContext$,
-) {
+function createClaimIdentities(input$: ClaimInput$) {
   const run$ = computed(async (get) => {
     return (await get(input$)).run;
+  });
+  const memberIdentity$ = computed(async (get) => {
+    const { orgId, userId } = await get(run$);
+    return { orgId, userId };
   });
   const identity$ = computed(async (get) => {
     const run = await get(run$);
@@ -257,17 +234,7 @@ function createClaimIdentities(
     }
     return { orgId: run.orgId, userId: run.userId, agentId: run.agentId };
   });
-  const currentFeatures$ = computed(async (get) => {
-    const [run, context] = await Promise.all([get(run$), get(sourceContext$)]);
-    if (context.kind !== "agent") {
-      throw new Error("Connector features require an admitted Agent");
-    }
-    return featureSwitchContextFromRows(
-      run.orgId,
-      run.userId,
-      context.features,
-    );
-  });
+  const currentFeatures$ = createUserFeatureSwitchContext(memberIdentity$);
   const features$ = computed(async (get) => {
     const [current, input] = await Promise.all([
       get(currentFeatures$),
@@ -290,22 +257,23 @@ function createClaimIdentities(
       overrides,
     };
   });
-  const selectionFeatures$ = computed(async (get) => {
-    const { run, context } = await get(input$);
-    const key = FeatureSwitchKey.ConnectorChatAccountAccess;
-    const captured = context.featureFlags?.[key];
-    if (captured === undefined) {
-      return await get(features$);
-    }
-    // Selection reads only this admitted decision. Do not serialize its current
-    // grants/catalog reads behind the independent account/credential capture.
-    return {
-      orgId: run.orgId,
-      userId: run.userId,
-      overrides: { [key]: captured },
-    };
+  return { run$, identity$, features$ };
+}
+
+function createClaimPreferences(run$: ClaimRun$) {
+  return computed(async (get) => {
+    const run = await get(run$);
+    const [row] = await get(db$)
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, run.orgId),
+          eq(orgMembersMetadata.userId, run.userId),
+        ),
+      );
+    return { timezone: row?.timezone ?? undefined };
   });
-  return { run$, identity$, features$, selectionFeatures$ };
 }
 
 function createClaimDisabledTools(input$: ClaimInput$) {
@@ -323,15 +291,14 @@ function createClaimConnectorContext(
   input$: ClaimInput$,
   identities: ClaimIdentities,
   sources: ClaimSources,
-  sourceContext$: ClaimSourceContext$,
 ) {
   const { run$, identity$, features$ } = identities;
   const targets$ = computed(async (get) => {
-    const context = await get(sourceContext$);
-    if (context.kind !== "agent") {
-      throw new Error("Connector registrations require an admitted Agent");
-    }
-    const [row] = context.registrations;
+    const run = await get(run$);
+    const [row] = await get(db$)
+      .select({ payload: agentRunConnectorDiagnosticRegistrations.payload })
+      .from(agentRunConnectorDiagnosticRegistrations)
+      .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
     if (!row) {
       throw new ClaimRuntimeUnavailableError();
     }
@@ -352,20 +319,6 @@ function createClaimConnectorContext(
     return new ApiDispatchTimingCollector();
   });
   const connected = createClaimConnectedAccounts({
-    selections$: computed(async (get) => {
-      const context = await get(sourceContext$);
-      if (context.kind !== "agent") {
-        throw new Error("Connector selections require an admitted Agent");
-      }
-      return context.selections;
-    }),
-    accessOverrides$: computed(async (get) => {
-      const context = await get(sourceContext$);
-      if (context.kind !== "agent") {
-        throw new Error("Connector access requires an admitted Agent");
-      }
-      return context.accessOverrides;
-    }),
     identity$: connectorIdentity$,
     targets$,
     scope$: sources.signals.connectorScope$,
@@ -400,28 +353,12 @@ function createClaimConnectorContext(
   return { bodyEnvironment$, connectorEnvironment$, timing$ };
 }
 
-function createClaimModel(
-  run$: ClaimRun$,
-  global: GlobalModels,
-  sourceContext$: ClaimSourceContext$,
-) {
+function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
   const memberIdentity$ = computed(async (get) => {
     const run = await get(run$);
     return { orgId: run.orgId, userId: run.userId, runId: run.id };
   });
-  const agentlessMemberModels$ = createRunModelSources(memberIdentity$);
-  const memberModels$ = computed(async (get) => {
-    if ((await get(run$)).agentId === null) {
-      return await get(agentlessMemberModels$);
-    }
-    const captured = await get(sourceContext$);
-    if (captured.kind !== "agent" || captured.memberModels === undefined) {
-      throw new Error(
-        "Admitted personal model requires captured member sources",
-      );
-    }
-    return captured.memberModels;
-  });
+  const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
     const run = await get(run$);
     if (run.modelProvider === null) {
@@ -801,12 +738,9 @@ function createClaimEnvironment(
 function createClaimPreparedContext(
   input$: ClaimInput$,
   dependencies: {
-    readonly sourceContext$: ClaimSourceContext$;
     readonly model$: ClaimModel$;
     readonly initialInput$: InitialInput$;
-    readonly preferences$: Computed<
-      Promise<{ readonly timezone: string | undefined }>
-    >;
+    readonly preferences$: ReturnType<typeof createClaimPreferences>;
     readonly packages$: ReturnType<typeof createClaimPackages>;
     readonly environment$: ReturnType<typeof createClaimEnvironment>;
     readonly storage$: ReturnType<typeof createClaimStorage>;
@@ -818,9 +752,6 @@ function createClaimPreparedContext(
 ) {
   return computed(async (get) => {
     const { run, context } = await get(input$);
-    // Start the shared launch-critical capture before independent hydration.
-    // Joining it below retains error ownership without serializing other reads.
-    const sourceContext = get(dependencies.sourceContext$);
     const [model, originalInput, preferences, packages, resolved, storage] =
       await Promise.all([
         get(dependencies.model$),
@@ -829,7 +760,6 @@ function createClaimPreparedContext(
         get(dependencies.packages$),
         get(dependencies.environment$),
         get(dependencies.storage$),
-        sourceContext,
       ]);
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
