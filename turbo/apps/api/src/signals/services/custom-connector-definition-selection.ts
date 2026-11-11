@@ -1,4 +1,7 @@
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { customConnectorNetworkBindingSelection } from "./custom-connector-network-binding";
+import type { infer as zInfer } from "zod";
+import type { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import type {
   CustomConnectorHttpRow,
   CustomConnectorMcpRow,
@@ -25,6 +28,7 @@ export type CustomConnectorExecutionDefinition =
 
 export function customConnectorDefinitionSelection() {
   return {
+    networkBinding: customConnectorNetworkBindingSelection(),
     id: orgCustomConnectors.id,
     orgId: orgCustomConnectors.orgId,
     slug: orgCustomConnectors.slug,
@@ -49,5 +53,12 @@ export function customConnectorDefinitionSelection() {
 
 export type CustomConnectorDefinitionRow = Pick<
   typeof orgCustomConnectors.$inferSelect,
-  keyof ReturnType<typeof customConnectorDefinitionSelection>
->;
+  Exclude<
+    keyof ReturnType<typeof customConnectorDefinitionSelection>,
+    "networkBinding"
+  >
+> & {
+  readonly networkBinding?: zInfer<
+    typeof customConnectorNetworkMetadataSchema
+  > | null;
+};

@@ -347,6 +347,10 @@ async function buildCustomConnectorRuntimeRow(args: {
   readonly context: BuildCustomConnectorRuntimeContextArgs;
   readonly selectedPermissionNames: readonly string[];
 }): Promise<BuiltCustomConnectorRuntimeRow> {
+  // Preparation cannot publish an executable Direct rule for a bound definition.
+  if (args.row.connector.networkBinding) {
+    return unavailableCustomConnectorRuntimeRow();
+  }
   const hasProvidedBaseUrlVars =
     args.context.baseUrlVarsByConnectorId?.has(args.row.connector.id) ?? false;
   const baseUrlVars = resolveCustomConnectorBaseUrlVars({

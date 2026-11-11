@@ -3179,6 +3179,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} member",
     "affectedMembers_other": "{{count}} members",
+    "bindingUnavailable": "Unavailable",
     "cancel": "Cancel",
     "changed": "This Cloudflare Access changed while you were editing. Your changes were not saved.",
     "clientIdPlaceholder": "Paste the Service Token Client ID",
@@ -3191,7 +3192,7 @@
     "failed": "Could not save the Cloudflare Access change.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
     "impactChanged": "The affected hosts changed. The change was not applied.",
-    "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
+    "inUse": "This Cloudflare Access is still in use. Unbind or rebind its dependent hosts and custom connectors first.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
     "loadFailed": "Could not load Cloudflare Access.",
     "loading": "Loading Cloudflare Access…",

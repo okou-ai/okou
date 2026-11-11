@@ -27,6 +27,7 @@ import {
   type AgentConnectorSelectionScope,
 } from "./execution-agent-connectors.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import { workflowsForRunFromRows } from "./workflow-data.service";
@@ -35,8 +36,12 @@ import { workflowsForRunFromRows } from "./workflow-data.service";
 const builtinColumns = Object.freeze({
   connectorSlug: userBuiltinConnectors.connectorSlug,
 });
+const {
+  networkBinding: connectorNetworkBinding,
+  ...connectorDefinitionColumns
+} = customConnectorDefinitionSelection();
 const connectorColumns = Object.freeze({
-  ...customConnectorDefinitionSelection(),
+  ...connectorDefinitionColumns,
   ...customConnectorSkillBundleSelection(),
 });
 const oauthColumns = getTableColumns(orgCustomConnectorOauthConfigs);
@@ -77,7 +82,7 @@ function agentSelectionQueries(
   const custom = builder
     .select({
       payload: sql`jsonb_build_object(
-      'connector', ${contextJsonProjection(connectorColumns)},
+      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${connectorNetworkBinding}),
       'oauthConfig', case when ${orgCustomConnectorOauthConfigs.connectorId} is null then null else ${contextJsonProjection(oauthColumns)} end,
       'permissionNames', ${userCustomConnectors.permissionNames})`
         .mapWith(zodDriverValueDecoder(zUnknown()))
@@ -194,7 +199,11 @@ export function createAgentSelectionContext(
     );
     const custom = array(
       object({
-        connector: contextProjectionSchema(connectorColumns),
+        connector: contextProjectionSchema(connectorColumns).and(
+          object({
+            networkBinding: customConnectorNetworkMetadataSchema.nullable(),
+          }),
+        ),
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
         permissionNames: array(string()),
       }),

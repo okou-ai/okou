@@ -261,6 +261,7 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         firewall: Firewall {
             name: "builtin-mcp".to_owned(),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: "builtin-mcp:0".to_owned(),
                 base: "https://mcp.example.test/server".to_owned(),
                 auth: FirewallAuth {

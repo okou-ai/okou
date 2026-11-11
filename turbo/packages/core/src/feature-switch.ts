@@ -53,6 +53,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
+    maintainer: "liangyou@vm0.ai",
+    enabled: false,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",

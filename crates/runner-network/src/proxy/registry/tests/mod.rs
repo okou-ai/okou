@@ -164,6 +164,7 @@ fn test_firewalls(connector_slugs: &[&str]) -> Vec<FirewallEntry> {
             firewall: Firewall {
                 name: (*connector_slug).to_string(),
                 apis: vec![FirewallApi {
+                    network_intent: None,
                     id: format!("{connector_slug}-rest"),
                     base: format!("https://api.{connector_slug}.com"),
                     auth: FirewallAuth {
@@ -220,6 +221,7 @@ fn custom_runtime_firewall(custom_connector_id: &str, name: &str) -> FirewallEnt
         firewall: Firewall {
             name: name.to_string(),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: format!("{name}:0"),
                 base: "https://custom.example.test/api/".to_string(),
                 auth: FirewallAuth {
@@ -1845,6 +1847,7 @@ async fn registry_with_firewalls() {
         firewall: Firewall {
             name: "gmail".to_string(),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: String::new(),
                 base: "https://gmail.googleapis.com/gmail/v1/users/me".to_string(),
                 auth: FirewallAuth {
@@ -2021,6 +2024,7 @@ async fn registry_firewall_auth_base_serialized() {
         firewall: Firewall {
             name: "discord-webhook".to_string(),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: String::new(),
                 base: "https://firewall-placeholder.vm3.ai/discord-webhook/hook".to_string(),
                 auth: FirewallAuth {
@@ -2067,6 +2071,7 @@ async fn registry_firewall_auth_query_serialized() {
         firewall: Firewall {
             name: "serpapi".to_string(),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: String::new(),
                 base: "https://serpapi.com".to_string(),
                 auth: FirewallAuth {

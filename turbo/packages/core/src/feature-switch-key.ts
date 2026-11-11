@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   UserNotifications = "userNotifications",
   AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",

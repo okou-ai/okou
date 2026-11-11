@@ -212,6 +212,7 @@ fn firewall_round_trip() {
     let fw = Firewall {
         name: "github".into(),
         apis: vec![FirewallApi {
+            network_intent: None,
             id: "api-1".into(),
             base: "https://api.github.com".into(),
             auth: FirewallAuth {
@@ -251,6 +252,31 @@ fn firewall_auth_base_omitted_when_none() {
     };
     let json = serde_json::to_value(&auth).unwrap();
     assert!(json.get("base").is_none());
+}
+
+#[test]
+fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
+    let value = serde_json::json!({
+        "name": "custom-fixture",
+        "apis": [{"id": "custom-api", "base": "https://api.example.com/",
+            "auth": {"headers": {}}, "permissions": null, "networkIntent": {"kind": "direct"}}]
+    });
+    let direct: Firewall = serde_json::from_value(value.clone()).unwrap();
+    direct.validate_for_connector_runtime().unwrap();
+    assert!(direct.validate_for_cache().is_err());
+    assert_eq!(serde_json::to_value(&direct).unwrap(), value);
+
+    let mut bound = value.clone();
+    bound["apis"][0]["networkIntent"] = serde_json::json!({
+        "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44",
+        "protectedOrigins": ["https://api.example.com"]
+    });
+    let prepared: Firewall = serde_json::from_value(bound).unwrap();
+    assert!(prepared.validate_for_connector_runtime().is_err());
+
+    let mut unknown = value;
+    unknown["apis"][0]["networkIntent"]["kind"] = "unknown".into();
+    assert!(serde_json::from_value::<Firewall>(unknown).is_err());
 }
 
 #[test]

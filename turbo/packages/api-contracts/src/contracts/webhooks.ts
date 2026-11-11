@@ -386,6 +386,9 @@ const firewallAwsSigv4AuthSchema = object({
 }).strict();
 
 const firewallAuthResponseSchema = object({
+  networkAdmission: object({ kind: literal("direct") })
+    .strict()
+    .optional(),
   headers: record(string(), string()),
   base: string().optional(),
   query: record(string(), string()).optional(),
@@ -449,6 +452,8 @@ export const webhookFirewallAuthContract = c.router({
       // auth cache lifetime by the current credit authorization lease.
       firewallBillable: boolean().optional(),
       forceRefresh: boolean().optional(),
+      // Opt-in preparation: this release only admits unbound custom connectors.
+      networkAdmission: literal(true).optional(),
     }),
     responses: {
       200: firewallAuthResponseSchema,

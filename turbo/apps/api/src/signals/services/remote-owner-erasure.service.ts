@@ -1,10 +1,12 @@
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
@@ -21,6 +23,42 @@ export const eraseRemoteOwnerData$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    if (scope.kind === "organization") {
+      // Organization teardown must not turn retained definitions into Direct
+      // connectors if cleanup stops between removing the edge and its network.
+      await db
+        .update(orgCustomConnectors)
+        .set({ enabled: false })
+        .where(
+          and(
+            eq(orgCustomConnectors.orgId, scope.orgId),
+            exists(
+              db
+                .select({
+                  id: orgCustomConnectorCloudflareBindings.connectorId,
+                })
+                .from(orgCustomConnectorCloudflareBindings)
+                .where(
+                  and(
+                    eq(
+                      orgCustomConnectorCloudflareBindings.connectorId,
+                      orgCustomConnectors.id,
+                    ),
+                    eq(
+                      orgCustomConnectorCloudflareBindings.orgId,
+                      orgCustomConnectors.orgId,
+                    ),
+                  ),
+                ),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+      await db
+        .delete(orgCustomConnectorCloudflareBindings)
+        .where(eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId));
+      signal.throwIfAborted();
+    }
     await db
       .delete(vncConnections)
       .where(

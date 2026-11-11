@@ -33,6 +33,13 @@ describe("connector custom show/delete", () => {
         () => {
           return HttpResponse.json({
             ...connector,
+            networkBinding: {
+              type: "cloudflare_access",
+              status: "available",
+              name: "Corporate gateway",
+              configId: "5e7fd365-c432-41b2-a780-cfa467655b44",
+              protectedOrigins: ["https://api.example.com"],
+            },
             authMode: "oauth",
             fields: [],
             oauthConfig: {
@@ -64,6 +71,10 @@ describe("connector custom show/delete", () => {
     expect(JSON.parse(output)).toMatchObject({
       id: connector.id,
       authMode: "oauth",
+      networkBinding: {
+        name: "Corporate gateway",
+        protectedOrigins: ["https://api.example.com"],
+      },
     });
     expect(output).not.toContain(SECRET);
     expect(output).not.toContain("oauthConfig");
