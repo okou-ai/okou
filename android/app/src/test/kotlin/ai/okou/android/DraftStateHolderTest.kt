@@ -1,4 +1,4 @@
-package ai.okou.android.foundation
+package ai.okou.android
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collect

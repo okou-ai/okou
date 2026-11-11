@@ -1,4 +1,4 @@
-package ai.okou.android.foundation
+package ai.okou.android
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

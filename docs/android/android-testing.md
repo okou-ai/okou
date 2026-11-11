@@ -44,7 +44,12 @@ duplicate primitive/framework test suites when a feature outcome is sufficient.
 
 ## Test Ownership
 
-SDK-independent state-holder tests live with the Kotlin foundation module.
+Keep state-holder and Compose tests in the owning feature/module's local test
+source set. Pure Kotlin logic does not need a separate build module solely to
+test it. The standard app Gradle test task requires SDK configuration but runs
+without a device; pure Kotlin tests themselves can run in a separate JVM-only
+entry without moving the production source into a new module. Add such an entry
+only when its value justifies maintaining another build path.
 Robolectric tests use API 35, the real Compose route/theme/resources and native
 lifecycle collection. They establish host-side behavior, not physical-device
 rendering, keyboard accuracy or runtime performance.

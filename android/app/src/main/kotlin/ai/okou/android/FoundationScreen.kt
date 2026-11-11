@@ -1,6 +1,5 @@
 package ai.okou.android
 
-import ai.okou.android.foundation.DraftUiState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize

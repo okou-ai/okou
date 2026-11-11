@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "OkouAndroid"
 
-include(":foundation", ":app")
+include(":app")

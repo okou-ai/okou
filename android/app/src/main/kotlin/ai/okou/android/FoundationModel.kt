@@ -1,6 +1,5 @@
 package ai.okou.android
 
-import ai.okou.android.foundation.DraftStateHolder
 import androidx.lifecycle.ViewModel
 
 /** Retains the local draft for this screen; no network or background operation is started. */

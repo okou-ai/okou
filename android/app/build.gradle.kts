@@ -44,7 +44,6 @@ val generateLicenseAssets by
 tasks.named("preBuild") { dependsOn(generateLicenseAssets) }
 
 dependencies {
-    implementation(project(":foundation"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
@@ -53,6 +52,7 @@ dependencies {
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.compose.ui.test)
     testImplementation(libs.lifecycle.runtime.testing)

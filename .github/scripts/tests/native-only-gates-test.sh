@@ -209,12 +209,11 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect', 'core', 'build-test'} <= set(android_gate['needs'])
+assert {'detect', 'build-test'} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
         'needs.detect.result': 'success',
         'needs.detect.outputs.needed': needed,
-        'needs.core.result': 'success' if needed == 'true' else 'skipped',
         'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
     }
     assert condition(android_gate, values, cancelled=True)
@@ -223,11 +222,10 @@ for needed in ['true', 'false']:
         blocked = values | {'needs.detect.result': failure}
         assert condition(android_gate, blocked)
         gate(android, 'ci-gate-android', blocked, False)
-    for job in ['core', 'build-test']:
-        for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
-            blocked = values | {f'needs.{job}.result': result}
-            assert condition(android_gate, blocked)
-            gate(android, 'ci-gate-android', blocked, False)
+    for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
+        blocked = values | {'needs.build-test.result': result}
+        assert condition(android_gate, blocked)
+        gate(android, 'ci-gate-android', blocked, False)
     for invalid in ['', 'unknown']:
         gate(android, 'ci-gate-android', values | {'needs.detect.outputs.needed': invalid}, False)
 

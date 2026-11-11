@@ -23,8 +23,8 @@ services after upgrading Node.js so they use the patched runtime.
 ## Environment
 
 Native Android development has an independent Gradle project and command-line
-SDK setup. See [Android setup and verification](android/README.md); its core
-Kotlin state holders can be tested without Android SDK, pnpm, or local services.
+SDK setup. See [Android setup and verification](android/README.md); its local
+state-holder and Compose tests run without an emulator, pnpm, or local services.
 
 Team members with the required 1Password access can use `scripts/sync-env.sh`.
 For manual setup, copy the current templates from the repository root:

@@ -59,22 +59,23 @@ state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, an
 assembly. It uses two Gradle workers, a 1536 MB build heap and in-process Kotlin
 compilation by default for small sandboxes.
 
-Pure Kotlin state holders can be tested without configuring Android projects or an SDK:
+Run the app's local JVM tests through Android Gradle Plugin with the configured
+Android SDK; no emulator is needed:
 
 ```bash
 cd android
-./gradlew --settings-file core.settings.gradle.kts :foundation:test spotlessCheck --no-daemon
+./gradlew :app:testDebugUnitTest --no-daemon
 ```
 
-The alternate settings flag is supported by pinned Gradle 8.11.1 and emits a
-Gradle 9 deprecation warning. Update that entry point when upgrading Gradle;
-do not remove SDK-independent verification.
+The plain Kotlin state-holder tests do not themselves use Android APIs. An
+independent Kotlin/JVM test entry could compile those same sources without an
+SDK, without splitting production modules. The command above uses the app's
+standard Android build configuration; the project maintains one test entry.
 
 Other focused commands, from `android/`:
 
 ```bash
 ./gradlew spotlessApply
-./gradlew :foundation:test :app:testDebugUnitTest
 ./gradlew :app:lintDebug :app:assembleDebug
 python3 scripts/sync-design-tokens.py --check
 python3 scripts/ci-changed.test.py
@@ -98,9 +99,9 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 
 ## Components and Authority
 
-- `foundation`: plain Kotlin feature state holders and immutable UI models,
-  using native coroutines/Flow without Android UI dependencies.
-- `app`: native Activity, ViewModel owner, reusable theme, local draft surface.
+- `app`: native Activity, ViewModel owner, Kotlin state holders/immutable UI
+  models, reusable theme and local draft surface. Plain business logic can stay
+  free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
 
 [CCState principles on Android](../docs/android/android-ccstate.md) covers
@@ -108,9 +109,11 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-The [foundation test map](foundation/TESTING.md) records current feature outcomes
-and native integration coverage. Add shared helpers only for actual application
-contracts; this scaffold does not start background requests or model fake tasks.
+DraftStateHolderTest covers draft validation, content/snapshot preservation and
+owner isolation. FoundationScreenTest covers actual input/actions, lifecycle
+stop/resume and owner replacement through the real route. Both live in app's
+local test source set. Add modules/shared helpers only for actual application
+boundaries; this scaffold does not start background requests or model fake tasks.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`.
@@ -119,8 +122,8 @@ vector retains the geometry from `ios/Assets/AppIcon.svg`.
 
 `.github/workflows/android.yml` checks PRs, merge groups, main pushes and manual
 runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
-and shared font/color-evaluator assets. Core verification has no SDK setup;
-the native job tests, lints, assembles, and uploads the debug APK for seven days.
+and shared font/color-evaluator assets. One native job runs all local tests,
+lints, assembles, and uploads the debug APK for seven days.
 The final `ci-gate-android` check always reports an aggregate result. It requires
 successful detection and every selected job to succeed; only an explicit
 unselected result permits skipped native checks.
