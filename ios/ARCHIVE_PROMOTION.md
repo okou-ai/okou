@@ -185,10 +185,13 @@ team/bundle identities, both shared storage entitlements, production APNs on
 the app, and disabled `get-task-allow`. The extension's compiled sections and
 symbols have the same immutable archive contract as the main executable.
 
-Internal-only upload, processing/group availability checks, and private symbol
-retention remain unchanged. Signing material and temporary IPA files are deleted
-on exit. A missing mapping input, archive, checksum, source identity, toolchain,
-or signing verification fails without rebuilding or retesting. Recovery requires
+The standard TestFlight & App Store export is distributed automatically only to
+the configured internal group. External testing and App Store review require
+separate submissions in App Store Connect. Processing/group availability checks
+and private symbol retention remain unchanged. Signing material and temporary
+IPA files are deleted on exit. A missing mapping input, archive, checksum, source
+identity, toolchain, or signing verification fails without rebuilding or
+retesting. Recovery requires
 restoring the exact immutable object or fixing the cause, not selecting another
 build. Runner-image Xcode/SDK drift between build and consumption also fails
 closed and requires matching merge-group inputs to be built again through CI.

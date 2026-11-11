@@ -591,7 +591,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
         run: node ios/scripts/testflight.mjs prepare
-      - name: Sign export and upload the canonical internal-only iOS archive
+      - name: Sign export and upload the canonical iOS archive
         env:
           IOS_BUILD_NUMBER: ${{ steps.prepare.outputs.build_number }}
           IOS_APP_ID: ${{ steps.prepare.outputs.app_id }}

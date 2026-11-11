@@ -9,10 +9,14 @@ Like Desktop, publication uses GitHub-hosted macOS and the existing `production`
 environment approval. No local Mac, Apple account password, external beta review,
 or App Store release submission is part of routine publication. The release job
 checks out the exact release target and consumes its verified, immutable device
-archive from merge-group CI. It signs/exports an **internal-only** IPA and uploads
-it to App Store Connect without resolving packages, compiling, or retesting.
-An internal-only build cannot later be used for external testing or an App Store
-release; that would require a new build and a deliberate export-policy change.
+archive from merge-group CI. It signs/exports a standard **TestFlight & App Store**
+IPA (`testFlightInternalTestingOnly=false`) and uploads it to App Store Connect
+without resolving packages, compiling, or retesting. Automated distribution still
+assigns builds only to the configured internal group. After internal acceptance,
+select the same build in App Store Connect for external testing and submit it for
+TestFlight App Review, or submit it separately for an App Store release. Neither
+review nor external distribution is automatic. Previously uploaded internal-only
+builds remain restricted; this policy applies only to newly exported uploads.
 
 ## One-time setup
 
@@ -165,7 +169,7 @@ bash .github/scripts/tests/ios-testflight-workflow-test.sh
 ```
 
 The HTTP tests use a real loopback server and generated test signing keys. They
-cover JWT verification, pagination, internal-only enforcement, build selection,
+cover JWT verification, pagination, internal-group enforcement, build selection,
 processing, persistent group assignment, access errors, and timeout behavior.
 They do not upload an app, read production data, or replace a signed CI archive
 and TestFlight installation check.
