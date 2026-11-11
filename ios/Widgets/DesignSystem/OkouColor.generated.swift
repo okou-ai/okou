@@ -1,1 +1,0 @@
-../../Okou/DesignSystem/OkouColor.generated.swift

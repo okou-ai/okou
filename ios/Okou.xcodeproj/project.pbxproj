@@ -96,6 +96,14 @@
 			);
 			target = 0000000000000000000000AB /* OkouWidgets */;
 		};
+		0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				DesignSystem/OkouColor.generated.swift,
+				DesignSystem/OkouPlatformColor.swift,
+			);
+			target = 0000000000000000000000AB /* OkouWidgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -108,6 +116,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				00000000000000000000000B /* Exceptions for "Okou" folder in "Okou" target */,
+				0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */,
 			);
 			path = Okou;
 			sourceTree = "<group>";
