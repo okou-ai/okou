@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.64](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.63...runner-rs-v0.244.64) (2026-11-11)
+
+
+### Refactoring
+
+* **runner:** centralize completed sse line transitions ([#46474](https://github.com/okou-ai/okou/issues/46474)) ([c6becc5](https://github.com/okou-ai/okou/commit/c6becc5dd395574f302a9833c127a8ce6eaceb1e))
+
 ## [0.244.63](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.62...runner-rs-v0.244.63) (2026-11-10)
 
 

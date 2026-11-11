@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.65](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.64...guest-agent-v0.109.65) (2026-11-11)
+
+
+### Refactoring
+
+* **guest-agent:** isolate claude stdin protocol ownership ([#46470](https://github.com/okou-ai/okou/issues/46470)) ([00e06f3](https://github.com/okou-ai/okou/commit/00e06f3960689a71ece65a133ccbbb9d6fe19f3a))
+
 ## [0.109.64](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.63...guest-agent-v0.109.64) (2026-11-10)
 
 
