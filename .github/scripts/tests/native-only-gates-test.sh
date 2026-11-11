@@ -110,13 +110,9 @@ for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True, event='merge_group')), job
     assert not condition(turbo[job], context(ios=False, ts=True, event='push')), job
     assert not condition(turbo[job], context(ios=False, ts=False)), job
-for result in ['failure', 'cancelled', 'skipped']:
-    blocked = context(ios=False, ts=True) | {
-        'needs.test-browser-extension-package.result': result,
-        'needs.test-browser-extension.result': 'skipped',
-    }
-    assert not condition(turbo['test-browser-extension'], blocked)
-    gate(turbo, 'ci-gate-turbo', blocked, False)
+for job in ['test-browser-extension-package', 'test-browser-extension']:
+    for result in ['failure', 'cancelled', 'skipped']:
+        gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True) | {f'needs.{job}.result': result}, False)
 for job in artifacts:
     assert 'detect-turbo-ts-checks' in turbo[job]['needs']
     assert condition(turbo[job], context(ios=False, ts=True)), job
