@@ -1,39 +1,40 @@
 import SwiftSyntax
 
-enum SubscriptionValue: Int { case unknown, handle, collection }
+enum NativeLifetimeValue: Int { case unknown, handle, collection, completion }
 
-struct SubscriptionCleanup {
+struct NativeLifetimeCleanup {
   let statements: CodeBlockItemListSyntax
-  var captures: [String: SubscriptionValue] = [:]
+  var captures: [String: NativeLifetimeValue] = [:]
 }
 
-struct SubscriptionPath {
+struct NativeLifetimePath {
   enum Exit { case normal, returned, thrown, breakLoop, continueLoop }
-  var values: [String: SubscriptionValue] = [:]
+  var values: [String: NativeLifetimeValue] = [:]
   var locals: Set<String> = []
   var acquired = false
   var released = false
   var transferred = false
   var exit = Exit.normal
-  var deferred: [SubscriptionCleanup] = []
+  var deferred: [NativeLifetimeCleanup] = []
 }
 
-final class SubscriptionTrace {
-  let kind: SubscriptionKind
-  let creation: AbsolutePosition
-  let owner: SubscriptionOwner
+final class NativeLifetimeTrace {
+  let kind: NativeLifetimeKind
+  let creation: AbsolutePosition?
+  let owner: NativeLifetimeOwner
   var checking: Set<String> = []
   var calls: Set<AbsolutePosition> = []
   var teardown = false
   var reachedCreation = false
+  var retained: [String: NativeLifetimeValue] = [:]
 
-  init(kind: SubscriptionKind, creation: AbsolutePosition, owner: SubscriptionOwner) {
+  init(kind: NativeLifetimeKind, creation: AbsolutePosition?, owner: NativeLifetimeOwner) {
     self.kind = kind
     self.creation = creation
     self.owner = owner
   }
 
-  func finished(_ path: SubscriptionPath) -> Bool {
+  func finished(_ path: NativeLifetimePath) -> Bool {
     if !path.acquired || path.released || path.transferred { return true }
     return path.values.contains { name, value in
       name.hasPrefix("self.") && value != .unknown
@@ -41,22 +42,28 @@ final class SubscriptionTrace {
     }
   }
 
-  func ownerReleases(_ name: String, value: SubscriptionValue) -> Bool {
+  func ownerReleases(_ name: String, value: NativeLifetimeValue) -> Bool {
     guard checking.insert(name).inserted else { return false }
     defer { checking.remove(name) }
     let previous = teardown
     teardown = true
     defer { teardown = previous }
-    let entries: Set<String> = [
+    var entries: Set<String> = [
       "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach",
     ]
-    let initial = SubscriptionPath(values: ["self." + name: value], acquired: true)
+    if kind.isTask { entries = nativeTaskTeardown }
+    let initial = NativeLifetimePath(values: ["self." + name: value], acquired: true)
     for function in owner.functions
     where entries.contains(function.name.text)
-      && function.signature.parameterClause.parameters.isEmpty
+      && (kind.isTask || function.signature.parameterClause.parameters.isEmpty)
     {
+      var entering = initial
+      entering.locals = Set(
+        function.signature.parameterClause.parameters.map {
+          ($0.secondName ?? $0.firstName).text
+        })
       if let body = function.body,
-        block(body.statements, states: [initial]).allSatisfy(\.released)
+        block(body.statements, states: [entering]).allSatisfy(\.released)
       {
         return true
       }
@@ -76,8 +83,8 @@ final class SubscriptionTrace {
     return false
   }
 
-  func block(_ statements: CodeBlockItemListSyntax, states: [SubscriptionPath])
-    -> [SubscriptionPath]
+  func block(_ statements: CodeBlockItemListSyntax, states: [NativeLifetimePath])
+    -> [NativeLifetimePath]
   {
     states.flatMap { initial in
       var paths = [initial]
@@ -93,7 +100,7 @@ final class SubscriptionTrace {
           path.exit == .normal ? step(Syntax(statement.item), path: path) : [path]
         }
       }
-      return paths.flatMap { path -> [SubscriptionPath] in
+      return paths.flatMap { path -> [NativeLifetimePath] in
         var results = [path]
         let pending = path.deferred.dropFirst(initial.deferred.count)
         for cleanup in pending.reversed() {
@@ -130,10 +137,10 @@ final class SubscriptionTrace {
     }
   }
 
-  private func step(_ node: Syntax, path initial: SubscriptionPath) -> [SubscriptionPath] {
+  private func step(_ node: Syntax, path initial: NativeLifetimePath) -> [NativeLifetimePath] {
     var path = initial
     if let cleanup = node.as(DeferStmtSyntax.self) {
-      path.deferred.append(SubscriptionCleanup(statements: cleanup.body.statements))
+      path.deferred.append(NativeLifetimeCleanup(statements: cleanup.body.statements))
       return [path]
     }
     let expression = node.as(ExpressionStmtSyntax.self)?.expression ?? node.as(ExprSyntax.self)
@@ -210,16 +217,19 @@ final class SubscriptionTrace {
     }
     if let statement = expression?.as(SwitchExprSyntax.self) {
       _ = value(statement.subject, path: &path)
-      return statement.cases.flatMap { entry -> [SubscriptionPath] in
+      return statement.cases.flatMap { entry -> [NativeLifetimePath] in
         guard let branch = entry.as(SwitchCaseSyntax.self) else { return [path] }
         return block(branch.statements, states: [path])
       }
     }
     if let statement = node.as(ReturnStmtSyntax.self) {
-      if let expression = statement.expression, value(expression, path: &path) != .unknown,
-        !teardown
-      {
-        path.transferred = true
+      if let expression = statement.expression {
+        let returned = value(expression, path: &path)
+        if !teardown, returned != .unknown { path.transferred = true }
+        if kind.isTask, teardown, returned == .completion {
+          // A returned cleanup Task transfers an explicit drain to its caller.
+          path.released = true
+        }
       }
       path.exit = .returned
       return [path]
@@ -247,9 +257,9 @@ final class SubscriptionTrace {
     } else if let expression {
       _ = value(expression, path: &path)
     }
-    let facts = SubscriptionSuspension()
+    let facts = NativeLifetimeSuspension()
     facts.walk(node)
-    if teardown, facts.awaits, !initial.released {
+    if teardown, !kind.isTask, facts.awaits, !initial.released {
       path.released = false
       path.exit = .returned
     }
@@ -261,7 +271,7 @@ final class SubscriptionTrace {
     return [path]
   }
 
-  private func conditional(_ node: IfExprSyntax, path: SubscriptionPath) -> [SubscriptionPath] {
+  private func conditional(_ node: IfExprSyntax, path: NativeLifetimePath) -> [NativeLifetimePath] {
     let (yes, no, bindings) = conditions(node.conditions, path: path)
     var results = block(node.body.statements, states: yes)
     if let body = node.elseBody?.as(CodeBlockSyntax.self) {
@@ -282,8 +292,8 @@ final class SubscriptionTrace {
   }
 
   private func conditions(
-    _ conditions: ConditionElementListSyntax, path initial: SubscriptionPath
-  ) -> ([SubscriptionPath], [SubscriptionPath], Set<String>) {
+    _ conditions: ConditionElementListSyntax, path initial: NativeLifetimePath
+  ) -> ([NativeLifetimePath], [NativeLifetimePath], Set<String>) {
     var yes = initial
     var no = initial
     var bindings: Set<String> = []
@@ -301,6 +311,47 @@ final class SubscriptionTrace {
         if conditions.count == 1, original != .unknown { no.released = true }
       } else if let expression = element.condition.as(ExprSyntax.self) {
         _ = value(expression, path: &yes)
+        if kind.isTask {
+          if let member = expression.as(MemberAccessExprSyntax.self),
+            member.declName.baseName.text == "isEmpty", let base = member.base,
+            value(base, path: &yes) == .collection
+          {
+            yes.released = true
+          }
+          if conditions.count == 1,
+            let prefix = expression.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "!",
+            let member = prefix.expression.as(MemberAccessExprSyntax.self),
+            member.declName.baseName.text == "isEmpty", let base = member.base,
+            value(base, path: &yes) == .collection
+          {
+            no.released = true
+          }
+          if let parts = expression.as(SequenceExprSyntax.self).map({ Array($0.elements) }),
+            parts.count == 3,
+            let operation = parts[1].as(BinaryOperatorExprSyntax.self)?.operator.text,
+            ["==", "!="].contains(operation)
+          {
+            for index in [0, 2] where parts[2 - index].is(NilLiteralExprSyntax.self) {
+              var evaluating = initial
+              if value(parts[index], path: &evaluating) == .handle {
+                if operation == "==" {
+                  yes.released = true
+                } else if conditions.count == 1 {
+                  no.released = true
+                }
+              }
+            }
+          }
+          if teardown, conditions.count == 1,
+            let prefix = expression.as(PrefixOperatorExprSyntax.self),
+            prefix.operator.text == "!",
+            let name = key(prefix.expression, path: initial),
+            ["self.closed", "self.isClosed"].contains(name)
+          {
+            // An idempotent close may return when the owner has already closed.
+            no.released = true
+          }
+        }
         if conditions.count == 1, let literal = expression.as(BooleanLiteralExprSyntax.self) {
           return literal.literal.text == "true" ? ([yes], [], bindings) : ([], [no], bindings)
         }
@@ -310,7 +361,7 @@ final class SubscriptionTrace {
   }
 }
 
-final class SubscriptionSuspension: SyntaxVisitor {
+final class NativeLifetimeSuspension: SyntaxVisitor {
   var awaits = false
   var `throws` = false
   init() { super.init(viewMode: .sourceAccurate) }

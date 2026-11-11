@@ -27,6 +27,7 @@ final class PersonalSubscriptionAuthorization {
   var didComplete: (@MainActor () async -> Void)?
   private var session: SubscriptionAuthSession?
   private var flowTask: Task<Void, Never>?
+  private var finishingFlows: [UUID: Task<Void, Never>] = [:]
   private var authAccountID: String?
   private var authRevision = UUID()
   private var closed = false
@@ -122,7 +123,7 @@ final class PersonalSubscriptionAuthorization {
   }
   private func begin(type: PersonalSubscriptionType, accountID: String? = nil) {
     guard !closed else { return }
-    cancelAuth()
+    cancelFlow()
     authType = type
     authAccountID = accountID
     phase = .starting
@@ -130,6 +131,10 @@ final class PersonalSubscriptionAuthorization {
     // Do not cancel a start request: a late successful session still needs server cancellation.
     flowTask = Task { [weak self] in
       guard let self else { return }
+      defer {
+        finishingFlows[request] = nil
+        if authRevision == request { flowTask = nil }
+      }
       do {
         let result = try await service.start(type: type, accountID: accountID)
         guard !closed, authRevision == request else {
@@ -220,7 +225,10 @@ final class PersonalSubscriptionAuthorization {
   private func cancelFlow() {
     let oldSession = session
     let oldType = authType
+    let previous = authRevision
     authRevision = UUID()
+    // A late start must retain its handle until it can cancel the remote session.
+    if let flowTask { finishingFlows[previous] = flowTask }
     if phase != .starting { flowTask?.cancel() }
     flowTask = nil
     phase = .idle
@@ -249,8 +257,16 @@ final class PersonalSubscriptionAuthorization {
       }
     }
   }
-  func close() {
+  @discardableResult
+  func close() -> Task<Void, Never> {
     closed = true
-    cancelAuth()
+    let current = flowTask
+    let pending = Array(finishingFlows.values)
+    finishingFlows.removeAll()
+    cancelFlow()
+    return Task {
+      for task in pending { await task.value }
+      _ = await current?.value
+    }
   }
 }

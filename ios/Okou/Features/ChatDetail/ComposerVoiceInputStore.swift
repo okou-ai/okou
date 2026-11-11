@@ -85,7 +85,9 @@ final class ComposerVoiceInputStore {
   }
 
   private func beginStart() -> Task<Void, Never>? {
-    guard phase == .idle, let composer, composer.canEditVoice else { return nil }
+    guard phase == .idle, startingTask == nil, let composer, composer.canEditVoice else {
+      return nil
+    }
     guard let target = composer.editor.voiceInsertion() else {
       error = "Finish editing before starting voice input."
       return nil
@@ -128,6 +130,7 @@ final class ComposerVoiceInputStore {
       duration = 0
       levels = []
       transcriptionFailed = false
+      captureTask?.cancel()
       captureTask = Task { [weak self] in
         do {
           for try await chunk in stream {
@@ -328,7 +331,8 @@ final class ComposerVoiceInputStore {
     }
   }
 
-  func suspend() {
+  @discardableResult
+  func suspend() -> Task<Void, Never> {
     startRequested = false
     generation = UUID()
     let owner = generation
@@ -338,14 +342,14 @@ final class ComposerVoiceInputStore {
     transcriptionTask?.cancel()
     preparationTask?.cancel()
     insertion = nil
-    guard phase != .idle else { return }
+    let captureTask = captureTask
+    guard phase != .idle else { return Task { _ = await captureTask?.result } }
     phase = .processing
     let startingTask = startingTask
     let quotaTask = quotaTask
-    let captureTask = captureTask
     let transcriptionTask = transcriptionTask
     let preparationTask = preparationTask
-    Task { [weak self] in
+    return Task { [weak self] in
       await startingTask?.value
       _ = await quotaTask?.result
       _ = await captureTask?.result

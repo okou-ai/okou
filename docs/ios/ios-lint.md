@@ -23,6 +23,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
 | `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
 | `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
+| `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle when replacing it.                                               | Native extension of async ownership; no identical Web rule        |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -106,6 +107,24 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `UIView`/`UIViewController` destruction is a valid control lifetime; a retained
   business owner's `deinit` alone is not an explicit close path. Selector-based
   notification registration retains its system-managed semantics.
+- Class/actor owners with a named teardown entry (`close`, `stop`, `cancel`,
+  `dismiss`, `deactivate`, `invalidate`, `detach`, `suspend`, `clear`, or `finish`)
+  pair newly constructed, nonempty Tasks with cancellation or completion of the
+  original handle. A business `deinit` alone is insufficient. The check follows
+  Task-typed properties (or direct Task initializers), arrays/dictionaries of Tasks, immutable
+  snapshots, all-element loops, and same-owner helpers. Dropping the property,
+  clearing a collection, cancelling a different handle, a filtered loop, or an
+  uncalled cleanup closure does not release the work.
+  Single-handle replacement first cancels/awaits the old Task, proves that the
+  handle is absent, or transfers it to another explicit completion owner. A UI
+  busy flag alone is not proof; use the actual handle for operation exclusion.
+  An awaited `value` or `result` establishes completion. A derived Task that
+  awaits the original preserves its completion dependency; cancelling that
+  derived Task does not cancel the original. A synchronous teardown may return
+  a Task that drains its captured original handles, transferring completion to
+  its caller. This allows accepted writes and late remote cleanup to finish
+  without inventing cancellation or rollback. Resource evaluation Tasks retain
+  the separate `okou_resource_cancellation` contract.
 - Ably, ClerkKit and ClerkKitUI imports belong to the exact realtime,
   authentication, sign-in presentation, authentication-theme and notification
   extension definition sites recorded in `ImportBoundariesRule.swift`. The
@@ -140,7 +159,15 @@ and known callback contracts. Cross-file type aliases, arbitrary wrappers,
 indirect helper effects, and custom callback execution semantics need review.
 Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
-dispatch target, collection-held Task, or cross-file teardown contract.
+dispatch target, or cross-file teardown contract.
+Task lifecycle checks require an explicit class/actor lifetime boundary (or a
+business destructor) and directly visible Task construction and storage types.
+Inferred/cross-file factories, tuple-held handles, dictionary-key replacement,
+arbitrary collection mutation, actor reentrancy, process/SDK owners without a
+recognized teardown entry, and view-owned Task handles still require review.
+The rule does not require a borrower to cancel a shared Task or prove that every
+caller invokes teardown and awaits a returned cleanup Task. A syntactically
+recognized completion dependency is not proof of upstream cancellation.
 Subscription checks recognize local handle transfers, direct Store spellings,
 `store`/`stateStore` members, known notification centers, and local immutable
 center aliases. Cross-file factories, custom callback lifetimes, dynamic

@@ -779,7 +779,7 @@ final class WorkspaceStore {
   func createChat(composerOptions: ChatComposerOptions? = nil) async
     -> ChatThread?
   {
-    guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
+    guard creationTask == nil, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     guard newModelSelection.canSend else { return nil }
     let selection = modelStore.configuration.map { _ in
       newModelSelection.captureNewChatSelection()
