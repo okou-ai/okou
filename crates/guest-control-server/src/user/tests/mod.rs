@@ -74,7 +74,7 @@ fn guest_agent_environment_preserves_trusted_defaults() {
     let mut command = crate::contained_command::ContainedCommand::new("true");
     configure_guest_agent_command_environment(&mut command).unwrap();
 
-    for (key, expected) in TRUSTED_ROOTFS_ENVIRONMENT {
+    for &(key, expected) in TRUSTED_ROOTFS_ENVIRONMENT {
         let actual = command.environment.get(std::ffi::OsStr::new(key));
         assert_eq!(
             actual.map(|value| value.as_os_str()),
@@ -85,6 +85,29 @@ fn guest_agent_environment_preserves_trusted_defaults() {
     assert_eq!(
         shell.map(|value| value.as_os_str()),
         Some(std::ffi::OsStr::new(AGENT_SHELL))
+    );
+    #[cfg(any(debug_assertions, feature = "test-support"))]
+    assert_eq!(
+        command.environment.get(std::ffi::OsStr::new("PATH")),
+        Some(&std::ffi::OsString::from(
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games"
+        ))
+    );
+    assert_eq!(
+        sandbox_user_path(Path::new("/home/user")),
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games:/home/user/go/bin:/home/user/.cargo/bin:/home/user/.local/bin:/home/user/bin"
+    );
+    assert_eq!(
+        command.environment.get(std::ffi::OsStr::new("RUSTUP_HOME")),
+        Some(&std::ffi::OsString::from("/usr/local/rustup"))
+    );
+    assert_eq!(
+        command
+            .environment
+            .get(std::ffi::OsStr::new("NODE_EXTRA_CA_CERTS")),
+        Some(&std::ffi::OsString::from(
+            "/usr/local/share/ca-certificates/vm0-proxy-ca.crt"
+        ))
     );
 }
 
