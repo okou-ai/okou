@@ -107,6 +107,8 @@ struct OkouChatRow: View {
   let chat: OkouWidgetChat
   let model: OkouWidgetModel
   var showsDetail = true
+  /// Lists keep one line a chat, as the sidebar does; the medium widget's two chats take two.
+  var titleLines = 1
 
   var body: some View {
     Link(destination: OkouWidgetLink.chat(chat, workspaceID: model.snapshot.workspaceID)) {
@@ -116,7 +118,7 @@ struct OkouChatRow: View {
           Text(chat.title)
             .font(.okouWidget(14.5, weight: chat.state == .idle ? .medium : .semibold))
             .foregroundStyle(OkouColor.foreground)
-            .lineLimit(1)
+            .lineLimit(titleLines)
             .privacySensitive()
           if showsDetail, let detail {
             Text(detail)
@@ -197,39 +199,62 @@ struct OkouSmallWidget: View {
   let model: OkouWidgetModel
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(alignment: .top) {
-        OkouMascot(mood: model.mood, size: 78)
-          .padding(.leading, -10)
-          .padding(.top, -8)
-        Spacer(minLength: 0)
-        trailing.padding(.top, 1)
-      }
-      Spacer(minLength: 0)
+    Group {
       if let chat = model.lead {
+        active(chat)
+      } else {
+        quiet
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .widgetURL(url)
+  }
+
+  /// A chat leads: the mascot steps back to the state line so the title has the widget, up to
+  /// four lines, as a notification gives its body the room. The time sits at the foot, where
+  /// a running timer has the width it needs.
+  private func active(_ chat: OkouWidgetChat) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 5) {
+        OkouMascot(mood: model.mood, size: 34)
+          .padding(.leading, -5)
+          .frame(width: 28, height: 26)
         Text(label(chat))
           .font(.okouWidget(12, weight: .semibold))
           .foregroundStyle(labelColor(chat))
+          .lineLimit(1)
           .widgetAccentable()
-        Text(chat.title)
-          .font(.okouWidget(15, weight: .semibold, relativeTo: .headline))
-          .foregroundStyle(OkouColor.foreground)
-          .lineLimit(2)
-          .padding(.top, 2)
-          .privacySensitive()
-      } else {
-        Text(model.greeting)
-          .font(.okouWidget(17, weight: .semibold, relativeTo: .headline))
-          .foregroundStyle(OkouColor.foreground)
-          .lineLimit(2)
-        Text(model.quietNote)
-          .font(.okouWidget(12))
-          .foregroundStyle(OkouColor.mutedForeground)
-          .padding(.top, 4)
+        Spacer(minLength: 0)
       }
+      .frame(height: 26)
+      Text(chat.title)
+        .font(.okouWidget(15, weight: .semibold, relativeTo: .headline))
+        .foregroundStyle(OkouColor.foreground)
+        .lineLimit(4)
+        .minimumScaleFactor(0.85)
+        .padding(.top, 8)
+        .privacySensitive()
+      Spacer(minLength: 4)
+      time
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    .widgetURL(url)
+  }
+
+  /// Nothing to report: the mascot is the widget, with the greeting under it.
+  private var quiet: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      OkouMascot(mood: model.mood, size: 78)
+        .padding(.leading, -10)
+        .padding(.top, -8)
+      Spacer(minLength: 0)
+      Text(model.greeting)
+        .font(.okouWidget(17, weight: .semibold, relativeTo: .headline))
+        .foregroundStyle(OkouColor.foreground)
+        .lineLimit(2)
+      Text(model.quietNote)
+        .font(.okouWidget(12))
+        .foregroundStyle(OkouColor.mutedForeground)
+        .padding(.top, 4)
+    }
   }
 
   private var url: URL {
@@ -239,15 +264,15 @@ struct OkouSmallWidget: View {
     return OkouWidgetLink.newChat
   }
 
-  @ViewBuilder private var trailing: some View {
+  @ViewBuilder private var time: some View {
     if let chat = model.lead {
       if chat.state == .working {
         Text(chat.activityAt, style: .timer)
           .font(.okouWidget(12, mono: true))
           .foregroundStyle(OkouColor.mutedForeground)
           .monospacedDigit()
-          .multilineTextAlignment(.trailing)
-          .frame(maxWidth: 56, alignment: .trailing)
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
       } else {
         Text(OkouWidgetTime.short(chat.activityAt, now: model.date))
           .font(.okouWidget(12))
@@ -259,7 +284,7 @@ struct OkouSmallWidget: View {
   private func label(_ chat: OkouWidgetChat) -> String {
     switch chat.state {
     case .needsYou: String(localized: "Needs you")
-    case .working: String(localized: "Working on")
+    case .working: String(localized: "Working")
     default: String(localized: "Finished")
     }
   }
@@ -301,8 +326,9 @@ struct OkouMediumWidget: View {
         .widgetURL(OkouWidgetLink.newChat)
       } else {
         VStack(spacing: 4) {
+          // The trailing mark already says working or finished, so the title takes the room.
           ForEach(model.rows(2)) { chat in
-            OkouChatRow(chat: chat, model: model)
+            OkouChatRow(chat: chat, model: model, showsDetail: false, titleLines: 2)
           }
         }
         .padding(.top, 6)
@@ -365,9 +391,14 @@ struct OkouLargeWidget: View {
       .padding(.top, 10)
       VStack(spacing: 0) {
         let rows = model.rows(5)
+        // A short list has the room for whole titles; a full one keeps the sidebar's one line.
+        let lines = rows.count <= 3 ? 2 : 1
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, chat in
-          OkouChatRow(chat: chat, model: model, showsDetail: chat.state == .needsYou)
-            .frame(height: chat.state == .needsYou ? 50 : 38)
+          OkouChatRow(
+            chat: chat, model: model, showsDetail: chat.state == .needsYou, titleLines: lines
+          )
+          .frame(minHeight: chat.state == .needsYou ? 50 : 38)
+          .padding(.vertical, lines == 2 ? 4 : 0)
           if index < rows.count - 1 && chat.state != .needsYou
             && rows[index + 1].state != .needsYou
           {
