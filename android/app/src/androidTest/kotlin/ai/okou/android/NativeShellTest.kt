@@ -152,12 +152,18 @@ class NativeShellTest {
 
     private fun click(id: Int) = text(id).click()
 
+    // Compose exposes the label as a child of the native checkable option.
+    private fun appearanceOption(id: Int): BySelector =
+        By.pkg(app.packageName).checkable(true).hasDescendant(label(id))
+
     private fun awaitSelectable(id: Int) =
-        await("Appearance controls finish loading") { device.hasObject(label(id).enabled(true)) }
+        await("Appearance controls finish loading") {
+            device.hasObject(appearanceOption(id).enabled(true))
+        }
 
     private fun awaitSelected(id: Int) =
         await("Confirmed appearance selection: ${app.getString(id)}") {
-            device.hasObject(label(id).checked(true).enabled(true))
+            device.hasObject(appearanceOption(id).checked(true).enabled(true))
         }
 
     private fun awaitBars(light: Boolean) =
@@ -194,10 +200,24 @@ class NativeShellTest {
         )
     }
 
-    private fun editorNode(value: String): AccessibilityNodeInfo =
-        requireNotNull(automation.rootInActiveWindow)
-            .findAccessibilityNodeInfosByText(value)
-            .single { it.isEditable && it.packageName?.toString() == app.packageName }
+    private fun editorNode(value: String): AccessibilityNodeInfo {
+        // Walk the real virtual nodes: Compose does not implement the provider's text search.
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(requireNotNull(automation.rootInActiveWindow))
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            if (
+                node.packageName?.toString() == app.packageName &&
+                    node.className?.toString() == "android.widget.EditText" &&
+                    node.text?.toString() == value &&
+                    node.isEditable
+            ) {
+                return node
+            }
+            repeat(node.childCount) { index -> node.getChild(index)?.let(pending::addLast) }
+        }
+        error("Native editable draft not found: $value")
+    }
 
     private fun imeVisible(activity: MainActivity): Boolean =
         ViewCompat.getRootWindowInsets(activity.window.decorView)
