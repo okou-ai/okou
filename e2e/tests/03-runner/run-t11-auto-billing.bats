@@ -25,7 +25,9 @@ teardown() {
     assert_success
     AGENT_ID="$output"
 
-    run set_runner_model_test_instructions "$AGENT_ID"
+    run set_runner_agent_instructions \
+        "$AGENT_ID" \
+        "Auto billing smoke test instructions."
     echo "$output"
     assert_success
 
@@ -43,7 +45,7 @@ teardown() {
     echo "$output"
     assert_success
 
-    local prompt="This is a real-model billing test. Do not use tools. Briefly confirm that you received this message."
+    local prompt="Briefly confirm that the Auto runner is responding."
     run runner_chat_send "$AGENT_ID" "$prompt" "" "auto"
     echo "$output"
     assert_success
@@ -70,9 +72,8 @@ teardown() {
     local billable_run_id="$RUN_ID"
     local settlement_prompt
     settlement_prompt=$(cat <<'EOF'
-This is the cancellation phase of the billing test. The test harness will cancel this run externally to trigger usage reconciliation.
-Use Bash to run exactly this command in the foreground: python3 -c 'import signal; signal.pause()'
-The command intentionally waits for a signal. Do not background, replace, or terminate it yourself, and do not reply while it is running.
+Run this command with Bash in the foreground: python3 -c 'import signal; signal.pause()'
+Wait for it to exit before replying. Do not background it; this run will be cancelled externally.
 EOF
 )
     run runner_chat_send \
