@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1114.1](https://github.com/okou-ai/okou/compare/app-v0.1114.0...app-v0.1114.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **app:** simplify automation disablement notifications ([#46538](https://github.com/okou-ai/okou/issues/46538)) ([0471cae](https://github.com/okou-ai/okou/commit/0471cae5607a931c1798ea2728d4bcc875e18966))
+
 ## [0.1114.0](https://github.com/okou-ai/okou/compare/app-v0.1113.0...app-v0.1114.0) (2026-11-11)
 
 

@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.59.1](https://github.com/okou-ai/okou/compare/api-v2.59.0...api-v2.59.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **email:** allow resend cdn attachment downloads ([#46548](https://github.com/okou-ai/okou/issues/46548)) ([d37f02d](https://github.com/okou-ai/okou/commit/d37f02da66990f4d03226b6932232c4c707243d3))
+
 ## [2.59.0](https://github.com/okou-ai/okou/compare/api-v2.58.0...api-v2.59.0) (2026-11-11)
 
 
