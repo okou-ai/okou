@@ -6,34 +6,8 @@ import {
   BUCKET,
   ENDPOINT,
   PROJECT,
-  WORKFLOW,
-  digestSchema,
   liveMembersSchema,
-  type ProductionContext,
-  type ProductionMetadata,
 } from "./production-model";
-
-export function validateProductionContext(context: ProductionContext) {
-  if (context.mode === "target") return;
-  if (context.mode === "plan") {
-    if (
-      !context.writersDrained ||
-      !digestSchema.safeParse(context.prefixesSha256).success
-    )
-      throw new PlanningError(
-        "ProductionPlanRequiresDrainedWritersAndPrefixDigest",
-      );
-    return;
-  }
-  if (
-    !/^\d+$/u.test(context.planRunId) ||
-    context.planRunId === context.runId ||
-    !digestSchema.safeParse(context.planSha256).success ||
-    !digestSchema.safeParse(context.imageSha256).success ||
-    (context.mode !== "verify" && !context.writersDrained)
-  )
-    throw new PlanningError("ReviewedProductionImageAndWriterDrainRequired");
-}
 
 async function requestJson(url: string, token: string) {
   const response = await fetch(url, {
@@ -50,10 +24,7 @@ async function requestJson(url: string, token: string) {
 }
 
 /** Resolve only the protected production branch; never use an implicit URI target. */
-export async function resolveProductionTarget(
-  mode: ProductionContext["mode"],
-  token: string,
-) {
+export async function resolveProductionTarget(token: string) {
   const base = `https://console.neon.tech/api/v2/projects/${PROJECT}`;
   object({
     branch: object({
@@ -94,23 +65,20 @@ export async function resolveProductionTarget(
     bucket: BUCKET,
     endpoint: ENDPOINT,
   };
-  if (mode === "target")
-    return { endpointId: endpoint.id, scope, capacity: endpoint };
-  const role = mode === "apply" || mode === "recover" ? "neondb_owner" : "RO";
-  const query = new URLSearchParams({
-    branch_id: BRANCH,
-    endpoint_id: endpoint.id,
-    database_name: "neondb",
-    role_name: role,
-    pooled: "false",
-  });
-  const { uri } = object({ uri: string() }).parse(
-    await requestJson(`${base}/connection_uri?${query}`, token),
-  );
-  const address = new URL(uri);
+  return { endpointId: endpoint.id, scope, capacity: endpoint };
+}
+
+/** A local credential must match the independently resolved target and role. */
+export function validateProductionConnection(
+  connection: string,
+  host: string,
+  writable: boolean,
+) {
+  const role = writable ? "neondb_owner" : "RO";
+  const address = new URL(connection);
   if (
     !["postgres:", "postgresql:"].includes(address.protocol) ||
-    address.hostname !== endpoint.host ||
+    address.hostname !== host ||
     (address.port && address.port !== "5432") ||
     address.pathname !== "/neondb" ||
     decodeURIComponent(address.username) !== role ||
@@ -122,82 +90,7 @@ export async function resolveProductionTarget(
   )
     throw new PlanningError("ProductionConnectionIdentityRejected");
   address.searchParams.set("sslmode", "verify-full");
-  return {
-    connection: address.toString(),
-    endpointId: endpoint.id,
-    scope,
-    role,
-    capacity: endpoint,
-  };
-}
-
-export async function verifyProductionOrigin(
-  context: ProductionContext,
-  token: string,
-) {
-  validateProductionContext(context);
-  const run = object({
-    id: number().int(),
-    head_sha: string().regex(/^[a-f0-9]{40}$/u),
-    head_branch: string(),
-    event: string(),
-    status: string(),
-    conclusion: string().nullable(),
-    run_attempt: number().int(),
-    path: string(),
-    display_title: string(),
-  }).parse(
-    await requestJson(
-      `https://api.github.com/repos/${context.repository}/actions/runs/${context.planRunId}`,
-      token,
-    ),
-  );
-  if (
-    String(run.id) !== context.planRunId ||
-    (context.mode === "apply" && run.head_sha !== context.driverCommit) ||
-    run.head_branch !== "main" ||
-    run.event !== "workflow_dispatch" ||
-    run.status !== "completed" ||
-    run.conclusion !== "success" ||
-    run.run_attempt !== 1 ||
-    run.path !== WORKFLOW ||
-    !run.display_title.startsWith(`plan single-agent ${context.orgId} `)
-  )
-    throw new PlanningError("ProductionPlanOriginRejected");
-  if (run.head_sha !== context.driverCommit) {
-    const compared = object({
-      status: string(),
-      merge_base_commit: object({ sha: string() }),
-    }).parse(
-      await requestJson(
-        `https://api.github.com/repos/${context.repository}/compare/${run.head_sha}...${context.driverCommit}?per_page=1`,
-        token,
-      ),
-    );
-    if (
-      !["ahead", "identical"].includes(compared.status) ||
-      compared.merge_base_commit.sha !== run.head_sha
-    )
-      throw new PlanningError("ProductionPlanCommitNotOnMainHistory");
-  }
-  return {
-    artifactName: `single-agent-plan-${context.planRunId}`,
-    commit: run.head_sha,
-  };
-}
-
-export function validateProductionMetadata(
-  context: ProductionContext,
-  meta: ProductionMetadata,
-) {
-  if (
-    meta.binding.commit !== context.commit ||
-    meta.binding.orgId !== context.orgId ||
-    meta.binding.planRunId !== context.planRunId ||
-    meta.planSha256 !== context.planSha256 ||
-    meta.imageSha256 !== context.imageSha256
-  )
-    throw new PlanningError("ReviewedProductionMetadataMismatch");
+  return { connection: address.toString(), role };
 }
 
 /** Live Clerk is authoritative; a cached org role is not enough to admit a cutover. */

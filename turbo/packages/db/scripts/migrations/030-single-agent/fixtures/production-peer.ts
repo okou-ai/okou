@@ -1,15 +1,13 @@
 import { readFileSync } from "node:fs";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { number, object, string } from "zod";
-import { BRANCH, PROJECT, STAFF_ORG, WORKFLOW } from "../production-model";
+import { number, object } from "zod";
+import { BRANCH, PROJECT } from "../production-model";
 
 // External protocol fixtures are preloaded only by the CLI integration test.
-const fixture = object({
-  minimumCu: number(),
-  sourceCommit: string(),
-  planRunId: string(),
-}).parse(JSON.parse(readFileSync(process.argv.at(-1)!, "utf8")));
+const fixture = object({ minimumCu: number() }).parse(
+  JSON.parse(readFileSync(process.argv.at(-1)!, "utf8")),
+);
 process.argv.splice(-2);
 const base = `https://console.neon.tech/api/v2/projects/${PROJECT}`;
 const server = setupServer(
@@ -37,27 +35,5 @@ const server = setupServer(
       ],
     });
   }),
-  http.get("https://api.github.com/repos/okou-ai/okou/actions/runs/:id", () => {
-    return HttpResponse.json({
-      id: Number(fixture.planRunId),
-      head_sha: fixture.sourceCommit,
-      head_branch: "main",
-      event: "workflow_dispatch",
-      status: "completed",
-      conclusion: "success",
-      run_attempt: 1,
-      path: WORKFLOW,
-      display_title: `plan single-agent ${STAFF_ORG} by @operator`,
-    });
-  }),
-  http.get(
-    "https://api.github.com/repos/okou-ai/okou/compare/:comparison",
-    () => {
-      return HttpResponse.json({
-        status: "ahead",
-        merge_base_commit: { sha: fixture.sourceCommit },
-      });
-    },
-  ),
 );
 server.listen({ onUnhandledRequest: "error" });

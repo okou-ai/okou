@@ -564,7 +564,7 @@ try {
       branchId: BRANCH,
       endpointId: "fixture",
       commit: "a".repeat(40),
-      planRunId: "1",
+      planId: randomUUID(),
       orgId: STAFF_ORG,
     },
   };

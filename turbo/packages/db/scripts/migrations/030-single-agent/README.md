@@ -271,132 +271,139 @@ This verifies persisted migration behavior, not native continuation, live
 authorization, listener delivery or production rollout. Those remain explicit
 acceptance gates under #45473/#45474. Agent retirement remains #45476.
 
-## Protected staff production cutover
+## Manual staff production cutover
 
-`.github/workflows/single-agent-migration.yml` is the manual production entry
-point. It runs only from `main`, requires the existing `production` environment
-review, and serializes all its modes without cancelling an in-flight operator.
-It does not merge, deploy, change feature switches, stop writers, resize compute,
-clear queues, retire Agents, or enable another organization.
+Run `single-agent:production` directly on the operator's authorized machine,
+using the repository's pinned dependencies and a clean reviewed Git checkout.
+Merging or deploying this code does not execute it. There is no GitHub Actions
+execution dependency, repository secret, Actions run ID or artifact download.
+The migration SQL, scope and recovery guarantees are shared with the copy operator.
 
-The first cohort is exactly `org_3ANttyrbWYJk6JKRSTRLEsbsDLe`. The operator
-resolves the default, protected, ready production branch in Neon project
-`hidden-lab-39609750`, requires a unique read-write endpoint, validates every
-connection identity, and checks the fixed production R2 bucket and endpoint.
-Both configured compute bounds must be at least **8 CU**. The rehearsal passed
-at fixed 8 CU; 1 CU failed with PostgreSQL `53200`. This is a conservative
-prerequisite for this image, not a measured minimum for every organization.
-The existing 60-second SQL statement timeout is unchanged.
+The first cohort is exactly `org_3ANttyrbWYJk6JKRSTRLEsbsDLe`. Neon metadata must
+confirm project `hidden-lab-39609750`, its default/protected/ready production
+branch and a unique read-write endpoint. Both configured compute bounds must
+be at least **8 CU**; fixed 8 CU passed the staff-copy rehearsal while 1 CU failed
+with PostgreSQL `53200`. This is a conservative admission condition, not a
+measured minimum for every organization. The SQL timeout remains 60 seconds.
+The operator does not resize compute, stop writers, clear work indexes, deploy,
+change feature switches or enable another organization.
 
-Before the first dispatch:
+The executing machine supplies credentials through its existing authorized
+secret environment and an owner-only database connection file:
 
-1. Keep #45473 acceptance, the successful staff-copy migration/verification/
-   recovery evidence, serving permission-policy identity and supported rollback
-   compatibility recorded in #45474.
-2. An authorized owner provisions `SINGLE_AGENT_MIGRATION_IMAGE_KEY` in the
-   protected production environment: 32 cryptographically random bytes encoded
-   as 64 lowercase hexadecimal characters. This is a dedicated AES-256-GCM key,
-   never an R2 key. Retain an owner-private copy for review and recovery. Keep
-   the key available and unchanged until the cutover and recovery window close.
-   This PR does not create or read that secret.
-3. Confirm authorized production Neon, Clerk and R2 credentials and the existing
-   bucket/account variables are configured for the workflow. The coding and
-   review process must not retrieve production credentials.
-4. Dispatch `target` with the exact staff org ID. This fetches branch/compute
-   metadata only: it does not request a database connection URI or read rows.
-   Arrange any capacity change separately, then repeat this inspection.
-5. Arrange a real maintenance window. Stop API ingress, scheduler dispatch,
-   listener/webhook/worker delivery and every other database writer; drain
-   running and queued work; freeze membership/role changes. Record who stopped
-   what and the evidence in #45474. `writers_drained` is an operator attestation,
-   not an automatic service-control mechanism. Database zero-work and full
-   source/schema/drift checks are additional gates, not proof that ingress has
-   stopped. The production operator never deletes active/queued indexes to
-   manufacture an idle database.
+- `NEON_API_KEY`: metadata-only GET requests for the fixed branch/endpoint. The
+  operator never asks Neon for a connection URI or role password.
+- `DATABASE_URL_FILE`: mode-0600 connection file for that exact endpoint and
+  `neondb`; use `RO` for plan/verify and `neondb_owner` for apply/recover. TLS is
+  verified. Database metadata must attest the login, database, read-only session
+  and appropriate table/column privileges.
+- `CLERK_SECRET_KEY`: a complete live membership/role census must match the
+  cached inventory. Missing pages, duplicate members or membership drift block.
+- `R2_ENDPOINT`, `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`: explicitly select the fixed production object store.
 
-Review the fixed prefix map from the rehearsal against the current source
-Agents. Encrypt that owner-only JSON file before dispatch; private Agent IDs and
-names must not appear in workflow inputs. From `turbo/packages/db`:
+No credential value is a command-line argument, receipt or stdout field. Do not
+retrieve production credentials while implementing or reviewing this tool.
+
+Before execution, record #45473 acceptance, staff-copy apply/verify/recovery
+results, serving permission-policy identity and supported rollback compatibility
+in #45474. Arrange actual staff-scoped writer maintenance: stop API ingress,
+scheduler/listener/worker delivery and other writers, drain running/queued work,
+and freeze membership changes. `--writers-drained` records a truthful operator
+attestation; it does not stop services. The database's additional zero-work and
+source/schema/drift checks do not prove that ingress has stopped. Do not stop
+other organizations merely to satisfy this staff-only operation.
+
+First inspect metadata (no database connection or archive key is needed):
 
 ```sh
-pnpm single-agent:package seal-prefixes \
-  --input /private/agent-prefixes.json \
-  --key-file /private/migration-image-key \
-  --output /private/prefixes.base64
+pnpm single-agent:production target \
+  --org-id org_3ANttyrbWYJk6JKRSTRLEsbsDLe
 ```
 
-Both input files must have mode `0600`; their containing directory must be
-owner-private. The command prints only the plaintext map digest and an output
-path. Supply the encrypted file's single base64 line as `prefixes_base64` and
-its printed digest as `prefixes_sha256` for `plan`, with `writers_drained=true`.
+Keep all input/output outside the checkout in an owner-private directory.
+Generate one dedicated 32-byte key as 64 lowercase hexadecimal characters in a
+new mode-0600 local file; pass its path with `--key-file`. Keep the same private
+key through planning, review, execution and the recovery window. It is never
+configured in GitHub. Preserve a secure owner-controlled recovery copy of the
+key and encrypted plan; a lost key prevents decryption.
 
-The `plan` mode obtains the explicit `RO` database role and verifies SELECT-only
-privileges. Inventory, plan and preparation use read-only sessions. Live Clerk
-membership and roles must exactly match the cached census; pages, duplicate
-members and incomplete results fail closed. A complete fixed map, zero blockers,
-zero running/queued work, immutable source archive validation and drift checks
-must pass. Preparation only reads immutable production objects.
-
-A successful plan retains `single-agent-plan-<run-id>` for 30 days:
-
-- `execution.enc`: authenticated encrypted recovery rows, source inventory,
-  reviewed plan, immutable archive bytes and attempt receipts;
-- `metadata.json`: non-content scope, source commit/run, hashes and counts;
-- `audit.json`: redacted operation identity and outcome.
-
-Plaintext rows, Agent names, source bodies, credentials and archive bytes are
-never uploaded as artifacts. Download the original plan artifact to a private
-local directory and inspect it using the privately retained key:
+Use the reviewed fixed prefix map as a normal mode-0600 JSON file. Planning is
+read-only and is also the default when the command name is omitted:
 
 ```sh
-chmod 600 /private/review/metadata.json
+export DATABASE_URL_FILE=/private/production-ro-url
+pnpm single-agent:production plan \
+  --org-id org_3ANttyrbWYJk6JKRSTRLEsbsDLe \
+  --agent-prefixes /private/agent-prefixes.json \
+  --key-file /private/migration-image-key \
+  --directory /private/new-staff-plan \
+  --writers-drained
+```
+
+A complete map, zero blockers, live membership, full immutable source-archive
+validation, quiescence and drift checks must pass. Planning only GETs object
+bytes and uses read-only database sessions. The new mode-0700 output contains:
+
+- `execution.enc`: AES-256-GCM authenticated recovery image, source inventory,
+  reviewed plan and immutable archive bytes;
+- `metadata.json`: scope, unique plan ID, producer commit, hashes and counts;
+- `audit.json`: operation identity and redacted completion/error state.
+
+Files use mode `0600` and are never overwritten or automatically uploaded.
+Decrypted staging is private and removed on normal success/failure. A hard kill
+can leave private staging on the authorized machine; preserve the original plan,
+resolve the database outcome, then remove only that operation's private staging.
+
+Open the encrypted plan locally to review the actual prefix map, changes,
+association deletions, source/before/after rows and bundle manifests:
+
+```sh
 pnpm single-agent:package open \
-  --input /private/review/execution.enc \
-  --metadata /private/review/metadata.json \
+  --input /private/new-staff-plan/execution.enc \
+  --metadata /private/new-staff-plan/metadata.json \
   --key-file /private/migration-image-key \
-  --output /private/new-review-directory
+  --output /private/new-staff-review
 ```
 
-Review `execution.json`, including its `inventoryBytes`, `planBytes`, before/after
-rows and bundle manifests. Keep all decrypted material outside Git and delete it
-when no longer needed. Confirm the printed image hash and the metadata plan
-hash; record approval of these exact hashes and the source run in #45474.
+Record approval of the exact metadata plan/image hashes in #45474. Keep the
+original successful plan directory durable before any external effect. Apply
+requires both reviewed hashes, a new attempt directory, the same clean operator
+commit, the local key and explicit mutation/drain flags:
 
-Dispatch `apply` with `plan_run_id`, `plan_sha256`, `image_sha256` and a renewed
-truthful writer-drain attestation. The source must be a successful first-attempt
-`plan` dispatch of this workflow on the **same exact main commit**. If main has
-advanced, prepare and review a new plan. The operator downloads the original
-artifact by exact run/name, authenticates it, checks its production-only purpose,
-org/project/branch/endpoint/revision bindings and current live membership, then
-uses the same immutable publication and atomic SQL checkpoint as the rehearsed
-copy operator. The original encrypted plan must already be durably uploaded
-before apply can start. Shared SQL source-value conditions, row-count assertions,
-schema and complete image drift checks remain enforced.
+```sh
+export DATABASE_URL_FILE=/private/production-owner-url
+pnpm single-agent:production apply \
+  --org-id org_3ANttyrbWYJk6JKRSTRLEsbsDLe \
+  --plan-directory /private/new-staff-plan \
+  --expect-plan-sha256 <reviewed-plan-hash> \
+  --expect-image-sha256 <reviewed-image-hash> \
+  --key-file /private/migration-image-key \
+  --directory /private/new-staff-apply-attempt \
+  --writers-drained --migrate
+```
 
-Use `verify` with the original plan run and hashes to distinguish authoritative
-`before`/`after` data from drift, especially after cancellation, timeout or an
-uncertain outcome. Never infer failure from a missing completion receipt. Do not
-use GitHub's rerun button: every dispatch must be attempt 1. Investigate the
-existing outcome before dispatching a new operation; there is no automatic
-apply retry or rollback.
+After an interruption or uncertain result, do not infer failure from a missing
+completion receipt. Run `verify` with the original plan/hashes/key, a fresh
+output directory and the `RO` connection. It accepts neither mutation flag and
+reports authoritative before/after state or rejects drift. There are no
+automatic apply retries or rollback.
 
-`recover` requires writers to remain stopped, the original plan run/hashes and
-the exact after image. It refuses later edits, restores complete source rows,
-retains immutable shared objects and preserves monotonic event sequences.
-Verification and recovery may run after main advances: the workflow verifies
-that the producer commit is still an ancestor of main, checks out that original
-reviewed commit and uses its operator and dependencies. Apply cannot use this
-exception. A missing original artifact or package key blocks recovery; retain
-both throughout the recovery window. Cleanup removes plaintext and credentials
-on success/failure; cancellation also has shell/always-step cleanup, and the
-original encrypted plan remains the durable recovery source if a runner dies.
+Run `recover` with the same original plan/hashes/key, a fresh output directory,
+the owner connection and both `--writers-drained --migrate` flags. It only
+accepts the exact after image, refuses later edits and preserves monotonic event
+sequences and immutable shared objects. Keep writers stopped through verification
+and the recovery decision. Use `metadata.binding.commit` in a clean checkout for
+all operations on that plan, including after main advances; the operator never
+checks out or deploys code for you. A source/schema change can require a fresh
+plan or explicit recovery investigation rather than an automatic override.
 
-Before resuming writers, verify persisted data and source/target object
-references. Then record production runtime checks for personal Instructions,
-Workflow permissions, Project/Chat continuation and retained Automation delivery
-in #45474. Persisted migration success alone does not establish runtime
-acceptance or authorize the next organization. Each later cohort needs its own
-fresh inventory, reviewed plan and explicit rollout decision.
+Before resuming staff writers, verify persisted rows and source/target object
+references. Then accept personal Instructions, Workflow permissions, Project/Chat
+continuation and retained Automation delivery in production under #45474.
+Persisted migration success alone is not runtime acceptance. Other organizations
+need separate inventories, reviewed plans and rollout decisions. Restore the
+previous shared compute configuration after the operation completes.
 
 ## Verification
 
@@ -431,15 +438,13 @@ committed PostgreSQL responses, idempotent resume, cascading-row/Run-reference
 recovery, later-edit rejection and concurrent first saves. It does not run a
 staff-copy rehearsal or execute a Workflow.
 
-`test-production.ts` invokes the production CLI with MSW protocol fixtures at
-the external Neon/GitHub/Clerk boundary, without production credentials or network
-access. It checks target-only inspection, 8 CU admission, exact-plan source
-verification, retained-source recovery selection, authenticated encrypted package
-round trips, tamper/unexpected-entry rejection, private file modes, encrypted
-prefix submission and paginated live membership drift. The shared real-Postgres
-execution test also rejects production-purpose images at the copy CLI boundary.
-These tests do not execute a production cutover or establish staff runtime
-acceptance.
+`test-production.ts` invokes the manual CLI with real files and MSW only at
+external HTTP boundaries. It covers target inspection, default read-only mode,
+explicit mutation admission, reviewed local plan identity, authenticated package
+round trips, tamper/unexpected-entry rejection, private modes, connection identity
+and paginated live membership drift. It does not dispatch a production operation
+or establish staff runtime acceptance. The copy CLI rejects production-purpose
+images before execution.
 
 The real-PostgreSQL execution test also exercises production privilege admission
 with a uniquely owned login role: SELECT-only access is accepted for planning,

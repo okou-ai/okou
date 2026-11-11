@@ -1,12 +1,11 @@
 import {
   array,
-  boolean,
-  enum as zEnum,
   iso,
   literal,
   number,
   object,
   string,
+  uuid,
   type infer as zInfer,
 } from "zod";
 
@@ -17,7 +16,6 @@ export const BRANCH = "br-late-pine-aft7prua";
 export const BUCKET = "vm0-s3-user-storages-prod";
 export const ENDPOINT =
   "https://98b0b14cee451004596479a689d2071b.r2.cloudflarestorage.com";
-export const WORKFLOW = ".github/workflows/single-agent-migration.yml";
 export const digestSchema = string().regex(/^[a-f0-9]{64}$/u);
 export const commitSchema = string().regex(/^[a-f0-9]{40}$/u);
 
@@ -26,27 +24,10 @@ export const productionBindingSchema = object({
   branchId: literal(BRANCH),
   endpointId: string().min(1),
   commit: commitSchema,
-  planRunId: string().regex(/^\d+$/u),
+  planId: uuid(),
   orgId: literal(STAFF_ORG),
 }).strict();
 export type ProductionBinding = zInfer<typeof productionBindingSchema>;
-export const productionContextSchema = object({
-  mode: zEnum(["target", "plan", "apply", "verify", "recover"]),
-  repository: literal("okou-ai/okou"),
-  ref: literal("refs/heads/main"),
-  commit: commitSchema,
-  driverCommit: commitSchema,
-  orgId: literal(STAFF_ORG),
-  runId: string().regex(/^\d+$/u),
-  runAttempt: literal(1),
-  actor: string().min(1),
-  writersDrained: boolean(),
-  planRunId: string(),
-  planSha256: string(),
-  imageSha256: string(),
-  prefixesSha256: string(),
-}).strict();
-export type ProductionContext = zInfer<typeof productionContextSchema>;
 export const productionMetadataSchema = object({
   format: literal("single-agent-production-plan-v1"),
   binding: productionBindingSchema,

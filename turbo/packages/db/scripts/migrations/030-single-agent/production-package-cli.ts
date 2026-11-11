@@ -1,11 +1,6 @@
 import { parseArgs } from "node:util";
-import { readPrivate, sha256, writePrivate } from "./execution-model";
-import {
-  packageKey,
-  sealBytes,
-  openExecutionDirectory,
-} from "./production-package";
-import { parseAgentPrefixes } from "./plan-names";
+import { readPrivate } from "./execution-model";
+import { packageKey, openExecutionDirectory } from "./production-package";
 import { productionMetadataSchema } from "./production-model";
 import { PlanningError } from "./snapshot";
 
@@ -25,29 +20,11 @@ async function main() {
     !values.output ||
     !values["key-file"]
   )
-    throw new PlanningError(
-      "UseSealPrefixesOrOpenWithInputOutputAndPrivateKeyFile",
-    );
+    throw new PlanningError("UseOpenWithInputOutputMetadataAndPrivateKeyFile");
   const key = packageKey(
     (await readPrivate(values["key-file"])).toString("utf8").trim(),
   );
-  if (positionals[0] === "seal-prefixes" && !values.metadata) {
-    const bytes = await readPrivate(values.input);
-    parseAgentPrefixes(JSON.parse(bytes.toString("utf8")));
-    await writePrivate(
-      values.output,
-      sealBytes(bytes, key, "single-agent-production-prefixes-v1").toString(
-        "base64",
-      ) + "\n",
-    );
-    console.log(
-      JSON.stringify({
-        command: "seal-prefixes",
-        output: values.output,
-        prefixesSha256: sha256(bytes),
-      }),
-    );
-  } else if (positionals[0] === "open" && values.metadata) {
+  if (positionals[0] === "open" && values.metadata) {
     const meta = productionMetadataSchema.parse(
       JSON.parse((await readPrivate(values.metadata)).toString("utf8")),
     );
@@ -64,7 +41,7 @@ async function main() {
         imageSha256: meta.imageSha256,
       }),
     );
-  } else throw new PlanningError("UseSealPrefixesOrOpenWithMetadata");
+  } else throw new PlanningError("UseOpenWithMetadata");
 }
 
 await main().catch((error: unknown) => {

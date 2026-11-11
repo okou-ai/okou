@@ -20,7 +20,7 @@ import { setupServer } from "msw/node";
 import { c as createTar } from "tar";
 import { sha256, writePrivate } from "./execution-model";
 import {
-  resolveProductionTarget,
+  validateProductionConnection,
   verifyLiveMembers,
 } from "./production-guards";
 import {
@@ -29,11 +29,9 @@ import {
   ENDPOINT,
   PROJECT,
   STAFF_ORG,
-  type ProductionContext,
   type ProductionMetadata,
 } from "./production-model";
 import {
-  openBytes,
   packageKey,
   sealBytes,
   sealExecutionDirectory,
@@ -58,29 +56,6 @@ const server = setupServer();
 server.listen({ onUnhandledRequest: "error" });
 let counter = 0;
 
-const baseContext: ProductionContext = {
-  mode: "target",
-  repository: "okou-ai/okou",
-  ref: "refs/heads/main",
-  commit: revision,
-  driverCommit: revision,
-  orgId: STAFF_ORG,
-  runId: "200",
-  runAttempt: 1,
-  actor: "operator",
-  writersDrained: false,
-  planRunId: "",
-  planSha256: "",
-  imageSha256: "",
-  prefixesSha256: "",
-};
-const reviewedContext: ProductionContext = {
-  ...baseContext,
-  planRunId: "100",
-  planSha256: "a".repeat(64),
-  imageSha256: "b".repeat(64),
-  prefixesSha256: "c".repeat(64),
-};
 async function invoke(
   file: string,
   args: string[],
@@ -103,7 +78,8 @@ async function invoke(
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
-
+        NEON_API_KEY: "synthetic-neon",
+        CLERK_SECRET_KEY: "synthetic-clerk",
         R2_ENDPOINT: ENDPOINT,
         R2_USER_STORAGES_BUCKET_NAME: BUCKET,
         R2_ACCESS_KEY_ID: "synthetic-access",
@@ -134,170 +110,65 @@ async function invoke(
   assert.ok(!child.stdout.includes(key) && !child.stderr.includes(key));
   return child;
 }
-async function request(
-  context: ProductionContext,
-  minimumCu = 8,
-  sourceCommit = revision,
-) {
+async function request(minimumCu = 8) {
   const root = join(directory, String(++counter));
   await mkdir(root, { mode: 0o700 });
-  const contextFile = join(root, "context.json"),
-    credentials = join(root, "credentials.json"),
-    fixture = join(root, "peer.json");
-  await writePrivate(contextFile, JSON.stringify(context));
-  await writePrivate(
-    credentials,
-    JSON.stringify({
-      neon: "synthetic-neon",
-      github: "synthetic-github",
-      clerk: "synthetic-clerk",
-      key,
-    }),
-  );
-  await writePrivate(
-    fixture,
-    JSON.stringify({ minimumCu, sourceCommit, planRunId: context.planRunId }),
-  );
-  return {
-    root,
-    fixture,
-    args: ["--context", contextFile, "--credentials", credentials],
-  };
+  const fixture = join(root, "peer.json");
+  await writePrivate(fixture, JSON.stringify({ minimumCu }));
+  return { root, fixture };
 }
 
 try {
-  const target = await request(baseContext);
-  const output = join(target.root, "output");
+  const target = await request();
   const result = await invoke(
     cli,
-    [
-      "--operation",
-      "run",
-      ...target.args,
-      "--request",
-      target.root,
-      "--reviewed",
-      join(target.root, "reviewed"),
-      "--output",
-      output,
-    ],
+    ["target", "--org-id", STAFF_ORG],
     target.fixture,
   );
   assert.match(result.stdout, /"minimumCu":8/u);
-  assert.deepEqual(await readdir(output), ["audit.json"]);
-  assert.ok(
-    !(await readFile(join(output, "audit.json"), "utf8")).includes(
-      "synthetic-neon",
-    ),
-  );
-  assert.deepEqual((await readdir(target.root)).sort(), [
-    "context.json",
-    "credentials.json",
-    "output",
-    "peer.json",
-  ]);
-
-  const tooSmall = await request(baseContext, 1);
+  assert.deepEqual(await readdir(target.root), ["peer.json"]);
+  const tooSmall = await request(1);
   assert.match(
     (
       await invoke(
         cli,
-        [
-          "--operation",
-          "run",
-          ...tooSmall.args,
-          "--request",
-          tooSmall.root,
-          "--reviewed",
-          join(tooSmall.root, "reviewed"),
-          "--output",
-          join(tooSmall.root, "output"),
-        ],
+        ["target", "--org-id", STAFF_ORG],
         tooSmall.fixture,
         false,
       )
     ).stderr,
     /ProductionRequiresProvisionedEightComputeUnits/u,
   );
-  assert.ok(
-    !(await readdir(tooSmall.root)).some((file) => {
-      return file.startsWith("private-");
-    }),
-  );
-
-  const apply = await request({
-    ...reviewedContext,
-    mode: "apply",
-    writersDrained: true,
-  });
-  const githubOutput = join(apply.root, "github-output");
-  await writePrivate(githubOutput, "");
-  await invoke(
-    cli,
-    [
-      "--operation",
-      "verify-origin",
-      ...apply.args,
-      "--github-output",
-      githubOutput,
-    ],
-    apply.fixture,
-  );
-  assert.equal(
-    await readFile(githubOutput, "utf8"),
-    `artifact-name=single-agent-plan-100\noperator-commit=${revision}\n`,
-  );
-  assert.equal(
-    (await stat(join(apply.root, "bound-context.json"))).mode & 0o777,
-    0o600,
-  );
-
-  const olderCommit = "d".repeat(40);
-  const changedMain = await request(
-    { ...reviewedContext, mode: "apply", writersDrained: true },
-    8,
-    olderCommit,
+  // Omitting the mode selects read-only planning, never an apply.
+  assert.match(
+    (await invoke(cli, ["--org-id", STAFF_ORG], target.fixture, false)).stderr,
+    /PrivateDirectoryAndKeyFileRequired/u,
   );
   assert.match(
     (
       await invoke(
         cli,
         [
-          "--operation",
-          "verify-origin",
-          ...changedMain.args,
-          "--github-output",
-          join(changedMain.root, "github-output"),
+          "apply",
+          "--org-id",
+          STAFF_ORG,
+          "--directory",
+          join(directory, "attempt"),
+          "--key-file",
+          join(directory, "key"),
+          "--plan-directory",
+          join(directory, "reviewed"),
+          "--expect-plan-sha256",
+          "a".repeat(64),
+          "--expect-image-sha256",
+          "b".repeat(64),
         ],
-        changedMain.fixture,
+        target.fixture,
         false,
       )
     ).stderr,
-    /ProductionPlanOriginRejected/u,
+    /MutationRequiresMigrateAndDrainedWriters/u,
   );
-  const recovery = await request(
-    { ...reviewedContext, mode: "recover", writersDrained: true },
-    8,
-    olderCommit,
-  );
-  const recoveryOutput = join(recovery.root, "github-output");
-  await writePrivate(recoveryOutput, "");
-  await invoke(
-    cli,
-    [
-      "--operation",
-      "verify-origin",
-      ...recovery.args,
-      "--github-output",
-      recoveryOutput,
-    ],
-    recovery.fixture,
-  );
-  const bound = JSON.parse(
-    await readFile(join(recovery.root, "bound-context.json"), "utf8"),
-  );
-  assert.equal(bound.commit, olderCommit);
-  assert.equal(bound.driverCommit, revision);
 
   const execution = join(directory, "execution");
   await mkdir(execution, { mode: 0o700 });
@@ -318,7 +189,7 @@ try {
       branchId: BRANCH,
       endpointId: "ep-production-fixture",
       commit: revision,
-      planRunId: "100",
+      planId: randomUUID(),
       orgId: STAFF_ORG,
     },
     createdAt: "2026-11-11T00:00:00.000Z",
@@ -340,6 +211,55 @@ try {
     JSON.stringify(metadata),
   );
   assert.ok(!(await readFile(encrypted)).includes(canary));
+
+  // A local plan with different approved hashes must fail before loading any DB credential.
+  const reviewed = join(directory, "reviewed");
+  await mkdir(reviewed, { mode: 0o700 });
+  await writePrivate(join(reviewed, "metadata.json"), JSON.stringify(metadata));
+  await writePrivate(
+    join(reviewed, "execution.enc"),
+    await readFile(encrypted),
+  );
+  await writePrivate(
+    join(reviewed, "audit.json"),
+    JSON.stringify({
+      mode: "plan",
+      completed: true,
+      commit: revision,
+      imageSha256: metadata.imageSha256,
+    }),
+  );
+  assert.match(
+    (
+      await invoke(
+        cli,
+        [
+          "apply",
+          "--org-id",
+          STAFF_ORG,
+          "--plan-directory",
+          reviewed,
+          "--expect-plan-sha256",
+          metadata.planSha256,
+          "--expect-image-sha256",
+          "d".repeat(64),
+          "--key-file",
+          keyFile,
+          "--directory",
+          join(directory, "wrong-plan-attempt"),
+          "--writers-drained",
+          "--migrate",
+        ],
+        target.fixture,
+        false,
+      )
+    ).stderr,
+    /ReviewedProductionMetadataMismatch/u,
+  );
+  await assert.rejects(stat(join(directory, "wrong-plan-attempt")), {
+    code: "ENOENT",
+  });
+
   const opened = join(directory, "opened");
   await invoke(
     packaging,
@@ -445,103 +365,23 @@ try {
     ),
   );
 
-  const prefixes = Buffer.from(
-    JSON.stringify({
-      format: "single-agent-prefixes-v1",
-      orgId: STAFF_ORG,
-      prefixes: [{ agentId: randomUUID(), prefix: "source" }],
-    }),
+  const connection = validateProductionConnection(
+    "postgresql://RO:synthetic@fixture.neon.tech/neondb?sslmode=require",
+    "fixture.neon.tech",
+    false,
   );
-  const prefixesFile = join(directory, "prefixes.json"),
-    sealedPrefixes = join(directory, "prefixes.base64");
-  await writePrivate(prefixesFile, prefixes);
-  const prefixResult = await invoke(
-    packaging,
-    [
-      "seal-prefixes",
-      "--input",
-      prefixesFile,
-      "--output",
-      sealedPrefixes,
-      "--key-file",
-      keyFile,
-    ],
-    target.fixture,
-  );
-  assert.match(prefixResult.stdout, new RegExp(sha256(prefixes), "u"));
-  assert.deepEqual(
-    openBytes(
-      Buffer.from((await readFile(sealedPrefixes, "utf8")).trim(), "base64"),
-      packageKey(key),
-      "single-agent-production-prefixes-v1",
-    ),
-    prefixes,
-  );
-  const prefixCiphertext = Buffer.from(
-    (await readFile(sealedPrefixes, "utf8")).trim(),
-    "base64",
-  );
-  assert.throws(() => {
-    return openBytes(prefixCiphertext, packageKey(key), "other-scope");
-  });
-
-  const neon = `https://console.neon.tech/api/v2/projects/${PROJECT}`;
-  server.use(
-    http.get(`${neon}/branches/${BRANCH}`, () => {
-      return HttpResponse.json({
-        branch: {
-          id: BRANCH,
-          default: true,
-          protected: true,
-          current_state: "ready",
-        },
-      });
-    }),
-    http.get(`${neon}/endpoints`, () => {
-      return HttpResponse.json({
-        endpoints: [
-          {
-            id: "ep-fixture",
-            host: "fixture.neon.tech",
-            branch_id: BRANCH,
-            type: "read_write",
-            autoscaling_limit_min_cu: 8,
-            autoscaling_limit_max_cu: 8,
-          },
-        ],
-      });
-    }),
-    http.get(`${neon}/connection_uri`, ({ request }) => {
-      const query = new URL(request.url).searchParams;
-      assert.equal(query.get("branch_id"), BRANCH);
-      assert.equal(query.get("endpoint_id"), "ep-fixture");
-      assert.equal(query.get("pooled"), "false");
-      assert.equal(query.get("role_name"), "RO");
-      return HttpResponse.json({
-        uri: "postgresql://RO:synthetic@fixture.neon.tech/neondb?sslmode=require",
-      });
-    }),
-  );
-  const readOnlyTarget = await resolveProductionTarget(
-    "plan",
-    "synthetic-neon",
-  );
-  assert.equal(readOnlyTarget.role, "RO");
+  assert.equal(connection.role, "RO");
   assert.equal(
-    new URL(readOnlyTarget.connection!).searchParams.get("sslmode"),
+    new URL(connection.connection).searchParams.get("sslmode"),
     "verify-full",
   );
-  server.use(
-    http.get(`${neon}/connection_uri`, () => {
-      return HttpResponse.json({
-        uri: "postgresql://RO:synthetic@another.neon.tech/neondb",
-      });
-    }),
-  );
-  await assert.rejects(
-    resolveProductionTarget("plan", "synthetic-neon"),
-    /ProductionConnectionIdentityRejected/u,
-  );
+  assert.throws(() => {
+    validateProductionConnection(
+      "postgresql://RO:synthetic@another.neon.tech/neondb",
+      "fixture.neon.tech",
+      false,
+    );
+  }, /ProductionConnectionIdentityRejected/u);
 
   const members = Array.from({ length: 101 }, (_, i) => {
     return {
@@ -575,7 +415,7 @@ try {
     /LiveProductionMembershipChanged/u,
   );
   console.log(
-    "Production operator CLI, encrypted artifacts, origin binding, capacity and live membership checks passed",
+    "Production operator CLI, encrypted artifacts, manual admission, capacity and live membership checks passed",
   );
 } finally {
   server.close();
