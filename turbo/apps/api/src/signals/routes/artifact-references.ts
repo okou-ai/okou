@@ -1,3 +1,5 @@
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
+import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import {
@@ -193,7 +195,17 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     !("sharedThreadSnapshot" in resolved.body) &&
     (await set(appDownloadPaywalled$, signal))
   ) {
-    return { ...resolved, body: { ...resolved.body, downloadUrl: null } };
+    const downloadUrl = new URL(
+      artifactDownloadsContract.download.path.replace(
+        ":reference",
+        encodeURIComponent(reference),
+      ),
+      env("OKOU_API_BACKEND_URL"),
+    ).href;
+    return {
+      ...resolved,
+      body: { ...resolved.body, downloadUrl, downloadAllowed: false },
+    };
   }
   return resolved;
 });

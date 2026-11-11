@@ -1,4 +1,5 @@
 import {
+  boolean,
   literal,
   object,
   string,
@@ -119,8 +120,9 @@ export const artifactReferencesContract = c.router({
       200: object({
         url: zUrl(),
         expiresAt: string(),
-        // Preview access does not imply permission to download in the App.
-        downloadUrl: zUrl().nullable(),
+        downloadUrl: zUrl(),
+        // A denied App action retains a guarded URL for installed native readers.
+        downloadAllowed: boolean().optional(),
         sharedThreadSnapshot: literal(true).optional(),
         filename: string(),
         contentType: string(),

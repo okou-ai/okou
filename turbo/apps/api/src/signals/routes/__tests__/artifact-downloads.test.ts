@@ -556,9 +556,15 @@ test.each(["free", "pro"] as const)(
       contentType: "application/pdf",
       url: expect.any(String),
     });
-    expect(resolved.body.downloadUrl).toStrictEqual(
-      plan === "free" ? null : expect.any(String),
+    expect(resolved.body.downloadAllowed).toBe(
+      plan === "free" ? false : undefined,
     );
+    expect(resolved.body.downloadUrl).toStrictEqual(expect.any(String));
+    if (plan === "free") {
+      expect(resolved.body.downloadUrl).toBe(
+        `https://api.okou.ai/api/artifact-references/${params.reference}/download`,
+      );
+    }
     const download = await accept(
       api()(artifactDownloadsContract).download({ headers, params }),
       [200, 402],

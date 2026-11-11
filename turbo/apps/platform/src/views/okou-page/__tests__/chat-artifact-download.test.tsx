@@ -211,7 +211,8 @@ test("a server-denied download keeps the preview available and opens the plans",
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
       url: "https://storage.example.test/preview/report.pdf",
-      downloadUrl: null,
+      downloadUrl: `https://api.okou.ai/api/artifact-references/${id.replaceAll("-", "")}/download`,
+      downloadAllowed: false,
       expiresAt: "2099-01-01T00:00:00Z",
       filename,
       contentType: "application/pdf",

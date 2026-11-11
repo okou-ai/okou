@@ -51,14 +51,14 @@ export const attachmentDownloadSource$ = command(
           { showErrorToast: false },
         );
         if (result.status === 200) {
-          if (result.body.downloadUrl === null && audience === "app") {
+          if (result.body.downloadAllowed === false && audience === "app") {
             return {
               kind: "paywalled",
               resourceUrl: result.body.url,
               hosted: result.body.target.kind === "html",
             };
           }
-          if (result.body.downloadUrl !== null) {
+          if (result.body.downloadAllowed !== false) {
             return {
               kind: "managed",
               resourceUrl: result.body.url,

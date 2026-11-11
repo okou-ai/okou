@@ -259,8 +259,10 @@ test.each([false, true])(
     const browser = context.mocks.browser.blobDownload();
     const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
     const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
-    const video: { downloadUrl: string | null } = {
-      downloadUrl: appDenied ? null : `${downloadUrl}-preview`,
+    const guardedUrl =
+      "https://api.okou.ai/api/artifact-references/lightvid01.mp4/download";
+    const video = {
+      downloadUrl: appDenied ? guardedUrl : `${downloadUrl}-preview`,
     };
     context.mocks.api(
       artifactReferencesContract.resolve,
@@ -269,6 +271,7 @@ test.each([false, true])(
         return respond(200, {
           url: previewUrl,
           downloadUrl: video.downloadUrl,
+          downloadAllowed: !appDenied,
           filename: "lightvid01.mp4",
           contentType: "video/mp4",
           expiresAt: "2099-01-01T00:00:00Z",
@@ -311,7 +314,7 @@ test.each([false, true])(
         `${previewUrl}#t=2`,
       );
     });
-    video.downloadUrl = appDenied ? null : downloadUrl;
+    video.downloadUrl = appDenied ? guardedUrl : downloadUrl;
     click(getButtonByName("Download", dialog));
 
     await waitFor(() => {
