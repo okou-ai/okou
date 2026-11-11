@@ -191,7 +191,14 @@ export function createClaimSourceContext(
       .from(modelProviders)
       .leftJoin(modelProviderAccounts, modelSources.joins.account)
       .leftJoin(modelProviderAccountSecrets, modelSources.joins.secret)
-      .where(modelSources.joins.provider);
+      .where(
+        and(
+          modelSources.joins.provider,
+          run.modelProviderId === null
+            ? sql`false`
+            : eq(modelProviderAccounts.id, run.modelProviderId),
+        ),
+      );
     const modelProjection = needsMemberModel ? sql`(${modelRows})` : sql`NULL`;
     const capture: PgPoolAcquisitionCapture = { acquisitions: [] };
     const startedAt = performance.now();
