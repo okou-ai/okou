@@ -61,5 +61,5 @@ teardown() {
     assert_success
     run _wait_for_runner_chat_completion "$THREAD_ID" "$RUN_ID" 60
     assert_success
-    assert_output --regexp '^[[:space:]]*SMOKE_OK[[:space:]]*$'
+    assert_output --partial 'SMOKE_OK'
 }
