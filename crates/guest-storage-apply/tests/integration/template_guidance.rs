@@ -151,13 +151,18 @@ fn template_guidance_remote_archive_above_skill_and_host_cache_limits_is_verifie
     let archive = create_tar_gz(&[("first.bin", &data), ("second.bin", &data)]).unwrap();
     assert!(archive.len() > 32 * 1024 * 1024);
     let server = MockServer::start();
-    let request = server.mock(|when, then| {
-        when.method(GET).path("/large");
-        then.status(200).body(&archive);
-    });
     let dir = tempfile::tempdir().unwrap();
     let mount = dir.path().join("mount");
-    assert!(apply(&manifest(&mount, &server.url("/large"), &archive)));
+    let expected_manifest = manifest(&mount, &server.url("/large"), &archive);
+    let response = httpmock::HttpMockResponse::builder()
+        .status(200)
+        .body(archive)
+        .build();
+    let mut request = server.mock(|when, then| {
+        when.method(GET).path("/large");
+        then.respond_with(move |_| response.clone());
+    });
+    assert!(apply(&expected_manifest));
     let mut buffer = [0; 64 * 1024];
     for name in ["first.bin", "second.bin"] {
         let mut file = fs::File::open(mount.join(name)).unwrap();
@@ -169,6 +174,8 @@ fn template_guidance_remote_archive_above_skill_and_host_cache_limits_is_verifie
         assert_eq!(file.read(&mut [0]).unwrap(), 0, "{name}: extra bytes");
     }
     request.assert_calls(1);
+    // Release the shared archive before the mock server returns to its pool.
+    request.delete();
 }
 
 #[test]
