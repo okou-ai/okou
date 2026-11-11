@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.19.10](https://github.com/okou-ai/okou/compare/cli-v10.19.9...cli-v10.19.10) (2026-11-11)
+
+
+### Performance Improvements
+
+* **api:** remove the chat search time filter ([#46502](https://github.com/okou-ai/okou/issues/46502)) ([baa9594](https://github.com/okou-ai/okou/commit/baa95943ef45870b92855b3974772657ca2b6711))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+    * @okouai/pi-agent-runtime bumped to 1.51.99
+
 ## [10.19.9](https://github.com/okou-ai/okou/compare/cli-v10.19.8...cli-v10.19.9) (2026-11-11)
 
 

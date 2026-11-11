@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.9...runner-storage-v0.10.10) (2026-11-11)
+
+
+### Bug Fixes
+
+* **storage:** scope decoded rejections to admission policy ([#46497](https://github.com/okou-ai/okou/issues/46497)) ([cff7060](https://github.com/okou-ai/okou/commit/cff7060231c11599897a23692a98b6fc7461d203))
+
 ## [0.10.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.8...runner-storage-v0.10.9) (2026-11-11)
 
 ## [0.10.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.7...runner-storage-v0.10.8) (2026-11-10)

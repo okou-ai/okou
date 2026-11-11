@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.827.0](https://github.com/okou-ai/okou/compare/core-v8.826.2...core-v8.827.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+
 ## [8.826.2](https://github.com/okou-ai/okou/compare/core-v8.826.1...core-v8.826.2) (2026-11-11)
 
 
