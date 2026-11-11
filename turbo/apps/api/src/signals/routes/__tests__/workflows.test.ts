@@ -586,6 +586,153 @@ describe("workflows", () => {
         canPublish: false,
       }),
     );
+
+    await requestUpdateWorkflow(
+      member,
+      created.body.id,
+      { instruction: "# unauthorized update" },
+      [403],
+    );
+    await accept(
+      detailClient().delete({
+        headers: authHeaders(member),
+        params: { workflowId: created.body.id },
+      }),
+      [403],
+    );
+    await accept(
+      visibilityClient().demote({
+        headers: authHeaders(member),
+        params: { workflowId: created.body.id },
+      }),
+      [403],
+    );
+    const retained = await accept(
+      detailClient().get({
+        headers: authHeaders(owner),
+        params: { workflowId: created.body.id },
+      }),
+      [200],
+    );
+    expect(retained.body.instruction).toBe("# public workflow");
+  });
+
+  it.each(["workflow owner", "agent owner", "org admin"] as const)(
+    "allows the %s to maintain a shared agent's public workflow",
+    async (maintainer) => {
+      const agentOwner = user();
+      const author = user({ orgId: agentOwner.orgId });
+      const agent = await createAgent(agentOwner, {
+        displayName: "Shared Public Agent",
+        visibility: "public",
+      });
+      const workflow = await createWorkflow(author, {
+        agentId: agent.agentId,
+        name: `public-maintenance-${randomUUID().slice(0, 8)}`,
+        visibility: "public",
+        instruction: "# original content",
+      });
+      // The author and Agent owner no longer have the org admin role.
+      const maintainers: Record<typeof maintainer, ApiTestUser> = {
+        "workflow owner": { ...author, orgRole: "org:member" },
+        "agent owner": { ...agentOwner, orgRole: "org:member" },
+        "org admin": user({ orgId: agentOwner.orgId }),
+      };
+      const actor = maintainers[maintainer];
+      const listed = await accept(
+        collectionClient().list({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(listed.body).toContainEqual(
+        expect.objectContaining({ id: workflow.body.id, canManage: true }),
+      );
+      const detail = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(detail.body).toMatchObject({
+        ownerUserId: author.userId,
+        visibility: "public",
+        canManage: true,
+        canPublish: false,
+      });
+
+      await updateWorkflow(actor, workflow.body.id, {
+        instruction: "# maintained content",
+      });
+      const updated = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(updated.body).toMatchObject({
+        instruction: "# maintained content",
+        ownerUserId: author.userId,
+        visibility: "public",
+      });
+      await accept(
+        detailClient().delete({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [204],
+      );
+      await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [404],
+      );
+    },
+  );
+
+  it("allows a public workflow owner to withdraw sharing without gaining publication rights", async () => {
+    const agentOwner = user();
+    const author = user({ orgId: agentOwner.orgId });
+    const agent = await createAgent(agentOwner, {
+      displayName: "Shared Public Agent",
+      visibility: "public",
+    });
+    const workflow = await createWorkflow(author, {
+      agentId: agent.agentId,
+      name: `withdraw-sharing-${randomUUID().slice(0, 8)}`,
+      visibility: "public",
+      instruction: "# shared content",
+    });
+    const member: ApiTestUser = { ...author, orgRole: "org:member" };
+    const demoted = await accept(
+      visibilityClient().demote({
+        headers: authHeaders(member),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(demoted.body).toMatchObject({
+      visibility: "private",
+      ownerUserId: member.userId,
+      canManage: true,
+      canPublish: false,
+    });
+    await accept(
+      visibilityClient().publish({
+        headers: authHeaders(member),
+        params: { workflowId: workflow.body.id },
+      }),
+      [403],
+    );
+    await accept(
+      detailClient().get({
+        headers: authHeaders(agentOwner),
+        params: { workflowId: workflow.body.id },
+      }),
+      [404],
+    );
   });
 
   it("allows members to create private workflows under visible public agents", async () => {
@@ -629,10 +776,25 @@ describe("workflows", () => {
       canManage: true,
     });
 
+    await accept(
+      visibilityClient().publish({
+        headers: authHeaders(member),
+        params: { workflowId: created.body.id },
+      }),
+      [403],
+    );
+
     await requestUpdateWorkflow(
       agentOwner,
       created.body.id,
       { displayName: "Agent Owner Update" },
+      [404],
+    );
+    await accept(
+      detailClient().delete({
+        headers: authHeaders(agentOwner),
+        params: { workflowId: created.body.id },
+      }),
       [404],
     );
 

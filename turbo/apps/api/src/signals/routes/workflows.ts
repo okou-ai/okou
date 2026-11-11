@@ -1882,7 +1882,8 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (loaded.workflow.officialDefinitionName !== null) {
     return conflict(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
   }
-  const reviewError = requireAgentWritePermission(
+  const reviewError = requireWorkflowPermission(
+    loaded.workflow,
     loaded.agent,
     member,
     "demote public workflows",
