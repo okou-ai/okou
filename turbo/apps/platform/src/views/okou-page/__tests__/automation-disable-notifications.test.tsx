@@ -335,6 +335,24 @@ test("Not now dismisses a disablement and restores focus to its notification", a
   });
 });
 
+test("A fast notification destination replaces its initially hidden loading status", async () => {
+  mockAutomationDestination();
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
+    await response.promise;
+    return respond(200, automation());
+  });
+  const dialog = await openDetails();
+  click(control("link", "View automation", dialog));
+  const loading = await screen.findByText("Loading automation");
+  expect(loading).not.toBeVisible();
+  response.resolve();
+  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+  expect(selected).toHaveAttribute("aria-current", "true");
+  expect(within(selected).getByRole("switch")).not.toBeChecked();
+  expect(loading).not.toBeInTheDocument();
+});
+
 test("A pending notification destination shows a lightweight status until access resolves", async () => {
   mockAutomationDestination();
   const response = createDeferredPromise<void>(context.signal);
