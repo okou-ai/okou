@@ -19,13 +19,13 @@ import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
 import {
   downloadManifest,
+  generatePresignedGetUrl,
   generatePresignedPutUrl,
   s3ObjectExists,
   s3ObjectHead,
   type S3ObjectHead,
 } from "../external/s3";
 import { storageCommitLineageCondition } from "./storage-write-conditions";
-import { prepareMemoryMergeContext$ } from "./memory-merge-context.service";
 import {
   sandboxStorageRunIsActive,
   storageCommitPublicationStatement,
@@ -273,6 +273,65 @@ const findStorageById$ = command(
 
     signal.throwIfAborted();
     return storage;
+  },
+);
+
+/** Keep Memory's immutable download capabilities inside its existing publication owner. */
+const prepareMemoryMergeContext$ = command(
+  async (
+    { get, set },
+    args: { readonly storage: StorageRow; readonly baseVersionId: string },
+    signal: AbortSignal,
+  ): Promise<MemoryMergeContext> => {
+    const headVersionId = args.storage.headVersionId;
+    if (!headVersionId) {
+      throw new Error("Memory has no HEAD version");
+    }
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const snapshots = await Promise.all(
+      [args.baseVersionId, headVersionId].map(async (versionId) => {
+        const version = await set(
+          findStorageVersion$,
+          { storageId: args.storage.id, versionId },
+          signal,
+        );
+        if (
+          !version ||
+          version.s3Key !== `${args.storage.s3Prefix}/${versionId}`
+        ) {
+          throw new Error("Memory merge version is unavailable");
+        }
+        if (version.fileCount === 0) {
+          return { versionId, empty: true };
+        }
+        const [manifestUrl, archiveUrl] = await Promise.all([
+          get(
+            generatePresignedGetUrl(
+              bucket,
+              `${version.s3Key}/manifest.json`,
+              undefined,
+              true,
+            ),
+          ),
+          get(
+            generatePresignedGetUrl(
+              bucket,
+              `${version.s3Key}/archive.tar.gz`,
+              undefined,
+              true,
+            ),
+          ),
+        ]);
+        signal.throwIfAborted();
+        return { versionId, empty: false, manifestUrl, archiveUrl };
+      }),
+    );
+    signal.throwIfAborted();
+    const [base, head] = snapshots;
+    if (!base || !head) {
+      throw new Error("Memory merge snapshots are unavailable");
+    }
+    return { base, head };
   },
 );
 
