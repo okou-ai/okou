@@ -19,6 +19,7 @@ only_rules:
   - okou_check_after_await
   - okou_resource_cancellation
   - okou_subscription_teardown
+  - okou_import_boundaries
 
 included:
   - Okou

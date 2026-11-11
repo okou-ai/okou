@@ -21,6 +21,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_check_after_await`     | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
 | `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
+| `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -104,6 +105,17 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `UIView`/`UIViewController` destruction is a valid control lifetime; a retained
   business owner's `deinit` alone is not an explicit close path. Selector-based
   notification registration retains its system-managed semantics.
+- Ably, ClerkKit and ClerkKitUI imports belong to the exact realtime,
+  authentication, sign-in presentation, authentication-theme and notification
+  extension definition sites recorded in `ImportBoundariesRule.swift`. The
+  existing external-provider fixtures/tests can import their real SDK; another
+  file named `Tests` or placed in a test directory does not acquire that role.
+  Review a new adapter's responsibility before registering its import site.
+  ChatDomain production sources import only Foundation and the Swift standard
+  library. ChatData production/test-support sources reject known App, UI,
+  graph, identity and realtime modules while retaining system transport,
+  storage, crypto and synchronization frameworks. Package test targets retain
+  their test-framework and public package imports.
 
 ## Static Analysis Limits
 
@@ -120,6 +132,11 @@ center aliases. Cross-file factories, custom callback lifetimes, dynamic
 receivers, arbitrary collection mutations, and whether a caller actually invokes
 its owner's close path still need review. Returning a handle is an ownership
 transfer, not proof that its eventual caller releases it.
+Import checks inspect declarations, including attributed, scoped and
+conditional imports, at known source paths. They do not resolve transitive
+dependencies, inferred SDK values, type aliases or every future UI/SDK module.
+ChatData's known forbidden module edges complement its package manifest;
+unknown dependencies and SDK operations still require architectural review.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.

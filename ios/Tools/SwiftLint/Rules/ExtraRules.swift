@@ -7,5 +7,6 @@ public func extraRules() -> [any Rule.Type] {
     TestSynchronizationRule.self,
     CheckAfterAwaitRule.self, ResourceCancellationRule.self,
     SubscriptionTeardownRule.self,
+    ImportBoundariesRule.self,
   ]
 }
