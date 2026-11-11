@@ -1028,7 +1028,7 @@ export function CapabilityHomePage({
         <footer data-chat-composer className="relative shrink-0">
           <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
             <div className="mx-auto max-w-[900px]">
-              <ChatComposer signals={signals} layout="thread" />
+              <ChatComposer signals={signals} layout="home" />
               <CapabilityHomeCompliance />
               <SuggestionSaveErrors />
             </div>

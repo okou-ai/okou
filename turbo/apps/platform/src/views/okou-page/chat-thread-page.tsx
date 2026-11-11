@@ -326,7 +326,7 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -3565,7 +3565,11 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           ) : (
             <ChatThreadEventsPane thread={thread} />
           )}
-          <ChatThreadBottomBar thread={thread} below={belowComposer} />
+          <ChatThreadBottomBar
+            thread={thread}
+            layout={showCapabilities ? "home" : "default"}
+            below={belowComposer}
+          />
         </div>
       </div>
       <ChatThreadFeedbackSlot thread={thread} />
@@ -3617,9 +3621,12 @@ function SharedThreadCreatedLink({
 
 function ChatThreadBottomBar({
   thread,
+  layout = "default",
   below = null,
 }: {
   readonly thread: ChatPanelSignals;
+  /** `home` while an empty thread shows the capability home above it. */
+  readonly layout?: ComposerLayout;
   /** Shown under the composer, such as compliance on an empty thread's home. */
   readonly below?: ReactNode;
 }) {
@@ -3635,7 +3642,7 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} below={below} />,
+      <ChatThreadComposer thread={thread} layout={layout} below={below} />,
     );
   }
 
@@ -3926,9 +3933,11 @@ function RecommendedFollowupList({
 
 function ChatThreadComposer({
   thread,
+  layout,
   below,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly layout: ComposerLayout;
   readonly below: ReactNode;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
@@ -3951,7 +3960,7 @@ function ChatThreadComposer({
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} />
+          <ChatComposer signals={thread.composer} layout={layout} />
           {below}
         </div>
       </div>
