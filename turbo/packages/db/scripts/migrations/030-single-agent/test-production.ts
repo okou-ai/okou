@@ -95,7 +95,7 @@ async function invoke(
     {
       env: {
         PATH: process.env.PATH,
-        HOME: directory,
+        HOME: process.env.HOME,
 
         R2_ENDPOINT: ENDPOINT,
         R2_USER_STORAGES_BUCKET_NAME: BUCKET,

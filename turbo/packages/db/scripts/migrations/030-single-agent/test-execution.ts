@@ -43,6 +43,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { applyPendingMigrations } from "../../migration-runner";
+import { checkPrivileges } from "./production-database";
 import { BRANCH, PROJECT, STAFF_ORG } from "./production-model";
 
 const connection = process.env.DATABASE_URL;
@@ -50,6 +51,8 @@ assert.ok(connection, "Disposable DATABASE_URL required");
 const address = new URL(connection);
 assert.ok(["127.0.0.1", "localhost", "postgres"].includes(address.hostname));
 const database = `single_agent_execute_${randomUUID().replaceAll("-", "")}`;
+const readOnlyRole = `single_agent_ro_${randomUUID().replaceAll("-", "")}`;
+const rolePassword = randomUUID().replaceAll("-", "");
 const admin = postgres(connection, { max: 1, onnotice: () => {} });
 const testUrl = new URL(connection);
 testUrl.pathname = `/${database}`;
@@ -266,6 +269,43 @@ async function eventsState() {
 try {
   await admin.unsafe(`CREATE DATABASE "${database}"`);
   await applyPendingMigrations(sql);
+  const login = object({ value: string() }).parse(
+    (await sql`SELECT session_user AS value`)[0],
+  ).value;
+  assert.equal(
+    (await checkPrivileges(testUrl.toString(), login, true)).readonly,
+    true,
+  );
+  await assert.rejects(
+    checkPrivileges(testUrl.toString(), login, false),
+    /ProductionDatabasePrivilegesRejected/u,
+  );
+  // The security adapter is exercised with real role privileges, not mocked SQL.
+  await admin.unsafe(
+    `CREATE ROLE "${readOnlyRole}" LOGIN PASSWORD '${rolePassword}'`,
+  );
+  await sql.unsafe(`GRANT USAGE ON SCHEMA public TO "${readOnlyRole}"`);
+  await sql.unsafe(
+    `GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${readOnlyRole}"`,
+  );
+  const readOnlyAddress = new URL(testUrl);
+  readOnlyAddress.username = readOnlyRole;
+  readOnlyAddress.password = rolePassword;
+  assert.equal(
+    (await checkPrivileges(readOnlyAddress.toString(), readOnlyRole, false))
+      .database,
+    database,
+  );
+  await assert.rejects(
+    checkPrivileges(readOnlyAddress.toString(), readOnlyRole, true),
+    /ProductionDatabasePrivilegesRejected/u,
+  );
+  await sql.unsafe(`GRANT INSERT ON workflows TO "${readOnlyRole}"`);
+  await assert.rejects(
+    checkPrivileges(readOnlyAddress.toString(), readOnlyRole, false),
+    /ProductionDatabasePrivilegesRejected/u,
+  );
+
   const storePort = await listen(store),
     proxyPort = await listen(proxy);
   const proxied = new URL(testUrl);
@@ -876,6 +916,7 @@ try {
   try {
     await admin.unsafe(`DROP DATABASE IF EXISTS "${database}"`);
   } finally {
+    await admin.unsafe(`DROP ROLE IF EXISTS "${readOnlyRole}"`);
     await admin.end();
     await rm(directory, { recursive: true, force: true });
   }

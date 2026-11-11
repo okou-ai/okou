@@ -440,3 +440,8 @@ prefix submission and paginated live membership drift. The shared real-Postgres
 execution test also rejects production-purpose images at the copy CLI boundary.
 These tests do not execute a production cutover or establish staff runtime
 acceptance.
+
+The real-PostgreSQL execution test also exercises production privilege admission
+with a uniquely owned login role: SELECT-only access is accepted for planning,
+an overprivileged reader is rejected, and insufficient write rights cannot admit
+apply/recovery. The fixture database and role are removed together.

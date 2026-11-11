@@ -24,7 +24,7 @@ export function packageKey(value: string) {
 
 export function sealBytes(bytes: Uint8Array, key: Buffer, aad: string) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
   cipher.setAAD(Buffer.from(aad));
   return Buffer.concat([
     magic,
@@ -46,6 +46,7 @@ export function openBytes(bytes: Buffer, key: Buffer, aad: string) {
     "aes-256-gcm",
     key,
     bytes.subarray(magic.length, magic.length + 12),
+    { authTagLength: 16 },
   );
   decipher.setAAD(Buffer.from(aad));
   decipher.setAuthTag(bytes.subarray(-16));

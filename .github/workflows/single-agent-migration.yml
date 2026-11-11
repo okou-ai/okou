@@ -38,6 +38,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: production-single-agent-migration
   cancel-in-progress: false
