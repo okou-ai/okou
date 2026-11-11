@@ -21,14 +21,7 @@ export function mcpChatSearch(
     }
   >,
 ): Computed<Promise<McpChatSearchResponse>> {
-  const nativeInput$ = computed((get) => {
-    const { since, ...args } = get(args$);
-    return {
-      ...args,
-      since: since === undefined ? undefined : Date.parse(since),
-    };
-  });
-  const nativeSearch$ = chatSearch(nativeInput$);
+  const nativeSearch$ = chatSearch(args$);
 
   return computed(async (get) => {
     const args = get(args$);

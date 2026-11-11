@@ -108,7 +108,7 @@ describe("okou search --source slack", () => {
       ]);
 
       const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("--since");
+      expect(output).toContain("--agent");
       expect(output).toContain("ignored");
     });
   });
@@ -176,8 +176,8 @@ describe("okou search --source slack", () => {
         "hello",
         "--source",
         "slack",
-        "--since",
-        "30d",
+        "--agent",
+        "550e8400-e29b-41d4-a716-446655440001",
       ]);
 
       expect(mockExit).not.toHaveBeenCalled();

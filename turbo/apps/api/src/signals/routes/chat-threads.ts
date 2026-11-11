@@ -354,7 +354,6 @@ const searchChatInner$ = computed(async (get) => {
       orgId: auth.orgId,
       keyword: query.keyword,
       agentId: query.agentId,
-      since: query.since,
     }),
   );
 
