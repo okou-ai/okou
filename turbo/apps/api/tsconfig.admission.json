@@ -221,6 +221,10 @@
     "src/signals/services/internal-email-chat-run-callback.service.ts",
     "src/signals/services/email-channel-delivery.service.ts",
     "src/signals/services/email-mailbox-context.service.ts",
+    "src/signals/services/email-source-message.service.ts",
+    "src/signals/services/email-active-source-context.service.ts",
+    "src/signals/services/chat-connector-execution.ts",
+    "src/signals/external/email-message-reader.ts",
     "src/signals/services/email-prompt.ts"
   ],
   "references": [

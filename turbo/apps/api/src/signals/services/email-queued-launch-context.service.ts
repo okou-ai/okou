@@ -96,6 +96,11 @@ export const loadEmailQueuedLaunchMaterial$ = command(
     }
     return {
       prompt: row.messageText,
+      emailSource: {
+        emailAddress: row.emailAddress,
+        messageId: row.messageId,
+        messageText: row.messageText,
+      },
       appendSystemPrompt: buildEmailPrompt(
         row,
         resolveIntegrationNotePrompt({

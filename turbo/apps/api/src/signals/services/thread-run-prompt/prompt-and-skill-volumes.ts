@@ -6,7 +6,6 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
-import { createEmailMailboxConnections } from "../email-mailbox-context.service";
 import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
@@ -50,13 +49,7 @@ function createIntegrationPrompts(
   featureSwitches$: AgentRunContextSignals["featureSwitches$"],
   threadContext: ThreadContext,
   singleAgent$: Computed<Promise<boolean>>,
-  orgId: string,
 ) {
-  const emailMailboxes$ = createEmailMailboxConnections(
-    pickedEvent$,
-    threadContext.selectedConnectorSources$,
-    orgId,
-  );
   const framework$ = computed(async (get) => {
     const framework = await get(threadContext.providerFramework$);
     if (typeof framework !== "string") {
@@ -96,7 +89,7 @@ function createIntegrationPrompts(
     email: createEmailThreadPrompt(
       threadContext.emailContext$,
       featureSwitches$,
-      emailMailboxes$,
+      threadContext.emailMailboxConnections$,
     ),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
@@ -215,7 +208,6 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
     threadContext,
     singleAgent$,
-    bootstrap.orgId,
   );
   const agentPrompt$ = createAgentPrompt(
     agent$,

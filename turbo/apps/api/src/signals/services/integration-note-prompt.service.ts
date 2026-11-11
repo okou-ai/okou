@@ -37,7 +37,7 @@ function privateArtifactFinalReplyLine(args: {
 }
 
 const EMAIL_CONNECTED_MAILBOX_NOTE =
-  "- Connected mailbox context: the mailbox accounts above are selected for this Run. When the user's task needs source email details beyond the received message, use the corresponding Gmail or outlook-mail Skill and confirm the current account with `okou connector status <connector-slug> --json` before authorized reads. Use the account matching the source mailbox; ask if more than one account is plausible. Locate and verify the source email using the current metadata and forwarded content; do not assume the inbound message is the original email or that its full conversation has been retrieved. Mailbox connections supplement context; the final response still uses automatic Email delivery.";
+  "- Connected mailbox context: before this Run starts, the server looks up the current received email through the selected Gmail or Outlook Mail account API using its exact RFC Message-ID. A Mailbox Message Context block in the input reports the retrieved provider IDs, headers and message body, or the reason it was not read. This lookup does not load other messages in the provider conversation. Use the received email when no match is available; do not claim the complete source conversation was retrieved. The final response still uses automatic Email delivery.";
 
 const EMAIL_INTEGRATION_NOTE_LINES = [
   "- Email messaging: only your final response is automatically delivered to the verified sender in this email conversation, so do not send a second email to deliver it; nothing you produce while the run is in progress reaches Email on its own. Write a clear, complete reply; the email subject and references are handled by the platform.",
