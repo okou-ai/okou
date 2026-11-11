@@ -14,7 +14,11 @@ spec = importlib.util.spec_from_file_location(
 )
 colors = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(colors)
-ROLES = ("primary", "primary-foreground", "background", "foreground", "card", "muted-foreground")
+ROLES = (
+    "primary", "primary-foreground", "background", "foreground", "card", "card-foreground",
+    "muted", "muted-foreground", "accent", "accent-foreground", "border",
+    "destructive", "destructive-foreground",
+)
 
 
 def outputs():

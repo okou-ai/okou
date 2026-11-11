@@ -4,6 +4,8 @@ kotlin = "2.1.20"
 compose-bom = "2025.04.01"
 activity = "1.10.1"
 lifecycle = "2.9.0"
+navigation = "2.8.9"
+datastore = "1.1.4"
 coroutines = "1.10.2"
 junit = "4.13.2"
 robolectric = "4.14.1"
@@ -20,6 +22,8 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-runtime-testing = { module = "androidx.lifecycle:lifecycle-runtime-testing", version.ref = "lifecycle" }
+navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
