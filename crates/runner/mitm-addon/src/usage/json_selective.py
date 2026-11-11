@@ -1049,8 +1049,7 @@ class JsonSelectiveExtractor:
         if _contains_surrogate(value):
             self._value_complete()
             return
-        self._record_scalar_consistency(state.path, value)
-        self.values[state.path] = value
+        self._record_selected_scalar(state.path, value)
         self._value_complete()
 
     def _consume_number(self, chunk: bytes, i: int) -> int:
@@ -1182,19 +1181,18 @@ class JsonSelectiveExtractor:
             if field.max_int_value is not None and value > field.max_int_value:
                 self._error = JSON_INTEGER_VALUE_LIMIT_EXCEEDED
                 return
-            self._record_scalar_consistency(state.path, value)
-            self.values[state.path] = value
+            self._record_selected_scalar(state.path, value)
         self._value_complete()
 
-    def _record_scalar_consistency(self, path: Path, value: object) -> None:
+    def _record_selected_scalar(self, path: Path, value: object) -> None:
         consistency = self._scalar_consistency.get(path)
-        if consistency is None:
-            return
-        if consistency.valid_occurrences == 0:
-            consistency.first_value = value
-        elif consistency.first_value != value:
-            consistency.conflicting = True
-        consistency.valid_occurrences += 1
+        if consistency is not None:
+            if consistency.valid_occurrences == 0:
+                consistency.first_value = value
+            elif consistency.first_value != value:
+                consistency.conflicting = True
+            consistency.valid_occurrences += 1
+        self.values[path] = value
 
     def _consume_literal(self, chunk: bytes, i: int) -> int:
         state = self._literal
@@ -1222,8 +1220,7 @@ class JsonSelectiveExtractor:
                     state.path, {b"true": True, b"false": False, b"null": None}[state.literal]
                 )
             if state.selected_value is not None:
-                self._record_scalar_consistency(state.path, state.selected_value)
-                self.values[state.path] = state.selected_value
+                self._record_selected_scalar(state.path, state.selected_value)
             self._value_complete()
         return i
 
