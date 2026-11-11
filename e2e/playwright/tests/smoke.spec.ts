@@ -27,12 +27,12 @@ test("receive a reply and compose with an IME", async ({ page }) => {
   // The onboarding prompt handoff sends the message as the first chat.
   await completePromptOnboarding(page, {
     appUrl,
-    prompt: "Reply with only this token: 3",
+    prompt: "Reply with only this token: SMOKE_OK",
   });
 
   await expect(
     page.locator('[data-role="assistant"] [data-chat-selection-source]').last(),
-  ).toHaveText(/^\s*3\s*$/, { timeout: 90_000 });
+  ).toHaveText(/^\s*SMOKE_OK\s*$/, { timeout: 90_000 });
 
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.click();
