@@ -184,6 +184,7 @@ final class MessageArtifactStore {
     preview?.isDownloading = true
     preview?.downloadError = nil
     let service = service
+    saveTask?.cancel()
     saveTask = Task { [weak self] in
       guard let self else { return }
       defer { if preview?.id == item.id { preview?.isDownloading = false } }

@@ -12,6 +12,7 @@ from cancellation_cases import CANCELLATION_CASES
 from import_cases import IMPORT_CASES
 from storage_cases import STORAGE_CASES
 from subscription_cases import SUBSCRIPTION_CASES
+from task_lifecycle_cases import TASK_LIFECYCLE_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -25,6 +26,7 @@ BINARY = (
 CASES = [
     *CANCELLATION_CASES,
     *SUBSCRIPTION_CASES,
+    *TASK_LIFECYCLE_CASES,
     (
         "typed cancellation cannot become resource data",
         "okou_resource_failures",

@@ -1,7 +1,7 @@
 import SwiftSyntax
 
-extension SubscriptionTrace {
-  func key(_ expression: ExprSyntax, path: SubscriptionPath) -> String? {
+extension NativeLifetimeTrace {
+  func key(_ expression: ExprSyntax, path: NativeLifetimePath) -> String? {
     if let optional = expression.as(OptionalChainingExprSyntax.self) {
       return key(optional.expression, path: path)
     }
@@ -23,7 +23,7 @@ extension SubscriptionTrace {
     return nil
   }
 
-  func value(_ expression: ExprSyntax, path: inout SubscriptionPath) -> SubscriptionValue {
+  func value(_ expression: ExprSyntax, path: inout NativeLifetimePath) -> NativeLifetimeValue {
     if expression.position == creation, expression.is(FunctionCallExprSyntax.self) {
       reachedCreation = true
       path.acquired = true
@@ -33,6 +33,13 @@ extension SubscriptionTrace {
       return value(attempt.expression, path: &path)
     }
     if let suspension = expression.as(AwaitExprSyntax.self) {
+      if kind.isTask, let member = suspension.expression.as(MemberAccessExprSyntax.self),
+        ["value", "result"].contains(member.declName.baseName.text), let base = member.base,
+        [.handle, .completion].contains(value(base, path: &path))
+      {
+        path.released = true
+        return .unknown
+      }
       return value(suspension.expression, path: &path)
     }
     if let optional = expression.as(OptionalChainingExprSyntax.self) {
@@ -64,6 +71,7 @@ extension SubscriptionTrace {
         let source = value(parts[2], path: &path)
         path.values[target] =
           parts[0].is(SubscriptCallExprSyntax.self) && source == .handle ? .collection : source
+        retain(target, path: path)
         return .unknown
       }
       for part in parts { _ = value(part, path: &path) }
@@ -84,14 +92,41 @@ extension SubscriptionTrace {
   }
 
   private func invocation(
-    _ call: FunctionCallExprSyntax, path: inout SubscriptionPath
-  ) -> SubscriptionValue {
+    _ call: FunctionCallExprSyntax, path: inout NativeLifetimePath
+  ) -> NativeLifetimeValue {
     let member = call.calledExpression.as(MemberAccessExprSyntax.self)
     let receiver = member?.base.map { value($0, path: &path) } ?? .unknown
     let arguments = call.arguments.map { value($0.expression, path: &path) }
+    if kind.isTask, nativeTaskCall(call), let closure = nativeTaskBody(call) {
+      var entering = path
+      entering.exit = .normal
+      entering.deferred = []
+      // A Task reads mutable captures later. Only immutable local values and
+      // explicit capture-list snapshots preserve the original at acquisition.
+      entering.values = path.values.filter { path.immutable.contains($0.key) }
+      for capture in closure.signature?.capture?.items ?? [] {
+        let name = capture.name.text
+        let source =
+          capture.initializer?.value
+          ?? ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(name)))
+        entering.locals.insert(name)
+        entering.immutable.insert(name)
+        entering.values[name] = capture.specifier == nil ? value(source, path: &path) : .unknown
+      }
+      for name in closureParameters(closure) {
+        entering.locals.insert(name)
+        entering.immutable.remove(name)
+        entering.values[name] = .unknown
+      }
+      let results = block(closure.statements, states: [entering])
+      return !path.released && results.allSatisfy(\.released) ? .completion : .unknown
+    }
+    if kind.isTask, callName(call.calledExpression) == "Array", arguments == [.collection] {
+      return .collection
+    }
     if let member {
       switch kind {
-      case .subscription:
+      case .subscription, .task:
         if member.declName.baseName.text == "cancel", call.arguments.isEmpty, receiver == .handle {
           path.released = true
         }
@@ -106,6 +141,7 @@ extension SubscriptionTrace {
         arguments.contains(.handle), let base = member.base, let name = key(base, path: path)
       {
         path.values[name] = .collection
+        retain(name, path: path)
       }
       if member.declName.baseName.text == "removeAll", let base = member.base,
         let name = key(base, path: path)
@@ -128,7 +164,7 @@ extension SubscriptionTrace {
       let closure = call.trailingClosure
         ?? call.arguments.last?.expression.as(ClosureExprSyntax.self)
     {
-      var cleanup = SubscriptionCleanup(statements: closure.statements)
+      var cleanup = NativeLifetimeCleanup(statements: closure.statements)
       for capture in closure.signature?.capture?.items ?? [] {
         let name = capture.name.text
         let source =
@@ -171,7 +207,7 @@ extension SubscriptionTrace {
     return false
   }
 
-  private func isTestTeardown(_ call: FunctionCallExprSyntax, path: SubscriptionPath) -> Bool {
+  private func isTestTeardown(_ call: FunctionCallExprSyntax, path: NativeLifetimePath) -> Bool {
     guard callName(call.calledExpression) == "addTeardownBlock" else { return false }
     if let reference = call.calledExpression.as(DeclReferenceExprSyntax.self),
       path.locals.contains(reference.baseName.text)
@@ -200,26 +236,28 @@ extension SubscriptionTrace {
   }
 
   private func applyHelper(
-    _ call: FunctionCallExprSyntax, arguments: [SubscriptionValue], path: inout SubscriptionPath
+    _ call: FunctionCallExprSyntax, arguments: [NativeLifetimeValue], path: inout NativeLifetimePath
   ) {
     if let reference = call.calledExpression.as(DeclReferenceExprSyntax.self),
       path.locals.contains(reference.baseName.text)
     {
       return
     }
-    let functions = owner.matching(call)
+    let functions = owner.matching(call, allowAsync: kind.isTask)
     guard !functions.isEmpty else { return }
-    var results: [SubscriptionPath] = []
+    var results: [NativeLifetimePath] = []
     for function in functions {
       guard calls.insert(function.position).inserted else { return }
       if let body = function.body {
         var entering = path
         entering.locals = []
+        entering.immutable = []
         entering.values = path.values.filter { $0.key.hasPrefix("self.") }
         entering.deferred = []
         for (parameter, argument) in zip(function.signature.parameterClause.parameters, arguments) {
           let name = (parameter.secondName ?? parameter.firstName).text
           entering.locals.insert(name)
+          entering.immutable.insert(name)
           entering.values[name] = argument
         }
         results += block(body.statements, states: [entering])
@@ -227,11 +265,26 @@ extension SubscriptionTrace {
       calls.remove(function.position)
     }
     guard !results.isEmpty else { return }
-    path.released = results.allSatisfy(\.released)
+    path.released = results.allSatisfy { result in
+      if result.released { return true }
+      guard kind.isTask else { return false }
+      // A helper may move the original into a distinct owner-held drain collection.
+      return result.values.contains { name, value in
+        name.hasPrefix("self.") && value != .unknown
+          && path.values[name, default: .unknown] == .unknown
+          && ownerReleases(String(name.dropFirst(5)), value: value)
+      }
+    }
     for field in owner.fields {
       let name = "self." + field
       let values = results.map { $0.values[name] ?? .unknown }
       path.values[name] = values.allSatisfy { $0 == values.first } ? values.first : .unknown
+    }
+  }
+
+  private func retain(_ name: String, path: NativeLifetimePath) {
+    if kind.isTask, name.hasPrefix("self."), let value = path.values[name], value != .unknown {
+      retained[String(name.dropFirst(5))] = value
     }
   }
 }
