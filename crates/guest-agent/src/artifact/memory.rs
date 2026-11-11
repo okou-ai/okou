@@ -130,13 +130,19 @@ async fn recover_memory(
             .filter(|(path, file)| base.get(path).is_none_or(|old| old.hash != file.hash))
             .collect(),
     };
-    // Uploaded candidates retain their exact archive. The deduplicated branch
-    // freezes its validated original bytes once before any merge is attempted.
-    let frozen = match original.archive.take() {
-        Some(archive) => archive,
-        None => create_archive_bundle(request.mount_path, Arc::from(request.files.clone())).await?,
+    // Only changed files supply candidate bytes; unchanged files come from HEAD.
+    // Freeze writes once, reusing an uploaded archive when available. Deletions
+    // alone need no candidate archive or further access to the original mount.
+    let frozen = match (delta.writes.is_empty(), original.archive.take()) {
+        (true, _) => None,
+        (false, Some(archive)) => Some(Arc::new(archive)),
+        (false, None) => {
+            let files = delta.writes.values().cloned().collect::<Vec<_>>();
+            Some(Arc::new(
+                create_archive_bundle(request.mount_path, files.into()).await?,
+            ))
+        }
     };
-    let frozen = Arc::new(frozen);
     for attempt in 1..=MAX_MERGE_ATTEMPTS {
         let head = download_manifest(
             http,
@@ -172,13 +178,16 @@ async fn recover_memory(
                 .await?;
         }
         let tree = staging.path().join("tree");
-        let frozen_archive = Arc::clone(&frozen);
-        let writes = delta.writes.clone();
+        let frozen_writes = frozen
+            .as_ref()
+            .map(|archive| (Arc::clone(archive), delta.writes.clone()));
         let tree_path = tree.clone();
         let staging = tokio::task::spawn_blocking(move || {
             fs::create_dir(&tree_path)?;
             copy_archive_files(&head_archive, &head_files, &tree_path)?;
-            copy_archive_files(&frozen_archive.archive_path, &writes, &tree_path)?;
+            if let Some((archive, writes)) = frozen_writes {
+                copy_archive_files(&archive.archive_path, &writes, &tree_path)?;
+            }
             Ok::<_, AgentError>(staging)
         })
         .await

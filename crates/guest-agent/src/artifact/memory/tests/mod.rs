@@ -182,6 +182,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
         let successful_size: usize = expected.iter().map(|(_, content)| content.len()).sum();
         let captured_base = base_version.clone();
         let live_file = mount.path().join("own/new.md");
+        let inherited_file = mount.path().join("inherited.md");
         let commit = server.mock(|when, then| {
             when.method(POST).path("/api/webhooks/agent/storages/commit");
             then.respond_with(move |request| {
@@ -190,7 +191,9 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
                     HttpMockResponse::builder().status(200).body(json!({"success": true,
                         "versionId": successful_version, "storageName": "memory", "size": successful_size, "fileCount": 7}).to_string()).build()
                 } else {
-                    if body["parentVersionId"] != captured_base {
+                    if body["parentVersionId"] == captured_base {
+                        fs::write(&inherited_file, "late unrelated local change").unwrap();
+                    } else {
                         fs::write(&live_file, "late local modification").unwrap();
                     }
                     HttpMockResponse::builder().status(409).body(json!({"error": {"message": "HEAD moved", "code": "CONFLICT"}}).to_string()).build()
@@ -237,7 +240,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
         );
         assert_eq!(
             fs::read_to_string(mount.path().join("inherited.md")).unwrap(),
-            "base"
+            "late unrelated local change"
         );
         assert_eq!(
             fs::read_to_string(mount.path().join("own/new.md")).unwrap(),
