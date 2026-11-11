@@ -172,7 +172,7 @@ private struct MailDraftCardContent: View {
 
   private func statusText(_ draft: ChatMailDraft) -> String {
     if store.requiresReadback { return String(localized: "Check draft status") }
-    switch draft.status {
+    return switch draft.status {
     case .draft: String(localized: "Draft · not sent")
     case .sending: String(localized: "Sending…")
     case .sent: String(localized: "Sent")
