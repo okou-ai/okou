@@ -121,7 +121,6 @@ cat >"${fake_bin}/sleep" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$1" >>"$MOCK_SLEEP_LOG"
-touch "$MOCK_RUNS_RELEASED"
 SH
 chmod +x "${fake_bin}/gh" "${fake_bin}/sleep"
 
@@ -137,7 +136,6 @@ run_cancel() {
     MOCK_GH_LOG="${tmp_dir}/gh.log" \
     MOCK_CANCEL_LOG="${tmp_dir}/cancel.log" \
     MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \
-    MOCK_RUNS_RELEASED="${tmp_dir}/runs-released" \
     MOCK_QUEUED_QUERY_COUNT="${tmp_dir}/queued-query-count" \
     SUPERSEDED_RUN_TIMEOUT_SECONDS=10 \
     "$@" \
@@ -184,7 +182,6 @@ fi
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
 if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 \
   >"${tmp_dir}/cancel-failure.out" 2>"${tmp_dir}/cancel-failure.err"; then
   fail "non-conflict cancellation failure must stop the handoff"
@@ -199,7 +196,6 @@ grep -q 'failed to cancel superseded run 100' "${tmp_dir}/cancel-failure.err" ||
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
 output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409)
 grep -q "Requested cancellation of superseded CI runs" <<<"$output" ||
   fail "cancellation conflict must continue without completion checks"
