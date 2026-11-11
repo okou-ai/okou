@@ -5,6 +5,8 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
@@ -128,13 +130,15 @@ const siteFiles = Object.freeze([
   hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
 ]);
 
-async function fixture() {
+async function fixture(plan: "free" | "pro" = "pro") {
   const bdd = createBddApi(context);
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected an organization");
   }
-  await createRunsApi(context).grantProEntitlement(actor);
+  if (plan === "pro") {
+    await createRunsApi(context).grantProEntitlement(actor);
+  }
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
@@ -510,3 +514,71 @@ test("public sites are cloneable outside their originating organization", async 
     }
   }
 });
+
+test.each(["free", "pro"] as const)(
+  "%s App previews respect the download paywall without blocking agent inputs",
+  async (plan) => {
+    const { actor, share } = await fixture(plan);
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId! },
+      {
+        [FeatureSwitchKey.FreePlanArtifactPaywall]: true,
+      },
+    );
+    session(actor);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({
+        headers,
+        body: {
+          filename: "report.pdf",
+          contentType: "application/pdf",
+          size: 13,
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    const params = { reference: reference(completed.body.url) };
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({ headers, params }),
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      filename: "report.pdf",
+      contentType: "application/pdf",
+      url: expect.any(String),
+    });
+    expect(resolved.body.downloadUrl).toStrictEqual(
+      plan === "free" ? null : expect.any(String),
+    );
+    const download = await accept(
+      api()(artifactDownloadsContract).download({ headers, params }),
+      [200, 402],
+    );
+    expect(download.status).toBe(plan === "free" ? 402 : 200);
+    const agentInput = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers: runHeaders(actor, ["file:read"]),
+        params,
+        query: { kind: "file" },
+      }),
+      [200],
+    );
+    expect(agentInput.body.downloadUrl).toStrictEqual(expect.any(String));
+
+    await share({ kind: "file", id: prepared.body.id }, "public");
+    const publicPreview = await accept(
+      api()(artifactReferencesContract).publicUrl({ params }),
+      [200],
+    );
+    expect(publicPreview.body.downloadUrl).toStrictEqual(expect.any(String));
+  },
+);

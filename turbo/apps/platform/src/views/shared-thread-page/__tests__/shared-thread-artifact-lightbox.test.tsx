@@ -253,65 +253,81 @@ test.each([false, true])(
   },
 );
 
-test("a signed-in viewer downloads freshly authorized bytes from a normal artifact reference", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
-  const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
-  const video = { downloadUrl: `${downloadUrl}-preview` };
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ request, respond }) => {
-      expect(request.headers.has("authorization")).toBeTruthy();
-      return respond(200, {
-        url: previewUrl,
-        downloadUrl: video.downloadUrl,
-        filename: "lightvid01.mp4",
-        contentType: "video/mp4",
-        expiresAt: "2099-01-01T00:00:00Z",
-        target: { kind: "file", id: FILE_ID },
-      });
-    },
-  );
-  mockSharedMessage(`![Launch video](${VIDEO})`);
-
-  await setupSharedThreadPage(context, {
-    host: "app.okou.ai",
-    auth: { user: { id: "user_shared_artifact_viewer", fullName: "Viewer" } },
-  });
-
-  const card = await screen.findByTestId("markdown-artifact-preview-video");
-  await waitFor(() => {
-    expect(card.querySelector("video")).toHaveAttribute(
-      "src",
-      `${previewUrl}#t=0.001`,
+test.each([false, true])(
+  "a signed-in viewer downloads a public artifact regardless of their App paywall (App denied: %s)",
+  async (appDenied) => {
+    const browser = context.mocks.browser.blobDownload();
+    const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
+    const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
+    const video: { downloadUrl: string | null } = {
+      downloadUrl: appDenied ? null : `${downloadUrl}-preview`,
+    };
+    context.mocks.api(
+      artifactReferencesContract.resolve,
+      ({ request, respond }) => {
+        expect(request.headers.has("authorization")).toBeTruthy();
+        return respond(200, {
+          url: previewUrl,
+          downloadUrl: video.downloadUrl,
+          filename: "lightvid01.mp4",
+          contentType: "video/mp4",
+          expiresAt: "2099-01-01T00:00:00Z",
+          target: { kind: "file", id: FILE_ID },
+        });
+      },
     );
-  });
+    context.mocks.api(
+      artifactReferencesContract.publicUrl,
+      ({ request, respond }) => {
+        expect(request.headers.has("authorization")).toBeFalsy();
+        return respond(200, {
+          url: previewUrl,
+          downloadUrl,
+          preview: { filename: "lightvid01.mp4", contentType: "video/mp4" },
+        });
+      },
+    );
+    mockSharedMessage(`![Launch video](${VIDEO})`);
 
-  click(card);
+    await setupSharedThreadPage(context, {
+      host: "app.okou.ai",
+      auth: { user: { id: "user_shared_artifact_viewer", fullName: "Viewer" } },
+    });
 
-  const dialog = await screen.findByRole("dialog");
-  await waitFor(() => {
+    const card = await screen.findByTestId("markdown-artifact-preview-video");
+    await waitFor(() => {
+      expect(card.querySelector("video")).toHaveAttribute(
+        "src",
+        `${previewUrl}#t=0.001`,
+      );
+    });
+
+    click(card);
+
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.querySelector("video")).toHaveAttribute(
+        "src",
+        `${previewUrl}#t=2`,
+      );
+    });
+    video.downloadUrl = appDenied ? null : downloadUrl;
+    click(getButtonByName("Download", dialog));
+
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(browser.downloads[0]).toMatchObject({
+      filename: "lightvid01.mp4",
+      url: downloadUrl,
+      blob: null,
+    });
     expect(dialog.querySelector("video")).toHaveAttribute(
       "src",
       `${previewUrl}#t=2`,
     );
-  });
-  video.downloadUrl = downloadUrl;
-  click(getButtonByName("Download", dialog));
-
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]).toMatchObject({
-    filename: "lightvid01.mp4",
-    url: downloadUrl,
-    blob: null,
-  });
-  expect(dialog.querySelector("video")).toHaveAttribute(
-    "src",
-    `${previewUrl}#t=2`,
-  );
-});
+  },
+);
 
 test("a shared video uses its generated cover and plays the original in the viewer", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();

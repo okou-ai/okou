@@ -11,6 +11,7 @@ import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { s3ObjectHead } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
+import { appDownloadPaywalled$ } from "../services/artifact-paywall.service";
 import { resolveArtifactDownloadUrl$ } from "../services/artifact-download-url.service";
 import { privateArtifactRecord$ } from "../services/private-artifact-storage.service";
 import { uploadedArtifactPreviewImageUrl$ } from "../services/uploaded-artifact.service";
@@ -185,7 +186,16 @@ const resolveReference$ = command(
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { kind } = get(queryOf(artifactReferencesContract.resolve));
   const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
-  return await set(resolveReference$, reference, kind, signal);
+  const resolved = await set(resolveReference$, reference, kind, signal);
+  // Standalone conversation snapshots retain their independent sharing authority.
+  if (
+    resolved.status === 200 &&
+    !("sharedThreadSnapshot" in resolved.body) &&
+    (await set(appDownloadPaywalled$, signal))
+  ) {
+    return { ...resolved, body: { ...resolved.body, downloadUrl: null } };
+  }
+  return resolved;
 });
 
 const resolvePublicReference$ = command(

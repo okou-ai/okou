@@ -119,7 +119,8 @@ export const artifactReferencesContract = c.router({
       200: object({
         url: zUrl(),
         expiresAt: string(),
-        downloadUrl: zUrl(),
+        // Preview access does not imply permission to download in the App.
+        downloadUrl: zUrl().nullable(),
         sharedThreadSnapshot: literal(true).optional(),
         filename: string(),
         contentType: string(),

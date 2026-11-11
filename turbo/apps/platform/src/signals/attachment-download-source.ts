@@ -16,6 +16,11 @@ type AttachmentDownloadSource =
       readonly hosted: boolean;
     }
   | {
+      readonly kind: "paywalled";
+      readonly resourceUrl: string;
+      readonly hosted: boolean;
+    }
+  | {
       readonly kind: "unmanaged";
       readonly resourceUrl: string;
       readonly hosted: false;
@@ -26,6 +31,7 @@ export const attachmentDownloadSource$ = command(
   async (
     { get },
     inputUrl: string,
+    audience: "app" | "public",
     signal: AbortSignal,
   ): Promise<AttachmentDownloadSource> => {
     const url = publicAttachmentUrl(inputUrl);
@@ -45,16 +51,25 @@ export const attachmentDownloadSource$ = command(
           { showErrorToast: false },
         );
         if (result.status === 200) {
-          return {
-            kind: "managed",
-            resourceUrl: result.body.url,
-            downloadUrl: result.body.downloadUrl,
-            hosted: result.body.target.kind === "html",
-          };
+          if (result.body.downloadUrl === null && audience === "app") {
+            return {
+              kind: "paywalled",
+              resourceUrl: result.body.url,
+              hosted: result.body.target.kind === "html",
+            };
+          }
+          if (result.body.downloadUrl !== null) {
+            return {
+              kind: "managed",
+              resourceUrl: result.body.url,
+              downloadUrl: result.body.downloadUrl,
+              hosted: result.body.target.kind === "html",
+            };
+          }
         }
       }
-      // Published references are readable without a session or membership in
-      // their originating organization, just as in the standalone viewer.
+      // Published references remain readable without membership in their source
+      // organization, including when a public page's active workspace is paywalled.
       const result = await accept(
         get(apiClient$)(artifactReferencesContract, {
           getToken: () => {
