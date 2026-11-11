@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.87](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.86...sandbox-firecracker-v0.53.87) (2026-11-10)
+
+
+### Refactoring
+
+* **sandbox:** isolate balloon settlement ([#46379](https://github.com/okou-ai/okou/issues/46379)) ([347f580](https://github.com/okou-ai/okou/commit/347f58073304fc6f3a4bcb3a591e68803ed58242))
+
 ## [0.53.86](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.85...sandbox-firecracker-v0.53.86) (2026-11-10)
 
 ## [0.53.85](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.84...sandbox-firecracker-v0.53.85) (2026-11-09)

@@ -738,6 +738,9 @@ export const scrollTargetedWorkflowAutomationIntoViewRef$ = onRef(
   command((_context, element: HTMLElement, signal: AbortSignal) => {
     signal.throwIfAborted();
     element.scrollIntoView({ block: "center" });
+    // Deep-link navigation hands keyboard focus to the selected automation,
+    // rather than leaving it on the notification dialog that just unmounted.
+    element.focus({ preventScroll: true });
   }),
 );
 
@@ -869,10 +872,11 @@ async function readWorkflowDetail(
       params: { workflowId },
       ...(signal ? { fetchOptions: { signal } } : {}),
     }),
-    [200, 404],
+    [200, 403, 404],
     signal,
+    { showErrorToast: false },
   );
-  return result.status === 404 ? null : result.body;
+  return result.status === 200 ? result.body : null;
 }
 
 /** The workflow detail derived from the active route. */

@@ -60,6 +60,8 @@ export type AttachmentArtifactMetadata = {
 
 interface AttachmentNamedLightboxBase {
   readonly catalogArtifactId?: string;
+  readonly contentType?: string | undefined;
+  readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
   readonly threadId?: string;
   readonly url: string;
   readonly filename: string;
@@ -108,6 +110,8 @@ export interface AttachmentAnnotationTarget {
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
   readonly catalogArtifactId?: string;
+  readonly contentType?: string | undefined;
+  readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
   /** Reuse the initiating surface's already resolved credential. */
   readonly preview?: AttachmentPreviewSignals;
   /**

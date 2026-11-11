@@ -506,6 +506,7 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
       readonly state: string;
       readonly cimdClientId: string;
       readonly dcrClientMetadata: OAuthClientMetadata;
+      readonly hasOAuthAccount: boolean;
       readonly featureContext: FeatureSwitchContext;
     },
     signal: AbortSignal,

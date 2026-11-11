@@ -354,6 +354,56 @@ test("A touch device renders the recommended follow-ups as a quick reply rail", 
   expect(followupButtons(group)).toHaveLength(variedFollowups().length);
 });
 
+test.each([false, true])(
+  "Workflow and email recommendations keep their icons and edit the draft (touch: %s)",
+  async (touch) => {
+    context.mocks.browser.matchMedia((query) => {
+      return touch && query === "(pointer: coarse)";
+    });
+    const recommendations: ChatRecommendedFollowup[] = [
+      { prompt: "Save this process as a workflow", kind: "workflow" },
+      { prompt: "After I send it, notify me when they reply", kind: "email" },
+    ];
+    const onSendRequest = vi.fn<(body: { readonly prompt: string }) => void>();
+    installMessageExperienceChat({
+      threadId: context.resourceId,
+      chatEvents: completedReply(recommendations),
+      onSendRequest,
+    });
+    await setupPage({ context, path: `/chats/${context.resourceId}` });
+    const group = await keepGoingGroup();
+    const workflow = followupButtons(group).find((button) => {
+      return button.textContent?.trim() === recommendations[0]?.prompt;
+    });
+    const email = followupButtons(group).find((button) => {
+      return button.textContent?.trim() === recommendations[1]?.prompt;
+    });
+    if (!workflow || !email) {
+      throw new Error("Expected workflow and email recommendations");
+    }
+    expect(workflow.querySelector("svg.lucide-route")).toBeVisible();
+    expect(email.querySelector("svg.lucide-mail")).toBeVisible();
+    const composer = await findComposer();
+    click(workflow);
+    await waitFor(() => {
+      expect(composer.textContent).toBe(recommendations[0]?.prompt);
+      expect(composer).toHaveFocus();
+    });
+    click(email);
+    await waitFor(() => {
+      expect(composer.textContent).toBe(
+        recommendations
+          .map((item) => {
+            return item.prompt;
+          })
+          .join("\n"),
+      );
+      expect(composer).toHaveFocus();
+    });
+    expect(onSendRequest).not.toHaveBeenCalled();
+  },
+);
+
 test("A fine-pointer device keeps the recommended follow-up rows at any width", async () => {
   // The layout follows the pointer, never the viewport. Width is deliberately
   // left unset: a desktop window dragged narrow must keep these rows, and

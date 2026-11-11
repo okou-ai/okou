@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.46](https://github.com/okou-ai/okou/compare/runner-host-v0.10.45...runner-host-v0.10.46) (2026-11-11)
+
+
+### Refactoring
+
+* **host:** isolate systemctl output protocol ownership ([#46480](https://github.com/okou-ai/okou/issues/46480)) ([80423b5](https://github.com/okou-ai/okou/commit/80423b5b5ba25fa1e4eabe4679345fe5ad2d7018))
+
 ## [0.10.45](https://github.com/okou-ai/okou/compare/runner-host-v0.10.44...runner-host-v0.10.45) (2026-11-10)
 
 ## [0.10.44](https://github.com/okou-ai/okou/compare/runner-host-v0.10.43...runner-host-v0.10.44) (2026-11-09)

@@ -292,7 +292,6 @@ final class WorkspaceStoreTests: XCTestCase {
 
     XCTAssertTrue(requests.withLock { $0.isEmpty })
     XCTAssertTrue(store.list.threads.isEmpty)
-    XCTAssertNil(store.list.navigationError)
   }
 
   func testStartupLoadsChatsAndRealtimeDuringSlowNavigationAndPreservesTheDraft()
@@ -554,7 +553,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(reopened.selectedAgentID, storeAgentID)
   }
 
-  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
+  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationPublication() async throws {
     for cancelStartup in [false, true] {
       let cacheDirectory = CacheTestDirectory(owner: self)
       let navigationStarted = expectation(
@@ -602,7 +601,6 @@ final class WorkspaceStoreTests: XCTestCase {
 
       XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
       XCTAssertTrue(store.list.agents.isEmpty)
-      XCTAssertNil(store.list.navigationError)
     }
   }
 

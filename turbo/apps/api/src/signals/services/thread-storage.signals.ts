@@ -10,11 +10,6 @@ import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { storageVersionCacheKeySql } from "./execution-storage-cache-read.service";
-import {
-  createResolvedExecutionStorageObjects,
-  type ExecutionStorageRequest,
-  type PreparedExecutionStorageMount,
-} from "./execution-storage.service";
 import { resolvePreparedPiModelConfig } from "./pi-sandbox-config";
 import {
   type AgentRunStorageInput,
@@ -22,7 +17,7 @@ import {
   type AgentRunStorageSelection,
   assertUniquePersistedMountPaths,
   finalizePreparedStorage,
-  type MaterializedAgentRunStorage,
+  type ResolvedAgentRunStorage,
   persistedStorageMountRequests,
   prepareRequestStorageResolution,
   prepareRunOutputMetadata,
@@ -34,10 +29,8 @@ import {
   storageIndexKey,
   storageIndexWithPrefixVersions,
   storagePrefixVersionRequests,
-  storedMountFromPrepared,
 } from "./run-storage-manifest.service";
 import {
-  exactStorageVersionsFromIndex,
   mergeStorageIndexes,
   storageBaseIndexFromRows,
   storageBaseIndexReadPlan,
@@ -52,14 +45,8 @@ function isThreadModelError(value: unknown): value is ThreadModelError {
   return typeof value === "object" && value !== null && "status" in value;
 }
 
-/** The Run's storage: resolved mounts, prepared manifest and cache writes. */
-export interface Storage extends MaterializedAgentRunStorage {
-  /** Exact mounts and signed URLs recorded in the presigned URL cache. */
-  readonly presignedUrlCache: {
-    readonly mounts: readonly ExecutionStorageRequest[];
-    readonly prepared: readonly PreparedExecutionStorageMount[];
-  };
-}
+/** Exact accepted mount intent. Claim owns archive metadata and signed URLs. */
+export type Storage = ResolvedAgentRunStorage;
 
 /** A prompt bundle or other source that declares the Run's skill volumes. */
 export type SkillVolumeSource = Computed<
@@ -68,7 +55,7 @@ export type SkillVolumeSource = Computed<
 
 /**
  * The Run's storage from its current Agent, model and skill volumes: resolved
- * versions, mounts, writeback targets and signed URLs.
+ * versions, mount paths and writeback targets.
  */
 export function createStorageSignals(
   bootstrap: AgentRunContextSignals,
@@ -84,80 +71,7 @@ export function createStorageSignals(
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
   const plan = createStoragePlanSignals(index);
-  const objects = createStorageObjectSignals(threadContext, plan);
-  const { selectedStorageMetadata$, executionStorageObjects$ } = objects;
-  return computed(async (get): Promise<Storage> => {
-    const [selected, storage] = await Promise.all([
-      get(selectedStorageMetadata$),
-      get(executionStorageObjects$),
-    ]);
-    const spanTiming = selected.plan.requested.input.timing;
-    const spanStartedAt = spanTiming ? performance.now() : undefined;
-    const mounts = await (async () => {
-      return await get(storage.objects.preparedMounts$);
-    })().finally(() => {
-      if (spanTiming && spanStartedAt !== undefined) {
-        spanTiming.recordDuration(
-          "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-          "nested",
-          performance.now() - spanStartedAt,
-          now(),
-          { storage_manifest_signing_owner: "execution_storage" },
-        );
-      }
-    });
-    const byPath = new Map(
-      mounts.map((mount) => {
-        return [mount.mountPath, mount];
-      }),
-    );
-    const attach = (
-      mount: MaterializedAgentRunStorage["resolved"]["metadata"]["storageMounts"][number],
-    ) => {
-      const prepared = byPath.get(mount.mountPath);
-      if (!prepared) {
-        throw new Error("Selected storage mount has no prepared result");
-      }
-      return storedMountFromPrepared(
-        prepared,
-        mount.missingRootPolicy !== undefined,
-      );
-    };
-    const entries = {
-      ...selected.entries,
-      composeEntries: selected.entries.composeEntries.map((entry) => {
-        return {
-          ...entry,
-          storedMount: attach(entry.storedMount),
-        };
-      }),
-      additionalEntries: selected.entries.additionalEntries.map((entry) => {
-        return {
-          ...entry,
-          storedMount: attach(entry.storedMount),
-        };
-      }),
-      writebackEntries: selected.entries.writebackEntries.map((entry) => {
-        return {
-          ...entry,
-          storedMount: attach(entry.storedMount),
-        };
-      }),
-    };
-    const prepared = await finalizePreparedStorage({
-      entries,
-      timing: selected.plan.requested.input.timing,
-      stats: selected.plan.requested.input.stats,
-    });
-    return {
-      resolved: {
-        metadata: selected.metadata,
-        requested: selected.plan.requested,
-      },
-      prepared,
-      presignedUrlCache: { mounts: storage.mounts, prepared: mounts },
-    };
-  });
+  return createStorageMetadataSignal(plan);
 }
 
 function createStorageInputSignal(
@@ -506,12 +420,11 @@ function createStoragePlanSignals(
   return { plan$ };
 }
 
-function createStorageObjectSignals(
-  threadContext: ThreadContext,
+function createStorageMetadataSignal(
   plan: ReturnType<typeof createStoragePlanSignals>,
 ) {
   const { plan$ } = plan;
-  const selectedStorageMetadata$ = computed(async (get) => {
+  return computed(async (get): Promise<Storage> => {
     const plan = await get(plan$);
     if (plan.missingArtifacts.length > 0) {
       throw new Error(
@@ -523,43 +436,11 @@ function createStorageObjectSignals(
       );
     }
     const entries = storageEntriesMetadata(plan.requested);
-    const metadata = await finalizePreparedStorage({ entries });
-    return { plan, entries, metadata };
-  });
-  const executionStorageObjects$ = computed(async (get) => {
-    const selected = await get(selectedStorageMetadata$);
-    const mounts = selected.metadata.storageMounts.map(
-      (mount): ExecutionStorageRequest => {
-        const identity = {
-          orgId: mount.orgId,
-          userId: mount.userId,
-          storageId: mount.storageId,
-          versionId: mount.versionId,
-          name: mount.name,
-          mountPath: mount.mountPath,
-        };
-        return mount.writeback
-          ? {
-              ...identity,
-              mode: "writeback",
-              missingRootPolicy: mount.missingRootPolicy ?? "fail",
-            }
-          : {
-              ...identity,
-              mode: "readonly",
-            };
-      },
-    );
-    const storageIndex = selected.plan.requested.input.storageIndex;
-    const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
-    // The index includes the prefetched entries and their cached URLs.
-    const rows = [...storageIndex.values()].flatMap((entry) => {
-      return entry.cachedUrls ?? [];
+    const metadata = await finalizePreparedStorage({
+      entries,
+      timing: plan.requested.input.timing,
+      stats: plan.requested.input.stats,
     });
-    return {
-      mounts,
-      objects: createResolvedExecutionStorageObjects(mounts, versions, rows),
-    };
+    return { metadata, requested: plan.requested };
   });
-  return { selectedStorageMetadata$, executionStorageObjects$ };
 }

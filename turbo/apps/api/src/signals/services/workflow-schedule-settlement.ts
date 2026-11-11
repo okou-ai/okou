@@ -16,6 +16,11 @@ import {
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
+import type { PreparedAutomationDisabledNotification } from "./automation-disabled-notification.service";
+import {
+  automationDisabledNotificationInsertSql,
+  automationDisableTransitionColumns,
+} from "./automation-disabled-notification-sql";
 
 type ScheduleInputs = Pick<
   typeof workflowAutomations.$inferSelect,
@@ -101,6 +106,7 @@ interface MorningBriefSettlementPublication extends MorningBriefSettlementClaimI
   >;
   readonly settledAt: Date;
   readonly advance: InFlightScheduleAdvance | null;
+  readonly notification: PreparedAutomationDisabledNotification | null;
 }
 
 export function morningBriefScheduleSettlementClaimCondition(
@@ -156,7 +162,11 @@ function morningBriefSettlementAdvanceSql(
       sql`${workflowAutomations}.xmin::text = ${args.automationRevision}`,
       sql`EXISTS (SELECT 1 FROM morning_settlement_candidate)`,
     ),
-    returning: [{ path: ["id"], field: workflowAutomations.id }],
+    returning: Object.entries(automationDisableTransitionColumns()).map(
+      ([name, field]) => {
+        return { path: [name], field };
+      },
+    ),
   });
 }
 
@@ -185,10 +195,15 @@ export function morningBriefScheduleSettlementPublicationSql(
   const advance = args.advance
     ? morningBriefSettlementAdvanceSql(args, args.advance)
     : query
-        .select({ id: workflowAutomations.id })
+        .select(automationDisableTransitionColumns())
         .from(workflowAutomations)
         .where(sql`false`)
         .getSQL();
+  const notification = automationDisabledNotificationInsertSql(
+    args.notification,
+    sql.identifier("morning_settlement_advanced"),
+    sql`EXISTS (SELECT 1 FROM morning_settlement_claim)`,
+  );
   const admitted = args.advance
     ? sql`EXISTS (SELECT 1 FROM morning_settlement_advanced)`
     : sql`EXISTS (SELECT 1 FROM morning_settlement_current)`;
@@ -204,7 +219,8 @@ export function morningBriefScheduleSettlementPublicationSql(
         AND ${eq(morningBriefScheduleClaims.settlement, "unsettled")}
         AND ${admitted}
       RETURNING id
-    )
+    ),
+    morning_settlement_notification AS (${notification})
     SELECT EXISTS (SELECT 1 FROM morning_settlement_candidate) AS candidate_present,
       EXISTS (SELECT 1 FROM morning_settlement_current) AS automation_current,
       EXISTS (SELECT 1 FROM morning_settlement_advanced) AS advanced,

@@ -157,6 +157,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatActionFollowups]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Workflow and email follow-ups",
+    description:
+      "Recommend reusable workflows and email reply reminders with dedicated chat icons.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
@@ -347,6 +356,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.AutomationDisableNotifications]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Automation disable notifications",
+    description:
+      "Notify automation owners in the home bell when consecutive failures automatically disable a recurring schedule.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.UserNotifications]: {
     maintainer: "yuma@okou.ai",

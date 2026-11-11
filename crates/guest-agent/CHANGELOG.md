@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.109.65](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.64...guest-agent-v0.109.65) (2026-11-11)
+
+
+### Refactoring
+
+* **guest-agent:** isolate claude stdin protocol ownership ([#46470](https://github.com/okou-ai/okou/issues/46470)) ([00e06f3](https://github.com/okou-ai/okou/commit/00e06f3960689a71ece65a133ccbbb9d6fe19f3a))
+
+## [0.109.64](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.63...guest-agent-v0.109.64) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-agent:** centralize api success json decoding ([#46442](https://github.com/okou-ai/okou/issues/46442)) ([f40b601](https://github.com/okou-ai/okou/commit/f40b60192f15b80058b6ba9f92b6d20bf167c4d6))
+* **guest-agent:** isolate codex message codec ([#46431](https://github.com/okou-ai/okou/issues/46431)) ([537eec6](https://github.com/okou-ai/okou/commit/537eec60576e04b14b639c4e98da4988cc887d1b))
+
+## [0.109.63](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.62...guest-agent-v0.109.63) (2026-11-10)
+
 ## [0.109.62](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.61...guest-agent-v0.109.62) (2026-11-10)
 
 

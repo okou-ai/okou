@@ -1,10 +1,14 @@
 import {
   array,
+  boolean,
   discriminatedUnion,
   enum as enumType,
+  iso,
   literal,
+  number,
   object,
   string,
+  uuid,
   type infer as Infer,
 } from "zod";
 
@@ -17,6 +21,17 @@ export const userNotificationPayloadSchema = discriminatedUnion("type", [
   object({
     type: literal("rich_text"),
     markdown: markdownSchema,
+    // Older readers retain the rich-text message while ignoring task metadata.
+    automationDisabled: object({
+      automationId: uuid(),
+      workflowId: uuid(),
+      workspaceId: string().min(1),
+      workspaceName: string().min(1).max(200).optional(),
+      automationName: string().min(1).max(200),
+      disabledAt: iso.datetime(),
+      consecutiveFailures: number().int().positive(),
+      recoveryScheduled: boolean(),
+    }).optional(),
   }),
   object({
     type: literal("carousel"),

@@ -44,6 +44,38 @@
             .contentShape(Circle())
           }
         }
+        OkouCatalogSection("Composer suggestions") {
+          OkouSuggestionPanel(
+            title: "Chats",
+            availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+            dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "catalog-dismiss-chats",
+            dismiss: {}
+          ) { _ in
+            VStack(alignment: .leading, spacing: 0) {
+              ForEach(["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self) {
+                title in
+                OkouSuggestionRow(title: title)
+                  .padding(.horizontal, OkouSpace.lg)
+                  .padding(.vertical, OkouSpace.sm)
+              }
+            }
+            .padding(.bottom, OkouSpace.sm)
+          }
+          OkouSuggestionPanel(
+            title: "Workflows",
+            availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+            dismissLabel: "Dismiss Workflow suggestions",
+            dismissIdentifier: "catalog-dismiss-workflows", dismiss: {}
+          ) { _ in
+            OkouSuggestionRow(
+              title: "Daily error review", detail: "Review production errors",
+              command: "/error-review"
+            )
+            .padding(.horizontal, OkouSpace.lg)
+            .padding(.vertical, OkouSpace.sm)
+            .padding(.bottom, OkouSpace.sm)
+          }
+        }
         OkouCatalogSection("Dictation") {
           // A frozen sample of the live strip: dots before audio, then speech.
           HStack(spacing: OkouSpace.xs) {

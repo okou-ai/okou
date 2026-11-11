@@ -172,6 +172,7 @@ export interface ClerkEmailAddress {
 
 export interface ClerkUser {
   readonly id: string;
+  readonly externalId?: string | null;
   readonly createdAt?: number;
   readonly banned?: boolean;
   readonly emailAddresses: readonly ClerkEmailAddress[];
@@ -216,6 +217,13 @@ export type ClerkOrganizationInvitationStatus =
   "pending" | "accepted" | "revoked" | "expired";
 
 export interface ClerkUsersApi {
+  createUser(params: {
+    externalId: string;
+    emailAddress: string[];
+    skipPasswordRequirement: boolean;
+    legalAcceptedAt: Date;
+    privateMetadata: Record<string, unknown>;
+  }): Promise<ClerkUser>;
   getUser(
     userId: string,
     context?: ClerkReadContext,
@@ -225,6 +233,7 @@ export interface ClerkUsersApi {
     params?: {
       userId?: string[];
       emailAddress?: string[];
+      externalId?: string[];
       limit?: number;
       offset?: number;
     },
@@ -250,10 +259,13 @@ export interface ClerkUsersApi {
 }
 
 export interface ClerkOrganizationsApi {
+  createOrganization(params: {
+    name: string;
+    slug: string;
+    createdBy: string;
+  }): Promise<ClerkOrganization>;
   getOrganization(
-    params: {
-      organizationId: string;
-    },
+    params: { organizationId: string } | { slug: string },
     context?: ClerkReadContext,
     signal?: AbortSignal,
   ): Promise<ClerkOrganization>;
@@ -337,6 +349,13 @@ export interface ClerkClient {
   readonly users: ClerkUsersApi;
   readonly organizations: ClerkOrganizationsApi;
   readonly m2m: ClerkMachineToMachineApi;
+  readonly blocklistIdentifiers: {
+    getBlocklistIdentifierList(
+      params: { limit: number; offset: number },
+      context?: ClerkReadContext,
+      signal?: AbortSignal,
+    ): Promise<ClerkPaginated<{ readonly identifier: string }>>;
+  };
 }
 
 export interface ClerkRateLimit {
@@ -575,6 +594,27 @@ export function isClerkInvitationEmailFormatError(error: unknown): boolean {
   );
 }
 
+/** Only explicit identifier refusals are safety verdicts; outages remain errors. */
+export function isClerkEmailSignupRejected(error: unknown): boolean {
+  return (
+    isClerkAPIResponseError(error) &&
+    error.status === 403 &&
+    error.errors.some(({ code }) => {
+      return code === "not_allowed_access";
+    })
+  );
+}
+
+export function isClerkUniqueIdentifierConflict(error: unknown): boolean {
+  return (
+    isClerkAPIResponseError(error) &&
+    error.status === 422 &&
+    error.errors.some(({ code }) => {
+      return code === "form_identifier_exists";
+    })
+  );
+}
+
 export type ClerkOrganizationInvitationConflict =
   "already_member" | "already_invited";
 
@@ -750,6 +790,9 @@ const clerkClient = singleton((): ClerkClient => {
       },
     },
     users: {
+      createUser: (params) => {
+        return sdk.users.createUser(params);
+      },
       getUser: (userId, context, signal) => {
         return clerkRead(
           () => {
@@ -782,6 +825,9 @@ const clerkClient = singleton((): ClerkClient => {
       },
     },
     organizations: {
+      createOrganization: (params) => {
+        return sdk.organizations.createOrganization(params);
+      },
       getOrganization: (params, context, signal) => {
         return clerkRead(
           () => {
@@ -834,6 +880,17 @@ const clerkClient = singleton((): ClerkClient => {
     m2m: {
       createToken: (params) => {
         return sdk.m2m.createToken(params);
+      },
+    },
+    blocklistIdentifiers: {
+      getBlocklistIdentifierList: (params, context, signal) => {
+        return clerkRead(
+          () => {
+            return sdk.blocklistIdentifiers.getBlocklistIdentifierList(params);
+          },
+          context,
+          signal,
+        );
       },
     },
   };

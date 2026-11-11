@@ -1365,6 +1365,7 @@ async fn apply_prepared_storage(
     let cancel = prepared.delivery.cancellation_token();
     let host_failed = Arc::new(AtomicBool::new(false));
     let (send, receive) = tokio::sync::oneshot::channel();
+    let (population_done, wait_population) = tokio::sync::oneshot::channel();
     let handoff = crate::storage_cache::GuestApplication::new(
         send,
         std::path::PathBuf::from(super::guest_runtime_dir(context.run_id)?),
@@ -1385,6 +1386,9 @@ async fn apply_prepared_storage(
                 handoff,
             )
             .await;
+            // Guest may observe ready files before the publication RPC settles.
+            // Only the producer's complete success can admit a decoded tail.
+            let _ = population_done.send(result.is_ok());
             telemetry.record(
                 "runner_storage_manifest_cache_populate",
                 cache_started.elapsed(),
@@ -1394,19 +1398,43 @@ async fn apply_prepared_storage(
             result.map_err(RunnerError::from)
         };
         let application = async {
-            let Ok(crate::storage_cache::GuestStorageInput { manifest, files }) = receive.await
+            let Ok(crate::storage_cache::GuestStorageInput {
+                initial,
+                decoded_tail,
+            }) = receive.await
             else {
                 return Ok(None);
             };
             let started = Instant::now();
-            let result = super::storage::download_storages_with_files_until_cancelled(
-                sandbox,
-                context,
-                manifest,
-                &files,
-                guest_telemetry,
-                &cancel,
-            )
+            let result = async {
+                super::storage::download_storages_with_files_until_cancelled(
+                    sandbox,
+                    context,
+                    initial.manifest,
+                    &initial.files,
+                    guest_telemetry,
+                    &cancel,
+                )
+                .await?;
+                if let Some(tail) = decoded_tail {
+                    let populated = wait_population.await.map_err(|_| {
+                        RunnerError::Internal("storage population completion was lost".into())
+                    })?;
+                    if !populated {
+                        return Err(RunnerError::Cancelled);
+                    }
+                    super::storage::download_storages_with_files_until_cancelled(
+                        sandbox,
+                        context,
+                        tail.manifest,
+                        &tail.files,
+                        guest_telemetry,
+                        &cancel,
+                    )
+                    .await?;
+                }
+                Ok(())
+            }
             .await;
             guest_telemetry.record(
                 "runner_storage_manifest_guest_storage_apply",

@@ -103,7 +103,9 @@ use background_fill::BackgroundFillAction;
 use background_fill::*;
 pub use background_fill::{DeferredBackgroundFill, StorageCacheBackgroundFillCoordinator};
 
-pub use guest_application::{GuestApplication, GuestStorageInput, populate_cache_for_guest};
+pub use guest_application::{
+    GuestApplication, GuestStorageBatch, GuestStorageInput, populate_cache_for_guest,
+};
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -400,7 +402,7 @@ impl FreshArchiveDeliveryAdmission {
         }
         // Construction remains lazy after admission and failures are not
         // cached. There is no await while holding this initialization lock.
-        let client = Client::builder()
+        let client = archive_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
             .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
@@ -423,6 +425,16 @@ impl Default for FreshArchiveDeliveryAdmission {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// Archives are already compressed and their hashes identify the original bytes.
+// Preserve that contract even when another crate enables a reqwest codec.
+fn archive_client_builder() -> reqwest::ClientBuilder {
+    Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
 }
 
 struct FreshArchivePhaseRecord {

@@ -120,7 +120,7 @@ final class RecommendedFollowupRailView: UIScrollView {
     }
     for (button, followup) in zip(buttons, source.followups) {
       button.configure(
-        prompt: followup.prompt, icon: followup.kind == .generate ? icon(followup) : nil,
+        prompt: followup.prompt, icon: followup.kind == .talk ? nil : icon(followup),
         fontSize: fontSize, iconSize: iconSize)
     }
     setNeedsLayout()
@@ -157,7 +157,9 @@ final class RecommendedFollowupRailView: UIScrollView {
   }
 
   private func icon(_ followup: ChatRecommendedFollowup) -> String {
-    switch followup.generationType {
+    if followup.kind == .workflow { return "workflow" }
+    if followup.kind == .email { return "mail" }
+    return switch followup.generationType {
     case .image: "image"
     case .presentation: "chart-no-axes-combined"
     case .website: "link"
@@ -166,6 +168,8 @@ final class RecommendedFollowupRailView: UIScrollView {
   }
 
   private func kindLabel(_ followup: ChatRecommendedFollowup) -> String {
+    if followup.kind == .workflow { return "Workflow suggestion" }
+    if followup.kind == .email { return "Email reply reminder" }
     guard followup.kind == .generate else { return "Follow-up question" }
     switch followup.generationType {
     case .image: return "Image suggestion"

@@ -251,6 +251,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-compression"
+version = "0.4.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ad47a740fb906fffdd891e8b6d5fde2511600f7bfaebd68939fa08a14999459"
+dependencies = [
+ "compression-codecs",
+ "compression-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1151,6 +1163,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "compression-codecs"
+version = "0.4.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84f840cff84d10085260e460023934d0af699e71212b09b2a41452e8bd9cda43"
+dependencies = [
+ "compression-core",
+ "flate2",
+ "memchr",
+]
+
+[[package]]
+name = "compression-core"
+version = "0.4.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ebdda89edc534bf8d5dd2857562633b6495557e5846552ade994b99ed13c36a"
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2018,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.62"
+version = "0.109.65"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2057,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.171"
+version = "0.1.174"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2123,7 +2152,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.90"
+version = "0.24.92"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2141,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.160"
+version = "0.12.162"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2170,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.76"
+version = "0.20.78"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2191,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.31.2"
+version = "0.31.3"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -4053,7 +4082,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.59"
+version = "0.244.65"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4127,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.7"
+version = "0.21.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4175,7 +4204,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.45"
+version = "0.10.46"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4200,7 +4229,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.86"
+version = "0.17.89"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4231,7 +4260,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4263,13 +4292,14 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.17.5"
+version = "0.17.8"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
  "async-trait",
  "bytes",
  "chrono",
+ "flate2",
  "futures-util",
  "guest-contracts",
  "guest-control-proto",
@@ -4307,7 +4337,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.34"
+version = "0.31.38"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4408,7 +4438,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.10.6"
+version = "0.10.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4453,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.22.7"
+version = "0.22.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4778,7 +4808,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.86"
+version = "0.53.87"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4816,7 +4846,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.53"
+version = "0.17.54"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -5740,12 +5770,17 @@ version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
+ "async-compression",
  "bitflags 2.13.2",
  "bytes",
+ "futures-core",
  "futures-util",
  "http 1.5.0",
  "http-body",
+ "http-body-util",
  "pin-project-lite",
+ "tokio",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",

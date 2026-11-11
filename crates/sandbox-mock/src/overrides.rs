@@ -57,6 +57,8 @@ pub(crate) struct ExecOverrideState {
     pub(crate) calls: Mutex<Vec<ExecCall>>,
     /// Recorded fixed storage-manifest calls across all attached sandboxes.
     pub(crate) storage_manifest_calls: Mutex<Vec<StorageManifestCall>>,
+    /// Fixed storage operations that have selected and returned their result.
+    pub(crate) completed_storage_manifest_calls: Mutex<u64>,
     /// Optional gate entered after recording a fixed storage-manifest call.
     pub(crate) storage_manifest_gate: Mutex<Option<MockLifecycleGate>>,
     /// FIFO results for fixed storage-manifest operations.
@@ -582,6 +584,14 @@ impl MockSandboxOverrides {
             .storage_manifest_calls
             .lock_ignoring_poison()
             .clone()
+    }
+
+    /// Number of fixed storage responses completed past their lifecycle gate.
+    pub fn completed_storage_manifest_calls(&self) -> u64 {
+        *self
+            .exec
+            .completed_storage_manifest_calls
+            .lock_ignoring_poison()
     }
 
     /// Return typed instruction operations across attached sandboxes.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections import deque
 from collections.abc import Iterable
 from enum import Enum, auto
 from pathlib import Path
@@ -40,14 +41,16 @@ def _registered_key_name(node: ast.AST) -> str | None:
 
 
 def _contains_registered_key(nodes: Iterable[ast.AST]) -> bool:
-    # Walk structural nodes too, but only expressions and keywords can hold a key.
-    expression_types = (ast.expr, ast.keyword)
-    return any(
-        _registered_key_name(child) is not None
-        for node in nodes
-        for child in ast.walk(node)
-        if isinstance(child, expression_types)
-    )
+    # Walk every node; only _static_string_value's supported types can hold a key.
+    expression_types = (ast.Constant, ast.JoinedStr, ast.BinOp, ast.keyword)
+    for node in nodes:
+        pending = deque([node])
+        while pending:
+            child = pending.popleft()
+            pending.extend(ast.iter_child_nodes(child))
+            if isinstance(child, expression_types) and _registered_key_name(child) is not None:
+                return True
+    return False
 
 
 def _static_string_value(node: ast.AST) -> str | None:

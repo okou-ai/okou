@@ -56,18 +56,29 @@ function isJsonSyntaxPromptFragment(prompt: string): boolean {
 
 export function normalizeRecommendedFollowups(
   value: unknown,
+  actionFollowupsEnabled: boolean,
 ): ChatRecommendedFollowup[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   const seen = new Set<string>();
+  const actionKinds = new Set<ChatRecommendedFollowup["kind"]>();
   const followups: ChatRecommendedFollowup[] = [];
   for (const item of value) {
     if (!isRecord(item) || typeof item.prompt !== "string") {
       continue;
     }
-    if (item.kind !== "talk" && item.kind !== "generate") {
+    if (
+      item.kind !== "talk" &&
+      item.kind !== "generate" &&
+      item.kind !== "workflow" &&
+      item.kind !== "email"
+    ) {
+      continue;
+    }
+    const isAction = item.kind === "workflow" || item.kind === "email";
+    if (isAction && (!actionFollowupsEnabled || actionKinds.has(item.kind))) {
       continue;
     }
 
@@ -80,6 +91,9 @@ export function normalizeRecommendedFollowups(
       continue;
     }
     seen.add(prompt);
+    if (isAction) {
+      actionKinds.add(item.kind);
+    }
 
     followups.push({
       prompt,

@@ -10,6 +10,83 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.57.2](https://github.com/okou-ai/okou/compare/api-v2.57.1...api-v2.57.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **api:** allow verified memory cache cleanup across runs ([#46461](https://github.com/okou-ai/okou/issues/46461)) ([0122027](https://github.com/okou-ai/okou/commit/0122027f0fee256b8d439891ed3435304aeb2aa3))
+
+
+### Performance Improvements
+
+* **api:** reuse claim catalog and permission inputs ([#46454](https://github.com/okou-ai/okou/issues/46454)) ([46f2ac7](https://github.com/okou-ai/okou/commit/46f2ac7fd9056b0c3ffd59f611381dbf7d3092a2))
+
+## [2.57.1](https://github.com/okou-ai/okou/compare/api-v2.57.0...api-v2.57.1) (2026-11-10)
+
+
+### Refactoring
+
+* **api:** persist only irrecoverable execution inputs ([#46382](https://github.com/okou-ai/okou/issues/46382)) ([cee3bd3](https://github.com/okou-ai/okou/commit/cee3bd3b92c6d8b28bde8da1dd81876ee144b811))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.1
+    * @okouai/core bumped to 8.826.1
+    * @okouai/db bumped to 2.25.1
+    * @okouai/pi-agent-runtime bumped to 1.51.97
+
+## [2.57.0](https://github.com/okou-ai/okou/compare/api-v2.56.0...api-v2.57.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+* **email:** support multiple workspace sender connections ([#46296](https://github.com/okou-ai/okou/issues/46296)) ([f9761e3](https://github.com/okou-ai/okou/commit/f9761e3378b4a881a28d855962f8d87199b6a5d1))
+* **notifications:** notify owners when schedules are auto-disabled ([#46353](https://github.com/okou-ai/okou/issues/46353)) ([dbe6412](https://github.com/okou-ai/okou/commit/dbe6412be838f46e3200b9998358fb120f386dbb))
+
+
+### Bug Fixes
+
+* **email:** clarify workspace connection and show success toast ([#46399](https://github.com/okou-ai/okou/issues/46399)) ([321c716](https://github.com/okou-ai/okou/commit/321c7160da2c7a4156d5151c1d1639e99ef984bd))
+
+
+### Refactoring
+
+* **api:** prepare explicit preview bypass authorization receipt ([#46400](https://github.com/okou-ai/okou/issues/46400)) ([4c98de8](https://github.com/okou-ai/okou/commit/4c98de8a0ad8e8230a27c248ddc1534360646d33))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.0
+    * @okouai/core bumped to 8.826.0
+    * @okouai/db bumped to 2.25.0
+    * @okouai/pi-agent-runtime bumped to 1.51.96
+
+## [2.56.0](https://github.com/okou-ai/okou/compare/api-v2.55.7...api-v2.56.0) (2026-11-10)
+
+
+### Features
+
+* **email:** register new senders through confirmed replies ([#46356](https://github.com/okou-ai/okou/issues/46356)) ([0c64db3](https://github.com/okou-ai/okou/commit/0c64db344440e3507b033e9478b5944451575d3d))
+
+
+### Bug Fixes
+
+* **api:** admit useful delegable suggestions ([#46378](https://github.com/okou-ai/okou/issues/46378)) ([bd8efe4](https://github.com/okou-ai/okou/commit/bd8efe4f4182fc3498bc80e1cf4a72bb1a26136f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.24.14
+
 ## [2.55.7](https://github.com/okou-ai/okou/compare/api-v2.55.6...api-v2.55.7) (2026-11-10)
 
 

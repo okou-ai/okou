@@ -101,16 +101,17 @@ async def test_partitions_preserve_usage_and_lexical_state(
     body = model_json_body(protocol, characters=6_000, ensure_ascii=ensure_ascii)
     wire = encode_model_json(body, encoding)
     mitm_addon.responseheaders(flow)
-    forwarded = bytearray()
+    forwarded_size = 0
     size = chunk_size or len(wire)
     for offset in range(0, len(wire), size):
         chunk = wire[offset : offset + size]
         emitted = response_stream(flow)(chunk)
-        assert emitted == chunk
+        assert emitted == chunk == wire[forwarded_size : forwarded_size + len(chunk)]
         assert isinstance(emitted, bytes)
-        forwarded.extend(emitted)
-        await mitm_addon.responseinspection(flow)
-    assert forwarded == wire
+        forwarded_size += len(chunk)
+        if response_streaming.has_pending_response_inspection(flow):
+            await mitm_addon.responseinspection(flow)
+    assert forwarded_size == len(wire)
     assert response_stream(flow)(b"") == b""
     assert mitm_addon.response(flow) is None
     quantities = flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]

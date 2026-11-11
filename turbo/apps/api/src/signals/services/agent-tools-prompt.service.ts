@@ -258,6 +258,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : [
           "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
         ]),
+    "- Keep temporary downloads, synchronized chat histories, diffs, inventories and backups outside personal Memory. Store chat history caches under `/tmp/okou-chat-history` and other task scratch under `/tmp` or the workspace. Memory is saved after each Run; retain only durable knowledge and intentional evidence there, under the existing Memory authorization rules.",
     ...(args.singleAgent
       ? [instructionsAndMemoryGuidance[0], SINGLE_AGENT_SCOPE_PROMPT]
       : [

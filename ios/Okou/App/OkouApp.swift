@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import Foundation
 import SwiftUI
@@ -137,9 +138,7 @@ struct AppRootView: View {
         let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
-        if authentication.presentation?.userID == userID,
-          authentication.presentation?.preparedWorkspaceID == workspaceID,
-          let workspaceData, workspaceData.scopeID == scopeID,
+        if let workspaceData, workspaceData.scopeID == scopeID,
           scenePhase != .background || presentedScopeID == scopeID
         {
           WorkspaceRootView(
@@ -149,7 +148,7 @@ struct AppRootView: View {
           )
           .id(scopeID)
         } else {
-          ProgressView()
+          OkouColor.background.ignoresSafeArea()
         }
       } else {
         SignInView(authentication: authentication, webURL: configuration.webURL)
@@ -157,7 +156,8 @@ struct AppRootView: View {
     }
     .task(id: authentication.presentationScopeID) {
       await authentication.preparePresentation()
-      guard !Task.isCancelled else { return }
+    }
+    .task(id: authentication.presentationScopeID) {
       let data = notifications.data(
         authentication: authentication, configuration: configuration, session: session)
       workspaceData = data
@@ -256,14 +256,24 @@ private struct WorkspaceRootView: View {
       ZStack(alignment: .leading) {
         OkouColor.sidebar.ignoresSafeArea()
 
-        ChatSidebarView(
-          store: store, authentication: authentication, workspaceID: workspaceID,
-          notifications: notifications, sidebar: sidebar,
-          headerHeight: headerHeight,
-          accountError: $accountError,
-          close: closeSidebar,
-          newChat: startNewChat
-        )
+        Group {
+          // Identity restoration gates the sidebar, never the new-chat screen.
+          if authentication.presentation?.userID == userID,
+            authentication.presentation?.preparedWorkspaceID == workspaceID
+          {
+            StoreProvider(store.projects.stateStore) {
+              ChatSidebarView(
+                store: store, authentication: authentication, workspaceID: workspaceID,
+                notifications: notifications, sidebar: sidebar,
+                headerHeight: headerHeight,
+                accountError: $accountError,
+                close: closeSidebar,
+                newChat: startNewChat
+              )
+              .id(ObjectIdentifier(store))
+            }
+          }
+        }
         .frame(width: sidebarWidth, height: geometry.size.height)
         .offset(x: -drift * (1 - sidebarProgress))
         .allowsHitTesting(sidebar.isOpen)
@@ -277,7 +287,7 @@ private struct WorkspaceRootView: View {
               didSend: { await notifications.requestAfterSend() },
               topContentInset: topContentHeight, sidebar: sidebar,
               mentionSource: ComposerMentionSource(
-                agentID: conversation.thread.agentID, agents: store.list.agents,
+                agentID: conversation.thread.agentID,
                 threads: store.list.threads),
               onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
             )
@@ -286,33 +296,11 @@ private struct WorkspaceRootView: View {
             newChatHome
               .frame(minHeight: 0, maxHeight: .infinity)
               .safeAreaInset(edge: .bottom, spacing: 0) {
-                @Bindable var composer = store.newComposer
-                ChatComposerView(
-                  draft: $composer.text, isBusy: store.isCreating,
-                  showsProgress: store.isCreating, canStop: false,
-                  needsUpgrade: store.needsUpgrade,
-                  error: store.error, attachmentURL: store.webURL,
-                  attachments: composer.attachments,
-                  draftState: composer,
-                  submit: {
-                    await store.sendNewChat(
-                      sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-                    await notifications.requestAfterSend()
-                  },
-                  refresh: nil,
-                  modelSelection: store.newModelSelection,
-                  connectorSelection: store.newModelSelection.connectors,
-                  mentionSource: ComposerMentionSource(
-                    agentID: store.defaultAgentID, agents: store.list.agents,
-                    threads: store.list.threads),
-                  workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
-                  placeholder: String(localized: "Message \(store.currentAgentName)"),
-                  project: store.newChatProject,
-                  removeProject: store.removeNewChatProject)
+                newChatComposer
               }
               .animation(
                 reduceMotion ? nil : .easeInOut(duration: 0.22),
-                value: store.newComposer.voice?.phase)
+                value: store.newComposer.voice?.phase ?? .idle)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -416,7 +404,7 @@ private struct WorkspaceRootView: View {
             if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
           })
       )
-      .composerWorkflowOverlay(
+      .composerSuggestionOverlay(
         topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
       )
     }
@@ -482,6 +470,41 @@ private struct WorkspaceRootView: View {
       }
       .background(OkouColor.background)
       .interactiveDismissDisabled()
+    }
+  }
+
+  @ViewBuilder private var newChatComposer: some View {
+    if store.defaultAgentID != nil {
+      @Bindable var composer = store.newComposer
+      ChatComposerView(
+        draft: $composer.text, isBusy: store.isCreating,
+        showsProgress: store.isCreating, canStop: false,
+        needsUpgrade: store.needsUpgrade,
+        error: store.error, attachmentURL: store.webURL,
+        attachments: composer.attachments,
+        draftState: composer,
+        submit: {
+          await store.sendNewChat(
+            sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+          await notifications.requestAfterSend()
+        },
+        refresh: nil,
+        modelSelection: store.newModelSelection,
+        connectorSelection: store.newModelSelection.connectors,
+        mentionSource: ComposerMentionSource(
+          agentID: store.defaultAgentID,
+          threads: store.list.threads),
+        workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
+        placeholder: String(localized: "Message \(store.currentAgentName)"),
+        project: store.newChatProject,
+        removeProject: store.removeNewChatProject
+      )
+      .transition(.identity)
+    } else {
+      // Reserve the compact input's space without mounting the provisional editor.
+      Color.clear
+        .frame(height: OkouControl.composerCompactHeight + OkouSpace.sm)
+        .accessibilityHidden(true)
     }
   }
 

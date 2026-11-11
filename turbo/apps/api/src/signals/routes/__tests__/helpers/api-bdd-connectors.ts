@@ -385,7 +385,7 @@ interface AutomaticMcpOAuthProviderOptions {
     "invalid_client" | "invalid_grant" | "temporarily_unavailable" | null
   )[];
   readonly registration: "cimd" | "dcr" | "none";
-  readonly authentication?: "invalid" | "none" | "oauth";
+  readonly authentication?: "invalid" | "none" | "oauth" | "mixed";
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
     "none" | "client_secret_basic" | "client_secret_post";
@@ -557,6 +557,9 @@ export function mockAutomaticMcpOAuthProvider(
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],
   };
+  const resourceMetadataStatus =
+    options.resourceMetadataStatus ??
+    (options.authentication === "none" ? 404 : undefined);
   const tokenEndpointAuthMethod =
     options.dcrTokenEndpointAuthMethod ?? "client_secret_basic";
   const dcrClientId = options.dcrClientId ?? "automatic-dcr-client";
@@ -638,7 +641,10 @@ export function mockAutomaticMcpOAuthProvider(
       if (options.authentication === "invalid") {
         return new HttpResponse(null, { status: 403 });
       }
-      if (options.authentication === "none") {
+      if (
+        options.authentication === "none" ||
+        options.authentication === "mixed"
+      ) {
         const body = object({
           jsonrpc: literal("2.0"),
           id: union([string(), number()]).optional(),
@@ -646,18 +652,50 @@ export function mockAutomaticMcpOAuthProvider(
         })
           .passthrough()
           .parse(await request.json());
-        if (body.method !== "initialize" || body.id === undefined) {
+        if (body.method === "notifications/initialized") {
           return new HttpResponse(null, { status: 202 });
         }
-        return HttpResponse.json({
-          jsonrpc: "2.0",
-          id: body.id,
-          result: {
-            protocolVersion: "2025-06-18",
-            capabilities: {},
-            serverInfo: { name: "BDD no-auth MCP", version: "1.0.0" },
-          },
-        });
+        if (body.method === "initialize" && body.id !== undefined) {
+          return HttpResponse.json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              protocolVersion: "2025-06-18",
+              capabilities: { tools: {} },
+              serverInfo: {
+                name: "BDD public-initialization MCP",
+                version: "1.0.0",
+              },
+            },
+          });
+        }
+        if (body.method === "tools/list" && body.id !== undefined) {
+          return HttpResponse.json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              tools: [
+                {
+                  name: "public_lookup",
+                  description: "Public reference data",
+                  inputSchema: { type: "object", properties: {} },
+                },
+                ...(options.authentication === "mixed"
+                  ? [
+                      {
+                        name: "account_lookup",
+                        description: "Account data requiring OAuth",
+                        inputSchema: { type: "object", properties: {} },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          });
+        }
+        if (options.authentication === "none") {
+          return new HttpResponse(null, { status: 202 });
+        }
       }
       const resourceMetadataParameter =
         options.discovery === "well-known-oidc"
@@ -673,10 +711,10 @@ export function mockAutomaticMcpOAuthProvider(
       });
     }),
     http.get(resourceMetadataUrl, () => {
-      return options.resourceMetadataStatus
+      return resourceMetadataStatus
         ? HttpResponse.json(
             { error: "resource_metadata_unavailable" },
-            { status: options.resourceMetadataStatus },
+            { status: resourceMetadataStatus },
           )
         : HttpResponse.json({
             ...resourceMetadata,
@@ -695,10 +733,10 @@ export function mockAutomaticMcpOAuthProvider(
     http.get(
       new URL("/.well-known/oauth-protected-resource", endpoint).href,
       () => {
-        return options.resourceMetadataStatus
+        return resourceMetadataStatus
           ? HttpResponse.json(
               { error: "resource_metadata_unavailable" },
-              { status: options.resourceMetadataStatus },
+              { status: resourceMetadataStatus },
             )
           : HttpResponse.json({
               ...resourceMetadata,

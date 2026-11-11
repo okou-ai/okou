@@ -421,7 +421,6 @@ class UsageEventBuffer:
             lambda pending_batch: self._make_delivery_outcome_callback(
                 pending_flush,
                 pending_batch,
-                trigger,
             ),
         )
         _apply_retained_batch_counts(
@@ -440,14 +439,12 @@ class UsageEventBuffer:
         self,
         pending_flush: _PendingFlush,
         pending_batch: _PendingBatch,
-        trigger: UsageFlushTrigger,
     ) -> _DeliveryOutcomeCallback:
         def callback(outcome: WebhookDeliveryOutcome) -> None:
             self._record_delivery_outcome(
                 pending_flush,
                 pending_batch,
                 outcome,
-                trigger,
             )
 
         return callback
@@ -457,7 +454,6 @@ class UsageEventBuffer:
         pending_flush: _PendingFlush,
         pending_batch: _PendingBatch,
         outcome: WebhookDeliveryOutcome,
-        trigger: UsageFlushTrigger,
     ) -> None:
         timer_to_start: _TimerHandle | None = None
         completion: _DeliveryCompletion | None = None

@@ -1080,7 +1080,7 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
             .filter(|operation| operation.0 == "runner_claim_response_body_attribution")
             .map(|operation| (operation.2.as_deref(), operation.3.as_deref()))
             .collect::<Vec<_>>(),
-        vec![(Some("4_16_kib"), Some("absent"))]
+        vec![(Some("4_16_kib"), Some("absent_or_decoded"))]
     );
     assert_action_once_with_duration(&telemetry, "runner_claim_response_decode", 3);
     assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);

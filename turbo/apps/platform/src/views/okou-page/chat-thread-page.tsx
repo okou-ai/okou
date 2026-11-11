@@ -74,6 +74,7 @@ import {
   Loader2,
   Play,
   MessageCircle,
+  Mail,
   SmilePlus,
   Package,
   Route,
@@ -3718,6 +3719,12 @@ function RecommendedFollowupIcon({
 }: {
   followup: RecommendedFollowup;
 }) {
+  if (followup.kind === "workflow") {
+    return <Route size={16} />;
+  }
+  if (followup.kind === "email") {
+    return <Mail size={16} />;
+  }
   if (followup.kind !== "generate") {
     return <MessageCircle size={16} />;
   }
@@ -3749,6 +3756,8 @@ function recommendedFollowupShownKey(
 function reportRecommendedFollowupsShown(
   element: HTMLDivElement | null,
   source: RecommendedFollowupSource,
+  threadId: string,
+  layout: "rows" | "quick-reply-rail",
 ): void {
   if (!element) {
     return;
@@ -3761,7 +3770,9 @@ function reportRecommendedFollowupsShown(
   element.dataset.followupsShownKey = shownKey;
 
   captureRecommendedFollowupsShown({
+    threadId,
     messageId: source.eventId,
+    layout,
     followups: source.followups,
   });
 }
@@ -3778,11 +3789,12 @@ function RecommendedFollowupList({
   // composer auto-focus heuristic. A desktop window dragged narrow must still
   // render the flat list, so container width is not the deciding factor.
   const showFollowupCards = isMobileTextInputDevice();
+  const layout = showFollowupCards ? "quick-reply-rail" : "rows";
   const selectOrAppendComposerText = useSet(
     thread.composer.editor.selectOrAppendText$,
   );
   const handleRecommendedFollowupsRef = (element: HTMLDivElement | null) => {
-    reportRecommendedFollowupsShown(element, source);
+    reportRecommendedFollowupsShown(element, source, thread.threadId, layout);
   };
 
   const handleSelect = (
@@ -3790,7 +3802,9 @@ function RecommendedFollowupList({
     followupIndex: number,
   ) => {
     captureRecommendedFollowupSelected({
+      threadId: thread.threadId,
       messageId: source.eventId,
+      layout,
       followupIndex,
       followupCount: source.followups.length,
       followup,
@@ -3808,7 +3822,7 @@ function RecommendedFollowupList({
       // The layout is decided by the device, not by width, so it is not
       // observable through a media query. Tests and e2e read this instead of
       // the styling classes.
-      data-followup-layout={showFollowupCards ? "quick-reply-rail" : "rows"}
+      data-followup-layout={layout}
       className={cn(
         // The flat list pulls out by the row buttons' own px-2 so its text
         // aligns with the message column. The rail carries a deeper inner
@@ -3848,14 +3862,14 @@ function RecommendedFollowupList({
               className={cn(
                 "text-muted-foreground transition-colors group-hover:text-foreground",
                 // A quick reply drops the 28px response rail, but keeps the
-                // icon for `generate`: mispicking one there costs a real
-                // generation rather than another message. `h-6` is one line
-                // box, so the glyph centres on the first line of a wrapped
-                // suggestion instead of on the whole text block.
+                // icons for generation and setup requests so their intent
+                // stays visible. `h-6` is one line box, so the glyph centres
+                // on the first line of a wrapped suggestion instead of on
+                // the whole text block.
                 showFollowupCards
                   ? "inline-flex h-6 shrink-0 items-center justify-center"
                   : CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS,
-                showFollowupCards && followup.kind !== "generate" && "hidden",
+                showFollowupCards && followup.kind === "talk" && "hidden",
               )}
             >
               <RecommendedFollowupIcon followup={followup} />
@@ -6351,6 +6365,7 @@ function MessageAttachment({
             threadId,
             url: a.url,
             filename: a.filename,
+            contentType: a.signals.contentType,
             preview: a.signals,
             shareAvailable: false,
           });
@@ -6804,6 +6819,7 @@ function UserMessageFileReference({
             threadId,
             url: signals.url,
             filename: part.filenameSnapshot,
+            contentType: part.contentType,
             preview: signals,
             shareAvailable: false,
           });
@@ -7460,6 +7476,7 @@ function PagedUserMessage({
       threadId: thread.threadId,
       url: attachment.url,
       filename: attachment.filename,
+      contentType: attachment.signals.contentType,
       preview: attachment.signals,
       // The user's own attachment, not a published artifact: previewing it
       // offers no sharing controls.

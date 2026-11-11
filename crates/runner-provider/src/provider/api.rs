@@ -1,6 +1,7 @@
 //! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
 
 mod claim_inputs;
+mod response_decode;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,12 +17,12 @@ use api_contracts::generated::{
         PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
         PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
-    decode_paths, routes,
+    routes,
     types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
 use bytes::Bytes;
 use reqwest::{Response, StatusCode};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 
 use super::api_ably_supervisor::{
     AblySupervisor, AblySupervisorConfig, PollDue, PollOutcome, PollReason, PollWakeups,
@@ -62,6 +63,8 @@ use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
+
+use response_decode::{ApiDecodePath, decode_api_json, decode_api_json_bytes};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -2221,47 +2224,6 @@ async fn check_api_status(resp: Response, label: &'static str) -> ProviderResult
     Ok(resp)
 }
 
-trait ApiDecodePath: DeserializeOwned {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema;
-}
-
-impl ApiDecodePath for NextSteerableInputResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::steerable_inputs::next::RESPONSE;
-}
-
-impl ApiDecodePath for PollResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::poll::RESPONSE;
-}
-
-impl ApiDecodePath for ExecutionContext {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::jobs::by_id::claim::RESPONSE;
-}
-
-impl ApiDecodePath for ably_subscriber::TokenRequest {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::realtime::token::RESPONSE;
-}
-
-impl ApiDecodePath for ConnectorRuntimeSyncBatchResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::connector_runtime::sync::RESPONSE;
-}
-
-impl ApiDecodePath for BuiltinFirewallCatalog {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::builtin_firewalls::resolve::RESPONSE;
-}
-
-async fn decode_api_json<T: ApiDecodePath>(resp: Response, label: &str) -> ProviderResult<T> {
-    let body = resp.bytes().await.map_err(|e| {
-        ProviderError::Api(format!("{label} decode read body: {}", e.without_url()))
-    })?;
-    decode_api_json_bytes(&body).map_err(|e| ProviderError::Api(format!("{label} decode: {e}")))
-}
-
 async fn read_api_error(mut resp: Response) -> (StatusCode, ApiErrorBody) {
     let status = resp.status();
     let mut bytes = Vec::new();
@@ -2303,131 +2265,6 @@ fn api_status_error(
         status,
         body: body.into(),
     }))
-}
-
-fn decode_api_json_bytes<T: ApiDecodePath>(body: &[u8]) -> Result<T, String> {
-    let mut deserializer = serde_json::Deserializer::from_slice(body);
-    let value = serde_path_to_error::deserialize(&mut deserializer).map_err(|e| {
-        format_json_decode_error(
-            format_json_decode_path(e.path(), T::DECODE_PATH_SCHEMA),
-            e.inner(),
-        )
-    })?;
-    deserializer
-        .end()
-        .map_err(|e| format_json_decode_error(".".to_string(), &e))?;
-    Ok(value)
-}
-
-fn format_json_decode_path(
-    path: &serde_path_to_error::Path,
-    schema: &'static api_contracts::DecodePathSchema,
-) -> String {
-    let mut formatted = String::new();
-    let mut cursor = schema.root();
-
-    for segment in path {
-        match segment {
-            serde_path_to_error::Segment::Seq { index } => {
-                formatted.push('[');
-                formatted.push_str(&index.to_string());
-                formatted.push(']');
-                cursor = cursor.sequence_item();
-            }
-            serde_path_to_error::Segment::Map { key } => {
-                let (segment, next_cursor) = match cursor.map_segment(key) {
-                    api_contracts::DecodePathMapSegment::Field(next) => (key.as_str(), next),
-                    api_contracts::DecodePathMapSegment::DynamicKey(next) => ("<map-key>", next),
-                    api_contracts::DecodePathMapSegment::Unknown(next) => ("<field>", next),
-                };
-                push_json_path_segment(&mut formatted, segment);
-                cursor = next_cursor;
-            }
-            serde_path_to_error::Segment::Enum { .. } => {
-                push_json_path_segment(&mut formatted, "<variant>");
-            }
-            serde_path_to_error::Segment::Unknown => {
-                push_json_path_segment(&mut formatted, "?");
-                cursor = cursor.unknown();
-            }
-        }
-    }
-
-    if formatted.is_empty() {
-        ".".to_string()
-    } else {
-        formatted
-    }
-}
-
-fn push_json_path_segment(formatted: &mut String, segment: &str) {
-    if !formatted.is_empty() {
-        formatted.push('.');
-    }
-    formatted.push_str(segment);
-}
-
-fn format_json_decode_error(mut path: String, error: &serde_json::Error) -> String {
-    let category = match error.classify() {
-        serde_json::error::Category::Io => "io",
-        serde_json::error::Category::Syntax => "syntax",
-        serde_json::error::Category::Data => "data",
-        serde_json::error::Category::Eof => "eof",
-    };
-    let location = format!("line {} column {}", error.line(), error.column());
-    let detail = sanitized_json_error_detail(error);
-    if detail == "unknown variant" && is_firewall_entry_decode_path(&path) {
-        path.push_str(".kind");
-    }
-    if path == "." {
-        format!("failed at <root>: {detail}; {category} error at {location}")
-    } else {
-        format!("failed at {path}: {detail}; {category} error at {location}")
-    }
-}
-
-fn is_firewall_entry_decode_path(path: &str) -> bool {
-    let Some(rest) = path.strip_prefix("firewalls[") else {
-        return false;
-    };
-    let Some((index, suffix)) = rest.split_once(']') else {
-        return false;
-    };
-    !index.is_empty() && index.chars().all(|c| c.is_ascii_digit()) && suffix.is_empty()
-}
-
-fn sanitized_json_error_detail(error: &serde_json::Error) -> String {
-    let message = error.to_string();
-    let location_suffix = format!(" at line {} column {}", error.line(), error.column());
-    let detail = message
-        .strip_suffix(&location_suffix)
-        .unwrap_or(message.as_str());
-    if detail.starts_with("missing field `") || detail.starts_with("duplicate field `") {
-        return detail.to_string();
-    }
-
-    if detail.starts_with("unknown field `") {
-        return "unknown field".to_string();
-    }
-    if detail.starts_with("trailing characters") {
-        return "trailing characters".to_string();
-    }
-    if detail.starts_with("invalid type:") {
-        return "invalid type".to_string();
-    }
-    if detail.starts_with("invalid value:") {
-        return "invalid value".to_string();
-    }
-    if detail.starts_with("unknown variant `") {
-        return "unknown variant".to_string();
-    }
-    if detail.starts_with("expected value") {
-        return "expected value".to_string();
-    }
-    if detail.starts_with("EOF while parsing") {
-        return "unexpected end of input".to_string();
-    }
-    "invalid JSON".to_string()
 }
 
 // ---------------------------------------------------------------------------

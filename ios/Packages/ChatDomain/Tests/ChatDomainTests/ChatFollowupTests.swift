@@ -3,6 +3,25 @@ import Foundation
 import XCTest
 
 final class ChatFollowupTests: XCTestCase {
+  func testWorkflowAndEmailRecommendationsKeepOrderWithoutChangingMessages() throws {
+    let rows =
+      completed + [
+        followups(
+          4,
+          content: """
+            {"version":1,"followups":[{"prompt":"Save this process as a workflow","kind":"workflow"},{"prompt":"After I send it, notify me when they reply","kind":"email"}]}
+            """)
+      ]
+    let history = try project(rows)
+    XCTAssertEqual(
+      history.recommendedFollowups?.followups,
+      [
+        .init(prompt: "Save this process as a workflow", kind: .workflow),
+        .init(prompt: "After I send it, notify me when they reply", kind: .email),
+      ])
+    XCTAssertEqual(history.messages, try project(completed).messages)
+  }
+
   func testLateFollowupsKeepOrderAndRetireVideoWithoutChangingMessages() throws {
     let rows =
       completed + [

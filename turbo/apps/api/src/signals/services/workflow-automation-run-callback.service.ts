@@ -12,6 +12,11 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { prepareAutomationDisabledNotification$ } from "./automation-disabled-notification.service";
+import {
+  automationDisabledNotificationInsertSql,
+  automationDisableTransitionColumns,
+} from "./automation-disabled-notification-sql";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
@@ -245,23 +250,46 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
     // from an older recurrence must leave that publication and failure count
     // unchanged instead of correcting the new schedule after writing it.
     signal?.throwIfAborted();
-    const [committed] = await db
-      .update(workflowAutomations)
-      .set(inFlightScheduleAdvanceValues(advance))
-      .where(
-        and(
-          inFlightScheduleAdvanceCondition(advance),
-          eq(workflowAutomations.scheduleType, automation.scheduleType),
-          sql`${workflowAutomations.cronExpression} IS NOT DISTINCT FROM ${automation.cronExpression}`,
-          sql`${workflowAutomations.intervalSeconds} IS NOT DISTINCT FROM ${automation.intervalSeconds}`,
-          eq(workflowAutomations.timezone, automation.timezone),
-          eq(workflowAutomations.orgId, automation.orgId),
-          eq(workflowAutomations.workflowId, automation.workflowId),
-          sql`${workflowAutomations.ownerUserId} IS NOT DISTINCT FROM ${automation.ownerUserId}`,
-          sql`${workflowAutomations.officialBlueprintKey} IS NOT DISTINCT FROM ${automation.officialBlueprintKey}`,
+    const notification =
+      args.callback.status === "failed" && !isCreditError
+        ? await set(
+            prepareAutomationDisabledNotification$,
+            automation,
+            completedAt,
+            signal,
+          )
+        : null;
+    const transition = db.$with("automation_disable_transition").as(
+      db
+        .update(workflowAutomations)
+        .set(inFlightScheduleAdvanceValues(advance))
+        .where(
+          and(
+            inFlightScheduleAdvanceCondition(advance),
+            eq(workflowAutomations.scheduleType, automation.scheduleType),
+            sql`${workflowAutomations.cronExpression} IS NOT DISTINCT FROM ${automation.cronExpression}`,
+            sql`${workflowAutomations.intervalSeconds} IS NOT DISTINCT FROM ${automation.intervalSeconds}`,
+            eq(workflowAutomations.timezone, automation.timezone),
+            eq(workflowAutomations.orgId, automation.orgId),
+            eq(workflowAutomations.workflowId, automation.workflowId),
+            sql`${workflowAutomations.ownerUserId} IS NOT DISTINCT FROM ${automation.ownerUserId}`,
+            sql`${workflowAutomations.officialBlueprintKey} IS NOT DISTINCT FROM ${automation.officialBlueprintKey}`,
+          ),
+        )
+        .returning(automationDisableTransitionColumns()),
+    );
+    const notice = db
+      .$with("automation_disable_notification", {})
+      .as(
+        automationDisabledNotificationInsertSql(
+          notification,
+          sql.identifier("automation_disable_transition"),
         ),
-      )
-      .returning({ id: workflowAutomations.id });
+      );
+    const [committed] = await db
+      .with(transition, notice)
+      .select({ id: transition.id })
+      .from(transition);
     signal?.throwIfAborted();
     return committed !== undefined
       ? { kind: "settled", result: { success: true } }

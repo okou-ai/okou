@@ -570,19 +570,6 @@ def _validate_resolved_firewall_auth(
     )
 
 
-def _restore_header_phase_probe_state(
-    flow: http.HTTPFlow,
-    *,
-    metadata_snapshot: dict,
-    request_headers_snapshot: http.Headers,
-    request_url_snapshot: str,
-) -> None:
-    flow.metadata.clear()
-    flow.metadata.update(metadata_snapshot)
-    flow.request.url = request_url_snapshot
-    flow.request.headers = http.Headers(request_headers_snapshot.fields)
-
-
 def _apply_header_query_injection(
     flow: http.HTTPFlow,
     *,
@@ -1597,14 +1584,15 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     request_headers_snapshot = http.Headers(flow.request.headers.fields)
     request_url_snapshot = flow.request.url
 
+    def restore_probe_state() -> None:
+        flow.metadata.clear()
+        flow.metadata.update(metadata_snapshot)
+        flow.request.url = request_url_snapshot
+        flow.request.headers = http.Headers(request_headers_snapshot.fields)
+
     plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
     if plan.body_dependent or plan.failure is not None:
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
+        restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     _prepare_firewall_metadata(flow, allow, sandbox_info)
@@ -1615,12 +1603,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     try:
         token_meta = await _resolve_firewall_auth(plan, context)
     except asyncio.CancelledError:
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
+        restore_probe_state()
         raise
     except Exception as exc:
         _set_firewall_auth_resolution_failure(flow, context, exc)
@@ -1629,21 +1612,11 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     try:
         resolved_auth = _validate_resolved_firewall_auth(plan, token_meta)
     except TypeError, ValueError:
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
+        restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     if plan.injects_credentials and not revalidate_current_firewall_authorization():
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
+        restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     try:
@@ -1655,12 +1628,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         if resolved_auth.aws_sigv4 is not None:
             aws_sigv4_flow.sign_flow_request(flow, resolved_auth.aws_sigv4)
     except Exception:
-        _restore_header_phase_probe_state(
-            flow,
-            metadata_snapshot=metadata_snapshot,
-            request_headers_snapshot=request_headers_snapshot,
-            request_url_snapshot=request_url_snapshot,
-        )
+        restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     _finalize_firewall_auth_success(flow, context, resolved_auth)

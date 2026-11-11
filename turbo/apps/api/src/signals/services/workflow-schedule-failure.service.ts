@@ -12,6 +12,11 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { prepareAutomationDisabledNotification$ } from "./automation-disabled-notification.service";
+import {
+  automationDisabledNotificationInsertSql,
+  automationDisableTransitionColumns,
+} from "./automation-disabled-notification-sql";
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
@@ -118,23 +123,45 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           !failure.isCreditError &&
           current.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
         const nextRunAt = advanceAfterPreRunFailure(current, failureTime);
-        const [updated] = await db
-          .update(workflowAutomations)
-          .set({
-            consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
-            ...(shouldDisable ? { enabled: false } : {}),
-            nextRunAt,
-            updatedAt: failureTime,
-          })
-          .where(
-            and(
-              eq(workflowAutomations.id, current.id),
-              sql`${workflowAutomations}.xmin::text = ${current.rowVersion}`,
+        const notification = shouldDisable
+          ? await set(
+              prepareAutomationDisabledNotification$,
+              current,
+              failureTime,
+              signal,
+            )
+          : null;
+        const transition = db.$with("automation_disable_transition").as(
+          db
+            .update(workflowAutomations)
+            .set({
+              consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${failure.isCreditError ? 0 : 1}`,
+              ...(shouldDisable ? { enabled: false } : {}),
+              nextRunAt,
+              updatedAt: failureTime,
+            })
+            .where(
+              and(
+                eq(workflowAutomations.id, current.id),
+                sql`${workflowAutomations}.xmin::text = ${current.rowVersion}`,
+              ),
+            )
+            .returning(automationDisableTransitionColumns()),
+        );
+        const notice = db
+          .$with("automation_disable_notification", {})
+          .as(
+            automationDisabledNotificationInsertSql(
+              notification,
+              sql.identifier("automation_disable_transition"),
             ),
-          )
-          .returning({
-            consecutiveFailures: workflowAutomations.consecutiveFailures,
-          });
+          );
+        const [updated] = await db
+          .with(transition, notice)
+          .select({
+            consecutiveFailures: transition.consecutiveFailures,
+          })
+          .from(transition);
         if (!updated) {
           throw new StalePreRunFailure();
         }
@@ -184,30 +211,56 @@ export const recordPreRunFailure$ = command(
     const increment = failure.isCreditError ? 0 : 1;
     const threshold = sql`${workflowAutomations.consecutiveFailures} + ${increment} >= ${MAX_CONSECUTIVE_FAILURES}`;
     const nextRunAt = advanceAfterPreRunFailure(automation, failureTime);
-    const [updated] = await db
-      .update(workflowAutomations)
-      .set({
-        consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${increment}`,
-        ...(failure.isCreditError
-          ? { nextRunAt }
-          : scheduleFailurePauseValues(threshold, nextRunAt)),
-        updatedAt: failureTime,
-      })
-      .where(
-        and(
-          eq(workflowAutomations.id, automation.id),
-          automation.scheduleType === "once"
-            ? undefined
-            : eq(workflowAutomations.enabled, true),
-          stillDueAt
-            ? eq(workflowAutomations.nextRunAt, stillDueAt)
-            : undefined,
+    const notification = failure.isCreditError
+      ? null
+      : await set(
+          prepareAutomationDisabledNotification$,
+          automation,
+          failureTime,
+          signal,
+        );
+    const transition = db.$with("automation_disable_transition").as(
+      db
+        .update(workflowAutomations)
+        .set({
+          consecutiveFailures: sql`${workflowAutomations.consecutiveFailures} + ${increment}`,
+          ...(failure.isCreditError
+            ? { nextRunAt }
+            : scheduleFailurePauseValues(threshold, nextRunAt)),
+          updatedAt: failureTime,
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, automation.id),
+            eq(workflowAutomations.orgId, automation.orgId),
+            eq(workflowAutomations.ownerUserId, automation.ownerUserId),
+            eq(workflowAutomations.workflowId, automation.workflowId),
+            sql`${workflowAutomations.scheduleType} IS NOT DISTINCT FROM ${automation.scheduleType}`,
+            automation.scheduleType === "once"
+              ? undefined
+              : eq(workflowAutomations.enabled, true),
+            stillDueAt
+              ? eq(workflowAutomations.nextRunAt, stillDueAt)
+              : undefined,
+          ),
+        )
+        .returning(automationDisableTransitionColumns()),
+    );
+    const notice = db
+      .$with("automation_disable_notification", {})
+      .as(
+        automationDisabledNotificationInsertSql(
+          notification,
+          sql.identifier("automation_disable_transition"),
         ),
-      )
-      .returning({
-        consecutiveFailures: workflowAutomations.consecutiveFailures,
-        enabled: workflowAutomations.enabled,
-      });
+      );
+    const [updated] = await db
+      .with(transition, notice)
+      .select({
+        consecutiveFailures: transition.consecutiveFailures,
+        enabled: transition.enabled,
+      })
+      .from(transition);
     signal.throwIfAborted();
     if (
       !failure.isCreditError &&

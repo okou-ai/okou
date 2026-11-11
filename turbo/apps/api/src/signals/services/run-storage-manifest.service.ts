@@ -9,7 +9,7 @@ import {
   PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
-  type StoredExecutionContext,
+  type PreparedExecutionContext,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -140,11 +140,6 @@ export interface ResolvedAgentRunStorage {
 export interface AgentRunStoragePlan {
   readonly requested: ResolvedStorageEntries;
   readonly missingArtifacts: readonly ContextArtifact[];
-}
-
-export interface MaterializedAgentRunStorage {
-  readonly resolved: ResolvedAgentRunStorage;
-  readonly prepared: PreparedAgentRunStorage;
 }
 
 interface ResolvedStorageManifestEntryPlans {
@@ -1327,7 +1322,7 @@ export interface ResolvedAgentExecution {
   readonly ownerUserId: string;
   readonly orgId: string;
   readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  readonly nativeContinuation?: StoredExecutionContext["nativeContinuation"];
+  readonly nativeContinuation?: PreparedExecutionContext["nativeContinuation"];
 }
 
 interface ResolvedUnboundExecution extends Omit<
@@ -1350,8 +1345,8 @@ interface RunArtifacts {
 interface PreparedAdditionalVolumes {
   readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly sources: AdditionalVolumeSources;
-  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 }
 
 function autoMemoryMountPath(framework: SupportedFramework): string {
@@ -1464,8 +1459,8 @@ export function prepareRunOutputMetadata(args: {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({

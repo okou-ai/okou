@@ -6,7 +6,7 @@ import {
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { command, computed, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { and, eq, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { publicPresignedGetUrlSigner$ } from "../external/s3";
@@ -17,7 +17,6 @@ import {
   type ExecutionStorageCacheRows,
 } from "./execution-storage-cache-read.service";
 import {
-  persistStoragePresignedUrls$,
   readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
   storageManifestPresignedUrlCacheLookupPairs,
@@ -403,18 +402,6 @@ function preparedMounts(
   );
 }
 
-/** The canonical Thread already resolved exact rows; never reread those identities. */
-export function createResolvedExecutionStorageObjects(
-  mounts: readonly ExecutionStorageRequest[],
-  versions: readonly VersionRow[],
-  cacheRows: ExecutionStorageCacheRows,
-): ExecutionStorageObjects {
-  const input$ = computed(() => {
-    return Promise.resolve({ mounts, versions, cacheRows });
-  });
-  return createExecutionStorageObjects(input$);
-}
-
 function createExecutionStorageObjects(
   input$: Computed<Promise<ResolvedExecutionStorageInput>>,
 ): ExecutionStorageObjects {
@@ -485,28 +472,3 @@ function cacheSnapshot(
   }
   return { rowsByScope, cacheKeysByRequest };
 }
-
-/**
- * The approved log-only exception, run by the owner after its commit: stores
- * the URLs a preparation of `mounts` signed fresh, so later executions reuse
- * them. A failed write is logged and never fails the committed run.
- */
-export const updateExecutionStoragePresignedUrlCache$ = command(
-  async (
-    { set },
-    mounts: readonly ExecutionStorageRequest[],
-    prepared: readonly PreparedExecutionStorageMount[],
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    if (mounts.length === 0) {
-      return;
-    }
-    const values = prepared.flatMap((mount) => {
-      return "presignedUrlCacheWrite" in mount && mount.presignedUrlCacheWrite
-        ? [mount.presignedUrlCacheWrite]
-        : [];
-    });
-    await set(persistStoragePresignedUrls$, values, signal);
-  },
-);

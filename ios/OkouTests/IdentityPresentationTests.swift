@@ -28,7 +28,7 @@ final class IdentityPresentationTests: XCTestCase {
     _ = try await cached.image(entity: "workspace:org", url: url)
     _ = try await cached.image(entity: "profile", url: url)
     try await cached.close()
-    // The same caller entry used before WorkspaceRootView mounts must restore local bytes.
+    // The same caller entry used before the sidebar mounts must restore local bytes.
     let restored = IdentityPresentation(
       userID: "user",
       cache: IdentityPresentationCache(environment: "test", userID: "user", directory: directory))

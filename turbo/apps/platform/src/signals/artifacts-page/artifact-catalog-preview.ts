@@ -19,6 +19,8 @@ interface ArtifactDetailPreview {
   readonly kind: BodyPreviewKind;
   readonly url: string;
   readonly filename: string;
+  readonly contentType: string;
+  readonly artifactKind?: "hosted-site" | "presentation-html";
 }
 
 /** Resource and text graphs shared by the page and thread catalog sidebars. */
@@ -69,6 +71,7 @@ export function artifactDetailPreview(
         window.location.origin,
       ).toString(),
       filename: detail.title,
+      contentType: "text/html",
     };
   }
   if (detail.kind === "hosted-site" || detail.kind === "presentation") {
@@ -76,6 +79,9 @@ export function artifactDetailPreview(
       kind: "html",
       url: detail.site.url,
       filename: detail.title,
+      contentType: "text/html",
+      artifactKind:
+        detail.kind === "presentation" ? "presentation-html" : "hosted-site",
     };
   }
   return {
@@ -86,5 +92,6 @@ export function artifactDetailPreview(
     }),
     url: publicAttachmentUrl(detail.file.url),
     filename: detail.file.filename,
+    contentType: detail.file.contentType,
   };
 }

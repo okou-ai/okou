@@ -192,14 +192,14 @@
           // The sidebar's button; the search page's system field takes the same glyphs.
           OkouSearchBar(prompt: "Search chats")
         }
-        OkouCatalogSection("Search page") {
+        OkouCatalogSection("Search sheet") {
           // `OkouSearchPage`: the system field (no clear button, the app's ✕), filters and
           // results that move with the field, and an empty state centred above the keyboard.
-          Button("Open search page") { showsSearchPage = true }
+          Button("Open search sheet") { showsSearchPage = true }
             .buttonStyle(.bordered)
         }
       }
-      .fullScreenCover(isPresented: $showsSearchPage) {
+      .sheet(isPresented: $showsSearchPage) {
         NavigationStack {
           OkouSearchPage(
             "Search", text: $query, prompt: "Search",
@@ -225,6 +225,9 @@
             }
           }
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .okouSheetBackground(OkouColor.background)
       }
     }
 

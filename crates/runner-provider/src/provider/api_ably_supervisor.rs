@@ -145,6 +145,8 @@ impl DeferredPollWindow {
 
 #[derive(Debug)]
 struct PollWakeupsInner {
+    #[cfg(test)]
+    scheduled_wait_observer: Option<tests::ScheduledWaitObserver>,
     /// Selects slow versus fast ordinary polling cadence.
     ably_connected: bool,
     /// Last local inventory projection; an older heartbeat cannot re-enable
@@ -209,6 +211,8 @@ impl PollWakeups {
     pub(super) fn new(ably_connected: bool) -> Self {
         Self {
             inner: StdMutex::new(PollWakeupsInner {
+                #[cfg(test)]
+                scheduled_wait_observer: None,
                 ably_connected,
                 reuse_snapshot_order: None,
                 reuse_poll: None,
@@ -390,7 +394,12 @@ impl PollWakeups {
                     return None;
                 }
                 () = &mut notified => {}
-                () = tokio::time::sleep_until(scheduled.at) => {
+                () = {
+                    #[cfg(test)]
+                    { self.scheduled_sleep_for_test(scheduled.at, scheduled.reason, scheduled.reuse) }
+                    #[cfg(not(test))]
+                    { tokio::time::sleep_until(scheduled.at) }
+                } => {
                     if let Some(due) = self.consume_scheduled(scheduled) {
                         return Some(due);
                     }

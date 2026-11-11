@@ -31,7 +31,7 @@ private struct ComputerAuthorizationCardValue: View {
 
   init(store: ComputerAuthorizationStore) {
     self.store = store
-    _value = LoadableValue(task: store.request)
+    _value = LoadableValue(task: store.request, keepLast: true)
   }
 
   var body: some View {

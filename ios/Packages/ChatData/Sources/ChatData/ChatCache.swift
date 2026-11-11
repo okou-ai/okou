@@ -177,6 +177,7 @@ public actor ChatCache {
   }
 
   public func saveNavigation(_ snapshot: SidebarNavigationSnapshot) throws {
+    try Task.checkCancellation()
     let data = try JSONEncoder().encode(snapshot)
     try withDatabase { database in
       let write = try database.prepare(
@@ -195,6 +196,7 @@ public actor ChatCache {
   }
 
   public func saveProjects(_ projects: [ChatProject]) throws {
+    try Task.checkCancellation()
     let data = try JSONEncoder().encode(projects)
     try withDatabase { database in
       let write = try database.prepare(

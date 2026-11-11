@@ -126,9 +126,13 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
             result = &mut execution => break result???,
             request = server.next_request(Duration::from_secs(5)) => {
                 let request = request?;
-                accepted_sequences.extend(common::event_request_sequences(&request.request)?);
                 let payload: Value = serde_json::from_str(&request.request.body)?;
                 for event in payload.get("events").and_then(Value::as_array).ok_or("missing events")? {
+                    accepted_sequences.push(
+                        event.get("sequenceNumber").and_then(Value::as_u64)
+                            .and_then(|sequence| u32::try_from(sequence).ok())
+                            .ok_or("event omitted a u32 sequenceNumber")?,
+                    );
                     if event.get("type").and_then(Value::as_str) == Some("warning") {
                         let (index, _) = event.get("message").and_then(Value::as_str).ok_or("missing warning text")?.split_once(':').ok_or("missing warning index")?;
                         delivered_warnings.push(index.parse::<usize>()?);

@@ -355,10 +355,14 @@ Reusable views, grouped by what they do. Each group is a folder in
   own content (the sidebar's chat filter is its glass control); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
-- **Search is a page, not a sheet**, as ChatGPT, Claude and Perplexity open theirs: the
-  sidebar's search capsule zooms into a full-screen page (`fullScreenCover` with the zoom
-  transition from the capsule), white like a page, the field at the top, ✕ trailing.
-  The page is `OkouSearchPage`; build any other full search page on it.
+- **Search opens in a native sheet**, sliding up like the app's other sheets. Use a large
+  detent to leave room for results above the keyboard, a visible drag indicator, and the
+  trailing close button. Set `okouSheetBackground(OkouColor.background)` at the sheet's root.
+  `OkouSearchPage` owns the shared search surface; its header, filters and results share
+  `OkouColor.background` in light and dark appearances, with transparent list-row backgrounds.
+  - Opening search focuses the system field and brings up the keyboard immediately. Focus
+    belongs to the search presentation, not a query or filter update; dismissing the keyboard
+    while browsing results must not cause it to open again.
   - The field is the system's (it rises into the bar while typing), drawn with the app's
     glyph: Lucide `search` in placeholder grey (`OkouNavigationBar.applySearchField()`).
   - It has no clear button (`okouSearchPageField()`): the ✕ that ends search sits right
@@ -496,8 +500,8 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
 
 #### Agent artwork
 
-`OkouAgentAvatar` is shared by chat rows, the new-chat greeting, assistant
-messages, and mention suggestions. The default agent uses the canonical Okou
+`OkouAgentAvatar` is shared by chat rows, the new-chat greeting, and assistant
+messages. The default agent uses the canonical Okou
 avatar. Other agents show an uploaded bitmap image or a neutral tile with their
 name's initial. Keep the existing typography, semantic colors, native sizing,
 and accessible name in the shared component.
@@ -507,6 +511,15 @@ Preset identifiers and SVG URLs use the initial tile. Keep persisted avatar
 values with their owning service; this presentation policy does not rewrite
 another client's avatar configuration. Unavailable custom images use the same
 initial tile.
+
+Composer chat and workflow suggestions use text-first `OkouSuggestionRow` content
+inside `OkouSuggestionPanel`. Chat titles have no avatar or reserved artwork
+column and may wrap to two lines. Workflow names retain a trailing slash command
+and an optional description. Both pickers share the same editor-anchored overlay,
+native table, dismissal, and semantic focus layer; the editor retains first
+responder while the list scrolls or inserts a candidate. Empty queries have no
+implicit selection. The table measures self-sizing content within the available
+height rather than forcing the editor to move with the candidate count.
 
 #### Workspace artwork
 
@@ -555,15 +568,16 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Selection and input
 
-| Component                   | Use / states                                                                                                                                                    |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouTextFieldStyle`        | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation |
-| `okouValuePicker()`         | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                      |
-| `OkouChip` / `OkouChipRail` | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                 |
-| `OkouSegmentControl`        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                          |
-| `OkouAddIndicator`          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                          |
-| `OkouNameDialog`            | Native name alert (new or renamed project, renamed chat): one field, Cancel and a preferred Save, off while the name is empty or too long                       |
-| `OkouComposerSurface`       | The composer's glass surface: 44 pt compact with 44 pt actions either side; expanded keeps the editor and puts the actions on a bottom row                      |
+| Component                                   | Use / states                                                                                                                                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OkouTextFieldStyle`                        | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                                                        |
+| `okouValuePicker()`                         | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                                                                             |
+| `OkouChip` / `OkouChipRail`                 | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                                                        |
+| `OkouSegmentControl`                        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                                                                 |
+| `OkouAddIndicator`                          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                                                                 |
+| `OkouNameDialog`                            | Native name alert (new or renamed project, renamed chat): one field, Cancel and a preferred Save, off while the name is empty or too long                                                                              |
+| `OkouComposerSurface`                       | The composer's glass surface: 44 pt compact with 44 pt actions either side; expanded keeps the editor and puts the actions on a bottom row                                                                             |
+| `OkouSuggestionPanel` / `OkouSuggestionRow` | Composer chat and workflow suggestions above the editor: a floating panel with a footnote title and ✕, text-first rows (a chat title wraps to two lines; a workflow adds its trailing slash command and a description) |
 
 #### Lists and rows
 
@@ -580,11 +594,11 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Navigation and search
 
-| Component                | Use / states                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouSearchBar`          | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`)                                                                                                                                                             |
-| `OkouSearchPage`         | A full search page: the system field (rising into the bar while typing; no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, results as a plain list, and one `OkouEmptyState` centred over what is left of the screen, above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search page |
-| `OkouUnderNavigationBar` | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller                                                                                                                                                                                        |
+| Component                | Use / states                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OkouSearchBar`          | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`)                                                                                                                                                    |
+| `OkouSearchPage`         | A search surface in a large native sheet: the system field focused on opening (no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, transparent rows on the page background, and one `OkouEmptyState` centred above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search sheet |
+| `OkouUnderNavigationBar` | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller                                                                                                                                                                               |
 
 #### Status and feedback
 

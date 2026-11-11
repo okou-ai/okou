@@ -8,6 +8,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from cancellation_cases import CANCELLATION_CASES
+
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
     os.environ.get("SWIFTLINT_BIN")
@@ -18,6 +20,222 @@ BINARY = (
 )
 
 CASES = [
+    *CANCELLATION_CASES,
+    (
+        "typed cancellation cannot become resource data",
+        "okou_resource_failures",
+        """
+        import CCState
+        let items = computedTask { get, options in
+          do { return try await service.load() }
+          catch is CancellationError { return [] } // violation
+        }
+        let read = Computed { get in
+          Task {
+            do { return try await service.load() }
+            catch let cancelled as CancellationError { // violation
+              record(cancelled)
+              return nil
+            }
+          }
+        }
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch is _Concurrency.CancellationError { // violation
+            if closed { return [:] }
+            throw CancellationError()
+          }
+        }
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch is CancellationError {} // violation
+        }
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch let cancelled where cancelled is CancellationError { return [] } // violation
+        }
+        func makeData() -> Computed<Task<[String], Never>> {
+          Computed { get in
+            Task {
+              do { return try await service.load() }
+              catch is CancellationError { return [] } // violation
+              catch { return owner.recoveredSnapshot(for: error) }
+            }
+          }
+        }
+    """,
+    ),
+    (
+        "cancellation cleanup and native action completion",
+        "okou_resource_failures",
+        """
+        import CCState
+        let items = computedTask { get, options in
+          do { return try await service.load() }
+          catch let cancelled as CancellationError {
+            try? await allocated.close()
+            let cleanup = { return [] }
+            throw cancelled
+          }
+        }
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch is CancellationError {
+            try? await allocated.close()
+            throw CancellationError()
+          }
+          catch is MissingOptionalResource { return [] }
+        }
+        let action = asyncCommand { context in
+          do { try await service.save() }
+          catch is CancellationError { return }
+        }
+        func closePresentation() async {
+          do { try await operation.value }
+          catch is CancellationError { return }
+        }
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch let cancelled where cancelled is CancellationError {
+            try? await allocated.close()
+            throw cancelled
+          }
+        }
+        func makeCompletion() -> Computed<Task<Void, Never>> {
+          Computed { get in
+            Task {
+              do { try await owner.perform() }
+              catch is CancellationError {}
+              catch { owner.report(error) }
+            }
+          }
+        }
+        let completion: CCState.Computed<Task<(), Never>> = Computed { get in
+          Task {
+            do { try await owner.perform() }
+            catch is CancellationError { return }
+            catch { owner.report(error) }
+          }
+        }
+    """,
+    ),
+    (
+        "fixed sleeps in XCTest",
+        "okou_test_synchronization",
+        """
+        import XCTest
+        final class FlowTests: XCTestCase {
+          func testCompletion() async throws {
+            try await Task.sleep(for: .milliseconds(20)) // violation
+            try await Task<Never, Never>.sleep(nanoseconds: 1_000) // violation
+            try await _Concurrency.Task<Never, Never>.sleep(nanoseconds: 1_000) // violation
+            Thread.sleep(forTimeInterval: (0.01)) // violation
+            usleep(1_000) // violation
+            Darwin.sleep(1) // violation
+            let delay = Duration.seconds(1)
+            try await Task.sleep(for: delay) // violation
+            let nanos = UInt64(10 * 1_000)
+            try await Task.sleep(nanoseconds: nanos) // violation
+          }
+        }
+    """,
+    ),
+    (
+        "fixed yield counts in Swift Testing",
+        "okou_test_synchronization",
+        """
+        import Testing
+        @Test func completes() async {
+          for _ in (0..<100) {
+            await Task.yield() // violation
+          }
+          let attempts = 10
+          for _ in 1...attempts {
+            await Task.yield() // violation
+          }
+        }
+    """,
+    ),
+    (
+        "observable waits and injected clocks",
+        "okou_test_synchronization",
+        """
+        import XCTest
+        final class FlowTests: XCTestCase {
+          func testCompletion() async throws {
+            await operation.value
+            await gate.wait()
+            await fulfillment(of: [finished], timeout: 1)
+            try await clock.sleep(until: deadline)
+            while !owner.complete { await Task.yield() }
+            for _ in 0..<10 {
+              installCallback { await Task.yield() }
+            }
+          }
+          private func makeOwner(sleep: (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+          }) {}
+          private func forward(_ delay: Duration) async throws {
+            try await Task.sleep(for: delay, tolerance: .zero)
+          }
+        }
+        func pollProtocol() async throws {
+          try await Task.sleep(for: .seconds(1))
+        }
+    """,
+    ),
+    (
+        "clock callback parameters shadow constants",
+        "okou_test_synchronization",
+        """
+        import XCTest
+        final class FlowTests: XCTestCase {
+          func testCompletion() async throws {
+            let duration = Duration.seconds(1)
+            makeClock { duration in try await Task.sleep(for: duration) }
+            let clockStep = { (duration: Duration) in try await Task.sleep(for: duration) }
+          }
+        }
+    """,
+    ),
+    (
+        "throwing Tasks have an explicit result owner",
+        "unhandled_throwing_task",
+        """
+        func start() {
+          Task { try await service.load() } // violation
+          let task = Task { try await service.load() }
+          let read = Read(task: task)
+        }
+        func read() async throws {
+          _ = try await Task { try await service.load() }.value
+        }
+    """,
+    ),
+    (
+        "native notification observer handles are retained",
+        "discarded_notification_center_observer",
+        """
+        import Foundation
+        func observe() {
+          center.addObserver(forName: .event, object: nil, queue: nil) { _ in } // violation
+          let observer = center.addObserver(forName: .event, object: nil, queue: nil) { _ in }
+        }
+    """,
+    ),
+    (
+        "SwiftUI owns private view state",
+        "private_swiftui_state",
+        """
+        import SwiftUI
+        struct Screen: View {
+          @State var expanded = false // violation
+          @State private var selected = false
+          @Binding var value: String
+          var body: some View { Text(value) }
+        }
+    """,
+    ),
     (
         "render effects",
         "okou_render_effects",
@@ -531,6 +749,25 @@ class NativeRuleTests(unittest.TestCase):
                 "Packages/ChatData/Sources/ChatData/APIClient.swift",
             )
             self.assertEqual(findings, [])
+
+    def test_test_helper_waits(self):
+        with tempfile.TemporaryDirectory(prefix="native test helpers ") as directory:
+            source = (
+                "import Foundation\n"
+                "func waitForTurn() async throws { try await Task.sleep(for: .milliseconds(10)) }\n"
+                "func forward(_ duration: Duration) async throws { try await Task.sleep(for: duration) }\n"
+            )
+            result, findings = self.lint(
+                Path(directory),
+                source,
+                "okou_test_synchronization",
+                "Tests/Helpers.swift",
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(
+                [(f["rule_id"], f["line"]) for f in findings],
+                [("okou_test_synchronization", 2)],
+            )
 
 
 if __name__ == "__main__":

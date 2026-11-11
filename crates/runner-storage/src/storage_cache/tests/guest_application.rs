@@ -4,6 +4,15 @@ use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
 async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_failures() {
+    assert_ready_input_lifecycle(false).await;
+}
+
+#[tokio::test]
+async fn split_ready_inputs_preserve_order_and_join_publication_failures() {
+    assert_ready_input_lifecycle(true).await;
+}
+
+async fn assert_ready_input_lifecycle(split: bool) {
     // Every case reaches the same causal handoff before releasing the HTTP
     // body. Failure cases keep the original accepted population owner.
     for failure in [
@@ -15,7 +24,11 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
         "consumer-staging",
         "ineligible",
         "check-failed",
+        "ordinary-over-limit",
     ] {
+        if failure == "ordinary-over-limit" && !split {
+            continue;
+        }
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let cache = decoded::DecodedCache::new(home.clone());
@@ -23,22 +36,48 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
         let warm = tarball_with_contents(b"complete ready bytes\n");
         write_cached_archive(&home, "ready", "v1", &warm);
         let server = GatedResponse::start(bytes.clone()).await;
-        let mut plan = plan_from_entries(
-            vec![
-                storage_entry_with_archive_size(
-                    "/mnt/pending".into(),
-                    server.url.clone(),
-                    "pending",
-                    "v1",
-                    Some(bytes.len() as u64),
-                ),
+        let mut storages = vec![
+            storage_entry_with_archive_size(
+                "/mnt/pending".into(),
+                server.url.clone(),
+                "pending",
+                "v1",
+                Some(bytes.len() as u64),
+            ),
+            storage_entry(
+                "/mnt/ready".into(),
+                "https://example.test/ready".into(),
+                "ready",
+                "v1",
+            ),
+        ];
+        if split {
+            let decoded = tarball_with_contents(b"decoded continuation\n");
+            write_cached_archive(&home, "decoded", "v1", &decoded);
+            write_storage_lock(&home, "decoded", "v1");
+            cache.warm_from_archive("decoded", "v1").await.unwrap();
+            assert!(cache.get_ready("decoded", "v1").await.unwrap().is_some());
+            storages.extend((0..3).map(|index| {
                 storage_entry(
-                    "/mnt/ready".into(),
-                    "https://example.test/ready".into(),
-                    "ready",
+                    format!("/mnt/decoded-{index}"),
+                    format!("https://example.test/decoded?{}", "q".repeat(35_000)),
+                    "decoded",
                     "v1",
-                ),
-            ],
+                )
+            }));
+            if failure == "ordinary-over-limit" {
+                storages.extend((0..400).map(|index| {
+                    storage_entry(
+                        format!("/mnt/ordinary/{index}/{}", "p".repeat(80)),
+                        "https://example.test/ready".into(),
+                        "ready",
+                        "v1",
+                    )
+                }));
+            }
+        }
+        let mut plan = plan_from_entries(
+            storages,
             vec![artifact_entry(
                 "/mnt/alias".into(),
                 server.url.clone(),
@@ -47,6 +86,14 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
             )],
             None,
         );
+        if split {
+            assert!(
+                serde_json::to_vec(&plan.clone().into_guest_manifest())
+                    .unwrap()
+                    .len()
+                    > guest_contracts::storage_files::MAX_MANIFEST_BYTES
+            );
+        }
         let admission = FreshArchiveDeliveryAdmission::new();
         let mut telemetry = new_telemetry();
         let delivery = prepare_fresh_archive_delivery(
@@ -65,6 +112,10 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
             .unwrap();
         server.headers.send(()).unwrap();
         let mut prepared = PreparedStorage { plan, delivery };
+        assert_eq!(
+            prepared.plan.decoded_mount_count(),
+            if split { 3 } else { 0 }
+        );
         let cancel = prepared.delivery.cancellation_token();
         let sandbox = Arc::new(MockSandbox::new("early-application"));
         if failure == "ineligible" {
@@ -121,6 +172,22 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
                 (result, telemetry)
             }
         });
+        if failure == "ordinary-over-limit" {
+            server.body.send(()).unwrap();
+            let input = tokio::time::timeout(Duration::from_secs(5), receive)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(input.initial.manifest.archive_readiness.is_none());
+            assert_eq!(input.initial.files.len(), 3);
+            assert!(input.decoded_tail.is_none());
+            let (result, _) = task.await.unwrap();
+            drop(result.unwrap());
+            assert!(sandbox.storage_manifest_calls().is_empty());
+            server.task.finish().await;
+            admission.shutdown().await;
+            continue;
+        }
         if matches!(failure, "ineligible" | "check-failed") {
             tokio::time::timeout(Duration::from_secs(5), async {
                 while sandbox.storage_manifest_calls().is_empty() {
@@ -135,7 +202,8 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
                     .await
                     .unwrap()
                     .unwrap();
-                assert!(input.manifest.archive_readiness.is_none());
+                assert!(input.initial.manifest.archive_readiness.is_none());
+                assert!(input.decoded_tail.is_none());
             } else {
                 assert!(
                     tokio::time::timeout(Duration::from_secs(5), receive)
@@ -163,20 +231,32 @@ async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_f
             .await
             .unwrap()
             .unwrap();
+        if split {
+            let tail = input.decoded_tail.as_ref().expect("decoded continuation");
+            assert_eq!(tail.files.len(), 3);
+            assert_eq!(tail.manifest.storages.len(), 3);
+            assert!(tail.manifest.cleanup_paths.is_empty());
+            assert!(tail.manifest.instruction_cleanups.is_empty());
+            assert!(tail.manifest.archive_readiness.is_none());
+            assert!(input.initial.files.is_empty());
+        } else {
+            assert!(input.decoded_tail.is_none());
+        }
         let readiness = input
+            .initial
             .manifest
             .archive_readiness
             .as_ref()
             .expect("real pending source");
-        readiness.validate(&input.manifest).unwrap();
+        readiness.validate(&input.initial.manifest).unwrap();
         assert_eq!(
             readiness.sources.len(),
             1,
             "one source serves aliased targets"
         );
         assert_eq!(
-            input.manifest.storages[0].archive_url,
-            input.manifest.artifacts[0].archive_url
+            input.initial.manifest.storages[0].archive_url,
+            input.initial.manifest.artifacts[0].archive_url
         );
         assert_eq!(readiness.wait_timeout(), Duration::from_secs(300));
         let staged = sandbox.write_files_calls();

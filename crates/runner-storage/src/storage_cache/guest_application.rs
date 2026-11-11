@@ -1,23 +1,108 @@
-//! One complete Guest input handoff while the original population owner continues.
+//! Guest application handoff while the original population owner continues.
 
 use super::*;
 use guest_contracts::storage_manifest::{ArchiveReadiness, Manifest};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Immutable transport snapshot. StoragePlan remains the only semantic planner.
-pub struct GuestStorageInput {
+/// One transport phase. StoragePlan remains the only semantic planner.
+pub struct GuestStorageBatch {
     pub manifest: Manifest,
     pub files: Vec<(String, Arc<decoded::CachedFiles>)>,
+}
+
+/// Initial application input and an optional decoded continuation.
+///
+/// A continuation requires both initial application and host population success.
+pub struct GuestStorageInput {
+    pub initial: GuestStorageBatch,
+    pub decoded_tail: Option<GuestStorageBatch>,
 }
 
 impl GuestStorageInput {
     fn from_plan(mut plan: StoragePlan) -> Self {
         let files = plan.take_decoded();
         Self {
-            manifest: plan.into_guest_manifest(),
-            files,
+            initial: GuestStorageBatch {
+                manifest: plan.into_guest_manifest(),
+                files,
+            },
+            decoded_tail: None,
         }
     }
+
+    fn prepare_early(
+        mut self,
+        readiness: &ArchiveReadiness,
+    ) -> RunnerResult<Option<(Self, Vec<u8>)>> {
+        readiness
+            .validate(&self.initial.manifest)
+            .map_err(|error| RunnerError::Internal(error.into()))?;
+        self.initial.manifest.archive_readiness = Some(readiness.clone());
+        let query = serialize_manifest(&self.initial.manifest)?;
+        if query.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES {
+            return Ok(Some((self, query)));
+        }
+        if self.initial.files.is_empty() {
+            return Ok(None);
+        }
+
+        // An early ordinary operation cannot validate the decoded continuation.
+        // Check complete bindings and aggregate budgets before any Guest mutation.
+        guest_contracts::storage_files::validate_bindings(
+            &self.initial.manifest,
+            self.initial.files.iter().map(|(mount, _)| mount.as_str()),
+        )
+        .map_err(|error| RunnerError::Internal(format!("early storage bindings: {error}")))?;
+        let groups = self
+            .initial
+            .files
+            .iter()
+            .map(|(mount, files)| (mount.as_str(), files.files.as_slice()))
+            .collect::<Vec<_>>();
+        guest_contracts::storage_files::encoded_payload_len(&groups)
+            .map_err(|error| RunnerError::Internal(format!("early storage payload: {error}")))?;
+        let selected = self
+            .initial
+            .files
+            .iter()
+            .map(|(mount, _)| mount.as_str())
+            .collect::<HashSet<_>>();
+        let (decoded_storages, ordinary_storages) =
+            std::mem::take(&mut self.initial.manifest.storages)
+                .into_iter()
+                .partition(|entry| selected.contains(entry.mount_path.as_str()));
+        let (decoded_artifacts, ordinary_artifacts) =
+            std::mem::take(&mut self.initial.manifest.artifacts)
+                .into_iter()
+                .partition(|entry| selected.contains(entry.mount_path.as_str()));
+        self.initial.manifest.storages = ordinary_storages;
+        self.initial.manifest.artifacts = ordinary_artifacts;
+        self.decoded_tail = Some(GuestStorageBatch {
+            manifest: Manifest {
+                storages: decoded_storages,
+                artifacts: decoded_artifacts,
+                cleanup_paths: Vec::new(),
+                instruction_cleanups: Vec::new(),
+                archive_readiness: None,
+            },
+            files: std::mem::take(&mut self.initial.files),
+        });
+        // Cleanup and ordinary dependency ordering remain in the initial phase.
+        // Its complete readiness query must still fit the existing Guest limit.
+        readiness
+            .validate(&self.initial.manifest)
+            .map_err(|error| RunnerError::Internal(error.into()))?;
+        let query = serialize_manifest(&self.initial.manifest)?;
+        if query.len() > guest_contracts::storage_files::MAX_MANIFEST_BYTES {
+            return Ok(None);
+        }
+        Ok(Some((self, query)))
+    }
+}
+
+fn serialize_manifest(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
+    serde_json::to_vec(manifest)
+        .map_err(|error| RunnerError::Internal(format!("Guest storage snapshot: {error}")))
 }
 
 /// One-shot application handoff, not a detached task or additional cache owner.
@@ -108,7 +193,7 @@ impl GuestApplication {
                 rewrite_url(&mut snapshot, target);
             }
         }
-        let mut input = GuestStorageInput::from_plan(snapshot);
+        let input = GuestStorageInput::from_plan(snapshot);
         let mut seen = HashSet::new();
         let sources = pending
             .iter()
@@ -127,18 +212,9 @@ impl GuestApplication {
             wait_timeout_ms: Some(self.wait_timeout_ms),
             check_only: true,
         };
-        readiness
-            .validate(&input.manifest)
-            .map_err(|error| RunnerError::Internal(error.into()))?;
-        input.manifest.archive_readiness = Some(readiness.clone());
-
-        // Split requests retain their existing ordering. Only a complete bounded
-        // manifest can be checked and handed off as this one operation.
-        let query = serde_json::to_vec(&input.manifest)
-            .map_err(|error| RunnerError::Internal(format!("Guest storage snapshot: {error}")))?;
-        if query.len() > guest_contracts::storage_files::MAX_MANIFEST_BYTES {
+        let Some((mut input, query)) = input.prepare_early(&readiness)? else {
             return Ok(());
-        }
+        };
         let checked = sandbox
             .apply_storage_manifest(&sandbox::StorageManifestRequest {
                 manifest_json: &query,
@@ -170,13 +246,13 @@ impl GuestApplication {
         }
         let mut readiness = readiness;
         readiness.check_only = false;
-        input.manifest.archive_readiness = Some(readiness.clone());
+        input.initial.manifest.archive_readiness = Some(readiness.clone());
         self.pending = Some(readiness);
         self.send(input)
     }
 }
 
-/// Populate using the existing owners and hand off one complete application.
+/// Populate using the existing owners and hand off ordered application phases.
 ///
 /// `prepared` stays borrowed by its Executor, so hard cancellation retains the
 /// original delivery for explicit drain. No accepted operation is detached.

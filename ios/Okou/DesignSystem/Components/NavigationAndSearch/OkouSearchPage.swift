@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// A full search page, as ChatGPT, Claude and Perplexity open theirs: the system search field
-/// (its interaction kept, rising into the bar while typing) on a page with the app's ✕
+/// A search surface with the system search field focused on opening, the app's ✕
 /// trailing, a filter row pinned under it on a solid header, the results as a plain list, and,
 /// when there are none, one `OkouEmptyState` centred in what is left of the screen.
 ///
@@ -11,8 +10,9 @@ import SwiftUI
 /// - The empty state sits between the filters and the keyboard while the keyboard is up, and
 ///   recentres with it as it goes down.
 ///
-/// Put it in a `NavigationStack`. `results` are list rows; `empty` shows over the list, so give
-/// it content only when the list has nothing to show.
+/// Put it in a `NavigationStack` presented as a large native sheet with
+/// `okouSheetBackground(OkouColor.background)`. `results` are list rows; `empty` shows over
+/// the list, so give it content only when the list has nothing to show.
 struct OkouSearchPage<Filters: View, Results: View, Empty: View>: View {
   let title: LocalizedStringKey
   @Binding var text: String
@@ -21,6 +21,7 @@ struct OkouSearchPage<Filters: View, Results: View, Empty: View>: View {
   let filters: Filters
   let results: Results
   let empty: Empty
+  @FocusState private var isSearchFocused: Bool
 
   init(
     _ title: LocalizedStringKey, text: Binding<String>, prompt: LocalizedStringKey,
@@ -48,11 +49,13 @@ struct OkouSearchPage<Filters: View, Results: View, Empty: View>: View {
       .searchable(
         text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt
       )
+      .searchFocused($isSearchFocused)
       .toolbar { OkouCloseToolbarItem(action: close) }
+      .task { isSearchFocused = true }
   }
 
   private var page: some View {
-    List { results }
+    List { results.listRowBackground(Color.clear) }
       .listStyle(.plain)
       .scrollContentBackground(.hidden)
       .background(OkouColor.background)

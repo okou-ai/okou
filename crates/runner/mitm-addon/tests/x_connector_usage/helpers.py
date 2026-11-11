@@ -8,10 +8,7 @@ from typing import Any
 from mitmproxy import http
 
 import usage
-from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
-    read_jsonl_entries_after_flush,
-)
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.usage_helpers import UsageWebhookServer
 from tests.x_flow_helpers import RealFlowFactory, make_x_usage_flow
 
@@ -81,7 +78,6 @@ class XUsageHarness:
 
 
 def assert_lost_visibility_error(proxy_log: Path) -> dict[str, Any]:
-    assert jsonl_exists_after_flush(proxy_log)
     entries = read_jsonl_entries_after_flush(proxy_log)
     matching_entries = [
         entry

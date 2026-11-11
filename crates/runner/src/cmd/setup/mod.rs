@@ -57,12 +57,7 @@ pub async fn run_setup() -> RunnerResult<()> {
 
     let paths = HomePaths::new()?;
     create_directories(&paths).await?;
-    let http_client = reqwest::Client::builder()
-        .connect_timeout(SETUP_CONNECT_TIMEOUT)
-        .read_timeout(SETUP_READ_TIMEOUT)
-        .timeout(SETUP_REQUEST_TIMEOUT)
-        .build()
-        .map_err(|e| RunnerError::Internal(format!("build setup HTTP client: {e}")))?;
+    let http_client = setup_http_client()?;
     artifacts::install_firecracker(&http_client, &paths, arch).await?;
     artifacts::install_kernel(&http_client, &paths, arch).await?;
     artifacts::install_mitmdump(&http_client, &paths, arch).await?;
@@ -77,6 +72,20 @@ pub async fn run_setup() -> RunnerResult<()> {
 
     tracing::info!("setup complete");
     Ok(())
+}
+
+fn setup_http_client() -> RunnerResult<reqwest::Client> {
+    // Pinned artifact sizes and hashes refer to the original download bytes.
+    reqwest::Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .connect_timeout(SETUP_CONNECT_TIMEOUT)
+        .read_timeout(SETUP_READ_TIMEOUT)
+        .timeout(SETUP_REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| RunnerError::Internal(format!("build setup HTTP client: {e}")))
 }
 
 fn check_architecture() -> RunnerResult<&'static str> {

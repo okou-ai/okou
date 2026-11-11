@@ -75,6 +75,7 @@ export function ArtifactCatalogSidebar() {
         artifactRef={{
           url: preview.url,
           filename: preview.filename,
+          contentType: preview.contentType,
           kind: preview.kind,
           resourceUrl$: artifactCatalogSidebar.preview.resourceUrl$,
           shareUrl$: artifactCatalogSidebar.preview.shareUrl$,

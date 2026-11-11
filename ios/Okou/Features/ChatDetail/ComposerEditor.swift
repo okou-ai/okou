@@ -63,7 +63,7 @@ final class ComposerEditor {
   }
   @ObservationIgnored private var inputs: [ObjectIdentifier: Input] = [:]
   private(set) var mentionQuery: String?
-  private(set) var selectedMentionIndex = 0
+  private(set) var selectedMentionIndex = -1
   var mentionSource: ComposerMentionSource?
   @ObservationIgnored private weak var mentionView: ComposerTextView?
   @ObservationIgnored private var mentionRange: NSRange?
@@ -88,7 +88,7 @@ final class ComposerEditor {
     let key = "\(ObjectIdentifier(view))-\(range.location)-\(range.length)-\(query)"
     guard key != dismissedMention else { return }
     if mentionQuery != query || mentionView !== view || mentionRange != range {
-      selectedMentionIndex = 0
+      selectedMentionIndex = query.isEmpty ? -1 : 0
     }
     mentionView = view
     mentionRange = range
@@ -119,7 +119,7 @@ final class ComposerEditor {
     mentionView = nil
     mentionRange = nil
     mentionQuery = nil
-    selectedMentionIndex = 0
+    selectedMentionIndex = -1
   }
 
   @discardableResult func handleMentionKey(_ key: String, in view: ComposerTextView) -> Bool {
@@ -134,10 +134,13 @@ final class ComposerEditor {
     guard !suggestions.isEmpty else { return false }
     switch key {
     case UIKeyCommand.inputUpArrow:
-      selectedMentionIndex = (selectedMentionIndex + suggestions.count - 1) % suggestions.count
+      selectedMentionIndex =
+        selectedMentionIndex <= 0 ? suggestions.count - 1 : selectedMentionIndex - 1
     case UIKeyCommand.inputDownArrow:
       selectedMentionIndex = (selectedMentionIndex + 1) % suggestions.count
-    case "\r", "\t": insertMention(suggestions[min(selectedMentionIndex, suggestions.count - 1)])
+    case "\r", "\t":
+      guard suggestions.indices.contains(selectedMentionIndex) else { return false }
+      insertMention(suggestions[selectedMentionIndex])
     default: return false
     }
     return true

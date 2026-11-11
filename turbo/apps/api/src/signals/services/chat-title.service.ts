@@ -64,68 +64,108 @@ const TITLE_CONTEXT_CHAR_CAP = 150;
 const TITLE_PRIOR_MESSAGE_CAP = 10;
 const FOLLOWUP_CONTEXT_CHAR_CAP = 700;
 const FOLLOWUP_CONTEXT_MESSAGE_CAP = 8;
-const RECOMMENDED_FOLLOWUP_SYSTEM_PROMPT = [
-  "You generate recommended follow-up messages for a chat.",
-  "",
-  `Generate exactly ${RECOMMENDED_FOLLOWUP_LIMIT.toString()} distinct follow-up messages that meaningfully advance the task. These are quick replies, not task briefs.`,
-  "Usefulness is a hard requirement and takes priority over naturalness, brevity, and conversational tone.",
-  "",
-  "Conversation rules:",
-  "- Treat the latest assistant reply as authoritative.",
-  "- Focus on the latest unresolved decision or action.",
-  "- A suggestion passes the utility gate only if it does at least one of the following:",
-  "  - asks the assistant to take a concrete next action;",
-  "  - makes or requests a decision, selection, constraint, or adjustment;",
-  "  - asks a substantive question whose answer reduces uncertainty or changes the next step.",
-  "- Never output a pure acknowledgement, thanks, praise, sympathy, status reaction, or conversation closer.",
-  '- Invalid examples include: "Got it", "Thanks", "Sounds good", "知道了", "辛苦了", "好的", and "明白了".',
-  "- If removing polite or social words leaves no action, decision, constraint, or substantive question, the suggestion is invalid.",
-  "- Do not ask for information, links, status, summaries, lists, drafts, or artifacts already provided.",
-  "- If the assistant is waiting for the user to take an action, suggest a conditional message for continuing after that action. Never claim the action has already been completed.",
-  "- If the task is complete, suggest only genuinely useful next steps or refinements.",
-  "- If the task is blocked, suggest the smallest safe unblock, a useful alternative, or a root-cause question.",
-  "- If the latest assistant reply asks the user a direct question or offers to take an action, responding to it takes priority over all other follow-up ideas.",
-  "- For a yes-or-no question, confirmation request, permission request, or action offer, return exactly these three directions in order: accept or proceed; decline, stop, or defer; adjust the proposal, add a condition, or choose a closely related alternative.",
-  "- Each suggestion must directly answer or meaningfully respond to that question or offer. Do not revive an older topic merely for variety.",
-  "- Never invent facts, actions, or user intent that are not supported by the conversation.",
-  "",
-  "Writing rules:",
-  "- Match the user's language and conversational tone.",
-  "- Write each suggestion as a very short, natural quick reply.",
-  "- Express exactly one intent in one simple clause or question.",
-  "- Make every suggestion effortless to read at a glance.",
-  "- Remove every word that is not necessary.",
-  "- Rely on the existing conversation context. Do not repeat names, IDs, links, dates, or other details unless essential for clarity.",
-  "- Use natural contextual references when their meaning is unambiguous.",
-  "- Avoid formal, bureaucratic, report-like, or assistant-style wording.",
-  "- Do not label suggestions as positive, negative, or other.",
-  "- Do not combine multiple requests into one suggestion.",
-  "- Make the suggestions meaningfully distinct. Do not return paraphrases of the same intent.",
-  "- Do not default to summaries, reports, release notes, or presentations.",
-  "- Before returning the JSON, silently validate every suggestion: if the user sent it, the assistant must have a concrete action, decision, analysis, or meaningful question to handle. Replace any suggestion that fails this test.",
-  "- When three obvious options are unavailable, derive distinct useful directions by executing, diagnosing, verifying, comparing alternatives, refining constraints, or deferring with an explicit continuation condition. Never pad with social filler.",
-  `- Always return exactly ${RECOMMENDED_FOLLOWUP_LIMIT.toString()} suggestions.`,
-  "",
-  "Classification rules:",
-  '- Use kind "talk" for discussion, questions, planning, analysis, refinement, or ordinary actions.',
-  '- Use kind "generate" only when the suggestion naturally asks for one of the supported built-in generation outputs.',
-  "- Supported generation types are:",
-  "  - image: create or edit images and visual assets.",
-  "  - presentation: create slide decks or presentation documents.",
-  "  - website: create hosted websites or web pages.",
-  '- For kind "generate", include generationType as one of: image, presentation, website.',
-  "- Never add a generation suggestion merely for variety.",
-  "",
-  "Output rules:",
-  "- The prompt values are displayed as plain text, not rendered as Markdown.",
-  "- Do not use Markdown, links, bullet markers, backticks, bold markers, italic markers, or presentation-only syntax inside prompt values.",
-  "- Return only a JSON array.",
-  "- Each item must be either:",
-  '  {"prompt":"...","kind":"talk"}',
-  "  or:",
-  '  {"prompt":"...","kind":"generate","generationType":"website"}',
-  "- Do not return explanations, Markdown fences, or any text outside the JSON array.",
-].join("\n");
+function recommendedFollowupSystemPrompt(
+  actionFollowupsEnabled: boolean,
+): string {
+  return [
+    "You generate recommended follow-up messages for a chat.",
+    "",
+    `Generate exactly ${RECOMMENDED_FOLLOWUP_LIMIT.toString()} distinct follow-up messages that meaningfully advance the task. These are quick replies, not task briefs.`,
+    "Usefulness is a hard requirement and takes priority over naturalness, brevity, and conversational tone.",
+    "",
+    "Conversation rules:",
+    "- Treat the latest assistant reply as authoritative.",
+    "- Focus on the latest unresolved decision or action.",
+    "- A suggestion passes the utility gate only if it does at least one of the following:",
+    "  - asks the assistant to take a concrete next action;",
+    "  - makes or requests a decision, selection, constraint, or adjustment;",
+    "  - asks a substantive question whose answer reduces uncertainty or changes the next step.",
+    "- Never output a pure acknowledgement, thanks, praise, sympathy, status reaction, or conversation closer.",
+    '- Invalid examples include: "Got it", "Thanks", "Sounds good", "知道了", "辛苦了", "好的", and "明白了".',
+    "- If removing polite or social words leaves no action, decision, constraint, or substantive question, the suggestion is invalid.",
+    "- Do not ask for information, links, status, summaries, lists, drafts, or artifacts already provided.",
+    "- If the assistant is waiting for the user to take an action, suggest a conditional message for continuing after that action. Never claim the action has already been completed.",
+    "- If the task is complete, suggest only genuinely useful next steps or refinements.",
+    "- If the task is blocked, suggest the smallest safe unblock, a useful alternative, or a root-cause question.",
+    "- If the latest assistant reply asks the user a direct question or offers to take an action, responding to it takes priority over all other follow-up ideas.",
+    "- For a yes-or-no question, confirmation request, permission request, or action offer, return exactly these three directions in order: accept or proceed; decline, stop, or defer; adjust the proposal, add a condition, or choose a closely related alternative.",
+    "- Each suggestion must directly answer or meaningfully respond to that question or offer. Do not revive an older topic merely for variety.",
+    "- Never invent facts, actions, or user intent that are not supported by the conversation.",
+    "",
+    "Writing rules:",
+    "- Match the user's language and conversational tone.",
+    "- Write each suggestion as a very short, natural quick reply.",
+    "- Express exactly one intent in one simple clause or question.",
+    "- Make every suggestion effortless to read at a glance.",
+    "- Remove every word that is not necessary.",
+    "- Rely on the existing conversation context. Do not repeat names, IDs, links, dates, or other details unless essential for clarity.",
+    "- Use natural contextual references when their meaning is unambiguous.",
+    "- Avoid formal, bureaucratic, report-like, or assistant-style wording.",
+    "- Do not label suggestions as positive, negative, or other.",
+    "- Do not combine multiple requests into one suggestion.",
+    "- Make the suggestions meaningfully distinct. Do not return paraphrases of the same intent.",
+    "- Do not default to summaries, reports, release notes, or presentations.",
+    "- Before returning the JSON, silently validate every suggestion: if the user sent it, the assistant must have a concrete action, decision, analysis, or meaningful question to handle. Replace any suggestion that fails this test.",
+    "- When three obvious options are unavailable, derive distinct useful directions by executing, diagnosing, verifying, comparing alternatives, refining constraints, or deferring with an explicit continuation condition. Never pad with social filler.",
+    `- Always return exactly ${RECOMMENDED_FOLLOWUP_LIMIT.toString()} suggestions.`,
+    "",
+    ...(actionFollowupsEnabled
+      ? [
+          "Workflow opportunity rules:",
+          "- Consider saving the user's work as a reusable workflow when it has identifiable inputs, repeatable steps, and a useful output for future dates, datasets, or subjects.",
+          "- Explicit recurring language is a strong signal but is not required when the reusable value is clear.",
+          '- Include at most one workflow-creation suggestion among the three follow-ups. Use kind "workflow" and name the specific process to save.',
+          "- Skip trivial questions, isolated incidents, and tasks whose reusable process is still unclear.",
+          "- Do not propose a workflow already created or being created, or repeat a proposal declined or deferred in the visible conversation.",
+          "- Saving a workflow preserves reusable instructions; it does not enable automatic execution. Do not invent a trigger or frequency.",
+          "",
+          "Email reply reminder rules:",
+          "- When the user is composing or has sent an email that reasonably calls for a reply, consider a suggestion asking to be notified when the recipient replies.",
+          '- Include at most one reply-reminder suggestion, with kind "email". Do not use this kind for writing or editing email.',
+          "- If the email is still a draft or sending is unconfirmed, make the request conditional on sending it first. Never imply the email was sent or tracking is already active.",
+          "- Skip reply reminders if the reply has already arrived, tracking is already set up, the user declined it, or no response is expected.",
+          "- Do not offer automatic Outlook reply tracking; the Gmail reply-tracking automation does not support Outlook.",
+          "",
+          "- Workflow and email suggestions must still pass the utility gate. Never force them for variety.",
+          "- Responding to the latest assistant question or action offer takes priority over these opportunities. Preserve the required accept / decline / adjust directions when applicable.",
+          "- These are requests for the assistant to help set up the next action, not claims that anything has been created, enabled, or completed.",
+          "",
+        ]
+      : []),
+    "Classification rules:",
+    '- Use kind "talk" for discussion, questions, planning, analysis, refinement, or ordinary actions.',
+    ...(actionFollowupsEnabled
+      ? [
+          '- Use kind "workflow" for saving a reusable workflow, and kind "email" for an email reply reminder.',
+        ]
+      : []),
+    '- Use kind "generate" only when the suggestion naturally asks for one of the supported built-in generation outputs.',
+    "- Supported generation types are:",
+    "  - image: create or edit images and visual assets.",
+    "  - presentation: create slide decks or presentation documents.",
+    "  - website: create hosted websites or web pages.",
+    '- For kind "generate", include generationType as one of: image, presentation, website.',
+    "- Never add a generation suggestion merely for variety.",
+    "",
+    "Output rules:",
+    "- The prompt values are displayed as plain text, not rendered as Markdown.",
+    "- Do not use Markdown, links, bullet markers, backticks, bold markers, italic markers, or presentation-only syntax inside prompt values.",
+    "- Return only a JSON array.",
+    "- Each item must be either:",
+    '  {"prompt":"...","kind":"talk"}',
+    "  or:",
+    '  {"prompt":"...","kind":"generate","generationType":"website"}',
+    ...(actionFollowupsEnabled
+      ? [
+          "  or:",
+          '  {"prompt":"...","kind":"workflow"}',
+          "  or:",
+          '  {"prompt":"...","kind":"email"}',
+        ]
+      : []),
+    "- Do not return explanations, Markdown fences, or any text outside the JSON array.",
+  ].join("\n");
+}
 
 export interface ChatCompletionContextMessage {
   readonly role: "user" | "assistant";
@@ -492,14 +532,20 @@ export async function generateChatNotificationSummary(
   );
 }
 
-function parseRecommendedFollowups(text: string): ChatRecommendedFollowup[] {
+function parseRecommendedFollowups(
+  text: string,
+  actionFollowupsEnabled: boolean,
+): ChatRecommendedFollowup[] {
   const unfenced = text
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
 
-  return normalizeRecommendedFollowups(safeJsonParse(unfenced));
+  return normalizeRecommendedFollowups(
+    safeJsonParse(unfenced),
+    actionFollowupsEnabled,
+  );
 }
 
 export const loadChatThreadRecommendedFollowupContext$ = command(
@@ -540,6 +586,7 @@ export const loadChatThreadRecommendedFollowupContext$ = command(
 
 async function generateRecommendedFollowups(
   messages: readonly ChatCompletionContextMessage[],
+  actionFollowupsEnabled: boolean,
   record: RecordAuxiliaryGenerationDetail,
   signal?: AbortSignal,
 ): Promise<ChatRecommendedFollowup[]> {
@@ -556,7 +603,7 @@ async function generateRecommendedFollowups(
     [
       {
         role: "system",
-        content: RECOMMENDED_FOLLOWUP_SYSTEM_PROMPT,
+        content: recommendedFollowupSystemPrompt(actionFollowupsEnabled),
       },
       {
         role: "user",
@@ -568,12 +615,15 @@ async function generateRecommendedFollowups(
     signal,
   );
 
-  return text === null ? [] : parseRecommendedFollowups(text);
+  return text === null
+    ? []
+    : parseRecommendedFollowups(text, actionFollowupsEnabled);
 }
 
 export async function generateChatThreadRecommendedFollowupsFromContext(
   args: {
     readonly messages: readonly ChatCompletionContextMessage[];
+    readonly actionFollowupsEnabled: boolean;
     readonly threadId?: string;
   },
   signal?: AbortSignal,
@@ -587,7 +637,12 @@ export async function generateChatThreadRecommendedFollowupsFromContext(
       {
         feature: "recommended_followups",
         generate: (record) => {
-          return generateRecommendedFollowups(args.messages, record, signal);
+          return generateRecommendedFollowups(
+            args.messages,
+            args.actionFollowupsEnabled,
+            record,
+            signal,
+          );
         },
         usable: (value) => {
           return value.length > 0;

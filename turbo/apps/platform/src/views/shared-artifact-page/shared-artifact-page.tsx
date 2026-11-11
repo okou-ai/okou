@@ -115,6 +115,8 @@ function ArtifactViewerActions({
       )}
       <ArtifactDownloadMenu
         filename={artifact.filename}
+        contentType={artifact.contentType}
+        previewKind={artifact.preview.kind}
         url={artifact.preview.url}
         iconSize={18}
         showGoogleDriveAction={false}

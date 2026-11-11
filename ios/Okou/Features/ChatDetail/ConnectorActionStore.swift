@@ -111,7 +111,8 @@ final class ConnectorActionStore {
     if let pending = reads[action.id] {
       read = pending
     } else {
-      read = Read(task: Task { [service] in try await service.status(action) })
+      let statusTask = Task { [service] in try await service.status(action) }
+      read = Read(task: statusTask)
       reads[action.id] = read
     }
     defer { if reads[action.id]?.id == read.id { reads[action.id] = nil } }

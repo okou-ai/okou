@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.35.0](https://github.com/okou-ai/okou/compare/ios-v0.34.2...ios-v0.35.0) (2026-11-11)
+
+
+### Features
+
+* **ios:** unify text-first composer suggestions ([#46393](https://github.com/okou-ai/okou/issues/46393)) ([b3e314a](https://github.com/okou-ai/okou/commit/b3e314a7fd7ed8258f7f059881c25854f124d719))
+
+
+### Bug Fixes
+
+* **ios:** present search in a focused native sheet ([#46418](https://github.com/okou-ai/okou/issues/46418)) ([54f94c2](https://github.com/okou-ai/okou/commit/54f94c2a37e0de75e42807901cf246432980f26a))
+
+
+### Refactoring
+
+* **ios:** separate project reads from confirmed operations ([#46437](https://github.com/okou-ai/okou/issues/46437)) ([f6cc5b8](https://github.com/okou-ai/okou/commit/f6cc5b8f3b32746edca6363eb828feaa2d84cabe))
+
+## [0.34.2](https://github.com/okou-ai/okou/compare/ios-v0.34.1...ios-v0.34.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** arbitrate sidebar closing against list scrolling ([#46415](https://github.com/okou-ai/okou/issues/46415)) ([eb98a9b](https://github.com/okou-ai/okou/commit/eb98a9bac54f0fb76edf3ee990bec9aefe68c6af))
+* **ios:** preserve computer access cards during refresh ([#46435](https://github.com/okou-ai/okou/issues/46435)) ([3bc99f8](https://github.com/okou-ai/okou/commit/3bc99f8f811b6c4575ab1bef423a37054a183010))
+
+## [0.34.1](https://github.com/okou-ai/okou/compare/ios-v0.34.0...ios-v0.34.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** move chats between projects optimistically ([#46417](https://github.com/okou-ai/okou/issues/46417)) ([949d67f](https://github.com/okou-ai/okou/commit/949d67f7fa44f7b3e72b6f22b7a5ec8597347d75))
+
+## [0.34.0](https://github.com/okou-ai/okou/compare/ios-v0.33.1...ios-v0.34.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+
+
+### Refactoring
+
+* **ios:** own shared agent navigation reads ([#46408](https://github.com/okou-ai/okou/issues/46408)) ([99108df](https://github.com/okou-ai/okou/commit/99108df2c8a5ddfc4f9761172876afa9fc96ba91))
+
+## [0.33.1](https://github.com/okou-ai/okou/compare/ios-v0.33.0...ios-v0.33.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** prioritize unread status in collapsed projects ([#46372](https://github.com/okou-ai/okou/issues/46372)) ([1da2394](https://github.com/okou-ai/okou/commit/1da2394344850424f2080a7287a44842095dfbd6))
+
 ## [0.33.0](https://github.com/okou-ai/okou/compare/ios-v0.32.0...ios-v0.33.0) (2026-11-10)
 
 
