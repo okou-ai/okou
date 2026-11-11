@@ -67,6 +67,10 @@ struct ChatComposerView: View {
   }
   /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var showsVoiceInput: Bool {
+    replacesSendWithMic || (expandsInput && !voiceActive)
+  }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
@@ -194,20 +198,23 @@ struct ChatComposerView: View {
       } trailing: {
         HStack(spacing: OkouSpace.xs) {
           // The chat's model, only while the composer is open, where the next message is written.
-          if let modelSelection, expandsInput && !voiceActive {
+          // Keep controls mounted so they enter with the moving toolbar, not at its final position.
+          if let modelSelection {
             ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
               .disabled(needsUpgrade)
-              .transition(.opacity)
+              .opacity(showsModelPicker ? 1 : 0)
+              .allowsHitTesting(showsModelPicker)
+              .accessibilityHidden(!showsModelPicker)
           }
           // The mic sits beside send once there is a draft; on an empty one it takes send's place.
-          if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
-            ComposerVoiceInputButton(voice: voice)
-              .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
-          }
-          if replacesSendWithMic, let voice = draftState?.voice {
+          if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-          } else {
+              .opacity(showsVoiceInput ? 1 : 0)
+              .allowsHitTesting(showsVoiceInput)
+              .accessibilityHidden(!showsVoiceInput)
+          }
+          if !replacesSendWithMic {
             Button {
               if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
               // The send operation captures native text for motion before ending editing.

@@ -7,7 +7,6 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   @ViewBuilder let leading: () -> Leading
   @ViewBuilder let trailing: () -> Trailing
 
-  @State private var trailingWidth = OkouControl.minimumTarget
   private let actionSize = OkouControl.minimumTarget
   private var cornerRadius: CGFloat {
     isExpanded ? 28 : OkouControl.composerCompactHeight / 2
@@ -16,7 +15,9 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   var body: some View {
     content()
       .padding(.leading, isExpanded ? 18 : actionSize + OkouSpace.sm)
-      .padding(.trailing, isExpanded ? 18 : trailingWidth + OkouSpace.sm)
+      // Only the primary action shares the compact input's line. Hidden expansion
+      // controls keep their toolbar geometry without reserving space in the editor.
+      .padding(.trailing, isExpanded ? 18 : actionSize + OkouSpace.sm)
       .padding(.top, isExpanded ? 17 : OkouSpace.six)
       .padding(.bottom, isExpanded ? 62 : OkouSpace.six)
       .frame(
@@ -24,17 +25,15 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
         alignment: isExpanded ? .topLeading : .leading
       )
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-      .overlay(alignment: isExpanded ? .bottomLeading : .leading) {
+      .overlay(alignment: .bottomLeading) {
         leading()
           .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
-      .overlay(alignment: isExpanded ? .bottomTrailing : .trailing) {
+      .overlay(alignment: .bottomTrailing) {
         trailing()
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-          } action: {
-            trailingWidth = $0
-          }
+          // Resolve motion at the toolbar so fading controls inherit its animated
+          // position while the keyboard raises the surface.
+          .geometryGroup()
           .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
           .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
