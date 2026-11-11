@@ -307,6 +307,26 @@ final class MailDraftCardTests: XCTestCase {
     XCTAssertEqual(confirmed?.status, .sent)
   }
 
+  func testReconciliationFetchesHTTPWhileTheConfirmedPresentationTaskIsPending() async throws {
+    let fixture = MailDraftHTTPFixture()
+    fixture.state.withLock { $0.sendErrorOnce = 503 }
+    let (conversation, card) = setup(fixture)
+    defer { conversation.close() }
+    await card.send()
+    // The native loadable starts observing the confirmed baseline without awaiting it.
+    let presentation = try card.stateStore.get(card.value)
+    addTeardownBlock { @MainActor in
+      presentation.cancel()
+      _ = await presentation.result
+    }
+    await card.refresh()
+    let reconciled = try await card.read()
+    XCTAssertEqual(reconciled?.status, .sent)
+    await card.send()
+    XCTAssertEqual(
+      fixture.state.withLock { $0.requests.filter { $0.httpMethod == "POST" }.count }, 1)
+  }
+
   func testProviderRejectionReconcilesWithGETAndRequiresANewExplicitSend() async throws {
     for status in [400, 409] {
       let fixture = MailDraftHTTPFixture()

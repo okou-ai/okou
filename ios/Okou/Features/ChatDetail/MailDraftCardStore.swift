@@ -108,7 +108,9 @@ final class MailDraftCardStore {
   func read(refresh: Bool = false) async throws -> ChatMailDraft? {
     guard isActive, !closed, !Task.isCancelled else { throw CancellationError() }
     let generation = generation
-    try stateStore.set(request, refresh && pending == nil)
+    // A pending confirmed-result presentation is not an HTTP read to coalesce with.
+    let replacingConfirmation = try stateStore.get(source) != .remote
+    try stateStore.set(request, refresh && (pending == nil || replacingConfirmation))
     var task = try stateStore.get(value)
     while true {
       let result = await task.result
