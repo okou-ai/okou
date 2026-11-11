@@ -188,9 +188,12 @@ final class ChatModelSelectionStore {
   }
   var effectiveEffort: String? { models.configuration?.effectiveEffort(for: selection) }
   var requestedEffort: String? { models.configuration?.requestedEffort(for: selection) }
-  var canSaveForFutureChats: Bool {
+  var canSaveForFutureChats: Bool { canSaveForFutureChats(selection) }
+  /// Whether `choice` (this new chat's choice, or the sheet's draft of it) differs from the
+  /// default for new chats, so saving it as that default would change something.
+  func canSaveForFutureChats(_ choice: ChatModelSelection) -> Bool {
     guard !closed, threadID == nil, let configuration = models.configuration else { return false }
-    let current = selection
+    let current = configuration.resolved(choice)
     let defaultSelection = configuration.defaultSelection
     // Compare the preferred effort, preserving choices narrowed by the current runtime.
     // Settings remembered for other models do not change this chat's selection.
@@ -273,39 +276,27 @@ final class ChatModelSelectionStore {
     stored = nil
     error = nil
   }
-  func choose(model: String?) async {
-    var next = selection
-    if next.model != model {
-      next.model = model
-      next.serviceTier = nil
-    }
-    await save(next, effort: nil)
+  /// Saves a choice drafted in the model sheet (a model, that model's effort and Fast) as one
+  /// write, so the chat never runs on half of it. True once the chat uses the choice; an
+  /// unchanged draft has nothing to save.
+  @discardableResult
+  func apply(_ draft: ChatModelSelection) async -> Bool {
+    guard let configuration = models.configuration else { return false }
+    let next = configuration.resolved(draft)
+    guard next != selection else { return true }
+    return await save(next, effort: configuration.requestedEffort(for: next))
   }
-  func choose(effort: String) async {
-    var next = selection
-    guard let model = next.model,
-      models.configuration?.efforts(for: next).contains(effort) == true
-    else { return }
-    next.modelSettings[model] = ThreadModelSetting(effort: effort)
-    await save(next, effort: effort)
-  }
-  func setFast(_ fast: Bool) async {
-    guard models.configuration?.canUseFast(selection) == true else { return }
-    var next = selection
-    next.serviceTier = fast ? "priority" : nil
-    await save(next, effort: nil)
-  }
-  private func save(_ next: ChatModelSelection, effort: String?) async {
+  private func save(_ next: ChatModelSelection, effort: String?) async -> Bool {
     guard !closed, !isBusy, !uncertain, models.configuration != nil,
       models.configuration?.row(for: next)?.isConfigurable == true
-    else { return }
+    else { return false }
     revision += 1
     isSaving = true
     defer { isSaving = false }
     guard let threadID else {
       stored = next
       error = nil
-      return
+      return true
     }
     var accepted = false
     var checkingUncertainWrite = false
@@ -313,13 +304,13 @@ final class ChatModelSelectionStore {
       try await models.service.save(next, effort: effort, threadID: threadID)
       accepted = true
       let confirmed = try await models.service.selection(threadID: threadID)
-      guard !closed, !Task.isCancelled else { return }
+      guard !closed, !Task.isCancelled else { return false }
       stored = confirmed
       hasLoaded = true
       needsThreadReadback = false
       error = nil
     } catch {
-      guard !closed else { return }
+      guard !closed else { return false }
       // A failed response may follow a successful write. Block sends until a fresh read resolves it.
       uncertain = true
       self.error = ChatRequestFailure.message(for: error)
@@ -333,6 +324,7 @@ final class ChatModelSelectionStore {
     if checkingUncertainWrite && !uncertain && stored != next {
       error = String(localized: "Your model change was not saved. Choose it again to retry.")
     }
+    return error == nil && !uncertain
   }
   private func finishSaving() async {
     isSaving = false
@@ -342,31 +334,63 @@ final class ChatModelSelectionStore {
       await refresh()
     }
   }
-  func saveForFutureChats() async {
-    guard canSaveForFutureChats, !isBusy, !uncertain else { return }
+  /// True once this new chat's choice is the default for new chats.
+  @discardableResult
+  func saveForFutureChats() async -> Bool {
+    guard canSaveForFutureChats, !isBusy, !uncertain else { return false }
     isSaving = true
     let value = selection
     defer { isSaving = false }
     do {
       let preference = try await models.service.saveDefault(
         value, effort: value.model.flatMap { value.modelSettings[$0]?.effort })
-      guard !closed, !Task.isCancelled else { return }
+      guard !closed, !Task.isCancelled else { return false }
       models.applyPreference(preference)
       // Preserve canonical readback after a write while reusing other metadata.
       await models.refresh([.modelPreference])
-      guard !closed, !Task.isCancelled else { return }
+      guard !closed, !Task.isCancelled else { return false }
       error = nil
     } catch {
-      guard !closed else { return }
+      guard !closed else { return false }
       self.error = ChatRequestFailure.message(for: error)
       models.report(error)
     }
     await finishSaving()
+    return error == nil
   }
   func close() {
     connectors.close()
     closed = true
     revision += 1
     stored = nil
+  }
+}
+
+/// The model sheet's edits to a drafted choice; nothing is saved until
+/// `ChatModelSelectionStore.apply(_:)`.
+extension ChatModelSelection {
+  /// Fast belongs to a model, so a different model starts at the standard speed. The new
+  /// model keeps the effort last chosen for it (`modelSettings`).
+  func choosing(model: String?) -> ChatModelSelection {
+    var next = self
+    if next.model != model {
+      next.model = model
+      next.serviceTier = nil
+    }
+    return next
+  }
+  /// Remembers `effort` for the chosen model, if that model offers it.
+  func choosing(effort: String, in configuration: ChatModelConfiguration) -> ChatModelSelection {
+    guard let model, configuration.efforts(for: self).contains(effort) else { return self }
+    var next = self
+    next.modelSettings[model] = ThreadModelSetting(effort: effort)
+    return next
+  }
+  /// Fast ("priority") or the standard speed, if the chosen model offers Fast.
+  func choosing(fast: Bool, in configuration: ChatModelConfiguration) -> ChatModelSelection {
+    guard configuration.canUseFast(self) else { return self }
+    var next = self
+    next.serviceTier = fast ? "priority" : nil
+    return next
   }
 }

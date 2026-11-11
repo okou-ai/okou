@@ -81,6 +81,51 @@ final class ChatModelCommandTests: XCTestCase {
     XCTAssertEqual(writes.withLock { $0 }, 0)
   }
 
+  func testTheSheetSavesItsDraftedModelEffortAndSpeedAsOneWrite() async throws {
+    let writes = Mutex<[[String: String]]>([])
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("model-selection") {
+        let body = try XCTUnwrap(
+          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+        writes.withLock { $0.append(body.compactMapValues { $0 as? String }) }
+        return ChatHTTPResponse(status: 204, body: "")
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource, thread: thread())
+    defer {
+      selection.close()
+      resource.close()
+    }
+    await selection.open()
+    let configuration = try XCTUnwrap(resource.configuration)
+    let unchanged = await selection.apply(selection.selection)
+    XCTAssertTrue(unchanged)
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+
+    let faster = selection.selection.choosing(effort: "high", in: configuration)
+      .choosing(fast: true, in: configuration)
+    XCTAssertTrue(writes.withLock { $0.isEmpty })
+    let savedFaster = await selection.apply(faster)
+    XCTAssertTrue(savedFaster)
+    let switched = selection.selection.choosing(model: "claude-model")
+      .choosing(effort: "high", in: configuration)
+    let savedSwitch = await selection.apply(switched)
+    XCTAssertTrue(savedSwitch)
+    XCTAssertEqual(
+      writes.withLock { $0 },
+      [
+        ["model": "codex-model", "reasoningEffort": "high", "codexServiceTier": "fast"],
+        ["model": "claude-model", "reasoningEffort": "high"],
+      ])
+    // A level the model does not offer, and Fast on a model without it, leave the draft as it was.
+    XCTAssertEqual(switched.choosing(effort: "ultra", in: configuration), switched)
+    XCTAssertNil(
+      selection.selection.choosing(model: nil).choosing(fast: true, in: configuration).serviceTier)
+  }
+
   func testDefaultSaveAvailabilityFollowsCrossDevicePreferenceChanges() async throws {
     let changed = Mutex(false)
     let fixture = ChatHTTPFixture { request in
@@ -584,5 +629,20 @@ final class ChatModelCommandTests: XCTestCase {
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
       title: "Example", selectedModel: "codex-model", createdAt: Date(), updatedAt: Date(),
       sortAt: Date())
+  }
+}
+
+/// The model sheet's single edits followed by Done, as the tests' shorthand.
+extension ChatModelSelectionStore {
+  func choose(model: String?) async {
+    await apply(selection.choosing(model: model))
+  }
+  func choose(effort: String) async {
+    guard let configuration = models.configuration else { return }
+    await apply(selection.choosing(effort: effort, in: configuration))
+  }
+  func setFast(_ fast: Bool) async {
+    guard let configuration = models.configuration else { return }
+    await apply(selection.choosing(fast: fast, in: configuration))
   }
 }
