@@ -148,7 +148,9 @@ export async function validateCustomConnectorCloudflareStorage(
               changed.reason.constraint,
               "fk_custom_connector_cloudflare_config",
             );
-            assert.equal(changed.reason.code, "23001");
+            // PostgreSQL versions and the winning FK check can report either
+            // referential code; the named constraint and persisted state own the invariant.
+            assert.ok(["23503", "23001"].includes(changed.reason.code));
           }
           assert.equal(
             (

@@ -42,19 +42,32 @@ export function customConnectorDirectNetworkAdmission(
 export function customConnectorNetworkBindingSelection() {
   const binding = orgCustomConnectorCloudflareBindings;
   const config = cloudflareAccessConfigs;
-  return sql`(
-    SELECT jsonb_build_object(
+  const query = new QueryBuilder()
+    .select({
+      metadata: sql`jsonb_build_object(
       'type', 'cloudflare_access',
       'configId', ${binding.configId},
       'protectedOrigins', ${binding.protectedOrigins},
       'status', 'available',
       'name', ${config.name}
-    ) FROM ${binding}
-    JOIN ${config} ON ${config.id} = ${binding.configId}
-      AND ${config.orgId} = ${binding.orgId} AND ${config.scope} = 'organization'
-    WHERE ${binding.connectorId} = ${orgCustomConnectors.id}
-      AND ${binding.orgId} = ${orgCustomConnectors.orgId}
-  )`.mapWith(
+    )`,
+    })
+    .from(binding)
+    .innerJoin(
+      config,
+      and(
+        eq(config.id, binding.configId),
+        eq(config.orgId, binding.orgId),
+        eq(config.scope, "organization"),
+      ),
+    )
+    .where(
+      and(
+        eq(binding.connectorId, orgCustomConnectors.id),
+        eq(binding.orgId, orgCustomConnectors.orgId),
+      ),
+    );
+  return sql`(${query})`.mapWith(
     zodDriverValueDecoder(customConnectorNetworkMetadataSchema.nullable()),
   );
 }

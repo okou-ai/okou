@@ -7,20 +7,15 @@ import {
   uuid,
   enum as zEnum,
 } from "zod";
-import { validateBaseUrlHostPolicy } from "@okouai/connectors/firewall-types";
 
 /** Exact admin-approved credential recipients, never host suffixes or templates. */
+// Browser-shared syntax; request admission owns DNS and public-address checks.
 export const customConnectorProtectedOriginSchema = string()
   .max(2048)
   .refine((value) => {
     let url: URL;
     try {
       url = new URL(value);
-      validateBaseUrlHostPolicy({
-        base: value,
-        serviceName: "Cloudflare Access",
-        hostPolicy: { kind: "publicDestination" },
-      });
     } catch {
       return false;
     }
