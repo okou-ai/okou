@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.5...browser-extension-v0.5.6) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ci:** run browser extension tests in a pinned playwright image ([#46654](https://github.com/okou-ai/okou/issues/46654)) ([a1a23a3](https://github.com/okou-ai/okou/commit/a1a23a36c5201b3815c7b61ea8b24d1778f3f7ec))
+
 ## [0.5.5](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.4...browser-extension-v0.5.5) (2026-11-07)
 
 
