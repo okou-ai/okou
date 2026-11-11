@@ -200,6 +200,77 @@ or increased count baseline. See [public entry points](../docs/android/android-d
 before adding exported components, deep links or external Intent handling.
 
 This workflow is not a signing or store-publication pipeline. No release-please
-component, backend client header/floor, Android API consumption inventory, or
-FCM credentials are configured. Those boundaries must be implemented with the
-features that consume them; this scaffold makes no authenticated API requests.
+component or FCM credentials are configured. The transport below is available
+to feature owners; the local shell still makes no authenticated API requests.
+
+## Canonical API Bindings And Transport
+
+Selected TypeScript/Zod contracts in
+`turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts` generate the
+Kotlin serialization models, Retrofit suspend declarations and client constants
+in `app/src/main/kotlin/ai/okou/android/api/generated`. The same route references
+register Android's installed-reader inventory, including error responses.
+Add only contracts a native consumer actually needs. Unsupported schema shapes
+fail generation; do not replace them with untyped JSON or parallel handwritten DTOs.
+
+Regenerate from the repository root with the Turbo workspace dependencies installed:
+
+```bash
+cd turbo
+pnpm -F @okouai/api-contracts generate:kotlin
+cd ../android
+./gradlew spotlessApply
+```
+
+The generated source is committed, so ordinary Android builds need no Node/pnpm.
+To verify it against the current canonical contracts, from `turbo/`:
+
+```bash
+pnpm -F @okouai/api-contracts check:kotlin
+pnpm -F @okouai/api-contracts lint-android-api-consumption
+```
+
+Drift comparison ignores comments, whitespace and optional trailing commas;
+Android Spotless owns formatting. Type/method/path changes still fail. Production
+Retrofit declarations belong in the generated boundary; the consumption check
+rejects manual `retrofit2.http` declarations/imports and raw API path literals
+elsewhere, including aliased/qualified declarations. First-party calls use this
+service; direct arbitrary HTTP in features is outside the transport contract.
+
+`ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
+identity and a fresh suspending `WorkspaceTokenProvider`. Its ordinary methods
+cover current workspace and member preference bootstrap. The authentication
+owner captures the right origin/user/workspace, cancels retired consumers and
+closes their client; token renewal itself does not replace durable identity.
+Construction starts no token resolution or network work and is not wired into
+the local shell. A real bootstrap must render native UI while responses remain
+pending and keep protected data/actions behind their actual prerequisites.
+
+The client returns typed HTTP/network/incompatible-response failures, propagates
+coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
+64 KiB, and closes responses. Error status remains available when its envelope
+is malformed/oversized. Unknown fields permit additive responses; required
+nullable fields and enum values retain the generated reader's contract.
+JSON field types follow Kotlin serialization semantics rather than recreating
+Zod's complete validation runtime. Decode failures expose a typed incompatible
+response error without serializer messages/input snippets that could disclose
+response data through exception reporting.
+
+HTTP 426 retains a read-only `updateRequired` state and blocks further calls
+from that client; a malformed envelope keeps the minimum version unknown.
+The real authenticated root must observe this state and present its native
+blocking update destination. No self-clear/retry is provided for an installed
+version that needs an update. The backend Android floor starts unset; see
+[Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
+
+API requests do not follow redirects or automatically retry connection/status
+failures, including `503 Retry-After: 0`. A lost response is not remote rollback;
+operation owners decide retry/readback. `SignedTransferClient` owns a separate
+HTTP client without the token provider, cookies or API/client headers. It accepts
+signed HTTPS download/upload URLs, rejects credential-header injection and
+redirects, and requires a download byte limit. Large file/streaming/resume owners
+should add their own bounded file APIs with the actual feature.
+
+Release network policy requires HTTPS. Debug permits cleartext only for
+`localhost`, `127.0.0.1` and `::1`, for local transport fixtures/development.
+This does not enable cleartext production endpoints or trust arbitrary certificates.

@@ -17,7 +17,10 @@ export const DESKTOP_PUBLISHED_VERSION_ORACLE =
 export const IOS_PUBLISHED_VERSION_ORACLE =
   "ios-v* release commit with a successful publish-ios-testflight job and successful internal availability verification in release-please.yml";
 
-type NativeOwner = "desktop" | "ios";
+export const ANDROID_PUBLISHED_VERSION_ORACLE =
+  "verified Android release availability; no publication oracle is configured yet, so CI cannot prove an Android floor raise";
+
+type NativeOwner = "desktop" | "ios" | "android";
 interface NativeClientPolicy {
   readonly owner: NativeOwner;
   readonly label: string;
@@ -27,6 +30,14 @@ interface NativeClientPolicy {
 }
 
 const nativeClients: Readonly<Record<NativeOwner, NativeClientPolicy>> = {
+  android: {
+    owner: "android",
+    label: "Android",
+    floorFile: "turbo/apps/api/src/lib/android-client-compatibility.json",
+    transformsFile:
+      "turbo/packages/api-contracts/src/client-transforms/android.ts",
+    oracle: ANDROID_PUBLISHED_VERSION_ORACLE,
+  },
   desktop: {
     owner: "desktop",
     label: "Desktop",
@@ -68,6 +79,9 @@ export interface RuntimeApiGateInput {
   readonly iosFloor?: NativeFloorChange;
   readonly iosPublishedVersion?: string;
   readonly iosTransforms?: readonly ClientResponseTransform[];
+  readonly androidFloor?: NativeFloorChange;
+  readonly androidPublishedVersion?: string;
+  readonly androidTransforms?: readonly ClientResponseTransform[];
 }
 
 type RuntimeApiGateOutcome = "blocking" | "proven" | "inherited" | "warning";
@@ -120,8 +134,16 @@ export function evaluateRuntimeApiGate(
   const errors: RuntimeApiGateError[] = [];
   const desktop = nativeContext(input, nativeClients.desktop, errors);
   const ios = nativeContext(input, nativeClients.ios, errors);
+  const android = nativeContext(input, nativeClients.android, errors);
   const findings = input.findings.map((finding) => {
-    return classifyFinding(finding, finding.owner === "ios" ? ios : desktop);
+    return classifyFinding(
+      finding,
+      finding.owner === "android"
+        ? android
+        : finding.owner === "ios"
+          ? ios
+          : desktop,
+    );
   });
 
   return {
@@ -140,16 +162,21 @@ function nativeContext(
   client: NativeClientPolicy,
   errors: RuntimeApiGateError[],
 ): ClassifyContext {
-  const change =
-    client.owner === "desktop" ? input.desktopFloor : input.iosFloor;
-  const publishedVersion =
-    client.owner === "desktop"
-      ? input.desktopPublishedVersion
-      : input.iosPublishedVersion;
-  const transforms =
-    client.owner === "desktop"
-      ? input.desktopTransforms
-      : (input.iosTransforms ?? []);
+  const change = {
+    desktop: input.desktopFloor,
+    ios: input.iosFloor,
+    android: input.androidFloor,
+  }[client.owner];
+  const publishedVersion = {
+    desktop: input.desktopPublishedVersion,
+    ios: input.iosPublishedVersion,
+    android: input.androidPublishedVersion,
+  }[client.owner];
+  const transforms = {
+    desktop: input.desktopTransforms,
+    ios: input.iosTransforms ?? [],
+    android: input.androidTransforms ?? [],
+  }[client.owner];
   const floor = evaluateNativeFloor(change, publishedVersion, client);
   if (floor.kind === "invalid") {
     errors.push({
@@ -193,10 +220,7 @@ export function renderRuntimeApiGateReport(
       "",
       `Suggested fix: ${finding.recommendation}`,
       ...(finding.proofs
-        ? [
-            "",
-            `${finding.owner === "ios" ? "iOS" : "Desktop"} proofs: ${finding.proofs}`,
-          ]
+        ? ["", `${nativeLabel(finding.owner)} proofs: ${finding.proofs}`]
         : []),
       "",
       `Gate: ${finding.resolution}`,
@@ -207,7 +231,7 @@ export function renderRuntimeApiGateReport(
   });
   for (const error of result.errors) {
     sections.push(
-      `${error.kind.startsWith("ios-") ? "iOS" : "Desktop"} contract gate error (${error.kind})\n\n${error.message}`,
+      `${nativeLabel(error.kind.split("-")[0]!)} contract gate error (${error.kind})\n\n${error.message}`,
     );
   }
 
@@ -234,7 +258,7 @@ export function runtimeApiGateAnnotations(
   });
   for (const error of result.errors) {
     annotations.push(
-      `::error title=${error.kind.startsWith("ios-") ? "iOS" : "Desktop"} contract gate::${oneLine(error.message)}`,
+      `::error title=${nativeLabel(error.kind.split("-")[0]!)} contract gate::${oneLine(error.message)}`,
     );
   }
   return annotations;
@@ -354,7 +378,9 @@ function classifyFinding(
   return {
     ...finding,
     ...classifyOutcome(finding, context),
-    ...(finding.owner === "desktop" || finding.owner === "ios"
+    ...(finding.owner === "desktop" ||
+    finding.owner === "ios" ||
+    finding.owner === "android"
       ? {
           proofs: nativeProofs(
             finding,
@@ -385,7 +411,11 @@ function classifyOutcome(
     };
   }
 
-  if (finding.owner !== "desktop" && finding.owner !== "ios") {
+  if (
+    finding.owner !== "desktop" &&
+    finding.owner !== "ios" &&
+    finding.owner !== "android"
+  ) {
     return {
       outcome: "blocking",
       resolution: `${finding.owner} findings block merges and accept no proof; keep the production contract.`,
@@ -509,6 +539,10 @@ function findingKey(finding: RuntimeApiCompatFinding): string {
   return [finding.routeId, finding.direction, finding.path, finding.kind].join(
     "\u0000",
   );
+}
+
+function nativeLabel(owner: string): string {
+  return owner === "android" ? "Android" : owner === "ios" ? "iOS" : "Desktop";
 }
 
 function oneLine(value: string): string {

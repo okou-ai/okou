@@ -1,6 +1,7 @@
 import {
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_IOS,
+  CLIENT_TYPE_ANDROID,
 } from "../contracts/client-headers";
 import type { ClientResponseTransform } from "./types";
 
@@ -50,7 +51,7 @@ export function isTransformableStatus(status: number): boolean {
 /**
  * Returns the response transforms to apply, in registry order, so that a
  * native build up to each transform's `maxVersion` receives the response shape
- * it was built against. Only `2xx` responses to exact `Desktop` or `iOS`
+ * it was built against. Only `2xx` responses to exact `Desktop`, `iOS` or `Android`
  * requests with a stable `x.y.z` version are transformed; every other request
  * selects nothing.
  */
@@ -63,7 +64,9 @@ export function selectClientResponseTransforms({
   status,
 }: ClientResponseTransformRequest): readonly ClientResponseTransform[] {
   if (
-    (client !== CLIENT_TYPE_DESKTOP && client !== CLIENT_TYPE_IOS) ||
+    (client !== CLIENT_TYPE_DESKTOP &&
+      client !== CLIENT_TYPE_IOS &&
+      client !== CLIENT_TYPE_ANDROID) ||
     version === undefined ||
     !isTransformableStatus(status)
   ) {
@@ -76,7 +79,12 @@ export function selectClientResponseTransforms({
 
   return transforms.filter((entry) => {
     if (
-      entry.client !== (client === CLIENT_TYPE_IOS ? "ios" : "desktop") ||
+      entry.client !==
+        (client === CLIENT_TYPE_IOS
+          ? "ios"
+          : client === CLIENT_TYPE_ANDROID
+            ? "android"
+            : "desktop") ||
       entry.method !== method ||
       entry.path !== path ||
       entry.status !== status

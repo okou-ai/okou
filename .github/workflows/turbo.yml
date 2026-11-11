@@ -2831,6 +2831,13 @@ jobs:
             > /tmp/runtime-api-schema/desktop-base-floor.json
           git show "$base_sha:turbo/apps/api/src/lib/ios-client-compatibility.json" \
             > /tmp/runtime-api-schema/ios-base-floor.json
+          if git cat-file -e "$base_sha:turbo/apps/api/src/lib/android-client-compatibility.json" 2>/dev/null; then
+            git show "$base_sha:turbo/apps/api/src/lib/android-client-compatibility.json" \
+              > /tmp/runtime-api-schema/android-base-floor.json
+          else
+            # Before Android is registered there is no enforced Android floor.
+            printf '%s\n' '{"minimumSupportedVersion":null}' > /tmp/runtime-api-schema/android-base-floor.json
+          fi
 
           # Findings the base already has against production were proven by the
           # change that introduced them and must not block this one.
@@ -2882,6 +2889,10 @@ jobs:
         working-directory: turbo
         run: pnpm --filter @okouai/api-contracts run lint-ios-api-consumption
 
+      - name: Check generated Android API consumption
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts run lint-android-api-consumption
+
       - name: Check runtime API compatibility
         working-directory: turbo
         shell: bash
@@ -2900,11 +2911,16 @@ jobs:
             --report-out "$schema_dir/report.json"
             --block-owner desktop
             --block-owner ios
+            --block-owner android
             --desktop-floor "$PWD/apps/api/src/lib/desktop-compatibility.json"
             --desktop-base-floor "$schema_dir/desktop-base-floor.json"
             --ios-floor "$PWD/apps/api/src/lib/ios-client-compatibility.json"
             --ios-base-floor "$schema_dir/ios-base-floor.json"
+            --android-floor "$PWD/apps/api/src/lib/android-client-compatibility.json"
+            --android-base-floor "$schema_dir/android-base-floor.json"
           )
+          # No Android publication oracle is configured: never pass a claimed
+          # available version. A floor raise fails until real evidence is wired.
           if [ -f "$schema_dir/base.json" ]; then
             args+=(--base-schema "$schema_dir/base.json")
           fi
