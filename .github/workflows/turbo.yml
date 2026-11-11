@@ -1111,7 +1111,7 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  test-browser-extension:
+  test-browser-extension-package:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
@@ -1124,12 +1124,29 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Test extension release boundaries
         run: node --test .github/scripts/release/browser-extension-release.test.mjs
-      - name: Install full Chromium
-        run: pnpm --dir turbo/apps/browser-extension exec playwright install --with-deps chromium
-      - name: Test native extension behavior
-        run: pnpm --dir turbo --filter @okouai/browser-extension test
+      - name: Build extension
+        run: pnpm --dir turbo --filter @okouai/browser-extension build
       - name: Verify deterministic extension package
         run: pnpm --dir turbo --filter @okouai/browser-extension verify-package
+
+  test-browser-extension:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      # Match @playwright/test in the extension package. This image supplies
+      # full Chromium, system libraries and the native font fixtures.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 10.33.4
+      - uses: ./.github/actions/toolchain-init
+      - name: Test native extension behavior
+        run: pnpm --dir turbo --filter @okouai/browser-extension test
 
   test-other:
     needs: [detect-turbo-ts-checks]
@@ -1877,7 +1894,9 @@ jobs:
 
   deploy-stripe-listener:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Namespace acquisition can wait eight minutes behind a runner owner.
+    # Retain the previous five-minute deployment allowance after that wait.
+    timeout-minutes: 15
     concurrency:
       group: deploy-stripe-listener-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -1924,45 +1943,8 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          set -euo pipefail
-          cd ansible
-
-          STRIPE_LISTENER_HOST="$(printf '%s\n' "$METAL_HOSTS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d' | head -n 1)"
-          if [[ -z "$STRIPE_LISTENER_HOST" ]]; then
-            echo "::error::AWS_METAL_RUNNER_HOSTS is empty"
-            exit 1
-          fi
-
-          CLEANUP_EXTRA_VARS="$(jq -nc \
-            --arg ansible_user "$METAL_USER" \
-            --arg job_ref "$JOB_REF" \
-            '{ansible_user: $ansible_user, job_ref: $job_ref}')"
-          if ! ansible-playbook \
-            -i "${METAL_HOSTS}," \
-            playbooks/cleanup-stripe-listener.yml \
-            --extra-vars "$CLEANUP_EXTRA_VARS" \
-            -v; then
-            echo "::warning::Stripe CLI listener cleanup failed for ${JOB_REF} — stale Stripe forwarding may remain on metal hosts"
-          fi
-
-          FORWARD_URL="${API_PREVIEW_URL%/}/api/webhooks/stripe"
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            encoded_bypass="$(node -e 'process.stdout.write(encodeURIComponent(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || ""))')"
-            echo "::add-mask::$encoded_bypass"
-            FORWARD_URL="${FORWARD_URL}?x-vercel-protection-bypass=${encoded_bypass}"
-          fi
-          EXTRA_VARS="$(jq -nc \
-            --arg ansible_user "$METAL_USER" \
-            --arg job_ref "$JOB_REF" \
-            --arg forward_url "$FORWARD_URL" \
-            --arg stripe_secret_key "$STRIPE_SECRET_KEY" \
-            '{ansible_user: $ansible_user, job_ref: $job_ref, forward_url: $forward_url, stripe_secret_key: $stripe_secret_key}')"
-
-          ansible-playbook \
-            -i "${STRIPE_LISTENER_HOST}," \
-            playbooks/start-stripe-listener.yml \
-            --extra-vars "$EXTRA_VARS" \
-            -v
+          .github/scripts/runner/with-runner-lifecycle-lock.sh \
+            bash .github/scripts/runner/start-stripe-listener.sh
 
   # Exercise the hosted Clerk UI via agent-browser. This is intentionally
   # separate from Playwright because Playwright signs in through Clerk's
@@ -2976,6 +2958,7 @@ jobs:
       - test-app
       - test-api
       - test-other
+      - test-browser-extension-package
       - test-browser-extension
       - test-discord-gateway
       - test-link-approval
@@ -3106,6 +3089,7 @@ jobs:
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-browser-extension-package" "${{ needs.test-browser-extension-package.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-browser-extension" "${{ needs.test-browser-extension.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-link-approval" "${{ needs.test-link-approval.result }}" "$TS_CHECK_SKIP_ALLOWED"

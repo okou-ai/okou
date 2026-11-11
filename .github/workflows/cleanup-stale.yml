@@ -223,6 +223,10 @@ jobs:
 
   cleanup-metal-runners:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: cleanup-metal-resources
+      cancel-in-progress: false
     permissions:
       actions: read
       contents: read
@@ -257,131 +261,17 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Discover runner PR namespaces
+      - name: Reconcile stale metal resources
         if: steps.check.outputs.should-cleanup == 'true'
-        id: runner-prs
-        env:
-          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-        run: .github/scripts/runner/discover-runner-pr-namespaces.sh
-
-      - name: Select closed runner PRs
-        if: steps.check.outputs.should-cleanup == 'true'
-        id: prs
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PR_NUMBERS: ${{ steps.runner-prs.outputs.numbers }}
-          RUNNER_PR_NUMBERS: ${{ inputs.runner-pr-numbers }}
-        with:
-          script: |
-            let candidates = JSON.parse(process.env.PR_NUMBERS);
-            const requested = process.env.RUNNER_PR_NUMBERS;
-            if (requested) {
-              const numbers = requested.split(',').map(value => value.trim());
-              if (numbers.some(value => !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))) {
-                throw new Error('runner-pr-numbers must be comma-separated positive PR numbers');
-              }
-              const selected = new Set(numbers.map(Number));
-              candidates = candidates.filter(number => selected.has(number));
-              console.log(`Restricting runner cleanup to requested PRs: ${numbers.join(', ')}`);
-            }
-            const closed = [];
-
-            for (const pull_number of candidates) {
-              const { data: pull } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number
-              });
-
-              if (pull.state === 'closed') {
-                closed.push(pull_number);
-              } else {
-                console.log(`Keeping runner resources for PR #${pull_number} (${pull.state})`);
-              }
-            }
-
-            console.log(`Found runner resources for closed PRs: ${closed.join(', ')}`);
-            core.setOutput('numbers', JSON.stringify(closed));
-            core.setOutput('has-prs', closed.length > 0 ? 'true' : 'false');
-
-      - name: Install Ansible
-        if: steps.check.outputs.should-cleanup == 'true' && steps.prs.outputs.has-prs == 'true' && env.DRY_RUN != 'true'
-        run: pip3 install ansible-core
-
-      - name: Cleanup stale runners
-        if: steps.check.outputs.should-cleanup == 'true' && steps.prs.outputs.has-prs == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-          PR_NUMBERS: ${{ steps.prs.outputs.numbers }}
+          RUNNER_PR_NUMBERS: ${{ inputs.runner-pr-numbers }}
           DRY_RUN: ${{ env.DRY_RUN }}
-        run: |
-          cd ansible
-          CLEANED=0
-          FAILED=0
-
-          for PR_NUMBER in $(echo "$PR_NUMBERS" | jq -r '.[]'); do
-            echo "--- Cleaning up runners for PR #${PR_NUMBER} ---"
-
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "[DRY-RUN] Would cleanup PR runner namespace pr-${PR_NUMBER}"
-              echo "[DRY-RUN] Would cleanup Stripe CLI listener pr-${PR_NUMBER}"
-              CLEANED=$((CLEANED + 1))
-              continue
-            fi
-
-            PR_FAILED=0
-
-            # First await owners visible through GitHub, then hold the same
-            # host-local namespace lock as Turbo through the actual deletion.
-            # A late approval serializes behind cleanup and reconciles after it.
-            if ! PR_NUMBER="$PR_NUMBER" \
-              RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-              "$GITHUB_WORKSPACE/.github/scripts/cancel-superseded-merge-group-runs.sh"; then
-              echo "::warning::Owner check failed for pr-${PR_NUMBER}; retaining its resources and continuing with the next PR"
-              FAILED=$((FAILED + 1))
-              continue
-            fi
-
-            # Cleanup every runner resource in the PR namespace.
-            JOB_REF="pr-${PR_NUMBER}"
-            export JOB_REF PR_NUMBER
-            if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
-              "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
-              echo "::warning::PR runner cleanup failed for pr-${PR_NUMBER}"
-              PR_FAILED=1
-            fi
-
-            # Cleanup Stripe CLI listener
-            if ! ansible-playbook \
-              -i "${METAL_HOSTS}," \
-              playbooks/cleanup-stripe-listener.yml \
-              -e "ansible_user=${METAL_USER}" \
-              -e "job_ref=pr-${PR_NUMBER}" \
-              -v; then
-              echo "::warning::Stripe CLI listener cleanup failed for pr-${PR_NUMBER}"
-              PR_FAILED=1
-            fi
-
-            if [ "$PR_FAILED" -eq 1 ]; then
-              FAILED=$((FAILED + 1))
-            else
-              CLEANED=$((CLEANED + 1))
-            fi
-          done
-
-          echo ""
-          echo "=== Metal Runner Cleanup Summary ==="
-          echo "Cleaned: $CLEANED"
-          echo "Failures: $FAILED"
-
-          if [ "$FAILED" -gt 0 ]; then
-            exit 1
-          fi
+        run: python3 .github/scripts/runner/cleanup-metal-runners.py
 
   cleanup-git-branches:
     if: inputs.runner-pr-numbers == ''

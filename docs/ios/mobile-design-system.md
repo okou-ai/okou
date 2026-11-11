@@ -125,7 +125,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                       |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample; navigation transitions are system-owned)                                     |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -611,17 +611,18 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Status and feedback
 
-| Component                                | Use / states                                                                                                                                                                     |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouRunningIndicator`                   | Web's breathing running dot, the transcript's working line                                                                                                                       |
-| `OkouShimmerText`                        | Working text: a soft-edged band of `placeholder` grey sweeping across `foreground` text every 1.5 s (`okouShimmerText()`)                                                        |
-| `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                 |
-| `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                           |
-| `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                        |
-| `ChatFeedbackSurface`                    | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                        |
-| `OkouEmptyState`                         | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title |
-| `OkouUsageMeter`                         | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                         |
-| `OkouLiveWaveform`                       | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                |
+| Component                                | Use / states                                                                                                                                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OkouRunningIndicator`                   | Web's breathing running dot, the transcript's working line                                                                                                                                                                                                         |
+| `OkouShimmerText`                        | Working text: a soft-edged band of `placeholder` grey sweeping across `foreground` text every 1.5 s (`okouShimmerText()`)                                                                                                                                          |
+| `OkouUnreadBadge`                        | An 8 pt `running` dot over a glyph's top-right corner, as an iOS badged symbol: a ring cut out of the glyph keeps a gap between them. It marks something unread inside (the menu button, a folded project's folder); the control's accessibility value says Unread |
+| `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                   |
+| `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                                                                                                             |
+| `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                                                                                                          |
+| `ChatFeedbackSurface`                    | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                                                                                                          |
+| `OkouEmptyState`                         | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                                                   |
+| `OkouUsageMeter`                         | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                                                                                                           |
+| `OkouLiveWaveform`                       | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                                                                                                  |
 
 #### Content
 
@@ -731,15 +732,14 @@ feature; the catalog shows each one.
 
 ### Sidebar
 
-- **The sidebar and the chat are two full pages**, as Grok has them: chat titles are long, and
-  the chat never shows beside the list. The pages cross-fade through a blur
-  (`OkouElevation.sidebarBlur`, 12 pt): the chat drifts a quarter of the screen right
-  (`OkouMotion.sidebarParallax`) as it blurs and fades away, and the list drifts in from a
-  quarter screen left as it comes into focus. The edge each page leads with fades out over up
-  to 35 % of the screen (`OkouMotion.sidebarFeather`) while it moves, so the pages meet in the
-  blur and never along a line. The blur is a `.visualEffect`, which never touches layout: a
-  `.blur` on the chat changed the transcript's safe area with every step of the radius, and
-  the messages jumped as the chat came back into focus.
+- **The sidebar and the chat are two full pages**: chat titles are long, and the
+  chat never shows beside the list. `WorkspaceNavigation` uses a native
+  `UINavigationController`, with the sidebar at its root and the chat pushed above it.
+  The navigation bar stays hidden: each page retains its custom header, footer,
+  typography, colors and controls. UIKit owns push/pop animations, interactive
+  return and Reduce Motion adaptation. Retain both page hosts across navigation
+  so drafts and scroll state survive. Forward the SwiftUI environment to both
+  hosts, including appearance, scene phase and scoped link/system-entry actions.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
@@ -760,8 +760,10 @@ feature; the catalog shows each one.
   lists them; a whole project row folds it with `OkouMotion.disclosure`, a soft spring with
   no bounce, and its fold is remembered. The folder sits in the status column, so the name
   starts on the chat titles' edge, and the row ends with a 20 pt `chevron-down` in
-  `quietMark` that turns right as the project folds; a folded project's unread dot sits
-  before it. Inside an unfolded project, its pinned chats lead in their manual order, then
+  `quietMark` that turns right as the project folds. A folded project with an unread chat
+  badges its folder (`OkouUnreadBadge`, as the menu button does), so the chevron keeps the
+  trailing column in line with the chats' own dots.
+  Inside an unfolded project, its pinned chats lead in their manual order, then
   the rest by latest activity, indented to the project's name; a project lists every chat it
   holds. An empty project says so in one quiet line, then offers "Show archived chats" when
   it holds archived ones. A hairline (`OkouListDivider`) closes the projects, and the chats
@@ -779,7 +781,8 @@ feature; the catalog shows each one.
   left swipe anywhere in the sidebar closes it, as does its back button; a swipe is never
   the only way back. Content that scrolls
   sideways (a code block or a table) keeps the finger, and from there the chat still opens
-  the sidebar from its leading edge (`SidebarGesturePolicy`).
+  the sidebar from its leading edge. UIKit owns the interactive pop; the list’s left
+  swipe requests a native push rather than driving a custom transition.
   A page swipe never also taps the row under it. Chat rows keep their actions on the
   right swipe — Mark as read/unread, Archive — so they never compete with closing.
 

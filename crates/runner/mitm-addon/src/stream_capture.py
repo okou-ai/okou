@@ -1,4 +1,4 @@
-"""Shared captured stream-body writes, metadata access and validation."""
+"""Shared captured stream-body writes, metadata access, validation and release."""
 
 from typing import NamedTuple
 
@@ -77,3 +77,10 @@ def captured_response_stream_body(flow: http.HTTPFlow) -> CapturedStreamBody | N
         state_key=metadata_keys.STREAM_BUFFER_STATE,
         writer="response_streaming.configure_response_stream()",
     )
+
+
+def clear_response_capture_state(flow: http.HTTPFlow) -> None:
+    """Remove byte accounting and optional body capture, leaving callbacks to their owners."""
+    flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
+    flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
+    flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)

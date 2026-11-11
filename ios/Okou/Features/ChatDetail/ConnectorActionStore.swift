@@ -226,6 +226,7 @@ final class ConnectorActionStore {
   }
   private func startPolling(_ flow: ConnectorAuthorizationFlow) {
     // The attempt owns polling. Dismissal and workspace replacement revoke continuation.
+    task?.cancel()
     task = Task { [weak self, weak flow] in
       guard let self, let flow else { return }
       while active === flow, !closed, !Task.isCancelled {

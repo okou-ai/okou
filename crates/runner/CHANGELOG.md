@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.245.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.1...runner-rs-v0.245.2) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** centralize response capture metadata cleanup ([#46638](https://github.com/okou-ai/okou/issues/46638)) ([42906b3](https://github.com/okou-ai/okou/commit/42906b3110df9c01cadac54edfaa192dac89ca10))
+
+## [0.245.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.0...runner-rs-v0.245.1) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.245.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.70...runner-rs-v0.245.0) (2026-11-11)
 
 

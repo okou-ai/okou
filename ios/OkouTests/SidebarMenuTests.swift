@@ -5,12 +5,12 @@ import XCTest
 
 @MainActor
 final class SidebarMenuTests: XCTestCase {
-  func testSidebarPanWaitsForTheLiftedMenuButtonToReturn() throws {
+  func testNavigationGestureWaitsForTheLiftedMenuButtonToReturn() throws {
     let sidebar = SidebarInteraction()
     sidebar.setOpen(true)
     let pan = UIPanGestureRecognizer()
-    sidebar.attachPanGesture(pan)
-    defer { sidebar.detachPanGesture(pan) }
+    sidebar.setNavigationGestures([pan])
+    defer { sidebar.setNavigationGestures([]) }
     let button = SidebarMenuButton(sidebar: sidebar)
     defer { button.endMenuPresentations() }
     button.menu = UIMenu(children: [UIAction(title: "Chats") { _ in }])
@@ -20,29 +20,25 @@ final class SidebarMenuTests: XCTestCase {
       identifier: nil, previewProvider: nil, actionProvider: nil)
     let animator = MenuDismissalAnimator()
 
-    sidebar.dragChanged(-50)
     button.contextMenuInteraction(interaction, willDisplayMenuFor: configuration, animator: nil)
     XCTAssertFalse(pan.isEnabled)
-    XCTAssertNil(sidebar.translation)
     XCTAssertTrue(sidebar.isOpen)
 
     button.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
     XCTAssertFalse(pan.isEnabled)
     // SwiftUI can update the recognizer while UIKit is still returning the lifted button.
-    sidebar.attachPanGesture(pan)
+    sidebar.setNavigationGestures([pan])
     XCTAssertFalse(pan.isEnabled)
 
     animator.complete()
     XCTAssertTrue(pan.isEnabled)
-    sidebar.endDrag(translation: -300, velocity: -600, cancelled: false, sidebarWidth: 390)
-    XCTAssertFalse(sidebar.isOpen)
   }
 
   func testRemovingTheMenuReleasesItsPanLockDespiteALateDismissalCompletion() throws {
     let sidebar = SidebarInteraction()
     let pan = UIPanGestureRecognizer()
-    sidebar.attachPanGesture(pan)
-    defer { sidebar.detachPanGesture(pan) }
+    sidebar.setNavigationGestures([pan])
+    defer { sidebar.setNavigationGestures([]) }
     let button = SidebarMenuButton(sidebar: sidebar)
     defer { button.endMenuPresentations() }
     button.menu = UIMenu(children: [UIAction(title: "Chats") { _ in }])

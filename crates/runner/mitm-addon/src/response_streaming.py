@@ -820,9 +820,7 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
         inspection.close()
     stream_callback = flow.metadata.pop(_RESPONSE_STREAM_CALLBACK, None)
-    flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)
+    stream_capture.clear_response_capture_state(flow)
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)

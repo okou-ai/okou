@@ -298,8 +298,7 @@ jobs:
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
             .github/scripts/checks/crates-coverage-needed.sh \
             .github/scripts/tests/crates-coverage-workflow-test.sh \
-            .github/scripts/runner/cleanup-pr-runner-namespace.sh \
-            .github/scripts/runner/discover-runner-pr-namespaces.sh \
+            .github/scripts/runner/start-stripe-listener.sh \
             .github/scripts/checks/detect-native-only.sh \
             .github/scripts/tests/native-only-ci-test.sh \
             .github/scripts/tests/native-only-gates-test.sh \
@@ -338,7 +337,6 @@ jobs:
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/check-pr-ci-capacity-test.sh \
             .github/scripts/tests/ci-source-revision-workflow-test.sh \
-            .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \
             .github/scripts/tests/clerk-test-resource-workflow-test.sh \
             .github/scripts/tests/cloudflare-ssh-command-test.sh \
@@ -350,7 +348,6 @@ jobs:
             .github/scripts/tests/ios-testflight-workflow-test.sh \
             .github/scripts/tests/ios-published-version-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
-            .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \

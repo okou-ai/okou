@@ -502,7 +502,7 @@ final class ConversationStore {
   /// Execution recovery appends a new input. Uncertain delivery still uses retry(_:).
   func recoverFailure(_ id: String, resetUsage: Bool = false) async {
     guard !closed, !needsUpgrade, failureReadsEnabled, !Task.isCancelled,
-      !isRecoveringFailure, !isSending, pending.isEmpty,
+      failureRecoveryTask == nil, !isSending, pending.isEmpty,
       history?.latestFailureID == id, let failure = messages.first(where: { $0.id == id })?.failure,
       failureState(failure).recovery.canRetry,
       modelSelection?.canSendConfirmedSelection != false, modelSelection?.isMutating != true
@@ -555,7 +555,7 @@ final class ConversationStore {
   }
 
   private func submit(_ message: PendingMessage) async {
-    guard !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard sendTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isSending = true
     modelSelection?.isSending = true
     let task = Task { [weak self] in
@@ -613,7 +613,7 @@ final class ConversationStore {
   }
 
   func stop() async {
-    guard !isStopping, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isStopping = true
     stopIssue = nil
     let task = Task { [weak self] in

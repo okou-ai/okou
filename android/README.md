@@ -1,11 +1,21 @@
 # Okou for Android
 
-Native Kotlin/Jetpack Compose foundation inside the Okou monorepo. Open this
+Native Kotlin/Jetpack Compose client shell inside the Okou monorepo. Open this
 directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
-The application currently provides an editable **local draft preview** backed
-by a Kotlin state holder, read-only StateFlow and a lifecycle-aware Compose route.
+The application currently provides native **Home and Settings** destinations,
+an editable local draft preview, and device-local Light/Dark/Follow system
+appearance. Compact windows use bottom navigation; wider windows use a rail.
+Home remains usable while Preferences DataStore loads or reports an IO error;
+Settings exposes loading, saving and retry states. Appearance is confirmed from
+the stored data stream and restored across relaunch/configuration changes.
+Owned UI resources cover the twelve current Web locales, following the device
+language with distinct Simplified/Traditional Chinese resources. Account-backed
+palette/language selection is separate future work.
+
+The Activity retains native text, selection and IME state across navigation
+and configuration changes; previews are independent immutable text snapshots.
 It does not authenticate, send chats, contact
 production, register push, or publish to a store. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
@@ -97,10 +107,53 @@ native acceptance. Robolectric exercises host-side Compose interactions and
 does not establish those device properties. Linux sandboxes without `/dev/kvm`
 are useful for compilation/tests but do not provide accelerated emulator evidence.
 
+### Instrumented Android Tests
+
+The `androidTest` suite launches the real Activity and uses UI Automator to
+exercise platform keyboard/insets and Back, retained editor/caret state,
+appearance restoration with a new Activity owner, native system bars and live
+platform night-mode changes. The existing JVM/Robolectric tests retain the
+broader state/error/localization matrix.
+
+On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
+
+```bash
+./gradlew :app:pixel2Api35DebugAndroidTest \
+  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
+  --no-daemon
+```
+
+AGP manages one Pixel 2, API 35, 64-bit AOSP device: emulator/image provisioning,
+snapshots, installation, test execution and teardown. Accept the SDK licenses
+using the setup procedure above before provisioning. Initial downloads take
+additional time and disk space. Software GPU rendering supports headless CI;
+CPU virtualization still requires KVM on Linux. This configuration targets the
+CI phone cohort, not a measured performance or physical-device matrix.
+
+Compile/package the suite without starting a device:
+
+```bash
+./gradlew :app:assembleDebugAndroidTest --no-daemon
+```
+
+Use an isolated test emulator. The fixture snapshots/restores app preferences,
+platform night mode and keyboard settings, scopes its UI Automation shell
+permissions, and closes its Activity owners on success and failure. It does not
+contact a backend. A new Activity owner is not a process-death restoration test.
+
+Managed-device HTML reports are under `app/build/reports/androidTests/`, with
+JUnit results/logcat under `app/build/outputs/androidTest-results/`. Official
+Test Storage retrieves failure screenshots and accessibility hierarchies under
+`app/build/outputs/managed_device_android_test_additional_output/` before device
+teardown. These images are diagnostics, not screenshot-golden assertions.
+CI retains these outputs and the Gradle execution log for seven days in
+`android-instrumentation-api35-<revision>` artifacts.
+
 ## Components and Authority
 
-- `app`: native Activity, ViewModel owner, Kotlin state holders/immutable UI
-  models, reusable theme and local draft surface. Plain business logic can stay
+- `app`: native Activity, Home/Settings routes, retained presentation owners,
+  pure preview snapshots, local preference storage and the shared native theme.
+  Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
 
@@ -109,14 +162,22 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-DraftStateHolderTest covers draft validation, content/snapshot preservation and
-owner isolation. FoundationScreenTest covers actual input/actions, lifecycle
-stop/resume and owner replacement through the real route. Both live in app's
-local test source set. Add modules/shared helpers only for actual application
-boundaries; this scaffold does not start background requests or model fake tasks.
+DraftPreviewStateHolderTest covers validation, verbatim snapshots and owner
+isolation. AppearanceModelTest exercises real presentation/decoding against the
+DataStore IO boundary, including read/write recovery, confirmation ordering,
+cancellation and actual file-backed reopen. OkouAppTest and MainActivityTest
+exercise real routes, native editor selection, back/configuration retention,
+appearance and adaptive navigation. LocalizedResourcesTest verifies native
+locale/script matching on APIs 24 and 35. These are local tests; they do not
+establish physical-device IME/rendering or startup budgets.
+Add modules/shared helpers only for actual application boundaries. Preferences
+DataStore has one lazy process owner; its observation starts asynchronously at
+the retained presentation owner and does not gate Home on disk IO.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
-vector retains the geometry from `ios/Assets/AppIcon.svg`.
+vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation
+vectors use Lucide geometry; its shared license is also packaged under
+`assets/licenses`. No runtime font or icon download is needed.
 
 ## CI and Distribution
 
@@ -124,9 +185,13 @@ vector retains the geometry from `ios/Assets/AppIcon.svg`.
 runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
 and shared font/color-evaluator assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK for seven days.
-The final `ci-gate-android` check always reports an aggregate result. It requires
-successful detection and every selected job to succeed; only an explicit
-unselected result permits skipped native checks.
+A separate Linux/KVM job runs the instrumented suite on the managed API 35
+phone. The final `ci-gate-android` check always reports an aggregate result. It
+requires successful detection and both selected JVM/build and instrumentation
+jobs to succeed; only explicit unselected results permit skipped native checks.
+Cancellation, failure or an unexpected skip fails the gate. Emulator functional
+evidence does not establish OEM input-method behavior or physical-device startup
+budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
 recognizes the intentionally public MAIN/LAUNCHER only after the strict source

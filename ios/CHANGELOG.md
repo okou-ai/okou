@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.36.2](https://github.com/okou-ai/okou/compare/ios-v0.36.1...ios-v0.36.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** badge a folded project's folder and overlap the unread badge ([#46651](https://github.com/okou-ai/okou/issues/46651)) ([80fb3be](https://github.com/okou-ai/okou/commit/80fb3bef905a255b7206f39fdd4827d3a678b200))
+* **ios:** fade composer controls with the keyboard ([#46669](https://github.com/okou-ai/okou/issues/46669)) ([0702f33](https://github.com/okou-ai/okou/commit/0702f33e5c5aaa099ca4a91e8f4448330a27e176))
+* **ios:** keep empty editor height stable during focus ([#46636](https://github.com/okou-ai/okou/issues/46636)) ([cb7c831](https://github.com/okou-ai/okou/commit/cb7c8313b9d8c0a116b9593605fdf0c3e293c487))
+
+
+### Refactoring
+
+* **ios:** own mail draft card reads with ccstate ([#46613](https://github.com/okou-ai/okou/issues/46613)) ([ebfecbd](https://github.com/okou-ai/okou/commit/ebfecbd2b153b09e1a9f53a99f2dd59ca33bfd22))
+* **ios:** retire computer authorization read owners ([#46656](https://github.com/okou-ai/okou/issues/46656)) ([b5c49ba](https://github.com/okou-ai/okou/commit/b5c49bad63eec5d9085db7b56eeec9b27c3d424d))
+* **ios:** use native navigation for the chat sidebar ([#46659](https://github.com/okou-ai/okou/issues/46659)) ([137d86e](https://github.com/okou-ai/okou/commit/137d86e92b9c8f595a32c30e28ed0110ebb1cb47))
+
+## [0.36.1](https://github.com/okou-ai/okou/compare/ios-v0.36.0...ios-v0.36.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** allow testflight builds to progress beyond internal testing ([#46626](https://github.com/okou-ai/okou/issues/46626)) ([8e0e118](https://github.com/okou-ai/okou/commit/8e0e1187f3b6bb1048d6619482419128d13fb81d))
+* **ios:** keep search fixed at the top of its sheet ([#46617](https://github.com/okou-ai/okou/issues/46617)) ([aacfa85](https://github.com/okou-ai/okou/commit/aacfa8560e3e9e194cedb13ae290898d55e8935c))
+
 ## [0.36.0](https://github.com/okou-ai/okou/compare/ios-v0.35.3...ios-v0.36.0) (2026-11-11)
 
 

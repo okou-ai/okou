@@ -123,12 +123,13 @@ struct ChatComposerTextInput: UIViewRepresentable {
     let height = uiView.textView.sizeThatFits(
       CGSize(width: width, height: .greatestFiniteMagnitude)
     ).height
-    // Typed text is never cut: any draft keeps its full height (up to six lines, then it
-    // scrolls), focused or not. Only an empty field collapses to one line.
+    // The surface reserves expansion space. Keep an empty editor's measured height
+    // stable on focus so it does not resize the surface in a second layout update.
+    // Drafts and feedback still keep at least two lines, up to six before scrolling.
     let hasText = !(uiView.textView.text ?? "").isEmpty
     return CGSize(
       width: width,
-      height: isFocused || expanded || hasText ? min(max(height, line * 2), line * 6) : line)
+      height: expanded || hasText ? min(max(height, line * 2), line * 6) : line)
   }
 
   static func dismantleUIView(_ container: ComposerInputContainer, coordinator: Coordinator) {
@@ -183,8 +184,6 @@ struct ChatComposerTextInput: UIViewRepresentable {
     func textViewDidBeginEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if !input.isFocused { input.isFocused = true }
-      // Focus changes the representable's minimum line count, even without a text edit.
-      textView.invalidateIntrinsicContentSize()
       if let view = textView as? ComposerTextView {
         input.editor?.updateMention(in: view)
         view.updateWorkflows(false)
@@ -193,7 +192,6 @@ struct ChatComposerTextInput: UIViewRepresentable {
     func textViewDidEndEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
       if input.isFocused { input.isFocused = false }
-      textView.invalidateIntrinsicContentSize()
       input.editor?.dismissMentions()
       if let view = textView as? ComposerTextView { input.editor?.workflows.unregister(view) }
     }

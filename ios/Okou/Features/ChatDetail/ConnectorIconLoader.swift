@@ -48,13 +48,16 @@ final class ConnectorIconLoader: NSObject, WKNavigationDelegate {
     return image
   }
 
-  func close() {
+  @discardableResult
+  func close() -> Task<Void, Never> {
     closed = true
     renderer?.stopLoading()
     resumeNavigation()
     renderer = nil
     renders?.cancel()
+    let pending = renders
     renders = nil
+    return Task { _ = await pending?.value }
   }
 
   /// One renderer, one logo at a time.

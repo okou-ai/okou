@@ -9,7 +9,7 @@ import Observation
 final class ComputerAuthorizationStore {
   let action: ChatComputerAuthorizationAction
   let stateStore = CCState.Store()
-  var chosenHostID: String?
+  private(set) var chosenHostID: String?
   private(set) var isActive = false
   private(set) var isWorking = false
   private(set) var needsContinuation = false
@@ -23,6 +23,7 @@ final class ComputerAuthorizationStore {
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
+  private let didRetainInteraction: @MainActor (ComputerAuthorizationStore) -> Void
   @ObservationIgnored private var readTask: Task<ChatComputerAuthorizationRequest, Error>?
   @ObservationIgnored private var operation: Task<Void, Never>?
   @ObservationIgnored private var generation = UUID()
@@ -31,7 +32,8 @@ final class ComputerAuthorizationStore {
   init(
     action: ChatComputerAuthorizationAction, thread: ChatThread, commands: ChatCommands,
     sync: ChatSync, didFail: @escaping @MainActor (Error) -> Void,
-    didContinue: @escaping @MainActor () async -> Void
+    didContinue: @escaping @MainActor () async -> Void,
+    didRetainInteraction: @escaping @MainActor (ComputerAuthorizationStore) -> Void = { _ in }
   ) {
     self.action = action
     self.thread = thread
@@ -39,6 +41,7 @@ final class ComputerAuthorizationStore {
     self.sync = sync
     self.didFail = didFail
     self.didContinue = didContinue
+    self.didRetainInteraction = didRetainInteraction
     let revision = revision
     reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
   }
@@ -73,7 +76,19 @@ final class ComputerAuthorizationStore {
   }
 
   func read() async throws -> ChatComputerAuthorizationRequest {
-    try await stateStore.get(request).value
+    let generation = generation
+    try checkOwner(generation)
+    var task = try stateStore.get(request)
+    while true {
+      let result = await task.result
+      try checkOwner(generation)
+      let latest = try stateStore.get(request)
+      if latest != task {
+        task = latest
+        continue
+      }
+      return try result.get()
+    }
   }
 
   func selectedHost(in request: ChatComputerAuthorizationRequest) -> String? {
@@ -84,6 +99,12 @@ final class ComputerAuthorizationStore {
       return preferred
     }
     return chosenHostID == nil && hosts.count == 1 ? hosts.first?.id : nil
+  }
+
+  func selectHost(_ id: String?) {
+    guard isActive, !closed, id != chosenHostID else { return }
+    chosenHostID = id
+    didRetainInteraction(self)
   }
 
   func activate() {
@@ -109,6 +130,7 @@ final class ComputerAuthorizationStore {
 
   func decide(_ decision: Decision) async {
     guard isActive, !closed, operation == nil, !Task.isCancelled else { return }
+    didRetainInteraction(self)
     isWorking = true
     error = nil
     let generation = generation

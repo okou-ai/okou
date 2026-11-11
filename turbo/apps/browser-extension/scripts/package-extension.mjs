@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import {
-  readFile,
-  writeFile,
-  copyFile,
-  mkdir,
-  utimes,
-  rm,
-} from "node:fs/promises";
+import { readFile, writeFile, mkdir, utimes, rm } from "node:fs/promises";
 import { resolve, basename } from "node:path";
 
 const directory = process.cwd();
@@ -27,10 +20,6 @@ const files = [
   "manifest.json",
 ];
 const dist = resolve(directory, "dist");
-await copyFile(
-  resolve(directory, "manifest.json"),
-  resolve(dist, "manifest.json"),
-);
 const epoch = new Date("2000-01-01T00:00:00.000Z");
 for (const file of files) await utimes(resolve(dist, file), epoch, epoch);
 const artifacts = resolve(directory, "artifacts");

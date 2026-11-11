@@ -16,7 +16,9 @@ struct OkouUnreadBadge: ViewModifier {
               .stroke(OkouStatusColor.running, lineWidth: OkouSpace.two)
               .blendMode(.destinationOut)
           }
-          .offset(x: OkouSpace.xs, y: -OkouSpace.xs)
+          // Over the glyph's top-right corner, as an iOS badged symbol: the cut ring keeps a
+          // gap between the dot and the strokes it covers.
+          .offset(x: OkouSpace.two, y: -OkouSpace.two)
           .allowsHitTesting(false)
           .accessibilityHidden(true)
       }

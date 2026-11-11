@@ -49,6 +49,37 @@ done"#,
 }
 
 #[test]
+fn pre_exec_placement_failure_prevents_child_execution() {
+    let directory = tempfile::tempdir().unwrap();
+    let placement = tempfile::NamedTempFile::new().unwrap();
+    let containment = WorkloadContainment {
+        placement: Arc::new(fs::File::open(placement.path()).unwrap().into()),
+        workload_path: Arc::new(PathBuf::from("/unused")),
+        tool_placement_endpoint: Arc::from("test-tool-endpoint"),
+        evidence_stream: Arc::new(Mutex::new(None)),
+    };
+    let target_output = directory.path().join("target-started");
+    let mut command = tokio::process::Command::new("/bin/sh");
+    command
+        .args(["-c", "printf target-started > \"$1\"", "sh"])
+        .arg(&target_output)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    containment.configure_command(&mut command).unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let error = runtime
+        .block_on(async move { command.status().await })
+        .unwrap_err();
+
+    assert_eq!(error.raw_os_error(), Some(libc::EBADF));
+    assert!(!target_output.exists());
+}
+
+#[test]
 fn exposes_runner_owned_tool_endpoint_for_cli_environment() {
     let containment = WorkloadContainment {
         placement: Arc::new(tempfile::tempfile().unwrap().into()),
