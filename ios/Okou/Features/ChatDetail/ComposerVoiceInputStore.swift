@@ -317,6 +317,11 @@ final class ComposerVoiceInputStore {
     await transcriptionTask?.value
     _ = await preparationTask?.result
     guard generation == owner else { return }
+    startingTask = nil
+    quotaTask = nil
+    captureTask = nil
+    transcriptionTask = nil
+    preparationTask = nil
     do {
       if let session { try await session.discard() } else { try storage.remove() }
       guard generation == owner else { return }

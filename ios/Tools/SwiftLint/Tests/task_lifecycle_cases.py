@@ -223,6 +223,21 @@ TASK_LIFECYCLE_CASES = [
             options.signal.onCancel { work.cancel() }
             return work
           }
+          func close() {}
+          func factory(_ signal: EvaluationSignal) -> Task<String, Error> {
+            let task = Task { try await service.read() }
+            current = task
+            signal.onCancel { task.cancel() }
+            return task
+          }
+        }
+        final class OrdinaryOperation {
+          private var current: Task<Void, Never>?
+          func start(signal: EvaluationSignal) {
+            current?.cancel()
+            current = Task { await service.refresh() } // violation
+          }
+          func close() {}
         }
         struct Screen: View {
           @State private var request: Task<Void, Never>?

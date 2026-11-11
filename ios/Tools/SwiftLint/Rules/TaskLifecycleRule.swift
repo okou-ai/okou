@@ -153,9 +153,11 @@ struct TaskLifecycleRule: NativeRule {
         }
         if let function = ancestor.as(FunctionDeclSyntax.self), let body = function.body {
           let parameters = function.signature.parameterClause.parameters
-          if parameters.contains(where: {
-            ["EvaluationSignal", "CCState.EvaluationSignal"].contains($0.type.trimmedDescription)
-          }) {
+          if function.signature.returnClause?.type.trimmedDescription.contains("Task<") == true,
+            parameters.contains(where: {
+              ["EvaluationSignal", "CCState.EvaluationSignal"].contains($0.type.trimmedDescription)
+            })
+          {
             return nil
           }
           return Scope(
