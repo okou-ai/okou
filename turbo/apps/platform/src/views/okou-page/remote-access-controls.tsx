@@ -218,6 +218,7 @@ export function AccessChoiceSelect({
   busy = readOnly,
   onChange,
   popupFocus,
+  className,
 }: {
   ariaLabel: string;
   defaultEnabled: boolean;
@@ -229,6 +230,7 @@ export function AccessChoiceSelect({
     readonly remember: (popup: HTMLDivElement) => void;
     readonly restore: () => false;
   };
+  className?: string;
 }) {
   const { t } = useTranslation();
   const defaultLabel = t(($) => {
@@ -267,7 +269,12 @@ export function AccessChoiceSelect({
         );
       }}
     >
-      <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
+      <div
+        className={cn(
+          "relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]",
+          className,
+        )}
+      >
         {sizingLabels.map((label) => {
           return (
             <span
@@ -375,6 +382,7 @@ function HostChoiceSelect({
       </div>
       <div className="col-start-2 min-w-0 sm:col-start-3 sm:row-start-1">
         <AccessChoiceSelect
+          className="w-fit max-w-[min(12rem,100%)]"
           ariaLabel={`${protocol.toUpperCase()} ${host.displayName}`}
           defaultEnabled={host.defaultEnabled}
           value={value}
