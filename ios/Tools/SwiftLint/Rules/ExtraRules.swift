@@ -6,5 +6,6 @@ public func extraRules() -> [any Rule.Type] {
     AccessorEscapeRule.self, NativeRequestsRule.self, ResourceFailuresRule.self,
     TestSynchronizationRule.self,
     CheckAfterAwaitRule.self, ResourceCancellationRule.self,
+    SubscriptionTeardownRule.self,
   ]
 }

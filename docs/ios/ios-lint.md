@@ -20,6 +20,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_test_synchronization`  | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
 | `okou_check_after_await`     | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
+| `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -89,6 +90,20 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   acquire ownership of that shared request. Do not cancel it merely because a
   derived consumer stops waiting. Already-completed Tasks and unrelated native
   operations retain their own contracts.
+- Known `Store.watch` subscriptions and block-based `NotificationCenter` tokens
+  keep the original handle under a visible cleanup owner. Local handles use
+  `defer`, XCTest `addTeardownBlock`, or the current evaluation signal's
+  `onCancel`; explicit returns transfer ownership to the caller. Retained handles
+  and arrays/dictionaries have a release path through `close`, `stop`, `cancel`,
+  `dismiss`, `deactivate`, `invalidate`, or `detach`, including synchronous
+  same-owner helpers. Collections cancel every element; an early break/return,
+  filtered iteration, clearing the collection, or an uncalled closure is not
+  cleanup. Cancellation through optional bindings and immutable snapshots is
+  valid; shadowed or overwritten handles do not release the original. Block
+  observers are removed from their original notification center. Native
+  `UIView`/`UIViewController` destruction is a valid control lifetime; a retained
+  business owner's `deinit` alone is not an explicit close path. Selector-based
+  notification registration retains its system-managed semantics.
 
 ## Static Analysis Limits
 
@@ -99,6 +114,12 @@ indirect helper effects, and custom callback execution semantics need review.
 Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
 dispatch target, collection-held Task, or cross-file teardown contract.
+Subscription checks recognize local handle transfers, direct Store spellings,
+`store`/`stateStore` members, known notification centers, and local immutable
+center aliases. Cross-file factories, custom callback lifetimes, dynamic
+receivers, arbitrary collection mutations, and whether a caller actually invokes
+its owner's close path still need review. Returning a handle is an ownership
+transfer, not proof that its eventual caller releases it.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.

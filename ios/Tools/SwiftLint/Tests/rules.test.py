@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from cancellation_cases import CANCELLATION_CASES
+from subscription_cases import SUBSCRIPTION_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -21,6 +22,7 @@ BINARY = (
 
 CASES = [
     *CANCELLATION_CASES,
+    *SUBSCRIPTION_CASES,
     (
         "typed cancellation cannot become resource data",
         "okou_resource_failures",
