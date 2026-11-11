@@ -79,8 +79,18 @@ import {
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
 import { ThreadRemoteAccessDialog } from "./remote-access-controls.tsx";
+import { ChatForwardDialogMount } from "./chat-feedback-selection.tsx";
 
-function ThreadRemoteAccessDialogsMount() {
+function ThreadComposerDialogs({ thread }: { thread: ChatPanelSignals }) {
+  return (
+    <>
+      <ThreadRemoteAccessDialog signals={thread.composer} />
+      <ChatForwardDialogMount feedback={thread.feedback} />
+    </>
+  );
+}
+
+function ThreadComposerDialogsMount() {
   const route = useGet(activeRoute$);
   const left = useGet(currentLeftThread$);
   const right = useGet(currentRightThread$);
@@ -89,14 +99,9 @@ function ThreadRemoteAccessDialogsMount() {
   }
   return (
     <>
-      {left && (
-        <ThreadRemoteAccessDialog key={left.threadId} signals={left.composer} />
-      )}
+      {left && <ThreadComposerDialogs key={left.threadId} thread={left} />}
       {right && right !== left && (
-        <ThreadRemoteAccessDialog
-          key={right.threadId}
-          signals={right.composer}
-        />
+        <ThreadComposerDialogs key={right.threadId} thread={right} />
       )}
     </>
   );
@@ -522,7 +527,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <QueueDrawer />
       {/* Workspace content remounts when mobile navigation adds its wrapper.
           Keep in-flight remote permission actions outside that subtree. */}
-      <ThreadRemoteAccessDialogsMount />
+      <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>
           <ChatThreadDialogs />
