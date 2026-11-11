@@ -431,3 +431,118 @@ TASK_LIFECYCLE_CASES += [
     """,
     ),
 ]
+
+TASK_LIFECYCLE_CASES += [
+    (
+        "asynchronous drains capture immutable originals rather than late mutable reads",
+        "okou_task_lifecycle",
+        """
+        final class LateProperty {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            current = Task { await service.refresh() } // violation
+          }
+          func close() -> Task<Void, Never> {
+            let cleanup = Task { await self.current?.value }
+            current = nil
+            return cleanup
+          }
+        }
+        final class MutableCapture {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            current = Task { await service.refresh() } // violation
+          }
+          func close() -> Task<Void, Never> {
+            var pending = current
+            let cleanup = Task { await pending?.value }
+            pending = nil
+            current = nil
+            return cleanup
+          }
+        }
+        final class Captured {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            current = Task { await service.refresh() }
+          }
+          func close() -> Task<Void, Never> {
+            let cleanup = Task { [pending = current] in await pending?.value }
+            current = nil
+            return cleanup
+          }
+        }
+    """,
+    ),
+    (
+        "repeated acquisition handles every iteration rather than only the entering task",
+        "okou_task_lifecycle",
+        """
+        final class Repeated {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            for id in ids {
+              current = Task { await service.refresh(id) } // violation
+            }
+          }
+          func close() { current?.cancel() }
+        }
+        final class CancelEach {
+          private var current: Task<Void, Never>?
+          func start() {
+            for id in ids {
+              current?.cancel()
+              current = Task { await service.refresh(id) }
+            }
+          }
+          func close() { current?.cancel() }
+        }
+        actor CompleteEach {
+          private var current: Task<Void, Never>?
+          func start() async {
+            current?.cancel()
+            for id in ids {
+              current = Task { await service.refresh(id) }
+              await current?.value
+            }
+          }
+          func close() { current?.cancel() }
+        }
+        final class RepeatedInitializer {
+          private var current: Task<Void, Never>?
+          init() {
+            for id in ids {
+              current = Task { await service.refresh(id) } // violation
+            }
+          }
+          func close() { current?.cancel() }
+        }
+        final class StopAfterFirst {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            current = nil
+            while current == nil {
+              current = Task { await service.refresh() }
+            }
+          }
+          func close() { current?.cancel() }
+        }
+        final class SingleIteration {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            for id in ids {
+              current = Task { await service.refresh(id) }
+              break
+            }
+          }
+          func close() { current?.cancel() }
+        }
+    """,
+    ),
+]

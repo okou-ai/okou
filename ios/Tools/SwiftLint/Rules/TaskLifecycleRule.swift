@@ -44,7 +44,8 @@ struct TaskLifecycleRule: NativeRule {
       let trace = NativeLifetimeTrace(kind: .task, creation: node.position, owner: owner)
       if let scope = scope(node) {
         let paths = trace.block(
-          scope.statements, states: [NativeLifetimePath(locals: scope.locals)])
+          scope.statements,
+          states: [NativeLifetimePath(locals: scope.locals, immutable: scope.locals)])
         let retained = trace.retained.filter { fields.contains($0.key) }
         if !retained.isEmpty, !paths.allSatisfy({ trace.finished($0) }) {
           report(
@@ -58,14 +59,42 @@ struct TaskLifecycleRule: NativeRule {
           }
           // Initializers create the first handle; indexed collections can add independent keys.
           // Replacement checks here cover single, explicitly typed owner handles.
-          if value == .handle, !scope.initializer {
+          if value == .handle, !scope.initializer || repeatedScope(node) != nil {
             let replacement = NativeLifetimeTrace(
               kind: .task, creation: nil, owner: owner)
-            let original = NativeLifetimePath(
-              values: ["self." + field: .handle], locals: scope.locals, acquired: true)
-            if !replacement.block(scope.statements, states: [original])
-              .allSatisfy({ replacement.finished($0) })
-            {
+            func preserves(_ statements: CodeBlockItemListSyntax) -> Bool {
+              let original = NativeLifetimePath(
+                values: ["self." + field: .handle], locals: scope.locals,
+                immutable: scope.locals, acquired: true)
+              return replacement.block(statements, states: [original])
+                .allSatisfy { replacement.finished($0) }
+            }
+            var preserved = scope.initializer || preserves(scope.statements)
+            if let repeated = repeatedScope(node) {
+              let iteration = NativeLifetimeTrace(
+                kind: .task, creation: node.position, owner: owner)
+              let body =
+                repeated.as(ForStmtSyntax.self)?.body
+                ?? repeated.as(WhileStmtSyntax.self)?.body
+                ?? repeated.as(RepeatStmtSyntax.self)?.body
+              let completes =
+                body.map {
+                  iteration.block(
+                    $0.statements,
+                    states: [NativeLifetimePath(locals: scope.locals, immutable: scope.locals)]
+                  ).allSatisfy {
+                    !$0.acquired || $0.released || $0.transferred
+                      || [.breakLoop, .returned, .thrown].contains($0.exit)
+                  }
+                } ?? false
+              let original = NativeLifetimePath(
+                values: ["self." + field: .handle], locals: scope.locals,
+                immutable: scope.locals, acquired: true)
+              let retains = replacement.step(repeated, path: original)
+                .allSatisfy { replacement.finished($0) }
+              preserved = preserved && (completes || retains)
+            }
+            if !preserved {
               report(
                 node,
                 "Replacing '\(field)' loses its original Task; cancel, await, or preserve it first")
@@ -88,6 +117,22 @@ struct TaskLifecycleRule: NativeRule {
         }
       }
       return .visitChildren
+    }
+
+    private func repeatedScope(_ node: FunctionCallExprSyntax) -> Syntax? {
+      for ancestor in ancestors(of: node) {
+        if ancestor.is(ClosureExprSyntax.self) || ancestor.is(FunctionDeclSyntax.self)
+          || ancestor.is(InitializerDeclSyntax.self)
+        {
+          return nil
+        }
+        if ancestor.is(ForStmtSyntax.self) || ancestor.is(WhileStmtSyntax.self)
+          || ancestor.is(RepeatStmtSyntax.self)
+        {
+          return ancestor
+        }
+      }
+      return nil
     }
 
     private struct Scope {

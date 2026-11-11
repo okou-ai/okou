@@ -118,11 +118,16 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   Single-handle replacement first cancels/awaits the old Task, proves that the
   handle is absent, or transfers it to another explicit completion owner. A UI
   busy flag alone is not proof; use the actual handle for operation exclusion.
+  A loop must establish safe replacement on each iteration or complete the
+  newly created work before continuing; cancellation only before the loop is
+  insufficient.
   An awaited `value` or `result` establishes completion. A derived Task that
   awaits the original preserves its completion dependency; cancelling that
   derived Task does not cancel the original. A synchronous teardown may return
   a Task that drains its captured original handles, transferring completion to
-  its caller. This allows accepted writes and late remote cleanup to finish
+  its caller. Such drains use immutable local values or explicit capture-list
+  snapshots; reading a mutable property or local later is not an original-handle
+  capture. This allows accepted writes and late remote cleanup to finish
   without inventing cancellation or rollback. Resource evaluation Tasks retain
   the separate `okou_resource_cancellation` contract.
 - Ably, ClerkKit and ClerkKitUI imports belong to the exact realtime,
@@ -163,8 +168,9 @@ dispatch target, or cross-file teardown contract.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
 Inferred/cross-file factories, tuple-held handles, dictionary-key replacement,
-arbitrary collection mutation, actor reentrancy, process/SDK owners without a
-recognized teardown entry, and view-owned Task handles still require review.
+arbitrary collection mutation, actor reentrancy, owners without a recognized
+teardown entry (including process/SDK lifetimes), and view-owned Task handles
+still require review.
 The rule does not require a borrower to cancel a shared Task or prove that every
 caller invokes teardown and awaits a returned cleanup Task. A syntactically
 recognized completion dependency is not proof of upstream cancellation.

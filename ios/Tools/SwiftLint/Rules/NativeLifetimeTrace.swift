@@ -11,6 +11,7 @@ struct NativeLifetimePath {
   enum Exit { case normal, returned, thrown, breakLoop, continueLoop }
   var values: [String: NativeLifetimeValue] = [:]
   var locals: Set<String> = []
+  var immutable: Set<String> = []
   var acquired = false
   var released = false
   var transferred = false
@@ -62,6 +63,7 @@ final class NativeLifetimeTrace {
         function.signature.parameterClause.parameters.map {
           ($0.secondName ?? $0.firstName).text
         })
+      entering.immutable = entering.locals
       if let body = function.body,
         block(body.statements, states: [entering]).allSatisfy(\.released)
       {
@@ -112,6 +114,7 @@ final class NativeLifetimeTrace {
             for (name, value) in cleanup.captures {
               entering.values[name] = value
               entering.locals.insert(name)
+              entering.immutable.insert(name)
             }
             return block(cleanup.statements, states: [entering]).map {
               var leaving = $0
@@ -119,6 +122,7 @@ final class NativeLifetimeTrace {
               for name in cleanup.captures.keys {
                 leaving.values[name] = result.values[name]
                 if !result.locals.contains(name) { leaving.locals.remove(name) }
+                if !result.immutable.contains(name) { leaving.immutable.remove(name) }
               }
               return leaving
             }
@@ -130,6 +134,11 @@ final class NativeLifetimeTrace {
           for name in declarations {
             result.values[name] = initial.values[name]
             if !initial.locals.contains(name) { result.locals.remove(name) }
+            if initial.immutable.contains(name) {
+              result.immutable.insert(name)
+            } else {
+              result.immutable.remove(name)
+            }
           }
           return result
         }
@@ -137,7 +146,7 @@ final class NativeLifetimeTrace {
     }
   }
 
-  private func step(_ node: Syntax, path initial: NativeLifetimePath) -> [NativeLifetimePath] {
+  func step(_ node: Syntax, path initial: NativeLifetimePath) -> [NativeLifetimePath] {
     var path = initial
     if let cleanup = node.as(DeferStmtSyntax.self) {
       path.deferred.append(NativeLifetimeCleanup(statements: cleanup.body.statements))
@@ -178,6 +187,7 @@ final class NativeLifetimeTrace {
       var iteration = path
       if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
         iteration.locals.insert(name)
+        iteration.immutable.insert(name)
         iteration.values[name] = sequence == .collection ? .handle : .unknown
       }
       let results = block(loop.body.statements, states: [iteration])
@@ -195,6 +205,7 @@ final class NativeLifetimeTrace {
             _, new in new
           }
           result.locals = path.locals
+          result.immutable = path.immutable
           return result
         }
     }
@@ -251,6 +262,11 @@ final class NativeLifetimeTrace {
         let source = binding.initializer.map { value($0.value, path: &path) } ?? .unknown
         if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
           path.locals.insert(name)
+          if variable.bindingSpecifier.text == "let" {
+            path.immutable.insert(name)
+          } else {
+            path.immutable.remove(name)
+          }
           path.values[name] = source
         }
       }
@@ -286,6 +302,11 @@ final class NativeLifetimeTrace {
       for name in bindings {
         result.values[name] = path.values[name]
         if !path.locals.contains(name) { result.locals.remove(name) }
+        if path.immutable.contains(name) {
+          result.immutable.insert(name)
+        } else {
+          result.immutable.remove(name)
+        }
       }
       return result
     }
@@ -307,6 +328,11 @@ final class NativeLifetimeTrace {
         let original = value(source, path: &yes)
         yes.values[name] = original
         yes.locals.insert(name)
+        if binding.bindingSpecifier.text == "let" {
+          yes.immutable.insert(name)
+        } else {
+          yes.immutable.remove(name)
+        }
         bindings.insert(name)
         if conditions.count == 1, original != .unknown { no.released = true }
       } else if let expression = element.condition.as(ExprSyntax.self) {

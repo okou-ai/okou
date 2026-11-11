@@ -101,16 +101,21 @@ extension NativeLifetimeTrace {
       var entering = path
       entering.exit = .normal
       entering.deferred = []
+      // A Task reads mutable captures later. Only immutable local values and
+      // explicit capture-list snapshots preserve the original at acquisition.
+      entering.values = path.values.filter { path.immutable.contains($0.key) }
       for capture in closure.signature?.capture?.items ?? [] {
         let name = capture.name.text
         let source =
           capture.initializer?.value
           ?? ExprSyntax(DeclReferenceExprSyntax(baseName: .identifier(name)))
         entering.locals.insert(name)
+        entering.immutable.insert(name)
         entering.values[name] = capture.specifier == nil ? value(source, path: &path) : .unknown
       }
       for name in closureParameters(closure) {
         entering.locals.insert(name)
+        entering.immutable.remove(name)
         entering.values[name] = .unknown
       }
       let results = block(closure.statements, states: [entering])
@@ -246,11 +251,13 @@ extension NativeLifetimeTrace {
       if let body = function.body {
         var entering = path
         entering.locals = []
+        entering.immutable = []
         entering.values = path.values.filter { $0.key.hasPrefix("self.") }
         entering.deferred = []
         for (parameter, argument) in zip(function.signature.parameterClause.parameters, arguments) {
           let name = (parameter.secondName ?? parameter.firstName).text
           entering.locals.insert(name)
+          entering.immutable.insert(name)
           entering.values[name] = argument
         }
         results += block(body.statements, states: [entering])
