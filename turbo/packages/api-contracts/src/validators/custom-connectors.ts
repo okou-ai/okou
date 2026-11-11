@@ -19,6 +19,7 @@ import {
 } from "zod";
 
 import { connectorCompletedOperationResponseSchema } from "../contracts/connector-schemas";
+import { customConnectorNetworkMetadataSchema } from "./custom-connector-network";
 
 export const CUSTOM_CONNECTOR_INJECTION_TEMPLATE_MAX_CHARS = 2_048;
 
@@ -126,6 +127,7 @@ export const customConnectorMcpTransportSchema = literal("streamable-http");
  * Never includes any secret material.
  */
 const customConnectorResponseBaseSchema = object({
+  networkBinding: customConnectorNetworkMetadataSchema.optional(),
   id: uuid(),
   slug: string(),
   displayName: string(),

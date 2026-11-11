@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 struct ChatThreadMenu {
   enum Action: Hashable {
-    case pin, rename, moveToProject, status, mute, markUnread, archive
+    case pin, movePinUp, movePinDown, rename, moveToProject, status, mute, markUnread, archive
     case setStatus(String?)
   }
 
@@ -22,6 +22,8 @@ struct ChatThreadMenu {
   let workspace: WorkspaceStore
   let threadID: String
   let moveToProject: (ChatThread) -> Void
+  /// The sidebar's neighbouring pins; nil where this chat's pin cannot be reordered.
+  var pinNeighbors: ChatSidebarPresentation.PinNeighbors?
 
   private var thread: ChatThread? {
     workspace.list.threads.first { $0.id == threadID }
@@ -39,7 +41,19 @@ struct ChatThreadMenu {
       Item(
         action: .pin,
         title: pinned ? String(localized: "Unpin chat") : String(localized: "Pin chat"),
-        icon: pinned ? "pin-off" : "pin", enabled: available && list.canPin(threadID)),
+        icon: pinned ? "pin-off" : "pin", enabled: available && list.canPin(threadID))
+    ]
+    if pinned, let pinNeighbors {
+      items += [
+        Item(
+          action: .movePinUp, title: String(localized: "Move up"), icon: "arrow-up",
+          enabled: enabled && pinNeighbors.above != nil),
+        Item(
+          action: .movePinDown, title: String(localized: "Move down"), icon: "arrow-down",
+          enabled: enabled && pinNeighbors.below != nil),
+      ]
+    }
+    items += [
       Item(
         action: .rename, title: String(localized: "Rename"), icon: "pencil",
         enabled: enabled && !list.isSavingRename),
@@ -95,6 +109,14 @@ struct ChatThreadMenu {
     else { return }
     switch action {
     case .pin: await workspace.list.togglePinned(threadID)
+    case .movePinUp:
+      guard let above = pinNeighbors?.above else { return }
+      await workspace.list.movePinned(
+        threadID, beside: above, placement: .before, projectID: pinNeighbors?.projectID)
+    case .movePinDown:
+      guard let below = pinNeighbors?.below else { return }
+      await workspace.list.movePinned(
+        threadID, beside: below, placement: .after, projectID: pinNeighbors?.projectID)
     case .rename: workspace.list.beginRename(threadID)
     case .moveToProject: moveToProject(thread)
     case .status: break

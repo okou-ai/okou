@@ -3245,6 +3245,7 @@
     "affectedMembers_one": "{{count}} membro",
     "affectedMembers_many": "",
     "affectedMembers_other": "{{count}} membri",
+    "bindingUnavailable": "Non disponibile",
     "cancel": "Annulla",
     "changed": "Questo Cloudflare Access è cambiato durante la modifica. Le modifiche non sono state salvate.",
     "clientIdPlaceholder": "Incolla il Client ID del Service Token",
@@ -3257,7 +3258,7 @@
     "failed": "Impossibile salvare la modifica Cloudflare Access.",
     "forbidden": "Solo gli amministratori dell'organizzazione possono modificare Cloudflare Access condiviso.",
     "impactChanged": "Gli host interessati sono cambiati. La modifica non è stata applicata.",
-    "inUse": "Un host SSH utilizza questo Cloudflare Access. Il proprietario deve prima associarlo a un'altra configurazione o eliminarlo.",
+    "inUse": "Questo Cloudflare Access è ancora in uso. Scollega o modifica prima l’associazione degli host e dei connettori personalizzati dipendenti.",
     "invalidInput": "Alcune impostazioni Cloudflare Access non sono valide. Controlla i campi e riprova.",
     "loadFailed": "Impossibile caricare Cloudflare Access.",
     "loading": "Caricamento di Cloudflare Access…",
@@ -5195,7 +5196,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5588,6 +5588,11 @@
       "creditBalance_many": "{{value}} crediti",
       "creditBalance_other": "{{value}} crediti",
       "exportData": "Esporta dati",
+      "help": {
+        "docs": "Documentazione",
+        "keyboardShortcuts": "Scorciatoie",
+        "label": "Aiuto"
+      },
       "lab": "Laboratorio",
       "settings": "Impostazioni",
       "signOut": "Esci",

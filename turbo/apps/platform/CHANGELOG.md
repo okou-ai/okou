@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1115.0](https://github.com/okou-ai/okou/compare/app-v0.1114.2...app-v0.1115.0) (2026-11-11)
+
+
+### Features
+
+* **app:** show a project name's emoji as a badge on its folder ([#46565](https://github.com/okou-ai/okou/issues/46565)) ([9402fdf](https://github.com/okou-ai/okou/commit/9402fdfb07cc2572870c243e7610c33451da7cb7))
+* **platform:** align project chat list empty states, pin order and rename with its design ([#46568](https://github.com/okou-ai/okou/issues/46568)) ([e03d0a1](https://github.com/okou-ai/okou/commit/e03d0a180d1763ecfa30a75209b6db968e439b88))
+
+
+### Refactoring
+
+* **platform:** bound the notification membership scan by its pages ([#46572](https://github.com/okou-ai/okou/issues/46572)) ([6c809fc](https://github.com/okou-ai/okou/commit/6c809fc872bae541db9415d2cf32b7b0d0128b19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.1
+    * @okouai/core bumped to 8.828.1
+
 ## [0.1114.2](https://github.com/okou-ai/okou/compare/app-v0.1114.1...app-v0.1114.2) (2026-11-11)
 
 

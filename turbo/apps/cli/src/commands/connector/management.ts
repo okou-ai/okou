@@ -125,6 +125,9 @@ function nonsecretConnectorUrl(value: string): string | null {
 /** Only member/definition metadata, never OAuth app configuration or injection values. */
 export function customConnectorMetadata(connector: CustomConnectorResponse) {
   return {
+    ...(connector.networkBinding
+      ? { networkBinding: connector.networkBinding }
+      : {}),
     id: connector.id,
     slug: connector.slug,
     kind: connector.kind,

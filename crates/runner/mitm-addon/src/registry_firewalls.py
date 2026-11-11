@@ -426,6 +426,11 @@ def resolve_firewall_entries(
                     )
                 for api in raw_apis:
                     if isinstance(api, dict):
+                        intent = api.get("networkIntent")
+                        if intent is not None and intent != {"kind": "direct"}:
+                            raise FirewallEntryResolutionError(
+                                "Cloudflare Access is unavailable in this preparation release"
+                            )
                         api["customConnectorId"] = custom_connector_id
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)

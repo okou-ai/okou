@@ -10,6 +10,7 @@ import {
   mergeRunPromptAndSkills,
   renderRunPrompts,
   type SkillVolume,
+  type SystemPromptVariables,
 } from "../run-prompt-and-skills";
 import { createSystemSkillsContext } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
@@ -29,6 +30,7 @@ import { createUserPrompt } from "./user";
 import { createWebThreadPrompt } from "./web";
 
 export interface PromptAndSkillVolumes {
+  readonly systemPromptVariables: SystemPromptVariables;
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
@@ -89,6 +91,7 @@ function createIntegrationPrompts(
     email: createEmailThreadPrompt(
       threadContext.emailContext$,
       featureSwitches$,
+      threadContext.emailMailboxConnections$,
     ),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
@@ -300,6 +303,7 @@ export function createPromptAndSkillVolumesSignals(
     ]);
     const prompts = renderRunPrompts(combined);
     return {
+      systemPromptVariables: combined.systemPromptVariables,
       appendedSystemPrompt: prompts.systemPrompt,
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,

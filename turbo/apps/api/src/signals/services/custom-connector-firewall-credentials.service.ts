@@ -167,7 +167,7 @@ function currentCustomConnectorAuthRefsFromRuntime(
     ReturnType<typeof customConnectorRuntimeDataFromRows>[number] | undefined,
   memberConnectorId: string,
 ): CurrentCustomConnectorAuthRefsResolution {
-  if (!runtime) {
+  if (!runtime || runtime.connector.networkBinding) {
     return { kind: "unavailable" };
   }
   if (runtime.credentialAccess.kind === "incompatible") {

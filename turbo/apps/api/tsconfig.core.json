@@ -251,6 +251,7 @@
     "src/signals/services/custom-connector-credential-access.service.ts",
     "src/signals/services/custom-connector-credential-storage.service.ts",
     "src/signals/services/custom-connector-definition-selection.ts",
+    "src/signals/services/custom-connector-network-binding.ts",
     "src/signals/services/custom-connector-skill-bundle-columns.ts",
     "src/signals/services/custom-connector-order.ts",
     "src/signals/services/custom-connector-permission-bundle.service.ts",
@@ -374,6 +375,7 @@
     "src/signals/services/cloudflare-access-client-invalidation.service.ts",
     "src/signals/services/tailscale-client-invalidation.service.ts",
     "src/signals/services/cloudflare-access.service.ts",
+    "src/signals/services/cloudflare-custom-connector-references.ts",
     "src/signals/services/network-config-model.ts",
     "src/signals/services/network-config-references.ts",
     "src/signals/services/network-config-mutation-query.ts",
@@ -628,6 +630,11 @@
     "src/signals/services/email-queued-launch-context.service.ts",
     "src/signals/services/internal-email-chat-run-callback.service.ts",
     "src/signals/services/email-channel-delivery.service.ts",
+    "src/signals/services/email-mailbox-context.service.ts",
+    "src/signals/services/email-source-message.service.ts",
+    "src/signals/services/email-active-source-context.service.ts",
+    "src/signals/services/chat-connector-execution.ts",
+    "src/signals/external/email-message-reader.ts",
     "src/signals/services/email-prompt.ts"
   ],
   "references": [

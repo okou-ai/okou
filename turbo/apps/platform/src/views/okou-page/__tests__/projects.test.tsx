@@ -2003,6 +2003,40 @@ test("Project deep links open the Project page with its composer", async () => {
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
 });
+test("A Project page shares the capability home and its compliance line under the composer", async () => {
+  const member = {
+    ...continuityThread(95, 1, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 95,
+    threads: [member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeInTheDocument();
+  });
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const compliance = screen.getByRole("region", {
+    name: "Okou’s compliance, built for your trust",
+  });
+  expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
+  expect(
+    editor.compareDocumentPosition(compliance) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+});
 test("A message sent from the Project page starts its chat inside the Project", async () => {
   const ordinary = continuityThread(116, 1, "Thread B");
   const workspace = installContinuityWorkspace(context, {
@@ -2529,6 +2563,85 @@ test("Project rename closes immediately and yields to persisted events", async (
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
+  await waitFor(() => {
+    expect(projectToggle("Launch confirmed")).toBeInTheDocument();
+  });
+});
+
+test("A rejected Project name does not replace the confirmed name of a later save", async () => {
+  const ordinary = continuityThread(229, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 229,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  let rejected = false;
+  context.mocks.api(projectsContract.update, ({ body, respond }) => {
+    if (!rejected) {
+      rejected = true;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Project state changed" },
+      });
+    }
+    events.push(
+      {
+        id: body.eventId,
+        seqId: 2,
+        projectId: id,
+        kind: "renamed",
+        name: body.name,
+        createdAt: at,
+      },
+      {
+        id: crypto.randomUUID(),
+        seqId: 3,
+        projectId: id,
+        kind: "renamed",
+        name: "Launch confirmed",
+        createdAt: at,
+      },
+    );
+    return respond(200, {
+      id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  click(button("Options for Launch", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch draft",
+  );
+  click(button("Save"));
+  await expect(
+    screen.findByText("Project state changed"),
+  ).resolves.toBeInTheDocument();
+
+  // The rejected name stays visible until reload; the next save supersedes it.
+  click(button("Options for Launch draft", projectRows()));
+  click(await findMenuItem("Rename"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Launch plan",
+  );
+  click(button("Save"));
   await waitFor(() => {
     expect(projectToggle("Launch confirmed")).toBeInTheDocument();
   });

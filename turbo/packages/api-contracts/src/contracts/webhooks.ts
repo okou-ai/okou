@@ -386,6 +386,9 @@ const firewallAwsSigv4AuthSchema = object({
 }).strict();
 
 const firewallAuthResponseSchema = object({
+  networkAdmission: object({ kind: literal("direct") })
+    .strict()
+    .optional(),
   headers: record(string(), string()),
   base: string().optional(),
   query: record(string(), string()).optional(),
@@ -449,6 +452,8 @@ export const webhookFirewallAuthContract = c.router({
       // auth cache lifetime by the current credit authorization lease.
       firewallBillable: boolean().optional(),
       forceRefresh: boolean().optional(),
+      // Opt-in preparation: this release only admits unbound custom connectors.
+      networkAdmission: literal(true).optional(),
     }),
     responses: {
       200: firewallAuthResponseSchema,
@@ -893,6 +898,18 @@ export const webhookTelemetryContract = c.router({
 // Direct Upload Contracts (Webhook endpoints for sandbox)
 // ============================================================================
 
+const memoryMergeSnapshotSchema = object({
+  versionId: string(),
+  empty: boolean(),
+  manifestUrl: string().optional(),
+  archiveUrl: string().optional(),
+});
+const memoryMergeContextSchema = object({
+  base: memoryMergeSnapshotSchema,
+  head: memoryMergeSnapshotSchema,
+});
+export type MemoryMergeContext = zInfer<typeof memoryMergeContextSchema>;
+
 /**
  * Webhook storage prepare contract for /api/webhooks/agent/storages/prepare
  *
@@ -913,6 +930,8 @@ export const webhookStoragesPrepareContract = c.router({
       storageId: uuid(),
       files: storageManifestFilesSchema,
       parentVersionId: string().optional(),
+      /** Request immutable inputs to recover a Memory commit conflict. */
+      includeMemoryMerge: boolean().optional(),
       /** Legacy request field; a registered version cannot be re-uploaded. */
       force: boolean().optional(),
       baseVersion: string().optional(),
@@ -926,6 +945,7 @@ export const webhookStoragesPrepareContract = c.router({
           archive: presignedUploadSchema,
           manifest: presignedUploadSchema,
         }).optional(),
+        memoryMerge: memoryMergeContextSchema.optional(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

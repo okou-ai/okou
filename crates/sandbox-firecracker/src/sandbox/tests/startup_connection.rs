@@ -1,5 +1,7 @@
 use super::*;
 
+use guest_control_client::test_support::ConnectionScope;
+
 struct UnwindingStartObserver {
     entered: Option<tokio::sync::oneshot::Sender<()>>,
     release: std::sync::mpsc::Receiver<()>,
@@ -60,13 +62,22 @@ async fn startup_unwind_retires_listener_and_handshake() {
                 entered: Some(entered),
                 release: released,
             };
-            let startup =
-                tokio::spawn(async move { sandbox.start_with_observer(&mut observer).await });
+            let scope = ConnectionScope::new(sandbox.id.clone(), Ok).unwrap();
+            let startup_scope = scope.clone();
+            let startup = tokio::spawn(async move {
+                startup_scope
+                    .scope(sandbox.start_with_observer(&mut observer))
+                    .await
+            });
             tokio::time::timeout(Duration::from_secs(1), ready)
                 .await
                 .unwrap()
                 .unwrap();
-            assert!(listener_exists(&listener_path, true).await);
+            // The pathname can appear before bind/listen finishes on the other
+            // worker. Await the owner's boundary without consuming a connection.
+            tokio::time::timeout(Duration::from_secs(1), scope.wait_for_listener())
+                .await
+                .unwrap();
             let mut peer = if accepted {
                 let peer = UnixStream::connect(&listener_path).await.unwrap();
                 assert!(listener_exists(&listener_path, false).await);

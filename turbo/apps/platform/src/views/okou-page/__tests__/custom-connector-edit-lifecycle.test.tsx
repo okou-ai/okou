@@ -15,6 +15,25 @@ import {
 
 const context = testContext();
 
+test("A custom connector displays its Cloudflare Access dependency without an activation control", async () => {
+  const connector = customConnector({
+    displayName: "Protected API",
+    networkBinding: {
+      type: "cloudflare_access",
+      status: "available",
+      name: "Corporate gateway",
+      configId: "5e7fd365-c432-41b2-a780-cfa467655b44",
+    },
+  });
+  mockCustomConnectorStory(context, [{ connector }]);
+  await setupPage({ context, path: "/connectors?scope=custom" });
+  await waitFor(() => {
+    expect(getConnectorCard("Protected API")).toHaveTextContent(
+      "Cloudflare Access: Corporate gateway",
+    );
+  });
+});
+
 test("A completed edit preserves a newer connector draft", async () => {
   const connector = customConnector({ displayName: "First API" });
   mockCustomConnectorStory(context, [{ connector }]);

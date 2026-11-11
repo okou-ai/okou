@@ -22,7 +22,7 @@ import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboard
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import { securityPageUrl } from "./onboarding-security.ts";
+import { publicSiteUrl } from "../../lib/public-site-url.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
@@ -192,7 +192,10 @@ export function OnboardingSourcesPage() {
         footnote={
           <a
             className="text-brand-text hover:text-brand-text-hover"
-            href={securityPageUrl(i18n.resolvedLanguage ?? i18n.language)}
+            href={publicSiteUrl(
+              i18n.resolvedLanguage ?? i18n.language,
+              "security",
+            )}
             target="_blank"
             rel="noopener noreferrer"
           >

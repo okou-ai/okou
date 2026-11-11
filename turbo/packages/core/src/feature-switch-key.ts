@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   UserNotifications = "userNotifications",
   AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",
@@ -21,7 +22,6 @@ export enum FeatureSwitchKey {
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",
   DocuSignConnector = "docusignConnector",
-  MercuryConnector = "mercuryConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
   SpotifyConnector = "spotifyConnector",
@@ -50,4 +50,5 @@ export enum FeatureSwitchKey {
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
+  HelpMenu = "helpMenu",
 }

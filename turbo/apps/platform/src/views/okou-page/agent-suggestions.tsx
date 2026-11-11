@@ -880,13 +880,22 @@ export function HomeSuggestionsCard() {
           radius: "compact",
           interactive: Boolean(item),
           className:
-            "relative isolate flex h-14 min-w-0 items-center gap-3 pr-2 pl-3.5 motion-reduce:transition-none pointer-coarse:h-16",
+            "relative isolate flex h-14 min-w-0 items-center gap-3 pr-2 pl-2.5 motion-reduce:transition-none pointer-coarse:h-16",
         })}
       >
-        <Sparkles
+        {/* The mark sits on a 36px tile, the height of the two lines beside
+            it, so it reads as the row's icon rather than a glyph floating
+            beside the text. The 10px inset matches the space above and below
+            the tile in the 56px row. The strip takes a hover state once it
+            holds a suggestion, so the tile is a nested fill: an opaque
+            `bg-muted` is what the hovered card composites to, and the tile
+            would vanish into the row. */}
+        <span
           aria-hidden
-          className="pointer-events-none relative z-10 size-4 shrink-0 text-brand-text"
-        />
+          className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-brand-text"
+        >
+          <Sparkles className="size-4" />
+        </span>
         {result.state === "hasError" ? (
           <>
             <span className="flex min-w-0 flex-1 flex-col">

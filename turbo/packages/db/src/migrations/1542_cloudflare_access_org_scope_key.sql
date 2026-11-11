@@ -1,0 +1,1 @@
+ALTER TABLE "cloudflare_access_configs" ADD CONSTRAINT "uq_cloudflare_access_configs_org_scope" UNIQUE("id","org_id","scope");

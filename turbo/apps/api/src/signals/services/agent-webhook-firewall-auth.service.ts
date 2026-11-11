@@ -79,6 +79,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { customConnectorDirectNetworkAdmission } from "./custom-connector-network-binding";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -93,7 +94,11 @@ import { variables as variablesTable } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
-import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -364,6 +369,7 @@ type FirewallAuthMaterialResolution =
 interface ResolveResult {
   readonly status: 200;
   readonly body: {
+    readonly networkAdmission?: { readonly kind: "direct" };
     readonly headers: Record<string, string>;
     readonly base?: string;
     readonly query?: Record<string, string>;
@@ -4369,11 +4375,13 @@ export const admitPreparedFirewallAuthResponse$ = command(
     args: {
       readonly auth: SandboxAuth;
       readonly response: ResolveFirewallAuthResult;
+      readonly networkAdmissionConnectorId?: string;
     },
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
-    if (args.response.status !== 200) {
-      return args.response;
+    const response = args.response;
+    if (response.status !== 200) {
+      return response;
     }
     const db = set(writeDb$);
     const startedAt = performance.now();
@@ -4382,7 +4390,16 @@ export const admitPreparedFirewallAuthResponse$ = command(
       // The final owner/status check keeps its existing row-lock ordering. A
       // single statement needs no larger application transaction boundary.
       const [run] = await db
-        .select({ status: agentRuns.status })
+        .select({
+          status: agentRuns.status,
+          networkAllowed:
+            args.networkAdmissionConnectorId === undefined
+              ? sql`true`.mapWith(pgBooleanDecoder)
+              : customConnectorDirectNetworkAdmission(
+                  args.auth.orgId,
+                  args.networkAdmissionConnectorId,
+                ),
+        })
         .from(agentRuns)
         .where(
           and(
@@ -4395,7 +4412,22 @@ export const admitPreparedFirewallAuthResponse$ = command(
         .limit(1);
       signal.throwIfAborted();
       success = run !== undefined && firewallAuthRunIsActive(run.status);
-      return success ? args.response : forbiddenTerminalRun();
+      if (!run || !success) {
+        return forbiddenTerminalRun();
+      }
+      if (!run.networkAllowed) {
+        success = false;
+        return connectorNotConfigured();
+      }
+      return args.networkAdmissionConnectorId === undefined
+        ? response
+        : {
+            ...response,
+            body: {
+              ...response.body,
+              networkAdmission: { kind: "direct" as const },
+            },
+          };
     })().finally(() => {
       recordFirewallAuthTimings(args.auth.runId, [
         {

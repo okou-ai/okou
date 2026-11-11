@@ -140,6 +140,7 @@ import * as chatThreadSnapshotSchema from "./schema/chat-thread-snapshot";
 import * as runOutputMaterializationSchema from "./schema/run-output-materialization";
 import * as runOutputLegacyPiEventSchema from "./schema/run-output-legacy-pi-event";
 import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
+import * as orgCustomConnectorCloudflareBindingSchema from "./schema/org-custom-connector-cloudflare-binding";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
 import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-connector-dcr-registration";
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
@@ -351,6 +352,7 @@ export const schema = {
   ...vncCredentialSchema,
   ...vncConnectionSchema,
   ...cloudflareAccessConfigSchema,
+  ...orgCustomConnectorCloudflareBindingSchema,
   ...tailscaleConfigSchema,
 };
 

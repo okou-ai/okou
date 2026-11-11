@@ -486,6 +486,7 @@ fn catalog(name: &str) -> BuiltinFirewallCatalog {
             Firewall {
                 name: name.to_string(),
                 apis: vec![FirewallApi {
+                    network_intent: None,
                     id: String::new(),
                     base: "https://api.example.com".to_string(),
                     auth: FirewallAuth {

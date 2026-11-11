@@ -1,3 +1,5 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import SafariServices
 import SwiftUI
@@ -6,11 +8,89 @@ struct ConnectorActionCard: View {
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   let loadsState: Bool
-  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
+  private let read: ConnectorActionRead
 
-  private var state: ConnectorActionStore.State {
-    action.kind == .unavailable ? .unavailable : (store.states[action.id] ?? .loading)
+  init(action: ChatConnectorAction, store: ConnectorActionStore, loadsState: Bool) {
+    self.action = action
+    self.store = store
+    self.loadsState = loadsState
+    read = store.resources.read(action)
   }
+
+  var body: some View {
+    StoreProvider(read.store) {
+      ConnectorActionDemandCard(action: action, store: store, read: read, loadsState: loadsState)
+    }.id(ObjectIdentifier(read))
+  }
+}
+
+private struct ConnectorActionDemandCard: View {
+  let action: ChatConnectorAction
+  let store: ConnectorActionStore
+  let read: ConnectorActionRead
+  let loadsState: Bool
+  @LoadableValue private var requested: Loadable<Bool>
+
+  init(
+    action: ChatConnectorAction, store: ConnectorActionStore, read: ConnectorActionRead,
+    loadsState: Bool
+  ) {
+    self.action = action
+    self.store = store
+    self.read = read
+    self.loadsState = loadsState
+    _requested = LoadableValue(read.requested)
+  }
+
+  var body: some View {
+    Group {
+      if action.kind == .unavailable {
+        ConnectorActionCardContent(action: action, store: store, state: .unavailable)
+      } else if requested.data == true {
+        ConnectorActionResourceCard(action: action, store: store, read: read)
+      } else {
+        ConnectorActionCardContent(action: action, store: store, state: .loading)
+      }
+    }
+    .task(id: loadsState) { if loadsState { _ = await read.result() } }
+  }
+}
+
+private struct ConnectorActionResourceCard: View {
+  let action: ChatConnectorAction
+  let store: ConnectorActionStore
+  @LoadableValue private var status: Loadable<ChatConnectorStatus?>
+
+  init(action: ChatConnectorAction, store: ConnectorActionStore, read: ConnectorActionRead) {
+    self.action = action
+    self.store = store
+    _status = LoadableValue(task: read.value)
+  }
+
+  var body: some View {
+    ConnectorActionCardContent(action: action, store: store, state: state)
+  }
+
+  private var state: ConnectorActionCardContent.State {
+    switch status {
+    case .loading: return .loading
+    case .hasError: return .failed
+    case .hasData(let value):
+      return value.map(ConnectorActionCardContent.State.ready) ?? .unavailable
+    }
+  }
+}
+
+private struct ConnectorActionCardContent: View {
+  enum State {
+    case loading, unavailable, failed
+    case ready(ChatConnectorStatus)
+  }
+
+  let action: ChatConnectorAction
+  let store: ConnectorActionStore
+  let state: State
+  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
 
   var body: some View {
     Group {
@@ -45,7 +125,6 @@ struct ConnectorActionCard: View {
       }
     }
     .accessibilityIdentifier("connector-action-card")
-    .task(id: action.id) { if loadsState { await store.refresh(action) } }
   }
 
   @ViewBuilder private var information: some View {

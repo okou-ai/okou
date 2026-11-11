@@ -982,6 +982,55 @@ impl http_body::Body for SizedBody {
 }
 
 impl HttpClient {
+    /// Download immutable storage bytes without API authorization or bypass headers.
+    pub(crate) async fn get_presigned_file(
+        &self,
+        url: &str,
+        path: &Path,
+        max_bytes: u64,
+    ) -> Result<(), AgentError> {
+        use tokio::io::AsyncWriteExt;
+
+        let mut response = self
+            .inner()?
+            .get(url)
+            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
+            .send()
+            .await
+            .map_err(|error| AgentError::Http(format_reqwest_error(error)))?;
+        if !response.status().is_success() {
+            return Err(AgentError::Http(format!(
+                "GET presigned: HTTP {}",
+                response.status()
+            )));
+        }
+        if response
+            .content_length()
+            .is_some_and(|size| size > max_bytes)
+        {
+            return Err(AgentError::Http(
+                "Memory download exceeds the size limit".into(),
+            ));
+        }
+        let mut file = tokio::fs::File::create(path).await?;
+        let mut received = 0_u64;
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| AgentError::Http(format_reqwest_error(error)))?
+        {
+            received = received.saturating_add(chunk.len() as u64);
+            if received > max_bytes {
+                return Err(AgentError::Http(
+                    "Memory download exceeds the size limit".into(),
+                ));
+            }
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
+        Ok(())
+    }
+
     /// PUT a file to a presigned S3 URL by streaming from disk.
     ///
     /// Unlike [`Self::put_presigned`], this avoids loading the entire file into

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.2...guest-contracts-v0.32.3) (2026-11-11)
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
 ## [0.32.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.1...guest-contracts-v0.32.2) (2026-11-11)
 
 

@@ -5,8 +5,8 @@
 //! emitted relative to executor completion and sandbox finalization.
 
 use guest_contracts::diagnostics::{
-    CliObservedExitDiagnostic, CliObservedExitKind, CliTerminationDiagnostic,
-    EventDeliveryDiagnostic, FailureClass, FailureDiagnostic, FailureReason,
+    AgentFramework, CliObservedExitDiagnostic, CliObservedExitKind, CliTerminationDiagnostic,
+    EventDeliveryDiagnostic, FailureClass, FailureDetailSource, FailureDiagnostic, FailureReason,
     HeartbeatFailureDiagnostic, WorkloadResourceLimitDiagnostic,
 };
 use tracing::info;
@@ -246,7 +246,9 @@ fn log_job_execution_failed(
                 .resource_diagnostics
                 .and_then(|diagnostics| diagnostics.failure_kind)
                 .is_some_and(executor::ResourceFailureKind::is_filesystem_full)
-                || diagnostic.is_some_and(is_info_level_job_failure) =>
+                || diagnostic.is_some_and(|diagnostic| {
+                    is_info_level_job_failure(diagnostic, &failure.error)
+                }) =>
         {
             emit_job_execution_failed!(tracing::Level::INFO, "job execution failed");
         }
@@ -512,36 +514,50 @@ impl From<Option<&WorkloadResourceLimitDiagnostic>> for JobWorkloadResourceLogFi
     }
 }
 
-fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
+fn is_info_level_job_failure(diagnostic: &FailureDiagnostic, error: &str) -> bool {
     match diagnostic.failure_class {
         FailureClass::CliExecutionError => {
             diagnostic.failure_reason == Some(FailureReason::InputTooLarge)
         }
-        FailureClass::CliNonzero => matches!(
-            diagnostic.failure_reason,
-            Some(
-                FailureReason::InsufficientCredits
-                    | FailureReason::ProviderInsufficientCredits
-                    | FailureReason::InvalidApiKey
-                    | FailureReason::InvalidCredentials
-                    | FailureReason::TermsAcceptanceRequired
-                    | FailureReason::AccountVerificationRequired
-                    | FailureReason::ContextWindowExceeded
-                    | FailureReason::ProviderImageTooLarge
-                    | FailureReason::OutputTokenLimit
-                    | FailureReason::ProviderRateLimited
-                    | FailureReason::ProviderOverloaded
-                    | FailureReason::ProviderStreamTimeout
-                    | FailureReason::ProviderQueueTimeout
-                    | FailureReason::ProviderServerError
-                    | FailureReason::ResponseConnectionLost
-                    | FailureReason::SafetyPolicyRefusal
-                    | FailureReason::ReconnectRequired
-                    | FailureReason::CodexAccessProgramUnavailable
-                    | FailureReason::UnsupportedModel
-                    | FailureReason::UsageLimit
+        FailureClass::CliNonzero => {
+            matches!(
+                diagnostic.failure_reason,
+                Some(
+                    FailureReason::InsufficientCredits
+                        | FailureReason::ProviderInsufficientCredits
+                        | FailureReason::InvalidApiKey
+                        | FailureReason::InvalidCredentials
+                        | FailureReason::TermsAcceptanceRequired
+                        | FailureReason::AccountVerificationRequired
+                        | FailureReason::ContextWindowExceeded
+                        | FailureReason::ProviderImageTooLarge
+                        | FailureReason::OutputTokenLimit
+                        | FailureReason::ProviderRateLimited
+                        | FailureReason::ProviderOverloaded
+                        | FailureReason::ProviderStreamTimeout
+                        | FailureReason::ProviderQueueTimeout
+                        | FailureReason::ProviderServerError
+                        | FailureReason::ProviderBadRequest
+                        | FailureReason::ProviderModelRestricted
+                        | FailureReason::ResponseConnectionLost
+                        | FailureReason::SafetyPolicyRefusal
+                        | FailureReason::ReconnectRequired
+                        | FailureReason::CodexAccessProgramUnavailable
+                        | FailureReason::UnsupportedModel
+                        | FailureReason::UsageLimit
+                )
+            ) || (
+                // The SDK emits this exact fallback for an upstream-declared stream
+                // error without detail. HTTP200 alone also precedes local failures.
+                diagnostic.framework == AgentFramework::Pi
+                    && diagnostic.failure_detail_source == Some(FailureDetailSource::PiResult)
+                    && diagnostic.failure_reason.is_none()
+                    && diagnostic.model_request.is_some_and(|request| {
+                        request.http_status == Some(200) && request.transport_failure.is_none()
+                    })
+                    && error == "Provider finish_reason: error"
             )
-        ),
+        }
         FailureClass::ClaudeZeroTurnNoHistory => true,
         _ => false,
     }
