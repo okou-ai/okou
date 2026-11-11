@@ -43,8 +43,14 @@ struct TaskLifecycleRule: NativeRule {
       guard !fields.isEmpty else { return .visitChildren }
       let trace = NativeLifetimeTrace(kind: .task, creation: node.position, owner: owner)
       if let scope = scope(node) {
-        _ = trace.block(scope.statements, states: [NativeLifetimePath(locals: scope.locals)])
-        for (field, value) in trace.retained where fields.contains(field) {
+        let paths = trace.block(
+          scope.statements, states: [NativeLifetimePath(locals: scope.locals)])
+        let retained = trace.retained.filter { fields.contains($0.key) }
+        if !retained.isEmpty, !paths.allSatisfy({ trace.finished($0) }) {
+          report(
+            node, "The newly retained Task loses its original handle before release or transfer")
+        }
+        for (field, value) in retained {
           if !trace.ownerReleases(field, value: value) {
             report(
               node,

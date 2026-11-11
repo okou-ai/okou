@@ -405,3 +405,29 @@ TASK_LIFECYCLE_CASES += [
     """,
     ),
 ]
+
+TASK_LIFECYCLE_CASES += [
+    (
+        "acquisition cannot discard the new original before owner teardown",
+        "okou_task_lifecycle",
+        """
+        final class Dropped {
+          private var current: Task<Void, Never>?
+          func start() {
+            current?.cancel()
+            current = Task { await service.refresh() } // violation
+            current = nil
+          }
+          func close() { current?.cancel() }
+        }
+        final class Cleared {
+          private var tasks: [Task<Void, Never>] = []
+          func start() {
+            tasks.append(Task { await service.refresh() }) // violation
+            tasks.removeAll()
+          }
+          func close() { for task in tasks { task.cancel() } }
+        }
+    """,
+    ),
+]
