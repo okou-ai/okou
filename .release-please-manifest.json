@@ -3,8 +3,8 @@
   "turbo/packages/browser-extension-client": "0.4.4",
   "turbo/packages/core": "8.828.0",
   "turbo/apps/cli": "10.20.0",
-  "turbo/apps/api": "2.59.0",
-  "turbo/apps/platform": "0.1114.0",
+  "turbo/apps/api": "2.59.1",
+  "turbo/apps/platform": "0.1114.1",
   "turbo/apps/app-worker": "1.10.163",
   "turbo/apps/host-worker": "1.9.87",
   "turbo/packages/api-contracts": "2.49.0",
@@ -57,5 +57,5 @@
   "crates/rfb-client": "0.24.9",
   "ios": "0.35.2",
   "crates/kerberos-credentials": "0.2.0",
-  "desktop": "0.56.2"
+  "desktop": "0.56.3"
 }
