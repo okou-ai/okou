@@ -22,7 +22,6 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
@@ -235,7 +234,29 @@ type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 function createChatAccountInputSignals(
   execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
   connectorInput$: Computed<Promise<{ readonly chatThreadId: string }>>,
+  suppliedOverrides$?: Computed<
+    Promise<
+      readonly { readonly connectorId: string; readonly enabled: boolean }[]
+    >
+  >,
 ) {
+  const accessOverrides$ =
+    suppliedOverrides$ ??
+    computed(async (get) => {
+      const input = await get(connectorInput$);
+      return await get(db$)
+        .select({
+          connectorId: chatThreadConnectorAccessOverrides.connectorId,
+          enabled: chatThreadConnectorAccessOverrides.enabled,
+        })
+        .from(chatThreadConnectorAccessOverrides)
+        .where(
+          eq(
+            chatThreadConnectorAccessOverrides.chatThreadId,
+            input.chatThreadId,
+          ),
+        );
+    });
   const chatAccountsEnabled$ = computed(async (get) => {
     return isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
@@ -247,16 +268,7 @@ function createChatAccountInputSignals(
     if (!(await get(chatAccountsEnabled$))) {
       return accounts;
     }
-    const input = await get(connectorInput$);
-    const overrides = await get(db$)
-      .select({
-        connectorId: chatThreadConnectorAccessOverrides.connectorId,
-        enabled: chatThreadConnectorAccessOverrides.enabled,
-      })
-      .from(chatThreadConnectorAccessOverrides)
-      .where(
-        eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
-      );
+    const overrides = await get(accessOverrides$);
     const enabledById = new Map(
       overrides.map((row) => {
         return [row.connectorId, row.enabled];
@@ -280,6 +292,23 @@ function createChatAccountInputSignals(
 
 /** Preserve registered account bindings and resolve current native-only selections. */
 interface ClaimConnectedAccountsArgs {
+  readonly selections$: Computed<
+    Promise<
+      readonly {
+        readonly connectorId: string;
+        readonly connectorSlug: string | null;
+        readonly customConnectorId: string | null;
+      }[]
+    >
+  >;
+  readonly accessOverrides$: Computed<
+    Promise<
+      readonly {
+        readonly connectorId: string;
+        readonly enabled: boolean;
+      }[]
+    >
+  >;
   readonly identity$: Computed<
     Promise<{
       readonly userId: string;
@@ -306,16 +335,7 @@ function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
       get(args.identity$),
       get(args.targets$),
     ]);
-    const rows = await get(db$)
-      .select({
-        connectorId: chatThreadConnectorSelections.connectorId,
-        connectorSlug: chatThreadConnectorSelections.connectorSlug,
-        customConnectorId: chatThreadConnectorSelections.customConnectorId,
-      })
-      .from(chatThreadConnectorSelections)
-      .where(
-        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
-      );
+    const rows = await get(args.selections$);
     const registered = new Set(targets.map(connectorAccountTargetKey));
     return {
       ...identity,
@@ -345,6 +365,7 @@ function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
   const currentAccounts = createChatAccountInputSignals(
     { featureSwitches$: args.features$, connectors$: args.connectors$ },
     connectorInput$,
+    args.accessOverrides$,
   );
   const effectiveAccounts$ = computed(async (get) => {
     const [rows, targets] = await Promise.all([
