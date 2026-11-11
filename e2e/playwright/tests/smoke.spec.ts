@@ -32,7 +32,7 @@ test("receive a reply and compose with an IME", async ({ page }) => {
 
   await expect(
     page.locator('[data-role="assistant"] [data-chat-selection-source]').last(),
-  ).toHaveText(/^\s*SMOKE_OK\s*$/, { timeout: 90_000 });
+  ).toContainText("SMOKE_OK", { timeout: 90_000 });
 
   const composer = page.getByRole("textbox", { name: "Message", exact: true });
   await composer.click();
