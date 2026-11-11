@@ -886,10 +886,13 @@ export function HomeSuggestionsCard() {
         {/* The mark sits on a 36px tile, the height of the two lines beside
             it, so it reads as the row's icon rather than a glyph floating
             beside the text. The 10px inset matches the space above and below
-            the tile in the 56px row. */}
+            the tile in the 56px row. The strip takes a hover state once it
+            holds a suggestion, so the tile is a nested fill: an opaque
+            `bg-muted` is what the hovered card composites to, and the tile
+            would vanish into the row. */}
         <span
           aria-hidden
-          className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-brand-text"
+          className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-brand-text"
         >
           <Sparkles className="size-4" />
         </span>
