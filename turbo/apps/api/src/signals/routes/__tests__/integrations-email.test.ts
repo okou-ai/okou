@@ -1390,8 +1390,13 @@ describe("Email integration", () => {
         [200],
       );
     };
-    const [first, concurrent] = await Promise.all([request(), request()]);
-    expect(first.body.operationId).toBe(concurrent.body.operationId);
+    const [first, ...concurrent] = await Promise.all([
+      request(),
+      ...Array.from({ length: 7 }, request),
+    ]);
+    for (const response of concurrent) {
+      expect(response.body.operationId).toBe(first.body.operationId);
+    }
     await flushWaitUntilForTest();
     const replay = await request();
     expect(replay.body).toMatchObject({
