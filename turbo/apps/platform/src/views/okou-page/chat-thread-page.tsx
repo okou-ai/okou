@@ -5155,7 +5155,7 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
   },
   provider_bad_request: () => {
     return i18n.t(($) => {
-      return $.chat.errors.genericTitle;
+      return $.chat.errors.recovery.providerBadRequestTitle;
     });
   },
   firewall_auth_failed: () => {
@@ -5298,7 +5298,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
   provider_bad_request: (t: TFunction<"common">) => {
     return t(($) => {
-      return $.runErrors.transient;
+      return $.chat.errors.recovery.providerBadRequestDescription;
     });
   },
   firewall_auth_failed: (t: TFunction<"common">) => {
@@ -5348,7 +5348,6 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
-    reason === "provider_bad_request" ||
     reason === "firewall_auth_failed" ||
     reason === "session_history_limit"
   ) {
@@ -5362,7 +5361,6 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
     reason !== "insufficient_credits" &&
     reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
-    reason !== "provider_bad_request" &&
     reason !== "firewall_auth_failed" &&
     reason !== "provider_image_too_large"
   );

@@ -2149,6 +2149,8 @@
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
         "personalAccount": "Persönliches Abonnement {{account}}",
         "personalAccountDisconnected": "Persönliches Abonnement getrennt",
+        "providerBadRequestDescription": "Versuche es erneut oder wechsle zu einem anderen Modell, um fortzufahren.",
+        "providerBadRequestTitle": "Der Modellanbieter hat einen Fehler zurückgegeben",
         "providerBalanceDescription": "Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.",
         "providerBalanceTitle": "Dein Abonnementkonto benötigt mehr Guthaben",
         "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Einstellungen > Modelle“ und versuchen Sie es erneut.",
@@ -5501,6 +5503,7 @@
     "modelTemporarilyUnavailable": "Modell vorübergehend nicht verfügbar",
     "modelUnavailable": "Das aktuelle Modell ist nicht verfügbar.",
     "overloaded": "{{model}} ist überlastet. Wechseln Sie zu einem anderen Modell.",
+    "providerBadRequest": "Der Modellanbieter hat einen Fehler zurückgegeben. Versuche es erneut oder wechsle zu einem anderen Modell, um fortzufahren.",
     "providerBalance": "Dein verbundenes Abonnementkonto hat nicht genügend Guthaben.",
     "transient": "Ein Fehler ist aufgetreten.",
     "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."

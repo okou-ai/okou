@@ -2141,6 +2141,8 @@
         "outputLimitTitle": "Jawaban mencapai batas panjang",
         "personalAccount": "Langganan pribadi {{account}}",
         "personalAccountDisconnected": "Langganan pribadi terputus",
+        "providerBadRequestDescription": "Coba lagi atau beralih ke model lain untuk melanjutkan.",
+        "providerBadRequestTitle": "Penyedia model mengembalikan kesalahan",
         "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
         "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
         "providerConnectionDescription": "Buka Setelan > Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
@@ -5483,6 +5485,7 @@
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
     "overloaded": "{{model}} sedang kelebihan beban. Beralih ke model lain.",
+    "providerBadRequest": "Penyedia model mengembalikan kesalahan. Coba lagi atau beralih ke model lain untuk melanjutkan.",
     "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
