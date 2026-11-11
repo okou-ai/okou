@@ -30,7 +30,21 @@ export async function checkAndroidConsumption(
       return `${generatedKotlinRelativeDirectory}/${name}`;
     }),
   );
-  const files = await kotlinFiles(join(root, "android"));
+  const files: string[] = [];
+  const appSources = join(root, "android/app/src");
+  for (const sourceSet of await readdir(appSources, { withFileTypes: true })) {
+    if (
+      !sourceSet.isDirectory() ||
+      ["test", "androidTest"].includes(sourceSet.name)
+    )
+      continue;
+    const directory = join(appSources, sourceSet.name);
+    for (const source of await readdir(directory, { withFileTypes: true })) {
+      if (source.isDirectory() && ["kotlin", "java"].includes(source.name)) {
+        files.push(...(await kotlinFiles(join(directory, source.name))));
+      }
+    }
+  }
   for (const path of files) {
     const file = relative(root, path).replaceAll("\\", "/");
     if (generated.has(file)) continue;
@@ -64,12 +78,7 @@ async function kotlinFiles(directory: string): Promise<string[]> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (
-        !["build", ".gradle", ".kotlin", "test", "androidTest"].includes(
-          entry.name,
-        )
-      )
-        files.push(...(await kotlinFiles(path)));
+      files.push(...(await kotlinFiles(path)));
     } else if (entry.name.endsWith(".kt")) files.push(path);
   }
   return files.sort();

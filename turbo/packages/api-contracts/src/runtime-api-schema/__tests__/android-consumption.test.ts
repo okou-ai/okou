@@ -67,6 +67,14 @@ describe("Android generated consumption CLI", () => {
     expect(await lint()).toBe(1);
   });
 
+  it("checks production packages named test instead of confusing them with test source sets", async () => {
+    await put(
+      "android/app/src/main/kotlin/ai/okou/android/test/Connection.kt",
+      'import retrofit2.http.GET\ninterface Extra { @GET("/api/unregistered") suspend fun get(): String }',
+    );
+    expect(await lint()).toBe(1);
+  });
+
   it("does not interpret comments or local test fixtures as production API consumers", async () => {
     await put(
       "android/app/src/main/kotlin/Comment.kt",
