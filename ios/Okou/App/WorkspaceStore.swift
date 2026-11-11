@@ -480,6 +480,9 @@ final class WorkspaceStore {
       repeat {
         // Coalesce startup, indicator updates and bursts of realtime messages.
         do { try await historyWarmingSleep(.seconds(1)) } catch { return }
+        guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled,
+          refreshGeneration == generation
+        else { return }
         warmAgain = false
         let recent = list.threads.sorted {
           $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt
