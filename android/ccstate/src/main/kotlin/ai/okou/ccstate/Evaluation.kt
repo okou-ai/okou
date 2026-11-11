@@ -31,6 +31,10 @@ class EvaluationSignal internal constructor() {
         if (aborted) throw CancellationException("CCState evaluation was invalidated")
     }
 
+    /**
+     * Runs immediately if already invalidated; otherwise registers cleanup. Closing the returned
+     * handle before this callback's dispatch turn prevents its invocation.
+     */
     fun onCancel(callback: () -> Unit): Subscription {
         if (aborted) {
             callback()
@@ -44,9 +48,9 @@ class EvaluationSignal internal constructor() {
         if (aborted) return emptyList()
         aborted = true
         val pending = callbacks.toList()
-        callbacks.clear()
         val failures = mutableListOf<Throwable>()
         for (callback in pending) {
+            if (!callbacks.remove(callback)) continue
             try {
                 callback()
             } catch (failure: Throwable) {

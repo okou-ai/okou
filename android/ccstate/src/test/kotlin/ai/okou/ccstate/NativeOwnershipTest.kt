@@ -7,6 +7,37 @@ import org.junit.Test
 /** Kotlin/JVM owner boundaries in addition to the pinned TS contract cases. */
 class NativeOwnershipTest {
     @Test
+    fun cancellationSkipsCallbacksUnsubscribedDuringDispatch() {
+        for (closeOwner in listOf(false, true)) Store().use { store ->
+            val revision = state(0)
+            val events = mutableListOf<String>()
+            lateinit var removed: Subscription
+            lateinit var retired: EvaluationSignal
+            val target = computed { get, evaluation ->
+                val value = get.get(revision)
+                if (value == 0) {
+                    retired = evaluation.signal
+                    retired.onCancel {
+                        events.add("first")
+                        removed.close()
+                    }
+                    removed = retired.onCancel { events.add("removed") }
+                    retired.onCancel { events.add("last") }
+                }
+                value
+            }
+            store
+                .watch(target) {}
+                .use {
+                    if (closeOwner) store.close() else store.set(revision, 1)
+                    assertTrue(retired.aborted)
+                    assertEquals(listOf("first", "last"), events)
+                    if (!closeOwner) assertEquals(1, store.get(target))
+                }
+        }
+    }
+
+    @Test
     fun foreignThreadsCannotReadUseEscapedAccessorsOrCloseTheOwner() {
         Store().use { store ->
             val source = state(0)

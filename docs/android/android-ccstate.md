@@ -64,6 +64,8 @@ share the cached handle while dependencies remain unchanged. Native coroutine
 scopes own producer work. An explicit `evaluation.signal.onCancel { ... }` can
 opt that work into reevaluation cancellation; core does not cancel arbitrary
 returned tasks. Release callback registrations with the work that owns them.
+Closing a registration before its dispatch turn prevents invocation, including
+when another cancellation callback removes it during reevaluation or Store close.
 
 Cancellation callbacks belong to the retired evaluation. A failing callback
 must not become the replacement computed's cached error or detach its new
