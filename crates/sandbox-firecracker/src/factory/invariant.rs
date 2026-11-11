@@ -33,12 +33,17 @@ const HASH_VSOCK_PATH: &str = "/vsock";
 ///   before the VM is paused, so no live CLI process or reusable process-local
 ///   V8 JIT state is preserved. It may warm the guest's file/page cache for
 ///   files read during startup; any startup benefit requires measurement.
-///   Each warmup is wrapped in its own
-///   `(... || true)` sub-shell so a failure on one framework does not block
-///   the other from warming.
+/// - `okou __agent-loop --help`: loads the installed Pi command's module graph
+///   without Run configuration or starting an Agent session. The CLI exits
+///   before capture; restored VMs retain warmed file pages, not a live CLI
+///   process or its process-local JIT state.
+///
+/// Each warmup is wrapped in its own `(... || true)` sub-shell so a failure on
+/// one framework does not block the others from warming.
 pub const PREWARM_SCRIPT: &str = "\
     (claude --print --verbose --output-format stream-json hi 2>/dev/null || true); \
-    (codex --help >/dev/null 2>&1 || true)";
+    (codex --help >/dev/null 2>&1 || true); \
+    (okou __agent-loop --help >/dev/null 2>&1 || true)";
 
 /// Invariant configuration shared by all sandboxes.
 ///
