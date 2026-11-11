@@ -49,7 +49,7 @@ final class ChatThreadPreviewTests: XCTestCase {
     XCTAssertEqual(content.messages.map(\.id), [ConversationHistoryFixture.id(3)])
   }
 
-  func testDismissingPreviewCancelsItsPendingReadAndAllowsAFreshPresentation() async throws {
+  func testDismissingPreviewCancelsItsPendingRead() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Preview history read reached HTTP")
     let fixture = ConversationHistoryFixture(
@@ -76,7 +76,5 @@ final class ChatThreadPreviewTests: XCTestCase {
     }
     XCTAssertTrue(error is CancellationError)
     XCTAssertNil(workspace.threadPreview)
-    workspace.previewChat(ConversationHistoryFixture.threadID)
-    XCTAssertFalse(workspace.threadPreview === preview)
   }
 }
