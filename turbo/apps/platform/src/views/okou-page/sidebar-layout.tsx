@@ -78,6 +78,29 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
+import { ThreadRemoteAccessDialog } from "./remote-access-controls.tsx";
+
+function ThreadRemoteAccessDialogsMount() {
+  const route = useGet(activeRoute$);
+  const left = useGet(currentLeftThread$);
+  const right = useGet(currentRightThread$);
+  if (route !== "chat") {
+    return null;
+  }
+  return (
+    <>
+      {left && (
+        <ThreadRemoteAccessDialog key={left.threadId} signals={left.composer} />
+      )}
+      {right && right !== left && (
+        <ThreadRemoteAccessDialog
+          key={right.threadId}
+          signals={right.composer}
+        />
+      )}
+    </>
+  );
+}
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -497,6 +520,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
+      {/* Workspace content remounts when mobile navigation adds its wrapper.
+          Keep in-flight remote permission actions outside that subtree. */}
+      <ThreadRemoteAccessDialogsMount />
       {pwaNavigation ? (
         <>
           <ChatThreadDialogs />

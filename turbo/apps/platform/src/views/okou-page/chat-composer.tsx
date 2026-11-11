@@ -6676,7 +6676,6 @@ function ComposerConnectorsSlot({
         actions={actions}
         onOpenAddDialog={openAddConnectorsDialog}
       />
-      <ThreadRemoteAccessDialog signals={signals} />
       {permissions && permissionSignals && (
         <ConnectorPermissionsDialog
           finalFocus={triggerElement}
@@ -7054,6 +7053,7 @@ export function ChatComposer({
   );
   return (
     <>
+      {!signals.threadId && <ThreadRemoteAccessDialog signals={signals} />}
       {/* The composer group's width, named once. The card is not the container
           itself: the model-scope notice and the pending-items strip are its
           siblings at exactly this width, and a control that reads a width it is
