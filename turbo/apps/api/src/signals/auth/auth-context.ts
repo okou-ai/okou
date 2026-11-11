@@ -24,6 +24,7 @@ import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
   cliTokenRecord,
   getMemberRoleAndUpdateCache$,
+  resolveMemberRoleAndUpdateCache$,
   updateCliTokenLastUsedAt$,
 } from "../services/auth.service";
 import {
@@ -93,9 +94,12 @@ const cliAuth$ = command(
     waitUntil(set(updateCliTokenLastUsedAt$, cliAuth.tokenId, signal));
 
     const membership = await set(
-      getMemberRoleAndUpdateCache$,
-      resolved.orgId,
-      resolved.userId,
+      resolveMemberRoleAndUpdateCache$,
+      {
+        orgId: resolved.orgId,
+        userId: resolved.userId,
+        cached: resolved.cachedMemberRole,
+      },
       signal,
     );
     // A deleted Clerk identity must not degrade into the user-only context a

@@ -86,7 +86,7 @@ import {
 } from "../utils";
 import {
   createAgentRunContextSignals,
-  preloadAgentRunContext$,
+  preloadChatSendContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
 import type {
@@ -2542,8 +2542,8 @@ const prepareNormalSendContext$ = command(
       args.body.agentId,
     );
     // The pool serves checkouts in dispatch order. Issue the request-critical
-    // thread row before the preload's roots, several of which this request
-    // never awaits, so it takes a warm connection instead of opening one.
+    // thread row before the send preload's roots, so it takes a warm
+    // connection instead of opening one.
     // Authorization joins it with the Agent read in this same turn.
     const existingThreadRow =
       args.body.threadId === undefined
@@ -2565,7 +2565,7 @@ const prepareNormalSendContext$ = command(
     );
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
-    set(preloadAgentRunContext$, context, signal);
+    set(preloadChatSendContext$, context, signal);
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context, existingThreadRow, agentRunSource },

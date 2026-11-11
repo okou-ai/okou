@@ -549,9 +549,27 @@ function createIdentityContext(
 }
 
 /**
- * Trigger each group immediately after context creation, before authorization in
- * prepareNormalSendContext$, or at pick start when no matching context is passed.
- * Cached failures remain authoritative.
+ * Start only the facts consumed before input publication. Launch-only Storage,
+ * Workflow and variable reads remain with the pick that actually has work.
+ */
+export const preloadChatSendContext$ = command(
+  ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    const nodes: readonly Computed<Promise<unknown>>[] = [
+      signals.agent$,
+      signals.modelFacts$,
+      signals.memberModels$,
+      signals.memberMetadata$,
+    ];
+    for (const node of nodes) {
+      waitUntil(settle(get(node)));
+    }
+  },
+);
+
+/**
+ * Start Run preparation after pick establishes work and capacity. A matching
+ * send context reuses its completed reads; cached failures stay authoritative.
  */
 export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {

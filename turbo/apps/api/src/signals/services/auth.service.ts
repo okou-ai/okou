@@ -28,6 +28,14 @@ type MemberRoleResult =
   | { readonly kind: "not_member" }
   | { readonly kind: "identity_not_found" };
 
+type CachedMemberRole = {
+  readonly role: string;
+  readonly cachedAt: Date;
+};
+type CliTokenContext = CliTokenRecord & {
+  readonly cachedMemberRole: CachedMemberRole | undefined;
+};
+
 const readMemberRoleCache$ = command(
   async ({ get }, orgId: string, userId: string, signal: AbortSignal) => {
     const [cached] = await get(db$)
@@ -49,7 +57,7 @@ const readMemberRoleCache$ = command(
 );
 
 function freshMemberRole(
-  cached: { readonly role: string; readonly cachedAt: Date } | undefined,
+  cached: CachedMemberRole | undefined,
 ): MemberRoleResult | undefined {
   if (cached && now() - cached.cachedAt.getTime() < MEMBER_ROLE_CACHE_TTL_MS) {
     return {
@@ -116,15 +124,18 @@ const deleteMemberRoleCache$ = command(
   },
 );
 
-export const getMemberRoleAndUpdateCache$ = command(
+export const resolveMemberRoleAndUpdateCache$ = command(
   async (
     { get, set },
-    orgId: string,
-    userId: string,
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly cached: CachedMemberRole | undefined;
+    },
     signal: AbortSignal,
   ): Promise<MemberRoleResult> => {
     signal.throwIfAborted();
-    const cached = await set(readMemberRoleCache$, orgId, userId, signal);
+    const { orgId, userId, cached } = args;
     const fresh = freshMemberRole(cached);
     if (fresh) {
       return fresh;
@@ -185,15 +196,44 @@ export const getMemberRoleAndUpdateCache$ = command(
   },
 );
 
+export const getMemberRoleAndUpdateCache$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<MemberRoleResult> => {
+    const cached = await set(readMemberRoleCache$, orgId, userId, signal);
+    return await set(
+      resolveMemberRoleAndUpdateCache$,
+      { orgId, userId, cached },
+      signal,
+    );
+  },
+);
+
 export function cliTokenRecord(
   cliAuth: CliAuth,
-): Computed<Promise<CliTokenRecord | null>> {
-  return computed(async (get): Promise<CliTokenRecord | null> => {
+): Computed<Promise<CliTokenContext | null>> {
+  return computed(async (get): Promise<CliTokenContext | null> => {
     const db = get(db$);
     const currentDate = nowDate();
     const [record] = await db
-      .select()
+      .select({
+        tokenId: cliTokens.id,
+        cachedMemberRole: {
+          role: orgMembersCache.role,
+          cachedAt: orgMembersCache.cachedAt,
+        },
+      })
       .from(cliTokens)
+      .leftJoin(
+        orgMembersCache,
+        and(
+          eq(orgMembersCache.orgId, cliAuth.orgId),
+          eq(orgMembersCache.userId, cliAuth.userId),
+        ),
+      )
       .where(
         and(
           eq(cliTokens.id, cliAuth.tokenId),
@@ -209,6 +249,7 @@ export function cliTokenRecord(
     return {
       userId: cliAuth.userId,
       orgId: cliAuth.orgId,
+      cachedMemberRole: record.cachedMemberRole ?? undefined,
     };
   });
 }
