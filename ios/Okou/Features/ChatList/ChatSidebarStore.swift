@@ -15,6 +15,7 @@ struct ChatSidebarPresentation {
     let emoji: String?
     let isWorking: Bool
     let isUnread: Bool
+    let isPinned: Bool
     var id: String { thread.id }
 
     init(_ thread: ChatThread) {
@@ -24,6 +25,7 @@ struct ChatSidebarPresentation {
       emoji = parts.emoji
       isWorking = thread.indicator == .active
       isUnread = !thread.isMuted && thread.indicator == .unread
+      isPinned = thread.pinnedAt != nil
     }
   }
 
@@ -45,14 +47,56 @@ struct ChatSidebarPresentation {
   struct ProjectGroup: Identifiable {
     let project: ChatProject
     let section: Section
+    /// The inbox leaves out archived chats this project holds; an empty project offers them.
+    var hasHiddenArchivedChats = false
     var id: String { project.id }
   }
 
+  /// The pinned chats a Move up / Move down places a pinned chat beside, in the list that
+  /// shows them: a project (`projectID`), or the chats outside projects (nil).
+  struct PinNeighbors: Equatable {
+    let above: String?
+    let below: String?
+    var projectID: String?
+  }
+
   let filter: ChatListFilter
-  let pinned: Section
-  let chats: Section
+  /// Projects oldest first, each with its pins (in their manual order) before its other chats.
   let projects: [ProjectGroup]
-  var isEmpty: Bool { pinned.isEmpty && chats.isEmpty && projects.isEmpty }
+  /// Chats outside Projects: pins in their manual order, then the most recent activity first.
+  let chats: Section
+  /// The inbox leaves out archived chats outside projects; an empty inbox offers them.
+  let hasHiddenArchivedChats: Bool
+  var isEmpty: Bool { chats.isEmpty && projects.isEmpty }
+  /// The inbox is the default list; every other filter offers the way back to it.
+  var isInbox: Bool { filter == .recent }
+  /// Each list's pins reorder among themselves, and only in the inbox, as on the web.
+  private let reorderablePins: [(projectID: String?, ids: [String])]
+
+  init(
+    filter: ChatListFilter, projects: [ProjectGroup], chats: Section,
+    hasHiddenArchivedChats: Bool = false
+  ) {
+    self.filter = filter
+    self.projects = projects
+    self.chats = chats
+    self.hasHiddenArchivedChats = hasHiddenArchivedChats
+    let pins = { (section: Section) in section.rows.filter(\.isPinned).map(\.id) }
+    reorderablePins =
+      filter == .recent
+      ? [(nil, pins(chats))] + projects.map { ($0.id, pins($0.section)) } : []
+  }
+
+  func pinNeighbors(of id: String) -> PinNeighbors? {
+    for list in reorderablePins {
+      guard let index = list.ids.firstIndex(of: id) else { continue }
+      return PinNeighbors(
+        above: index > 0 ? list.ids[index - 1] : nil,
+        below: index + 1 < list.ids.count ? list.ids[index + 1] : nil,
+        projectID: list.projectID)
+    }
+    return nil
+  }
 }
 
 /// One filter per workspace; no copied request phase, confirmed list or draft document.
@@ -99,9 +143,12 @@ final class ChatSidebarStore {
       let contents = try get(contents)
       return try ChatSidebarPresentation(
         filter: get(selection),
-        pinned: .init(contents.threads.filter { $0.pinnedAt != nil }),
-        chats: .init(contents.threads.filter { $0.pinnedAt == nil }),
-        projects: contents.projects.map { .init(project: $0.project, section: .init($0.threads)) })
+        projects: contents.projects.map {
+          .init(
+            project: $0.project, section: .init($0.threads),
+            hasHiddenArchivedChats: $0.hasHiddenArchivedThreads)
+        },
+        chats: .init(contents.threads), hasHiddenArchivedChats: contents.hasHiddenArchivedThreads)
     }
   }
 
