@@ -6374,6 +6374,7 @@
       "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
     },
     "continue": "Continue task",
+    "details": "Access details",
     "effect": "Allows commands and file transfers as this remote user until access is disabled.",
     "failed": "Could not complete the action. Retry to check access and continue.",
     "retry": "Retry",

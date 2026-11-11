@@ -6443,6 +6443,7 @@
       "run_unavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat."
     },
     "continue": "Continua attività",
+    "details": "Dettagli di accesso",
     "effect": "Consente comandi e trasferimenti di file come questo utente remoto finché l’accesso non viene disattivato.",
     "failed": "Impossibile completare l’azione. Riprova per verificare l’accesso e continuare.",
     "retry": "Riprova",

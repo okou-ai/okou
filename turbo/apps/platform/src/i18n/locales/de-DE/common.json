@@ -6376,6 +6376,7 @@
       "run_unavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
     },
     "continue": "Aufgabe fortsetzen",
+    "details": "Zugriffsdetails",
     "effect": "Erlaubt Befehle und Dateiübertragungen als dieser entfernte Benutzer, bis der Zugriff deaktiviert wird.",
     "failed": "Die Aktion konnte nicht abgeschlossen werden. Versuche es erneut, um den Zugriff zu prüfen und fortzufahren.",
     "retry": "Erneut versuchen",

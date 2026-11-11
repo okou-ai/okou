@@ -29,7 +29,11 @@ export const setupSshAuthorizationPage$ = command(
           className:
             "mx-auto flex w-full max-w-xl flex-col p-6 pt-safe-offset-8",
         },
-        createElement(SshAuthorizationCard, { key: signals.id, signals }),
+        createElement(SshAuthorizationCard, {
+          key: signals.id,
+          signals,
+          standalone: true,
+        }),
       ),
       "standalone",
     );

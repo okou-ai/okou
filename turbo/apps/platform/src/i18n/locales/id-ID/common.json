@@ -6355,6 +6355,7 @@
       "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
     },
     "continue": "Lanjutkan tugas",
+    "details": "Detail akses",
     "effect": "Mengizinkan perintah dan transfer file sebagai pengguna jarak jauh ini hingga akses dinonaktifkan.",
     "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
     "retry": "Coba lagi",

@@ -41,7 +41,9 @@ function request(overrides: Partial<SshAuthorization> = {}): SshAuthorization {
 }
 function button(card: HTMLElement, name: string) {
   const result = queryAllByRoleFast("button", card).find((value) => {
-    return value.textContent?.trim() === name;
+    return (
+      (value.textContent?.trim() || value.getAttribute("aria-label")) === name
+    );
   });
   if (!result) {
     throw new Error(`Missing button: ${name}`);
@@ -87,12 +89,16 @@ test("The inline card allows only this chat and shows the remote user and access
   });
   expect(card).toHaveTextContent("deploy@ssh.example.com:22");
   expect(card).toHaveTextContent("This host · This chat only");
-  expect(card).toHaveTextContent("commands and file transfers");
+  click(button(card, "Access details"));
+  const details = await screen.findByRole("dialog", { name: "Access details" });
+  expect(details).toHaveTextContent("commands and file transfers");
+  expect(details).toHaveTextContent("Verify SSH login and inspect the project");
+  click(button(card, "Access details"));
   click(button(card, "Allow in this chat"));
-  await within(card).findByText("SSH access allowed");
+  await within(card).findByText("SSH access allowed · Work Mac");
   expect(approvals).toBe(1);
   click(button(card, "Revoke"));
-  await within(card).findByText("SSH access revoked");
+  await within(card).findByText("SSH access revoked · Work Mac");
 });
 
 test("The direct page waits for connector approvals and requesting Run completion", async () => {
