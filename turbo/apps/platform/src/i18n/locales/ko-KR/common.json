@@ -5154,7 +5154,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5542,6 +5541,11 @@
       "creditBalance_one": "{{value}} 크레딧",
       "creditBalance_other": "{{value}} 크레딧",
       "exportData": "데이터 내보내기",
+      "help": {
+        "docs": "문서",
+        "keyboardShortcuts": "단축키",
+        "label": "도움말"
+      },
       "lab": "랩",
       "settings": "설정",
       "signOut": "로그아웃",

@@ -365,20 +365,6 @@ describe("okou connector list command", () => {
   });
 
   describe("auth method feature flag filtering", () => {
-    it("includes connectors with ungated api-token auth even when oauth is feature-gated", async () => {
-      server.use(
-        stubConnectors(["github"]),
-        stubAgent(AGENT_UUID, "test"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await listCommand.parseAsync(["node", "cli", "--agent", AGENT_UUID]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      // mercury has an ungated api-token auth method, so it is always visible.
-      expect(logCalls).toContain("mercury");
-    });
-
     it("uses the server-visible catalog for feature-gated oauth connectors", async () => {
       server.use(stubAvailableConnectors(["google-ads"]));
 

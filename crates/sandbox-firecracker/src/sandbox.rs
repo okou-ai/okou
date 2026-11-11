@@ -1536,7 +1536,7 @@ impl FirecrackerSandbox {
         let connection_sandbox_id = self.id.clone();
         let observe_connection = timing.observer.is_some();
         let connection_submitted = Instant::now();
-        #[cfg(feature = "test-support")]
+        #[cfg(any(test, feature = "test-support"))]
         let connection_scope = guest_control_client::test_support::ConnectionScope::current();
         // Cancelling startup must also retire its pending listener or handshake.
         let mut vsock_task = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -1562,7 +1562,7 @@ impl FirecrackerSandbox {
                     )
                 }
             };
-            #[cfg(feature = "test-support")]
+            #[cfg(any(test, feature = "test-support"))]
             let connection = async move {
                 match connection_scope {
                     Some(scope) => scope.scope(connection).await,

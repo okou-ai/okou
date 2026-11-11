@@ -1,4 +1,8 @@
 export const GLOBAL_KEYBOARD_SHORTCUTS = {
+  showShortcuts: {
+    binding: "shift+/",
+    ariaKeyShortcuts: "Shift+?",
+  },
   searchWorkspace: {
     binding: "mod+shift+f",
     ariaKeyShortcuts: "Meta+Shift+F Control+Shift+F",

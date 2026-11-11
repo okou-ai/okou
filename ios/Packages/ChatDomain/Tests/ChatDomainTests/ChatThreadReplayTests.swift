@@ -52,6 +52,64 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(try ChatThreadReplay.firstPinOrder(legacy), "a0")
   }
 
+  func testPinOrderKeysMatchPWAFractionalIndexing() throws {
+    let cases: [(String?, String?, String)] = [
+      (nil, nil, "a0"), (nil, "a0", "Zz"), ("a0", nil, "a1"), ("a0", "a1", "a0V"),
+      ("a1", "a2", "a1V"), ("a0V", "a1", "a0l"), ("Zz", "a0", "ZzV"), ("Zz", "a1", "a0"),
+      ("bzz", nil, "c000"), ("a0", "a0V", "a0G"), ("b125", "b129", "b127"),
+    ]
+    for (lower, upper, expected) in cases {
+      XCTAssertEqual(
+        try ChatPinOrder.key(between: lower, and: upper), expected,
+        "\(lower ?? "-") \(upper ?? "-")")
+    }
+    XCTAssertEqual(
+      try ChatPinOrder.keys(between: "a0", and: "a1", count: 5),
+      ["a08", "a0G", "a0V", "a0d", "a0l"])
+    XCTAssertEqual(try ChatPinOrder.keys(between: nil, and: nil, count: 3), ["a0", "a1", "a2"])
+    XCTAssertEqual(try ChatPinOrder.keys(between: nil, and: "a0", count: 2), ["Zy", "Zz"])
+    // Reversed bounds and a fraction ending in zero are not keys the API or the PWA accept.
+    XCTAssertThrowsError(try ChatPinOrder.key(between: "a1", and: "a0"))
+    XCTAssertThrowsError(try ChatPinOrder.key(between: "a10", and: nil))
+  }
+
+  func testMovingAPinRewritesOnlyItsRankUnlessItLandsInATiedRun() throws {
+    let third = "10000000-0000-4000-8000-000000000104"
+    let pins = ChatThreadReplay.replay(
+      snapshot: [],
+      events: [
+        event(.created, at: 1), event(.created, thread: replayOtherThread, at: 1),
+        event(.created, thread: third, at: 1), event(.pinned, at: 2, pinOrder: "a0"),
+        event(.pinned, thread: replayOtherThread, at: 2, pinOrder: "a1"),
+        event(.pinned, thread: third, at: 2, pinOrder: "a2"),
+      ])
+    func move(_ id: String, _ target: String, _ placement: ChatThreadReplay.PinPlacement)
+      throws -> [[String]]
+    {
+      try ChatThreadReplay.movePinOrder(
+        pins, threadID: id, targetID: target, placement: placement
+      ).map { [$0.threadID, $0.pinOrder] }
+    }
+    XCTAssertEqual(try move(third, replayThread, .before), [[third, "Zz"]])
+    XCTAssertEqual(try move(replayThread, replayOtherThread, .after), [[replayThread, "a1V"]])
+    XCTAssertEqual(try move(replayThread, third, .after), [[replayThread, "a3"]])
+    // Already in place, or beside itself: nothing to write.
+    XCTAssertEqual(try move(replayOtherThread, replayThread, .after), [])
+    XCTAssertEqual(try move(replayThread, replayThread, .before), [])
+
+    // Ties order by id, larger first. Landing between equal ranks re-spreads that run.
+    let tied = ChatThreadReplay.replay(
+      snapshot: pins,
+      events: [event(.sortTouched, thread: replayOtherThread, at: 3, pinOrder: "a2")])
+    XCTAssertEqual(
+      ChatThreadReplay.sidebarOrder(tied).map(\.id), [replayThread, third, replayOtherThread])
+    let spread = try ChatThreadReplay.movePinOrder(
+      tied, threadID: replayThread, targetID: third, placement: .after)
+    XCTAssertEqual(
+      spread.map { [$0.threadID, $0.pinOrder] },
+      [[replayThread, "a3"], [replayOtherThread, "a4"]])
+  }
+
   func testMuteReplaySuppressesUnreadWithoutChangingActivityOrPinRanking() throws {
     var original = try XCTUnwrap(
       ChatThreadReplay.replay(

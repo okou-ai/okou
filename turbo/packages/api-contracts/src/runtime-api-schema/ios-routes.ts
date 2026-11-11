@@ -25,6 +25,7 @@ import {
   chatThreadModelSelectionContract,
   chatThreadMuteContract,
   chatThreadPinContract,
+  chatThreadPinOrderContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadUsageContract,
@@ -249,6 +250,10 @@ const iosContracts: readonly {
     route: chatThreadMuteContract.unmute,
   },
   { id: "ios.chatThreadPinContract.pin", route: chatThreadPinContract.pin },
+  {
+    id: "ios.chatThreadPinOrderContract.reorder",
+    route: chatThreadPinOrderContract.reorder,
+  },
   {
     id: "ios.chatThreadRenameContract.rename",
     route: chatThreadRenameContract.rename,

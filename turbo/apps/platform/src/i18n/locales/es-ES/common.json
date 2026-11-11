@@ -5229,7 +5229,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5622,6 +5621,11 @@
       "creditBalance_many": "{{value}} créditos",
       "creditBalance_other": "{{value}} créditos",
       "exportData": "Exportar datos",
+      "help": {
+        "docs": "Documentación",
+        "keyboardShortcuts": "Atajos",
+        "label": "Ayuda"
+      },
       "lab": "Laboratorio",
       "settings": "Configuración",
       "signOut": "Cerrar sesión",

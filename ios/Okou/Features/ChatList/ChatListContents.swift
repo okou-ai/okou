@@ -6,11 +6,15 @@ struct ChatListContents {
   struct ProjectGroup: Identifiable {
     let project: ChatProject
     let threads: [ChatThread]
+    /// The inbox leaves out archived chats this Project holds.
+    let hasHiddenArchivedThreads: Bool
     var id: String { project.id }
   }
 
   let projects: [ProjectGroup]
   let threads: [ChatThread]
+  /// The inbox leaves out archived chats outside Projects.
+  let hasHiddenArchivedThreads: Bool
 
   init(
     projects: [ChatProject], threads: [ChatThread], agentID: String?,
@@ -25,15 +29,26 @@ struct ChatListContents {
       case .archived: return thread.isArchived
       }
     }
-    self.projects = projects.compactMap { project in
-      let members = threads.filter { $0.projectId == project.id && matches($0) }
-      if members.isEmpty && filter != .recent { return nil }
-      return ProjectGroup(project: project, threads: members)
+    // Only the inbox leaves archived chats out, so only it offers them.
+    let inbox = filter == .recent
+    // Projects keep their creation order, oldest first, as the web replays them.
+    let ordered = projects.sorted {
+      ($0.createdAt, $0.id) < ($1.createdAt, $1.id)
+    }
+    self.projects = ordered.compactMap { project in
+      let held = threads.filter { $0.projectId == project.id }
+      let members = held.filter(matches)
+      if members.isEmpty && !inbox { return nil }
+      return ProjectGroup(
+        project: project, threads: members,
+        hasHiddenArchivedThreads: inbox && held.contains(where: \.isArchived))
     }
     // A name read can fail independently of membership synchronization. Keep
     // those authorized chats reachable while the Project read reports its error.
-    self.threads = threads.filter {
-      $0.agentID == agentID && !knownIDs.contains($0.projectId ?? "") && matches($0)
+    let outside = threads.filter {
+      $0.agentID == agentID && !knownIDs.contains($0.projectId ?? "")
     }
+    self.threads = outside.filter(matches)
+    hasHiddenArchivedThreads = inbox && outside.contains(where: \.isArchived)
   }
 }

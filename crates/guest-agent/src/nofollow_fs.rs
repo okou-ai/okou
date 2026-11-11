@@ -151,6 +151,29 @@ impl Dir {
         )
     }
 
+    pub(crate) fn create_child_dir(&self, name: &OsStr) -> io::Result<Self> {
+        let child = child_name_c_string(name)?;
+        match rustix::fs::mkdirat(&self.0, child.as_c_str(), rustix::fs::Mode::RWXU) {
+            Ok(()) | Err(rustix::io::Errno::EXIST) => self.open_child_dir(name),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Create a fresh regular file without following or truncating an existing leaf.
+    pub(crate) fn create_child_file(&self, name: &OsStr) -> io::Result<File> {
+        use rustix::fs::{Mode, OFlags, openat};
+
+        let name = child_name_c_string(name)?;
+        openat(
+            &self.0,
+            name.as_c_str(),
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::RUSR | Mode::WUSR,
+        )
+        .map(File::from)
+        .map_err(Into::into)
+    }
+
     pub(crate) fn rename_child(&self, from: &OsStr, to: &OsStr) -> io::Result<()> {
         let from = child_name_c_string(from)?;
         let to = child_name_c_string(to)?;

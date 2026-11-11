@@ -209,6 +209,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.HelpMenu]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Help menu",
+    description:
+      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -256,11 +264,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {

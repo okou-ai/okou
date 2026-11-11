@@ -976,7 +976,7 @@ describe("GET /api/connector-catalog", () => {
     ).toStrictEqual(["api-token"]);
   });
 
-  it("shows only the Mercury API token method while Mercury OAuth is disabled", async () => {
+  it("shows Mercury OAuth without the API token method hidden from new connections", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
@@ -994,66 +994,6 @@ describe("GET /api/connector-catalog", () => {
 
     expect(
       response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["api-token"]);
-  });
-
-  it("replaces the Mercury API token method with OAuth when enabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.MercuryConnector]: true,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "mercury" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["oauth"]);
-  });
-
-  it("keeps an existing Mercury API token connection visible after OAuth is enabled", async () => {
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await connectorsApi.connectManualGrant(actor, "mercury", "api-token", {
-      apiToken: "test-mercury-token",
-    });
-    await enableConnectorFeatureSwitches(actor.orgId, actor.userId, {
-      [FeatureSwitchKey.MercuryConnector]: true,
-    });
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.status({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    const mercury = response.body.connectors.find((connector) => {
-      return connector.slug === "mercury";
-    });
-    expect(mercury).toMatchObject({
-      slug: "mercury",
-    });
-    expect(
-      mercury?.authMethods.map((authMethod) => {
         return authMethod.id;
       }),
     ).toStrictEqual(["oauth"]);

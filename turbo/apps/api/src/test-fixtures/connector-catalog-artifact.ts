@@ -1545,6 +1545,7 @@ const connectors = [
         scopes: ["read", "offline_access"],
       }),
       manualMethod({
+        visible: false,
         label: "API Token",
         description: "Enter a Mercury API token.",
         fields: [

@@ -65,9 +65,8 @@ final class ConnectorActionTests: XCTestCase {
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
-    guard case .ready(let status) = store.states[action.id] else {
-      return XCTFail("Missing verified status")
-    }
+    let loaded = try await store.resources.read(action).load()
+    let status = try XCTUnwrap(loaded)
     XCTAssertTrue(status.complete)
   }
   func testSavedAccountsWithoutDefaultDoNotOpenAnAddFlow() async throws {
@@ -85,10 +84,7 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
-    try await waitForBusinessResult {
-      if case .failed = store.states[action.id] { return true }
-      return false
-    }
+    try await waitForBusinessResult { store.activationError != nil }
     XCTAssertNil(store.active)
   }
   func testExactReconnectRejectsASiblingReceiptAndAllowsRetry() async throws {
@@ -138,6 +134,11 @@ final class ConnectorActionTests: XCTestCase {
     store.submit()
     try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
+    // Unrelated read demand may evict cached rows, never the uncertain operation's identity.
+    for _ in 0..<80 {
+      _ = store.resources.read(
+        .configuration(target: .builtin("slack"), agentID: F.agentID, threadID: UUID().uuidString))
+    }
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(starts.withLock { $0 }, 1)
@@ -218,13 +219,15 @@ final class ConnectorActionTests: XCTestCase {
       try await waitForBusinessResult { !flow.busy }
       XCTAssertNil(store.active)
       if closing {
-        XCTAssertTrue(store.states.isEmpty)
+        do {
+          _ = try await store.resources.read(action).load()
+          XCTFail("A closed conversation must not start another status read")
+        } catch { XCTAssertTrue(error is CancellationError) }
         XCTAssertTrue(prompts.withLock { $0.isEmpty })
       } else {
         XCTAssertEqual(prompts.withLock { $0 }, ["Continue"])
-        guard case .ready(let status) = store.states[action.id] else {
-          return XCTFail("The delayed success must continue while its scope is open")
-        }
+        let loaded = try await store.resources.read(action).load()
+        let status = try XCTUnwrap(loaded)
         XCTAssertTrue(status.complete)
       }
     }
@@ -452,9 +455,8 @@ final class ConnectorActionTests: XCTestCase {
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
-    guard case .ready(let status) = store.states[action.id] else {
-      return XCTFail("Expected confirmed status")
-    }
+    let loaded = try await store.resources.read(action).load()
+    let status = try XCTUnwrap(loaded)
     XCTAssertTrue(status.selected)
   }
 
@@ -503,8 +505,242 @@ final class ConnectorActionTests: XCTestCase {
     store.close()
     await fulfillment(of: [cancelled], timeout: 3)
     XCTAssertNil(store.active)
-    XCTAssertTrue(store.states.isEmpty)
+    let action = try descriptor(fixture)
+    do {
+      _ = try await store.resources.read(action).load()
+      XCTFail("A closed conversation must reject future reads")
+    } catch { XCTAssertTrue(error is CancellationError) }
     XCTAssertEqual(polls.withLock { $0 }, 1)
+  }
+
+  func testEquivalentActionReadsShareHTTPAndCancellingOneWaiterKeepsTheOtherReadAlive()
+    async throws
+  {
+    let began = expectation(description: "The shared status HTTP began")
+    let gate = ModelResponseGate()
+    let metadataReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path.hasSuffix("/metadata") == true {
+        let count = metadataReads.withLock { value in
+          value += 1
+          return value
+        }
+        if count == 1 {
+          began.fulfill()
+          await gate.wait()
+          XCTAssertFalse(Task.isCancelled)
+        }
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let first = try descriptor(fixture)
+    let equivalent = try XCTUnwrap(
+      ChatConnectorAction.parse(
+        "/connectors/SLACK/authorize?callbackPrompt=Another+prompt&threadId=\(F.threadID)&agentId=\(F.agentID)",
+        webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
+    let one = Task.immediate { @MainActor in try await store.resources.read(first).load() }
+    let two = Task.immediate { @MainActor in try await store.resources.read(equivalent).load() }
+    addTeardownBlock { @MainActor in
+      one.cancel()
+      two.cancel()
+      gate.open()
+      _ = await one.result
+      _ = await two.result
+    }
+    await fulfillment(of: [began], timeout: 3)
+    one.cancel()
+    gate.open()
+    let status = try await two.value
+    XCTAssertTrue(try XCTUnwrap(status).complete)
+    guard case .failure(let error) = await one.result else {
+      return XCTFail("The cancelled waiter must not publish status")
+    }
+    XCTAssertTrue(error is CancellationError)
+    XCTAssertEqual(metadataReads.withLock { $0 }, 1)
+    XCTAssertNil(store.active)
+  }
+
+  func testClosingConversationCancelsOriginalStatusHTTPAndRejectsFutureReadDemand() async throws {
+    let began = expectation(description: "Original status HTTP began")
+    let cancelled = expectation(description: "Original status HTTP was cancelled")
+    let gate = ModelResponseGate()
+    let metadataReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path.hasSuffix("/metadata") == true {
+        let count = metadataReads.withLock { value in
+          value += 1
+          return value
+        }
+        if count == 1 {
+          await withTaskCancellationHandler {
+            began.fulfill()
+            await gate.wait()
+          } onCancel: {
+            cancelled.fulfill()
+          }
+        }
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try descriptor(fixture)
+    let retired = store.resources.read(action)
+    let pending = Task { try await retired.load() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      pending.cancel()
+      gate.open()
+      _ = await pending.result
+    }
+    await fulfillment(of: [began], timeout: 3)
+    store.close()
+    await fulfillment(of: [cancelled], timeout: 3)
+    gate.open()
+    guard case .failure(let error) = await pending.result else {
+      return XCTFail("A retired scope must not return its late HTTP success")
+    }
+    XCTAssertTrue(error is CancellationError)
+    for read in [retired, store.resources.read(action)] {
+      do {
+        _ = try await read.load()
+        XCTFail("Retired reads cannot start future HTTP")
+      } catch { XCTAssertTrue(error is CancellationError) }
+    }
+    let fresh = self.store(fixture)
+    defer { fresh.close() }
+    let value = try await fresh.resources.read(action).load()
+    XCTAssertTrue(try XCTUnwrap(value).complete)
+    XCTAssertEqual(metadataReads.withLock { $0 }, 2)
+  }
+
+  func testStatusDenialStaysCachedUntilAnExplicitReadRetryAndNeverStartsAuthorization()
+    async throws
+  {
+    for status in [401, 403, 426] {
+      let response = Mutex(status)
+      let reported = Mutex<[Int]>([])
+      let fixture = ChatHTTPFixture { request in
+        XCTAssertEqual(request.httpMethod, "GET")
+        if request.url?.path.hasSuffix("/metadata") == true, response.withLock({ $0 }) != 200 {
+          return ChatHTTPResponse(
+            status: response.withLock { $0 },
+            body: "{\"error\":{\"message\":\"Access unavailable\"}}")
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      let store = ConnectorActionStore(
+        service: ChatConnectorService(client: fixture.client), didContinue: {},
+        didFail: { error in
+          if let code = (error as? APIClientError)?.statusCode {
+            reported.withLock { $0.append(code) }
+          }
+        })
+      defer { store.close() }
+      let action = try descriptor(fixture)
+      let read = store.resources.read(action)
+      await store.refresh(action)
+      response.withLock { $0 = 200 }
+      do {
+        _ = try await read.load()
+        XCTFail("Re-observing a denied read must not silently retry")
+      } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, status) }
+      XCTAssertEqual(reported.withLock { $0 }, [status])
+      XCTAssertNil(store.active)
+      await store.refresh(action)
+      let value = try await read.load()
+      XCTAssertTrue(try XCTUnwrap(value).complete)
+      XCTAssertNil(store.active)
+    }
+  }
+
+  func testKnownRefreshOnlyReloadsPreviouslyDemandedConnectorStatus() async throws {
+    let response = Mutex(200)
+    let metadataReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path.hasSuffix("/metadata") == true {
+        metadataReads.withLock { $0 += 1 }
+        let status = response.withLock { $0 }
+        if status != 200 {
+          return ChatHTTPResponse(
+            status: status, body: "{\"error\":{\"message\":\"Access revoked\"}}")
+        }
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try descriptor(fixture)
+    let read = store.resources.read(action)
+    // A measurement row may create this resource before any committed row requests it.
+    await store.refreshKnown()
+    XCTAssertEqual(metadataReads.withLock { $0 }, 0)
+    let loaded = try await read.load()
+    XCTAssertTrue(try XCTUnwrap(loaded).complete)
+    response.withLock { $0 = 403 }
+    await store.refreshKnown()
+    do {
+      _ = try await read.load()
+      XCTFail("A previously demanded read must reflect the refresh's permission denial")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+    XCTAssertEqual(metadataReads.withLock { $0 }, 2)
+    XCTAssertNil(store.active)
+  }
+
+  func testAnInvalidatedOldStatusCannotReplaceANewerDeniedReadOrOpenAuthorization() async throws {
+    let began = expectation(description: "The old status HTTP began")
+    let gate = ModelResponseGate()
+    let response = Mutex(200)
+    let reads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path.hasSuffix("/metadata") == true {
+        let status = response.withLock { $0 }
+        let index = reads.withLock { value in
+          value += 1
+          return value
+        }
+        if index == 1 {
+          began.fulfill()
+          await gate.wait()
+        }
+        if status != 200 {
+          return ChatHTTPResponse(
+            status: status, body: "{\"error\":{\"message\":\"Access revoked\"}}")
+        }
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try descriptor(fixture)
+    let read = store.resources.read(action)
+    let old = Task { try await read.load() }
+    addTeardownBlock { @MainActor in
+      old.cancel()
+      gate.open()
+      _ = await old.result
+    }
+    await fulfillment(of: [began], timeout: 3)
+    response.withLock { $0 = 403 }
+    read.invalidate()
+    do {
+      _ = try await read.load()
+      XCTFail("The replacement read must preserve its permission denial")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+    gate.open()
+    guard case .failure(let error) = await old.result else {
+      return XCTFail("An old success cannot replace the current denied status")
+    }
+    XCTAssertEqual((error as? APIClientError)?.statusCode, 403)
+    store.activate(action)
+    try await waitForBusinessResult { store.activationError != nil }
+    XCTAssertNil(store.active)
   }
 
 }

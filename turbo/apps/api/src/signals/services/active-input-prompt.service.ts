@@ -1,4 +1,6 @@
 import { loadEmailQueuedLaunchMaterial$ } from "./email-queued-launch-context.service";
+import { loadActiveEmailIntegrationContext$ } from "./email-active-source-context.service";
+import type { EmailPromptContext } from "./email-prompt";
 import {
   loadWechatQueuedLaunchMaterial$,
   WechatLaunchUnavailableError,
@@ -73,6 +75,9 @@ interface ActiveInputPromptEvent {
 interface IntegrationPromptMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
+  readonly emailSource?: EmailPromptContext & {
+    readonly messageText: string;
+  };
 }
 
 const CONTEXT_BACKED_CONTEXT_TYPES: readonly ContextBackedContextType[] = [
@@ -129,7 +134,11 @@ export const materializeActiveInputSource$ = command(
   async (
     { set },
     source: ActiveInputSourceRow,
-    auth: { readonly orgId: string; readonly userId: string },
+    auth: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId: string;
+    },
     signal: AbortSignal,
   ): Promise<string> => {
     if (
@@ -161,6 +170,7 @@ export const materializeActiveInputSource$ = command(
         },
         orgId: auth.orgId,
         userId: auth.userId,
+        runId: auth.runId,
         featureSwitchContext,
       },
       signal,
@@ -284,6 +294,7 @@ const materializeActiveInputPrompt$ = command(
       readonly event: ActiveInputPromptEvent;
       readonly orgId: string;
       readonly userId: string;
+      readonly runId: string;
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -338,13 +349,25 @@ const materializeActiveInputPrompt$ = command(
       mountedUserTemplates: [],
     }).prompt;
     const prompt = integration?.prompt ?? projection.agentPrompt;
-    const parts = [
-      integration?.appendSystemPrompt ?? "",
-      templatePrompt,
-      prompt,
-    ].filter((part) => {
-      return part.length > 0;
-    });
+    const integrationContext = integration?.emailSource
+      ? await set(
+          loadActiveEmailIntegrationContext$,
+          {
+            runId: args.runId,
+            userId: args.userId,
+            orgId: args.orgId,
+            chatThreadId: args.event.chatThreadId,
+            featureSwitchContext: args.featureSwitchContext,
+            email: integration.emailSource,
+          },
+          signal,
+        )
+      : (integration?.appendSystemPrompt ?? "");
+    const parts = [integrationContext, templatePrompt, prompt].filter(
+      (part) => {
+        return part.length > 0;
+      },
+    );
     const materialized = parts.join("\n\n");
     if (materialized.length === 0) {
       throw new Error("Active input event materialized to an empty prompt");
