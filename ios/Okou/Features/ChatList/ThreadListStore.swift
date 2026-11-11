@@ -334,7 +334,8 @@ final class ThreadListStore {
   }
 
   func setRead(_ thread: ChatThread, read: Bool) async -> Bool {
-    guard !updatingThreads.contains(thread.id), !closed, !blocked, !markingAgentRead,
+    guard updateTasks[thread.id] == nil, !updatingThreads.contains(thread.id), !closed, !blocked,
+      !markingAgentRead,
       !Task.isCancelled
     else {
       return false
@@ -743,7 +744,9 @@ final class ThreadListStore {
     didBegin: @MainActor () -> Void = {},
     command: @escaping @MainActor () async throws -> Void
   ) async -> Bool {
-    guard !updatingThreads.contains(id), !closed, !blocked, !Task.isCancelled else { return false }
+    guard updateTasks[id] == nil, !updatingThreads.contains(id), !closed, !blocked,
+      !Task.isCancelled
+    else { return false }
     updatingThreads.insert(id)
     var succeeded = false
     let task = Task { [weak self] in

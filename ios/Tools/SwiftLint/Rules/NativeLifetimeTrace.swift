@@ -1,6 +1,6 @@
 import SwiftSyntax
 
-enum NativeLifetimeValue: Int { case unknown, handle, collection, completion }
+enum NativeLifetimeValue: Int { case unknown, handle, collection, completion, completionCollection }
 
 struct NativeLifetimeCleanup {
   let statements: CodeBlockItemListSyntax
@@ -17,28 +17,41 @@ struct NativeLifetimePath {
   var transferred = false
   var exit = Exit.normal
   var deferred: [NativeLifetimeCleanup] = []
+  var indexAliases: [String: NativeTaskIndex] = [:]
 }
 
 final class NativeLifetimeTrace {
   let kind: NativeLifetimeKind
   let creation: AbsolutePosition?
   let owner: NativeLifetimeOwner
+  let slots: [NativeTaskSlot]
   var checking: Set<String> = []
   var calls: Set<AbsolutePosition> = []
   var teardown = false
   var reachedCreation = false
   var retained: [String: NativeLifetimeValue] = [:]
+  var retainedSlots: [NativeTaskSlot] = []
 
-  init(kind: NativeLifetimeKind, creation: AbsolutePosition?, owner: NativeLifetimeOwner) {
+  init(
+    kind: NativeLifetimeKind, creation: AbsolutePosition?, owner: NativeLifetimeOwner,
+    slot: NativeTaskSlot? = nil, slots: [NativeTaskSlot] = []
+  ) {
     self.kind = kind
     self.creation = creation
     self.owner = owner
+    self.slots = slots + (slot.map { [$0] } ?? [])
   }
 
   func finished(_ path: NativeLifetimePath) -> Bool {
     if !path.acquired || path.released || path.transferred { return true }
     return path.values.contains { name, value in
-      name.hasPrefix("self.") && value != .unknown
+      if let slot = slots.first(where: { $0.storage == name }),
+        [.handle, .completion].contains(value)
+      {
+        return ownerReleases(
+          slot.field, value: value == .handle ? .collection : .completionCollection)
+      }
+      return name.hasPrefix("self.") && value != .unknown
         && ownerReleases(String(name.dropFirst(5)), value: value)
     }
   }
@@ -188,10 +201,13 @@ final class NativeLifetimeTrace {
       if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
         iteration.locals.insert(name)
         iteration.immutable.insert(name)
-        iteration.values[name] = sequence == .collection ? .handle : .unknown
+        iteration.values[name] =
+          sequence == .collection
+          ? .handle
+          : sequence == .completionCollection ? .completion : .unknown
       }
       let results = block(loop.body.statements, states: [iteration])
-      if sequence == .collection, loop.whereClause == nil,
+      if [.collection, .completionCollection].contains(sequence), loop.whereClause == nil,
         results.allSatisfy({ $0.released && ($0.exit == .normal || $0.exit == .continueLoop) })
       {
         path.released = true
@@ -340,7 +356,7 @@ final class NativeLifetimeTrace {
         if kind.isTask {
           if let member = expression.as(MemberAccessExprSyntax.self),
             member.declName.baseName.text == "isEmpty", let base = member.base,
-            value(base, path: &yes) == .collection
+            [.collection, .completionCollection].contains(value(base, path: &yes))
           {
             yes.released = true
           }
@@ -348,7 +364,7 @@ final class NativeLifetimeTrace {
             let prefix = expression.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "!",
             let member = prefix.expression.as(MemberAccessExprSyntax.self),
             member.declName.baseName.text == "isEmpty", let base = member.base,
-            value(base, path: &yes) == .collection
+            [.collection, .completionCollection].contains(value(base, path: &yes))
           {
             no.released = true
           }

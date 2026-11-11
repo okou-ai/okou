@@ -120,6 +120,7 @@ TASK_LIFECYCLE_CASES = [
         final class Uploads {
           private var requests: [String: Task<Void, Never>] = [:]
           func start(_ id: String) {
+            requests[id]?.cancel()
             requests[id] = Task { await service.upload(id) }
           }
           func close() {

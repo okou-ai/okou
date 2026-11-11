@@ -80,6 +80,7 @@ final class AttachmentDraftStore {
   }
 
   private func validateRemote(_ item: Item) {
+    guard uploads[item.id] == nil else { return }
     let file: ChatAttachment
     switch item.state {
     case .ready(let value), .checking(let value): file = value
@@ -206,6 +207,7 @@ final class AttachmentDraftStore {
   private func startUploads() {
     guard !closed else { return }
     for item in items where uploads.count < 3 {
+      guard uploads[item.id] == nil else { continue }
       guard case .waiting = item.state else { continue }
       guard item.file.url.isFileURL else { continue }
       update(item.id, .uploading(0))
@@ -240,7 +242,9 @@ final class AttachmentDraftStore {
   private func savedRemoteAttachment(_ id: UUID) -> ChatAttachment? { remoteFiles[id] }
 
   func retry(_ id: UUID) {
-    guard let item = items.first(where: { $0.id == id }), case .failed = item.state else { return }
+    guard uploads[id] == nil, let item = items.first(where: { $0.id == id }),
+      case .failed = item.state
+    else { return }
     if let file = savedRemoteAttachment(id) {
       update(id, .checking(file))
       validateRemote(Item(id: item.id, file: item.file, state: .checking(file)))
