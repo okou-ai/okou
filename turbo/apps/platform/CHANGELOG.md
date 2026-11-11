@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1114.2](https://github.com/okou-ai/okou/compare/app-v0.1114.1...app-v0.1114.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **platform:** clarify remote access selection across connection states ([#46520](https://github.com/okou-ai/okou/issues/46520)) ([ff03d11](https://github.com/okou-ai/okou/commit/ff03d11c1f6a7a0d256c126481fbc1401b5d14a4))
+
 ## [0.1114.1](https://github.com/okou-ai/okou/compare/app-v0.1114.0...app-v0.1114.1) (2026-11-11)
 
 
