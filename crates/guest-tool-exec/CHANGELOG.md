@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.69](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.68...guest-tool-exec-v0.3.69) (2026-11-11)
+
+
+### Refactoring
+
+* **ipc:** centralize cgroup self-placement writes ([#46641](https://github.com/okou-ai/okou/issues/46641)) ([f89ce04](https://github.com/okou-ai/okou/commit/f89ce0406f37c41e1eb2b451f1f2f3b007b920c6))
+
 ## [0.3.68](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.67...guest-tool-exec-v0.3.68) (2026-11-11)
 
 ## [0.3.67](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.66...guest-tool-exec-v0.3.67) (2026-11-11)
