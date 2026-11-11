@@ -182,6 +182,89 @@ rehearsal and subsequent review. A staff production cutover needs a fresh plan,
 followed by persisted-data and runtime acceptance. Other orgs need separate fresh
 inventories/plans. Legacy Agent deletion belongs to #45476.
 
+## Isolated-copy execution and recovery
+
+`single-agent:rehearse` is a separate operator for a stopped, isolated database
+and object-store copy. It is not a production cutover entry point. The original
+`inventory`/`plan` commands remain read-only and their reports remain
+non-executable. This operator creates a different, hash-bound execution image
+after validating the reviewed report, current rows, complete source archives,
+canonical Workflow documents and attachment manifests.
+
+Before a staff-copy rehearsal, complete #45473, verify the deployed permission
+policy, resolve every plan blocker, verify the copy's lineage and stop its API,
+schedulers, listeners and other writers. The operator checks active/queued work,
+but cannot stop remote ingress or establish live Clerk membership. A database
+name, endpoint or target label does not prove that a database is a copy. Record
+those operational prerequisites in #45474; do not invent acceptance evidence to
+pass the command's explicit writer-drain acknowledgement.
+
+Use an owner-only connection file and explicitly configured **copy** object
+store. Populate that store with the source's immutable archive objects before
+preparation. Never point a rehearsal at production credentials or publish its
+test objects to a production bucket.
+
+```sh
+# DATABASE_URL_FILE is a mode-0600 file containing the isolated copy's URL.
+# Set R2_ENDPOINT, R2_USER_STORAGES_BUCKET_NAME, R2_ACCESS_KEY_ID and
+# R2_SECRET_ACCESS_KEY through the authorized copy environment.
+pnpm single-agent:rehearse prepare \
+  --org-id <org-id> --target <copy-label> \
+  --inventory /private/inventory.json --plan /private/plan.json \
+  --expect-plan-sha256 <reviewed-plan-hash> \
+  --directory /private/new-execution
+
+pnpm single-agent:rehearse apply \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash> \
+  --rehearsal --writers-drained --migrate
+
+pnpm single-agent:rehearse verify \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash>
+
+pnpm single-agent:rehearse recover \
+  --org-id <org-id> --target <copy-label> \
+  --directory /private/new-execution \
+  --expect-image-sha256 <reviewed-execution-hash> \
+  --rehearsal --writers-drained --migrate
+```
+
+Preparation writes a new mode-0700 directory with mode-0600 `execution.json`
+and prepared archive files. Unlike the metadata inventory, this recovery image
+contains complete private source rows, Instructions, Chat metadata and affected
+Automation configuration/dependent records. Keep it owner-private, durable and
+outside Git. PostgreSQL JSON text stays intact to preserve wide numeric values
+and microsecond timestamps. The image pins the org, database endpoint/name,
+object-store endpoint/bucket, schema, source revisions, inventory/report hashes,
+source identities and exact before/after values. It never unions grants or
+changes member overrides.
+
+Apply flushes an exclusive attempt receipt before its first external effect,
+verifies/publishes immutable hash objects, then publishes the database changes
+and Project/Chat metadata events in one atomic SQL statement. Every affected
+write has its source-value condition; a failed admission or row count aborts
+the whole statement. No explicit transaction, advisory lock or coordination
+table is introduced. Automation deletion recovery includes known cascading
+children and historical Run references; unknown deletion dependencies block.
+
+There is one database checkpoint per org image. An absent completion receipt
+does not prove failure: `verify` reads authoritative rows and reports `before`,
+`after` or drift. Repeating apply on the exact after image verifies objects and
+returns `already-applied` without duplicate rows/events. Recovery only accepts
+the exact after image, restores full source data and publishes compensating
+Project/Chat events. It rejects later edits instead of overwriting them.
+Repeating recovery returns `already-recovered`. Event sequences remain
+monotonic, PostgreSQL row revisions are not rewound, and immutable shared
+objects are retained. Prepare a fresh inventory/report/image to rehearse again
+after recovery.
+
+This verifies persisted migration behavior, not native continuation, live
+authorization, listener delivery or production rollout. Those remain explicit
+acceptance gates under #45473/#45474. Agent retirement remains #45476.
+
 ## Verification
 
 ```sh
@@ -206,3 +289,11 @@ Naming coverage includes bounded/deduplicated readable prefixes, non-Latin
 aliases, complete fixed-map replay, map scope/duplicate rejection, deterministic
 long-name shortening with preserved override grouping, and separate same-name
 Agent Projects with stable source suffixes.
+
+The same CI command also runs `test-execution.ts` against a second owned
+database and an isolated HTTP object-store fixture. It exercises actual CLI
+subprocesses, complete before/after data, immutable bundle publication, attachment
+bytes/modes, private-Agent ownership, personal empty/preserved values, uncertain
+committed PostgreSQL responses, idempotent resume, cascading-row/Run-reference
+recovery, later-edit rejection and concurrent first saves. It does not run a
+staff-copy rehearsal or execute a Workflow.
