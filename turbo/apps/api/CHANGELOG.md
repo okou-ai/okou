@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.59.0](https://github.com/okou-ai/okou/compare/api-v2.58.0...api-v2.59.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+    * @okouai/db bumped to 2.27.0
+    * @okouai/pi-agent-runtime bumped to 1.51.100
+
 ## [2.58.0](https://github.com/okou-ai/okou/compare/api-v2.57.3...api-v2.58.0) (2026-11-11)
 
 

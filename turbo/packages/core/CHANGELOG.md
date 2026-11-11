@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.828.0](https://github.com/okou-ai/okou/compare/core-v8.827.0...core-v8.828.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+
 ## [8.827.0](https://github.com/okou-ai/okou/compare/core-v8.826.2...core-v8.827.0) (2026-11-11)
 
 

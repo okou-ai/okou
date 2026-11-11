@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.10...runner-storage-v0.10.11) (2026-11-11)
+
+
+### Performance Improvements
+
+* **runner:** stage archives during active guest application ([#46517](https://github.com/okou-ai/okou/issues/46517)) ([f236d85](https://github.com/okou-ai/okou/commit/f236d8567fbd20bcba7be1c68aa2dd3bfd06009f))
+
 ## [0.10.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.9...runner-storage-v0.10.10) (2026-11-11)
 
 

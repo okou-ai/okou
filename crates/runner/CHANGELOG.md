@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.68](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.67...runner-rs-v0.244.68) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** centralize selected scalar publication ([#46540](https://github.com/okou-ai/okou/issues/46540)) ([edaa90b](https://github.com/okou-ai/okou/commit/edaa90b51353f0727662ea5112b3179182f1a883))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.67](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.66...runner-rs-v0.244.67) (2026-11-11)
 
 ### Release Dependencies
