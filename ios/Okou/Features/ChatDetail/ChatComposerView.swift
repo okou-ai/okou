@@ -30,8 +30,6 @@ struct ChatComposerView: View {
   var removeProject: (() -> Void)? = nil
 
   @State private var isFocused = false
-  @State private var waitsForKeyboard = false
-  @State private var hasPresentedExpandedControls = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
   @State private var showsConnectors = false
@@ -69,9 +67,9 @@ struct ChatComposerView: View {
   }
   /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
-  private var showsModelPicker: Bool { expandsInput && !voiceActive && !waitsForKeyboard }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
   private var showsVoiceInput: Bool {
-    replacesSendWithMic || (expandsInput && !voiceActive && !waitsForKeyboard)
+    replacesSendWithMic || (expandsInput && !voiceActive)
   }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
@@ -285,33 +283,6 @@ struct ChatComposerView: View {
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
-    .onChange(of: expandsInput, initial: true) { _, expanded in
-      if !expanded {
-        waitsForKeyboard = false
-        hasPresentedExpandedControls = false
-      } else if !isFocused {
-        hasPresentedExpandedControls = true
-      }
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
-    ) { notification in
-      guard !hasPresentedExpandedControls,
-        let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-        frame.height > 0
-      else { return }
-      // SwiftUI can reveal a new control at the keyboard's final position while
-      // UIKit is still moving the composer. Reveal it after native presentation.
-      waitsForKeyboard = true
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) {
-      _ in
-      revealExpandedControls()
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) {
-      _ in
-      revealExpandedControls()
-    }
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
       showsConnectors = false
       connectorSelection?.configure(agentID: agentID)
@@ -393,13 +364,6 @@ struct ChatComposerView: View {
       case .success(let urls): attachments.importFiles(urls)
       case .failure(let error): attachments.report(error)
       }
-    }
-  }
-
-  private func revealExpandedControls() {
-    withAnimation(reduceMotion ? nil : OkouMotion.transition) {
-      waitsForKeyboard = false
-      hasPresentedExpandedControls = expandsInput
     }
   }
 

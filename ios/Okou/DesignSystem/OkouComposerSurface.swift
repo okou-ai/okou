@@ -31,6 +31,9 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
       }
       .overlay(alignment: .bottomTrailing) {
         trailing()
+          // Resolve motion at the toolbar so fading controls inherit its animated
+          // position while the keyboard raises the surface.
+          .geometryGroup()
           .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
           .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
