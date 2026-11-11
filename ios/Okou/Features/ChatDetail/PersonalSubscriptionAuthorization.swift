@@ -102,7 +102,7 @@ final class PersonalSubscriptionAuthorization {
     self?.begin(type: target.type, accountID: target.accountID)
   }
   private lazy var retryCommand = Command<Void, Void> { [weak self] _ in self?.retryFlow() }
-  private lazy var cancelCommand = Command<Void, Void> { [weak self] _ in self?.cancelFlow() }
+  private lazy var cancelCommand = Command<Void, Void> { [weak self] _ in _ = self?.cancelFlow() }
   private lazy var submitCommand: Command<Task<Void, Error>, Void> = asyncCommand {
     [weak self] _, _ in
     await self?.submitCode()
@@ -222,7 +222,8 @@ final class PersonalSubscriptionAuthorization {
     clearSecrets()
     await cancelRemote(type: type, token: token)
   }
-  private func cancelFlow() {
+  @discardableResult
+  private func cancelFlow() -> Task<Void, Never>? {
     let oldSession = session
     let oldType = authType
     let previous = authRevision
@@ -237,8 +238,15 @@ final class PersonalSubscriptionAuthorization {
     authError = nil
     clearSecrets()
     if let oldSession, let oldType {
-      Task { await cancelRemote(type: oldType, token: oldSession.sessionToken) }
+      let id = UUID()
+      let cleanup = Task {
+        defer { finishingFlows[id] = nil }
+        await cancelRemote(type: oldType, token: oldSession.sessionToken)
+      }
+      finishingFlows[id] = cleanup
+      return cleanup
     }
+    return nil
   }
   private func clearSecrets() {
     session = nil
@@ -263,10 +271,11 @@ final class PersonalSubscriptionAuthorization {
     let current = flowTask
     let pending = Array(finishingFlows.values)
     finishingFlows.removeAll()
-    cancelFlow()
+    let cancellation = cancelFlow()
     return Task {
       for task in pending { await task.value }
       _ = await current?.value
+      _ = await cancellation?.value
     }
   }
 }
