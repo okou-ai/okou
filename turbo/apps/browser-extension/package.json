@@ -6,8 +6,9 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "lint": "oxlint --deny-warnings && eslint . --max-warnings 0",
-    "build": "vite build && node scripts/package-extension.mjs",
-    "test": "pnpm build && playwright test",
+    "build": "pnpm build:unpacked && node scripts/package-extension.mjs",
+    "build:unpacked": "node scripts/build-extension.mjs",
+    "test": "pnpm build:unpacked && playwright test",
     "test:provider": "pnpm build && node tests/provider-smoke.mjs",
     "verify-package": "node scripts/verify-package.mjs"
   },
