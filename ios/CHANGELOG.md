@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.1](https://github.com/okou-ai/okou/compare/ios-v0.36.0...ios-v0.36.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** allow testflight builds to progress beyond internal testing ([#46626](https://github.com/okou-ai/okou/issues/46626)) ([8e0e118](https://github.com/okou-ai/okou/commit/8e0e1187f3b6bb1048d6619482419128d13fb81d))
+* **ios:** keep search fixed at the top of its sheet ([#46617](https://github.com/okou-ai/okou/issues/46617)) ([aacfa85](https://github.com/okou-ai/okou/commit/aacfa8560e3e9e194cedb13ae290898d55e8935c))
+
 ## [0.36.0](https://github.com/okou-ai/okou/compare/ios-v0.35.3...ios-v0.36.0) (2026-11-11)
 
 
