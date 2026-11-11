@@ -57,6 +57,7 @@ def run(args, *, input=None, timeout=120, env=None):
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
+                # It already exited; communicate below still reaps it.
                 pass
             try:
                 process.communicate(timeout=5)
@@ -298,6 +299,7 @@ class Session:
             try:
                 self.process.stdin.close()
             except OSError:
+                # Release was acknowledged; abort below retires the channel.
                 pass
             if self.process.wait(timeout=5):
                 raise RuntimeError(f"lock worker failed during release on {self.host}")
@@ -313,6 +315,7 @@ class Session:
             try:
                 os.killpg(self.process.pid, signal.SIGTERM)
             except ProcessLookupError:
+                # It exited between poll and kill; wait below still reaps it.
                 pass
             try:
                 self.process.wait(timeout=5)
@@ -323,6 +326,7 @@ class Session:
             try:
                 stream.close()
             except OSError:
+                # The worker is reaped; preserve the original channel failure.
                 pass
         CHILDREN.discard(self.process.pid)
 
@@ -604,6 +608,7 @@ if __name__ == "__main__":
             try:
                 os.killpg(pid, signal.SIGTERM)
             except ProcessLookupError:
+                # A child may exit between the registry snapshot and signal.
                 pass
         raise SystemExit(128 + signum)
 
@@ -612,6 +617,7 @@ if __name__ == "__main__":
             try:
                 os.killpg(pid, signal.SIGTERM)
             except ProcessLookupError:
+                # A child may exit between the registry snapshot and signal.
                 pass
         raise TimeoutError("cleanup batch deadline exceeded")
 

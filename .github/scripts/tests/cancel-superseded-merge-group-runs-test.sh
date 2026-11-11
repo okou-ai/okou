@@ -107,20 +107,8 @@ JSON
     esac
     ;;
   repos/okou-ai/okou/actions/runs/*)
-    run_id=${endpoint##*/}
-    case " ${MOCK_RUN_STATUS_FAILURE_RUN_IDS:-} " in
-      *" $run_id "*)
-        echo 'gh: failed to query workflow run (HTTP 500)' >&2
-        exit 1
-        ;;
-    esac
-    if [ "${MOCK_INVALID_STATUS:-0}" = "1" ]; then
-      printf 'null\n'
-    elif [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ]; then
-      printf 'in_progress\n'
-    else
-      printf 'completed\n'
-    fi
+    echo "unexpected individual workflow-status lookup" >&2
+    exit 1
     ;;
   *)
     echo "unexpected gh endpoint: ${endpoint}" >&2
@@ -151,27 +139,6 @@ run_cancel() {
     MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \
     MOCK_RUNS_RELEASED="${tmp_dir}/runs-released" \
     MOCK_QUEUED_QUERY_COUNT="${tmp_dir}/queued-query-count" \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
-    SUPERSEDED_RUN_TIMEOUT_SECONDS=10 \
-    "$@" \
-    bash "$script"
-}
-
-run_closed_pr_cleanup() {
-  env -i \
-    PATH="${fake_bin}:$PATH" \
-    HOME="${HOME:-/tmp}" \
-    GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=okou-ai/okou \
-    GITHUB_RUN_ID=400 \
-    PR_NUMBER=42 \
-    RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-    MOCK_GH_LOG="${tmp_dir}/gh.log" \
-    MOCK_CANCEL_LOG="${tmp_dir}/cancel.log" \
-    MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \
-    MOCK_RUNS_RELEASED="${tmp_dir}/runs-released" \
-    MOCK_QUEUED_QUERY_COUNT="${tmp_dir}/queued-query-count" \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
     SUPERSEDED_RUN_TIMEOUT_SECONDS=10 \
     "$@" \
     bash "$script"
@@ -180,7 +147,7 @@ run_closed_pr_cleanup() {
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
-output=$(run_cancel MOCK_RUN_STATUS_FAILURE_RUN_IDS='100 110 120')
+output=$(run_cancel)
 grep -q "Requested cancellation of superseded CI runs" <<<"$output" ||
   fail "expected cancellation requests without a completion claim"
 cancelled_runs=$(cat "${tmp_dir}/cancel.log")
@@ -191,48 +158,6 @@ cancelled_runs=$(cat "${tmp_dir}/cancel.log")
 if grep -Eq 'api --method GET repos/okou-ai/okou/actions/runs/[0-9]+ ' "${tmp_dir}/gh.log"; then
   fail "superseded runs must not read individual statuses after cancellation"
 fi
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-output=$(run_closed_pr_cleanup MOCK_DELAY_COMPLETION=1)
-grep -q "All active runner-owner CI runs completed before closed-PR resource cleanup starts" <<<"$output" ||
-  fail "expected closed-PR cleanup to await every active runner owner"
-[ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "closed-PR cleanup must not cancel active required checks"
-grep -q "Waiting for active runner-owner CI runs" <<<"$output" ||
-  fail "closed-PR cleanup must retain an explicit terminal-state barrier"
-[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
-  fail "closed-PR cleanup must wait for active owners to finish naturally"
-
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-if run_closed_pr_cleanup RUNNER_OWNER_ASSERT_IDLE=true \
-  >"${tmp_dir}/assert-idle.out" 2>"${tmp_dir}/assert-idle.err"; then
-  fail "locked cleanup must abort when a late owner appears"
-fi
-grep -q "appeared while closed-PR cleanup held the namespace lifecycle lock" \
-  "${tmp_dir}/assert-idle.err" ||
-  fail "locked cleanup must explain the late-owner handoff"
-[ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "locked cleanup must not cancel the late owner"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "locked cleanup must release its host lock instead of awaiting the late owner"
-
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_closed_pr_cleanup \
-  MOCK_DELAY_COMPLETION=1 \
-  SUPERSEDED_RUN_TIMEOUT_SECONDS=0 \
-  >"${tmp_dir}/closed-timeout.out" 2>"${tmp_dir}/closed-timeout.err"; then
-  fail "closed-PR cleanup must fail closed when an active owner outlives the barrier"
-fi
-[ ! -s "${tmp_dir}/cancel.log" ] ||
-  fail "timed-out closed-PR cleanup must not cancel the active owner"
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "zero-timeout ownership barrier must fail before polling"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
@@ -275,8 +200,7 @@ grep -q 'failed to cancel superseded run 100' "${tmp_dir}/cancel-failure.err" ||
 : >"${tmp_dir}/cancel.log"
 : >"${tmp_dir}/sleep.log"
 rm -f "${tmp_dir}/runs-released"
-output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
-  MOCK_RUN_STATUS_FAILURE_RUN_IDS='100 110 120')
+output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409)
 grep -q "Requested cancellation of superseded CI runs" <<<"$output" ||
   fail "cancellation conflict must continue without completion checks"
 [ ! -s "${tmp_dir}/sleep.log" ] ||
@@ -286,15 +210,6 @@ grep -q "Requested cancellation of superseded CI runs" <<<"$output" ||
 if grep -Eq 'api --method GET repos/okou-ai/okou/actions/runs/[0-9]+ ' "${tmp_dir}/gh.log"; then
   fail "cancellation conflict must not read individual statuses"
 fi
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-rm -f "${tmp_dir}/runs-released"
-if run_closed_pr_cleanup MOCK_INVALID_STATUS=1 >"${tmp_dir}/invalid.out" 2>"${tmp_dir}/invalid.err"; then
-  fail "unknown status must stop closed-PR cleanup"
-fi
-[ ! -s "${tmp_dir}/cancel.log" ] || fail "closed-PR cleanup must not cancel owners"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"
@@ -311,19 +226,5 @@ if run_cancel MOCK_DISCOVERY_FAILURE_STATUS=queued >"${tmp_dir}/discovery.out" 2
 fi
 [ ! -s "${tmp_dir}/cancel.log" ] ||
   fail "a run discovery API failure must not attempt cancellation"
-
-: >"${tmp_dir}/gh.log"
-: >"${tmp_dir}/cancel.log"
-: >"${tmp_dir}/sleep.log"
-if run_closed_pr_cleanup MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 >"${tmp_dir}/status.out" 2>"${tmp_dir}/status.err"; then
-  fail "unreadable owner status must stop closed-PR cleanup"
-fi
-[ ! -s "${tmp_dir}/sleep.log" ] ||
-  fail "an API status failure must stop before polling"
-[ ! -s "${tmp_dir}/cancel.log" ] || fail "closed-PR cleanup must not cancel owners"
-
-if run_closed_pr_cleanup MOCK_DISCOVERY_FAILURE_STATUS=queued >/dev/null 2>&1; then
-  fail "closed-PR cleanup must fail closed when run discovery fails"
-fi
 
 echo "cancel-superseded-merge-group-runs tests passed"

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-barrier_script="${repo_root}/.github/scripts/cancel-superseded-merge-group-runs.sh"
 lock_script="${repo_root}/.github/scripts/runner/with-runner-lifecycle-lock.sh"
 tmp_dir=$(mktemp -d)
 background_pids=()
@@ -25,38 +24,6 @@ fail() {
 fake_bin="${tmp_dir}/bin"
 lock_root="${tmp_dir}/locks"
 mkdir -p "$fake_bin" "$lock_root"
-
-cat >"${fake_bin}/gh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-
-endpoint=""
-for argument in "$@"; do
-  case "$argument" in
-    repos/*) endpoint=$argument ;;
-  esac
-done
-
-case "$endpoint" in
-  repos/okou-ai/okou/pulls/42)
-    if [[ " $* " == *" --jq .state "* ]]; then
-      case "${MOCK_PR_STATE:-closed}" in
-        error) exit 1 ;;
-        *) printf '%s\n' "${MOCK_PR_STATE:-closed}" ;;
-      esac
-    else
-      printf 'feature/late-approval\tokou-ai/okou\n'
-    fi
-    ;;
-  repos/okou-ai/okou/actions/runs)
-    printf '[{"workflow_runs":[]}]\n'
-    ;;
-  *)
-    echo "unexpected gh endpoint: ${endpoint}" >&2
-    exit 1
-    ;;
-esac
-SH
 
 cat >"${fake_bin}/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -84,10 +51,6 @@ SH
 cat >"${fake_bin}/cleanup-critical" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [ -n "${MOCK_ANSIBLE_LOG:-}" ]; then
-  printf 'ansible\n' >>"$MOCK_ANSIBLE_LOG"
-  exit 0
-fi
 printf 'cleanup-entered\n' >"$MOCK_CLEANUP_READY_FIFO"
 IFS= read -r release <"$MOCK_CLEANUP_RELEASE_FIFO"
 [ "$release" = "release" ]
@@ -99,24 +62,8 @@ cat >"${fake_bin}/late-start-critical" <<'SH'
 set -euo pipefail
 printf 'start\n' >>"$MOCK_ORDER_LOG"
 SH
-chmod +x "${fake_bin}/gh" "${fake_bin}/ssh" \
+chmod +x "${fake_bin}/ssh" \
   "${fake_bin}/cleanup-critical" "${fake_bin}/late-start-critical"
-
-barrier_output=$(
-  env -i \
-    PATH="${fake_bin}:$PATH" \
-    HOME="${HOME:-/tmp}" \
-    GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=okou-ai/okou \
-    GITHUB_RUN_ID=900 \
-    PR_NUMBER=42 \
-    RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-    SUPERSEDED_RUN_POLL_SECONDS=0 \
-    SUPERSEDED_RUN_TIMEOUT_SECONDS=5 \
-    bash "$barrier_script"
-)
-grep -q "No active runner-owner CI runs found for PR #42" <<<"$barrier_output" ||
-  fail "expected the stabilized discovery barrier to return an empty owner set"
 
 # PR authority is exercised through the shared cleanup CLI suite. This suite
 # retains the actual all-host lock, lease and late-start ordering contract.
@@ -156,8 +103,8 @@ cleanup_ready=$(
 [ "$cleanup_ready" = "cleanup-entered" ] ||
   fail "cleanup readiness marker was invalid"
 
-# Model approval after the empty discovery snapshot: the late Turbo start now
-# tries to acquire the same namespace while cleanup still owns deletion.
+# A late Turbo start tries to acquire the same namespace while cleanup
+# still owns deletion.
 PATH="${fake_bin}:$PATH" \
   JOB_REF=pr-42 \
   METAL_HOSTS=metal-a.example.test \

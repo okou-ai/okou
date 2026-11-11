@@ -251,6 +251,7 @@ class Host:
             else:
                 shutil.rmtree(path)
         except FileNotFoundError:
+            # An earlier teardown may already have removed this exact resource.
             pass
 
     @contextlib.contextmanager
