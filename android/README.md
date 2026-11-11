@@ -120,7 +120,9 @@ vector retains the geometry from `ios/Assets/AppIcon.svg`.
 runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
 and shared font/color-evaluator assets. Core verification has no SDK setup;
 the native job tests, lints, assembles, and uploads the debug APK for seven days.
-The final `android` check requires every selected job to succeed.
+The final `ci-gate-android` check always reports an aggregate result. It requires
+successful detection and every selected job to succeed; only an explicit
+unselected result permits skipped native checks.
 
 The shared security workflow retains Semgrep scanning. Its result handler
 recognizes the intentionally public MAIN/LAUNCHER only after the strict source

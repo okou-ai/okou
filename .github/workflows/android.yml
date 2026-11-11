@@ -84,21 +84,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  android:
+  ci-gate-android:
     needs: [detect, core, build-test]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require selected checks
+      - name: Validate CI results
         env:
           DETECT: ${{ needs.detect.result }}
           NEEDED: ${{ needs.detect.outputs.needed }}
           CORE: ${{ needs.core.result }}
           BUILD: ${{ needs.build-test.result }}
         run: |
-          test "$DETECT" = success
-          if [ "$NEEDED" = true ]; then
-            test "$CORE" = success
-            test "$BUILD" = success
+          if [ "$DETECT" != success ]; then
+            echo "::error::Android change detection must succeed; got $DETECT"
+            exit 1
           fi
+          case "$NEEDED:$CORE:$BUILD" in
+            true:success:success)
+              echo 'Android core tests, native tests, lint and APK assembly passed.'
+              ;;
+            false:skipped:skipped)
+              echo 'Android checks were not needed for these changes.'
+              ;;
+            *)
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, core=$CORE, build=$BUILD"
+              exit 1
+              ;;
+          esac
