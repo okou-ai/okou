@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.35.0](https://github.com/okou-ai/okou/compare/ios-v0.34.2...ios-v0.35.0) (2026-11-11)
+
+
+### Features
+
+* **ios:** unify text-first composer suggestions ([#46393](https://github.com/okou-ai/okou/issues/46393)) ([b3e314a](https://github.com/okou-ai/okou/commit/b3e314a7fd7ed8258f7f059881c25854f124d719))
+
+
+### Bug Fixes
+
+* **ios:** present search in a focused native sheet ([#46418](https://github.com/okou-ai/okou/issues/46418)) ([54f94c2](https://github.com/okou-ai/okou/commit/54f94c2a37e0de75e42807901cf246432980f26a))
+
+
+### Refactoring
+
+* **ios:** separate project reads from confirmed operations ([#46437](https://github.com/okou-ai/okou/issues/46437)) ([f6cc5b8](https://github.com/okou-ai/okou/commit/f6cc5b8f3b32746edca6363eb828feaa2d84cabe))
+
 ## [0.34.2](https://github.com/okou-ai/okou/compare/ios-v0.34.1...ios-v0.34.2) (2026-11-10)
 
 
