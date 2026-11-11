@@ -41,13 +41,13 @@ final class VoiceInputNavigationTests: XCTestCase {
     XCTAssertEqual(voice.phase, .idle)
 
     host.rootView = VoiceEntryHarness(workspace: workspace, isAuthenticated: true)
-    try await eventually { voice.phase == .recording }
+    try await waitForBusinessResult { voice.phase == .recording }
     XCTAssertNil(workspace.selectedThreadID)
     XCTAssertEqual(workspace.newChatDraft, "Existing notes: ")
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     XCTAssertFalse(input.isFirstResponder)
     capture.speak(seconds: 1)
-    try await eventually { voice.duration == 1 }
+    try await waitForBusinessResult { voice.duration == 1 }
 
     let scene = try XCTUnwrap(window.windowScene)
     NewChatSceneDelegate().windowScene(
@@ -57,10 +57,10 @@ final class VoiceInputNavigationTests: XCTestCase {
     ) { XCTAssertTrue($0) }
     XCTAssertTrue(requests.open(in: workspace))
     capture.speak(seconds: 1)
-    try await eventually { voice.duration == 2 }
+    try await waitForBusinessResult { voice.duration == 2 }
 
     workspace.setForeground(false)
-    try await eventually { voice.phase == .saved }
+    try await waitForBusinessResult { voice.phase == .saved }
     workspace.selectChat(AttachmentFlowFixture.threadID)
     NewChatSceneDelegate().windowScene(
       scene,
@@ -68,7 +68,7 @@ final class VoiceInputNavigationTests: XCTestCase {
         type: NewChatRequests.voiceShortcutType, localizedTitle: "Voice Input")
     ) { XCTAssertTrue($0) }
     workspace.setForeground(true)
-    try await eventually { workspace.selectedThreadID == nil }
+    try await waitForBusinessResult { workspace.selectedThreadID == nil }
     XCTAssertEqual(voice.phase, .saved)
     XCTAssertEqual(voice.duration, 2, accuracy: 0.0001)
 
@@ -112,7 +112,7 @@ final class VoiceInputNavigationTests: XCTestCase {
       rootView: VoiceEntryHarness(workspace: workspace, isAuthenticated: true))
     let window = try await mountMentionHost(host)
     addTeardownBlock { @MainActor in unmount(window) }
-    try await eventually { voice.microphoneDenied }
+    try await waitForBusinessResult { voice.microphoneDenied }
     XCTAssertEqual(voice.phase, .idle)
     XCTAssertNotNil(voice.error)
     XCTAssertEqual(workspace.newChatDraft, "Keep these notes")
@@ -158,7 +158,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await eventually { input.isFirstResponder }
     gate.release()
-    try await eventually { voice.phase == .idle }
+    try await waitForBusinessResult { voice.phase == .idle }
     XCTAssertEqual(workspace.newChatDraft, "Retain this draft")
     XCTAssertEqual(fixture.state.created.withLock { $0 }, 0)
     XCTAssertTrue(fixture.flow.state.value.withLock { $0.messages.isEmpty })

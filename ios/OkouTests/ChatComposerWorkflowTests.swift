@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class ChatComposerWorkflowTests: XCTestCase {
-  func testWorkflowInsertionAndUndoPreserveNativeChatReferences() async throws {
+  func testWorkflowInsertionPreservesReferencesUTF16SelectionAndUndoWithoutSending() async throws {
     let fixture = MentionNavigationFixture(workflows: { _ in
       ChatHTTPResponse(body: workflowResponse)
     })
@@ -20,7 +20,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
-    input.insertText("Before @")
+    input.insertText("🌷 Before @")
     let firstChat = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "").first)
     try await waitForBusinessResult {
@@ -29,22 +29,37 @@ final class ChatComposerWorkflowTests: XCTestCase {
     workspace.newComposer.editor.insertMention(firstChat)
     let references = workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }
     XCTAssertEqual(references.map { $0["type"]?.string }, ["chat_thread"])
-    input.insertText(" /rel after")
-    let slash = (input.text as NSString).range(of: "/rel")
-    input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
+    input.insertText("/rel after")
+    let before = workspace.newComposer.document
+    let inserted = ChatDraftDocument(parts: [
+      .object(["type": .string("text"), "text": .string("🌷 Before ")]), firstChat.part,
+      .object(["type": .string("text"), "text": .string(" /release after")]),
+    ])
+    input.selectedRange = NSRange(location: "🌷 Before \u{fffc} /rel".utf16.count, length: 0)
     let workflow = try await workflowCell("release", in: host.view)
     XCTAssertTrue(workflow.accessibilityActivate())
-    try await eventually { input.text.contains("/release after") }
+    try await waitForBusinessResult { workspace.newComposer.document == inserted }
+    XCTAssertEqual(input.text, "🌷 Before \u{fffc} /release after")
+    XCTAssertEqual(
+      input.selectedRange,
+      NSRange(location: "🌷 Before \u{fffc} /release".utf16.count, length: 0))
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await eventually { input.text.contains("/rel after") }
+    try await waitForBusinessResult { workspace.newComposer.document == before }
+    XCTAssertEqual(input.text, "🌷 Before \u{fffc} /rel after")
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     input.undoManager?.redo()
-    try await eventually { input.text.contains("/release after") }
+    try await waitForBusinessResult { workspace.newComposer.document == inserted }
+    XCTAssertEqual(input.text, "🌷 Before \u{fffc} /release after")
+    XCTAssertEqual(
+      workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
+    input.selectedRange = NSRange(location: "🌷 Before \u{fffc} /release".utf16.count, length: 0)
+    input.insertText(" edited")
+    XCTAssertEqual(workspace.newChatDraft, "🌷 Before  /release edited after")
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
     let chat = try XCTUnwrap(
@@ -57,41 +72,14 @@ final class ChatComposerWorkflowTests: XCTestCase {
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }.map {
         $0["type"]?.string
       }, ["chat_thread", "chat_thread"])
-    XCTAssertTrue(input.text.contains("/release after"))
+    XCTAssertTrue(input.text.contains("/release edited after"))
     XCTAssertNil(workflowTable(in: host.view))
     XCTAssertTrue(input.isFirstResponder)
-  }
-
-  func testWorkflowInsertionUsesOnlyTheActiveUTF16TokenAndKeepsFocusAndUndo() async throws {
-    let fixture = workflowFixture()
-    let source = ComposerWorkflowSource(
-      client: fixture.http.client, storage: nil, didFail: { _ in })
-    let conversation = fixture.conversation(workflowSource: source)
-    defer {
-      conversation.close()
-      source.close()
-    }
-    let host = UIHostingController(rootView: composer(conversation))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let input = try XCTUnwrap(inputs(in: host.view).first)
-    try await focusMentionInput(input)
-    input.insertText("🌷 Keep /rel tail")
-    input.selectedRange = NSRange(location: "🌷 Keep /rel".utf16.count, length: 0)
-    let workflow = try await workflowCell("release", in: host.view)
-    XCTAssertTrue(workflow.accessibilityActivate())
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
-    XCTAssertEqual(input.selectedRange, NSRange(location: "🌷 Keep /release".utf16.count, length: 0))
-    XCTAssertTrue(input.isFirstResponder)
-    XCTAssertTrue(source.recentIDs().isEmpty)
-    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    try await eventually { input.undoManager?.groupingLevel == 0 }
-    input.undoManager?.undo()
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /rel tail" }
-    input.undoManager?.redo()
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
-    input.insertText(" edited")
-    XCTAssertTrue(conversation.draft.contains("edited"))
+    XCTAssertTrue(workspace.composerWorkflows.recentIDs().isEmpty)
+    XCTAssertFalse(
+      fixture.paths.value.withLock {
+        $0.contains { $0 == "/api/chat/events" || $0 == "/api/chat-threads" }
+      })
   }
 
   func testNativeSelectionAndEscapePreventWorkflowInsertionAndNumericQueryInsertsOnlyItsMatch()

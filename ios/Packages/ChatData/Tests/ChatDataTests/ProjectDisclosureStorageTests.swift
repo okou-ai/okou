@@ -152,6 +152,28 @@ final class ProjectDisclosureStorageTests: XCTestCase {
     XCTAssertNil(fixture.defaults.object(forKey: key))
   }
 
+  func testChatCacheRebuildDoesNotResetProjectDisclosure() async throws {
+    let fixture = try environment()
+    let scope = scope()
+    let disk = storage(fixture, scope: scope)
+    try await disk.setExpanded(true, projectID: "keep").value
+    await disk.close().value
+    let cacheDirectory = CacheTestDirectory(owner: self)
+    let cache = cacheDirectory.cache(scope: scope)
+    try await cache.saveProjects([])
+    await cache.close()
+    let files = try FileManager.default.contentsOfDirectory(
+      at: cacheDirectory.url.appending(path: "ChatCache"), includingPropertiesForKeys: nil)
+    let database = try XCTUnwrap(files.first { $0.pathExtension == "sqlite" })
+    try Data("not a SQLite database".utf8).write(to: database)
+    let repaired = cacheDirectory.cache(scope: scope)
+    let rebuilt = try await repaired.loadProjects()
+    XCTAssertNil(rebuilt)
+    let reopened = storage(fixture, scope: scope)
+    let retained = try await reopened.load().value
+    XCTAssertEqual(retained, ["keep"])
+  }
+
   private func environment() throws -> PreferenceStorageFixture {
     let fixture = try PreferenceStorageFixture()
     addTeardownBlock { @MainActor in try fixture.close() }

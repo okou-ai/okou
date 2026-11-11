@@ -410,7 +410,7 @@ final class ComposerDraftTests: XCTestCase {
       ["Existing question", "Existing question"])
   }
 
-  func testRecommendedTextPreservesNativeRichDraftAndAttachments() async throws {
+  func testRecommendedTextPreservesRichDraftFocusSelectionAndUndoWithoutSending() async throws {
     let server = DraftServer(remote: try richDraft())
     let composer = server.composer()
     defer { composer.close() }
@@ -421,10 +421,51 @@ final class ComposerDraftTests: XCTestCase {
     let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
-    composer.editor.selectOrAppendText("Compare the alternatives")
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    let editor = composer.editor
+    let first = "Create a presentation outline"
+    let second = "Compare the alternatives"
+    editor.selectOrAppendText(second)
     try await waitForBusinessResult { composer.text.hasSuffix("\nCompare the alternatives") }
     XCTAssertEqual(composer.document.parts.filter { $0["type"]?.string != "text" }, parts)
     XCTAssertEqual(composer.attachments.savedItems, attachments)
+
+    replaceInput("Keep the context 🧭", in: input)
+    editor.selectOrAppendText(first)
+    try await waitForBusinessResult { composer.text == "Keep the context 🧭\n" + first }
+    try await eventually { input.isFirstResponder }
+    XCTAssertEqual(input.selectedRange.length, 0)
+    editor.selectOrAppendText(first)
+    XCTAssertEqual((input.text as NSString).substring(with: input.selectedRange), first)
+    XCTAssertEqual(composer.text, "Keep the context 🧭\n" + first)
+
+    editor.selectOrAppendText(second)
+    try await waitForBusinessResult { composer.text.hasSuffix(first + "\n" + second) }
+    replaceInput("Before " + second + " after " + second, in: input)
+    editor.selectOrAppendText(second)
+    XCTAssertEqual(input.selectedRange, NSRange(location: 7, length: second.utf16.count))
+    XCTAssertTrue(input.isFirstResponder)
+    input.undoManager?.removeAllActions()
+    let beforeLongPrompt = composer.text
+    let longPrompt =
+      "What risks should we discuss next? " + String(repeating: "More context. ", count: 20)
+    editor.selectOrAppendText(longPrompt)
+    try await waitForBusinessResult {
+      composer.text.hasSuffix(longPrompt.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    input.undoManager?.undo()
+    try await waitForBusinessResult { composer.text == beforeLongPrompt }
+    replaceInput("", in: input)
+    editor.selectOrAppendText(first)
+    try await waitForBusinessResult { composer.text == first }
+    replaceInput("Keep the trailing paragraph\n   ", in: input)
+    editor.selectOrAppendText(first)
+    try await waitForBusinessResult { composer.text == "Keep the trailing paragraph\n   " + first }
+    XCTAssertEqual(composer.attachments.savedItems, attachments)
+    XCTAssertFalse(
+      server.state.value.withLock {
+        $0.paths.contains { $0.contains("/api/chat/events") || $0.contains("generat") }
+      })
   }
 
   func testRichDraftConflictKeepsLocalTextReferencesAndAttachments() async throws {
@@ -741,6 +782,12 @@ final class ComposerDraftTests: XCTestCase {
     await reopened.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
   }
+}
+
+@MainActor
+private func replaceInput(_ text: String, in input: ComposerTextView) {
+  input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+  if text.isEmpty { input.deleteBackward() } else { input.insertText(text) }
 }
 
 private func textDraft(_ text: String) -> ComposerDraft {

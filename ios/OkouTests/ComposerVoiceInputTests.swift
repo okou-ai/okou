@@ -94,20 +94,17 @@ final class ComposerVoiceInputTests: XCTestCase {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
+    let client = VoiceInputClient(client: fixture.http.client)
+    let quota = try await client.quota()
+    XCTAssertTrue(quota.allowed)
+    let session = try VoiceDraftSession(
+      client: client, storage: VoiceDraftStorage(directory: root),
+      activityDetection: NativeVoiceActivityDetection())
+    let id = try await session.begin(context: VoiceEditorContext(before: "", selected: "", after: ""))
     // Reduce the recorded voice by 24 dB, preserving its waveform and duration.
-    capture.speak(seconds: 1, attenuation: 16)
-    let started = ContinuousClock.now
-    await voice.finish()
-    print("SoundAnalysis quiet speech finish: \(started.duration(to: .now))")
-    XCTAssertEqual(composer.text, "spoken words")
+    _ = try await session.append(recordedSpeech(seconds: 1, attenuation: 16), recordingID: id)
+    let text = try await session.finish(recordingID: id)
+    XCTAssertEqual(text, "spoken words")
     XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
   }
 
@@ -115,18 +112,18 @@ final class ComposerVoiceInputTests: XCTestCase {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let capture = VoiceCaptureFixture()
-    let composer = fixture.composer(root: root, capture: capture)
-    defer { composer.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
-    let window = try await mountMentionHost(host)
-    defer { unmount(window) }
-    let voice = try XCTUnwrap(composer.voice)
-    await voice.start()
-    capture.record(Data(repeating: 0, count: 64_000))
-    capture.speak(seconds: 1, attenuation: 16, sampleLimit: 4_000)
-    await voice.finish()
-    XCTAssertEqual(composer.text, "spoken words")
+    let client = VoiceInputClient(client: fixture.http.client)
+    let quota = try await client.quota()
+    XCTAssertTrue(quota.allowed)
+    let session = try VoiceDraftSession(
+      client: client, storage: VoiceDraftStorage(directory: root),
+      activityDetection: NativeVoiceActivityDetection())
+    let id = try await session.begin(context: VoiceEditorContext(before: "", selected: "", after: ""))
+    _ = try await session.append(Data(repeating: 0, count: 64_000), recordingID: id)
+    _ = try await session.append(
+      recordedSpeech(seconds: 1, attenuation: 16, sampleLimit: 4_000), recordingID: id)
+    let text = try await session.finish(recordingID: id)
+    XCTAssertEqual(text, "spoken words")
     XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [72_000])
   }
 
@@ -641,26 +638,11 @@ final class VoiceCaptureFixture: VoiceAudioCapture {
     return stream
   }
   func speak(seconds: Int, attenuation: Int16 = 1, sampleLimit: Int? = nil) {
-    guard
-      let url = Bundle(for: ComposerVoiceInputTests.self)
-        .url(forResource: "voice-speech", withExtension: "wav"),
-      let wav = try? Data(contentsOf: url)
-    else {
-      XCTFail("The recorded speech fixture is missing")
-      return
+    do {
+      record(try recordedSpeech(seconds: seconds, attenuation: attenuation, sampleLimit: sampleLimit))
+    } catch {
+      XCTFail("Cannot load the recorded speech fixture: \(error)")
     }
-    var pcm = Data(wav.dropFirst(44))
-    pcm.withUnsafeMutableBytes { bytes in
-      for offset in stride(from: 0, to: bytes.count, by: 2) {
-        let sample = Int16(
-          littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: Int16.self))
-        bytes.storeBytes(
-          of: (sample / attenuation).littleEndian, toByteOffset: offset, as: Int16.self)
-      }
-    }
-    var audio = Data()
-    for _ in 0..<seconds { audio.append(pcm) }
-    record(sampleLimit.map { Data(audio.prefix($0 * 2)) } ?? audio)
   }
   func record(_ pcm: Data) {
     continuation?.yield(VoiceAudioChunk(pcm: pcm, level: 0.3))
@@ -670,6 +652,26 @@ final class VoiceCaptureFixture: VoiceAudioCapture {
     continuation?.finish()
     continuation = nil
   }
+}
+
+private func recordedSpeech(seconds: Int, attenuation: Int16 = 1, sampleLimit: Int? = nil) throws
+  -> Data
+{
+  let url = try XCTUnwrap(
+    Bundle(for: ComposerVoiceInputTests.self).url(forResource: "voice-speech", withExtension: "wav"))
+  let wav = try Data(contentsOf: url)
+  var pcm = Data(wav.dropFirst(44))
+  pcm.withUnsafeMutableBytes { bytes in
+    for offset in stride(from: 0, to: bytes.count, by: 2) {
+      let sample = Int16(
+        littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: Int16.self))
+      bytes.storeBytes(
+        of: (sample / attenuation).littleEndian, toByteOffset: offset, as: Int16.self)
+    }
+  }
+  var audio = Data()
+  for _ in 0..<seconds { audio.append(pcm) }
+  return sampleLimit.map { Data(audio.prefix($0 * 2)) } ?? audio
 }
 
 private final class VoiceComposerState: Sendable {
