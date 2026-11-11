@@ -212,7 +212,27 @@ export const getMemberRoleAndUpdateCache$ = command(
   },
 );
 
+function activeCliTokenCondition(cliAuth: CliAuth, currentDate: Date) {
+  return and(
+    eq(cliTokens.id, cliAuth.tokenId),
+    gt(cliTokens.expiresAt, currentDate),
+  );
+}
+
 export function cliTokenRecord(
+  cliAuth: CliAuth,
+): Computed<Promise<CliTokenRecord | null>> {
+  return computed(async (get): Promise<CliTokenRecord | null> => {
+    const [record] = await get(db$)
+      .select({ tokenId: cliTokens.id })
+      .from(cliTokens)
+      .where(activeCliTokenCondition(cliAuth, nowDate()))
+      .limit(1);
+    return record ? { userId: cliAuth.userId, orgId: cliAuth.orgId } : null;
+  });
+}
+
+export function cliTokenMembershipContext(
   cliAuth: CliAuth,
 ): Computed<Promise<CliTokenContext | null>> {
   return computed(async (get): Promise<CliTokenContext | null> => {
@@ -234,12 +254,7 @@ export function cliTokenRecord(
           eq(orgMembersCache.userId, cliAuth.userId),
         ),
       )
-      .where(
-        and(
-          eq(cliTokens.id, cliAuth.tokenId),
-          gt(cliTokens.expiresAt, currentDate),
-        ),
-      )
+      .where(activeCliTokenCondition(cliAuth, currentDate))
       .limit(1);
 
     if (!record) {

@@ -22,7 +22,7 @@ import { mcpServerConfig } from "../../lib/mcp-server-config";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
-  cliTokenRecord,
+  cliTokenMembershipContext,
   getMemberRoleAndUpdateCache$,
   resolveMemberRoleAndUpdateCache$,
   updateCliTokenLastUsedAt$,
@@ -85,7 +85,7 @@ const cliAuth$ = command(
     cliAuth: CliAuth,
     signal: AbortSignal,
   ): Promise<AuthContext | null> => {
-    const resolved = await get(cliTokenRecord(cliAuth));
+    const resolved = await get(cliTokenMembershipContext(cliAuth));
     signal.throwIfAborted();
     if (!resolved) {
       return null;
