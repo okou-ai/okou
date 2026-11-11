@@ -2149,6 +2149,8 @@
         "outputLimitTitle": "The response reached its length limit",
         "personalAccount": "Personal subscription {{account}}",
         "personalAccountDisconnected": "Personal subscription disconnected",
+        "providerBadRequestDescription": "Try again, or switch to another model to continue.",
+        "providerBadRequestTitle": "The model provider returned an error",
         "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
         "providerBalanceTitle": "Your subscription account needs more credit",
         "providerConnectionDescription": "Open Settings > Models to reconnect or update your account, then try again.",
@@ -5500,6 +5502,7 @@
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
     "overloaded": "{{model}} is overloaded. Switch to another model.",
+    "providerBadRequest": "The model provider returned an error. Try again, or switch to another model to continue.",
     "providerBalance": "Your connected subscription account has insufficient balance.",
     "transient": "Oops, something went wrong.",
     "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."

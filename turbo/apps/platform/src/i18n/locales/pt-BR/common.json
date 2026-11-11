@@ -2181,6 +2181,8 @@
         "outputLimitTitle": "A resposta chegou ao limite de tamanho",
         "personalAccount": "Assinatura pessoal {{account}}",
         "personalAccountDisconnected": "Assinatura pessoal desconectada",
+        "providerBadRequestDescription": "Tente novamente ou mude para outro modelo para continuar.",
+        "providerBadRequestTitle": "O provedor do modelo retornou um erro",
         "providerBalanceDescription": "Verifique o uso ou o saldo de créditos da sua conta de assinatura e tente novamente.",
         "providerBalanceTitle": "Sua conta de assinatura precisa de mais crédito",
         "providerConnectionDescription": "Abra Configurações > Modelos para reconectar ou atualizar sua conta e tente novamente.",
@@ -5563,6 +5565,7 @@
     "modelTemporarilyUnavailable": "Modelo temporariamente indisponível",
     "modelUnavailable": "O modelo atual não está disponível.",
     "overloaded": "{{model}} está sobrecarregado. Mude para outro modelo.",
+    "providerBadRequest": "O provedor do modelo retornou um erro. Tente novamente ou mude para outro modelo para continuar.",
     "providerBalance": "Sua conta de assinatura conectada não tem saldo suficiente.",
     "transient": "Ocorreu um erro.",
     "vm0Credits": "Créditos insuficientes. Adicione créditos ou conecte uma assinatura pessoal do Codex ou Claude para continuar."

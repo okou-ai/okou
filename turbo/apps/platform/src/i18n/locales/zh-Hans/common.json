@@ -2141,6 +2141,8 @@
         "outputLimitTitle": "回复达到了长度上限",
         "personalAccount": "个人订阅 {{account}}",
         "personalAccountDisconnected": "个人订阅已断开",
+        "providerBadRequestDescription": "可以重试，或切换模型继续。",
+        "providerBadRequestTitle": "模型服务商返回错误",
         "providerBalanceDescription": "请检查订阅账号的用量或额度余额，然后重试。",
         "providerBalanceTitle": "你的订阅账号需要更多额度",
         "providerConnectionDescription": "到「设置 > 模型」中重新连接或更新账户，然后再试。",
@@ -5484,6 +5486,7 @@
     "modelTemporarilyUnavailable": "模型暂时不可用",
     "modelUnavailable": "当前模型不可用。",
     "overloaded": "{{model}}负载过高。请改用其他模型。",
+    "providerBadRequest": "模型服务商返回错误。可以重试，或切换模型继续。",
     "providerBalance": "你连接的订阅账号余额不足。",
     "transient": "出了点问题。",
     "vm0Credits": "积分不足。请充值积分，或连接个人 Codex 或 Claude 订阅后继续。"

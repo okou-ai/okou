@@ -2181,6 +2181,8 @@
         "outputLimitTitle": "La réponse a atteint sa limite de longueur",
         "personalAccount": "Abonnement personnel {{account}}",
         "personalAccountDisconnected": "Abonnement personnel déconnecté",
+        "providerBadRequestDescription": "Réessayez ou choisissez un autre modèle pour continuer.",
+        "providerBadRequestTitle": "Le fournisseur du modèle a renvoyé une erreur",
         "providerBalanceDescription": "Vérifiez l'utilisation ou le solde de crédit de votre compte d'abonnement, puis réessayez.",
         "providerBalanceTitle": "Votre compte d'abonnement a besoin de plus de crédit",
         "providerConnectionDescription": "Ouvrez « Paramètres > Modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
@@ -5563,6 +5565,7 @@
     "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
     "modelUnavailable": "Le modèle actuel est indisponible.",
     "overloaded": "{{model}} est surchargé. Choisissez un autre modèle.",
+    "providerBadRequest": "Le fournisseur du modèle a renvoyé une erreur. Réessayez ou choisissez un autre modèle pour continuer.",
     "providerBalance": "Le solde de votre compte d'abonnement connecté est insuffisant.",
     "transient": "Une erreur s’est produite.",
     "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou connectez un abonnement personnel Codex ou Claude pour continuer."

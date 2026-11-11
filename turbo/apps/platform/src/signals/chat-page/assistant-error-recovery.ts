@@ -281,7 +281,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   codex_access_program_unavailable: "provider-retryable",
   provider_server_error: "provider-retryable",
   firewall_auth_failed: null,
-  provider_bad_request: null,
+  provider_bad_request: "provider-retryable",
   response_connection_lost: "provider-retryable",
   safety_policy_refusal: "safety-policy-refusal",
   reconnect_required: "provider-settings",

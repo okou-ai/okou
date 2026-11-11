@@ -2141,6 +2141,8 @@
         "outputLimitTitle": "回覆達到了長度上限",
         "personalAccount": "個人訂閱 {{account}}",
         "personalAccountDisconnected": "個人訂閱已中斷",
+        "providerBadRequestDescription": "可以重試，或切換模型繼續。",
+        "providerBadRequestTitle": "模型服務商傳回錯誤",
         "providerBalanceDescription": "請檢查訂閱帳號的用量或額度餘額，然後重試。",
         "providerBalanceTitle": "你的訂閱帳號需要更多額度",
         "providerConnectionDescription": "到「設定 > 模型」中重新連線或更新帳戶，然後再試。",
@@ -5484,6 +5486,7 @@
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
     "overloaded": "{{model}}負載過高。請改用其他模型。",
+    "providerBadRequest": "模型服務商傳回錯誤。可以重試，或切換模型繼續。",
     "providerBalance": "你連結的訂閱帳號餘額不足。",
     "transient": "出了點問題。",
     "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
