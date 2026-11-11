@@ -1493,7 +1493,9 @@ describe("Email integration", () => {
     }
     const claim = await runs.claimRunnerJob(runId);
     expect(claim.prompt).toContain("First independent request");
-    expect(claim.appendSystemPrompt).toContain("Email integration");
+    expect(claim.appendSystemPrompt).toContain(
+      "You are currently running inside: Email",
+    );
     await webhooks.requestAgentEvents(
       {
         runId,
