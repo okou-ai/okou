@@ -252,7 +252,11 @@ test.each([
     installDependencyFixture({ newChat: true });
     const menu = await openRemoteAccess(true);
     await within(menu).findByText(SSH_WARNING);
-    const originalOrder = within(menu).getAllByRole("combobox");
+    const originalOrder = within(menu)
+      .getAllByRole("combobox")
+      .map((control) => {
+        return control.getAttribute("aria-label");
+      });
     const user = userEvent.setup({ delay: null });
     within(menu).getByRole("combobox", { name }).focus();
     await user.keyboard("{Enter}");
@@ -264,7 +268,13 @@ test.each([
       expect(control).toHaveTextContent(option);
       expect(control).toHaveFocus();
     });
-    expect(within(menu).getAllByRole("combobox")).toStrictEqual(originalOrder);
+    expect(
+      within(menu)
+        .getAllByRole("combobox")
+        .map((control) => {
+          return control.getAttribute("aria-label");
+        }),
+    ).toStrictEqual(originalOrder);
   },
 );
 
