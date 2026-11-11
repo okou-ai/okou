@@ -45,7 +45,8 @@ export const workflowAutomationNotificationAccess$ = computed(async (get) => {
     // an access grant. Membership pagination is finite, not timed polling.
     let page = 1;
     let seen = 0;
-    while (true) {
+    let hasMore = true;
+    while (hasMore) {
       const memberships = await user.getOrganizationMemberships({
         initialPage: page,
         pageSize: 100,
@@ -60,11 +61,10 @@ export const workflowAutomationNotificationAccess$ = computed(async (get) => {
         } as const;
       }
       seen += memberships.data.length;
-      if (memberships.data.length === 0 || seen >= memberships.total_count) {
-        return { status: "unavailable" } as const;
-      }
+      hasMore = memberships.data.length > 0 && seen < memberships.total_count;
       page += 1;
     }
+    return { status: "unavailable" } as const;
   }
   // The personal notification is a historical snapshot, not proof the target
   // still exists or belongs to this user/workspace.
