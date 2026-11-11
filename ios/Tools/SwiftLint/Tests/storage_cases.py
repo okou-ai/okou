@@ -47,17 +47,35 @@ STORAGE_CASES = [
         """,
     ),
     (
-        "project disclosure retains its existing defaults owner",
+        "project disclosure now uses its typed SQLite owner",
         "Okou/Features/ChatList/ChatProjectStore.swift",
         """
         import Foundation
         final class ChatProjectStore {
-          let defaults: UserDefaults
-          init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+          let defaults: UserDefaults // violation
+          init(defaults: UserDefaults = .standard) { self.defaults = defaults } // violation
           func persist(_ expansion: [String: Bool], key: String) {
             defaults.set(expansion, forKey: key)
           }
         }
+        """,
+    ),
+    (
+        "one-way disclosure migration owns legacy defaults access",
+        "Packages/ChatData/Sources/ChatData/ProjectDisclosureMigration.swift",
+        """
+        import Foundation
+        let defaults = UserDefaults.standard
+        let previous = defaults.dictionary(forKey: legacyKey)
+        defaults.removeObject(forKey: legacyKey)
+        """,
+    ),
+    (
+        "migration basenames do not give feature code defaults access",
+        "Okou/Features/Other/ProjectDisclosureMigration.swift",
+        """
+        import Foundation
+        let defaults = UserDefaults.standard // violation
         """,
     ),
     (

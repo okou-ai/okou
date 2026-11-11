@@ -29,11 +29,11 @@ struct StorageBoundariesRule: NativeRule {
 
     init(path: String) {
       self.path = path
-      // These existing owners persist project disclosure and notification metadata.
+      // These owners persist notification metadata and import legacy UI preferences.
       // A new definition site needs a responsibility review, not a directory exemption.
       ownsDefaults = [
-        "/Okou/Features/ChatList/ChatProjectStore.swift",
         "/Okou/Services/NotificationService.swift",
+        "/Packages/ChatData/Sources/ChatData/ProjectDisclosureMigration.swift",
       ].contains { path.hasSuffix($0) }
       isTest = [
         "/OkouTests/", "/Packages/ChatDomain/Tests/", "/Packages/ChatData/Tests/",

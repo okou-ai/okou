@@ -118,8 +118,9 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   storage, crypto and synchronization frameworks. Package test targets retain
   their test-framework and public package imports.
 - Raw `UserDefaults` references, type aliases and injected production types
-  belong to the existing project-disclosure and notification-metadata definition
-  sites in `StorageBoundariesRule.swift`. Callers use their semantic operations.
+  belong to the notification-metadata and one-way preference-migration definition
+  sites in `StorageBoundariesRule.swift`. Project disclosure uses its typed SQLite
+  storage; it does not retain a direct-defaults exception. Callers use their semantic operations.
   `@AppStorage` remains valid for the registered appearance and sidebar keys at
   their exact view definition sites; the same file cannot introduce a new
   business key or a custom `store:`. Direct wrapper construction and aliases do

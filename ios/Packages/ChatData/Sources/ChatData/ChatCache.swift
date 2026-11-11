@@ -2,7 +2,6 @@ import ChatDomain
 import CryptoKit
 import Foundation
 import OSLog
-import SQLite3
 
 public struct ChatCacheScope: Sendable {
   public let apiBaseURL: URL
@@ -100,7 +99,7 @@ public actor ChatCache {
 
   private let fileURL: URL
   private let legacyFileURL: URL?
-  private var connection: CacheDatabase?
+  private var connection: SQLiteDatabase?
   private var isClosed = false
 
   public init(
@@ -224,7 +223,7 @@ public actor ChatCache {
     try updateIndicatorState { $0.change(change, threads: threads) }
   }
 
-  private func readIndicatorState(_ database: CacheDatabase) throws -> ChatIndicatorCacheState {
+  private func readIndicatorState(_ database: SQLiteDatabase) throws -> ChatIndicatorCacheState {
     let query = try database.prepare("SELECT state FROM chat_indicators WHERE id = 1")
     guard try query.step() else { return ChatIndicatorCacheState() }
     return try JSONDecoder().decode(ChatIndicatorCacheState.self, from: query.blob(at: 0))
@@ -482,10 +481,10 @@ public actor ChatCache {
     }
   }
 
-  private func withDatabase<Result>(_ body: (CacheDatabase) throws -> Result) throws -> Result {
+  private func withDatabase<Result>(_ body: (SQLiteDatabase) throws -> Result) throws -> Result {
     do {
       return try body(database())
-    } catch let error as CacheSQLiteError where error.isCorrupt {
+    } catch let error as SQLiteError where error.isCorrupt {
       try reset()
       return try body(database())
     } catch ChatCacheError.corrupt {
@@ -497,7 +496,7 @@ public actor ChatCache {
     }
   }
 
-  private func database() throws -> CacheDatabase {
+  private func database() throws -> SQLiteDatabase {
     guard !isClosed else { throw ChatCacheError.unavailable }
     if let connection { return connection }
     let directory = fileURL.deletingLastPathComponent()
@@ -518,7 +517,7 @@ public actor ChatCache {
     values.isExcludedFromBackup = true
     var mutableDirectory = directory
     try mutableDirectory.setResourceValues(values)
-    let opened = try CacheDatabase(url: fileURL)
+    let opened = try SQLiteDatabase(url: fileURL)
     try opened.initialize(version: Self.version)
     if let legacyFileURL, legacyFileURL != fileURL {
       do {
@@ -586,9 +585,9 @@ public actor ChatCache {
 
   private static func insert(
     _ event: ChatCacheEvent, into table: String, threadID: String? = nil,
-    database: CacheDatabase
+    database: SQLiteDatabase
   ) throws {
-    let statement: CacheStatement
+    let statement: SQLiteStatement
     if let threadID {
       statement = try database.prepare(
         "INSERT INTO history_rows (thread_id, id, seq_id, data) VALUES (?, ?, ?, ?)")
@@ -608,9 +607,9 @@ public actor ChatCache {
   }
 
   private static func existingEvent(
-    id: String, in table: String, threadID: String? = nil, database: CacheDatabase
+    id: String, in table: String, threadID: String? = nil, database: SQLiteDatabase
   ) throws -> ChatCacheEvent? {
-    let statement: CacheStatement
+    let statement: SQLiteStatement
     if let threadID {
       statement = try database.prepare(
         "SELECT id, seq_id, data FROM history_rows WHERE thread_id = ? AND id = ?")
@@ -625,36 +624,8 @@ public actor ChatCache {
   }
 }
 
-private struct CacheSQLiteError: Error {
-  let code: Int32
-  let message: String
-
-  var isCorrupt: Bool {
-    let primaryCode = code & 0xff
-    return primaryCode == SQLITE_CORRUPT || primaryCode == SQLITE_NOTADB
-  }
-}
-
-private final class CacheDatabase {
-  private let handle: OpaquePointer
-
-  init(url: URL) throws {
-    var opened: OpaquePointer?
-    let result = sqlite3_open_v2(
-      url.path, &opened, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
-    guard result == SQLITE_OK, let opened else {
-      let message =
-        opened.map { String(cString: sqlite3_errmsg($0)) } ?? "Unable to open chat cache"
-      if let opened { sqlite3_close(opened) }
-      throw CacheSQLiteError(code: result, message: message)
-    }
-    handle = opened
-    sqlite3_busy_timeout(handle, 5_000)
-  }
-
-  deinit { sqlite3_close(handle) }
-
-  func initialize(version: Int) throws {
+extension SQLiteDatabase {
+  fileprivate func initialize(version: Int) throws {
     try execute("PRAGMA journal_mode = WAL")
     try execute("PRAGMA foreign_keys = ON")
     try execute("CREATE TABLE IF NOT EXISTS cache_migrations (id INTEGER PRIMARY KEY)")
@@ -739,7 +710,7 @@ private final class CacheDatabase {
 
   /// The extension can create the shared store before the first app launch.
   /// Merge the old app-private cache once, preserving newer shared cursors.
-  func importLegacy(from url: URL) throws {
+  fileprivate func importLegacy(from url: URL) throws {
     let imported: Bool = try {
       let check = try prepare("SELECT 1 FROM cache_migrations WHERE id = 1")
       return try check.step()
@@ -819,125 +790,11 @@ private final class CacheDatabase {
     }
   }
 
-  func transaction<Result>(_ body: () throws -> Result) throws -> Result {
-    try execute("BEGIN IMMEDIATE")
-    do {
-      let result = try body()
-      try execute("COMMIT")
-      return result
-    } catch {
-      try? execute("ROLLBACK")
-      throw error
-    }
-  }
-
-  func execute(_ sql: String) throws {
-    let result = sqlite3_exec(handle, sql, nil, nil, nil)
-    guard result == SQLITE_OK else { throw failure(code: result) }
-  }
-
-  func prepare(_ sql: String) throws -> CacheStatement {
-    var statement: OpaquePointer?
-    let result = sqlite3_prepare_v2(handle, sql, -1, &statement, nil)
-    guard result == SQLITE_OK, let statement else { throw failure(code: result) }
-    return CacheStatement(database: self, handle: statement)
-  }
-
-  func failure(code: Int32? = nil) -> CacheSQLiteError {
-    CacheSQLiteError(
-      code: code ?? sqlite3_extended_errcode(handle),
-      message: String(cString: sqlite3_errmsg(handle)))
-  }
 }
 
-private final class CacheStatement {
-  private let database: CacheDatabase
-  private let handle: OpaquePointer
-
-  init(database: CacheDatabase, handle: OpaquePointer) {
-    self.database = database
-    self.handle = handle
-  }
-
-  deinit { sqlite3_finalize(handle) }
-
-  func bind(_ value: String?, at index: Int32) throws {
-    guard let value else {
-      try bindNull(at: index)
-      return
-    }
-    let result = value.withCString { pointer in
-      sqlite3_bind_text(handle, index, pointer, -1, cacheSQLiteTransient)
-    }
-    guard result == SQLITE_OK else { throw database.failure(code: result) }
-  }
-
-  func bind(_ value: Int, at index: Int32) throws {
-    let result = sqlite3_bind_int64(handle, index, Int64(value))
-    guard result == SQLITE_OK else { throw database.failure(code: result) }
-  }
-
-  func bind(_ value: Data, at index: Int32) throws {
-    let result: Int32
-    if value.isEmpty {
-      result = sqlite3_bind_zeroblob(handle, index, 0)
-    } else {
-      result = value.withUnsafeBytes { bytes in
-        sqlite3_bind_blob(
-          handle, index, bytes.baseAddress, Int32(bytes.count), cacheSQLiteTransient)
-      }
-    }
-    guard result == SQLITE_OK else { throw database.failure(code: result) }
-  }
-
-  private func bindNull(at index: Int32) throws {
-    let result = sqlite3_bind_null(handle, index)
-    guard result == SQLITE_OK else { throw database.failure(code: result) }
-  }
-
-  func step() throws -> Bool {
-    let result = sqlite3_step(handle)
-    switch result {
-    case SQLITE_ROW: return true
-    case SQLITE_DONE: return false
-    default: throw database.failure(code: result)
-    }
-  }
-
-  func run() throws {
-    guard try !step() else { throw ChatCacheError.corrupt }
-  }
-
-  func integer(at index: Int32) throws -> Int {
-    guard sqlite3_column_type(handle, index) == SQLITE_INTEGER,
-      let value = Int(exactly: sqlite3_column_int64(handle, index))
-    else { throw ChatCacheError.corrupt }
-    return value
-  }
-
-  func optionalInteger(at index: Int32) throws -> Int? {
-    sqlite3_column_type(handle, index) == SQLITE_NULL ? nil : try integer(at: index)
-  }
-
-  func optionalText(at index: Int32) -> String? {
-    guard let pointer = sqlite3_column_text(handle, index) else { return nil }
-    return String(cString: pointer)
-  }
-
-  func blob(at index: Int32) throws -> Data {
-    guard sqlite3_column_type(handle, index) == SQLITE_BLOB else {
-      throw ChatCacheError.corrupt
-    }
-    let length = Int(sqlite3_column_bytes(handle, index))
-    if length == 0 { return Data() }
-    guard let bytes = sqlite3_column_blob(handle, index) else { throw ChatCacheError.corrupt }
-    return Data(bytes: bytes, count: length)
-  }
-
-  func event() throws -> ChatCacheEvent {
+extension SQLiteStatement {
+  fileprivate func event() throws -> ChatCacheEvent {
     guard let id = optionalText(at: 0), !id.isEmpty else { throw ChatCacheError.corrupt }
     return ChatCacheEvent(id: id, seqID: try integer(at: 1), data: try blob(at: 2))
   }
 }
-
-private let cacheSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
