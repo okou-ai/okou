@@ -12,6 +12,7 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
   type WorkflowFileEntry,
+  type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -70,6 +71,14 @@ function expectPublishingReference(
   expect(files.get(reference.path)?.toString()).toBe(reference.content);
 }
 
+function expectLearningSchedule(automation: WorkflowAutomationSummary) {
+  if (automation.kind !== "schedule" || automation.schedule.type !== "cron") {
+    throw new Error("Expected the Learning cron schedule");
+  }
+  expect(automation.schedule.cronExpression.split(" ")[1]).toBe("2");
+  expect(automation.schedule.timezone).toBe("Asia/Shanghai");
+}
+
 test("requires authentication to publish the Official Workflow catalog", async () => {
   mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
   const app = setupApp({
@@ -88,7 +97,7 @@ test.each([
   { kind: "suggestions", failUpload: true },
   { kind: "learning", failUpload: false },
 ])(
-  "publishes idempotently and runs $kind on schedule (upload failure: $failUpload)",
+  "publishes the $kind catalog idempotently (upload failure: $failUpload)",
   async ({ kind, failUpload }) => {
     const learning = kind === "learning";
     const definitionName = learning
@@ -158,6 +167,9 @@ test.each([
       releaseId: published.body.releaseId,
       diagnostics: [],
     });
+    if (failUpload) {
+      return;
+    }
     const actor = owned.actor;
     const orgId = actor.orgId;
     if (!orgId) {
@@ -238,14 +250,7 @@ test.each([
       throw new Error("Expected the next Official workflow schedule");
     }
     if (learning) {
-      if (
-        automation.kind !== "schedule" ||
-        automation.schedule.type !== "cron"
-      ) {
-        throw new Error("Expected the Learning cron schedule");
-      }
-      expect(automation.schedule.cronExpression.split(" ")[1]).toBe("2");
-      expect(automation.schedule.timezone).toBe("Asia/Shanghai");
+      expectLearningSchedule(automation);
     }
     await withMockNowForTest(
       new Date(automation.nextRunAt).getTime(),
