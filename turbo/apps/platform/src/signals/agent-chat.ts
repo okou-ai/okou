@@ -23,10 +23,7 @@ import {
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
 import { projects$ } from "./projects/projects.ts";
-import {
-  expandedProjectIds$,
-  projectThreadLimits$,
-} from "./projects/project-expansion.ts";
+import { expandedProjectIds$ } from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
 
@@ -123,9 +120,9 @@ export const currentChatAgentDisplayName$ = computed(
 );
 
 export interface ChatThreadListSignals {
-  /** Listed chats outside Projects, which own number shortcuts and pins. */
+  /** Listed chats outside Projects, which own number shortcuts. */
   readonly threads$: Computed<EventDrivenChatThread[]>;
-  /** Listed chats inside Projects, including the ones a fold or limit hides. */
+  /** Listed chats inside Projects, including the ones a fold hides. */
   readonly projectThreads$: Computed<readonly EventDrivenChatThread[]>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly rows$: Computed<readonly ChatThreadListRow[]>;
@@ -133,6 +130,8 @@ export interface ChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
+  /** The inbox lists no chat outside Projects, and says so below them. */
+  readonly inboxEmptyOutsideProjects$: Computed<boolean>;
 }
 
 interface ChatThreadListFilter {
@@ -179,15 +178,19 @@ function createChatThreadListView({
   allThreadIds$,
   projectThreads$,
   allProjectThreads$: allProjectThreadsSource$,
+  projectIdsWithHiddenArchivedThreads$,
   hideEmptyProjects,
   hasHiddenArchivedThreads$,
+  inboxEmptyOutsideProjects$,
 }: {
   threads$: Computed<EventDrivenChatThread[]>;
   allThreadIds$: Computed<readonly string[]>;
   projectThreads$: Computed<readonly EventDrivenChatThread[]>;
   allProjectThreads$: Computed<readonly EventDrivenChatThread[]>;
+  projectIdsWithHiddenArchivedThreads$: Computed<ReadonlySet<string>>;
   hideEmptyProjects: boolean;
   hasHiddenArchivedThreads$: Computed<boolean>;
+  inboxEmptyOutsideProjects$: Computed<boolean>;
 }): ChatThreadListSignals {
   const threadIds$ = computed((get): readonly string[] => {
     return threadIdsOf(get(threads$));
@@ -196,8 +199,10 @@ function createChatThreadListView({
     return buildChatThreadListRows({
       projects: get(projects$),
       expandedProjectIds: get(expandedProjectIds$),
-      projectThreadLimits: get(projectThreadLimits$),
       projectThreads: get(projectThreads$),
+      projectIdsWithHiddenArchivedThreads: get(
+        projectIdsWithHiddenArchivedThreads$,
+      ),
       threadIds: get(threadIds$),
       hideEmptyProjects,
     });
@@ -227,6 +232,7 @@ function createChatThreadListView({
         : false;
     }),
     hasHiddenArchivedThreads$,
+    inboxEmptyOutsideProjects$,
   };
 }
 
@@ -254,11 +260,14 @@ function createChatThreadListSignals(
     }
     return filter.onlyArchived ? thread.archived : !thread.archived;
   };
+  // Only the inbox leaves archived chats out and explains an empty list.
+  const inbox = !filter.onlyArchived && !filter.onlyMuted;
+  const threads$ = computed((get): EventDrivenChatThread[] => {
+    return get(allThreads$).filter(listed);
+  });
 
   return createChatThreadListView({
-    threads$: computed((get): EventDrivenChatThread[] => {
-      return get(allThreads$).filter(listed);
-    }),
+    threads$,
     allThreadIds$: computed((get): readonly string[] => {
       return threadIdsOf(get(allThreads$));
     }),
@@ -267,14 +276,30 @@ function createChatThreadListSignals(
       return get(allProjectThreads$).filter(listed);
     }),
     allProjectThreads$,
-    hideEmptyProjects: filter.onlyArchived || filter.onlyMuted,
+    projectIdsWithHiddenArchivedThreads$: computed(
+      (get): ReadonlySet<string> => {
+        const projectIds = new Set<string>();
+        if (inbox) {
+          for (const thread of get(allProjectThreads$)) {
+            if (thread.archived && thread.projectId !== null) {
+              projectIds.add(thread.projectId);
+            }
+          }
+        }
+        return projectIds;
+      },
+    ),
+    hideEmptyProjects: !inbox,
     hasHiddenArchivedThreads$: computed((get): boolean => {
-      if (filter.onlyArchived || filter.onlyMuted) {
-        return false;
-      }
-      return get(allThreads$).some((thread) => {
-        return thread.archived;
-      });
+      return (
+        inbox &&
+        get(allThreads$).some((thread) => {
+          return thread.archived;
+        })
+      );
+    }),
+    inboxEmptyOutsideProjects$: computed((get): boolean => {
+      return inbox && get(threads$).length === 0;
     }),
   });
 }
@@ -294,8 +319,13 @@ const currentChatThreadListSignals$ = computed(
   },
 );
 
-const noHiddenArchivedThreads$ = computed(() => {
+// The unread list hides Projects without unread chats and offers every chat
+// instead of explaining what it leaves out.
+const notInbox$ = computed(() => {
   return false;
+});
+const noProjectIds$ = computed((): ReadonlySet<string> => {
+  return new Set();
 });
 
 // Indicators bound the unread list. Keep their asynchronous dependency out of
@@ -342,8 +372,10 @@ export const unreadChatThreadListSignals$ = computed(
       }),
       projectThreads$,
       allProjectThreads$: projectThreads$,
+      projectIdsWithHiddenArchivedThreads$: noProjectIds$,
       hideEmptyProjects: true,
-      hasHiddenArchivedThreads$: noHiddenArchivedThreads$,
+      hasHiddenArchivedThreads$: notInbox$,
+      inboxEmptyOutsideProjects$: notInbox$,
     });
   },
 );
