@@ -22,6 +22,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
 | `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
 | `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
+| `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -116,6 +117,19 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   graph, identity and realtime modules while retaining system transport,
   storage, crypto and synchronization frameworks. Package test targets retain
   their test-framework and public package imports.
+- Raw `UserDefaults` references, type aliases and injected production types
+  belong to the existing project-disclosure and notification-metadata definition
+  sites in `StorageBoundariesRule.swift`. Callers use their semantic operations.
+  `@AppStorage` remains valid for the registered appearance and sidebar keys at
+  their exact view definition sites; the same file cannot introduce a new
+  business key or a custom `store:`. Direct wrapper construction and aliases do
+  not create another preference owner.
+  Native tests and ChatData test support may construct an explicit nonempty
+  `UserDefaults(suiteName:)`, including qualified and contextual initializers.
+  They may inject its typed value, but cannot acquire `.standard`, an unnamed
+  domain, a constructor/metatype reference, or a type alias hiding that access.
+  Fixtures still own unique suite names and immediate domain cleanup as required
+  by [iOS testing](ios-testing.md#external-fixtures-and-isolation).
 
 ## Static Analysis Limits
 
@@ -137,6 +151,11 @@ conditional imports, at known source paths. They do not resolve transitive
 dependencies, inferred SDK values, type aliases or every future UI/SDK module.
 ChatData's known forbidden module edges complement its package manifest;
 unknown dependencies and SDK operations still require architectural review.
+Storage checks restrict explicit native defaults dependencies and registered
+property-wrapper declarations. They do not resolve arbitrary cross-file
+factories, inferred helper parameters, runtime suite-name values, or prove that
+a test suite is unique and eventually cleared. They do not inspect SQLite,
+Keychain, files, or third-party persistence internals.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.
