@@ -82,7 +82,7 @@ function agentSelectionQueries(
   const custom = builder
     .select({
       payload: sql`jsonb_build_object(
-      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${connectorNetworkBinding}),
+      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${connectorNetworkBinding.sql}),
       'oauthConfig', case when ${orgCustomConnectorOauthConfigs.connectorId} is null then null else ${contextJsonProjection(oauthColumns)} end,
       'permissionNames', ${userCustomConnectors.permissionNames})`
         .mapWith(zodDriverValueDecoder(zUnknown()))

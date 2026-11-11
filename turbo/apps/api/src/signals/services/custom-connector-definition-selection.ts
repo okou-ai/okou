@@ -28,7 +28,9 @@ export type CustomConnectorExecutionDefinition =
 
 export function customConnectorDefinitionSelection() {
   return {
-    networkBinding: customConnectorNetworkBindingSelection(),
+    networkBinding: customConnectorNetworkBindingSelection().as(
+      "connector_network_binding",
+    ),
     id: orgCustomConnectors.id,
     orgId: orgCustomConnectors.orgId,
     slug: orgCustomConnectors.slug,

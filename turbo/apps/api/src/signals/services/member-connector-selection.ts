@@ -84,7 +84,7 @@ export function memberConnectorSelectionQueries(
   const custom = builder
     .select({
       payload: sql`jsonb_build_object(
-      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${networkBinding}),
+      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${networkBinding.sql}),
       'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END,
       'permissionNames', '[]'::jsonb)`
         .mapWith(zodDriverValueDecoder(zUnknown()))

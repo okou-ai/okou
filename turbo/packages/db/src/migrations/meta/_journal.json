@@ -3249,6 +3249,13 @@
       "when": 1794382434393,
       "tag": "1542_cloudflare_access_org_scope_key",
       "breakpoints": true
+    },
+    {
+      "idx": 1543,
+      "version": "7",
+      "when": 1794382509385,
+      "tag": "1543_custom_connector_cloudflare_bindings",
+      "breakpoints": true
     }
   ]
 }

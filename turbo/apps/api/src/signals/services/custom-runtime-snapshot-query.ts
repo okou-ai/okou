@@ -10,12 +10,14 @@ import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { enum as zEnum } from "zod";
+import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
   pgIntegerDecoder,
   pgTextDecoder,
   zodEnumDriverValueDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { connectorCatalogCurrentWhere } from "./connector-catalog-slug-source.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
@@ -56,6 +58,11 @@ const storageKindDecoder = zodEnumDriverValueDecoder(
 // NULL slots are native SQL values; timestamp, int8, arrays and JSONB retain
 // their column representations and the first UNION branch owns every decoder.
 const emptySections = Object.freeze({
+  definition_networkBinding: sql`NULL::jsonb`
+    .mapWith(
+      zodDriverValueDecoder(customConnectorNetworkMetadataSchema.nullable()),
+    )
+    .as("definition_networkBinding"),
   definition_id: sql`NULL::uuid`
     .mapWith(nullableDriverValueDecoder(pgTextDecoder))
     .as("definition_id"),
@@ -427,6 +434,7 @@ function customRuntimeDefinitionRows(
     .select({
       section: sql`'definition'`.mapWith(sectionDecoder).as("section"),
       ...emptySections,
+      definition_networkBinding: definitions.networkBinding,
       definition_id: definitions.id,
       definition_orgId: definitions.orgId,
       definition_slug: definitions.slug,
@@ -667,6 +675,7 @@ type SnapshotRow = ReturnType<
 function customRuntimeDefinitionFromRow(row: SnapshotRow) {
   return {
     connector: {
+      networkBinding: row.definition_networkBinding,
       id: requiredSlot(row.definition_id),
       orgId: requiredSlot(row.definition_orgId),
       slug: requiredSlot(row.definition_slug),

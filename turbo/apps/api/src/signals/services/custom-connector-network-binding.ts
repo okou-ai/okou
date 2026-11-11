@@ -47,10 +47,10 @@ export function customConnectorNetworkBindingSelection() {
       'type', 'cloudflare_access',
       'configId', ${binding.configId},
       'protectedOrigins', ${binding.protectedOrigins},
-      'status', CASE WHEN ${config.id} IS NULL THEN 'unavailable' ELSE 'available' END,
+      'status', 'available',
       'name', ${config.name}
     ) FROM ${binding}
-    LEFT JOIN ${config} ON ${config.id} = ${binding.configId}
+    JOIN ${config} ON ${config.id} = ${binding.configId}
       AND ${config.orgId} = ${binding.orgId} AND ${config.scope} = 'organization'
     WHERE ${binding.connectorId} = ${orgCustomConnectors.id}
       AND ${binding.orgId} = ${orgCustomConnectors.orgId}
