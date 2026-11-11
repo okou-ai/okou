@@ -287,8 +287,19 @@ for host in "${hosts[@]}"; do
     for inherited_fd in "${lock_fds[@]}"; do
       close_fd "$inherited_fd"
     done
+    heartbeat_sleep_pid=""
+    trap '
+      if [ -n "$heartbeat_sleep_pid" ]; then
+        kill "$heartbeat_sleep_pid" 2>/dev/null || true
+        wait "$heartbeat_sleep_pid" 2>/dev/null || true
+      fi
+    ' EXIT
+    trap 'exit 0' INT TERM
     while :; do
-      sleep "$heartbeat_interval" {release_fd}>&-
+      sleep "$heartbeat_interval" {release_fd}>&- >/dev/null 2>&1 &
+      heartbeat_sleep_pid=$!
+      wait "$heartbeat_sleep_pid" || exit 0
+      heartbeat_sleep_pid=""
       printf '%s\n' VM0_RUNNER_LIFECYCLE_LOCK_HEARTBEAT >&"$release_fd" || exit 0
     done
   ) &

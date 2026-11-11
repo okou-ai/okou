@@ -180,8 +180,21 @@
           section("Chat rows") {
             // Chat rows, as the sidebar draws them: status emoji, the quiet glyph and the
             // trailing states in their order (unread, draft, pinned). A working chat's title
-            // shimmers, so it keeps its trailing state.
+            // shimmers, so it keeps its trailing state. A folded project with an unread chat
+            // leads: the badge on its folder, its chevron in line with the chats' dots.
             VStack(alignment: .leading, spacing: 0) {
+              HStack(spacing: OkouSpace.ten) {
+                OkouIcon("folder", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.mutedForeground)
+                  .modifier(OkouUnreadBadge(isVisible: true))
+                  .frame(width: OkouControl.statusColumn, alignment: .leading)
+                Text(verbatim: "Mobile").font(.okou(.body)).lineLimit(1)
+                Spacer(minLength: 0)
+                OkouIcon("chevron-down", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.quietMark)
+                  .rotationEffect(.degrees(-90))
+              }
+              .frame(minHeight: OkouControl.listRow)
               OkouChatRowLabel("Launch checklist", trailing: .pinned) {
                 OkouChatStatusMark(emoji: nil)
               }

@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   cleanup-runner:
+    timeout-minutes: 15
     # Skip for release-please PRs (only version bumps and changelogs)
     if: "github.event.action == 'closed' && !startsWith(github.head_ref || '', 'release-please--branches--')"
     runs-on: ubuntu-latest
@@ -39,20 +40,6 @@ jobs:
             echo "should-cleanup=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for active CI owners before runner cleanup
-        if: steps.check.outputs.should-cleanup == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUNNER_OWNER_SCOPE: closed-pr-cleanup
-        run: .github/scripts/cancel-superseded-merge-group-runs.sh
-
-      - name: Install Ansible
-        if: steps.check.outputs.should-cleanup == 'true'
-        run: pip3 install ansible-core
-
       - name: Setup SSH via Cloudflare Tunnel
         if: steps.check.outputs.should-cleanup == 'true'
         uses: ./.github/actions/setup-ssh-tunnel
@@ -64,40 +51,16 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Cleanup PR runners on all metal hosts
+      - name: Reconcile closed PR metal resources
         if: steps.check.outputs.should-cleanup == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-        run: |
-          JOB_REF="pr-${PR_NUMBER}"
-          export JOB_REF
-          if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
-            "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
-            echo "::warning::PR runner cleanup failed for ${JOB_REF} — stale services may remain on metal hosts"
-          fi
-
-      - name: Cleanup Stripe CLI listener on all metal hosts
-        if: steps.check.outputs.should-cleanup == 'true'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-        run: |
-          cd ansible
-          JOB_REF="pr-${PR_NUMBER}"
-          if ! ansible-playbook \
-            -i "${METAL_HOSTS}," \
-            playbooks/cleanup-stripe-listener.yml \
-            -e "ansible_user=${METAL_USER}" \
-            -e "job_ref=${JOB_REF}" \
-            -v; then
-            echo "::warning::Stripe CLI listener cleanup failed for ${JOB_REF} — stale Stripe forwarding may remain on metal hosts"
-          fi
+          RUNNER_PR_NUMBERS: ${{ github.event.pull_request.number }}
+        run: python3 .github/scripts/runner/cleanup-metal-runners.py
 
   # Worker cleanup never deletes the shared Neon branch; cleanup-database owns it.
   cleanup-api-worker:

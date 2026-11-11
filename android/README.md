@@ -107,6 +107,48 @@ native acceptance. Robolectric exercises host-side Compose interactions and
 does not establish those device properties. Linux sandboxes without `/dev/kvm`
 are useful for compilation/tests but do not provide accelerated emulator evidence.
 
+### Instrumented Android Tests
+
+The `androidTest` suite launches the real Activity and uses UI Automator to
+exercise platform keyboard/insets and Back, retained editor/caret state,
+appearance restoration with a new Activity owner, native system bars and live
+platform night-mode changes. The existing JVM/Robolectric tests retain the
+broader state/error/localization matrix.
+
+On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
+
+```bash
+./gradlew :app:pixel2Api35DebugAndroidTest \
+  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
+  --no-daemon
+```
+
+AGP manages one Pixel 2, API 35, 64-bit AOSP device: emulator/image provisioning,
+snapshots, installation, test execution and teardown. Accept the SDK licenses
+using the setup procedure above before provisioning. Initial downloads take
+additional time and disk space. Software GPU rendering supports headless CI;
+CPU virtualization still requires KVM on Linux. This configuration targets the
+CI phone cohort, not a measured performance or physical-device matrix.
+
+Compile/package the suite without starting a device:
+
+```bash
+./gradlew :app:assembleDebugAndroidTest --no-daemon
+```
+
+Use an isolated test emulator. The fixture snapshots/restores app preferences,
+platform night mode and keyboard settings, scopes its UI Automation shell
+permissions, and closes its Activity owners on success and failure. It does not
+contact a backend. A new Activity owner is not a process-death restoration test.
+
+Managed-device HTML reports are under `app/build/reports/androidTests/`, with
+JUnit results/logcat under `app/build/outputs/androidTest-results/`. Official
+Test Storage retrieves failure screenshots and accessibility hierarchies under
+`app/build/outputs/managed_device_android_test_additional_output/` before device
+teardown. These images are diagnostics, not screenshot-golden assertions.
+CI retains these outputs and the Gradle execution log for seven days in
+`android-instrumentation-api35-<revision>` artifacts.
+
 ## Components and Authority
 
 - `app`: native Activity, Home/Settings routes, retained presentation owners,
@@ -143,9 +185,13 @@ vectors use Lucide geometry; its shared license is also packaged under
 runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
 and shared font/color-evaluator assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK for seven days.
-The final `ci-gate-android` check always reports an aggregate result. It requires
-successful detection and every selected job to succeed; only an explicit
-unselected result permits skipped native checks.
+A separate Linux/KVM job runs the instrumented suite on the managed API 35
+phone. The final `ci-gate-android` check always reports an aggregate result. It
+requires successful detection and both selected JVM/build and instrumentation
+jobs to succeed; only explicit unselected results permit skipped native checks.
+Cancellation, failure or an unexpected skip fails the gate. Emulator functional
+evidence does not establish OEM input-method behavior or physical-device startup
+budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
 recognizes the intentionally public MAIN/LAUNCHER only after the strict source
