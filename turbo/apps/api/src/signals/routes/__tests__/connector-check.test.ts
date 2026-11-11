@@ -1,6 +1,7 @@
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { publicChatActor } from "./helpers/public-chat-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { randomUUID } from "node:crypto";
 
@@ -193,7 +194,12 @@ async function createOwnedRun(
   bdd.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  runsApi.configureRunnerGroup();
+  const runnerGroup = runsApi.configureRunnerGroup();
+  const runOwner = publicRunOwner(context, actor, {
+    clockTime: () => {
+      return now();
+    },
+  });
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -217,11 +223,15 @@ async function createOwnedRun(
       options.customConnectorIds,
     );
   }
-  const run = await runsApi.createThreadRun(actor, {
-    agentId: agent.agentId,
-    prompt: "Create a connector check fixture",
+  return runOwner.run(async () => {
+    const run = await runsApi.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Create a connector check fixture",
+    });
+    await runsApi.heartbeatRunner(runnerGroup);
+    await runOwner.claim(run.runId);
+    return { runId: run.runId, agentId: agent.agentId };
   });
-  return { runId: run.runId, agentId: agent.agentId };
 }
 
 async function createAwsRunWithPermissionGrants(): Promise<string> {
