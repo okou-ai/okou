@@ -63,6 +63,7 @@ export interface AgentToolsPromptInputs {
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
+  readonly sshChatApprovalEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -77,6 +78,10 @@ export function buildAgentToolsPromptInputs(args: {
     disabledPaidTools: args.disabledPaidTools,
     chatConnectorAccountsEnabled: isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
+      context,
+    ),
+    sshChatApprovalEnabled: isFeatureEnabled(
+      FeatureSwitchKey.SshChatApproval,
       context,
     ),
     wechatEnabled: isFeatureEnabled(
@@ -158,7 +163,11 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
     "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
-    "- SSH chat access: for a configured host missing from authorized inventory, use `okou ssh request-access <connection-id> --reason <purpose>` and share its exact review URL, then end the Run. The user approves in a message card and the next round continues automatically; do not direct them to find a Remote control switch. If connector permissions also need approval, use `--require-permission <connector/permission>` for every diagnosed permission, share the existing permission/batch link alongside the SSH request, and attach continuation only to the SSH request. If the request API reports the feature unavailable, use the existing owner-controlled host selection.",
+    ...(args.sshChatApprovalEnabled
+      ? [
+          "- SSH chat access: in Web Chat, for a configured host missing from authorized inventory, use `okou ssh request-access <connection-id> --reason <purpose>` and share its exact review URL, then end the Run. The user approves in a message card and the next round continues automatically; do not direct them to find a Remote control switch. If connector permissions also need approval, use `--require-permission <connector/permission>` for every diagnosed permission, share the existing permission/batch link alongside the SSH request, and attach continuation only to the SSH request. If the request API reports the feature unavailable, use the existing owner-controlled host selection.",
+        ]
+      : []),
     "- Remote SSH failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command or check.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
@@ -254,10 +263,14 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     ...(args.batchConnectorPermissionsEnabled
       ? [
           "- Batch permission approvals: after diagnosing each concrete builtin HTTP operation with `okou connector check`, use `okou connector permission-request --batch-file <path>` for multiple permissions. The JSON file contains `{ connector, permission, url, method }` entries, with the existing AWS diagnostic selectors when needed; use only the exact diagnosed operations, never provider OAuth scopes. The CLI rechecks every item and skips permissions already allowed. Return its single batch URL verbatim. A single batch approval may carry one `--callback-prompt <prompt>` when it is this turn's only access action; after sharing it, end the current turn. The user chooses one permission duration for the batch.",
-          "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. For SSH host access plus connector permission approvals, a `ssh request-access` request declaring every `--require-permission` can own continuation; use ordinary non-callback permission links alongside it. Otherwise, return all generated links in one response, one link per line, and wait for the user to finish all of them.",
+          args.sshChatApprovalEnabled
+            ? "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. For Web Chat SSH host access plus connector permission approvals, a `ssh request-access` request declaring every `--require-permission` can own continuation; use ordinary non-callback permission links alongside it. Otherwise, return all generated links in one response, one link per line, and wait for the user to finish all of them."
+            : "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. Return all generated links in one response, one link per line, and wait for the user to finish all of them.",
         ]
       : [
-          "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. The exception is an SSH access request that declares every required connector permission with `--require-permission`: only that request owns continuation. Otherwise, return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
+          args.sshChatApprovalEnabled
+            ? "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. The exception is a Web Chat SSH access request that declares every required connector permission with `--require-permission`: only that request owns continuation. Otherwise, return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them."
+            : "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
         ]),
     "- Keep temporary downloads, synchronized chat histories, diffs, inventories and backups outside personal Memory. Store chat history caches under `/tmp/okou-chat-history` and other task scratch under `/tmp` or the workspace. Memory is saved after each Run; retain only durable knowledge and intentional evidence there, under the existing Memory authorization rules.",
     ...(args.singleAgent

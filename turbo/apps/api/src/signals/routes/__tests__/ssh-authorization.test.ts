@@ -372,6 +372,69 @@ describe("SSH chat authorization", () => {
       [410],
     );
   });
+
+  it("revokes approved access through the review endpoint and keeps repeated decisions safe", async () => {
+    const s = await scenario();
+    const created = await accept(
+      api().create({ headers: s.token, body: s.body }),
+      [200],
+    );
+    await end(s.run);
+    const params = { id: created.body.id };
+    await accept(api().approve({ headers, params, body: {} }), [200]);
+    await flushWaitUntilForTest();
+    const events = await createChatFilesBddApi(context).listThreadEvents(
+      s.run.actor,
+      s.run.threadId,
+    );
+    const continuation = events.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === created.body.id
+      );
+    });
+    if (!continuation?.runId) {
+      throw new Error("Expected an approved SSH continuation Run");
+    }
+    resumed.push({ actor: s.run.actor, runId: continuation.runId });
+    const continued = await createRunsApi(context).readRun(
+      s.run.actor,
+      continuation.runId,
+    );
+    expect(continued.appendSystemPrompt).toContain(
+      "okou ssh request-access <connection-id> --reason <purpose>",
+    );
+    expect(continued.appendSystemPrompt).toContain(
+      "attach continuation only to the SSH request",
+    );
+    authenticate(s.owner);
+    const revoked = await accept(
+      api().revoke({ headers, params, body: {} }),
+      [200],
+    );
+    expect(revoked.body).toMatchObject({
+      status: "revoked",
+      enabled: false,
+      continuationPending: false,
+    });
+    const selected = await accept(
+      access().listThreadAccess({
+        headers,
+        params: { threadId: s.run.threadId },
+      }),
+      [200],
+    );
+    expect(selected.body.ssh).toContainEqual(
+      expect.objectContaining({
+        connectionId: s.host.id,
+        enabled: false,
+        source: "override",
+      }),
+    );
+    await accept(api().revoke({ headers, params, body: {} }), [200]);
+    await accept(api().approve({ headers, params, body: {} }), [409]);
+  });
+
   it.each([false, true])(
     "continues only after the companion permission is approved in the effective permission model (shared=%s)",
     async (memberMode) => {
