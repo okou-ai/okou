@@ -39,7 +39,6 @@ export enum FeatureSwitchKey {
   CodexExecution = "_codexExecution",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
-  BrowserNativeInput = "browserNativeInput",
   BrowserSharedOwner = "browserSharedOwner",
   AgentSuggestion = "agentSuggestion",
   ProactiveLearning = "proactiveLearning",

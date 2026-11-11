@@ -58,7 +58,6 @@ export interface AgentToolsPromptInputs {
   readonly larkEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  readonly browserNativeInputEnabled: boolean;
   readonly browserSharedOwnerEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
@@ -87,10 +86,6 @@ export function buildAgentToolsPromptInputs(args: {
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
-    browserNativeInputEnabled: isFeatureEnabled(
-      FeatureSwitchKey.BrowserNativeInput,
       context,
     ),
     browserSharedOwnerEnabled: isFeatureEnabled(
@@ -181,13 +176,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
                 "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
               ]
             : []),
-          ...(args.browserNativeInputEnabled === true
-            ? [
-                "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
-                "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
-                "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
-              ]
-            : []),
+          "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
+          "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
+          "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
           "- Direct Browser takeover is a last resort, not the default for login: when you need the user to operate the Browser, share `okou browser view` only if the required user-only interaction cannot be handled with available exact native input controls and `agent-browser` (for example, a passkey prompt or unsupported widget), or native input is unavailable. Explain the specific step and ask the user to reply when finished or blocked; stop using the Browser in this turn. If the user explicitly asks to view the Browser, you may share its live view without treating that request as a takeover.",
         ]
       : []),
