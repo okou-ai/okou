@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { literal, object, string } from "zod";
 import { bundleConfiguration, executionConnection } from "./execution-content";
@@ -50,6 +51,7 @@ import { PlanningError, parseSnapshot } from "./snapshot";
 async function operatorCommit() {
   const exec = promisify(execFile);
   const options = {
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
     env: { PATH: process.env.PATH, HOME: process.env.HOME },
     timeout: 10_000,
   };

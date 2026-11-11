@@ -66,7 +66,7 @@ async function invoke(
     process.execPath,
     [
       "--import",
-      "tsx",
+      import.meta.resolve("tsx"),
       "--import",
       peer,
       file,
@@ -75,6 +75,7 @@ async function invoke(
       fixture,
     ],
     {
+      cwd: directory,
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
