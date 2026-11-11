@@ -59,7 +59,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
     enabled: false,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
