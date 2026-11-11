@@ -33,6 +33,8 @@ if 'graphql' in args:
  print(json.dumps({'data':{'repository':pulls}}))
 elif any(a.endswith('/actions/runs') for a in args):
  if data.get('api_error'):sys.exit(1)
+ if data.get('reopen_during_owners'):
+  data['reopen']=data['reopen_during_owners'];(root/'github.json').write_text(json.dumps(data))
  status=next(a.split('=',1)[1] for a in args if a.startswith('status='))
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
  if data.get('churn'):
@@ -373,6 +375,16 @@ class CleanupTests(unittest.TestCase):
         result = self.controller()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
+        self.assertIn('"skipped_open": 1', result.stdout)
+
+    def test_reopened_during_owner_discovery_keeps_resources(self):
+        reopened = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        closed = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        self.github(reopen_during_owners=42)
+        result = self.controller()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(reopened.exists())
+        self.assertFalse(closed.exists())
         self.assertIn('"skipped_open": 1', result.stdout)
 
     def test_dry_run_and_missing_host_preserve_resources(self):

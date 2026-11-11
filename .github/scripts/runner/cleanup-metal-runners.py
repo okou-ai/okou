@@ -395,6 +395,11 @@ def reconcile_batch(github, hosts, user, numbers):
         state_finished = time.monotonic()
         owners = github.owners(pulls)
         owners_finished = time.monotonic()
+        # Owner discovery may take several API pages. A scheduled sweep is not
+        # cancelled by a reopen event, so refresh PR state at the mutation
+        # boundary instead of authorizing from the earlier CLOSED snapshot.
+        pulls = github.pulls(numbers)
+        authorized = time.monotonic()
         selected = []
         for number in numbers:
             if pulls[number]["state"] == "OPEN":
@@ -446,7 +451,8 @@ def reconcile_batch(github, hosts, user, numbers):
                     "lock_seconds": round(locked - started, 3),
                     "pr_state_seconds": round(state_finished - locked, 3),
                     "owner_seconds": round(owners_finished - state_finished, 3),
-                    "cleanup_seconds": round(time.monotonic() - owners_finished, 3),
+                    "authorization_seconds": round(authorized - owners_finished, 3),
+                    "cleanup_seconds": round(time.monotonic() - authorized, 3),
                     "github_response_pages": github.requests - pages_before,
                 }
             ),
