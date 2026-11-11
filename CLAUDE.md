@@ -44,6 +44,7 @@ For Platform requests, async ownership, module state, or runtime loading, read
 | GitHub Actions or CI scripts                  | [GitHub scripts](docs/github-scripts.md)                                                                                                                      |
 | React/TypeScript signals or async ownership   | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/react.md#effects-and-ownership), [cache](docs/react.md#cache-and-resource-lifetimes) as applicable |
 | Native iOS development or state ownership     | [iOS development](docs/ios/ios-development.md), [iOS ccstate](docs/ios/ios-ccstate.md) for graphs/async work, and [iOS instructions](ios/AGENTS.md)           |
+| Native Android development or state ownership | [Android development](docs/android/android-development.md), [Kotlin ccstate](docs/android/android-ccstate.md), and [Android instructions](android/AGENTS.md)  |
 | Browser App/shared UI styling or interactions | [Styles](docs/app/styles.md), [UI interaction contracts](#ui-interaction-contracts)                                                                           |
 | Database schema or queries                    | [Database guide](docs/api/database.md), then [database development](.claude/skills/database-development/SKILL.md)                                             |
 | New user-facing features or switch changes    | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                                                                    |

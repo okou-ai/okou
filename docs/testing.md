@@ -23,6 +23,9 @@ changes should not break a test when that contract is preserved.
   on demand. See [iOS testing](ios/ios-testing.md).
 - **Desktop, Runner, and addon:** use the production boundary described in the
   matching guide below, including IPC, protocols, and process outcomes.
+- **Android:** test the public Kotlin graph/observer contracts and real Compose
+  interactions on the JVM; separate these from device and system acceptance.
+  See [Android testing](android/android-testing.md).
 
 Do not substitute component state, query caches, database rows, service return
 values, or internal callback counts for these outcomes. The
@@ -135,6 +138,7 @@ Read only the guides matching the work:
 | CLI commands             | [CLI testing](cli/cli-testing.md)                 |
 | CLI deployed E2E         | [CLI E2E](cli/cli-e2e-testing.md)                 |
 | iOS                      | [iOS testing](ios/ios-testing.md)                 |
+| Android                  | [Android testing](android/android-testing.md)     |
 | Desktop                  | [Desktop testing](desktop/desktop-testing.md)     |
 | Rust                     | [Rust testing](runner/rust-testing.md)            |
 | Python addon             | [Addon testing](runner/mitm-addon-testing.md)     |
