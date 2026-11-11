@@ -27,7 +27,7 @@ test("receive a reply and compose with an IME", async ({ page }) => {
   // The onboarding prompt handoff sends the message as the first chat.
   await completePromptOnboarding(page, {
     appUrl,
-    prompt: "What is 1 + 2? Reply with only the number.",
+    prompt: "Reply with only this token: 3",
   });
 
   await expect(
