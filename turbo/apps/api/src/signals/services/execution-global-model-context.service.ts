@@ -18,7 +18,6 @@ import {
 } from "./context-rowset";
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
-import { observePgOperation } from "../../lib/db-instrumentation";
 
 const seedSkillColumns = Object.freeze({
   url: skillCatalog.url,
@@ -110,28 +109,25 @@ export function createGlobalModelContext() {
         sql`${modelRoutes.subscriptionType} asc nulls first`,
         asc(modelRoutes.priority),
       );
-    const read = async () => {
-      return await get(db$)
-        .select({
-          keys: contextJsonRows(keyRows).mapWith(
-            zodDriverValueDecoder(zUnknown()),
-          ),
-          pricing: contextJsonRows(prices).mapWith(
-            zodDriverValueDecoder(zUnknown()),
-          ),
-          models: contextJsonRows(modelRows).mapWith(
-            zodDriverValueDecoder(zUnknown()),
-          ),
-          routes: contextJsonRows(routeRows).mapWith(
-            zodDriverValueDecoder(zUnknown()),
-          ),
-          seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
-            zodDriverValueDecoder(zUnknown()),
-          ),
-        })
-        .from(sql`(values (1)) as context_seed(value)`);
-    };
-    const [row] = await observePgOperation("global_model_read", read);
+    const [row] = await get(db$)
+      .select({
+        keys: contextJsonRows(keyRows).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+        pricing: contextJsonRows(prices).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+        models: contextJsonRows(modelRows).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+        routes: contextJsonRows(routeRows).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+        seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
+          zodDriverValueDecoder(zUnknown()),
+        ),
+      })
+      .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {
       throw new Error("Global model context query returned no row");
     }

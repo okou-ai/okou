@@ -1,12 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
-import {
-  withPgPoolAcquisitionCapture,
-  withPgQueryExecutionCapture,
-  withPgOperationObserver,
-  type PgPoolAcquisitionCapture,
-  type PgQueryExecutionCapture,
-} from "../../lib/db-instrumentation";
 import { env } from "../../lib/env";
 import { monotonicNow, now } from "../../lib/time";
 import type { AuthTokenType } from "../../types/auth";
@@ -22,23 +15,11 @@ type EnqueueStage =
   | "suggestion_access"
   | "mcp_attribution"
   | "context_ready"
-  | "authorization"
-  | "catalog_ready"
-  | "model_ready"
   | "thread_selection"
   | "followup_validation"
-  | "replacement_target_read"
   | "attachments"
   | "model_capture"
-  | "event_prepare"
-  | "publication_prepare"
-  | "publication"
-  | "publication_sql"
-  | "private_asset_owners_batch"
-  | "thread_read"
-  | "source_run"
-  | "org_member_read"
-  | "global_model_read";
+  | "publication";
 
 type TimingRecord = Parameters<typeof recordApiOperationTimings>[0][number];
 
@@ -88,21 +69,17 @@ export class ChatEnqueueTimingCollector {
     success: boolean,
     observation?: {
       readonly finishedAt?: number;
-      readonly dimensions?: Readonly<Record<string, string | number>>;
-      readonly suffix?:
-        "_pool_acquire" | "_sql_call" | "_application_remainder";
+      readonly spanKind?: "parent" | "nested";
     },
   ): void {
     safeSync(() => {
-      // Optional early reads can settle after a rejected request. They keep
-      // their original owner but cannot append to an already-published batch.
       if (!this.closed) {
         this.records.push({
-          actionType: `chat_enqueue_${stage}${observation?.suffix ?? ""}`,
+          actionType: `chat_enqueue_${stage}`,
           durationMs: Math.max(0, durationMs),
           timestamp: new Date(observation?.finishedAt ?? now()).toISOString(),
           success,
-          dimensions: { span_kind: "nested", ...observation?.dimensions },
+          dimensions: { span_kind: observation?.spanKind ?? "nested" },
         });
       }
     });
@@ -113,18 +90,8 @@ export class ChatEnqueueTimingCollector {
       "request_to_commit",
       finishedAt - this.requestReceivedAt,
       true,
-      { finishedAt, dimensions: { span_kind: "parent" } },
+      { finishedAt, spanKind: "parent" },
     );
-  }
-
-  measureSync<T>(stage: EnqueueStage, operation: () => T): T {
-    const startedAt = monotonicNow();
-    const result = safeSync(operation);
-    this.record(stage, monotonicNow() - startedAt, "ok" in result);
-    if ("error" in result) {
-      throw result.error;
-    }
-    return result.ok;
   }
 
   async measure<T>(
@@ -142,83 +109,13 @@ export class ChatEnqueueTimingCollector {
     });
   }
 
-  async measureDatabase<T>(
-    stage: EnqueueStage,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const pool: PgPoolAcquisitionCapture = { acquisitions: [] };
-    const query: PgQueryExecutionCapture = { executions: [] };
-    const startedAt = monotonicNow();
-    let success = false;
-    return await (async () => {
-      const value = await withPgPoolAcquisitionCapture(pool, async () => {
-        return await withPgQueryExecutionCapture(query, operation);
-      });
-      success = true;
-      return value;
-    })().finally(() => {
-      safeSync(() => {
-        const durationMs = monotonicNow() - startedAt;
-        const finishedAt = now();
-        const dimensions = {
-          db_pool_capture: captureKind(pool.acquisitions.length),
-          db_query_capture: captureKind(query.executions.length),
-          db_pool_acquire_count: pool.acquisitions.length,
-          db_query_execution_count: query.executions.length,
-        };
-        this.record(stage, durationMs, success, { finishedAt, dimensions });
-        const [acquisition] = pool.acquisitions;
-        const [execution] = query.executions;
-        if (pool.acquisitions.length === 1 && acquisition) {
-          this.record(stage, acquisition.durationMs, success, {
-            finishedAt: acquisition.finishedAt,
-            dimensions: {
-              ...dimensions,
-              db_pool_acquire_path: acquisition.path,
-            },
-            suffix: "_pool_acquire",
-          });
-        }
-        if (query.executions.length === 1 && execution) {
-          // This is network/driver client-call wall, not server-only SQL time.
-          this.record(stage, execution.durationMs, success, {
-            finishedAt: execution.finishedAt,
-            dimensions,
-            suffix: "_sql_call",
-          });
-        }
-        if (
-          pool.acquisitions.length === 1 &&
-          query.executions.length === 1 &&
-          acquisition &&
-          execution &&
-          durationMs >= acquisition.durationMs + execution.durationMs
-        ) {
-          // Outside the captured PG work; this can include other I/O, not just CPU.
-          this.record(
-            stage,
-            durationMs - acquisition.durationMs - execution.durationMs,
-            success,
-            { finishedAt, dimensions, suffix: "_application_remainder" },
-          );
-        }
-      });
-    });
-  }
-
   async observeResponse<T extends { readonly status: number }>(
     operation: () => Promise<T>,
     signal: AbortSignal,
   ): Promise<T> {
     // Own cancellation until the terminal batch has been enqueued, then
     // propagate the exact original response or thrown value.
-    const response = await settleIncludingAbort(() => {
-      return withPgOperationObserver((name, read) => {
-        return name === "org_member_read" || name === "global_model_read"
-          ? this.measureDatabase(name, read)
-          : read();
-      }, operation);
-    });
+    const response = await settleIncludingAbort(operation);
     await this.flush(
       response.ok ? response.value.status : undefined,
       signal.aborted,
@@ -242,7 +139,7 @@ export class ChatEnqueueTimingCollector {
       "request_total",
       finishedAt - this.requestReceivedAt,
       status !== undefined && status < 400 && !cancelled,
-      { finishedAt, dimensions: { span_kind: "parent" } },
+      { finishedAt, spanKind: "parent" },
     );
     this.closed = true;
     const records = this.records.splice(0);
@@ -281,24 +178,10 @@ export class ChatEnqueueTimingCollector {
   }
 }
 
-function captureKind(count: number): "missing" | "single" | "multiple" {
-  return count === 0 ? "missing" : count === 1 ? "single" : "multiple";
-}
-
 export async function measureChatEnqueue<T>(
   timing: ChatEnqueueTimingCollector | undefined,
   stage: EnqueueStage,
   operation: () => T | Promise<T>,
 ): Promise<T> {
   return timing ? await timing.measure(stage, operation) : await operation();
-}
-
-export async function measureChatEnqueueDatabase<T>(
-  timing: ChatEnqueueTimingCollector | undefined,
-  stage: EnqueueStage,
-  operation: () => Promise<T>,
-): Promise<T> {
-  return timing
-    ? await timing.measureDatabase(stage, operation)
-    : await operation();
 }

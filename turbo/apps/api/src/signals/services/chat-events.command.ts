@@ -105,7 +105,6 @@ import {
 import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 import {
   measureChatEnqueue,
-  measureChatEnqueueDatabase,
   ChatEnqueueTimingCollector,
 } from "./chat-enqueue-timing.service";
 
@@ -704,29 +703,20 @@ const loadExistingSendThreadRow$ = command(
     signal: AbortSignal,
   ) => {
     const db = get(db$);
-    const [thread] = await measureChatEnqueueDatabase(
-      args.enqueueTiming,
-      "thread_read",
-      async () => {
-        return await db
-          .select({
-            ...chatThreadRequestSelection(),
-            isOfficialWorkflowThread: officialWorkflowThreadCondition({
-              threadId,
-              orgId: args.orgId,
-              userId: args.userId,
-            }).mapWith(pgBooleanDecoder),
-          })
-          .from(chatThreads)
-          .where(
-            and(
-              eq(chatThreads.id, threadId),
-              eq(chatThreads.userId, args.userId),
-            ),
-          )
-          .limit(1);
-      },
-    );
+    const [thread] = await db
+      .select({
+        ...chatThreadRequestSelection(),
+        isOfficialWorkflowThread: officialWorkflowThreadCondition({
+          threadId,
+          orgId: args.orgId,
+          userId: args.userId,
+        }).mapWith(pgBooleanDecoder),
+      })
+      .from(chatThreads)
+      .where(
+        and(eq(chatThreads.id, threadId), eq(chatThreads.userId, args.userId)),
+      )
+      .limit(1);
     signal.throwIfAborted();
     return thread;
   },
@@ -2057,18 +2047,32 @@ function normalSendPreparedPublication(
     },
   };
 }
-const loadNormalSendAssetOwners$ = command(
+const appendNormalSendInput$ = command(
   async (
     { set },
-    timing: ChatEnqueueTimingCollector | undefined,
-    attachments: NormalInputPlan["attachments"],
+    args: NormalSendArgs,
+    input: NormalInputPlan,
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // An existing thread's follow-up was captured by its revocation check and
+    // chat events are immutable, so only a new thread's revocation reads here.
+    const target =
+      input.replacementTarget === undefined
+        ? args.body.revokesEventId
+          ? parseRawRows(
+              chatEventReplacementTargetSchema,
+              await db.execute(
+                chatEventReplacementTargetSql(args.body.revokesEventId),
+              ),
+            )
+          : null
+        : [input.replacementTarget];
+    signal.throwIfAborted();
     // Match PostgreSQL's UUID spelling without changing the input references.
     const privateIds = [
       ...new Set(
-        attachments.flatMap((asset) => {
+        input.attachments.flatMap((asset) => {
           return asset.plan ? [] : [asset.owner.file.id.toLowerCase()];
         }),
       ),
@@ -2084,16 +2088,12 @@ const loadNormalSendAssetOwners$ = command(
         offset + NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE,
       );
       const loaded = await settle(
-        measureChatEnqueueDatabase(
-          timing,
-          "private_asset_owners_batch",
-          async () => {
-            return await db
-              .select()
-              .from(runUploadedFiles)
-              .where(inArray(runUploadedFiles.id, ids));
-          },
-        ),
+        (async () => {
+          return await db
+            .select()
+            .from(runUploadedFiles)
+            .where(inArray(runUploadedFiles.id, ids));
+        })(),
       );
       signal.throwIfAborted();
       const rows = new Map(
@@ -2107,131 +2107,73 @@ const loadNormalSendAssetOwners$ = command(
         owners.set(id, loaded.ok ? { ok: true, value: rows.get(id) } : loaded);
       }
     }
-    return owners;
-  },
-);
-const appendNormalSendInput$ = command(
-  async (
-    { set },
-    args: NormalSendArgs,
-    input: NormalInputPlan,
-    signal: AbortSignal,
-  ) => {
-    return await measureChatEnqueue(
-      args.enqueueTiming,
-      "publication",
-      async () => {
-        const db = set(writeDb$);
-        // An existing thread's follow-up was captured by its revocation check and
-        // chat events are immutable, so only a new thread's revocation reads here.
-        const replacementId = args.body.revokesEventId;
-        const target =
-          input.replacementTarget === undefined
-            ? replacementId
-              ? await measureChatEnqueueDatabase(
-                  args.enqueueTiming,
-                  "replacement_target_read",
-                  async () => {
-                    return parseRawRows(
-                      chatEventReplacementTargetSchema,
-                      await db.execute(
-                        chatEventReplacementTargetSql(replacementId),
-                      ),
-                    );
-                  },
-                )
-              : null
-            : [input.replacementTarget];
-        signal.throwIfAborted();
-        const owners = await set(
-          loadNormalSendAssetOwners$,
-          args.enqueueTiming,
-          input.attachments,
-          signal,
-        );
-        const claimId = randomUUID();
-        const preparePublication = () => {
-          const snapshots = normalSendAssetSnapshots(input.attachments, owners);
-          const prepared = normalSendPreparedPublication(
-            args,
-            input,
-            target,
-            snapshots,
-            claimId,
-          );
-          const created = prepared.createdPlan;
-          const query = normalChatInputPublicationSql({
-            ...prepared.plan,
-            newThread: created
-              ? db
-                  .with(...created.defaults)
-                  .insert(chatThreads)
-                  .values(created.values)
-                  .onConflictDoNothing()
-                  .returning(createdSendThreadSelection)
-                  .getSQL()
-              : undefined,
-          });
-          return { prepared, query };
-        };
-        const { prepared, query } = args.enqueueTiming
-          ? args.enqueueTiming.measureSync(
-              "publication_prepare",
-              preparePublication,
-            )
-          : preparePublication();
-        const result = await settle(
-          measureChatEnqueueDatabase(
-            args.enqueueTiming,
-            "publication_sql",
-            async () => {
-              return parseRawRows(
-                normalSendPublicationRowSchema,
-                await db.execute(query),
-              );
-            },
-          ),
-        );
-        if (!result.ok) {
-          throw normalSendPublicationFailure(result.error, prepared.failures);
-        }
-        const rows = result.value;
-        signal.throwIfAborted();
-        const row = rows[0];
-        if (!row) {
-          throw new Error("Normal chat input publication result is missing");
-        }
-        if (row.id === null) {
-          return null;
-        }
-        if (row.createdAt === null || row.seqId === null) {
-          throw new Error("Normal chat input publication is incomplete");
-        }
-        const enqueueCommit = { eventId: row.id, committedAt: now() };
-        args.enqueueTiming?.committed(enqueueCommit.committedAt);
-        let publishedLease: PublishedChatThreadLease | undefined;
-        if (row.claimId === claimId) {
-          if (row.claimExpiresAt === null || row.queuedAt === null) {
-            throw new Error(
-              "Normal chat publication lease receipt is incomplete",
-            );
-          }
-          publishedLease = {
-            ...input.queueInput,
-            userId: args.userId,
-            agentId: args.body.agentId,
-            claimId: row.claimId,
-            claimExpiresAt: row.claimExpiresAt,
-            queuedAt: row.queuedAt,
-          };
-        }
-        return {
-          inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
-          enqueueCommit,
-          publishedLease,
-        };
-      },
+    const snapshots = normalSendAssetSnapshots(input.attachments, owners);
+    const claimId = randomUUID();
+    const prepared = normalSendPreparedPublication(
+      args,
+      input,
+      target,
+      snapshots,
+      claimId,
     );
+    const created = prepared.createdPlan;
+    const query = normalChatInputPublicationSql({
+      ...prepared.plan,
+      newThread: created
+        ? db
+            .with(...created.defaults)
+            .insert(chatThreads)
+            .values(created.values)
+            .onConflictDoNothing()
+            .returning(createdSendThreadSelection)
+            .getSQL()
+        : undefined,
+    });
+    const rows = await (async () => {
+      const result = await settle(
+        (async () => {
+          return parseRawRows(
+            normalSendPublicationRowSchema,
+            await db.execute(query),
+          );
+        })(),
+      );
+      if (!result.ok) {
+        throw normalSendPublicationFailure(result.error, prepared.failures);
+      }
+      return result.value;
+    })();
+    signal.throwIfAborted();
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Normal chat input publication result is missing");
+    }
+    if (row.id === null) {
+      return null;
+    }
+    if (row.createdAt === null || row.seqId === null) {
+      throw new Error("Normal chat input publication is incomplete");
+    }
+    const enqueueCommit = { eventId: row.id, committedAt: now() };
+    let publishedLease: PublishedChatThreadLease | undefined;
+    if (row.claimId === claimId) {
+      if (row.claimExpiresAt === null || row.queuedAt === null) {
+        throw new Error("Normal chat publication lease receipt is incomplete");
+      }
+      publishedLease = {
+        ...input.queueInput,
+        userId: args.userId,
+        agentId: args.body.agentId,
+        claimId: row.claimId,
+        claimExpiresAt: row.claimExpiresAt,
+        queuedAt: row.queuedAt,
+      };
+    }
+    return {
+      inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
+      enqueueCommit,
+      publishedLease,
+    };
   },
 );
 
@@ -2261,23 +2203,17 @@ const prepareNormalSend$ = command(
     // Join the source resolution even when authorization fails, so the
     // started read stays owned. Its outcome, including a failure, is used only
     // once authorization has succeeded.
-    const [authorized, resolvedSource] = await measureChatEnqueue(
-      args.enqueueTiming,
-      "authorization",
-      () => {
-        return joinAll([
-          args.existingThreadRow === undefined
-            ? set(loadAuthorizedAgent$, args, signal)
-            : set(
-                loadAuthorizedExistingSendThread$,
-                args,
-                args.existingThreadRow,
-                signal,
-              ),
-          args.agentRunSource,
-        ]);
-      },
-    );
+    const [authorized, resolvedSource] = await joinAll([
+      args.existingThreadRow === undefined
+        ? set(loadAuthorizedAgent$, args, signal)
+        : set(
+            loadAuthorizedExistingSendThread$,
+            args,
+            args.existingThreadRow,
+            signal,
+          ),
+      args.agentRunSource,
+    ]);
     signal.throwIfAborted();
     if ("status" in authorized) {
       return authorized;
@@ -2299,11 +2235,7 @@ const prepareNormalSend$ = command(
     if (invalidTemplate) {
       return invalidTemplate;
     }
-    const catalog = (
-      await measureChatEnqueue(args.enqueueTiming, "catalog_ready", () => {
-        return get(args.context.modelFacts$);
-      })
-    ).catalog;
+    const catalog = (await get(args.context.modelFacts$)).catalog;
     signal.throwIfAborted();
     if (
       typeof args.body.model === "string" &&
@@ -2457,7 +2389,7 @@ const prepareNormalSendInput$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const attachFileMetadata = await measureChatEnqueueDatabase(
+    const attachFileMetadata = await measureChatEnqueue(
       args.enqueueTiming,
       "attachments",
       async () => {
@@ -2473,7 +2405,7 @@ const prepareNormalSendInput$ = command(
       },
     );
     signal.throwIfAborted();
-    const modelSelection = await measureChatEnqueueDatabase(
+    const modelSelection = await measureChatEnqueue(
       args.enqueueTiming,
       "model_capture",
       async () => {
@@ -2621,17 +2553,15 @@ const prepareNormalSendContext$ = command(
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization, so it runs alongside the thread row.
     const agentRunSource = settle(
-      measureChatEnqueueDatabase(args.enqueueTiming, "source_run", async () => {
-        return await set(
-          resolveNormalSendAgentRunSource$,
-          {
-            auth: args.auth,
-            userMessage: args.body.userMessage,
-            sourceRunId: args.body.sourceRunId,
-          },
-          signal,
-        );
-      }),
+      set(
+        resolveNormalSendAgentRunSource$,
+        {
+          auth: args.auth,
+          userMessage: args.body.userMessage,
+          sourceRunId: args.body.sourceRunId,
+        },
+        signal,
+      ),
     );
     // Start authenticated org/member reads immediately; authorization consumes
     // the same promises. Settled waitUntil work stays owned on rejection/abort.
@@ -2644,14 +2574,7 @@ const prepareNormalSendContext$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const models = await measureChatEnqueue(
-      args.enqueueTiming,
-      "model_ready",
-      () => {
-        return set(prepareNormalSendModels$, context, signal);
-      },
-    );
-    signal.throwIfAborted();
+    const models = await set(prepareNormalSendModels$, context, signal);
     return { ...prepared, ...models, context };
   },
 );
@@ -2683,6 +2606,7 @@ const publishPreparedNormalSend$ = command(
       enqueueCommit,
       publishedLease,
     } = committed;
+    args.enqueueTiming?.committed(enqueueCommit.committedAt);
     // Schedule before observing abort; touch, realtime and the running-run
     // notice follow this pick's outcome.
     waitUntil(
@@ -2719,8 +2643,8 @@ export const sendNormalEvent$ = command(
     const prepared = await measureChatEnqueue(
       args.enqueueTiming,
       "context_ready",
-      () => {
-        return set(prepareNormalSendContext$, args, signal);
+      async () => {
+        return await set(prepareNormalSendContext$, args, signal);
       },
     );
     signal.throwIfAborted();
@@ -2729,7 +2653,7 @@ export const sendNormalEvent$ = command(
     }
     const { authorized, catalog, orgModels, modelBootstrap, context } =
       prepared;
-    const resolvedThread = await measureChatEnqueueDatabase(
+    const resolvedThread = await measureChatEnqueue(
       args.enqueueTiming,
       "thread_selection",
       async () => {
@@ -2754,7 +2678,7 @@ export const sendNormalEvent$ = command(
     if ("status" in resolvedThread) {
       return resolvedThread;
     }
-    const revocation = await measureChatEnqueueDatabase(
+    const revocation = await measureChatEnqueue(
       args.enqueueTiming,
       "followup_validation",
       async () => {
@@ -2785,35 +2709,32 @@ export const sendNormalEvent$ = command(
       return input;
     }
     const { attachFileMetadata, modelSelection, thread } = input;
-    const prepareEvent = () => {
-      return preparedNormalSendEvent(
-        args,
-        thread.threadId,
-        modelSelection,
-        prepared.agentRunSource,
-      );
-    };
-    const event = args.enqueueTiming
-      ? args.enqueueTiming.measureSync("event_prepare", prepareEvent)
-      : prepareEvent();
+    const event = preparedNormalSendEvent(
+      args,
+      thread.threadId,
+      modelSelection,
+      prepared.agentRunSource,
+    );
     const enqueued = await settle(
-      set(
-        publishPreparedNormalSend$,
-        args,
-        {
-          input: {
-            thread,
-            event,
-            attachFileMetadata,
-            agentRunSource: prepared.agentRunSource,
-            replacementTarget: revocation?.replacementTarget,
+      measureChatEnqueue(args.enqueueTiming, "publication", async () => {
+        return await set(
+          publishPreparedNormalSend$,
+          args,
+          {
+            input: {
+              thread,
+              event,
+              attachFileMetadata,
+              agentRunSource: prepared.agentRunSource,
+              replacementTarget: revocation?.replacementTarget,
+            },
+            context,
+            previousBinding:
+              "thread" in authorized ? authorized.thread : undefined,
           },
-          context,
-          previousBinding:
-            "thread" in authorized ? authorized.thread : undefined,
-        },
-        signal,
-      ),
+          signal,
+        );
+      }),
       signal,
     );
     if (!enqueued.ok) {
