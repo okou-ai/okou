@@ -521,7 +521,8 @@ private final class ComputerAuthorizationFixture: Sendable {
         isAuthorizationRead || isAuthorizationWrite
           || (request.httpMethod == "GET"
             && [
-              threadPath + "/metadata", threadPath + "/event-snapshot", threadPath + "/event-rows",
+              threadPath, threadPath + "/metadata", threadPath + "/event-snapshot",
+              threadPath + "/event-rows",
             ]
             .contains(path))
           || (request.httpMethod == "POST" && path == "/api/chat/events")
@@ -579,6 +580,9 @@ private final class ComputerAuthorizationFixture: Sendable {
             body:
               "{\(common),\(host),\"source\":\"chat\",\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"hosts\":[{\"id\":\"\(Self.hostID)\",\"displayName\":\"Preview Mac\",\"status\":\"\(value.online ? "online" : "offline")\"}\(secondHost)]}"
           )
+        }
+        if path == threadPath {
+          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
         }
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
