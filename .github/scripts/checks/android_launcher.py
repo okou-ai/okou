@@ -121,7 +121,7 @@ def reviewed_launcher(root):
 
 if __name__ == "__main__":
     try:
-        launcher = reviewed_launcher(sys.argv[1] if len(sys.argv) > 1 else ".")
+        reviewed_launcher(sys.argv[1] if len(sys.argv) > 1 else ".")
     except (ValueError, OSError, ET.ParseError, expat.ExpatError) as failure:
         sys.exit(f"Android launcher audit failed: {failure}")
     print("Android source manifests audited; only the reviewed MAIN/LAUNCHER may be public")
