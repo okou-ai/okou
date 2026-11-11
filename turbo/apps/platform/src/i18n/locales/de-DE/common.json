@@ -1339,7 +1339,7 @@
           "too_expensive": "Es ist zu teuer"
         },
         "question": "Was hält dich heute vom Upgrade ab?",
-        "reward": "Antworte und erhalte {{credits}} kostenlose Credits, genug für etwa eine weitere Aufgabe.",
+        "reward": "Die erste berechtigte Antwort in diesem Workspace erhält {{credits}} Bonus-Credits, gültig für 30 Tage.",
         "thanksWithCredits": "Danke! {{credits}} Credits wurden hinzugefügt, du kannst direkt weitermachen."
       },
       "error": "Deine Antwort konnte nicht gesendet werden. Versuche es erneut.",

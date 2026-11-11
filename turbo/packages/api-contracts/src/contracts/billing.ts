@@ -125,6 +125,8 @@ const billingStatusResponseSchema = object({
 
 const checkoutResponseSchema = object({
   url: string(),
+  // Older API deployments only return the URL; they cannot be surveyed safely.
+  checkoutSessionId: string().optional(),
 });
 
 const subscriptionPurchasePreviewBaseSchema = object({
@@ -160,6 +162,7 @@ const billingPurchaseConfirmResponseSchema = discriminatedUnion("status", [
   object({
     status: literal("checkout_required"),
     checkoutUrl: url(),
+    checkoutSessionId: string().optional(),
   }),
 ]);
 
@@ -610,6 +613,7 @@ const billingSurveyRequestSchema = discriminatedUnion("survey", [
     answer: zEnum(CHECKOUT_ABANDONED_SURVEY_ANSWERS),
     detail: billingSurveyDetailSchema.optional(),
     checkoutKind: zEnum(BILLING_SURVEY_CHECKOUT_KINDS).optional(),
+    checkoutSessionId: string().min(1).max(255),
   }),
 ]);
 
@@ -622,6 +626,7 @@ const billingSurveyStatusResponseSchema = object({
   answered: array(billingSurveyKindSchema),
   /** Bonus credits a member receives for answering `credits_exhausted`. */
   creditsExhaustedReward: number().int().nonnegative(),
+  checkoutUnpaid: boolean(),
 });
 
 const billingSurveySubmitResponseSchema = object({
@@ -1382,8 +1387,10 @@ export const billingSurveyContract = c.router({
     method: "GET",
     path: "/api/billing/survey",
     headers: authHeadersSchema,
+    query: object({ checkoutSessionId: string().min(1).max(255).optional() }),
     responses: {
       200: billingSurveyStatusResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,

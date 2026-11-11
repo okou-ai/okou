@@ -1362,7 +1362,7 @@
           "too_expensive": "C'est trop cher"
         },
         "question": "Qu'est-ce qui vous empêche de passer à l'offre supérieure aujourd'hui ?",
-        "reward": "Répondez et recevez {{credits}} crédits gratuits, de quoi faire environ une tâche de plus.",
+        "reward": "La première réponse éligible dans cet espace de travail reçoit {{credits}} crédits bonus, valables 30 jours.",
         "thanksWithCredits": "Merci ! {{credits}} crédits ont été ajoutés, vous pouvez continuer."
       },
       "error": "Impossible d'envoyer votre réponse. Réessayez.",

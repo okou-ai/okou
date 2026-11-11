@@ -1336,7 +1336,7 @@
           "too_expensive": "價格太高"
         },
         "question": "是什麼讓你今天還沒有升級？",
-        "reward": "回答即可獲得 {{credits}} 免費 credits，大約夠再完成一個任務。",
+        "reward": "此工作區首個符合條件的回答可獲得 {{credits}} 獎勵 credits，有效期 30 天。",
         "thanksWithCredits": "感謝！已為你新增 {{credits}} credits，可以繼續使用了。"
       },
       "error": "送出失敗，請再試一次。",

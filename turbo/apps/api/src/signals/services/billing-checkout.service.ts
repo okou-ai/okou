@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import type {
   ConcurrencySubscriptionChangePreviewResponse,
+  CheckoutResponse,
   BillingPurchaseConfirmResponse,
   CreditPurchaseConfirmResponse,
   CreditPurchasePreviewResponse,
@@ -63,6 +64,14 @@ import {
   type BillingPurchasePaymentMethod,
 } from "./billing-payment-method.service";
 
+export function checkoutRequiredResponse(checkout: CheckoutResponse) {
+  return {
+    status: "checkout_required" as const,
+    checkoutUrl: checkout.url,
+    checkoutSessionId: checkout.checkoutSessionId,
+  };
+}
+
 interface CreateCheckoutSessionArgs {
   readonly orgId: string;
   readonly tier: SubscriptionCheckoutTier;
@@ -80,7 +89,11 @@ interface StartPlanPurchaseArgs extends CreateCheckoutSessionArgs {
 }
 
 type StartPlanPurchaseResult =
-  | { readonly status: "checkout"; readonly url: string }
+  | {
+      readonly status: "checkout";
+      readonly url: string;
+      readonly checkoutSessionId: string;
+    }
   | {
       readonly status: "preview";
       readonly preview: PlanPurchasePreviewResponse;
@@ -718,7 +731,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       if (!preview.successUrl || !preview.cancelUrl) {
         return { status: "billing_unavailable" };
       }
-      const checkoutUrl = await set(
+      const checkout = await set(
         createCreditCheckoutSession$,
         {
           orgId,
@@ -732,7 +745,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       );
       return {
         status: "confirmed",
-        response: { status: "checkout_required", checkoutUrl },
+        response: checkoutRequiredResponse(checkout),
       };
     }
     if (
@@ -978,7 +991,7 @@ export const startPlanPurchase$ = command(
     if (!args.supportsInAppPreview) {
       return {
         status: "checkout",
-        url: await set(createCheckoutSession$, args, signal),
+        ...(await set(createCheckoutSession$, args, signal)),
       };
     }
 
@@ -1001,7 +1014,7 @@ export const startPlanPurchase$ = command(
     if (route.kind === "checkout") {
       return {
         status: "checkout",
-        url: await set(createCheckoutSession$, args, signal),
+        ...(await set(createCheckoutSession$, args, signal)),
       };
     }
 
@@ -1374,7 +1387,7 @@ async function admitClaimedPlanPurchase(
   if (route.kind === "checkout") {
     // Hosted Checkout is not payable until the customer completes it; its
     // webhook publishes the result, so the claim is released afterwards.
-    const url = await createPlanCheckoutSession(
+    const checkout = await createPlanCheckoutSession(
       stripe,
       preview.customerId,
       {
@@ -1393,7 +1406,7 @@ async function admitClaimedPlanPurchase(
       kind: "release",
       result: {
         status: "confirmed",
-        response: { status: "checkout_required", checkoutUrl: url },
+        response: checkoutRequiredResponse(checkout),
         paidInvoice: null,
       },
     };
@@ -1597,7 +1610,7 @@ async function createPlanCheckoutSession(
   customerId: string,
   args: CreateCheckoutSessionArgs,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Required<CheckoutResponse>> {
   const metadata = checkoutSessionMetadata({
     orgId: args.orgId,
     tier: args.tier,
@@ -1628,7 +1641,7 @@ async function createPlanCheckoutSession(
   if (!session.url) {
     throw new Error("Stripe checkout session did not return a URL");
   }
-  return session.url;
+  return { url: session.url, checkoutSessionId: session.id };
 }
 
 const createCheckoutSession$ = command(
@@ -1636,7 +1649,7 @@ const createCheckoutSession$ = command(
     { set },
     args: CreateCheckoutSessionArgs,
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<Required<CheckoutResponse>> => {
     signal.throwIfAborted();
 
     const customerId = await set(
@@ -1760,7 +1773,7 @@ export const createCreditCheckoutSession$ = command(
     { set },
     args: CreateCreditCheckoutSessionArgs,
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<Required<CheckoutResponse>> => {
     const customerId = await set(
       getOrCreateStripeCustomer$,
       { orgId: args.orgId },
@@ -1828,7 +1841,7 @@ export const createCreditCheckoutSession$ = command(
     if (!session.url) {
       throw new Error("Stripe checkout session did not return a URL");
     }
-    return session.url;
+    return { url: session.url, checkoutSessionId: session.id };
   },
 );
 

@@ -1,11 +1,16 @@
 import {
   billingSurveyContract,
+  billingCheckoutContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
+import StripeSDK from "stripe";
+import { mockStripeClient } from "../../external/stripe-client";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow, nowDate } from "../../../lib/time";
+import { billingCheckoutRoutes } from "../billing-checkout";
 import { createApp } from "../../../app-factory";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -54,9 +59,42 @@ async function bonusCredits(): Promise<number> {
   return balance.body.bonusCredits;
 }
 
+async function createCheckout(actor: ApiTestUser): Promise<void> {
+  signIn(actor);
+  context.mocks.stripe.customers.create.mockResolvedValue({
+    id: `cus_survey_${actor.orgId}`,
+  });
+  context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+    id: "cs_survey_test",
+    url: "https://checkout.stripe.com/c/pay/cs_survey_test",
+  });
+  context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+    id: "cs_survey_test",
+    status: "open",
+    payment_status: "unpaid",
+    customer: `cus_survey_${actor.orgId}`,
+    metadata: { orgId: actor.orgId },
+  });
+  const checkout = await accept(
+    setupApp({ context, routes: billingCheckoutRoutes })(
+      billingCheckoutContract,
+    ).create({
+      headers: authHeaders(),
+      body: {
+        tier: "pro",
+        successUrl: "http://localhost:3002/?billing=pro",
+        cancelUrl: "http://localhost:3002/?billing=canceled",
+      },
+    }),
+    [200],
+  );
+  expect(checkout.body).toMatchObject({ checkoutSessionId: "cs_survey_test" });
+}
+
 describe("/api/billing/survey", () => {
   beforeEach(() => {
     context.mocks.ably.publish.mockResolvedValue(undefined);
+    mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
   });
 
   it("is unavailable while the feature switch is off", async () => {
@@ -80,6 +118,7 @@ describe("/api/billing/survey", () => {
   });
 
   it("thanks an unpaid member with credits once for the credits-exhausted answer", async () => {
+    mockNow(new Date("2026-11-11T08:00:00.000Z"));
     const bdd = createBddApi(context);
     const actor = bdd.user();
     await enableSurvey(actor);
@@ -123,12 +162,15 @@ describe("/api/billing/survey", () => {
       [200],
     );
     expect(after.body.answered).toStrictEqual(["credits_exhausted"]);
+    expect(after.body.creditsExhaustedReward).toBe(0);
+    mockNow(new Date(nowDate().getTime() + 30 * 24 * 60 * 60 * 1000));
+    await expect(bonusCredits()).resolves.toBe(creditsBefore);
   });
 
   it("grants the thank-you credits only once per organization", async () => {
     const bdd = createBddApi(context);
     const admin = bdd.user();
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:admin" });
     await enableSurvey(admin);
     await enableSurvey(member);
 
@@ -143,6 +185,11 @@ describe("/api/billing/survey", () => {
     expect(first.body.rewardCredits).toBeGreaterThan(0);
 
     signIn(member);
+    const offered = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(offered.body.creditsExhaustedReward).toBe(0);
     const second = await accept(
       surveyClient().submit({
         headers: authHeaders(),
@@ -177,6 +224,7 @@ describe("/api/billing/survey", () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     await enableSurvey(actor);
+    await createCheckout(actor);
     signIn(actor);
     const creditsBefore = await bonusCredits();
 
@@ -184,6 +232,7 @@ describe("/api/billing/survey", () => {
       survey: "checkout_abandoned",
       answer: "payment_issue",
       checkoutKind: "plan",
+      checkoutSessionId: "cs_survey_test",
     } as const;
     const first = await accept(
       surveyClient().submit({ headers: authHeaders(), body }),
@@ -202,6 +251,118 @@ describe("/api/billing/survey", () => {
       [200],
     );
     expect(status.body.answered).toStrictEqual(["checkout_abandoned"]);
+  });
+
+  it.each([
+    { status: "complete", payment_status: "paid" },
+    { status: "complete", payment_status: "unpaid" },
+    { status: "open", payment_status: "paid" },
+  ])(
+    "does not survey a completed or paid Checkout ($status, $payment_status)",
+    async (session) => {
+      const actor = createBddApi(context).user();
+      await enableSurvey(actor);
+      await createCheckout(actor);
+      context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+        ...session,
+        id: "cs_survey_test",
+        customer: `cus_survey_${actor.orgId}`,
+        metadata: { orgId: actor.orgId },
+      });
+      const status = await accept(
+        surveyClient().status({
+          headers: authHeaders(),
+          query: { checkoutSessionId: "cs_survey_test" },
+        }),
+        [200],
+      );
+      expect(status.body.checkoutUnpaid).toBeFalsy();
+      const submitted = await accept(
+        surveyClient().submit({
+          headers: authHeaders(),
+          body: {
+            survey: "checkout_abandoned",
+            answer: "payment_issue",
+            checkoutKind: "plan",
+            checkoutSessionId: "cs_survey_test",
+          },
+        }),
+        [200],
+      );
+      expect(submitted.body).toStrictEqual({
+        recorded: false,
+        rewardCredits: 0,
+      });
+      const after = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(after.body.answered).toStrictEqual([]);
+    },
+  );
+
+  it("does not survey a Checkout owned by a different organization", async () => {
+    const actor = createBddApi(context).user();
+    await enableSurvey(actor);
+    await createCheckout(actor);
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: "cs_other",
+      status: "open",
+      payment_status: "unpaid",
+      customer: "cus_other",
+      metadata: { orgId: "org_other" },
+    });
+    const status = await accept(
+      surveyClient().status({
+        headers: authHeaders(),
+        query: { checkoutSessionId: "cs_other" },
+      }),
+      [200],
+    );
+    expect(status.body.checkoutUnpaid).toBeFalsy();
+  });
+
+  it("does not reward a free member while starter credits are still available", async () => {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.bootstrapLimitedFreeOnboarding(actor, {
+      displayName: "Survey test",
+    });
+    await enableSurvey(actor);
+    signIn(actor);
+    const status = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(status.body.creditsExhaustedReward).toBe(0);
+    const submitted = await accept(
+      surveyClient().submit({
+        headers: authHeaders(),
+        body: { survey: "credits_exhausted", answer: "still_trying" },
+      }),
+      [200],
+    );
+    expect(submitted.body.rewardCredits).toBe(0);
+  });
+
+  it("does not offer or grant a reward to a non-admin member", async () => {
+    const actor = createBddApi(context).user({ orgRole: "org:member" });
+    await enableSurvey(actor);
+    signIn(actor);
+    const status = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(status.body.creditsExhaustedReward).toBe(0);
+    const submitted = await accept(
+      surveyClient().submit({
+        headers: authHeaders(),
+        body: { survey: "credits_exhausted", answer: "still_trying" },
+      }),
+      [200],
+    );
+    expect(submitted.body.rewardCredits).toBe(0);
   });
 
   it("rejects an answer that does not belong to the survey", async () => {

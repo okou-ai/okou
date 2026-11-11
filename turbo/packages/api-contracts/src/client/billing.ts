@@ -333,6 +333,7 @@ export const billingSurveyContract: ClientDescriptor<
     path: "/api/billing/survey",
     statuses: {
       200: true,
+      400: true,
       401: true,
       404: true,
       500: true,

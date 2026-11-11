@@ -1362,7 +1362,7 @@
           "too_expensive": "È troppo costoso"
         },
         "question": "Cosa ti impedisce di passare a un piano superiore oggi?",
-        "reward": "Rispondi e ricevi {{credits}} crediti gratuiti, circa un'attività in più.",
+        "reward": "La prima risposta idonea in questo spazio di lavoro riceve {{credits}} crediti bonus, validi per 30 giorni.",
         "thanksWithCredits": "Grazie! Abbiamo aggiunto {{credits}} crediti, così puoi continuare."
       },
       "error": "Impossibile inviare la risposta. Riprova.",

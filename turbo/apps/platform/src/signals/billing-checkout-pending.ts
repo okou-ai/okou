@@ -12,6 +12,7 @@ import { jsonParseOr } from "./utils.ts";
 
 const pendingCheckoutSchema = object({
   version: literal(1),
+  sessionId: string().min(1),
   orgId: string(),
   userId: string(),
   kind: zEnum(BILLING_SURVEY_CHECKOUT_KINDS),
@@ -39,12 +40,19 @@ export const markBillingCheckoutPending$ = command(
   async (
     { get, set },
     kind: BillingSurveyCheckoutKind,
+    sessionId: string | undefined,
     signal: AbortSignal,
   ) => {
+    if (!sessionId) {
+      // A draining older API cannot identify the checkout for verification.
+      set(pendingStorage.clear$);
+      return;
+    }
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     const pending: PendingBillingCheckout = {
       version: 1,
+      sessionId,
       orgId: identity.orgId,
       userId: identity.userId,
       kind,

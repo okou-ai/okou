@@ -1336,7 +1336,7 @@
           "too_expensive": "价格太高"
         },
         "question": "是什么让你今天还没有升级？",
-        "reward": "回答即可获得 {{credits}} 免费 credits，大约够再完成一个任务。",
+        "reward": "此工作区首个符合条件的回答可获得 {{credits}} 奖励 credits，有效期 30 天。",
         "thanksWithCredits": "感谢！已为你添加 {{credits}} credits，可以继续使用了。"
       },
       "error": "提交失败，请重试。",

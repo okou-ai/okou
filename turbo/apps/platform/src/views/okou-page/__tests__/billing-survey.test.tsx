@@ -106,6 +106,7 @@ function installSurveyApi(answered: readonly BillingSurveyKind[] = []) {
         }),
       ],
       creditsExhaustedReward: 200,
+      checkoutUnpaid: true,
     });
   });
   context.mocks.api(billingSurveyContract.submit, ({ body, respond }) => {
@@ -130,6 +131,7 @@ function rememberCheckout(args: {
     pendingCheckoutStorage.set$,
     JSON.stringify({
       version: 1,
+      sessionId: "cs_survey_test",
       orgId: "org_default",
       userId: "test-user-123",
       kind: args.kind,
@@ -156,7 +158,7 @@ test("Ask a free workspace admin why they are not upgrading and thank them with 
   });
   expect(
     within(survey).getByText(
-      "Answer to get 200 free credits, about one more task.",
+      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
     ),
   ).toBeVisible();
   // The upgrade action stays the card's primary choice.
@@ -243,6 +245,7 @@ test("Ask why a purchase was not completed when Stripe sends the member back", a
       survey: "checkout_abandoned",
       answer: "price_higher_than_expected",
       checkoutKind: "plan",
+      checkoutSessionId: "cs_survey_test",
     },
   ]);
   expect(window.location.search).not.toContain("billing=");
@@ -289,6 +292,86 @@ test("Wait while a recent Checkout may still be open in another tab", async () =
       name: "What's stopping you from upgrading today?",
     }),
   ).resolves.toBeVisible();
+  expect(
+    screen.queryByRole("dialog", {
+      name: "What stopped you from completing your purchase?",
+    }),
+  ).not.toBeInTheDocument();
+});
+
+test.each([0, 500])(
+  "Keep the Pro upgrade action without an exhaustion survey for a Pro-only model with %i credits",
+  async (credits) => {
+    installSurveyApi();
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, { ...freeBillingStatus(), credits });
+    });
+    installRunChat({
+      chatEvents: outOfCreditsChat().map((event) => {
+        return event.eventType === "output.error"
+          ? { ...event, error: "pro_required" }
+          : event;
+      }),
+    });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: SURVEY_SWITCHES,
+    });
+    await readyChat();
+    await expect(findButton("Upgrade to Pro")).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByRole("form", {
+        name: "What's stopping you from upgrading today?",
+      }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("Ask another admin for feedback without promising an already claimed organization reward", async () => {
+  installSurveyApi();
+  context.mocks.api(billingSurveyContract.status, ({ respond }) => {
+    return respond(200, {
+      answered: [],
+      creditsExhaustedReward: 0,
+      checkoutUnpaid: false,
+    });
+  });
+  installRunChat({ chatEvents: outOfCreditsChat() });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: SURVEY_SWITCHES,
+  });
+  const survey = await screen.findByRole("form", {
+    name: "What's stopping you from upgrading today?",
+  });
+  expect(
+    within(survey).queryByText(
+      "The first eligible answer in this workspace earns 200 bonus credits, valid for 30 days.",
+    ),
+  ).not.toBeInTheDocument();
+});
+
+test("Keep a completed Checkout out of the abandonment survey even without a success redirect", async () => {
+  installSurveyApi();
+  context.mocks.api(billingSurveyContract.status, ({ respond }) => {
+    return respond(200, {
+      answered: [],
+      creditsExhaustedReward: 200,
+      checkoutUnpaid: false,
+    });
+  });
+  rememberCheckout({ startedAgoMs: 2 * 60 * 60 * 1000, kind: "plan" });
+  installRunChat({ chatEvents: outOfCreditsChat() });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: SURVEY_SWITCHES,
+  });
+  await screen.findByRole("form", {
+    name: "What's stopping you from upgrading today?",
+  });
   expect(
     screen.queryByRole("dialog", {
       name: "What stopped you from completing your purchase?",

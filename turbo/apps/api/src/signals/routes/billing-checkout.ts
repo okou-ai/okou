@@ -546,7 +546,10 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: result.status === "preview" ? result.preview : { url: result.url },
+    body:
+      result.status === "preview"
+        ? result.preview
+        : { url: result.url, checkoutSessionId: result.checkoutSessionId },
   };
 });
 
@@ -740,7 +743,10 @@ const usagePackCheckoutAuthed$ = command(
     }
     return {
       status: 200 as const,
-      body: result.status === "preview" ? result.preview : { url: result.url },
+      body:
+        result.status === "preview"
+          ? result.preview
+          : { url: result.url, checkoutSessionId: result.checkoutSessionId },
     };
   },
 );

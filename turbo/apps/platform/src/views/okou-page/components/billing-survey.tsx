@@ -240,7 +240,10 @@ export function CheckoutAbandonedSurveyDialog() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     // The form owns submission; the page stays in place.
     event.preventDefault();
-    detach(submit(survey.checkoutKind, pageSignal), Reason.DomCallback);
+    detach(
+      submit(survey.checkoutKind, survey.checkoutSessionId, pageSignal),
+      Reason.DomCallback,
+    );
   };
 
   return (

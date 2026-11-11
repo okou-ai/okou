@@ -192,7 +192,15 @@ export const abandonedCheckoutSurvey$ = computed(async (get) => {
   if (surveyAnswered(status, "checkout_abandoned")) {
     return null;
   }
-  return { checkoutKind: pending.kind };
+  const client = get(apiClient$)(billingSurveyContract);
+  const checkout = await accept(
+    client.status({ query: { checkoutSessionId: pending.sessionId } }),
+    [200],
+  );
+  if (!checkout.body.checkoutUnpaid) {
+    return null;
+  }
+  return { checkoutKind: pending.kind, checkoutSessionId: pending.sessionId };
 });
 
 /** "Not now" closes the question until the next abandoned checkout. */
@@ -205,6 +213,7 @@ export const submitCheckoutAbandonedSurvey$ = command(
   async (
     { get, set },
     checkoutKind: BillingSurveyCheckoutKind,
+    checkoutSessionId: string,
     signal: AbortSignal,
   ) => {
     const draft = get(internalCheckoutAbandonedDraft$);
@@ -217,6 +226,7 @@ export const submitCheckoutAbandonedSurvey$ = command(
         survey: "checkout_abandoned",
         answer: draft.answer,
         checkoutKind,
+        checkoutSessionId,
         ...draftDetail(draft),
       },
       signal,

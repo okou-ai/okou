@@ -1336,7 +1336,7 @@
           "too_expensive": "Terlalu mahal"
         },
         "question": "Apa yang membuat Anda belum upgrade hari ini?",
-        "reward": "Jawab dan dapatkan {{credits}} kredit gratis, cukup untuk sekitar satu tugas lagi.",
+        "reward": "Jawaban pertama yang memenuhi syarat di ruang kerja ini mendapat {{credits}} kredit bonus, berlaku selama 30 hari.",
         "thanksWithCredits": "Terima kasih! {{credits}} kredit telah ditambahkan, Anda bisa melanjutkan."
       },
       "error": "Jawaban Anda gagal dikirim. Coba lagi.",

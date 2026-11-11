@@ -4584,7 +4584,15 @@ function PaidCreditCheckoutActions({
   );
 }
 
-function InsufficientCreditsCard() {
+function hasExhaustedCredits(error: string, credits: number | null): boolean {
+  return (
+    error.trim().toLowerCase() === "insufficient_credits" &&
+    credits !== null &&
+    credits <= 0
+  );
+}
+
+function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const { t } = useTranslation();
   const billingLoadable = useLoadable(billingStatusAsync$);
   const [checkoutLoadable, checkout] = useLoadableSet(startCheckout$);
@@ -4657,7 +4665,10 @@ function InsufficientCreditsCard() {
   // The upgrade question follows only the Pro upgrade action a billing manager
   // can take, never the credit top-up or the ask-an-admin copy.
   const showUpgradeSurvey =
-    canShowBillingAction && shouldStartProCheckout && billingSurveyEnabled;
+    hasExhaustedCredits(error, credits) &&
+    canShowBillingAction &&
+    shouldStartProCheckout &&
+    billingSurveyEnabled;
 
   return (
     <>
@@ -5798,7 +5809,7 @@ function AssistantErrorState({
   const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
   const fallback = assistantErrorFallbackContent(error, failureReason, t);
   if (fallback === null) {
-    return <InsufficientCreditsCard />;
+    return <InsufficientCreditsCard error={error} />;
   }
   const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;

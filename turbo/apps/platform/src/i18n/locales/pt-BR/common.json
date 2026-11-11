@@ -1362,7 +1362,7 @@
           "too_expensive": "É caro demais"
         },
         "question": "O que impede você de fazer o upgrade hoje?",
-        "reward": "Responda e ganhe {{credits}} créditos grátis, o suficiente para mais uma tarefa.",
+        "reward": "A primeira resposta elegível neste espaço de trabalho recebe {{credits}} créditos de bônus, válidos por 30 dias.",
         "thanksWithCredits": "Obrigado! Adicionamos {{credits}} créditos para você continuar."
       },
       "error": "Não foi possível enviar sua resposta. Tente novamente.",

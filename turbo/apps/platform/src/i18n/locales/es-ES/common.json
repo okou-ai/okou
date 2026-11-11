@@ -1362,7 +1362,7 @@
           "too_expensive": "Es demasiado caro"
         },
         "question": "¿Qué te impide mejorar tu plan hoy?",
-        "reward": "Responde y recibe {{credits}} créditos gratis, suficientes para una tarea más.",
+        "reward": "La primera respuesta que cumpla los requisitos en este espacio de trabajo recibe {{credits}} créditos de bonificación, válidos durante 30 días.",
         "thanksWithCredits": "¡Gracias! Hemos añadido {{credits}} créditos para que puedas continuar."
       },
       "error": "No se pudo enviar tu respuesta. Inténtalo de nuevo.",

@@ -1339,7 +1339,7 @@
           "too_expensive": "It's too expensive"
         },
         "question": "What's stopping you from upgrading today?",
-        "reward": "Answer to get {{credits}} free credits, about one more task.",
+        "reward": "The first eligible answer in this workspace earns {{credits}} bonus credits, valid for 30 days.",
         "thanksWithCredits": "Thanks! {{credits}} credits were added, so you can keep going."
       },
       "error": "Couldn't send your answer. Try again.",

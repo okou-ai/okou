@@ -128,6 +128,7 @@ import {
   parseBillingPreviewToken,
 } from "./billing-purchase-preview-token.service";
 import {
+  checkoutRequiredResponse,
   activeUsagePackPlanPriceId,
   activeUsagePackPriceId,
   isUsagePackPlanPriceId,
@@ -210,7 +211,11 @@ interface StartUsagePackPurchaseArgs extends CreateUsagePackCheckoutSessionArgs 
 
 type StartUsagePackPurchaseResult =
   | { readonly status: "conflict" }
-  | { readonly status: "checkout"; readonly url: string }
+  | {
+      readonly status: "checkout";
+      readonly url: string;
+      readonly checkoutSessionId: string;
+    }
   | {
       readonly status: "preview";
       readonly preview: UsagePackPurchasePreviewResponse;
@@ -676,7 +681,11 @@ const preparePendingUsagePackCheckout$ = command(
 
 type PreparedUsagePackPurchaseSnapshot =
   | { readonly kind: "conflict" }
-  | { readonly kind: "redirect"; readonly url: string }
+  | {
+      readonly kind: "redirect";
+      readonly url: string;
+      readonly checkoutSessionId: string;
+    }
   | { readonly kind: "snapshot"; readonly usagePackSubscriptionId: string };
 
 /**
@@ -696,7 +705,7 @@ const prepareUsagePackPurchaseSnapshot$ = command(
       customerId,
       signal,
     );
-    return pendingSnapshotResult(
+    const result = pendingSnapshotResult(
       await set(
         writeUsagePackPendingSnapshots$,
         { kind: "prepare-purchase", purchase: args, customerId, prepared },
@@ -704,6 +713,15 @@ const prepareUsagePackPurchaseSnapshot$ = command(
       ),
       "prepare-purchase",
     );
+    if (result.kind === "redirect") {
+      if (!prepared.retained) {
+        throw new Error(
+          "Redirected usage pack Checkout has no retained session",
+        );
+      }
+      return { ...result, checkoutSessionId: prepared.retained.session.id };
+    }
+    return result;
   },
 );
 
@@ -847,7 +865,10 @@ const createUsagePackCheckoutForSnapshot$ = command(
       readonly usagePackSubscriptionId: string;
       readonly fromClaim?: boolean;
     },
-  ): Promise<string | null> => {
+  ): Promise<{
+    readonly url: string;
+    readonly checkoutSessionId: string;
+  } | null> => {
     const stripe = getStripeClient();
     const metadata = usagePackSubscriptionMetadata({
       orgId: args.purchase.orgId,
@@ -891,14 +912,14 @@ const createUsagePackCheckoutForSnapshot$ = command(
       ? await set(correlateClaimedUsagePackCheckout$, correlationArgs)
       : await set(correlateUsagePackCheckout$, correlationArgs);
     if (correlation === "correlated") {
-      return session.url;
+      return { url: session.url, checkoutSessionId: session.id };
     }
     // The Session never became payable through a retained snapshot.
     await stripe.checkout.sessions.expire(session.id);
     if (correlation === "superseded") {
       // A later purchase retired this snapshot after it was selected: the same
       // outcome as this request completing first and then being superseded.
-      return session.url;
+      return { url: session.url, checkoutSessionId: session.id };
     }
     return null;
   },
@@ -915,13 +936,15 @@ const createUsagePackCheckout$ = command(
     // Provider I/O runs after the snapshot selection commits; the Session is
     // published by the conditional correlation, and a lost correlation is a
     // deterministic conflict.
-    const url = await set(createUsagePackCheckoutForSnapshot$, {
+    const checkout = await set(createUsagePackCheckoutForSnapshot$, {
       purchase: args,
       customerId,
       usagePackSubscriptionId,
     });
     signal.throwIfAborted();
-    return url === null ? { status: "conflict" } : { status: "checkout", url };
+    return checkout === null
+      ? { status: "conflict" }
+      : { status: "checkout", ...checkout };
   },
 );
 
@@ -948,7 +971,11 @@ const createUsagePackCheckoutSession$ = command(
       return { status: "conflict" };
     }
     if (prepared.kind === "redirect") {
-      return { status: "checkout", url: prepared.url };
+      return {
+        status: "checkout",
+        url: prepared.url,
+        checkoutSessionId: prepared.checkoutSessionId,
+      };
     }
     return await set(
       createUsagePackCheckout$,
@@ -1188,7 +1215,11 @@ export const startUsagePackPurchase$ = command(
       return { status: "conflict" };
     }
     if (prepared.kind === "redirect") {
-      return { status: "checkout", url: prepared.url };
+      return {
+        status: "checkout",
+        url: prepared.url,
+        checkoutSessionId: prepared.checkoutSessionId,
+      };
     }
     if (route.kind === "checkout") {
       return await set(
@@ -1411,6 +1442,7 @@ async function existingUsagePackPurchaseResult(
         status: "confirmed",
         response: {
           status: "checkout_required",
+          checkoutSessionId: session.id,
           checkoutUrl: preview.successUrl.replace(
             "{CHECKOUT_SESSION_ID}",
             session.id,
@@ -1425,6 +1457,7 @@ async function existingUsagePackPurchaseResult(
         response: {
           status: "checkout_required",
           checkoutUrl: session.url,
+          checkoutSessionId: session.id,
         },
         paidInvoice: null,
       };
@@ -1646,13 +1679,13 @@ const confirmUsagePackPurchaseSnapshot$ = command(
         );
         throw checkout.error;
       }
-      const checkoutUrl = checkout.value;
+      const session = checkout.value;
       providerSignal.throwIfAborted();
-      return checkoutUrl === null
+      return session === null
         ? { status: "invalid_preview" }
         : {
             status: "confirmed",
-            response: { status: "checkout_required", checkoutUrl },
+            response: checkoutRequiredResponse(session),
             paidInvoice: null,
           };
     }

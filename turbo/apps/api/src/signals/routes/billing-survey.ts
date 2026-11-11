@@ -6,11 +6,12 @@ import { command } from "ccstate";
 import { notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   answeredBillingSurveys$,
-  CREDITS_EXHAUSTED_SURVEY_REWARD,
+  checkoutUnpaid$,
+  creditsExhaustedSurveyReward$,
   recordBillingSurvey$,
 } from "../services/billing-survey.service";
 import { publishBillingChangedForOrg$ } from "../services/billing-realtime.service";
@@ -42,16 +43,37 @@ const surveyStatusAuthed$ = command(
     if (!enabled) {
       return surveyUnavailable();
     }
+    const query = get(queryOf(billingSurveyContract.status));
+    const checkoutUnpaid = query.checkoutSessionId
+      ? await set(
+          checkoutUnpaid$,
+          {
+            orgId: auth.orgId,
+            sessionId: query.checkoutSessionId,
+          },
+          signal,
+        )
+      : false;
     const answered = await set(
       answeredBillingSurveys$,
       { orgId: auth.orgId, userId: auth.userId },
+      signal,
+    );
+    const reward = await set(
+      creditsExhaustedSurveyReward$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        canManageBilling: auth.orgRole === "admin",
+      },
       signal,
     );
     return {
       status: 200 as const,
       body: {
         answered: [...answered],
-        creditsExhaustedReward: CREDITS_EXHAUSTED_SURVEY_REWARD,
+        creditsExhaustedReward: reward,
+        checkoutUnpaid,
       },
     };
   },
@@ -70,9 +92,30 @@ const surveySubmitAuthed$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
+    if (
+      bodyResult.data.survey === "checkout_abandoned" &&
+      !(await set(
+        checkoutUnpaid$,
+        {
+          orgId: auth.orgId,
+          sessionId: bodyResult.data.checkoutSessionId,
+        },
+        signal,
+      ))
+    ) {
+      return {
+        status: 200 as const,
+        body: { recorded: false, rewardCredits: 0 },
+      };
+    }
     const result = await set(
       recordBillingSurvey$,
-      { orgId: auth.orgId, userId: auth.userId, request: bodyResult.data },
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        request: bodyResult.data,
+        canManageBilling: auth.orgRole === "admin",
+      },
       signal,
     );
     if (result.rewardCredits > 0) {
