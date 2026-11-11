@@ -7372,6 +7372,7 @@
       "connect": "接続する",
       "disconnect": "切断する",
       "disconnecting": "切断中…",
+      "install": "インストール",
       "moreOptions": "その他のオプション",
       "uninstall": "アンインストール",
       "uninstalling": "アンインストール中…",
@@ -7441,6 +7442,10 @@
     "header": {
       "description": "これらのチャネルを通じて {{displayName}} に接続します",
       "title": "{{displayName}}の連携先"
+    },
+    "sections": {
+      "connected": "接続済み",
+      "more": "その他のチャネル"
     },
     "slack": {
       "adminInstall": "Slack 統合をインストールするように管理者に依頼してください",

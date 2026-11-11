@@ -4,6 +4,10 @@ import type { Command } from "ccstate";
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
 import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
+import {
   useGet,
   useSet,
   useLastLoadable,
@@ -16,7 +20,6 @@ import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/validators/integrations-telegram";
 import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
   PopoverContent,
@@ -68,7 +71,13 @@ import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
 import { WhatsappCard } from "./whatsapp-card.tsx";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  worksChannels$,
+  worksConnectedChannels$,
+  type WorksChannel,
+} from "../../signals/works-page/works-channel-placement.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { FeishuCard } from "./feishu-card.tsx";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -103,6 +112,7 @@ function ProviderCardActions({
   installTestId,
   connectTestId,
   installLabel,
+  shortInstallLabel,
   moreOptionsLabel,
   disconnectLabel,
   uninstallLabel,
@@ -121,6 +131,7 @@ function ProviderCardActions({
   installTestId: string;
   connectTestId?: string;
   installLabel: string;
+  shortInstallLabel: boolean;
   moreOptionsLabel: string;
   disconnectLabel: string;
   uninstallLabel: string;
@@ -143,12 +154,17 @@ function ProviderCardActions({
           variant="outline"
           size="sm"
           className="h-8 shrink-0 gap-1.5 rounded-lg"
+          aria-label={shortInstallLabel ? installLabel : undefined}
           onClick={() => {
             return openFreshOAuth(installUrl);
           }}
         >
           <Download size={14} />
-          {installLabel}
+          {shortInstallLabel
+            ? t(($) => {
+                return $.works.actions.install;
+              })
+            : installLabel}
         </Button>
       )}
       {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
@@ -279,8 +295,15 @@ function UninstallConfirmDialog({
   );
 }
 
-function SlackCard({ displayName }: { displayName: string }) {
+function SlackCard({
+  displayName,
+  layout,
+}: {
+  displayName: string;
+  layout: IntegrationCardLayout;
+}) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   // useLastLoadable keeps the prior resolved value during the polling refetch
   // so the card text doesn't flicker back to defaults on every poll cycle.
   const slackDataLoadable = useLastLoadable(slackOrgData$);
@@ -301,13 +324,10 @@ function SlackCard({ displayName }: { displayName: string }) {
 
   return (
     <>
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
-          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-            <img src={slackIconImg} alt="" className="h-7 w-7 scale-[2.2]" />
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
+          <div className={classes.iconFrame}>
+            <img src={slackIconImg} alt="" className="size-full scale-[2.2]" />
           </div>
           <div className="flex flex-1 flex-col gap-1 min-w-0">
             <div className="text-sm font-medium text-foreground">
@@ -315,7 +335,9 @@ function SlackCard({ displayName }: { displayName: string }) {
                 return $.works.slack.title;
               })}
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
+            >
               {!isInstalled && !isAdmin
                 ? t(($) => {
                     return $.works.slack.adminInstall;
@@ -334,6 +356,7 @@ function SlackCard({ displayName }: { displayName: string }) {
             connectedDetail={slackData?.workspaceName}
             connectedTestId="slack-connected-indicator"
             installTestId="slack-install-button"
+            shortInstallLabel={classes.shortInstallLabel}
             installLabel={t(($) => {
               return $.works.slack.install;
             })}
@@ -448,10 +471,16 @@ function DiscordDmSelection({
   );
 }
 
-function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
+function DiscordCardDescription({
+  data,
+  className,
+}: {
+  data: DiscordOrgStatus | null;
+  className: string | null;
+}) {
   const { t } = useTranslation();
   return (
-    <p className="text-sm text-muted-foreground">
+    <p className={cn("text-sm text-muted-foreground", className)}>
       {data
         ? discordDescription(data)
         : t(($) => {
@@ -461,8 +490,9 @@ function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   );
 }
 
-function DiscordCard() {
+function DiscordCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const title = t(($) => {
     return $.works.discord.title;
   });
@@ -480,15 +510,15 @@ function DiscordCard() {
       <section
         data-slot="integration-card"
         aria-label={title}
-        className={surfaceVariants({ className: "flex flex-col" })}
+        className={classes.frame}
       >
-        <div className="flex items-center gap-4 p-4">
+        <div className={classes.header}>
           <div className="shrink-0 text-foreground">
-            <DiscordMark size={28} />
+            <DiscordMark size={classes.iconSize} />
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">{title}</div>
-            <DiscordCardDescription data={data} />
+            <DiscordCardDescription data={data} className={classes.overflow} />
           </div>
           <DiscordAuthorizationActions
             data={data}
@@ -588,8 +618,15 @@ function teamsCardConnection(data: TeamsConnectStatus | null) {
   };
 }
 
-function TeamsCard({ displayName }: { displayName: string }) {
+function TeamsCard({
+  displayName,
+  layout,
+}: {
+  displayName: string;
+  layout: IntegrationCardLayout;
+}) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const brandName = useGet(brandName$);
   const teamsDataLoadable = useLoadable(teamsOrgData$);
   const teamsData =
@@ -616,13 +653,10 @@ function TeamsCard({ displayName }: { displayName: string }) {
 
   return (
     <>
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
-          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-            <img src={teamsIconImg} alt="" className="h-7 w-7" />
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
+          <div className={classes.iconFrame}>
+            <img src={teamsIconImg} alt="" className="size-full" />
           </div>
           <div className="flex flex-1 flex-col gap-1 min-w-0">
             <div className="text-sm font-medium text-foreground">
@@ -630,7 +664,11 @@ function TeamsCard({ displayName }: { displayName: string }) {
                 return $.works.teams.title;
               })}
             </div>
-            <div className="text-sm text-muted-foreground">{description}</div>
+            <div
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
+            >
+              {description}
+            </div>
           </div>
           <ProviderCardActions
             independentIdentity
@@ -643,6 +681,7 @@ function TeamsCard({ displayName }: { displayName: string }) {
             connectedTestId="teams-connected-indicator"
             installTestId="teams-install-button"
             connectTestId="teams-connect-button"
+            shortInstallLabel={classes.shortInstallLabel}
             installLabel={t(($) => {
               return $.works.teams.install;
             })}
@@ -695,8 +734,9 @@ function TeamsCard({ displayName }: { displayName: string }) {
   );
 }
 
-function GithubCard() {
+function GithubCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const githubDataLoadable = useLastLoadable(githubIntegrationData$);
   const githubData =
     githubDataLoadable.state === "hasData" ? githubDataLoadable.data : null;
@@ -716,11 +756,11 @@ function GithubCard() {
     <div
       data-slot="integration-card"
       data-testid="github-integration-card"
-      className={surfaceVariants({ className: "flex flex-col" })}
+      className={classes.frame}
     >
-      <div className="flex items-center gap-4 p-4">
-        <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-          <img src={githubIconImg} alt="" className="h-7 w-7" />
+      <div className={classes.header}>
+        <div className={classes.iconFrame}>
+          <img src={githubIconImg} alt="" className="size-full" />
         </div>
         <div className="flex flex-1 flex-col gap-1 min-w-0">
           <div className="text-sm font-medium text-foreground">
@@ -728,7 +768,9 @@ function GithubCard() {
               return $.works.github.title;
             })}
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div
+            className={cn("text-sm text-muted-foreground", classes.overflow)}
+          >
             {adminInstallRequired
               ? t(($) => {
                   return $.works.github.adminInstall;
@@ -750,15 +792,26 @@ function GithubCard() {
             href={githubData.installUrl}
             target="_blank"
             rel="noreferrer"
+            aria-label={
+              classes.shortInstallLabel
+                ? t(($) => {
+                    return $.works.github.install;
+                  })
+                : undefined
+            }
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "h-8 shrink-0 gap-1.5 rounded-lg",
             )}
           >
             <Download size={14} />
-            {t(($) => {
-              return $.works.github.install;
-            })}
+            {classes.shortInstallLabel
+              ? t(($) => {
+                  return $.works.actions.install;
+                })
+              : t(($) => {
+                  return $.works.github.install;
+                })}
           </a>
         ) : null}
         {githubData?.isInstalled && !githubData.isConnected ? (
@@ -821,8 +874,9 @@ function telegramConnectedDetail(bot: TelegramBot | undefined) {
         connectedUser?.telegramUserId;
 }
 
-function TelegramCard() {
+function TelegramCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const pageSignal = useGet(pageSignal$);
   const botsLoadable = useLoadable(telegramBots$);
   const bot =
@@ -842,13 +896,10 @@ function TelegramCard() {
   const connectedDetail = telegramConnectedDetail(bot);
 
   return (
-    <div
-      data-slot="integration-card"
-      className={surfaceVariants({ className: "flex flex-col" })}
-    >
-      <div className="flex items-center gap-4 p-4">
-        <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-          <img src={telegramIconImg} alt="" className="h-7 w-7" />
+    <div data-slot="integration-card" className={classes.frame}>
+      <div className={classes.header}>
+        <div className={classes.iconFrame}>
+          <img src={telegramIconImg} alt="" className="size-full" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -858,7 +909,9 @@ function TelegramCard() {
               })}
             </div>
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div
+            className={cn("text-sm text-muted-foreground", classes.overflow)}
+          >
             {botsLoadable.state === "hasError"
               ? t(($) => {
                   return $.connectors.providerSettings.telegram.loadError;
@@ -950,11 +1003,160 @@ function TelegramCard() {
   );
 }
 
+function WorksChannelCard({
+  channel,
+  layout,
+  displayName,
+}: {
+  channel: WorksChannel;
+  layout: IntegrationCardLayout;
+  displayName: string;
+}) {
+  switch (channel) {
+    case "slack": {
+      return <SlackCard displayName={displayName} layout={layout} />;
+    }
+    case "teams": {
+      return <TeamsCard displayName={displayName} layout={layout} />;
+    }
+    case "discord": {
+      return <DiscordCard layout={layout} />;
+    }
+    case "github": {
+      return <GithubCard layout={layout} />;
+    }
+    case "feishu": {
+      return <FeishuCard layout={layout} />;
+    }
+    case "lark": {
+      return <FeishuCard platform="lark" layout={layout} />;
+    }
+    case "telegram": {
+      return <TelegramCard layout={layout} />;
+    }
+    case "phone": {
+      return <AgentPhoneCard layout={layout} />;
+    }
+    case "email": {
+      return <EmailCard layout={layout} />;
+    }
+    case "whatsapp": {
+      return <WhatsappCard layout={layout} />;
+    }
+    case "wechat": {
+      return <WechatCard layout={layout} />;
+    }
+  }
+}
+
+function WorksSectionHeading({
+  id,
+  label,
+  count,
+}: {
+  id: string;
+  label: string;
+  count: number;
+}) {
+  return (
+    <h2
+      id={id}
+      className="flex items-center gap-2 text-sm font-medium text-foreground"
+    >
+      {label}
+      <span className="font-normal text-muted-foreground">{count}</span>
+    </h2>
+  );
+}
+
+function GroupedWorksChannels({
+  channels,
+  displayName,
+}: {
+  channels: readonly WorksChannel[];
+  displayName: string;
+}) {
+  const { t } = useTranslation();
+  const connected = useGet(worksConnectedChannels$) ?? [];
+  const connectedChannels = channels.filter((channel) => {
+    return connected.includes(channel);
+  });
+  const otherChannels = channels.filter((channel) => {
+    return !connected.includes(channel);
+  });
+
+  return (
+    <div className="mx-auto max-w-[900px] flex flex-col gap-6">
+      {connectedChannels.length > 0 ? (
+        <section
+          aria-labelledby="works-connected-channels"
+          className="flex flex-col gap-2"
+        >
+          <WorksSectionHeading
+            id="works-connected-channels"
+            label={t(($) => {
+              return $.works.sections.connected;
+            })}
+            count={connectedChannels.length}
+          />
+          <div
+            className={surfaceVariants({
+              className: "flex flex-col divide-y divide-border overflow-hidden",
+            })}
+          >
+            {connectedChannels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="row"
+                  displayName={displayName}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+      {otherChannels.length > 0 ? (
+        <section
+          aria-labelledby={
+            connectedChannels.length > 0 ? "works-more-channels" : undefined
+          }
+          className="flex flex-col gap-2"
+        >
+          {connectedChannels.length > 0 ? (
+            <WorksSectionHeading
+              id="works-more-channels"
+              label={t(($) => {
+                return $.works.sections.more;
+              })}
+              count={otherChannels.length}
+            />
+          ) : null}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {otherChannels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="tile"
+                  displayName={displayName}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function WorksPage() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
+  const channels = useGet(worksChannels$);
   const features = useGet(featureSwitch$);
-  const feishuEnabled = features[FeatureSwitchKey.FeishuIntegration] ?? false;
+  const channelGroups = features[FeatureSwitchKey.WorksChannelGroups] ?? false;
   const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
   const displayName =
     displayNameLoadable.state === "hasData"
@@ -985,23 +1187,22 @@ export function WorksPage() {
       </header>
 
       <main className="flex-1 overflow-auto px-4 sm:px-6 pt-3 pb-safe-or-8">
-        <div className="mx-auto max-w-[900px] flex flex-col gap-4">
-          <SlackCard displayName={displayName} />
-          <TeamsCard displayName={displayName} />
-          <DiscordCard />
-          <GithubCard />
-          {feishuEnabled ? <FeishuCard /> : null}
-          {features[FeatureSwitchKey.LarkIntegration] ? (
-            <FeishuCard platform="lark" />
-          ) : null}
-          <TelegramCard />
-          <AgentPhoneCard />
-          {features[FeatureSwitchKey.EmailIntegration] ? <EmailCard /> : null}
-          {features[FeatureSwitchKey.WhatsappIntegration] ? (
-            <WhatsappCard />
-          ) : null}
-          {features[FeatureSwitchKey.WechatIntegration] ? <WechatCard /> : null}
-        </div>
+        {channelGroups ? (
+          <GroupedWorksChannels channels={channels} displayName={displayName} />
+        ) : (
+          <div className="mx-auto max-w-[900px] flex flex-col gap-4">
+            {channels.map((channel) => {
+              return (
+                <WorksChannelCard
+                  key={channel}
+                  channel={channel}
+                  layout="card"
+                  displayName={displayName}
+                />
+              );
+            })}
+          </div>
+        )}
       </main>
     </div>
   );

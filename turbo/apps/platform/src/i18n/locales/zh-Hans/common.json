@@ -7372,6 +7372,7 @@
       "connect": "连接",
       "disconnect": "断开连接",
       "disconnecting": "正在断开…",
+      "install": "安装",
       "moreOptions": "更多选项",
       "uninstall": "卸载",
       "uninstalling": "正在卸载…",
@@ -7441,6 +7442,10 @@
     "header": {
       "description": "通过这些渠道与{{displayName}}协作",
       "title": "{{displayName}}的工作渠道"
+    },
+    "sections": {
+      "connected": "已连接",
+      "more": "更多渠道"
     },
     "slack": {
       "adminInstall": "请管理员安装 Slack 集成",

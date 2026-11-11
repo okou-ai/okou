@@ -7393,6 +7393,7 @@
       "connect": "Connect",
       "disconnect": "Disconnect",
       "disconnecting": "Disconnecting…",
+      "install": "Install",
       "moreOptions": "More options",
       "uninstall": "Uninstall",
       "uninstalling": "Uninstalling…",
@@ -7462,6 +7463,10 @@
     "header": {
       "description": "Connect with {{displayName}} through these channels",
       "title": "Where {{displayName}} works"
+    },
+    "sections": {
+      "connected": "Connected",
+      "more": "More channels"
     },
     "slack": {
       "adminInstall": "Ask your admin to install the Slack integration",

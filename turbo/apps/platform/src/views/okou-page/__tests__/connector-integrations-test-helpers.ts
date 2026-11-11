@@ -137,6 +137,7 @@ export function setupIntegrationsPage(
   options: {
     readonly feishu?: boolean;
     readonly lark?: boolean;
+    readonly channelGroups?: boolean;
   } = {},
 ): Promise<void> {
   return setupPage({
@@ -145,6 +146,7 @@ export function setupIntegrationsPage(
     featureSwitches: {
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
+      [FeatureSwitchKey.WorksChannelGroups]: options.channelGroups ?? false,
     },
   });
 }

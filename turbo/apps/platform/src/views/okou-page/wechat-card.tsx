@@ -1,7 +1,11 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button, surfaceVariants } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
+import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
 import {
   Dialog,
   DialogContent,
@@ -27,8 +31,9 @@ import { WechatConnectForm } from "./wechat-connect-form.tsx";
 
 const wechatIconImg = settingsIconAssetUrl("wechat");
 
-export function WechatCard() {
+export function WechatCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const statusLoadable = useLastLoadable(wechatStatus$);
   const signal = useGet(pageSignal$);
   const flow = useGet(wechatFlow$);
@@ -52,19 +57,22 @@ export function WechatCard() {
         }
       }}
     >
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
-          <img src={wechatIconImg} alt="" className="size-7 shrink-0" />
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
+          <img
+            src={wechatIconImg}
+            alt=""
+            className={cn("shrink-0", classes.icon)}
+          />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">
               {t(($) => {
                 return $.works.wechat.name;
               })}
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
+            >
               {status?.status === "reconnect_required"
                 ? t(($) => {
                     return $.works.wechat.reconnect_required;

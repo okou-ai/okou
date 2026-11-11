@@ -7473,6 +7473,7 @@
       "connect": "Connecter",
       "disconnect": "Se déconnecter",
       "disconnecting": "Déconnexion…",
+      "install": "Installer",
       "moreOptions": "Plus d'options",
       "uninstall": "Désinstaller",
       "uninstalling": "Désinstallation…",
@@ -7542,6 +7543,10 @@
     "header": {
       "description": "Connecter avec {{displayName}} via ces canaux",
       "title": "Où {{displayName}} travaille"
+    },
+    "sections": {
+      "connected": "Connectés",
+      "more": "Autres canaux"
     },
     "slack": {
       "adminInstall": "Demandez à votre administrateur d'installer l'intégration Slack",

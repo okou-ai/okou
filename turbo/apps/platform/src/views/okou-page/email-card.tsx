@@ -1,6 +1,10 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, surfaceVariants } from "@okouai/ui";
+import { Badge, Button, cn } from "@okouai/ui";
+import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
 import {
   Popover,
   PopoverContent,
@@ -25,8 +29,9 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { EmailConnectDialog } from "./email-connect-dialog.tsx";
 
-export function EmailCard() {
+export function EmailCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const status = useLastLoadable(emailLinkStatus$);
   const setConnectOpen = useSet(setEmailConnectDialogOpen$);
   const addEmail = useSet(addEmailConnection$);
@@ -37,14 +42,11 @@ export function EmailCard() {
   const email = emails[0];
   return (
     <>
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
           <Mail
             aria-hidden="true"
-            className="h-7 w-7 shrink-0 text-foreground"
+            className={cn("shrink-0 text-foreground", classes.icon)}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="truncate text-sm font-medium text-foreground">
@@ -52,7 +54,12 @@ export function EmailCard() {
                 return $.works.email.title;
               })}
             </div>
-            <div className="truncate text-sm text-muted-foreground">
+            <div
+              className={cn(
+                "text-sm text-muted-foreground",
+                classes.overflow ?? "truncate",
+              )}
+            >
               {t(($) => {
                 return $.works.email.description;
               })}

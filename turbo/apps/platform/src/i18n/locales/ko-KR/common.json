@@ -7372,6 +7372,7 @@
       "connect": "연결",
       "disconnect": "연결 해제",
       "disconnecting": "연결 해제 중…",
+      "install": "설치",
       "moreOptions": "추가 옵션",
       "uninstall": "제거",
       "uninstalling": "제거 중…",
@@ -7441,6 +7442,10 @@
     "header": {
       "description": "{{displayName}}와(과) 다음 채널을 통해 연결됨",
       "title": "{{displayName}}가(이) 작동하는 곳"
+    },
+    "sections": {
+      "connected": "연결됨",
+      "more": "더 많은 채널"
     },
     "slack": {
       "adminInstall": "관리자에게 Slack 통합 설치를 요청하세요",

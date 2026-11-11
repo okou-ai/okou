@@ -22,6 +22,10 @@ import {
 } from "@okouai/api-contracts/validators/feishu-connect";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -1265,10 +1269,13 @@ function FeishuSetupWizard({
 
 export function FeishuCard({
   platform = "feishu",
+  layout,
 }: {
   platform?: FeishuPlatform;
+  layout: IntegrationCardLayout;
 }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   return (
     <Link
       pathname={
@@ -1276,11 +1283,11 @@ export function FeishuCard({
       }
       data-slot="integration-card"
       data-testid={`${platform}-setup-button`}
-      className={surfaceVariants({ className: "block" })}
+      className={classes.frame}
     >
-      <div className="flex items-center gap-4 p-4">
-        <div className="inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden">
-          <img src={feishuIconImg} alt="" className="h-7 w-7" />
+      <div className={classes.header}>
+        <div className={classes.iconFrame}>
+          <img src={feishuIconImg} alt="" className="size-full" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="text-sm font-medium text-foreground">
@@ -1288,7 +1295,12 @@ export function FeishuCard({
               return $.connectors.providerSettings[platform].documentTitle;
             })}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
+          <div
+            className={cn(
+              "text-sm text-muted-foreground",
+              classes.overflow ?? "truncate",
+            )}
+          >
             {t(($) => {
               return $.connectors.providerSettings[platform].routeDescription;
             })}

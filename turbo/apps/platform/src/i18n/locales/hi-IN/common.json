@@ -7396,6 +7396,7 @@
       "connect": "जोड़ना",
       "disconnect": "डिस्कनेक्ट",
       "disconnecting": "डिस्कनेक्ट हो रहा है...",
+      "install": "स्थापित करना",
       "moreOptions": "अधिक विकल्प",
       "uninstall": "अनइंस्टॉल करें",
       "uninstalling": "अनइंस्टॉल किया जा रहा है...",
@@ -7465,6 +7466,10 @@
     "header": {
       "description": "इन चैनलों के माध्यम से {{displayName}} से जुड़ें",
       "title": "जहां {{displayName}} काम करता है"
+    },
+    "sections": {
+      "connected": "कनेक्टेड",
+      "more": "और चैनल"
     },
     "slack": {
       "adminInstall": "अपने व्यवस्थापक से Slack एकीकरण स्थापित करने के लिए कहें",
