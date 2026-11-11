@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.43](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.42...runner-remote-v0.31.43) (2026-11-11)
+
+
+### Bug Fixes
+
+* **rfb-client:** accept 1024-bit apple dh groups offered by macos 15 ([#46597](https://github.com/okou-ai/okou/issues/46597)) ([cd5d77b](https://github.com/okou-ai/okou/commit/cd5d77b8cf99152ec82106f43bec125a0016a5d5))
+
 ## [0.31.42](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.41...runner-remote-v0.31.42) (2026-11-11)
 
 ## [0.31.41](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.40...runner-remote-v0.31.41) (2026-11-11)

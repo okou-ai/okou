@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.36.0](https://github.com/okou-ai/okou/compare/ios-v0.35.3...ios-v0.36.0) (2026-11-11)
+
+
+### Features
+
+* **ios:** order the sidebar by projects and neutralize the brown accent ([#46586](https://github.com/okou-ai/okou/issues/46586)) ([8ad7f1e](https://github.com/okou-ai/okou/commit/8ad7f1e2b471d08ddbd0cf67e63e1428f1bbc6e0))
+
+
+### Refactoring
+
+* **ios:** persist project disclosure in sqlite ([#46546](https://github.com/okou-ai/okou/issues/46546)) ([b82ee92](https://github.com/okou-ai/okou/commit/b82ee92b4d09e499175a224ba5b9bb51ca7b503a))
+* **ios:** share permission card read resources ([#46584](https://github.com/okou-ai/okou/issues/46584)) ([5335094](https://github.com/okou-ai/okou/commit/53350940c22251d11f8ea1351af172e8ea9bfe05))
+
 ## [0.35.3](https://github.com/okou-ai/okou/compare/ios-v0.35.2...ios-v0.35.3) (2026-11-11)
 
 
