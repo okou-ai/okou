@@ -7,6 +7,11 @@ pub(super) struct EarlyApplication<'a> {
     pub(super) decoded_outcomes: &'a [(CacheTargetGroup, TargetOutcome)],
 }
 
+pub(super) struct MixedPreparation {
+    pub(super) fresh: Vec<(CacheTargetGroup, TargetOutcome)>,
+    pub(super) ordinary: Vec<(CacheTargetGroup, TargetOutcome)>,
+}
+
 /// Both futures stay borrowed by the population call. An error cancels the
 /// sibling but never drops an accepted Guest write or atomic publication.
 pub(super) async fn prepare_mixed(
@@ -16,65 +21,124 @@ pub(super) async fn prepare_mixed(
     concurrency: usize,
     stage: &mut GuestStageRecorder<'_>,
     early: Option<EarlyApplication<'_>>,
-) -> RunnerResult<(
-    Vec<FreshArchiveResolved>,
-    Vec<(CacheTargetGroup, TargetOutcome)>,
-)> {
+) -> RunnerResult<MixedPreparation> {
     let cancel_ordinary = CancellationToken::new();
     let cancel_fresh = delivery.cancel.clone();
     let mut metrics = CacheProcessMetrics::default();
     let result = {
-        let sandbox = stage.sandbox;
-        let fresh = delivery.resolve_inner(home, &mut metrics);
-        let ordinary = prepare_ordinary(groups, home, concurrency, Some(&cancel_ordinary), stage);
-        tokio::pin!(fresh, ordinary);
-        tokio::select! {
-            resolved = &mut fresh => match resolved {
-                Ok(resolved) => ordinary.await.map(|ordinary| (resolved, ordinary)),
-                Err(error) => {
-                    cancel_fresh.cancel();
-                    cancel_ordinary.cancel();
-                    let _ = ordinary.await;
-                    Err(error)
-                }
-            },
-            prepared = &mut ordinary => match prepared {
-                Ok(prepared) => {
-                    // Do not introduce markers when fresh work is already resolved.
-                    if let std::task::Poll::Ready(resolved) = futures_util::poll!(fresh.as_mut()) {
-                        resolved.map(|resolved| (resolved, prepared))
-                    } else {
-                        let handoff = if let Some(early) = early {
-                            early.application.start_if_useful(
-                                sandbox,
-                                early.plan,
-                                early.owned_groups,
-                                early.decoded_outcomes,
-                                &prepared,
-                            ).await
-                        } else {
-                            Ok(())
-                        };
-                        if let Err(error) = handoff {
-                            cancel_fresh.cancel();
-                            let _ = fresh.await;
-                            Err(error)
-                        } else {
-                            fresh.await.map(|resolved| (resolved, prepared))
+        let mut ready = Vec::new();
+        let mut complete = false;
+        let mut early = early;
+        async {
+            let ordinary = {
+                let ordinary =
+                    prepare_ordinary(groups, home, concurrency, Some(&cancel_ordinary), stage);
+                tokio::pin!(ordinary);
+                loop {
+                    tokio::select! {
+                        prepared = &mut ordinary => break prepared?,
+                        resolved = delivery.next_resolved(home, &mut metrics), if !complete => {
+                            match resolved {
+                                Ok(Some(archive)) => ready.push(archive),
+                                Ok(None) => complete = true,
+                                Err(error) => {
+                                    cancel_fresh.cancel();
+                                    cancel_ordinary.cancel();
+                                    let _ = ordinary.await;
+                                    return Err(error);
+                                }
+                            }
                         }
                     }
-                },
-                Err(error) => {
-                    cancel_fresh.cancel();
-                    let _ = fresh.await;
-                    Err(error)
                 }
-            },
+            };
+            collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
+            // This owner requires ordinary inputs and spare body admission.
+            // All-miss preparation retains complete collection and staging.
+            let incremental = if !complete && let Some(early) = early.as_mut() {
+                early
+                    .application
+                    .start_if_useful(
+                        stage.sandbox,
+                        early.plan,
+                        early.owned_groups,
+                        early.decoded_outcomes,
+                        &ordinary,
+                    )
+                    .await?
+            } else {
+                false
+            };
+            // Ordinary groups can be passthroughs, and Guest can reject an
+            // early plan. Preserve complete batching unless it actually starts.
+            if !complete && !incremental {
+                ready.extend(delivery.resolve_inner(home, &mut metrics).await?);
+                complete = true;
+            }
+            let mut fresh = Vec::new();
+            loop {
+                collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
+                // When only atomic cache publications remain, collect them as
+                // one batch instead of adding RPCs for ready/tiny downloads.
+                if !complete && delivery.fetches.is_empty() {
+                    while let Some(archive) = delivery.next_resolved(home, &mut metrics).await? {
+                        ready.push(archive);
+                    }
+                    complete = true;
+                }
+                check_cancel(Some(&cancel_fresh))?;
+                if !ready.is_empty() {
+                    let staged = stage_fresh_archives(std::mem::take(&mut ready), stage).await?;
+                    // An accepted staging write settles before cancellation
+                    // stops admission of a new readiness publication.
+                    check_cancel(Some(&cancel_fresh))?;
+                    if let Some(early) = early.as_mut() {
+                        early
+                            .application
+                            .publish_staged(stage.sandbox, &staged)
+                            .await?;
+                    }
+                    fresh.extend(staged);
+                }
+                if complete {
+                    return Ok(MixedPreparation { fresh, ordinary });
+                }
+                match delivery.next_resolved(home, &mut metrics).await? {
+                    Some(archive) => ready.push(archive),
+                    None => complete = true,
+                }
+            }
         }
+        .await
     };
+    if result.is_err() {
+        cancel_fresh.cancel();
+    }
     metrics.record_to(stage.telemetry);
     delivery.phase_records.record_to(stage.telemetry);
     result
+}
+
+/// Poll only immediately available progress. Bodies/publications remain in the
+/// delivery owner across Pending; at most the existing four admissions collect.
+async fn collect_ready(
+    delivery: &mut FreshArchiveDelivery,
+    home: &HomePaths,
+    metrics: &mut CacheProcessMetrics,
+    ready: &mut Vec<FreshArchiveResolved>,
+    complete: &mut bool,
+) -> RunnerResult<()> {
+    while !*complete {
+        let next = delivery.next_resolved(home, metrics);
+        tokio::pin!(next);
+        match futures_util::poll!(&mut next) {
+            std::task::Poll::Ready(Ok(Some(archive))) => ready.push(archive),
+            std::task::Poll::Ready(Ok(None)) => *complete = true,
+            std::task::Poll::Ready(Err(error)) => return Err(error),
+            std::task::Poll::Pending => break,
+        }
+    }
+    Ok(())
 }
 
 pub(super) async fn prepare_ordinary(

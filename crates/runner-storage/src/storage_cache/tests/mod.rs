@@ -10,6 +10,7 @@ mod fresh_teardown;
 mod group_failures;
 mod guest_application;
 mod http_reuse;
+mod incremental_staging;
 mod large_selection;
 mod mixed_preparation;
 mod phase_diagnostics;
