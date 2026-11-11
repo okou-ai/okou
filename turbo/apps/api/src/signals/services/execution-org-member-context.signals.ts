@@ -18,6 +18,7 @@ import {
   type ExecutionOrgRows,
 } from "./execution-org-context.service";
 import { memberModelSourcesAggregate } from "./model-source-context.service";
+import { observePgOperation } from "../../lib/db-instrumentation";
 
 const rawDecoder = zodDriverValueDecoder(zUnknown());
 const orgRowSchema = object({
@@ -51,12 +52,15 @@ export function createExecutionOrgMemberContext(
       ? sql`(SELECT to_jsonb(org_snapshot)
           FROM (${executionOrgQuery(owner.orgId, at, attached)}) AS org_snapshot)`
       : sql`NULL`;
-    const [row] = await get(db$)
-      .select({
-        org: orgRow.mapWith(rawDecoder),
-        member: memberRows.mapWith(memberRowsDecoder),
-      })
-      .from(sql`(SELECT 1) AS execution_snapshot`);
+    const read = async () => {
+      return await get(db$)
+        .select({
+          org: orgRow.mapWith(rawDecoder),
+          member: memberRows.mapWith(memberRowsDecoder),
+        })
+        .from(sql`(SELECT 1) AS execution_snapshot`);
+    };
+    const [row] = await observePgOperation("org_member_read", read);
     if (!row) {
       throw new Error("Execution organization/member query returned no row");
     }

@@ -1311,7 +1311,15 @@ export function createThreadClaimRunObjects(
             "top_level",
             committedAt - requestReceivedAt,
             committedAt,
-            { capture_scope: "request_observed_commit" },
+            {
+              capture_scope: "request_observed_commit",
+              ...(requestFacts?.input.enqueueObservationId
+                ? {
+                    enqueue_observation_id:
+                      requestFacts.input.enqueueObservationId,
+                  }
+                : {}),
+            },
           );
         }
         timing.recordDuration(

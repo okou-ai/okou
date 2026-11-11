@@ -73,6 +73,32 @@ export interface PgQueryExecutionCapture {
   readonly executions: PgQueryExecution[];
 }
 
+/** Optional timing around an existing read; observers invoke it exactly once. */
+type PgOperationObserver = <T>(
+  name: string,
+  operation: () => Promise<T>,
+) => Promise<T>;
+
+const scopedPgOperationObserver = singleton(() => {
+  return new AsyncLocalStorage<PgOperationObserver>();
+});
+
+/** Optional instrumentation stays in async scope, outside business graph inputs. */
+export async function withPgOperationObserver<T>(
+  observer: PgOperationObserver,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return await scopedPgOperationObserver().run(observer, operation);
+}
+
+export async function observePgOperation<T>(
+  name: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const observer = scopedPgOperationObserver.peek()?.getStore();
+  return observer ? await observer(name, operation) : await operation();
+}
+
 const scopedPgQueryExecutionCapture = singleton(() => {
   return new AsyncLocalStorage<PgQueryExecutionCapture | undefined>();
 });
