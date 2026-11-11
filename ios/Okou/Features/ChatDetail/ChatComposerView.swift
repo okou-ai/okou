@@ -68,8 +68,8 @@ struct ChatComposerView: View {
   /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
   private var showsModelPicker: Bool { expandsInput && !voiceActive }
-  private var showsSecondaryVoiceInput: Bool {
-    expandsInput && !replacesSendWithMic && !voiceActive
+  private var showsVoiceInput: Bool {
+    replacesSendWithMic || (expandsInput && !voiceActive)
   }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
@@ -212,18 +212,15 @@ struct ChatComposerView: View {
           // The mic sits beside send once there is a draft; on an empty one it takes send's place.
           if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
-              .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
-              .padding(.trailing, OkouSpace.xs)
-              .frame(width: showsSecondaryVoiceInput ? nil : 0, alignment: .trailing)
-              .clipped()
-              .opacity(showsSecondaryVoiceInput ? 1 : 0)
-              .allowsHitTesting(showsSecondaryVoiceInput)
-              .accessibilityHidden(!showsSecondaryVoiceInput)
-          }
-          if replacesSendWithMic, let voice = draftState?.voice {
-            ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-          } else {
+              .padding(.trailing, replacesSendWithMic ? 0 : OkouSpace.xs)
+              .frame(width: showsVoiceInput ? nil : 0, alignment: .trailing)
+              .clipped()
+              .opacity(showsVoiceInput ? 1 : 0)
+              .allowsHitTesting(showsVoiceInput)
+              .accessibilityHidden(!showsVoiceInput)
+          }
+          if !replacesSendWithMic {
             Button {
               if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
               // The send operation captures native text for motion before ending editing.
