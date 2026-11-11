@@ -247,12 +247,13 @@ class ApiClientTest {
 
     @Test
     fun boundsKnownLengthAndChunkedResponses() = runTest {
+        val oversized =
+            """{"id":"org_large","name":"${"x".repeat(MAX_API_RESPONSE_BYTES.toInt())}"}"""
         client().use { api ->
             for (response in
                 listOf(
-                    MockResponse().setBody("x".repeat(MAX_API_RESPONSE_BYTES.toInt() + 1)),
-                    MockResponse()
-                        .setChunkedBody("x".repeat(MAX_API_RESPONSE_BYTES.toInt() + 1), 8192),
+                    MockResponse().setBody(oversized),
+                    MockResponse().setChunkedBody(oversized, 8192),
                 )) {
                 server.enqueue(response)
                 failure<ApiFailure.IncompatibleResponse> { api.organization() }
