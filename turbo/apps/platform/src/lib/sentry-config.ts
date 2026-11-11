@@ -7,6 +7,7 @@ import { NativeNavigationFault } from "../signals/browser/navigation/rejection.t
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { SENTRY_APPLICATION_KEY } from "./sentry-application-key.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
+import { StorageUploadError } from "./storage-upload-error.ts";
 
 type PlatformSentryRuntime = "page" | "shared-worker";
 
@@ -100,6 +101,12 @@ export function createPlatformSentryOptions(
 
     beforeSend(event, hint) {
       const error = hint.originalException;
+      if (error instanceof StorageUploadError) {
+        event.contexts = {
+          ...event.contexts,
+          storage_upload: { ...error.diagnostics },
+        };
+      }
       if (error instanceof CdpFault && error.request) {
         event.contexts = {
           ...event.contexts,
