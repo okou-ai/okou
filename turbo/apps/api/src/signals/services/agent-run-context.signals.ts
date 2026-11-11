@@ -1045,7 +1045,10 @@ function createConnectorContextGroups(
   return createExecutionConnectorSources(identity$, featureSwitches$);
 }
 
-/** Connect current connector sources to an already-authorized execution identity. */
+/**
+ * Read current sources for an already-authorized execution identity.
+ * Keep connector revisions and credential values in the same statement.
+ */
 export function createExecutionConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
