@@ -106,7 +106,7 @@ export function initialRemoteAccessValues(
   return { ssh: values("ssh"), vnc: values("vnc") };
 }
 
-const notifyRemoteAccessChange$ = command(
+export const notifyRemoteAccessChange$ = command(
   async (
     { set },
     owner: HostOwner,

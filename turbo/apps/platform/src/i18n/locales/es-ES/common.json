@@ -6433,6 +6433,32 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
+  "sshAuthorization": {
+    "allow": "Permitir en este chat",
+    "blocked": {
+      "chat_busy": "Espera a que termine el Run actual de este chat antes de aprobar.",
+      "host_changed": "La configuración del host ha cambiado. Solicita una nueva aprobación.",
+      "permissions_required": "Aprueba primero los permisos del conector correspondientes.",
+      "run_active": "Espera a que termine el Run que hizo la solicitud antes de aprobar.",
+      "run_unavailable": "El Run que hizo la solicitud no está disponible. Pide una nueva solicitud en este chat."
+    },
+    "continue": "Continuar tarea",
+    "details": "Detalles del acceso",
+    "effect": "Permite comandos y transferencias de archivos como este usuario remoto hasta que se desactive el acceso.",
+    "failed": "No se pudo completar la acción. Reintenta para comprobar el acceso y continuar.",
+    "retry": "Reintentar",
+    "scope": "Este host · Solo este chat",
+    "status": {
+      "approved": "Acceso SSH permitido",
+      "denied": "Acceso SSH denegado",
+      "expired": "Solicitud SSH caducada",
+      "pending": "Acceso SSH",
+      "revoked": "Acceso SSH revocado",
+      "stale": "Solicitud SSH modificada"
+    },
+    "title": "Acceso SSH",
+    "unavailable": "Esta solicitud no está disponible. Solicita una nueva."
+  },
   "tailscale": {
     "changed": "Esta red Tailscale ha cambiado. No se guardaron los cambios; tu borrador se conserva.",
     "delete": "Eliminar Tailscale",

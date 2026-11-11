@@ -6364,6 +6364,32 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
+  "sshAuthorization": {
+    "allow": "Allow in this chat",
+    "blocked": {
+      "chat_busy": "Wait for the current Run in this chat to finish before approving.",
+      "host_changed": "The host configuration changed. Ask for a new request.",
+      "permissions_required": "Approve the accompanying connector permissions first.",
+      "run_active": "Wait for the requesting Run to finish before approving.",
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
+    },
+    "continue": "Continue task",
+    "details": "Access details",
+    "effect": "Allows commands and file transfers as this remote user until access is disabled.",
+    "failed": "Could not complete the action. Retry to check access and continue.",
+    "retry": "Retry",
+    "scope": "This host · This chat only",
+    "status": {
+      "approved": "SSH access allowed",
+      "denied": "SSH access denied",
+      "expired": "SSH request expired",
+      "pending": "SSH access",
+      "revoked": "SSH access revoked",
+      "stale": "SSH request changed"
+    },
+    "title": "SSH access",
+    "unavailable": "This request is unavailable. Ask for a new request."
+  },
   "tailscale": {
     "changed": "This Tailscale network changed. Your changes were not saved; your draft is preserved.",
     "delete": "Delete Tailscale",

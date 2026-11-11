@@ -16,6 +16,7 @@ export enum FeatureSwitchKey {
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
+  SshChatApproval = "sshChatApproval",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",

@@ -26,6 +26,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.SingleAgent,
     FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
+    FeatureSwitchKey.SshChatApproval,
     FeatureSwitchKey.ArtifactPreviewToolbar,
     FeatureSwitchKey.UserNotifications,
   ])("defaults %s to staff and honors Lab overrides", (key) => {

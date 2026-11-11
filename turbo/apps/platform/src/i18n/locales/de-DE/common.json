@@ -6366,6 +6366,32 @@
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
+  "sshAuthorization": {
+    "allow": "In diesem Chat erlauben",
+    "blocked": {
+      "chat_busy": "Warte vor der Genehmigung, bis der aktuelle Run in diesem Chat beendet ist.",
+      "host_changed": "Die Host-Konfiguration hat sich geändert. Fordere eine neue Anfrage an.",
+      "permissions_required": "Genehmige zuerst die zugehörigen Connector-Berechtigungen.",
+      "run_active": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
+      "run_unavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
+    },
+    "continue": "Aufgabe fortsetzen",
+    "details": "Zugriffsdetails",
+    "effect": "Erlaubt Befehle und Dateiübertragungen als dieser entfernte Benutzer, bis der Zugriff deaktiviert wird.",
+    "failed": "Die Aktion konnte nicht abgeschlossen werden. Versuche es erneut, um den Zugriff zu prüfen und fortzufahren.",
+    "retry": "Erneut versuchen",
+    "scope": "Dieser Host · Nur dieser Chat",
+    "status": {
+      "approved": "SSH-Zugriff erlaubt",
+      "denied": "SSH-Zugriff abgelehnt",
+      "expired": "SSH-Anfrage abgelaufen",
+      "pending": "SSH-Zugriff",
+      "revoked": "SSH-Zugriff widerrufen",
+      "stale": "SSH-Anfrage geändert"
+    },
+    "title": "SSH-Zugriff",
+    "unavailable": "Diese Anfrage ist nicht verfügbar. Fordere eine neue Anfrage an."
+  },
   "tailscale": {
     "changed": "Dieses Tailscale-Netzwerk wurde geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",
     "delete": "Tailscale löschen",

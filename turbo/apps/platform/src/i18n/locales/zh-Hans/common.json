@@ -6345,6 +6345,32 @@
     "unavailable": "该账号无法使用 SSH 访问。",
     "username": "SSH 用户名"
   },
+  "sshAuthorization": {
+    "allow": "允许当前聊天访问",
+    "blocked": {
+      "chat_busy": "当前聊天正在运行，结束后即可批准。",
+      "host_changed": "主机配置已变更，请重新申请。",
+      "permissions_required": "请先批准配套的连接器权限。",
+      "run_active": "发起申请的运行尚未结束，结束后即可批准。",
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
+    },
+    "continue": "继续任务",
+    "details": "访问详情",
+    "effect": "允许以此远程用户执行命令和传输文件，直到关闭访问。",
+    "failed": "操作未完成，请重试以检查权限并继续。",
+    "retry": "重试",
+    "scope": "仅此主机 · 仅当前聊天",
+    "status": {
+      "approved": "已允许 SSH 访问",
+      "denied": "已拒绝 SSH 访问",
+      "expired": "SSH 申请已过期",
+      "pending": "SSH 访问",
+      "revoked": "已撤销 SSH 访问",
+      "stale": "SSH 申请已变更"
+    },
+    "title": "SSH 访问",
+    "unavailable": "此申请不可用，请重新申请。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 网络已发生变化。更改未保存，草稿已保留。",
     "delete": "删除 Tailscale",

@@ -6433,6 +6433,32 @@
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
+  "sshAuthorization": {
+    "allow": "Autoriser dans cette conversation",
+    "blocked": {
+      "chat_busy": "Attendez la fin du Run en cours dans ce chat avant d’approuver.",
+      "host_changed": "La configuration de l’hôte a changé. Demandez un nouvel accès.",
+      "permissions_required": "Approuvez d’abord les autorisations du connecteur associées.",
+      "run_active": "Attendez la fin du Run à l’origine de la demande avant d’approuver.",
+      "run_unavailable": "Le Run à l’origine de la demande est indisponible. Demandez une nouvelle demande dans ce chat."
+    },
+    "continue": "Continuer la tâche",
+    "details": "Détails de l’accès",
+    "effect": "Autorise les commandes et transferts de fichiers avec cet utilisateur distant jusqu’à la désactivation de l’accès.",
+    "failed": "Impossible de terminer l’action. Réessayez pour vérifier l’accès et continuer.",
+    "retry": "Réessayer",
+    "scope": "Cet hôte · Cette conversation uniquement",
+    "status": {
+      "approved": "Accès SSH autorisé",
+      "denied": "Accès SSH refusé",
+      "expired": "Demande SSH expirée",
+      "pending": "Accès SSH",
+      "revoked": "Accès SSH révoqué",
+      "stale": "Demande SSH modifiée"
+    },
+    "title": "Accès SSH",
+    "unavailable": "Cette demande est indisponible. Demandez un nouvel accès."
+  },
   "tailscale": {
     "changed": "Ce réseau Tailscale a changé. Vos changements n'ont pas été enregistrés ; votre brouillon est conservé.",
     "delete": "Supprimer Tailscale",
