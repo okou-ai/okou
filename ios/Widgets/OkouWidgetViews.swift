@@ -41,14 +41,20 @@ struct OkouStatusWidgetView: View {
 struct OkouMascot: View {
   let mood: OkouWidgetMood
   let size: CGFloat
+  /// Shrinks below `size` when the text beside it needs the room; text never gives way to it.
+  var yields = false
 
   var body: some View {
-    Image("Mascot-" + mood.rawValue)
+    let image = Image("Mascot-" + mood.rawValue)
       .resizable()
       .widgetAccentedRenderingMode(.desaturated)
       .scaledToFit()
-      .frame(width: size, height: size)
       .accessibilityHidden(true)
+    if yields {
+      image.frame(maxWidth: size, maxHeight: size, alignment: .topLeading)
+    } else {
+      image.frame(width: size, height: size)
+    }
   }
 }
 
@@ -63,6 +69,29 @@ struct OkouGlyph: View {
       .scaledToFit()
       .frame(width: size, height: size)
       .accessibilityHidden(true)
+  }
+}
+
+/// The quiet greeting and its note. Both keep their full height — up to two lines of greeting —
+/// and the mascot beside or above them is the one that gives way.
+struct OkouGreeting: View {
+  let model: OkouWidgetModel
+  let size: CGFloat
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(model.greeting)
+        .font(.okouWidget(size, weight: .semibold, relativeTo: .headline))
+        .foregroundStyle(OkouColor.foreground)
+        .lineLimit(2)
+        .minimumScaleFactor(0.85)
+        .fixedSize(horizontal: false, vertical: true)
+      Text(model.quietNote)
+        .font(.okouWidget(12))
+        .foregroundStyle(OkouColor.mutedForeground)
+        .lineLimit(1)
+    }
+    .layoutPriority(1)
   }
 }
 
@@ -242,18 +271,11 @@ struct OkouSmallWidget: View {
   /// Nothing to report: the mascot is the widget, with the greeting under it.
   private var quiet: some View {
     VStack(alignment: .leading, spacing: 0) {
-      OkouMascot(mood: model.mood, size: 78)
-        .padding(.leading, -10)
-        .padding(.top, -8)
-      Spacer(minLength: 0)
-      Text(model.greeting)
-        .font(.okouWidget(17, weight: .semibold, relativeTo: .headline))
-        .foregroundStyle(OkouColor.foreground)
-        .lineLimit(2)
-      Text(model.quietNote)
-        .font(.okouWidget(12))
-        .foregroundStyle(OkouColor.mutedForeground)
-        .padding(.top, 4)
+      OkouMascot(mood: model.mood, size: 74, yields: true)
+        .padding(.leading, -8)
+        .padding(.top, -6)
+      Spacer(minLength: 6)
+      OkouGreeting(model: model, size: 17)
     }
   }
 
@@ -312,16 +334,7 @@ struct OkouMediumWidget: View {
           OkouMascot(mood: model.mood, size: 84)
             .padding(.leading, -10)
             .padding(.bottom, -6)
-          VStack(alignment: .leading, spacing: 5) {
-            Text(model.greeting)
-              .font(.okouWidget(19, weight: .semibold, relativeTo: .headline))
-              .foregroundStyle(OkouColor.foreground)
-              .lineLimit(2)
-            Text(model.quietNote)
-              .font(.okouWidget(12))
-              .foregroundStyle(OkouColor.mutedForeground)
-          }
-          .padding(.bottom, 6)
+          OkouGreeting(model: model, size: 19).padding(.bottom, 6)
         }
         .widgetURL(OkouWidgetLink.newChat)
       } else {
@@ -414,15 +427,7 @@ struct OkouLargeWidget: View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 10) {
         OkouMascot(mood: model.mood, size: 76).padding(.leading, -10)
-        VStack(alignment: .leading, spacing: 4) {
-          Text(model.greeting)
-            .font(.okouWidget(19, weight: .semibold, relativeTo: .headline))
-            .foregroundStyle(OkouColor.foreground)
-            .lineLimit(2)
-          Text(model.quietNote)
-            .font(.okouWidget(12))
-            .foregroundStyle(OkouColor.mutedForeground)
-        }
+        OkouGreeting(model: model, size: 19)
       }
       .padding(.top, 8)
       let chats = model.pinned.isEmpty ? model.rows(4) : Array(model.pinned.prefix(4))
