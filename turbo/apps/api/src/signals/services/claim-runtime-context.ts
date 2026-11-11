@@ -162,7 +162,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     sources,
     sourceContext$,
   );
-  const model$ = createClaimModel(run$, global);
+  const model$ = createClaimModel(run$, global, sourceContext$);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$))?.provider ?? null;
   });
@@ -400,12 +400,28 @@ function createClaimConnectorContext(
   return { bodyEnvironment$, connectorEnvironment$, timing$ };
 }
 
-function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
+function createClaimModel(
+  run$: ClaimRun$,
+  global: GlobalModels,
+  sourceContext$: ClaimSourceContext$,
+) {
   const memberIdentity$ = computed(async (get) => {
     const run = await get(run$);
     return { orgId: run.orgId, userId: run.userId, runId: run.id };
   });
-  const memberModels$ = createRunModelSources(memberIdentity$);
+  const agentlessMemberModels$ = createRunModelSources(memberIdentity$);
+  const memberModels$ = computed(async (get) => {
+    if ((await get(run$)).agentId === null) {
+      return await get(agentlessMemberModels$);
+    }
+    const captured = await get(sourceContext$);
+    if (captured.kind !== "agent" || captured.memberModels === undefined) {
+      throw new Error(
+        "Admitted personal model requires captured member sources",
+      );
+    }
+    return captured.memberModels;
+  });
   return computed(async (get) => {
     const run = await get(run$);
     if (run.modelProvider === null) {

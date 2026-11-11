@@ -715,7 +715,12 @@ function createConnectorContextGroups(
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  return createExecutionConnectorSources(identity$, featureSwitches$);
+  const environmentSnapshot$ = createAgentEnvironment(identity$);
+  return createExecutionConnectorSources(
+    identity$,
+    featureSwitches$,
+    environmentSnapshot$,
+  );
 }
 
 /**
@@ -725,9 +730,7 @@ function createConnectorContextGroups(
 export function createExecutionConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
-  environmentSnapshot$: Computed<
-    Promise<BootstrapEnvironmentSnapshot>
-  > = createAgentEnvironment(identity$),
+  environmentSnapshot$: Computed<Promise<BootstrapEnvironmentSnapshot>>,
 ) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
     createAgentSelectionContext(identity$, featureSwitches$);

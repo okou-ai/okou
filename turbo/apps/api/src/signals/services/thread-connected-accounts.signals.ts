@@ -231,32 +231,31 @@ function createConnectorMaterialization(
 
 type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
+function createChatAccountAccessOverrides(
+  connectorInput$: Computed<Promise<{ readonly chatThreadId: string }>>,
+) {
+  return computed(async (get) => {
+    const input = await get(connectorInput$);
+    return await get(db$)
+      .select({
+        connectorId: chatThreadConnectorAccessOverrides.connectorId,
+        enabled: chatThreadConnectorAccessOverrides.enabled,
+      })
+      .from(chatThreadConnectorAccessOverrides)
+      .where(
+        eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
+      );
+  });
+}
+
 function createChatAccountInputSignals(
   execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
-  connectorInput$: Computed<Promise<{ readonly chatThreadId: string }>>,
-  suppliedOverrides$?: Computed<
+  accessOverrides$: Computed<
     Promise<
       readonly { readonly connectorId: string; readonly enabled: boolean }[]
     >
   >,
 ) {
-  const accessOverrides$ =
-    suppliedOverrides$ ??
-    computed(async (get) => {
-      const input = await get(connectorInput$);
-      return await get(db$)
-        .select({
-          connectorId: chatThreadConnectorAccessOverrides.connectorId,
-          enabled: chatThreadConnectorAccessOverrides.enabled,
-        })
-        .from(chatThreadConnectorAccessOverrides)
-        .where(
-          eq(
-            chatThreadConnectorAccessOverrides.chatThreadId,
-            input.chatThreadId,
-          ),
-        );
-    });
   const chatAccountsEnabled$ = computed(async (get) => {
     return isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
@@ -364,7 +363,6 @@ function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
   });
   const currentAccounts = createChatAccountInputSignals(
     { featureSwitches$: args.features$, connectors$: args.connectors$ },
-    connectorInput$,
     args.accessOverrides$,
   );
   const effectiveAccounts$ = computed(async (get) => {
@@ -483,9 +481,10 @@ function createConnectorInputSignals(
       timing: get(dispatchTiming$),
     };
   });
+  const accessOverrides$ = createChatAccountAccessOverrides(connectorInput$);
   const chatAccounts = createChatAccountInputSignals(
     execution,
-    connectorInput$,
+    accessOverrides$,
   );
   const chatAccountsEnabled$ = chatAccounts.chatAccountsEnabled$;
   const effectiveAccounts$ = chatAccounts.effectiveAccounts$;

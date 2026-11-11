@@ -2,12 +2,17 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
+import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQLWrapper } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { performance } from "node:perf_hooks";
-import { array, object } from "zod";
+import { array, object, unknown as zUnknown } from "zod";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisitionCapture,
@@ -29,6 +34,8 @@ import {
   materializeConnectorEnvironment,
 } from "./execution-connector-environment.service";
 import { userFeatureSwitchRowCondition } from "./feature-switch-scope";
+import { memberModelBootstrapFromSources } from "./model-bootstrap.service";
+import { memberModelSourcesAggregate } from "./model-source-context.service";
 
 const featureColumns = Object.freeze({
   userId: userFeatureSwitches.userId,
@@ -56,11 +63,15 @@ const claimInputsDecoder = zodDriverValueDecoder(
     registrations: array(contextProjectionSchema(registrationColumns)),
     selections: array(contextProjectionSchema(selectionColumns)),
     accessOverrides: array(contextProjectionSchema(overrideColumns)),
+    modelSources: zUnknown(),
   }),
 );
 
 /** Scalar groups have independent cardinality; none multiplies account rows. */
-function claimInputProjection(run: ClaimExecutionContextRun) {
+function claimInputProjection(
+  run: ClaimExecutionContextRun,
+  modelSources: SQLWrapper,
+) {
   const builder = new QueryBuilder();
   const features = builder
     .select({
@@ -130,7 +141,8 @@ function claimInputProjection(run: ClaimExecutionContextRun) {
     'preferences', ${contextJsonRows(preferences)},
     'registrations', ${contextJsonRows(registrations)},
     'selections', ${contextJsonRows(selections)},
-    'accessOverrides', ${contextJsonRows(overrides)}
+    'accessOverrides', ${contextJsonRows(overrides)},
+    'modelSources', ${modelSources}
   ) ELSE NULL END`.mapWith(nullableDriverValueDecoder(claimInputsDecoder));
 }
 
@@ -158,6 +170,20 @@ export function createClaimSourceContext(
     }
     // run.vars is authoritative; only connector values need fresh reconstruction.
     const source = connectorEnvironmentRead(run, false);
+    const needsMemberModel =
+      run.modelProvider !== null && run.modelProvider !== "built-in";
+    const modelSources = memberModelSourcesAggregate(
+      run.orgId,
+      run.userId,
+      run.id,
+    );
+    const modelRows = new QueryBuilder()
+      .select({ payload: modelSources.payload })
+      .from(modelProviders)
+      .leftJoin(modelProviderAccounts, modelSources.joins.account)
+      .leftJoin(modelProviderAccountSecrets, modelSources.joins.secret)
+      .where(modelSources.joins.provider);
+    const modelProjection = needsMemberModel ? sql`(${modelRows})` : sql`NULL`;
     const capture: PgPoolAcquisitionCapture = { acquisitions: [] };
     const startedAt = performance.now();
     const rows = await withPgPoolAcquisitionCapture(capture, async () => {
@@ -168,7 +194,7 @@ export function createClaimSourceContext(
           connectorVariables: source.connectorVariables,
           credentials: source.credentials,
           automaticOAuthBindingId: source.automaticOAuthBindingId,
-          inputs: claimInputProjection(run),
+          inputs: claimInputProjection(run, modelProjection),
         })
         .from(source);
     });
@@ -187,6 +213,11 @@ export function createClaimSourceContext(
       kind: "agent" as const,
       ...input,
       timezone: preferences?.timezone ?? undefined,
+      memberModels: needsMemberModel
+        ? memberModelBootstrapFromSources(
+            modelSources.decode(input.modelSources),
+          )
+        : undefined,
       environment: materializeConnectorEnvironment(rows, {
         query,
         acquisitions: capture.acquisitions,
