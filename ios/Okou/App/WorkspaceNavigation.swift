@@ -47,6 +47,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let chat = UIHostingController(rootView: AnyView(EmptyView()))
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
+    private var forward: UISwipeGestureRecognizer?
     private var transitionTarget: Bool?
 
     init(sidebar: SidebarInteraction) {
@@ -56,12 +57,20 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
 
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
+      // UIKit installs its pop recognizers when the navigation controller loads its view.
+      navigation.loadViewIfNeeded()
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
       let forward = UISwipeGestureRecognizer(target: self, action: #selector(returnToChat))
       forward.direction = .left
       forward.delegate = self
       list.view.addGestureRecognizer(forward)
+      self.forward = forward
+      configureGestures()
+    }
+
+    private func configureGestures() {
+      guard let navigation else { return }
       let gestures = [
         navigation.interactivePopGestureRecognizer,
         navigation.interactiveContentPopGestureRecognizer,
@@ -98,7 +107,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       let showsSidebar = viewController === list
       transitionTarget = showsSidebar
       sidebar.setTransitioning(true)
-      if navigationController.transitionCoordinator?.isInteractive == true {
+      // A native pop (including accessibility return) starts outside the SwiftUI selection.
+      if requestedSidebarOpen != showsSidebar {
         requestedSidebarOpen = showsSidebar
         sidebar.setOpen(showsSidebar)
         navigationController.view.endEditing(true)
@@ -117,6 +127,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       }
       transitionTarget = nil
       sidebar.setTransitioning(false)
+      configureGestures()
       navigationController.view.setNeedsLayout()
     }
 
@@ -128,7 +139,14 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
         return navigation.topViewController === list
       }
       // A hidden navigation bar has no Back item. The stack still owns the native pop.
-      return navigation.viewControllers.count > 1
+      guard navigation.viewControllers.count > 1,
+        let pan = gestureRecognizer as? UIPanGestureRecognizer
+      else { return false }
+      let velocity = pan.velocity(in: navigation.view)
+      let leadingVelocity =
+        navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        ? -velocity.x : velocity.x
+      return leadingVelocity > abs(velocity.y) * 1.5
     }
 
     func gestureRecognizer(
