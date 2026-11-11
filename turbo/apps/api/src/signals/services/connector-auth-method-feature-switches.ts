@@ -12,7 +12,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
-  "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "spotify\0oauth": FeatureSwitchKey.SpotifyConnector,
@@ -25,22 +24,9 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "zoom\0oauth": FeatureSwitchKey.ZoomConnector,
 });
 
-const FEATURE_SWITCH_HIDDEN_AUTH_METHOD = Object.freeze<
-  Record<string, FeatureSwitchKey | undefined>
->({
-  "mercury\0api-token": FeatureSwitchKey.MercuryConnector,
-});
-
 export function connectorAuthMethodFeatureSwitch(
   connectorSlug: ConnectorSlug,
   authMethodId: ConnectorAuthMethodId,
 ): FeatureSwitchKey | undefined {
   return FEATURE_SWITCH_BY_AUTH_METHOD[`${connectorSlug}\0${authMethodId}`];
-}
-
-export function connectorAuthMethodHiddenFeatureSwitch(
-  connectorSlug: ConnectorSlug,
-  authMethodId: ConnectorAuthMethodId,
-): FeatureSwitchKey | undefined {
-  return FEATURE_SWITCH_HIDDEN_AUTH_METHOD[`${connectorSlug}\0${authMethodId}`];
 }
