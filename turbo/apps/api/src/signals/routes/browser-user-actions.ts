@@ -2,8 +2,6 @@ import {
   browserUserActionsContract,
   BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
@@ -20,7 +18,6 @@ import {
   readBrowserUserAction$,
   type BrowserUserActionServiceError,
 } from "../services/browser-user-actions.service";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 
 const authOptions = {
   requireOrganization: true,
@@ -31,15 +28,6 @@ const createAuthOptions = {
   acceptAnySandboxCapability: true,
   accept: ["agent", "sandbox"],
 } as const;
-const disabled = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Browser native input is not enabled",
-      code: "FORBIDDEN" as const,
-    }),
-  }),
-});
 
 function errorResponse(error: BrowserUserActionServiceError) {
   return {
@@ -47,18 +35,6 @@ function errorResponse(error: BrowserUserActionServiceError) {
     body: { error: { message: error.message, code: error.code } },
   };
 }
-
-const browserNativeInputEnabled$ = command(async ({ get }) => {
-  const auth = get(organizationAuthContext$);
-  const overrides = await get(
-    userFeatureSwitchOverrides(auth.orgId, auth.userId),
-  );
-  return isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    overrides,
-  });
-});
 
 const createBody$ = bodyResultOf(browserUserActionsContract.create);
 const getParams$ = pathParamsOf(browserUserActionsContract.get);
@@ -77,11 +53,6 @@ const cancelBody$ = bodyResultOf(browserUserActionsContract.cancel);
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
   if (auth.tokenType !== "agent" && auth.tokenType !== "sandbox") {
     return badRequestMessage("Browser user actions require a run token");
   }
@@ -107,11 +78,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
   const result = await set(
     readBrowserUserAction$,
     {
@@ -128,11 +94,6 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
   const body = await get(applyBody$);
   signal.throwIfAborted();
   if (!body.ok) {
@@ -155,10 +116,6 @@ const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const prepareFileInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
-    return disabled;
-  }
-  signal.throwIfAborted();
   const body = await get(prepareFileBody$);
   signal.throwIfAborted();
   if (!body.ok) {
@@ -181,11 +138,6 @@ const prepareFileInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const preflightInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
   const body = await get(preflightBody$);
   signal.throwIfAborted();
   if (!body.ok) {
@@ -207,11 +159,6 @@ const preflightInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
   const body = await get(cancelBody$);
   signal.throwIfAborted();
   if (!body.ok) {
