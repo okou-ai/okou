@@ -32,6 +32,8 @@ OWNER_PATHS = {
     ".github/workflows/runner-image.yml",
 }
 ACTIVE_STATUSES = ("queued", "in_progress", "pending", "waiting", "requested")
+# Repository run searches, including status filters, are capped by GitHub.
+RUN_SEARCH_LIMIT = 1000
 CHILDREN = set()
 CANCELLED = threading.Event()
 
@@ -134,13 +136,23 @@ class GitHub:
                     "--paginate",
                     "--slurp",
                 )
-                for page in pages:
-                    for record in page["workflow_runs"]:
-                        if record["path"] in OWNER_PATHS and record["event"] in {
-                            "pull_request",
-                            "merge_group",
-                        }:
-                            runs[record["id"]] = record
+                if not pages:
+                    raise RuntimeError(f"owner discovery returned no page for {status}")
+                records = [record for page in pages for record in page["workflow_runs"]]
+                reported = max(page["total_count"] for page in pages)
+                observed = len({record["id"] for record in records})
+                if reported >= RUN_SEARCH_LIMIT or observed < reported:
+                    raise RuntimeError(
+                        f"owner discovery coverage unverified for {status}: "
+                        f"{observed} returned, {reported} reported; "
+                        f"GitHub search limit {RUN_SEARCH_LIMIT}"
+                    )
+                for record in records:
+                    if record["path"] in OWNER_PATHS and record["event"] in {
+                        "pull_request",
+                        "merge_group",
+                    }:
+                        runs[record["id"]] = record
             owners = self.resolve_owners(pulls, runs)
             identities = {number: sorted(set(ids)) for number, ids in owners.items()}
             if previous == identities:

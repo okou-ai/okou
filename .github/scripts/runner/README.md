@@ -72,6 +72,9 @@ those locks. Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live
 owners are reported as deferred, and reopened PRs are retained. Other batches
 continue after errors; failed/unknown cleanup and lock outcomes fail the job.
+Owner discovery also fails closed when a status search reaches GitHub's 1,000-run
+limit or returns fewer distinct runs than its reported count; a clipped list is
+not evidence that a namespace has no owner.
 
 The host executor reobserves runner and Stripe units/directories under the locks,
 verifies stopped execution before removing files, and verifies final state.

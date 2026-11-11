@@ -39,7 +39,8 @@ elif any(a.endswith('/actions/runs') for a in args):
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
  if data.get('churn'):
   for run in runs:run['id']+=len((root/'github.log').read_text().splitlines())
- print(json.dumps([{'workflow_runs':runs}]))
+ pages=[{'total_count':len(runs),'workflow_runs':runs[offset:offset+100]} for offset in range(0,min(len(runs),1000),100)]
+ print(json.dumps(pages or [{'total_count':0,'workflow_runs':[]}]))
 elif any('/commits/' in a for a in args):print(json.dumps([[{'number':n} for n in data.get('associated',[])]]))
 else:raise SystemExit('unexpected gh call')
 """
@@ -397,6 +398,18 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"deferred_owner": 1', result.stdout)
+
+    def test_capped_owner_search_retains_unlisted_owner_resources(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        newest = [
+            {**self.owner(number=100 + index), "id": 2000 - index}
+            for index in range(1000)
+        ]
+        self.github(runs=[*newest, self.owner()])
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
 
     def test_unrelated_run_churn_does_not_block_selected_namespace(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
