@@ -25,7 +25,7 @@ final class ChatProjectStoreTests: XCTestCase {
       let record: @Sendable (String) -> String = { name in
         "{\"id\":\"\(projectID)\",\"name\":\"\(name)\",\"createdAt\":\"2026-11-09T01:00:00Z\",\"updatedAt\":\"2026-11-09T01:00:00Z\"}"
       }
-      if request.httpMethod == "PATCH" {
+      if request.httpMethod == "PATCH", request.url?.path == "/api/projects/\(projectID)" {
         let body = try JSONDecoder().decode(RenameBody.self, from: chatRequestBody(request))
         let fail = server.withLock {
           $0.writes.append(body.eventId)
@@ -38,7 +38,9 @@ final class ChatProjectStoreTests: XCTestCase {
         }
         return ChatHTTPResponse(body: record(body.name))
       }
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+        throw URLError(.unsupportedURL)
+      }
       return ChatHTTPResponse(body: "{\"projects\":[\(record(server.withLock { $0.name }))]}")
     }
     let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
@@ -65,8 +67,11 @@ final class ChatProjectStoreTests: XCTestCase {
 
   func testProjectsCollectOtherAgentsAndRespectUnreadAndArchiveFilters() async throws {
     let projectID = Self.project
-    let fixture = ChatHTTPFixture { _ in
-      ChatHTTPResponse(
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+        throw URLError(.unsupportedURL)
+      }
+      return ChatHTTPResponse(
         body:
           "{\"projects\":[{\"id\":\"\(projectID)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-09T01:00:00Z\",\"updatedAt\":\"2026-11-09T01:00:00Z\"}]}"
       )
@@ -142,17 +147,20 @@ final class ChatProjectStoreTests: XCTestCase {
       var holdRead = false
     }
     let directory = CacheTestDirectory(owner: self)
+    let projectID = Self.project
     let server = Mutex(Server())
     let gate = ProjectResponseGate()
     let began = expectation(description: "The older Project read is pending")
     let returned = expectation(description: "The older HTTP handler completed")
     let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "PATCH" {
+      if request.httpMethod == "PATCH", request.url?.path == "/api/projects/\(projectID)" {
         let body = try JSONDecoder().decode(RenameBody.self, from: chatRequestBody(request))
         server.withLock { $0.name = body.name }
         return ChatHTTPResponse(body: projectRecord(name: body.name))
       }
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+        throw URLError(.unsupportedURL)
+      }
       let response = server.withLock { ($0.name, $0.holdRead) }
       if response.1 {
         server.withLock { $0.holdRead = false }
@@ -270,7 +278,10 @@ final class ChatProjectStoreTests: XCTestCase {
     let began = expectation(description: "The first deletion is pending")
     let fixture = ChatHTTPFixture { request in
       if request.httpMethod == "DELETE" {
-        let id = request.url?.lastPathComponent ?? ""
+        guard let url = request.url,
+          url.path == "/api/projects/\(projectID)" || url.path == "/api/projects/\(other)"
+        else { throw URLError(.unsupportedURL) }
+        let id = url.lastPathComponent
         if id == projectID {
           began.fulfill()
           await gate.wait()
@@ -278,6 +289,7 @@ final class ChatProjectStoreTests: XCTestCase {
         deleted.withLock { $0.insert(id) }
         return ChatHTTPResponse(status: 204, body: "")
       }
+      guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
       switch request.url?.path {
       case "/api/projects":
         let records = [(projectID, "Launch"), (other, "Release")]
@@ -321,18 +333,21 @@ final class ChatProjectStoreTests: XCTestCase {
 
   func testCancellingARenameWaiterStillConfirmsAndPersistsTheAcknowledgedWrite() async throws {
     let directory = CacheTestDirectory(owner: self)
+    let projectID = Self.project
     let name = Mutex("Launch")
     let began = expectation(description: "Rename reached the external service")
     let gate = ProjectResponseGate()
     let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "PATCH" {
+      if request.httpMethod == "PATCH", request.url?.path == "/api/projects/\(projectID)" {
         let body = try JSONDecoder().decode(RenameBody.self, from: chatRequestBody(request))
         began.fulfill()
         await gate.wait()
         name.withLock { $0 = body.name }
         return ChatHTTPResponse(body: projectRecord(name: body.name))
       }
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+        throw URLError(.unsupportedURL)
+      }
       return projectList(name: name.withLock { $0 })
     }
     let scope = ChatCacheScope(

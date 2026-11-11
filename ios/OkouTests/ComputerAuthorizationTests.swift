@@ -233,18 +233,44 @@ private final class ComputerAuthorizationFixture: Sendable {
   ) {
     self.kind = kind
     let state = state
+    let authorizationPath: String
+    switch kind {
+    case .computerUse:
+      authorizationPath = "/api/computer-use/authorization-requests/preview_token"
+    case .browser:
+      authorizationPath = "/api/browser/authorization-requests/preview_token"
+    case .shell:
+      authorizationPath = "/api/computer-use/shell/authorizations/\(Self.requestID)"
+    }
+    let approvalPath = authorizationPath + (kind == .shell ? "/approve" : "/apply")
+    let threadPath = "/api/chat-threads/\(Self.threadID)"
     http = ChatHTTPFixture { request in
+      let path = request.url?.path ?? ""
+      let isAuthorizationRead = request.httpMethod == "GET" && path == authorizationPath
+      let isAuthorizationWrite =
+        request.httpMethod == "POST"
+        && (path == approvalPath
+          || (kind == .shell
+            && [authorizationPath + "/deny", authorizationPath + "/revoke"].contains(path)))
+      guard
+        isAuthorizationRead || isAuthorizationWrite
+          || (request.httpMethod == "GET"
+            && [
+              threadPath + "/metadata", threadPath + "/event-snapshot", threadPath + "/event-rows",
+            ]
+            .contains(path))
+          || (request.httpMethod == "POST" && path == "/api/chat/events")
+      else { throw URLError(.unsupportedURL) }
       await beforeRequest(request)
       try Task.checkCancellation()
       return try state.withLock { value in
-        let path = request.url!.path
         let approved = value.status == "approved"
         let expiration = value.expired ? "2020-01-01T00:00:00Z" : "2099-01-01T00:00:00Z"
-        if path.contains("/authorizations/") || path.contains("/authorization-requests/") {
-          if request.httpMethod == "POST" {
-            if path.hasSuffix("/deny") {
+        if isAuthorizationRead || isAuthorizationWrite {
+          if isAuthorizationWrite {
+            if path == authorizationPath + "/deny" {
               value.status = "denied"
-            } else if path.hasSuffix("/revoke") {
+            } else if path == authorizationPath + "/revoke" {
               value.status = "revoked"
             } else {
               value.grantWrites += 1
@@ -280,20 +306,20 @@ private final class ComputerAuthorizationFixture: Sendable {
               "{\(common),\(host),\"source\":\"chat\",\"expiresAt\":\"\(expiration)\",\"completedAt\":\(completion),\"hosts\":[{\"id\":\"\(Self.hostID)\",\"displayName\":\"Preview Mac\",\"status\":\"\(value.online ? "online" : "offline")\"}]}"
           )
         }
-        if path.hasSuffix("/metadata") {
+        if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body:
               "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":\(kind == .browser ? "null" : "\"\(Self.hostID)\""),\"cloudBrowserEnabled\":\(kind == .browser)}"
           )
         }
-        if path.hasSuffix("/event-snapshot") {
+        if path == threadPath + "/event-snapshot" {
           return ChatHTTPResponse(
             status: 404,
             body:
               "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
           )
         }
-        if path.hasSuffix("/event-rows") {
+        if path == threadPath + "/event-rows" {
           let rows = value.inputs.map { input -> [String: MessageJSON] in
             [
               "id": .string(Self.requestID), "chatThreadId": .string(Self.threadID),
