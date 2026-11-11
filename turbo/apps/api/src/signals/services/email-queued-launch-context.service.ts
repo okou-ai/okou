@@ -45,7 +45,10 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         userLinkId: emailUserLinks.id,
         agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
+        subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
+        inReplyTo: emailChannelMessages.inReplyTo,
+        references: emailChannelMessages.references,
         chatThreadId: chatEmailContext.chatThreadId,
       })
       .from(chatEvents)
@@ -93,6 +96,15 @@ export const loadEmailQueuedLaunchMaterial$ = command(
     }
     return {
       prompt: row.messageText,
+      emailSource: {
+        emailAddress: row.emailAddress,
+        messageId: row.messageId,
+        messageText: row.messageText,
+        subject: row.subject,
+        inReplyTo: row.inReplyTo,
+        references: row.references,
+        chatThreadId: row.chatThreadId,
+      },
       appendSystemPrompt: buildEmailPrompt(
         row,
         resolveIntegrationNotePrompt({
@@ -130,7 +142,10 @@ export function createEmailThreadContext(
         userLinkId: emailUserLinks.id,
         agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
+        subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
+        inReplyTo: emailChannelMessages.inReplyTo,
+        references: emailChannelMessages.references,
         chatThreadId: chatEmailContext.chatThreadId,
       })
       .from(chatEmailContext)
