@@ -88,7 +88,7 @@ final class ConnectorActionResources {
     live = live.filter { $0.value.value != nil }
     for read in live.values.compactMap(\.value) {
       guard !closed, !Task.isCancelled else { return }
-      _ = await read.result(refresh: true)
+      if read.isRequested { _ = await read.result(refresh: true) }
     }
   }
 
@@ -137,6 +137,11 @@ final class ConnectorActionRead {
   private var pendingID: UUID?
   private var closed = false
   fileprivate var isReading: Bool { pendingID != nil }
+  fileprivate var isRequested: Bool {
+    do { return try store.get(requested) } catch {
+      preconditionFailure("Cannot inspect local Connector status inputs: \(error)")
+    }
+  }
 
   fileprivate init(action: ChatConnectorAction, owner: ConnectorActionResources) {
     self.action = action

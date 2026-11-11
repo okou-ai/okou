@@ -658,6 +658,40 @@ final class ConnectorActionTests: XCTestCase {
     }
   }
 
+  func testKnownRefreshOnlyReloadsPreviouslyDemandedConnectorStatus() async throws {
+    let response = Mutex(200)
+    let metadataReads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      XCTAssertEqual(request.httpMethod, "GET")
+      if request.url?.path.hasSuffix("/metadata") == true {
+        metadataReads.withLock { $0 += 1 }
+        let status = response.withLock { $0 }
+        if status != 200 {
+          return ChatHTTPResponse(
+            status: status, body: "{\"error\":{\"message\":\"Access revoked\"}}")
+        }
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let action = try descriptor(fixture)
+    let read = store.resources.read(action)
+    // A measurement row may create this resource before any committed row requests it.
+    await store.refreshKnown()
+    XCTAssertEqual(metadataReads.withLock { $0 }, 0)
+    let loaded = try await read.load()
+    XCTAssertTrue(try XCTUnwrap(loaded).complete)
+    response.withLock { $0 = 403 }
+    await store.refreshKnown()
+    do {
+      _ = try await read.load()
+      XCTFail("A previously demanded read must reflect the refresh's permission denial")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+    XCTAssertEqual(metadataReads.withLock { $0 }, 2)
+    XCTAssertNil(store.active)
+  }
+
   func testAnInvalidatedOldStatusCannotReplaceANewerDeniedReadOrOpenAuthorization() async throws {
     let began = expectation(description: "The old status HTTP began")
     let gate = ModelResponseGate()
