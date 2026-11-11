@@ -16,6 +16,9 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
+import okio.Buffer
+import okio.GzipSink
+import okio.buffer
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -254,10 +257,47 @@ class ApiClientTest {
                 listOf(
                     MockResponse().setBody(oversized),
                     MockResponse().setChunkedBody(oversized, 8192),
+                    gzipResponse(oversized),
                 )) {
                 server.enqueue(response)
                 failure<ApiFailure.IncompatibleResponse> { api.organization() }
             }
+        }
+    }
+
+    @Test
+    fun decodesAndBoundsCompressedResponsesAfterDecompression() = runTest {
+        client().use { api ->
+            server.enqueue(gzipResponse(organization))
+            assertEquals(OrganizationRole.ADMIN, api.organization().role)
+            server.enqueue(gzipResponse(error).setResponseCode(503).setHeader("Retry-After", "0"))
+            assertEquals("FIXTURE_ERROR", failure<ApiFailure.Http> { api.organization() }.code)
+            val oversized =
+                """{"error":{"code":"TOO_LARGE","message":"${"x".repeat(64 * 1024)}"}}"""
+            server.enqueue(gzipResponse(oversized).setResponseCode(500))
+            val rejected = failure<ApiFailure.Http> { api.organization() }
+            assertEquals(500, rejected.status)
+            assertNull(rejected.code)
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(502)
+                    .setHeader("Content-Encoding", "gzip")
+                    .setBody("invalid gzip")
+            )
+            assertEquals(502, failure<ApiFailure.Http> { api.organization() }.status)
+            server.enqueue(
+                gzipResponse(
+                        """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}"""
+                    )
+                    .setResponseCode(426)
+            )
+            assertEquals(
+                "0.2.0",
+                failure<ApiFailure.UpdateRequired> { api.organization() }
+                    .requirement
+                    .minimumSupportedVersion,
+            )
+            assertEquals(5, server.requestCount)
         }
     }
 
@@ -329,4 +369,10 @@ internal suspend inline fun <reified T : Throwable> failure(block: suspend () ->
         if (error is T) return error else throw error
     }
     throw AssertionError("Expected ${T::class.simpleName}")
+}
+
+private fun gzipResponse(body: String): MockResponse {
+    val compressed = Buffer()
+    GzipSink(compressed).buffer().use { it.writeUtf8(body) }
+    return MockResponse().setHeader("Content-Encoding", "gzip").setBody(compressed)
 }

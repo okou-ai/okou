@@ -14,6 +14,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import okio.Buffer
 import okio.ForwardingSource
+import okio.GzipSource
 import okio.buffer
 
 internal const val MAX_API_RESPONSE_BYTES = 1024L * 1024L
@@ -48,8 +49,8 @@ internal fun httpClient(): OkHttpClient.Builder =
                 val envelope =
                     response.use {
                         try {
-                            checkNotNull(it.body).bounded(64L * 1024).use { body -> body.string() }
-                        } catch (_: ResponseLimitExceeded) {
+                            it.errorBody().bounded(64L * 1024).use { body -> body.string() }
+                        } catch (_: IOException) {
                             null
                         }
                     }
@@ -57,6 +58,21 @@ internal fun httpClient(): OkHttpClient.Builder =
             }
             response
         }
+
+private fun Response.errorBody(): ResponseBody {
+    val original = checkNotNull(body)
+    if (!header("Content-Encoding").equals("gzip", ignoreCase = true)) return original
+    // Rejections are captured before OkHttp's transparent decompression so they cannot replay.
+    // Decode here to apply the envelope limit to the bytes the JSON reader actually consumes.
+    val decoded = GzipSource(original.source()).buffer()
+    return object : ResponseBody() {
+        override fun contentType() = original.contentType()
+
+        override fun contentLength() = -1L
+
+        override fun source() = decoded
+    }
+}
 
 internal fun OkHttpClient.closeTransport() {
     dispatcher.cancelAll()

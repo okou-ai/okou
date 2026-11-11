@@ -248,9 +248,9 @@ pending and keep protected data/actions behind their actual prerequisites.
 
 The client returns typed HTTP/network/incompatible-response failures, propagates
 coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
-64 KiB, and closes responses. Error status remains available when its envelope
-is malformed/oversized. Unknown fields permit additive responses; required
-nullable fields and enum values retain the generated reader's contract.
+64 KiB after gzip decompression, and closes responses. Error status remains
+available when its envelope is malformed/oversized. Unknown fields permit additive
+responses; required nullable fields and enum values retain the generated reader's contract.
 JSON field types follow Kotlin serialization semantics rather than recreating
 Zod's complete validation runtime. Decode failures expose a typed incompatible
 response error without serializer messages/input snippets that could disclose

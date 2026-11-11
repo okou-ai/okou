@@ -105,7 +105,7 @@ class ApiClient(
                             .build()
                     )
                 }
-                .addNetworkInterceptor { chain ->
+                .addInterceptor { chain ->
                     val response = chain.proceed(chain.request())
                     if (response.isSuccessful) {
                         response
