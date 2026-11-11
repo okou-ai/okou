@@ -12,6 +12,7 @@ mod guest_application;
 mod http_reuse;
 mod incremental_staging;
 mod large_selection;
+mod missing_cache_cleanup;
 mod mixed_preparation;
 mod phase_diagnostics;
 mod rejected_observation;
