@@ -235,13 +235,16 @@ does not apply. Owned credentials and key material are redacted and erased where
 the Rust types permit it; no claim is made about compiler, kernel, or external
 library copies.
 
-The engine accepts only 2048–4096-bit, 16-byte-aligned declared DH lengths,
+The engine accepts only 1024–4096-bit, 16-byte-aligned declared DH lengths,
 small nontrivial generators, full-width odd moduli and in-range server public
 values. The independently exercised macOS 26.6.2 server used generator 5 and a
-stable 4096-bit modulus; other macOS versions/configurations are not thereby
-established. The implementation does not prove modulus primality. One absolute
-deadline, no longer than 30 seconds, covers the handshake. Failure or
-cancellation drops the owned stream and never falls back to another type.
+stable 4096-bit modulus. macOS 15.6 offers the 1024-bit RFC 2409 group 2 with
+generator 2; that weaker group is accepted because type 30 only protects the
+credential exchange inside the required outer transport. Other macOS
+versions/configurations are not thereby established. The implementation does
+not prove modulus primality. One absolute deadline, no longer than 30 seconds,
+covers the handshake. Failure or cancellation drops the owned stream and never
+falls back to another type.
 
 Local errors expose a static `diagnostic_code()` without nested source errors or
 peer-provided text. Apple DH parameter rejection also retains an allow-listed
