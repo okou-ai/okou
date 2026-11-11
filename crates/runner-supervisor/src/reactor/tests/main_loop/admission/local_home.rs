@@ -60,6 +60,81 @@ async fn selected_generic_home_advice_retains_verified_source_through_claim() {
 }
 
 #[tokio::test]
+async fn preferred_home_retries_fresh_after_failed_preparation_is_destroyed() {
+    assert_failed_preparation_settles_claim(false).await;
+}
+
+#[tokio::test]
+async fn preferred_home_completes_claim_and_stops_after_uncertain_preparation_cleanup() {
+    assert_failed_preparation_settles_claim(true).await;
+}
+
+async fn assert_failed_preparation_settles_claim(uncertain: bool) {
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_start_result(Err(sandbox::SandboxError::Start {
+        message: "preparation failed".into(),
+    }));
+    if uncertain {
+        overrides.push_destroy_panic("cleanup outcome uncertain");
+    }
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 8, 32768, 2, overrides.clone());
+    config.capacity.max_idle = 0;
+    let paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let key = "thread:failed-preferred-preparation";
+    let source = RunId::new_v4();
+    publish_home(&cache, &paths, key, source).await;
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+    let budget = config.capacity.budget.clone();
+    let runner = tokio::spawn(run(config));
+    wait_discover_entered(&env, WAIT).await;
+    let successor = RunId::new_v4();
+    env.provider
+        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
+    env.handle
+        .discover_tx
+        .send(ranked_candidate(
+            successor,
+            Some(key),
+            runner_provider::RunnerPreferenceTarget::PredecessorHome(
+                source,
+                runner_provider::ActivePredecessorHomeEvidence::Advertised,
+            ),
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
+        .unwrap();
+    let completion = env.handle.wait_completion(successor, WAIT).await.unwrap();
+    if uncertain {
+        assert_ne!(completion.exit_code, 0);
+        assert!(completion.sandbox_id.is_none());
+        let error = tokio::time::timeout(WAIT, runner)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("pre-claim blank cleanup was uncertain")
+        );
+        env.shutdown_startup_api().await;
+        assert_eq!(overrides.create_configs().len(), 1);
+    } else {
+        assert_eq!(completion.exit_code, 0);
+        assert!(completion.sandbox_id.is_some());
+        assert_eq!(overrides.create_configs().len(), 2);
+        shutdown(&env, runner).await;
+    }
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
+    assert!(env.cancel_tokens.handle(successor).await.is_none());
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
+#[tokio::test]
 async fn selected_home_source_cannot_be_displaced_by_exact_vm_that_parks_during_claim() {
     for blank_available in [false, true] {
         assert_home_selection(
