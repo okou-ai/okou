@@ -241,6 +241,7 @@ class Session:
         self.stopped = threading.Event()
         self.writer = threading.Lock()
         self.write_error = None
+        self.response_buffer = b""
         source = base64.b64encode(
             (HERE / "cleanup-metal-resources.py").read_bytes()
         ).decode()
@@ -278,11 +279,21 @@ class Session:
             self.process.stdin.flush()
 
     def read(self, timeout):
-        if not select.select([self.process.stdout], [], [], timeout)[0]:
-            raise TimeoutError(f"worker response deadline exceeded on {self.host}")
-        line = self.process.stdout.readline()
-        if not line:
-            raise RuntimeError(f"worker channel closed on {self.host}")
+        # Readability means bytes, not a complete line. A buffered readline
+        # could otherwise outlive the deadline on a stalled partial reply.
+        deadline = time.monotonic() + timeout
+        while b"\n" not in self.response_buffer:
+            remaining = deadline - time.monotonic()
+            if (
+                remaining <= 0
+                or not select.select([self.process.stdout], [], [], remaining)[0]
+            ):
+                raise TimeoutError(f"worker response deadline exceeded on {self.host}")
+            chunk = os.read(self.process.stdout.fileno(), 65536)
+            if not chunk:
+                raise RuntimeError(f"worker channel closed on {self.host}")
+            self.response_buffer += chunk
+        line, _, self.response_buffer = self.response_buffer.partition(b"\n")
         return json.loads(line)
 
     def keep_alive(self):

@@ -46,7 +46,7 @@ else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import os,shlex,subprocess,sys
+import json,os,shlex,signal,subprocess,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
 if os.environ.get('OFFLINE')==host:sys.exit(255)
@@ -58,6 +58,20 @@ if len(args)==1 and args[0].startswith('sudo flock '):
 os.environ['FIXTURE_HOST']=str(root/host)
 if args[2]=='-c':
  command=[sys.executable,'-c',shlex.split(args[3])[0],*args[4:],'--root',str(root/host)]
+ if os.environ.get('PARTIAL_RELEASE'):
+  with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
+   print(worker.stdout.readline(),end='',flush=True)
+   for line in sys.stdin:
+    worker.stdin.write(line);worker.stdin.flush()
+    if json.loads(line)['operation']=='heartbeat':continue
+    reply=worker.stdout.readline()
+    if json.loads(reply).get('released'):
+     worker.stdin.close();worker.wait(timeout=5)
+     sys.stdout.write('{"released":');sys.stdout.flush()
+     with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
+     signal.pause()
+    print(reply,end='',flush=True)
+   worker.stdin.close();sys.exit(worker.wait())
  if os.environ.get('RELEASE_ERROR'):
   subprocess.call(command);sys.exit(255)
  os.execv(sys.executable,command)
@@ -552,6 +566,63 @@ class CleanupTests(unittest.TestCase):
         self.assertFalse(config.exists())
         self.assertIn('"unverified": 1', result.stdout)
         self.assertIn('"resource_result":{"hosts":', result.stdout)
+
+    def test_partial_release_reply_obeys_deadline_and_preserves_resource_receipt(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        ready = self.root / "reply-ready"
+        os.mkfifo(ready)
+        descriptor = os.open(ready, os.O_RDWR | os.O_NONBLOCK)
+        self.addCleanup(os.close, descriptor)
+        with (
+            (self.root / "partial-reply.log").open("w") as log,
+            subprocess.Popen(
+                [sys.executable, str(TOOLS / "cleanup-metal-runners.py")],
+                env={**self.env, "PARTIAL_RELEASE": "1", "METAL_HOSTS": "metal-a"},
+                stdout=log,
+                stderr=log,
+            ) as process,
+        ):
+            try:
+                self.assertTrue(
+                    select.select([descriptor], [], [], 10)[0],
+                    (self.root / "partial-reply.log").read_text(),
+                )
+                proxy = int(os.read(descriptor, 100).decode().strip())
+                self.assertEqual(process.wait(timeout=10), 1)
+                self.assertFalse(config.exists())
+                self.assertFalse(Path(f"/proc/{proxy}").exists())
+                subprocess.run(
+                    [
+                        "flock",
+                        "--exclusive",
+                        "--timeout",
+                        "1",
+                        str(
+                            self.root
+                            / "metal-a/var/lock/vm0-runner-lifecycle-pr-42.lock"
+                        ),
+                        "true",
+                    ],
+                    check=True,
+                )
+                output = (self.root / "partial-reply.log").read_text()
+                records = [
+                    json.loads(line)
+                    for line in output.splitlines()
+                    if line.startswith("{")
+                ]
+                result = next(record for record in records if record.get("pr") == 42)
+                self.assertEqual(result["outcome"], "unverified")
+                self.assertIn(
+                    "worker response deadline exceeded", result["lifecycle_error"]
+                )
+                self.assertEqual(
+                    result["resource_result"]["hosts"]["metal-a"]["outcome"], "cleaned"
+                )
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
 
     def test_cancellation_retires_nested_holders_and_remote_commands(self):
         self.assert_cancellation_retires_resources(signal.SIGTERM)
