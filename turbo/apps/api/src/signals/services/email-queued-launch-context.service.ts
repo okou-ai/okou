@@ -45,7 +45,10 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         userLinkId: emailUserLinks.id,
         agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
+        subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
+        inReplyTo: emailChannelMessages.inReplyTo,
+        references: emailChannelMessages.references,
         chatThreadId: chatEmailContext.chatThreadId,
       })
       .from(chatEvents)
@@ -130,7 +133,10 @@ export function createEmailThreadContext(
         userLinkId: emailUserLinks.id,
         agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
+        subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
+        inReplyTo: emailChannelMessages.inReplyTo,
+        references: emailChannelMessages.references,
         chatThreadId: chatEmailContext.chatThreadId,
       })
       .from(chatEmailContext)

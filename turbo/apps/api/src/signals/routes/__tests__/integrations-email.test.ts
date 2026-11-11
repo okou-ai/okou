@@ -12,6 +12,7 @@ import {
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -23,6 +24,7 @@ import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upl
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -825,6 +827,63 @@ async function createdThreads(actor: ApiTestUser) {
   };
 }
 
+async function connectEmailMailbox(
+  actor: ApiTestUser,
+  provider: "gmail" | "outlook-mail",
+  address: string,
+) {
+  if (provider === "gmail") {
+    mockGmailConnectorOAuth({ email: address, subject: randomUUID() });
+  } else {
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_ID", "email-outlook-client");
+    mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "email-outlook-secret");
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: "email-outlook-token",
+            refresh_token: "email-outlook-refresh",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.get("https://graph.microsoft.com/v1.0/me", () => {
+        return HttpResponse.json({
+          id: randomUUID(),
+          mail: address,
+          displayName: "Email Outlook",
+        });
+      }),
+    );
+  }
+  const started = await connectorsApi.startOauth(actor, provider, "oauth");
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  const completed = await connectorsApi.completeOauthCallbackResult(provider, {
+    code: "email-channel-oauth",
+    state,
+  });
+  expect(completed.body).toMatchObject({ status: "success" });
+  const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
+    actor,
+    provider,
+    [200],
+  );
+  if (accounts.status !== 200) {
+    throw new Error("Expected connected mailbox accounts");
+  }
+  const account = accounts.body.connections.find((connection) => {
+    return connection.externalEmail === address;
+  });
+  if (!account) {
+    throw new Error("Expected the connected mailbox identity");
+  }
+  return account;
+}
+
 function sentEmails() {
   return context.mocks.resend.send.mock.calls.map((call) => {
     return object({
@@ -840,6 +899,85 @@ function sentEmails() {
 }
 
 describe("Email integration", () => {
+  it.each(["gmail", "outlook-mail"] as const)(
+    "enriches forwarded email with the selected %s mailbox without disclosing a disabled account",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: true,
+      });
+      const mailbox = await connectEmailMailbox(actor, provider, actor.email);
+      const disabled = await connectEmailMailbox(
+        actor,
+        provider,
+        `${randomUUID()}@private-mailbox.example`,
+      );
+      verifiedDirectory(actor);
+      await accept(
+        setupApp({ context, routes: chatConnectorAccessRoutes })(
+          chatConnectorAccessContract,
+        ).updateAccountDefault({
+          headers: authHeaders(),
+          params: { connectionId: disabled.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: provider },
+            enabled: false,
+          },
+        }),
+        [200],
+      );
+      const parentId = `<${randomUUID()}@original.example>`;
+      const message = incoming({
+        sender: actor.email,
+        subject: "Fwd: Customer discussion",
+        text: "Please review this forwarded message.\nOriginal message content",
+        inReplyTo: parentId,
+      });
+      await message.send();
+      await runs.heartbeatRunner(group);
+      const polled = await runs.pollRunner(group);
+      const runId = polled.body.job?.runId;
+      if (!runId) {
+        throw new Error("Expected the forwarded Email run");
+      }
+      const claim = await runs.claimRunnerJob(runId);
+      expect(claim.prompt).toContain("Original message content");
+      expect(claim.appendSystemPrompt).toContain(
+        'Subject: "Fwd: Customer discussion"',
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `In-Reply-To: ${JSON.stringify(parentId)}`,
+      );
+      expect(claim.appendSystemPrompt).toContain(
+        `References: ${JSON.stringify([parentId])}`,
+      );
+      const prefix = "Connected mailbox for this Run: ";
+      const mailboxes = (claim.appendSystemPrompt ?? "")
+        .split("\n")
+        .filter((line) => {
+          return line.startsWith(prefix);
+        })
+        .map((line) => {
+          return object({
+            connectorSlug: string(),
+            connectionId: string(),
+            emailAddress: string().nullable(),
+            displayName: string().nullable(),
+          })
+            .strict()
+            .parse(JSON.parse(line.slice(prefix.length)));
+        });
+      expect(mailboxes).toStrictEqual([
+        {
+          connectorSlug: provider,
+          connectionId: mailbox.id,
+          emailAddress: actor.email,
+          displayName: mailbox.displayName,
+        },
+      ]);
+    },
+  );
+
   it("provides Email system context and privately delivers an attachment once in the original conversation", async () => {
     const { actor, claim, token, message } = await claimEmailFileRun();
     expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
@@ -853,6 +991,7 @@ describe("Email integration", () => {
     expect(claim.appendSystemPrompt).toContain(
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
+    expect(claim.appendSystemPrompt).toContain('Subject: "Requested report"');
     expect(claim.appendSystemPrompt).toContain("okou email upload-file");
     expect(claim.appendSystemPrompt).toContain("# This Chat Thread");
     const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
@@ -1967,50 +2106,7 @@ describe("Email multi-account connections", () => {
       const secondEmail = `${randomUUID()}@example.com`;
       const addresses = [actor.email, secondEmail];
       for (const address of addresses) {
-        if (provider === "gmail") {
-          mockGmailConnectorOAuth({ email: address, subject: randomUUID() });
-        } else {
-          mockOptionalEnv("MICROSOFT_OAUTH_CLIENT_ID", "email-outlook-client");
-          mockOptionalEnv(
-            "MICROSOFT_OAUTH_CLIENT_SECRET",
-            "email-outlook-secret",
-          );
-          server.use(
-            http.post(
-              "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-              () => {
-                return HttpResponse.json({
-                  access_token: "email-outlook-token",
-                  refresh_token: "email-outlook-refresh",
-                  expires_in: 3600,
-                });
-              },
-            ),
-            http.get("https://graph.microsoft.com/v1.0/me", () => {
-              return HttpResponse.json({
-                id: randomUUID(),
-                mail: address,
-                displayName: "Email Outlook",
-              });
-            }),
-          );
-        }
-        const started = await connectorsApi.startOauth(
-          actor,
-          provider,
-          "oauth",
-        );
-        const state = new URL(started.authorizationUrl).searchParams.get(
-          "state",
-        );
-        if (!state) {
-          throw new Error("Expected OAuth state");
-        }
-        const completed = await connectorsApi.completeOauthCallbackResult(
-          provider,
-          { code: "email-channel-oauth", state },
-        );
-        expect(completed.body).toMatchObject({ status: "success" });
+        await connectEmailMailbox(actor, provider, address);
       }
       if (alreadyConnected) {
         await updateFeatureSwitchesForUser(
