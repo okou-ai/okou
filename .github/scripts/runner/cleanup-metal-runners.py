@@ -5,6 +5,7 @@ Required: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_RUN_ID, METAL_HOSTS, METAL_USER.
 Optional: RUNNER_PR_NUMBERS (comma-separated selection), DRY_RUN=true.
 The same command handles scheduled and close-event cleanup. Remote observations
 and outcomes are JSON, diagnostics are stderr, and unresolved outcomes exit 1.
+SIGINT/SIGTERM/SIGHUP retire owned commands and exit 128 + signal number.
 """
 
 import argparse
@@ -640,6 +641,7 @@ if __name__ == "__main__":
         raise TimeoutError("cleanup batch deadline exceeded")
 
     signal.signal(signal.SIGALRM, batch_deadline)
+    signal.signal(signal.SIGINT, terminate)
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGHUP, terminate)
     try:

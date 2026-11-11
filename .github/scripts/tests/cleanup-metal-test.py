@@ -501,6 +501,12 @@ class CleanupTests(unittest.TestCase):
         self.assertIn('"resource_result":{"hosts":', result.stdout)
 
     def test_cancellation_retires_nested_holders_and_remote_commands(self):
+        self.assert_cancellation_retires_resources(signal.SIGTERM)
+
+    def test_interrupt_retires_nested_holders_and_remote_commands(self):
+        self.assert_cancellation_retires_resources(signal.SIGINT)
+
+    def assert_cancellation_retires_resources(self, cancellation_signal):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
         for number in range(41, 49):
             self.resource(f"etc/systemd/system/vm0-runner-pr-{number}-api.service")
@@ -521,8 +527,8 @@ class CleanupTests(unittest.TestCase):
                 readable, _, _ = select.select([descriptor], [], [], 10)
                 self.assertTrue(readable, (self.root / "cancel.log").read_text())
                 child = int(os.read(descriptor, 100).decode().strip())
-                process.send_signal(signal.SIGTERM)
-                self.assertNotEqual(process.wait(timeout=10), 0)
+                process.send_signal(cancellation_signal)
+                self.assertEqual(process.wait(timeout=10), 128 + cancellation_signal)
                 self.assertTrue(unit.exists())
                 for host in ("metal-a", "metal-b"):
                     for number in range(41, 49):
