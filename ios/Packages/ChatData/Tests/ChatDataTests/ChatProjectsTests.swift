@@ -67,7 +67,12 @@ final class ChatProjectsTests: XCTestCase {
 
   func testProjectNamesSurviveReopeningTheWorkspaceCache() async throws {
     let record = Self.record
-    let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: "{\"projects\":[\(record)]}") }
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+        throw URLError(.unsupportedURL)
+      }
+      return ChatHTTPResponse(body: "{\"projects\":[\(record)]}")
+    }
     let projects = try await ChatProjects(client: fixture.client).list()
     let directory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
