@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.res.Configuration
 import android.os.Bundle
 import android.provider.Settings
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -50,7 +51,8 @@ class NativeShellTest {
             awaitActivity("IME becomes visible") { imeVisible(it) }
             val draft = "Native CI draft"
             editor().text = draft
-            assertTrue(device.pressBack())
+            // Observe the actual outcome instead of pressBack()'s short accessibility-event wait.
+            assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitActivity("Back dismisses the IME") { !imeVisible(it) }
             editor(draft)
             val selection =
@@ -67,7 +69,7 @@ class NativeShellTest {
             text(R.string.appearance)
             requireNotNull(scenario).recreate()
             text(R.string.appearance)
-            assertTrue(device.pressBack())
+            assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             editor(draft)
             assertEquals(3, editorNode(draft).textSelectionStart)
             assertEquals(3, editorNode(draft).textSelectionEnd)
@@ -116,7 +118,7 @@ class NativeShellTest {
             awaitActivity("Android light configuration applies") { !isNight(it) }
             awaitSelected(R.string.appearance_system)
             awaitBars(light = true)
-            assertTrue(device.pressBack())
+            assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             editor("Retained during platform configuration changes")
         }
 
