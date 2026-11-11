@@ -644,6 +644,9 @@ test.each([
     context.mocks.browser.matchMedia(desktop);
     const { trigger, first, user } = await prepareDraftHostChoices();
     const dialog = screen.getByRole("dialog", { name: "Remote access" });
+    expect(
+      within(dialog).getByText("Applied when you send the first message"),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(dialog.contains(document.activeElement)).toBeTruthy();
     });
