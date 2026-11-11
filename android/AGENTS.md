@@ -24,6 +24,9 @@ Setup and commands live in [README.md](README.md).
 - Use String resources and preserve user content. Never report a local preview
   as a remote message, a successful build as device acceptance, or an installed
   app as store publication.
+- Keep components explicitly private except the reviewed MAIN/LAUNCHER entry.
+  New public routes and external Intent handling need security review; preserve
+  the source-manifest audit and Semgrep's rejection of unreviewed findings.
 - Run the applicable commands in README. Kotlin formatting uses Spotless/ktfmt;
   Android lint owns platform diagnostics. Do not weaken checks or add broad
   suppressions/baselines. The core's single erased-cache cast is documented at

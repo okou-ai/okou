@@ -54,6 +54,10 @@ class ChangeSelectionTest(unittest.TestCase):
             write("turbo/packages/ui/src/styles/globals.css")
             commit()
             self.assertEqual(detect(current).stdout.strip(), "true")
+            current = git("rev-parse", "HEAD")
+            write(".github/scripts/checks/android_launcher.py")
+            commit()
+            self.assertEqual(detect(current).stdout.strip(), "true")
             self.assertEqual(detect(base, "workflow_dispatch").stdout.strip(), "true")
             self.assertNotEqual(detect(base, "unsupported", check=False).returncode, 0)
 

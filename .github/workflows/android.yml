@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 32
       - name: Verify change detection and scripts
         run: |
-          bash -n android/scripts/*.sh
+          for script in android/scripts/*.sh; do bash -n "$script"; done
           shellcheck android/scripts/*.sh
           python3 android/scripts/ci-changed.test.py
       - name: Select Android checks

@@ -62,6 +62,30 @@ names, font scaling, contrast and system inset/keyboard handling.
 
 ## Service and Release Boundaries
 
+### Public Android Entry Points
+
+An exported component can be launched by another application. The desktop
+launcher must be public, so export alone is an audit signal, not proof of an
+authorization defect. Keep private activities, aliases, services, receivers and
+providers explicitly unexported. Review external Intent values, URI grants,
+deep links and sensitive actions at their actual authorization boundary.
+
+The source-manifest audit in `.github/scripts/checks/android_launcher.py`
+recognizes only the app's reviewed `.MainActivity` and its single MAIN/LAUNCHER
+filter. It rejects additional public components, data filters and extra routes
+in Android source manifests. Semgrep still scans the source; result handling
+exempts only its `exported_activity` audit finding inside that validated
+component, in both JSON gating and SARIF publication. Other rules, files,
+locations and malformed findings remain subject to the existing checks.
+
+Adding a public entry or new Intent handling needs security review, including
+input validation and authorization of the reachable operation. The manifest
+guard cannot establish runtime authorization or audit third-party AAR manifests;
+review dependency/merged-manifest changes and the packaged release separately.
+Do not broaden count baselines or suppress unrelated findings to add an entry.
+
+### Service and Distribution Contracts
+
 Application endpoints belong in the existing canonical API service, not an
 Android-specific proxy. Before adding real requests, implement the owning
 transport, credentials/client identity, error/426 handling and native API

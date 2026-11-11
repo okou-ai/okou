@@ -11,7 +11,7 @@ production, register push, or publish to a store. Debug uses
 
 ## Prerequisites and Setup
 
-Use JDK 21, Python 3, curl and unzip on Linux/macOS. The build targets JVM 17.
+Use JDK 21, Python 3.9+, curl and unzip on Linux/macOS. The build targets JVM 17.
 Versions are pinned in `gradle/libs.versions.toml` and
 `gradle/wrapper/gradle-wrapper.properties`: Gradle 8.11.1, Kotlin 2.1.20,
 AGP 8.9.2, Compose BOM 2025.04.01, compile/target SDK 35, minSdk 24.
@@ -53,7 +53,7 @@ From the repository root:
 bash android/scripts/check.sh
 ```
 
-This checks generated colors, Kotlin/Gradle formatting, core tests, native
+This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting, core tests, native
 observer tests, a Robolectric Compose interaction, Android lint, and debug APK
 assembly. It uses two Gradle workers, a 1536 MB build heap and in-process Kotlin
 compilation by default for small sandboxes.
@@ -117,6 +117,12 @@ runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
 and shared font/color-evaluator assets. Core verification has no SDK setup;
 the native job tests, lints, assembles, and uploads the debug APK for seven days.
 The final `android` check requires every selected job to succeed.
+
+The shared security workflow retains Semgrep scanning. Its result handler
+recognizes the intentionally public MAIN/LAUNCHER only after the strict source
+manifest audit; this is a location/contract exception, not a rule-wide exclusion
+or increased count baseline. See [public entry points](../docs/android/android-development.md#public-android-entry-points)
+before adding exported components, deep links or external Intent handling.
 
 This workflow is not a signing or store-publication pipeline. No release-please
 component, backend client header/floor, Android API consumption inventory, or
