@@ -1894,7 +1894,9 @@ jobs:
 
   deploy-stripe-listener:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Namespace acquisition can wait eight minutes behind a runner owner.
+    # Retain the previous five-minute deployment allowance after that wait.
+    timeout-minutes: 15
     concurrency:
       group: deploy-stripe-listener-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
