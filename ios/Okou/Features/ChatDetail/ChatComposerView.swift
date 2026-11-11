@@ -295,7 +295,7 @@ struct ChatComposerView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) {
       notification in
-      guard isFocused, !hasPresentedExpandedControls,
+      guard !hasPresentedExpandedControls,
         let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
         frame.height > 0
       else { return }
@@ -305,11 +305,11 @@ struct ChatComposerView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) {
       _ in
-      if isFocused { revealExpandedControls() }
+      revealExpandedControls()
     }
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) {
       _ in
-      if !isFocused { revealExpandedControls() }
+      revealExpandedControls()
     }
     .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
       showsConnectors = false
