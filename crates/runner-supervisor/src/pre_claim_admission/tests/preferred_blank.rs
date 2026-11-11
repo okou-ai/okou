@@ -134,6 +134,10 @@ async fn exercise_preferred_blank(selected: bool, expired: bool, cancelled: bool
     let diagnostics =
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
+    let timings = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = timings.clone();
+    let reporter = runner_storage::SandboxOpReporter::new(|_| async {})
+        .with_record(move |record| recorded.lock().unwrap().push(record));
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 7).unwrap();
     // Same host ID with a stale process generation must not speculate.
     let advised = if selected {
@@ -165,7 +169,7 @@ async fn exercise_preferred_blank(selected: bool, expired: bool, cancelled: bool
         budget: &budget,
         active_runs: &active,
         home_cache_snapshot: &home,
-        sandbox_op_reporter: None,
+        sandbox_op_reporter: Some(&reporter),
         home_cache: None,
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
@@ -247,6 +251,18 @@ async fn exercise_preferred_blank(selected: bool, expired: bool, cancelled: bool
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(cancellation.handle(run_id).await.is_none());
     assert!(pool.lock().await.is_empty());
+    let timings = timings.lock().unwrap();
+    if selected && !expired {
+        assert_eq!(timings.len(), 3);
+        assert_eq!(timings[0].action_type, "runner_blank_preclaim_prepare");
+        assert_eq!(timings[0].success, !cancelled && !contended);
+        assert_eq!(timings[1].action_type, "runner_blank_claim_overlap");
+        assert_eq!(timings[2].action_type, "runner_blank_postclaim_remainder");
+        assert!(timings[1].duration <= timings[0].duration);
+        assert!(timings[2].duration <= timings[0].duration);
+    } else {
+        assert!(timings.is_empty());
+    }
     if selected && !expired && !contended {
         assert_eq!(overrides.destroy_call_count(), 1);
     }

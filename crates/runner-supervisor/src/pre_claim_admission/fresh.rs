@@ -23,6 +23,50 @@ pub(super) enum Preparation {
     Uncertain(String),
 }
 
+pub(super) fn record_timing(
+    reporter: Option<&runner_storage::SandboxOpReporter>,
+    run_id: RunId,
+    preparation: std::ops::Range<Instant>,
+    claim: std::ops::Range<Instant>,
+    prepared: bool,
+) {
+    // Preparation includes weighted admission and any joined failure cleanup.
+    // These intervals overlap Claim; never add them to its HTTP duration.
+    let duration = preparation.end.saturating_duration_since(preparation.start);
+    let overlap = preparation
+        .end
+        .min(claim.end)
+        .saturating_duration_since(preparation.start.max(claim.start));
+    let remainder = preparation
+        .end
+        .saturating_duration_since(claim.end.max(preparation.start));
+    if let Some(reporter) = reporter {
+        reporter.record(runner_storage::SandboxOpRecord::new(
+            "runner_blank_preclaim_prepare",
+            duration,
+            prepared,
+            (!prepared).then_some("not_prepared"),
+        ));
+        reporter.record(runner_storage::SandboxOpRecord::new(
+            "runner_blank_claim_overlap",
+            overlap,
+            true,
+            None,
+        ));
+        reporter.record(runner_storage::SandboxOpRecord::new(
+            "runner_blank_postclaim_remainder",
+            remainder,
+            true,
+            None,
+        ));
+    }
+    info!(%run_id, prepared,
+        preparation_ms = duration.as_secs_f64() * 1000.0,
+        claim_overlap_ms = overlap.as_secs_f64() * 1000.0,
+        post_claim_remainder_ms = remainder.as_secs_f64() * 1000.0,
+        "pre-claim blank preparation settled");
+}
+
 pub(super) async fn prepare(
     profile: FreshProfile<'_>,
     lease: BudgetLease,

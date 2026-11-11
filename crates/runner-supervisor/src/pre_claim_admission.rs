@@ -411,23 +411,36 @@ async fn claim_with_local_admission(
                     }
                     (claimed, returned_at)
                 };
-                let preparation = fresh::prepare(
-                    fresh::FreshProfile {
-                        factory,
-                        rootfs_hash,
-                        profile_name,
-                        vcpu: job_vcpu,
-                        memory_mb: job_memory,
-                        home_disk_mb,
-                        device_rate_limits,
-                    },
-                    budget_lease,
-                    preference,
-                    ctx.pre_spawn_admission,
-                    &cancel,
-                    ctx.idle_destroy_tracker,
+                let preparation = async {
+                    let started_at = Instant::now();
+                    let preparation = fresh::prepare(
+                        fresh::FreshProfile {
+                            factory,
+                            rootfs_hash,
+                            profile_name,
+                            vcpu: job_vcpu,
+                            memory_mb: job_memory,
+                            home_disk_mb,
+                            device_rate_limits,
+                        },
+                        budget_lease,
+                        preference,
+                        ctx.pre_spawn_admission,
+                        &cancel,
+                        ctx.idle_destroy_tracker,
+                    )
+                    .await;
+                    (preparation, started_at, Instant::now())
+                };
+                let ((claimed, returned_at), (preparation, started_at, completed_at)) =
+                    tokio::join!(claim, preparation);
+                fresh::record_timing(
+                    ctx.sandbox_op_reporter,
+                    run_id,
+                    started_at..completed_at,
+                    claim_started_at..returned_at,
+                    matches!(&preparation, fresh::Preparation::Ready(_)),
                 );
-                let ((claimed, returned_at), preparation) = tokio::join!(claim, preparation);
                 let preparation = match preparation {
                     fresh::Preparation::Ready(reservation) if !matches!(&claimed, Ok(Some(job)) if job.context().run_id == run_id) => {
                         fresh::retire((*reservation).into_destroy_job(), ctx.idle_destroy_tracker)
