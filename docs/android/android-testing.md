@@ -58,6 +58,25 @@ Keep formatter/lint evidence separate from behavior checks. Do not weaken a
 valid assertion, hide diagnostics or manufacture new production abstractions
 just to preserve tests for an obsolete API.
 
+## First Display With Pending API Requests
+
+For new startup API consumers, verify the
+[first-display contract](android-development.md#first-display-and-api-loading)
+through the real native route and its owners. Hold the external transport/SDK
+response incomplete while asserting that the initial native UI is visible with
+the appropriate loading or identity-checking state. Release or fail that response
+only after the UI assertion, then verify the resulting content or recovery state.
+This proves the rendering dependency without arbitrary sleeps or timing thresholds.
+
+Include slow/failing responses and owner replacement where relevant. A visible
+first screen must not expose another account's cached content or enable protected
+actions before their actual prerequisites are satisfied. Verify that late results
+from retired owners cannot replace the current screen's state.
+
+Add this coverage with the real API integration, rather than inventing a network
+path for an offline scaffold. Keep first-display independence distinct from data
+readiness and any separately justified physical-device latency measurement.
+
 ## Native Acceptance
 
 Use a small instrumented suite for boundaries that need the Android framework,
