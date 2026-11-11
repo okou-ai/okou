@@ -6,10 +6,11 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT, RawMessage,
+    ExecTermination, MSG_ERROR, MSG_GUEST_STORAGE_MANIFEST_RESULT, RawMessage,
     decode_guest_storage_manifest_result, encode_guest_storage_manifest_request_frame_into,
 };
 
+use crate::helper_output::owned_capture;
 use crate::{
     FrameWriteObserver, GuestControlClient, normal_request_on_shared_with_timing_frame_builder,
     validate_fixed_helper_response,
@@ -101,8 +102,10 @@ impl GuestControlClient {
         }
         let decoded = decode_guest_agent_instructions_result(&response.payload)
             .map_err(protocol_invalid_data)?;
-        let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
-        let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+        let (stdout, stdout_truncated) =
+            owned_capture(decoded.stdout, "guest storage manifest", "stdout")?;
+        let (stderr, stderr_truncated) =
+            owned_capture(decoded.stderr, "guest storage manifest", "stderr")?;
         Ok(GuestStorageManifestResult {
             resources: None,
             termination: decoded.termination,
@@ -270,8 +273,10 @@ fn decode_storage_manifest_response(
         }
     }
     let decoded = decoded.result;
-    let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
-    let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+    let (stdout, stdout_truncated) =
+        owned_capture(decoded.stdout, "guest storage manifest", "stdout")?;
+    let (stderr, stderr_truncated) =
+        owned_capture(decoded.stderr, "guest storage manifest", "stderr")?;
     Ok(GuestStorageManifestResult {
         resources,
         termination: decoded.termination,
@@ -282,16 +287,6 @@ fn decode_storage_manifest_response(
         stderr_truncated,
         diagnostic: decoded.diagnostic.to_owned(),
     })
-}
-
-fn owned_capture(output: ExecCapturedOutput<'_>, name: &str) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecCapturedOutput::Captured { bytes, truncated } => Ok((bytes.to_vec(), truncated)),
-        ExecCapturedOutput::Discarded => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("guest storage manifest result discarded {name}"),
-        )),
-    }
 }
 
 fn protocol_invalid_input(error: impl ToString) -> io::Error {
