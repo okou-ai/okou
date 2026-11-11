@@ -10,6 +10,7 @@ struct MailDraftCard: View {
 
   var body: some View {
     StoreProvider(store.stateStore) { MailDraftDemandView(store: store) }
+      .id(ObjectIdentifier(store))
       .task(id: loadsState && store.isActive) { if loadsState { await store.load() } }
   }
 }
