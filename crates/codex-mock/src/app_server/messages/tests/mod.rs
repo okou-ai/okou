@@ -26,6 +26,30 @@ fn owned_plan_notification_preserves_canonical_jsonl() -> io::Result<()> {
         write_json_line(&mut actual, &notification)?;
         assert_eq!(actual, format!("{expected}\n").as_bytes());
     }
+    let thread_id = "thread-你好\"\\\n\"plan\":[]000000";
+    let turn_id = "turn-\0";
+    for steps in [
+        0..0,
+        0..1,
+        9..11,
+        99..101,
+        999..1001,
+        9999..10001,
+        74998..75000,
+    ] {
+        let plan = steps.clone().map(|index| {
+            json!({"step":format!("step-{index:06}-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz"),"status":"pending"})
+        }).collect::<Vec<_>>();
+        let expected = json!({
+            "method":"turn/plan/updated", "params":{
+                "threadId":thread_id, "turnId":turn_id,
+                "explanation":"oversized structural plan", "plan":plan,
+            },
+        });
+        let mut actual = Vec::new();
+        write_numbered_plan_notification(&mut actual, thread_id, turn_id, steps)?;
+        assert_eq!(actual, format!("{expected}\n").as_bytes());
+    }
     Ok(())
 }
 
