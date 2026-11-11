@@ -241,9 +241,7 @@ def reset_cache_for_tests() -> None:
     global _admitted_firewall_auth_fetches
     global _firewall_auth_fetch_semaphore
 
-    _auth_state.clear()
-    _owned_auth_keys.clear()
-    _active_registry_generations.clear()
+    evict_all_cache_keys()
     _admitted_firewall_auth_fetches = 0
     _firewall_auth_fetch_semaphore = None
 
