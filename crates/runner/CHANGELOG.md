@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.65](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.64...runner-rs-v0.244.65) (2026-11-11)
+
+
+### Refactoring
+
+* **runner:** centralize upstream client index pruning ([#46485](https://github.com/okou-ai/okou/issues/46485)) ([a4cb451](https://github.com/okou-ai/okou/commit/a4cb451a3018099fde7936a1a8690a8b8eb8659b))
+
 ## [0.244.64](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.63...runner-rs-v0.244.64) (2026-11-11)
 
 

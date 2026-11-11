@@ -29,7 +29,7 @@
   "crates/codex-mock": "0.12.58",
   "crates/guest-state-restore": "0.4.6",
   "crates/guest-write-file": "0.1.286",
-  "crates/runner": "0.244.64",
+  "crates/runner": "0.244.65",
   "crates/runner-executor": "0.21.11",
   "crates/runner-host": "0.10.46",
   "crates/runner-lifecycle": "0.17.89",
