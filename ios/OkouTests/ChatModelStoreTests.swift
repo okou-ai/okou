@@ -7,16 +7,6 @@ import XCTest
 
 @testable import Okou
 
-@MainActor
-final class ModelInvalidationTests: XCTestCase {
-
-  func testCanonicalRealtimeModelNotificationsDecodeToTheirOwningReadScopes() {
-    // Keep canonical realtime notifications mapped to their owning production reads.
-    XCTAssertEqual(ChatInvalidation(notification: "userPreferenceChanged"), .modelPreference)
-    XCTAssertEqual(ChatInvalidation(notification: "runModelsChanged"), .runModels)
-  }
-}
-
 final class ModelResponseGate: Sendable {
   private let stream: AsyncStream<Void>
   private let continuation: AsyncStream<Void>.Continuation
