@@ -293,8 +293,9 @@ struct ChatComposerView: View {
         hasPresentedExpandedControls = true
       }
     }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) {
-      notification in
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+    ) { notification in
       guard !hasPresentedExpandedControls,
         let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
         frame.height > 0
