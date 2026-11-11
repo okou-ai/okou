@@ -63,6 +63,8 @@ final class ConversationStore {
   @ObservationIgnored lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
     didFail: didFail)
+  // Confirmed input for delivery, Stop, read watermarks and the native render window.
+  // Independent resource phases remain in their original Tasks, not in this snapshot.
   private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
 
   /// Text of the running run's messages as it streams, before the durable events arrive.
@@ -99,7 +101,8 @@ final class ConversationStore {
     let id = UUID()
     let position: ConversationReadingPosition
   }
-  private(set) var isLoading = false
+  /// The complete semantic refresh, including publication and read confirmation.
+  var isLoading: Bool { refreshTask != nil }
   private(set) var isSending = false
   enum DeliveryFailure {
     case notSent(String)
@@ -131,6 +134,7 @@ final class ConversationStore {
   private var detailOwner: UUID?
 
   private let sync: ChatSync
+  private let readResources: ConversationReadResources
   private let commands: ChatCommands
   /// Shares one answer together with the request that led to it, as the web does for a
   /// single message: the answer's event plus the user's prompts directly before its turn.
@@ -173,7 +177,6 @@ final class ConversationStore {
   private var refreshAgain = false
   private var refreshTask: Task<Void, Never>?
   private var refreshGeneration = UUID()
-  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private var sendTask: Task<Bool, Never>?
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
@@ -209,7 +212,8 @@ final class ConversationStore {
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
-    self.readRetrySleep = readRetrySleep
+    readResources = ConversationReadResources(
+      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail)
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
@@ -286,7 +290,6 @@ final class ConversationStore {
       guard let self else { return }
       defer {
         if refreshGeneration == generation {
-          isLoading = false
           refreshTask = nil
         }
         didSettle()
@@ -294,17 +297,13 @@ final class ConversationStore {
       guard !Task.isCancelled, refreshGeneration == generation else { return }
       await restoreCached()
       guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-      isLoading = true
       repeat {
         refreshAgain = false
         do {
-          async let recovery = ChatReadRecovery.read("cancellation recovery", sleep: readRetrySleep)
-          {
-            try await self.sync.cancellationRecoveryPending(threadID: self.thread.id)
-          }
-          let events = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
-            try await sync.eventHistory(threadID: thread.id)
-          }
+          let reads = try readResources.refresh()
+          // A failed history read must retire its unused recovery without waiting for it.
+          defer { reads.cancel() }
+          let events = try await reads.history.value
           // Keep a confirmed recovery visible until its independent read finishes.
           let result = events.withCancellationRecoveryPending(
             history?.executionState == .recovering)
@@ -314,7 +313,7 @@ final class ConversationStore {
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
-          let recovering = try await recovery
+          let recovering = try await reads.recovery.value
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
           let verified = events.withCancellationRecoveryPending(recovering)
@@ -335,7 +334,7 @@ final class ConversationStore {
           {
             do {
               let watermark = try await commands.markRead(threadID: thread.id)
-              guard !closed, !Task.isCancelled else { return }
+              guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
               readSyncError = nil
               if let watermark {
                 locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
@@ -345,7 +344,9 @@ final class ConversationStore {
               }
               if !suppressAutomaticRead { didMarkRead(watermark) }
             } catch {
-              guard !closed, !Task.isCancelled, !(error is CancellationError) else { return }
+              guard !closed, !Task.isCancelled, refreshGeneration == generation,
+                !(error is CancellationError)
+              else { return }
               readSyncError = error.localizedDescription
               report(error)
             }
@@ -750,6 +751,7 @@ final class ConversationStore {
     runUsage.close()
     modelSelection?.close()
     cancelRefresh()
+    readResources.close()
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
@@ -769,8 +771,8 @@ final class ConversationStore {
     refreshGeneration = UUID()
     refreshTask?.cancel()
     refreshTask = nil
+    readResources.pause()
     refreshAgain = false
-    isLoading = false
   }
 
   func artifactImageSources(for messageID: String) -> [String] {
