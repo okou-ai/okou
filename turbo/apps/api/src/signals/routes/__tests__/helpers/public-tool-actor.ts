@@ -82,7 +82,7 @@ export async function purchaseToolCredits(
     }),
     [200],
   );
-  expect(checkout.body).toStrictEqual({ url });
+  expect(checkout.body).toStrictEqual({ url, checkoutSessionId: session.id });
   if (!observed) {
     throw new Error("Expected Stripe to receive the credit checkout");
   }
