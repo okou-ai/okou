@@ -86,7 +86,7 @@ pub fn cli_control_failure_for_config(
         session_metadata,
         FailureClass::CliExecutionError,
         cli_result.exit_code,
-        cli_result.jsonl_result,
+        cli_result.jsonl_result.as_ref(),
     );
     let diagnostic =
         with_cli_observed_exit(diagnostic, cli_result.cli_observed_exit.as_ref().cloned());
@@ -114,7 +114,7 @@ pub fn cli_nonzero_failure_for_config(
         session_metadata,
         FailureClass::CliNonzero,
         cli_result.exit_code,
-        cli_result.jsonl_result,
+        cli_result.jsonl_result.as_ref(),
     )
     .with_failure_detail_source(failure_message.source);
     let diagnostic =
@@ -242,7 +242,7 @@ fn cli_result_failure_diagnostic_for_config(
     session_metadata: Option<&CapturedSessionMetadata>,
     failure_class: FailureClass,
     cli_exit_code: i32,
-    jsonl_result: Option<cli::JsonlResultSummary>,
+    jsonl_result: Option<&cli::JsonlResultSummary>,
 ) -> FailureDiagnostic {
     let mut diagnostic = base_failure_diagnostic_for_config(config, failure_class)
         .with_cli_exit_code(cli_exit_code)
@@ -258,7 +258,7 @@ fn cli_result_failure_diagnostic_for_config(
     if matches!(config.framework, env::Framework::Pi)
         && let Some(result) = jsonl_result
     {
-        diagnostic.model_request = result.model_request;
+        diagnostic.model_request = result.model_request.clone();
     }
     diagnostic
 }
@@ -296,7 +296,7 @@ fn with_cli_failure_reason(
     .or(failure_message.failure_reason)
     .or_else(|| {
         (diagnostic.framework == AgentFramework::Pi)
-            .then_some(diagnostic.model_request)
+            .then_some(diagnostic.model_request.as_ref())
             .flatten()
             .and_then(|request| request.http_status)
             .and_then(crate::provider_failure::http_failure_reason)

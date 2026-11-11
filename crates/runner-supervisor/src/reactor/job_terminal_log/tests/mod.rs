@@ -439,6 +439,8 @@ fn pi_provider_rejections_remain_errors_with_original_request_evidence() {
             retry_attempts: 0,
             retry_limit: None,
             transport_failure: None,
+            request: None,
+            response: None,
         });
         let failure = executor::ExecutionFailure::new(1, error, Some(diagnostic));
 
@@ -504,6 +506,8 @@ fn pi_provider_failures_log_info_with_observed_request_and_retry_evidence() {
             retry_attempts: retries,
             retry_limit,
             transport_failure: None,
+            request: None,
+            response: None,
         });
         let failure = executor::ExecutionFailure::new(1, message, Some(diagnostic));
         let event = capture_job_failure_log(&failure);
@@ -1417,3 +1421,4 @@ fn generic_and_timeout_failures_share_diagnostic_and_resource_fields() {
 
     assert_shared_failure_log_fields(&generic_event, &timeout_event);
 }
+mod model_request;

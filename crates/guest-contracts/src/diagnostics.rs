@@ -64,7 +64,7 @@ pub struct FailureDiagnostic {
 }
 
 /// Content-free evidence from the final failed model call and its session retries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRequestDiagnostic {
     /// HTTP status actually observed on the final transport attempt, if any.
@@ -81,6 +81,12 @@ pub struct ModelRequestDiagnostic {
     /// Original transport exception reduced to fixed values before SDK normalization.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_failure: Option<crate::model_transport::ModelTransportFailure>,
+    /// Content-free request shape and final-attempt wire-body measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<crate::model_request::ModelRequestEvidence>,
+    /// Validated correlation headers from the final received response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<crate::model_request::ModelResponseEvidence>,
 }
 
 impl FailureDiagnostic {

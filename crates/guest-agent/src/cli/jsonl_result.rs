@@ -3,7 +3,7 @@
 use guest_contracts::diagnostics::ModelRequestDiagnostic;
 
 /// Summary of a terminal JSONL `type=result` event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonlResultSummary {
     /// Reported turn count for the run, when present.
     pub num_turns: Option<u64>,

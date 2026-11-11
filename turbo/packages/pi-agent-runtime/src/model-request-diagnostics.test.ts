@@ -147,11 +147,11 @@ describe("Codex model request diagnostics", () => {
       expect(result.diagnostics).toContainEqual(
         expect.objectContaining({
           type: "okou_model_request",
-          details: {
+          details: expect.objectContaining({
             httpStatus: 400,
             transportAttempts: 1,
             failureReason: "provider_bad_request",
-          },
+          }),
         }),
       );
       expect(requests).toBe(1);
@@ -229,6 +229,20 @@ describe("Codex model request diagnostics", () => {
 
     expect(result.stopReason).toBe("error");
     expect(piModelFailureReason(result)).toBeUndefined();
+    expect(result.diagnostics).toMatchObject([
+      {
+        details: {
+          httpStatus: 400,
+          request: {
+            api: "openai-responses",
+            inputItems: 1,
+            tools: 0,
+            contentEncoding: "identity",
+            wireBodyBytes: expect.any(Number),
+          },
+        },
+      },
+    ]);
   });
 
   it("keeps the same JSON in a successful answer as ordinary content", async () => {

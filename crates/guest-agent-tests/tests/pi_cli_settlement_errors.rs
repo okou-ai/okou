@@ -161,6 +161,25 @@ fi
             Some(FailureDetailSource::PiResult)
         );
         assert_eq!(terminal_failure.diagnostic.claude_num_turns, None);
+        if let Some(details) = assistant_messages
+            .last()
+            .and_then(|message| message.pointer("/diagnostics/0/details/request"))
+        {
+            let request = terminal_failure
+                .diagnostic
+                .model_request
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("missing model evidence"))?;
+            assert_eq!(serde_json::to_value(request.request)?, *details);
+            assert_eq!(
+                serde_json::to_value(request.response.as_ref())?,
+                assistant_messages
+                    .last()
+                    .and_then(|message| message.pointer("/diagnostics/0/details/response"))
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            );
+        }
         assert_eq!(
             terminal_failure.diagnostic.failure_reason,
             expected_failure_reason
@@ -197,6 +216,8 @@ fi
                     retry_attempts: 0,
                     retry_limit: None,
                     transport_failure: None,
+                    request: None,
+                    response: None,
                 })
             );
             let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
@@ -228,6 +249,7 @@ fi
                 let request = terminal_failure
                     .diagnostic
                     .model_request
+                    .as_ref()
                     .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
                 assert_eq!(request.http_status.map(u64::from), Some(expected_status));
                 assert_eq!(request.transport_attempts, 1);
@@ -274,6 +296,8 @@ fi
                     retry_attempts: 0,
                     retry_limit: None,
                     transport_failure: None,
+                    request: None,
+                    response: None,
                 })
             );
             let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
@@ -296,6 +320,8 @@ fi
                     retry_attempts: 0,
                     retry_limit: None,
                     transport_failure: None,
+                    request: None,
+                    response: None,
                 })
             );
             let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
@@ -381,6 +407,18 @@ fi
         }
     );
     assert_eq!(terminal["is_error"], !completed);
+    if let Some(details) = assistant_messages
+        .last()
+        .and_then(|message| message.pointer("/diagnostics/0/details/request"))
+    {
+        assert_eq!(terminal.pointer("/modelRequest/request"), Some(details));
+        assert_eq!(
+            terminal.pointer("/modelRequest/response"),
+            assistant_messages
+                .last()
+                .and_then(|message| message.pointer("/diagnostics/0/details/response"))
+        );
+    }
     if completed {
         assert!(terminal.get("failureReason").is_none());
         assert!(terminal.get("modelRequest").is_none());
@@ -1011,6 +1049,25 @@ async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_result
         &[success["message"].clone(), aborted["message"].clone()],
         ExpectedTerminalResult::Exact("This operation was aborted"),
         None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000194",
+        &[serde_json::json!({
+            "role": "assistant", "api": "openai-codex-responses", "stopReason": "error", "content": [],
+            "errorMessage": "{\"detail\":\"Bad Request\"}",
+            "diagnostics": [{"type": "okou_model_request", "details": {
+                "httpStatus": 400, "transportAttempts": 1, "failureReason": "provider_bad_request",
+                "request": {"api": "openai-codex-responses", "inputItems": 2, "tools": 0,
+                    "wireBodyBytes": 348, "contentEncoding": "zstd"},
+                "response": {"requestId": "req_0123456789abcdef0123456789abcdef", "cfRay": "0123456789abcdef-SJC"}
+            }}]
+        })],
+        ExpectedTerminalResult::Exact(r#"{"detail":"Bad Request"}"#),
+        Some(FailureReason::ProviderBadRequest),
         None,
         &base_path,
         &original_directory,

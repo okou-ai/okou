@@ -23,6 +23,13 @@ import {
   parseModelTransportFailure,
   type PiModelTransportFailure,
 } from "./model-transport-diagnostics";
+import {
+  modelPayloadEvidence,
+  modelResponseEvidence,
+  modelWireEvidence,
+  type ModelRequestEvidence,
+  type ModelResponseEvidence,
+} from "./model-request-evidence";
 
 export type ModelRequestObservation = {
   httpStatus?: number;
@@ -30,6 +37,8 @@ export type ModelRequestObservation = {
   failureReason?: KnownRunFailureReason;
   transportFailure?: PiModelTransportFailure;
   firewallAuthFailure?: ReturnType<typeof parseFirewallAuthFailure>;
+  request?: ModelRequestEvidence;
+  response?: ModelResponseEvidence;
 };
 
 /** Inspect the actual response before SDKs can turn a nested message into prose. */
@@ -142,11 +151,25 @@ export class ModelRequestEventStream extends AssistantMessageEventStream {
 export function streamWithModelRequestDiagnostics(
   start: (
     fetch: NonNullable<SimpleStreamOptions["fetch"]>,
+    onPayload: NonNullable<SimpleStreamOptions["onPayload"]>,
   ) => AssistantMessageEventStream,
   fetchImpl: NonNullable<SimpleStreamOptions["fetch"]>,
   signal: AbortSignal | undefined,
+  onPayload?: SimpleStreamOptions["onPayload"],
 ): AssistantMessageEventStream {
   const observation: ModelRequestObservation = { transportAttempts: 0 };
+  let payloadEvidence: ModelRequestEvidence | undefined;
+  const observedPayload: NonNullable<SimpleStreamOptions["onPayload"]> = async (
+    payload,
+    model,
+  ) => {
+    const replacement = await onPayload?.(payload, model);
+    payloadEvidence = modelPayloadEvidence(
+      replacement === undefined ? payload : replacement,
+      model.api,
+    );
+    return replacement;
+  };
   const observedFetch: NonNullable<SimpleStreamOptions["fetch"]> = async (
     input,
     init,
@@ -157,6 +180,9 @@ export function streamWithModelRequestDiagnostics(
     observation.failureReason = undefined;
     observation.transportFailure = undefined;
     observation.firewallAuthFailure = undefined;
+    const request = { ...payloadEvidence, ...modelWireEvidence(input, init) };
+    observation.request = Object.keys(request).length > 0 ? request : undefined;
+    observation.response = undefined;
     let response: Response;
     try {
       response = await fetchImpl(input, init);
@@ -169,6 +195,7 @@ export function streamWithModelRequestDiagnostics(
       throw error;
     }
     observation.httpStatus = response.status;
+    observation.response = modelResponseEvidence(response.headers);
     observation.failureReason = classifyProviderHttpFailure(response.status);
     return observeModelResponseBody(response, (error) => {
       observation.transportFailure = modelTransportFailure(
@@ -192,6 +219,7 @@ export function streamWithModelRequestDiagnostics(
             opaqueBadRequestReason(body, status));
       },
     ),
+    observedPayload,
   );
   return new ModelRequestEventStream(source, observation);
 }

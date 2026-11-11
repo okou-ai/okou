@@ -26,6 +26,7 @@ pub mod home_cache_history;
 pub mod home_mount;
 pub mod managed_command;
 pub mod managed_task;
+pub mod model_request;
 pub mod model_transport;
 pub mod okou_cli;
 pub mod oom_evidence;
