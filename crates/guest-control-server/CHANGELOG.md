@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.94](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.93...guest-control-server-v0.24.94) (2026-11-11)
+
+
+### Refactoring
+
+* **rust:** centralize trusted guest runtime environment defaults ([#46574](https://github.com/okou-ai/okou/issues/46574)) ([1825ca0](https://github.com/okou-ai/okou/commit/1825ca0a55e905352bf50207d4abfac426d1e108))
+
 ## [0.24.93](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.92...guest-control-server-v0.24.93) (2026-11-11)
 
 ## [0.24.92](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.91...guest-control-server-v0.24.92) (2026-11-10)
