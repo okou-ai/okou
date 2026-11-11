@@ -1,25 +1,63 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
 struct PermissionBatchCard: View {
-  @Bindable var store: PermissionBatchStore
+  let store: PermissionBatchStore
   let loadsState: Bool
+  private let read: PermissionCardRead<ChatPermissionBatchSnapshot>
+
+  init(store: PermissionBatchStore, loadsState: Bool) {
+    self.store = store
+    self.loadsState = loadsState
+    read = store.read
+  }
   @Environment(\.scenePhase) private var scenePhase
+
+  var body: some View {
+    PermissionCardReadView(read: read) { phase in
+      PermissionBatchCardContent(store: store, phase: phase)
+    }
+    .task(id: store.isActive) {
+      if loadsState && store.isActive { await store.loadIfNeeded() }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active && store.isActive && loadsState {
+        Task { await store.refresh() }
+      }
+    }
+  }
+}
+
+private struct PermissionBatchCardContent: View {
+  @Bindable var store: PermissionBatchStore
+  let phase: Loadable<ChatPermissionBatchSnapshot>
   @State private var showsDetails = false
+
+  private var isLoading: Bool { phase.state == .loading }
+  private var snapshot: ChatPermissionBatchSnapshot? { phase.data ?? store.snapshot }
+  private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
+  private var allAllowed: Bool { phase.data?.allAllowed == true && !requiresReadback }
+  private var needsContinuation: Bool {
+    allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
+  }
+  private var error: String? {
+    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+  }
 
   private var status: String {
     if store.isContinuing { return String(localized: "Continuing chat…") }
     if store.isSaving { return String(localized: "Saving permissions…") }
-    if store.isLoading { return String(localized: "Checking permissions…") }
-    if store.requiresReadback { return String(localized: "Check permission status") }
-    guard let snapshot = store.snapshot else {
+    if isLoading { return String(localized: "Checking permissions…") }
+    if requiresReadback { return String(localized: "Check permission status") }
+    guard let snapshot = snapshot else {
       return String(localized: "Checking permissions…")
     }
     if !snapshot.complete { return String(localized: "Permission request unavailable") }
-    if store.hasContinued && store.allAllowed {
+    if store.hasContinued && allAllowed {
       return String(localized: "Permissions allowed · Chat continued")
     }
-    if store.needsContinuation {
+    if needsContinuation {
       return String(localized: "Permissions allowed · Continue chat")
     }
     return String(
@@ -38,9 +76,9 @@ struct PermissionBatchCard: View {
       Button {
         showsDetails = true
       } label: {
-        if store.allAllowed && !store.needsContinuation {
+        if allAllowed && !needsContinuation {
           Label("View details", systemImage: "checkmark.circle")
-        } else if store.needsContinuation {
+        } else if needsContinuation {
           Text("Continue chat")
         } else {
           Text("Review permissions")
@@ -54,27 +92,48 @@ struct PermissionBatchCard: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
-    .task(id: store.isActive) {
-      if loadsState && store.isActive { await store.loadIfNeeded() }
-    }
-    .onChange(of: scenePhase) { _, phase in
-      if phase == .active && store.isActive && loadsState {
-        Task { await store.refresh() }
-      }
-    }
   }
 }
 
 struct PermissionBatchDetails: View {
+  let store: PermissionBatchStore
+  private let read: PermissionCardRead<ChatPermissionBatchSnapshot>
+
+  init(store: PermissionBatchStore) {
+    self.store = store
+    read = store.read
+  }
+
+  var body: some View {
+    PermissionCardReadView(read: read) { phase in
+      PermissionBatchDetailsContent(store: store, phase: phase)
+    }
+    .task { await store.refresh() }
+  }
+}
+
+private struct PermissionBatchDetailsContent: View {
   @Bindable var store: PermissionBatchStore
+  let phase: Loadable<ChatPermissionBatchSnapshot>
   @Environment(\.dismiss) private var dismiss
+
+  private var isLoading: Bool { phase.state == .loading }
+  private var snapshot: ChatPermissionBatchSnapshot? { phase.data ?? store.snapshot }
+  private var requiresReadback: Bool { store.requiresReadback || phase.error != nil }
+  private var allAllowed: Bool { phase.data?.allAllowed == true && !requiresReadback }
+  private var needsContinuation: Bool {
+    allAllowed && store.action.callbackPrompt != nil && !store.hasContinued
+  }
+  private var error: String? {
+    phase.error.map(ChatRequestFailure.message(for:)) ?? store.error
+  }
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           requestSummary
-          if let snapshot = store.snapshot {
+          if let snapshot = snapshot {
             if snapshot.enabled {
               Text(
                 snapshot.connectorScoped
@@ -83,14 +142,14 @@ struct PermissionBatchDetails: View {
               )
               .font(.footnote).foregroundStyle(.secondary)
               ForEach(snapshot.groups) { group in
-                PermissionBatchGroup(group: group, verifiesGrants: !store.requiresReadback)
+                PermissionBatchGroup(group: group, verifiesGrants: !requiresReadback)
               }
             } else {
               Text("Batch permissions are not available for your account right now.")
                 .foregroundStyle(.secondary)
             }
           }
-          if let error = store.error {
+          if let error = error {
             Text(error).font(.footnote).foregroundStyle(.red).textSelection(.enabled)
           }
         }
@@ -105,28 +164,27 @@ struct PermissionBatchDetails: View {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
     }
-    .task { await store.refresh() }
   }
 
   private var requestSummary: some View {
     HStack(alignment: .top, spacing: 12) {
-      Image(systemName: store.allAllowed ? "checkmark.shield" : "lock.shield")
+      Image(systemName: allAllowed ? "checkmark.shield" : "lock.shield")
         .font(.title3)
-        .foregroundStyle(store.allAllowed ? Color.green : Color.secondary)
+        .foregroundStyle(allAllowed ? Color.green : Color.secondary)
         .frame(width: 40, height: 40)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
         Text("\(store.action.items.count) permissions requested").font(.headline)
-        Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
+        Text("Requested by \(snapshot?.agentName ?? String(localized: "this Agent"))")
           .font(.subheadline).foregroundStyle(.secondary)
-        if let snapshot = store.snapshot, snapshot.enabled && !store.requiresReadback {
+        if let snapshot = snapshot, snapshot.enabled && !requiresReadback {
           Text("\(snapshot.allowedCount) of \(store.action.items.count) permissions allowed")
             .font(.footnote).foregroundStyle(.secondary)
         }
         if store.hasContinued {
           Text("Your chat has continued.").font(.footnote).foregroundStyle(.secondary)
-        } else if store.needsContinuation && store.error != nil {
+        } else if needsContinuation && error != nil {
           Text("Permissions allowed · Chat not continued")
             .font(.footnote).foregroundStyle(.secondary)
         }
@@ -136,23 +194,23 @@ struct PermissionBatchDetails: View {
 
   private var confirmation: some View {
     VStack(spacing: 12) {
-      if store.isLoading && store.snapshot == nil {
+      if isLoading && snapshot == nil {
         ProgressView("Checking permissions…").frame(minHeight: 44)
-      } else if store.requiresReadback || store.snapshot == nil {
-        if store.requiresReadback {
+      } else if requiresReadback || snapshot == nil {
+        if requiresReadback {
           Text("Check the current permissions before trying again.")
             .font(.footnote).foregroundStyle(.secondary)
         }
         Button("Check permissions") { Task { await store.refresh() } }
-          .frame(minHeight: 44).disabled(store.isLoading || store.isSaving)
-      } else if store.snapshot?.complete != true {
+          .frame(minHeight: 44).disabled(isLoading || store.isSaving)
+      } else if snapshot?.complete != true {
         Text("These permissions are no longer available.")
           .font(.footnote).foregroundStyle(.secondary)
-      } else if store.allAllowed && !store.needsContinuation && !store.isSaving {
+      } else if allAllowed && !needsContinuation && !store.isSaving {
         Button("Done") { dismiss() }
           .buttonStyle(OkouButtonStyle(isPrimary: true))
       } else {
-        if !store.allAllowed && !store.isContinuing {
+        if !allAllowed && !store.isContinuing {
           HStack {
             Text("Allow new permissions for").font(.subheadline)
             Spacer(minLength: 12)
@@ -163,7 +221,7 @@ struct PermissionBatchDetails: View {
               Text("Always").tag(ChatPermissionAction.Duration.always)
             }
             .pickerStyle(.menu).labelsHidden()
-            .disabled(store.isSaving || store.isLoading)
+            .disabled(store.isSaving || isLoading)
             .accessibilityIdentifier("permission-batch-duration")
           }
           .frame(minHeight: 44)
@@ -173,12 +231,12 @@ struct PermissionBatchDetails: View {
           }
         }
         Button {
-          Task { await store.confirm() }
+          Task { [snapshot] in await store.confirm(reviewing: snapshot) }
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }
         .buttonStyle(OkouButtonStyle(isPrimary: true))
-        .disabled(!store.canConfirm)
+        .disabled(!store.canConfirm(reviewing: snapshot) || isLoading || phase.error != nil)
         .accessibilityIdentifier("permission-batch-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")
@@ -195,8 +253,8 @@ struct PermissionBatchDetails: View {
   private var confirmationTitle: LocalizedStringKey {
     if store.isContinuing { return "Continuing chat…" }
     if store.isSaving { return "Saving permissions…" }
-    if store.needsContinuation { return "Continue chat" }
-    let missing = store.action.items.count - (store.snapshot?.allowedCount ?? 0)
+    if needsContinuation { return "Continue chat" }
+    let missing = store.action.items.count - (snapshot?.allowedCount ?? 0)
     return "Allow \(missing) permissions"
   }
 }
