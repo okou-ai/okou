@@ -365,7 +365,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         return []
 
     def _record_metadata_merge_key_violations(self, node: ast.AST | None) -> None:
-        if self._state_only or node is None:
+        if self._state_only or not isinstance(
+            node, (ast.BinOp, ast.Dict, ast.Call, ast.IfExp, ast.BoolOp)
+        ):
             return
         node_id = id(node)
         if node_id in self._metadata_key_checked_node_ids:
