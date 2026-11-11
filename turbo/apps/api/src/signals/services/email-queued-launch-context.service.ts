@@ -100,6 +100,10 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         emailAddress: row.emailAddress,
         messageId: row.messageId,
         messageText: row.messageText,
+        subject: row.subject,
+        inReplyTo: row.inReplyTo,
+        references: row.references,
+        chatThreadId: row.chatThreadId,
       },
       appendSystemPrompt: buildEmailPrompt(
         row,

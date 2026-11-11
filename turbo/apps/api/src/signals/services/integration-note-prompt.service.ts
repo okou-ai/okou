@@ -37,7 +37,7 @@ function privateArtifactFinalReplyLine(args: {
 }
 
 const EMAIL_CONNECTED_MAILBOX_NOTE =
-  "- Connected mailbox context: before this Run starts, the server looks up the current received email through the selected Gmail or Outlook Mail account API using its exact RFC Message-ID. A Mailbox Message Context block in the input reports the retrieved provider IDs, headers and message body, or the reason it was not read. This lookup does not load other messages in the provider conversation. Use the received email when no match is available; do not claim the complete source conversation was retrieved. The final response still uses automatic Email delivery.";
+  "- Connected mailbox context: before an email input is delivered to the agent, the server looks up the current received email through the selected Gmail or Outlook Mail account API using its exact RFC Message-ID. A Mailbox Message Context block in the integration context reports the retrieved provider IDs, headers and message body, or the reason it was not read. This lookup does not load other messages in the provider conversation. Use the received email when no match is available; do not claim the complete source conversation was retrieved. The final response still uses automatic Email delivery.";
 
 const EMAIL_INTEGRATION_NOTE_LINES = [
   "- Email messaging: only your final response is automatically delivered to the verified sender in this email conversation, so do not send a second email to deliver it; nothing you produce while the run is in progress reaches Email on its own. Write a clear, complete reply; the email subject and references are handled by the platform.",

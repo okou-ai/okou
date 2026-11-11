@@ -18,7 +18,12 @@ import {
 } from "./chat-connector-execution";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
-import type { EmailMailboxConnection } from "./email-prompt";
+import {
+  buildEmailPrompt,
+  type EmailMailboxConnection,
+  type EmailPromptContext,
+} from "./email-prompt";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import {
   activeMemberConnectorPermissionCondition,
   memberConnectorPermissionColumns,
@@ -158,54 +163,63 @@ const readActiveEmailMailboxes$ = command(
 );
 
 /** Reuse the running Run's registered targets and current account/permissions. */
-export const loadActiveEmailSourceContext$ = command(
+export const loadActiveEmailIntegrationContext$ = command(
   async (
     { set },
     args: ActiveEmailScope & {
-      readonly email: {
-        readonly emailAddress: string;
-        readonly messageId: string;
+      readonly email: EmailPromptContext & {
         readonly messageText: string;
       };
     },
     signal: AbortSignal,
   ): Promise<string> => {
     const selection = await set(readActiveEmailMailboxes$, args, signal);
-    if (!selection || selection.mailboxes.length === 0) {
-      return "";
-    }
-    const connectorSlugs = selection.mailboxes.map((mailbox) => {
-      return mailbox.connectorSlug;
-    });
-    const snapshot = await set(
-      readConnectorRuntimeAuthSelection$,
-      {
+    let messageContext = "";
+    if (selection && selection.mailboxes.length > 0) {
+      const connectorSlugs = selection.mailboxes.map((mailbox) => {
+        return mailbox.connectorSlug;
+      });
+      const snapshot = await set(
+        readConnectorRuntimeAuthSelection$,
+        {
+          connectorSlugs,
+          firewallConnectorSlugs: connectorSlugs,
+        },
+        signal,
+      );
+      const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
+        scope: { ...args, agentId: selection.agentId },
         connectorSlugs,
-        firewallConnectorSlugs: connectorSlugs,
-      },
-      signal,
-    );
-    const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
-      scope: { ...args, agentId: selection.agentId },
-      connectorSlugs,
-      snapshot,
-      memberRules: selection.memberRules,
-    });
-    signal.throwIfAborted();
-    return await set(
-      loadEmailSourceMessageContext$,
-      {
-        ...args,
-        mailboxes: selection.mailboxes,
         snapshot,
-        policies: null,
-        networkPolicies: Object.fromEntries(
-          refreshes.map((refresh) => {
-            return [refresh.connectorSlug, refresh.networkPolicy];
-          }),
-        ),
-      },
-      signal,
+        memberRules: selection.memberRules,
+      });
+      signal.throwIfAborted();
+      messageContext = await set(
+        loadEmailSourceMessageContext$,
+        {
+          ...args,
+          mailboxes: selection.mailboxes,
+          snapshot,
+          policies: null,
+          networkPolicies: Object.fromEntries(
+            refreshes.map((refresh) => {
+              return [refresh.connectorSlug, refresh.networkPolicy];
+            }),
+          ),
+        },
+        signal,
+      );
+    }
+    const mailboxes = selection?.mailboxes ?? [];
+    return buildEmailPrompt(
+      args.email,
+      resolveIntegrationNotePrompt({
+        triggerSource: "email",
+        featureSwitchContext: args.featureSwitchContext,
+        emailHasConnectedMailbox: mailboxes.length > 0,
+      }),
+      mailboxes,
+      messageContext,
     );
   },
 );

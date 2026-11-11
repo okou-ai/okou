@@ -1,5 +1,6 @@
 import { loadEmailQueuedLaunchMaterial$ } from "./email-queued-launch-context.service";
-import { loadActiveEmailSourceContext$ } from "./email-active-source-context.service";
+import { loadActiveEmailIntegrationContext$ } from "./email-active-source-context.service";
+import type { EmailPromptContext } from "./email-prompt";
 import {
   loadWechatQueuedLaunchMaterial$,
   WechatLaunchUnavailableError,
@@ -74,9 +75,7 @@ interface ActiveInputPromptEvent {
 interface IntegrationPromptMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly emailSource?: {
-    readonly emailAddress: string;
-    readonly messageId: string;
+  readonly emailSource?: EmailPromptContext & {
     readonly messageText: string;
   };
 }
@@ -350,9 +349,9 @@ const materializeActiveInputPrompt$ = command(
       mountedUserTemplates: [],
     }).prompt;
     const prompt = integration?.prompt ?? projection.agentPrompt;
-    const emailSourceContext = integration?.emailSource
+    const integrationContext = integration?.emailSource
       ? await set(
-          loadActiveEmailSourceContext$,
+          loadActiveEmailIntegrationContext$,
           {
             runId: args.runId,
             userId: args.userId,
@@ -363,15 +362,12 @@ const materializeActiveInputPrompt$ = command(
           },
           signal,
         )
-      : "";
-    const parts = [
-      integration?.appendSystemPrompt ?? "",
-      templatePrompt,
-      prompt,
-      emailSourceContext,
-    ].filter((part) => {
-      return part.length > 0;
-    });
+      : (integration?.appendSystemPrompt ?? "");
+    const parts = [integrationContext, templatePrompt, prompt].filter(
+      (part) => {
+        return part.length > 0;
+      },
+    );
     const materialized = parts.join("\n\n");
     if (materialized.length === 0) {
       throw new Error("Active input event materialized to an empty prompt");

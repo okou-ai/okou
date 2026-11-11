@@ -1,4 +1,7 @@
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { buildEmailPrompt } from "./email-prompt";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import { renderRunPrompts } from "./run-prompt-and-skills";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
@@ -1100,15 +1103,17 @@ interface InternalRunCallbackInput {
   readonly payload: unknown;
 }
 
-function withEmailSourceContext(plan: RunPlan, sourceContext: string): RunPlan {
-  if (!sourceContext) {
+function withEmailSystemPrompt(
+  plan: RunPlan,
+  appendSystemPrompt: string | null,
+): RunPlan {
+  if (appendSystemPrompt === null) {
     return plan;
   }
-  const prompt = `${plan.args.body.prompt}\n\n${sourceContext}`;
-  const body = { ...plan.persisted.body, prompt };
+  const body = { ...plan.persisted.body, appendSystemPrompt };
   return {
     ...plan,
-    args: { ...plan.args, body: { ...plan.args.body, prompt } },
+    args: { ...plan.args, body: { ...plan.args.body, appendSystemPrompt } },
     persisted: { ...plan.persisted, body },
     runner: { ...plan.runner, body },
   };
@@ -3690,30 +3695,32 @@ export function createThreadClaimRunObjects(
       return head;
     },
   );
-  const prepareEmailSourceContext$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string> => {
+  const prepareEmailSystemPrompt$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
       const email = await get(threadContext.emailContext$);
       signal.throwIfAborted();
       if (!email) {
-        return "";
+        return null;
       }
       const mailboxes = await get(threadContext.emailMailboxConnections$);
       signal.throwIfAborted();
       if (mailboxes.length === 0) {
-        return "";
+        return null;
       }
-      const [snapshot, policies, featureSwitchContext] = await Promise.all([
-        get(bootstrap.catalog$),
-        get(bootstrap.permissionPolicies$),
-        get(bootstrap.featureSwitches$),
-      ]);
+      const [snapshot, policies, featureSwitchContext, promptAndSkills] =
+        await Promise.all([
+          get(bootstrap.catalog$),
+          get(bootstrap.permissionPolicies$),
+          get(bootstrap.featureSwitches$),
+          get(promptAndSkillVolumes$),
+        ]);
       signal.throwIfAborted();
       if (!snapshot) {
         throw new Error(
           "Email mailbox context requires its authorized catalog",
         );
       }
-      return await set(
+      const messageContext = await set(
         loadEmailSourceMessageContext$,
         {
           email,
@@ -3726,6 +3733,23 @@ export function createThreadClaimRunObjects(
         },
         signal,
       );
+      return renderRunPrompts({
+        systemPromptVariables: {
+          ...promptAndSkills.systemPromptVariables,
+          integrationContext: buildEmailPrompt(
+            email,
+            resolveIntegrationNotePrompt({
+              triggerSource: "email",
+              featureSwitchContext,
+              emailHasConnectedMailbox: true,
+            }),
+            mailboxes,
+            messageContext,
+          ),
+        },
+        userPromptVariables: { message: promptAndSkills.userPrompt },
+        skillVolumes: promptAndSkills.skillVolumes,
+      }).systemPrompt;
     },
   );
   /** Runner input owns the random token; storage then reads its result. */
@@ -3735,9 +3759,9 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
       const plan =
         original && !isRouteError(original)
-          ? withEmailSourceContext(
+          ? withEmailSystemPrompt(
               original,
-              await set(prepareEmailSourceContext$, signal),
+              await set(prepareEmailSystemPrompt$, signal),
             )
           : original;
       const storage = await set(

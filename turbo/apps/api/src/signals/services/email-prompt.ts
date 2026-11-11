@@ -8,17 +8,20 @@ export interface EmailMailboxConnection {
   readonly displayName: string | null;
 }
 
+export interface EmailPromptContext {
+  readonly emailAddress: string;
+  readonly subject: string;
+  readonly messageId: string;
+  readonly inReplyTo: string | null;
+  readonly references: readonly string[];
+  readonly chatThreadId: string;
+}
+
 export function buildEmailPrompt(
-  context: {
-    readonly emailAddress: string;
-    readonly subject: string;
-    readonly messageId: string;
-    readonly inReplyTo: string | null;
-    readonly references: readonly string[];
-    readonly chatThreadId: string;
-  },
+  context: EmailPromptContext,
   integrationNote: string,
   mailboxes: readonly EmailMailboxConnection[] = [],
+  messageContext = "",
 ): string {
   return [
     CONVERSATION_GUIDANCE,
@@ -40,6 +43,7 @@ export function buildEmailPrompt(
       }),
     ].join("\n"),
     integrationNote,
+    messageContext,
     buildCurrentThreadContext(context.chatThreadId),
   ]
     .filter(Boolean)

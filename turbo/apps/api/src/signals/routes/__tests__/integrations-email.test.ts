@@ -1058,9 +1058,14 @@ describe("Email integration", () => {
       }
       const claim = await runs.claimRunnerJob(runId);
       expect(claim.prompt).toContain("Original message content");
-      expect(claim.prompt).toContain(sourceBody);
-      expect(claim.prompt).toContain(source.providerMessageId);
-      expect(claim.prompt).toContain(source.providerConversationId);
+      expect(claim.prompt).not.toContain(sourceBody);
+      expect(claim.prompt).not.toContain("# Mailbox Message Context");
+      expect(claim.appendSystemPrompt).toContain(sourceBody);
+      expect(claim.appendSystemPrompt).toContain(source.providerMessageId);
+      expect(claim.appendSystemPrompt).toContain(source.providerConversationId);
+      expect(claim.appendSystemPrompt).toMatch(
+        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*# Restricted Explicit Content/,
+      );
 
       expect(claim.appendSystemPrompt).toContain(
         'Subject: "Fwd: Customer discussion"',
@@ -1108,6 +1113,9 @@ describe("Email integration", () => {
         "A follow-up while the Run is active",
       );
       expect(next.input?.prompt).toContain(followUpBody);
+      expect(next.input?.prompt).toMatch(
+        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*A follow-up while the Run is active/,
+      );
       if (provider === "gmail") {
         if (!next.input) {
           throw new Error("Expected the active Email input");
@@ -1157,7 +1165,7 @@ describe("Email integration", () => {
       }
       const claim = await runs.claimRunnerJob(runId);
       expect(claim.prompt).toContain("Only the received forward is available");
-      expect(claim.prompt).toContain('"status":"not-found"');
+      expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
     },
   );
 
@@ -1175,7 +1183,9 @@ describe("Email integration", () => {
     }).send();
     const claim = await claimPendingEmail(group);
     expect(claim.prompt).toContain("The received email remains usable");
-    expect(claim.prompt).toContain('"status":"permission-required"');
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"permission-required"',
+    );
   });
 
   it("refreshes rejected Gmail credentials before fetching and appending the exact message", async () => {
@@ -1217,7 +1227,7 @@ describe("Email integration", () => {
     );
     await message.send();
     const claim = await claimPendingEmail(group);
-    expect(claim.prompt).toContain("Body read after OAuth refresh");
+    expect(claim.appendSystemPrompt).toContain("Body read after OAuth refresh");
   });
 
   it("retains the received email when the mailbox provider is unavailable", async () => {
@@ -1238,7 +1248,9 @@ describe("Email integration", () => {
     }).send();
     const claim = await claimPendingEmail(group);
     expect(claim.prompt).toContain("Continue from this received message");
-    expect(claim.prompt).toContain('"status":"provider-unavailable"');
+    expect(claim.appendSystemPrompt).toContain(
+      '"status":"provider-unavailable"',
+    );
   });
 
   it("does not append a provider message with a different RFC Message-ID", async () => {
@@ -1279,8 +1291,9 @@ describe("Email integration", () => {
     );
     await message.send();
     const claim = await claimPendingEmail(group);
-    expect(claim.prompt).toContain('"status":"not-found"');
+    expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
     expect(claim.prompt).not.toContain("Unrelated private body");
+    expect(claim.appendSystemPrompt).not.toContain("Unrelated private body");
   });
 
   it("provides Email system context and privately delivers an attachment once in the original conversation", async () => {
