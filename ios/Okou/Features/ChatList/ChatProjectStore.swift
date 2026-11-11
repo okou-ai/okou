@@ -7,7 +7,24 @@ import Observation
 @MainActor @Observable
 final class ChatProjectStore {
   /// Confirmed names reconcile mutations and the durable baseline, independently of read phase.
-  private(set) var projects: [ChatProject] = []
+  @ObservationIgnored private let confirmedProjects = CCState.State<[ChatProject]>([])
+  @ObservationIgnored private let replaceProjects: Command<Void, [ChatProject]>
+  let confirmedValue: Computed<[ChatProject]>
+  private(set) var projects: [ChatProject] {
+    get {
+      access(keyPath: \.projects)
+      do { return try stateStore.get(confirmedValue) } catch {
+        preconditionFailure("Cannot read confirmed Projects: \(error)")
+      }
+    }
+    set {
+      withMutation(keyPath: \.projects) {
+        do { try stateStore.set(replaceProjects, newValue) } catch {
+          preconditionFailure("Cannot publish confirmed Projects: \(error)")
+        }
+      }
+    }
+  }
   private(set) var active = false
   private(set) var actionError: String?
   private(set) var pending: Set<String> = []
@@ -36,6 +53,12 @@ final class ChatProjectStore {
     didFail: @escaping @MainActor (Error) -> Void,
     didChangeMembership: @escaping @MainActor () async -> Void
   ) {
+    let confirmedProjects = confirmedProjects
+    confirmedValue = Computed { try $0(confirmedProjects) }
+    replaceProjects = Command { context, value in
+      guard try context.get(confirmedProjects) != value else { return }
+      try context.set(confirmedProjects, value)
+    }
     service = ChatProjects(client: client)
     self.resources = resources
     self.sync = sync

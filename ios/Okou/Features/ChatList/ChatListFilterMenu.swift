@@ -2,9 +2,7 @@ import SwiftUI
 import UIKit
 
 /// The shared chat filters, with Chats as the native default label.
-enum ChatListFilter: CaseIterable {
-  case recent, unread, archived, muted
-
+extension ChatListFilter {
   var title: String {
     switch self {
     case .recent: String(localized: "Chats")

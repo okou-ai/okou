@@ -14,17 +14,20 @@ struct ChatListContents {
 
   init(
     projects: [ChatProject], threads: [ChatThread], agentID: String?,
-    onlyUnread: Bool, archived: Bool, muted: Bool
+    filter: ChatListFilter
   ) {
     let knownIDs = Set(projects.map(\.id))
     let matches: (ChatThread) -> Bool = { thread in
-      if onlyUnread { return !thread.isMuted && thread.indicator == .unread }
-      if muted { return thread.isMuted }
-      return thread.isArchived == archived
+      switch filter {
+      case .unread: return !thread.isMuted && thread.indicator == .unread
+      case .muted: return thread.isMuted
+      case .recent: return !thread.isArchived
+      case .archived: return thread.isArchived
+      }
     }
     self.projects = projects.compactMap { project in
       let members = threads.filter { $0.projectId == project.id && matches($0) }
-      if members.isEmpty && (onlyUnread || archived || muted) { return nil }
+      if members.isEmpty && filter != .recent { return nil }
       return ProjectGroup(project: project, threads: members)
     }
     // A name read can fail independently of membership synchronization. Keep
