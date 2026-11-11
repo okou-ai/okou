@@ -113,7 +113,7 @@ not copied from CSS and are not all mandated by Apple.
 | Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
 | Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
 | Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                                                                                 |
+| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer (subheadline 15 for its model value, under the draft), footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                           |
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
@@ -200,7 +200,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   animation, until UIKit has returned the lifted button to its source.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
   draft, mic then send (`.glassProminent`, `primary`) once there is content, and stop
-  (`interrupt`) alone while a run is active and the draft is empty.
+  (`interrupt`) alone while a run is active and the draft is empty. In the open composer
+  the model control comes first.
 - **Dictation** works the way ChatGPT's does. The mic dismisses the keyboard and the
   composer collapses to its one-line height, whatever it held, into `VoiceRecordingBar`:
   cancel (✕), `OkouLiveWaveform`, stop (■ — the words go into the draft to read and
@@ -230,11 +231,15 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Buttons**: `OkouButtonStyle(isPrimary:)` is a filled primary or the web's outline
   button. `isCompact` (15 pt, 44 pt tall, one line) fits two actions side by side on a
   card; the default size is for one full-width action.
-- **The model control is in the header**, beside the menu, as Kimi and ChatGPT place it:
-  `ChatModelPickerButton`, a 44 pt glass capsule with the model's name in callout medium
-  `foreground` and its thinking effort and Fast in callout `muted-foreground` ("GPT 6.1 Sol
-  High"). On the home screen it is the next new chat's model; in a chat, that chat's. It
-  opens the model sheet. The composer's only leading control is `+`, which opens **Add to
+- **The model control is in the open composer**, left of the mic and send, as Claude and
+  ChatGPT place it: `ChatModelPickerButton` draws an `OkouComposerValueLabel` with the
+  model's name in subheadline medium `foreground`, its thinking effort and Fast in
+  subheadline `muted-foreground` ("GPT 6.1 Sol High") and a chevron. It shows only while the
+  composer is open, where the next message is written, and is gone from the one-line
+  composer and while dictating. On the home screen it is the next new chat's model; in a
+  chat, that chat's. The composer presents the model sheet, and keeps itself open under it,
+  so the sheet survives the keyboard going down and the keyboard comes back after it. The
+  composer's only leading control is `+`, which opens **Add to
   chat** (`ComposerAddSheet`, after Manus and Claude): a sideways strip of 88 pt tiles —
   `OkouActionTile` Camera, then the latest photos as `OkouMediaThumbnail`s once the reader
   lets Okou see the library — where photos are picked with `OkouSelectionMark` (an open
@@ -256,12 +261,31 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Compact buttons** carry `OkouCompactButtonLabel` (16 pt glyph, 6 pt gap) so two
   side-by-side actions keep their whole titles. A full-size `OkouButtonStyle` is for a page's
   one main action (sign-in); inside sheets and cards actions are compact.
+- **The model sheet** (`ChatModelPickerView`) follows ChatGPT's Configure sheet as a short
+  form, the way Calendar's new event drills into Repeat and Alert:
+  - the form: one card with Model (the drafted model's name, which opens the model list),
+    then Thinking effort and Speed (Standard or Fast) as value menus, Fast's cost heading its
+    menu since a menu shows one line per option; Set as default for new chats (a new chat
+    only) as a medium-weight ink action in a card of its own; Done pinned at the bottom;
+  - the model list is pushed, since several companies' models would crowd one menu: every
+    model under its company's heading, with the subscriptions to connect or manage after
+    them, opened scrolled to the checked model. Picking one checks it and returns to the
+    form, with the effort last chosen for that model and the standard speed;
+  - both pages keep the sheet's half height, so the list slides in where the form was; a
+    drag, or scrolling the list, takes it to full height. Changing the height as a page
+    pushes moved the page up the screen as it slid in;
+  - the choices are a draft: nothing behind the sheet changes, and Done saves model, effort
+    and speed in one write (`ChatModelSelectionStore.apply(_:)`), then closes with a
+    selection haptic and the composer's model control shows the result. A failed save keeps
+    the sheet and the draft, with the error above Done; ✕ or a swipe drops the draft.
 - **Value pickers** (Thinking effort, Appearance, Allow for, Category, Method) use
   `okouValuePicker()`: menu style with the value and chevron in `muted-foreground`.
   The app's global `foreground` tint otherwise drew the value as heavy as its label.
 - **Action rows in lists** ("Use for new chats too", "Open Okou on web", "Connect …")
   are `foreground` text with a leading icon. Amber is for a filled primary commit
-  (send, a card's `.primary` action), never for list text.
+  (send, a card's `.primary` action), never for list text. The model sheet's Set as default
+  is a commit of its own with no icon: medium-weight `foreground` in a card of its own, so it
+  reads apart from the options above it.
 - **The composer never truncates a draft.** With text in it the editor keeps its
   open height (up to six lines, then it scrolls), focused or not.
 - **Composer geometry** belongs to `OkouComposerSurface`, shared by the chat and
@@ -273,7 +297,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
   center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
 - Viewing sheets and immediately applied settings use `OkouCloseButton`. Use Done
-  for a completed operation, Save for an explicit commit, and Back within a sheet.
+  for a completed operation or choices a sheet drafts (the model sheet, whose ✕ drops
+  them), Save for an explicit commit of edited content, and Back within a sheet.
   Do not imply a pending save where selections already apply immediately.
 - **The close button has one place**: the trailing end of the toolbar, after the screen's
   own actions, on every sheet and full-screen viewer (`OkouCloseToolbarItem`; never
@@ -324,8 +349,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   sidebar, so a mark never carries meaning alone: the pencil has its VoiceOver label ("Draft")
   and the fold its heading's value.
 - **Section footers** use `okouSectionNote()`: 13 pt `muted-foreground`. A control's
-  explanation (Fast mode cost, effort, scope of a switch) goes in the footer under its
-  card, never as a row inside it — the system Settings pattern. One footer per card.
+  explanation (effort, scope of a switch) goes in the footer under its card, never as a
+  row inside it — the system Settings pattern. One footer per card. A menu's own options
+  explain themselves in the menu instead: the model sheet's Fast cost heads its menu.
 - **Sign-in is one way in.** The first screen holds the providers and the email field
   together, as the web's sign-in does: Apple first (when Clerk offers it, through the
   system's own Sign in with Apple sheet), then Google, Microsoft and Slack with their marks
@@ -367,8 +393,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   subscriptions); provider logos then live in the section headers.
 - **One separator style per card.** Rows with a leading icon and rows without one
   inset their separators differently; do not mix them in one card. Options of a
-  selection (Thinking effort, Fast mode) get their own card directly under the list
-  they configure, with `.listSectionSpacing(.compact)`.
+  selection (Thinking effort, Speed) share a card with the row that opens the list they
+  configure, as the model sheet's form does.
 - **Cards in the transcript** use `ChatCardSurface` (`OkouSurfaceStyle`, chat radius) and
   open with `ChatCardHeader`, as the web's `AssistantErrorCard`: a 16 pt glyph in
   `muted-foreground` on the title's first line (no tile behind it), the title in callout medium,
@@ -568,8 +594,8 @@ single floating line, and colour is a small accent for status only.
   every trailing mark is centred in one 20 pt column so they line up down the list. A chat still in memory takes its
   draft from its own composer, so leaving it with text typed marks it at once; other chats use
   the API's draft list (`/api/chat-thread-drafts`). Status is never a system spinner.
-- **Chat header** has no title: the menu glass circle and the model capsule on the left, the
-  chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
+- **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
+  the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
 - Provider headings separate identity from allowance; do not
   shrink or truncate allowance text to fit beside a brand name.
@@ -721,6 +747,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouUsageMeter`                                                              | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                                                                                                                                                                                                                            |
 | `okouSectionHeader()`, `okouSectionNote()`                                    | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                                                                                                                                                                                                                                            |
 | `okouValuePicker()`                                                           | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                                                                                                                                                                                                                                          |
+| `OkouComposerValueLabel`                                                      | A value the open composer changes (the chat's model): subheadline medium value, muted detail that gives way first, a chevron, on the 44 pt action height                                                                                                                                                                                                                                     |
 | `OkouRowLabel`                                                                | Row title with its leading graphic in the shared 28 pt slot                                                                                                                                                                                                                                                                                                                         |
 | `OkouValueRow`                                                                | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt `trailingValue` value yields and truncates in the middle                                                                                                                                                                                                                           |
 | `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                                                                                                                                                                                                                            |

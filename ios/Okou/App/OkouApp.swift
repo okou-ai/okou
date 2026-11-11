@@ -318,10 +318,7 @@ private struct WorkspaceRootView: View {
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             // Sync problems float below the header with the rest of the chat feedback.
-            ChatWorkspaceHeader(
-              store: store, height: headerHeight, openSidebar: openSidebar,
-              modelSelection: store.selectedConversation.map { $0.modelSelection }
-                ?? store.newModelSelection)
+            ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
           }
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height

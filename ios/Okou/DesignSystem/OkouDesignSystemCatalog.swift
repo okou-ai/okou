@@ -75,14 +75,6 @@
                 .accessibilityLabel(icon)
               }
             }
-            // The header's model control: name in the text colour, effort in grey.
-            HStack(spacing: OkouSpace.six) {
-              Text(verbatim: "GPT 6.1 Sol").font(.okou(.callout).weight(.medium))
-              Text(verbatim: "High").font(.okou(.callout))
-                .foregroundStyle(OkouColor.mutedForeground)
-            }
-            .padding(.horizontal, OkouSpace.lg)
-            .modifier(OkouGlassControl(shape: .capsule))
             // The sidebar's bottom bar: account, search capsule, prominent new chat.
             HStack(spacing: OkouSpace.md) {
               OkouProfileAvatar(
@@ -123,6 +115,33 @@
               .accessibilityLabel("Send message")
               .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
               .contentShape(Circle())
+            }
+            // Open, the composer shows the chat's model beside the mic: name in the text
+            // colour, effort in grey.
+            OkouComposerSurface(isExpanded: true) {
+              Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } leading: {
+              Button {
+              } label: {
+                OkouToolbarIcon("plus")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              }
+              .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
+            } trailing: {
+              HStack(spacing: OkouSpace.xs) {
+                Button {
+                } label: {
+                  OkouComposerValueLabel(title: "GPT 6.1 Sol", detail: "High")
+                }
+                .buttonStyle(.plain).accessibilityLabel("Model settings")
+                Button {
+                } label: {
+                  OkouToolbarIcon("mic")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Voice input")
+              }
             }
           }
           .id("composer-preview")
