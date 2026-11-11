@@ -1,6 +1,7 @@
 import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+  CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE,
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
@@ -64,6 +65,11 @@ function localizedRunErrorText(message: string): string | undefined {
     case CHAT_RUN_TRANSIENT_ERROR_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.transient;
+      });
+    }
+    case CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE: {
+      return i18n.t(($) => {
+        return $.runErrors.providerBadRequest;
       });
     }
     case CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE: {

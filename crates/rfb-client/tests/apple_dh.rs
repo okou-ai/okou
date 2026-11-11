@@ -80,26 +80,48 @@ async fn assert_invalid_dh_public_value(server_public: [u8; KEY_BYTES]) {
     ));
 }
 
-#[tokio::test]
-async fn type_30_authenticates_and_preserves_owned_raw_stream() {
+/// RFC 2409 Oakley group 2, the 1024-bit group that macOS 15.6 (24G84) offers
+/// for type 30 with generator 2.
+const RFC_2409_GROUP_2: &str = concat!(
+    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74",
+    "020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F1437",
+    "4FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED",
+    "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381FFFFFFFFFFFFFFFF",
+);
+
+#[allow(clippy::unwrap_used, reason = "fixed test vector")]
+fn rfc_2409_group_2() -> Vec<u8> {
+    RFC_2409_GROUP_2
+        .as_bytes()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+#[allow(clippy::unwrap_used, reason = "synthetic test peer")]
+async fn assert_type_30_authenticates(modulus: Vec<u8>, generator: u16) {
+    let key_bytes = modulus.len();
+    let bits = u32::try_from(key_bytes * 8).unwrap();
     let (client, mut server) = duplex(4096);
     let peer = tokio::spawn(async move {
         negotiate(&mut server, &[30, 33, 36]).await;
         assert_eq!(server.read_u8().await.unwrap(), 30);
 
-        let modulus = synthetic_modulus();
-        let modulus_int = BoxedUint::from_be_slice(&modulus, BITS).unwrap();
+        let modulus_int = BoxedUint::from_be_slice(&modulus, bits).unwrap();
         let params = BoxedMontyParams::new_vartime(
             Option::<Odd<BoxedUint>>::from(Odd::new(modulus_int)).unwrap(),
         );
-        let generator = BoxedUint::from_be_slice(&[5], BITS).unwrap();
-        let server_private = BoxedUint::from_be_slice(&[17], BITS).unwrap();
-        let server_public = BoxedMontyForm::new(generator, &params)
+        let generator_int = BoxedUint::from_be_slice(&generator.to_be_bytes(), bits).unwrap();
+        let server_private = BoxedUint::from_be_slice(&[17], bits).unwrap();
+        let server_public = BoxedMontyForm::new(generator_int, &params)
             .pow_bounded_exp(&server_private, 8)
             .retrieve()
             .to_be_bytes();
-        server.write_u16(5).await.unwrap();
-        server.write_u16(KEY_BYTES as u16).await.unwrap();
+        server.write_u16(generator).await.unwrap();
+        server
+            .write_u16(u16::try_from(key_bytes).unwrap())
+            .await
+            .unwrap();
         for chunk in modulus.chunks(64) {
             server.write_all(chunk).await.unwrap();
             tokio::task::yield_now().await;
@@ -110,14 +132,15 @@ async fn type_30_authenticates_and_preserves_owned_raw_stream() {
         }
 
         let mut encrypted = [0u8; 128];
-        let mut client_public = [0u8; KEY_BYTES];
+        let mut client_public = vec![0u8; key_bytes];
         server.read_exact(&mut encrypted).await.unwrap();
         server.read_exact(&mut client_public).await.unwrap();
-        let client_public = BoxedUint::from_be_slice(&client_public, BITS).unwrap();
+        let client_public = BoxedUint::from_be_slice(&client_public, bits).unwrap();
         let shared = BoxedMontyForm::new(client_public, &params)
             .pow_bounded_exp(&server_private, 8)
             .retrieve()
             .to_be_bytes();
+        assert_eq!(shared.len(), key_bytes);
         let key = Md5::digest(&shared);
         let cipher = Aes128::new_from_slice(&key).unwrap();
         for chunk in encrypted.as_chunks_mut::<16>().0 {
@@ -138,6 +161,18 @@ async fn type_30_authenticates_and_preserves_owned_raw_stream() {
     let mut stream = authenticated.into_stream();
     assert_eq!(stream.read_u8().await.unwrap(), 0x42);
     peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn type_30_authenticates_and_preserves_owned_raw_stream() {
+    assert_type_30_authenticates(synthetic_modulus().to_vec(), 5).await;
+}
+
+#[tokio::test]
+async fn type_30_authenticates_with_the_macos_15_1024_bit_group() {
+    let modulus = rfc_2409_group_2();
+    assert_eq!(modulus.len(), 128);
+    assert_type_30_authenticates(modulus, 2).await;
 }
 
 #[tokio::test]
@@ -317,7 +352,7 @@ async fn invalid_dh_modulus_is_rejected_without_credential_bytes() {
 async fn rejected_dh_header_retains_public_values_and_never_sends_credentials() {
     for (generator, key_bytes, expected) in [
         (1, 512, AppleDhParameterCheck::Generator),
-        (5, 128, AppleDhParameterCheck::KeyLength),
+        (5, 112, AppleDhParameterCheck::KeyLength),
         (5, 257, AppleDhParameterCheck::KeyLength),
     ] {
         let (client, mut server) = duplex(64);

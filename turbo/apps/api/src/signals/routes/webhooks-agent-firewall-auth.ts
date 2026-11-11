@@ -68,6 +68,14 @@ const firewallAuthRoute$ = command(
       return invalidBodyResponse;
     }
 
+    if (
+      bodyResult.data.networkAdmission &&
+      !bodyResult.data.matchedFirewall?.customConnectorId
+    ) {
+      return badRequestMessage(
+        "Network admission requires a matched custom connector",
+      );
+    }
     const billableCacheExpiry = await set(
       resolveBillableFirewallCacheExpiry$,
       { auth, firewallBillable: bodyResult.data.firewallBillable },
@@ -83,7 +91,13 @@ const firewallAuthRoute$ = command(
     signal.throwIfAborted();
     return await set(
       admitPreparedFirewallAuthResponse$,
-      { auth, response: prepared },
+      {
+        auth,
+        response: prepared,
+        networkAdmissionConnectorId: bodyResult.data.networkAdmission
+          ? bodyResult.data.matchedFirewall?.customConnectorId
+          : undefined,
+      },
       signal,
     );
   },

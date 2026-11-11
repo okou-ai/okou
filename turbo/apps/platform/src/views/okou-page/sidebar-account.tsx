@@ -584,7 +584,6 @@ export function useAccountProfile() {
     userInfoLoadable.state === "hasData" ? userInfoLoadable.data : undefined;
   const features = useLastResolved(featureSwitch$);
   const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
-  const helpMenuEnabled = features?.[FeatureSwitchKey.HelpMenu] ?? false;
   const current = accounts.find((a) => {
     return a.isActive;
   });
@@ -610,7 +609,6 @@ export function useAccountProfile() {
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    helpMenuEnabled,
   };
 }
 
@@ -771,7 +769,6 @@ export function AccountDropdown({
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    helpMenuEnabled,
   } = profile;
   const {
     handleAccountAction,
@@ -869,9 +866,7 @@ export function AccountDropdown({
             onAddAccount={handleAddAccount}
           />
           <ExtraAccountActions />
-          {helpMenuEnabled && (
-            <AccountHelpMenu showKeyboardShortcuts={showKeyboardShortcuts} />
-          )}
+          <AccountHelpMenu showKeyboardShortcuts={showKeyboardShortcuts} />
           <DropdownMenuSeparator />
           <SignOutItem onAccountAction={handleAccountAction} />
         </DropdownMenuContent>

@@ -210,6 +210,9 @@ export const RUN_ERROR_GUIDANCE: Record<
 export const CHAT_RUN_TRANSIENT_ERROR_MESSAGE =
   "Oops, something went wrong. Please try again later.";
 
+export const CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE =
+  "The model provider returned an error. Try again, or switch to another model to continue.";
+
 export const CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE =
   "This run reached its execution time limit.";
 
@@ -654,6 +657,7 @@ export function isActionableRunError(errorMessage: string): boolean {
     errorMessage === "Presentation template not found" ||
     isReplacementSubscriptionRequiredMessage(errorMessage) ||
     errorMessage === "Custom template not found" ||
+    errorMessage === CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE ||
     isAgentExecutionTimeoutRunError(errorMessage) ||
     isCodexOAuthReconnectRequiredRunError(errorMessage) ||
     isCodexChatGptAccountUnsupportedModelRunError(errorMessage) ||
@@ -680,9 +684,9 @@ function withOptionalActionUrl(
 }
 
 function formatClaudeCodeCredentialRecoveryMessage(
-  recovery: ClaudeCodeCredentialRecovery,
+  recovery: ClaudeCodeCredentialRecovery | undefined,
 ): string | undefined {
-  if (recovery.modelProviderType !== "claude-code-oauth-token") {
+  if (recovery?.modelProviderType !== "claude-code-oauth-token") {
     return undefined;
   }
   return withOptionalActionUrl(
@@ -706,6 +710,7 @@ type StructuredRunErrorBehavior =
   | "insufficient-credits"
   | "output-token-limit"
   | "provider-balance"
+  | "provider-bad-request"
   | "overloaded"
   | "usage-limit"
   | "unsupported-model"
@@ -738,7 +743,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_queue_timeout: "generic",
   provider_server_error: "generic",
   firewall_auth_failed: "generic",
-  provider_bad_request: "generic",
+  provider_bad_request: "provider-bad-request",
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
   reconnect_required: "reconnect",
@@ -808,6 +813,9 @@ function formatStructuredRunError(params: {
     case "execution-timeout": {
       return CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE;
     }
+    case "provider-bad-request": {
+      return CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE;
+    }
     case "content-policy": {
       return CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE;
     }
@@ -824,13 +832,11 @@ function formatStructuredRunError(params: {
       })!;
     }
     case "credential": {
-      const recoveryMessage =
-        params.claudeCodeCredentialRecovery === undefined
-          ? undefined
-          : formatClaudeCodeCredentialRecoveryMessage(
-              params.claudeCodeCredentialRecovery,
-            );
-      return recoveryMessage ?? CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+      return (
+        formatClaudeCodeCredentialRecoveryMessage(
+          params.claudeCodeCredentialRecovery,
+        ) ?? CHAT_RUN_TRANSIENT_ERROR_MESSAGE
+      );
     }
     case "reconnect": {
       return formatReconnectRunError(params.claudeCodeCredentialRecovery);

@@ -15,6 +15,31 @@ from tests.registry_helpers import inline_sandbox, write_multi_sandbox_registry
 
 
 class TestRegistryInlineFirewalls:
+    @pytest.mark.parametrize("kind", ["direct", "cloudflare_access", "unknown"])
+    def test_prepared_custom_network_intent_cannot_enable_unimplemented_execution(
+        self, tmp_path, mitm_ctx, kind
+    ):
+        path = tmp_path / "registry.json"
+        sandbox = inline_sandbox("run-custom-network")
+        custom_id = "550e8400-e29b-41d4-a716-446655440000"
+        entry = sandbox["firewalls"][0]
+        entry["customConnectorId"] = custom_id
+        sandbox["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
+        entry["firewall"]["apis"][0]["networkIntent"] = {"kind": kind}
+        write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
+        with mitm_ctx():
+            context = registry.get_sandbox_context("10.200.0.1", str(path))
+        if kind == "direct":
+            assert context is not None
+            _, compiled, policies = context
+            result = matching.match_compiled_firewall_request(
+                "https://api.example.com/items", "GET", compiled, policies
+            )
+            assert isinstance(result, matching.FirewallAllow)
+            assert result.api_entry["networkIntent"] == {"kind": "direct"}
+        else:
+            assert context is None
+
     def test_inline_firewalls_do_not_share_compiled_core(self, tmp_path):
         path = tmp_path / "registry.json"
         write_multi_sandbox_registry(

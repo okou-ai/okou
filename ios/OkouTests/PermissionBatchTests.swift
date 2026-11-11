@@ -2,6 +2,7 @@ import ChatData
 import ChatDataTestSupport
 import ChatDomain
 import Foundation
+import Synchronization
 import XCTest
 
 @testable import Okou
@@ -149,6 +150,18 @@ final class PermissionBatchTests: XCTestCase {
     defer { conversation.close() }
     await card.confirm()
     XCTAssertTrue(card.needsContinuation)
+    let owner = UUID()
+    conversation.permissionActions.activate(owner: owner)
+    conversation.permissionActions.deactivate()
+    for _ in 0..<80 {
+      let action = try XCTUnwrap(
+        ChatPermissionBatchAction(
+          value: F.actionURL(callback: false), webURL: fixture.http.baseURL, agentID: F.agentID,
+          threadID: UUID().uuidString))
+      _ = conversation.permissionActions.resources.read(action)
+    }
+    conversation.permissionActions.activate(owner: UUID())
+    await card.loadIfNeeded()
     await card.confirm()
     XCTAssertNil(card.error)
     XCTAssertFalse(card.needsContinuation)
@@ -225,6 +238,149 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
   }
 
+  func testConfirmUsesTheDisplayedSharedScopeAfterAnotherBatchCardRefreshes() async throws {
+    let fixture = fixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    let action = try XCTUnwrap(
+      ChatPermissionBatchAction(
+        value: F.actionURL(callback: false, duration: "24h"), webURL: fixture.http.baseURL,
+        agentID: F.agentID, threadID: F.threadID))
+    fixture.state.withLock { $0.shared = true }
+    await conversation.permissionActions.card(action).refresh()
+    let displayed = try await card.read.load()
+    XCTAssertTrue(displayed.connectorScoped)
+    XCTAssertTrue(card.canConfirm(reviewing: displayed))
+    await card.confirm(reviewing: displayed)
+    XCTAssertNil(card.error)
+    let saved = try await ChatBatchPermissions(client: fixture.http.client).load(card.action)
+    XCTAssertTrue(saved.allAllowed)
+    XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
+    let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }
+    XCTAssertEqual(writes.count, 2)
+    XCTAssertTrue(writes.allSatisfy { $0.url!.path == "/api/connector-permissions" })
+  }
+
+  func testEquivalentBatchReadsSurviveOneCancelledWaiterAndKeepSeparateDuration() async throws {
+    let blocks = Mutex(false)
+    let began = expectation(description: "Shared batch grant HTTP began")
+    let gate = ModelResponseGate()
+    let fixture = F(
+      onUnhandledRequest: { XCTFail($0) },
+      beforeRequest: { request in
+        if request.url!.path == "/api/user-permission-grants", blocks.withLock({ $0 }) {
+          began.fulfill()
+          await gate.wait()
+        }
+      })
+    let (conversation, card) = try await setup(fixture)
+    let action = try XCTUnwrap(
+      ChatPermissionBatchAction(
+        value: F.actionURL(items: Array(F.items.reversed()), callback: false, duration: "24h"),
+        webURL: fixture.http.baseURL, agentID: F.agentID, threadID: F.threadID))
+    let other = conversation.permissionActions.card(action)
+    blocks.withLock { $0 = true }
+    let one = Task { await card.refresh() }
+    await fulfillment(of: [began], timeout: 3)
+    let two = Task { await other.loadIfNeeded() }
+    addTeardownBlock { @MainActor in
+      conversation.close()
+      one.cancel()
+      two.cancel()
+      gate.open()
+      await one.value
+      await two.value
+    }
+    one.cancel()
+    gate.open()
+    await one.value
+    await two.value
+    XCTAssertTrue(other.canConfirm)
+    XCTAssertEqual(other.snapshot?.allowedCount, 0)
+    XCTAssertEqual(card.duration, .hour)
+    XCTAssertEqual(other.duration, .day)
+    XCTAssertEqual(
+      fixture.state.withLock {
+        $0.requests.filter { $0.url!.path == "/api/user-permission-grants" }.count
+      }, 2)
+    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+  }
+
+  func testRetiringBatchDetailCancelsOriginalReadAndRevalidatesOnReentry() async throws {
+    let blocks = Mutex(false)
+    let began = expectation(description: "Batch HTTP began")
+    let cancelled = expectation(description: "Original batch HTTP cancelled")
+    let gate = ModelResponseGate()
+    let fixture = F(
+      onUnhandledRequest: { XCTFail($0) },
+      beforeRequest: { request in
+        if request.url!.path == "/api/user-permission-grants", blocks.withLock({ $0 }) {
+          await withTaskCancellationHandler {
+            began.fulfill()
+            await gate.wait()
+          } onCancel: {
+            cancelled.fulfill()
+          }
+        }
+      })
+    let (conversation, card) = try await setup(fixture)
+    let owner = UUID()
+    conversation.setDetailVisible(true, owner: owner)
+    card.duration = .week
+    blocks.withLock { $0 = true }
+    let pending = Task { await card.refresh() }
+    addTeardownBlock { @MainActor in
+      conversation.close()
+      pending.cancel()
+      gate.open()
+      await pending.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    conversation.setDetailVisible(false, owner: owner)
+    await fulfillment(of: [cancelled], timeout: 3)
+    await card.refresh()
+    XCTAssertFalse(card.canConfirm)
+    blocks.withLock { $0 = false }
+    fixture.state.withLock {
+      $0.grants = F.items.map {
+        F.Grant(connectorSlug: $0["connectorSlug"]!, permission: $0["permission"]!)
+      }
+    }
+    conversation.setDetailVisible(true, owner: UUID())
+    await card.loadIfNeeded()
+    XCTAssertTrue(card.allAllowed)
+    XCTAssertEqual(card.duration, .week)
+    gate.open()
+    await pending.value
+    XCTAssertTrue(card.allAllowed)
+    conversation.close()
+    await card.refresh()
+    XCTAssertFalse(card.canConfirm)
+    XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
+  }
+
+  func testDeniedBatchReadRequiresExplicitReadbackAndCannotReplayWrites() async throws {
+    for status in [401, 403, 426] {
+      let fixture = fixture()
+      let (conversation, card) = try await setup(fixture)
+      defer { conversation.close() }
+      fixture.state.withLock { $0.grantReadStatus = status }
+      await card.refresh()
+      XCTAssertTrue(card.requiresReadback)
+      XCTAssertFalse(card.canConfirm)
+      fixture.state.withLock { $0.grantReadStatus = 200 }
+      await card.loadIfNeeded()
+      await card.confirm()
+      XCTAssertTrue(card.requiresReadback)
+      XCTAssertFalse(card.canConfirm)
+      await card.refresh()
+      XCTAssertFalse(card.requiresReadback)
+      XCTAssertTrue(card.canConfirm)
+      XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+      XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
+    }
+  }
+
   private func fixture(_ state: F.State = .init()) -> F {
     F(initial: state, onUnhandledRequest: { XCTFail($0) })
   }
@@ -239,6 +395,8 @@ final class PermissionBatchTests: XCTestCase {
       thread: thread, sync: sync, commands: commands, webURL: fixture.http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.http.baseURL),
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
+    // Exercise the production permission scope without starting unrelated chat summary demand.
+    conversation.permissionActions.activate(owner: UUID())
     let action = try XCTUnwrap(
       ChatPermissionBatchAction(
         value: F.actionURL(), webURL: fixture.http.baseURL, agentID: F.agentID, threadID: F.threadID

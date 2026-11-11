@@ -5,6 +5,7 @@ import {
   CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+  CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE,
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
   CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
@@ -58,6 +59,7 @@ describe("formatRunErrorForExternalSurface", () => {
   it.each([
     ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
     ["unsupported_model", CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE],
+    ["provider_bad_request", CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE],
   ] as const)(
     "renders actionable %s copy without exposing provider diagnostics",
     (failureReason, expected) => {
@@ -283,6 +285,27 @@ describe("formatRunErrorForExternalSurface", () => {
         code: "UNKNOWN",
         message:
           '{"error":{"message":"Invalid Format","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}',
+      }),
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+  });
+
+  it("preserves controlled provider-error guidance on text-only surfaces", () => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message: CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE,
+      }),
+    ).toBe(CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE);
+    expect(
+      isGenericRunErrorForDisplay(CHAT_RUN_PROVIDER_BAD_REQUEST_MESSAGE),
+    ).toBe(false);
+  });
+
+  it("does not infer provider-error guidance from an unclassified opaque400", () => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message: '{"detail":"Bad Request"}',
       }),
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
   });

@@ -26,6 +26,7 @@ import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_local_responses
 import matching
+import request_probe_snapshot
 from auth_base_forwarder import (
     AuthBaseForwardingSaturatedError,
     ForwardRequestPreSubmitRejectedError,
@@ -1640,28 +1641,12 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     snapshot and fall back before mutation.
     """
     metadata_snapshot = dict(flow.metadata)
-    request_headers_snapshot = http.Headers(flow.request.headers.fields)
-    request_target_snapshot = (
-        flow.request.data.scheme,
-        flow.request.data.host,
-        flow.request.data.port,
-        flow.request.data.authority,
-        flow.request.data.path,
-    )
+    request_snapshot = request_probe_snapshot.RequestProbeSnapshot.capture(flow.request)
 
     def restore_probe_state() -> None:
         flow.metadata.clear()
         flow.metadata.update(metadata_snapshot)
-        # The URL setter reparses as ASCII and cannot restore native non-ASCII
-        # query bytes. Rollback must preserve the exact admitted target instead.
-        (
-            flow.request.data.scheme,
-            flow.request.data.host,
-            flow.request.data.port,
-            flow.request.data.authority,
-            flow.request.data.path,
-        ) = request_target_snapshot
-        flow.request.headers = http.Headers(request_headers_snapshot.fields)
+        request_snapshot.restore(flow.request)
 
     plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
     if plan.body_dependent or plan.failure is not None:

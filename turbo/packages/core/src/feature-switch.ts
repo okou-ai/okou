@@ -53,6 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Custom connector Cloudflare Access",
+    description:
+      "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",
@@ -200,14 +207,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
-  },
-  [FeatureSwitchKey.HelpMenu]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Help menu",
-    description:
-      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",

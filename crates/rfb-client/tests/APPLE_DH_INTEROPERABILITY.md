@@ -30,6 +30,21 @@ and public-value range but does **not** prove primality or authenticate the
 server. Apple DH also leaves the later RFB session unencrypted. Product
 admission must require a verified outer channel that terminates on the Mac.
 
+## macOS 15 handshake observation
+
+On 2026-11-11, an unauthenticated probe on a macOS 15.6 (24G84) Mac connected
+to its own loopback `127.0.0.1:5900`. Remote Management advertised
+`RFB 003.889` and security types 30, 33, 36 and 35; legacy VNC password access
+was off and `com.apple.RemoteManagement` had `allowInsecureDH = 1`. Over two
+connections, type 30 offered generator 2 and a 128-byte modulus equal to the
+RFC 2409 1024-bit group 2, with an in-range server public value. The previous
+2048-bit minimum therefore rejected this server before sending credentials.
+
+This probe stopped after reading the DH parameters. It establishes the header
+and group the engine must accept, not a credential exchange; the synthetic
+suite covers that exchange with the same group and generator. Run the pinned
+tests below against such a Mac before claiming end-to-end compatibility.
+
 ## Reproducing the tests
 
 Build the test binary for the host architecture with the current source, and

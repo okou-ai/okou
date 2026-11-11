@@ -26,6 +26,7 @@ import {
   type NetworkProvider,
 } from "./network-config-model";
 import { networkReferencesQuery } from "./network-config-references";
+import { cloudflareCustomConnectorReferencesQuery } from "./cloudflare-custom-connector-references";
 
 export type NetworkMutationArgs = {
   readonly provider: NetworkProvider;
@@ -60,6 +61,18 @@ const outcomeSchema = zEnum([
 export type NetworkMutationOutcome = zInfer<typeof outcomeSchema>;
 const outcomeDecoder = zodEnumDriverValueDecoder(outcomeSchema);
 
+function customConnectorReferences(args: NetworkMutationArgs) {
+  return new QueryBuilder()
+    .$with("observed_network_custom_connectors")
+    .as(
+      cloudflareCustomConnectorReferencesQuery(
+        args.owner.orgId,
+        args.configId,
+        args.provider === "cloudflare_access",
+      ),
+    );
+}
+
 export function networkMutationReads(args: NetworkMutationArgs) {
   const qb = new QueryBuilder();
   const table = networkConfigTable(args.provider);
@@ -74,6 +87,10 @@ export function networkMutationReads(args: NetworkMutationArgs) {
   const hosts = qb
     .$with("observed_network_references")
     .as(networkReferencesQuery(args.provider, args.owner.orgId, args.configId));
+  const customConnectors = customConnectorReferences(args);
+  const hasConnectorReferences = exists(
+    qb.select({ id: customConnectors.id }).from(customConnectors),
+  );
   const own = exists(
     qb
       .select({ id: hosts.id })
@@ -101,13 +118,16 @@ export function networkMutationReads(args: NetworkMutationArgs) {
         : not(
             sql`(${arrayContains(observed.tags, sql`${sql.param(args.tags, tailscaleConfigs.tags)}`)} AND ${arrayContained(observed.tags, sql`${sql.param(args.tags, tailscaleConfigs.tags)}`)} AND ${eq(sql`cardinality(${observed.tags})`, args.tags.length)})`,
           );
-  const digest = sql`encode(sha256(convert_to(
+  const hostDigest = sql`encode(sha256(convert_to(
     '[' || to_json(${observed.id})::text || ',' || ${observed.revision}::text || ',[' ||
     (SELECT coalesce(string_agg(
       '[' || to_json(${hosts.protocol})::text || ',' || to_json(${hosts.id})::text || ',' ||
       to_json(${hosts.userId})::text || ',' || ${hosts.generation}::text || ',' ||
       ${hosts.rfb}::text || ',' || ${hosts.kdc}::text || ']', ',' ORDER BY ${asc(sql`${hosts.protocol} COLLATE "C"`)}, ${asc(hosts.id)}), '') FROM ${hosts}) ||
     ']]', 'UTF8')), 'hex')`;
+  const digest = sql`CASE WHEN ${hasConnectorReferences} THEN encode(sha256(convert_to(
+    ${hostDigest} || ':' || (SELECT string_agg(${customConnectors.id}::text || ':' || ${customConnectors.storageVersion}, ',' ORDER BY ${customConnectors.id}) FROM ${customConnectors}),
+    'UTF8')), 'hex') ELSE ${hostDigest} END`;
   const invalidScope =
     args.operation === "promote"
       ? ne(observed.scope, "personal")
@@ -141,6 +161,7 @@ export function networkMutationReads(args: NetworkMutationArgs) {
       WHEN ${invalidScope} THEN 'notFound'
       WHEN ${denied} THEN 'forbidden'
       WHEN ${ne(observed.revision, args.expectedRevision)} THEN 'conflict'
+      WHEN ${args.operation === "delete" || args.operation === "adopt" ? hasConnectorReferences : sql`false`} THEN 'inUse'
       WHEN ${args.operation === "delete" ? own : sql`false`} THEN 'inUse'
       WHEN ${impactConflict} THEN 'impactConflict'
       WHEN ${limit} THEN 'exhausted'
@@ -173,7 +194,7 @@ export function networkMutationReads(args: NetworkMutationArgs) {
         .from(eligible)
         .where(eq(eligible.effective, true)),
     ),
-    ctes: [observed, hosts, checked, eligible],
+    ctes: [observed, hosts, customConnectors, checked, eligible],
   };
 }
 

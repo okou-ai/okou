@@ -38,6 +38,11 @@ export const cloudflareAccessConfigs = pgTable(
         table.userId,
       ),
       unique("uq_cloudflare_access_configs_org_id").on(table.id, table.orgId),
+      unique("uq_cloudflare_access_configs_org_scope").on(
+        table.id,
+        table.orgId,
+        table.scope,
+      ),
       index("idx_cloudflare_access_configs_owner_created").on(
         table.orgId,
         table.userId,

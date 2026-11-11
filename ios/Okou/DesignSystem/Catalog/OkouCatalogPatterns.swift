@@ -7,17 +7,10 @@
     var body: some View {
       OkouCatalogPage(.chat, close: close) {
         OkouCatalogSection("Header") {
-          // The menu circle and the model capsule (name in the text colour, effort in grey)
-          // on the left, the chat's "…" on the right; no title.
+          // The menu circle on the left, the chat's "…" on the right; no title. The model
+          // control is in the open composer.
           HStack(spacing: OkouSpace.md) {
             OkouToolbarIcon("menu").modifier(OkouGlassControl(shape: .circle))
-            HStack(spacing: OkouSpace.six) {
-              Text(verbatim: "GPT 6.1 Sol").font(.okou(.callout).weight(.medium))
-              Text(verbatim: "High").font(.okou(.callout))
-                .foregroundStyle(OkouColor.mutedForeground)
-            }
-            .padding(.horizontal, OkouSpace.lg)
-            .modifier(OkouGlassControl(shape: .capsule))
             Spacer(minLength: 0)
             OkouToolbarIcon("ellipsis").modifier(OkouGlassControl(shape: .circle))
           }
@@ -42,6 +35,33 @@
             .accessibilityLabel("Send message")
             .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
             .contentShape(Circle())
+          }
+          // Open, the composer shows the chat's model beside the mic: name in the text
+          // colour, effort in grey.
+          OkouComposerSurface(isExpanded: true) {
+            Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          } leading: {
+            Button {
+            } label: {
+              OkouToolbarIcon("plus")
+                .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+            }
+            .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
+          } trailing: {
+            HStack(spacing: OkouSpace.xs) {
+              Button {
+              } label: {
+                OkouComposerValueLabel(title: "GPT 6.1 Sol", detail: "High")
+              }
+              .buttonStyle(.plain).accessibilityLabel("Model settings")
+              Button {
+              } label: {
+                OkouToolbarIcon("mic")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              }
+              .buttonStyle(.plain).accessibilityLabel("Voice input")
+            }
           }
         }
         OkouCatalogSection("Composer suggestions") {

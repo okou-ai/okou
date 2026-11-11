@@ -237,7 +237,9 @@ private struct WorkspaceRootView: View {
     _store = State(
       initialValue: WorkspaceStore(
         client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
+        draftStorage: ChatDraftStorage(scope: cacheScope),
+        projectDisclosure: ProjectDisclosureStorage(scope: cacheScope),
+        measurementScope: cacheScope,
         didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
   }
 
@@ -316,10 +318,7 @@ private struct WorkspaceRootView: View {
         .safeAreaBar(edge: .top, spacing: 0) {
           VStack(spacing: 0) {
             // Sync problems float below the header with the rest of the chat feedback.
-            ChatWorkspaceHeader(
-              store: store, height: headerHeight, openSidebar: openSidebar,
-              modelSelection: store.selectedConversation.map { $0.modelSelection }
-                ?? store.newModelSelection)
+            ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
           }
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height

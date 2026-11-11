@@ -2149,6 +2149,8 @@
         "outputLimitTitle": "The response reached its length limit",
         "personalAccount": "Personal subscription {{account}}",
         "personalAccountDisconnected": "Personal subscription disconnected",
+        "providerBadRequestDescription": "Try again, or switch to another model to continue.",
+        "providerBadRequestTitle": "The model provider returned an error",
         "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
         "providerBalanceTitle": "Your subscription account needs more credit",
         "providerConnectionDescription": "Open Settings > Models to reconnect or update your account, then try again.",
@@ -3197,6 +3199,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} member",
     "affectedMembers_other": "{{count}} members",
+    "bindingUnavailable": "Unavailable",
     "cancel": "Cancel",
     "changed": "This Cloudflare Access changed while you were editing. Your changes were not saved.",
     "clientIdPlaceholder": "Paste the Service Token Client ID",
@@ -3209,7 +3212,7 @@
     "failed": "Could not save the Cloudflare Access change.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
     "impactChanged": "The affected hosts changed. The change was not applied.",
-    "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
+    "inUse": "This Cloudflare Access is still in use. Unbind or rebind its dependent hosts and custom connectors first.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
     "loadFailed": "Could not load Cloudflare Access.",
     "loading": "Loading Cloudflare Access…",
@@ -5499,6 +5502,7 @@
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
     "overloaded": "{{model}} is overloaded. Switch to another model.",
+    "providerBadRequest": "The model provider returned an error. Try again, or switch to another model to continue.",
     "providerBalance": "Your connected subscription account has insufficient balance.",
     "transient": "Oops, something went wrong.",
     "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
