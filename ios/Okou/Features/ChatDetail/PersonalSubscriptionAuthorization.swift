@@ -28,6 +28,7 @@ final class PersonalSubscriptionAuthorization {
   private var session: SubscriptionAuthSession?
   private var flowTask: Task<Void, Never>?
   private var finishingFlows: [UUID: Task<Void, Never>] = [:]
+  private var remoteCancellations: [UUID: Task<Void, Never>] = [:]
   private var authAccountID: String?
   private var authRevision = UUID()
   private var closed = false
@@ -240,10 +241,10 @@ final class PersonalSubscriptionAuthorization {
     if let oldSession, let oldType {
       let id = UUID()
       let cleanup = Task {
-        defer { finishingFlows[id] = nil }
+        defer { remoteCancellations[id] = nil }
         await cancelRemote(type: oldType, token: oldSession.sessionToken)
       }
-      finishingFlows[id] = cleanup
+      remoteCancellations[id] = cleanup
       return cleanup
     }
     return nil
@@ -270,10 +271,13 @@ final class PersonalSubscriptionAuthorization {
     closed = true
     let current = flowTask
     let pending = Array(finishingFlows.values)
+    let remote = Array(remoteCancellations.values)
     finishingFlows.removeAll()
+    remoteCancellations.removeAll()
     let cancellation = cancelFlow()
     return Task {
       for task in pending { await task.value }
+      for task in remote { await task.value }
       _ = await current?.value
       _ = await cancellation?.value
     }
