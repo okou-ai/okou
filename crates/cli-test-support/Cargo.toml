@@ -35,5 +35,8 @@ tar = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = { workspace = true, optional = true, features = ["rt"] }
 
+[dev-dependencies]
+tempfile = { workspace = true, features = ["getrandom"] }
+
 [lints]
 workspace = true

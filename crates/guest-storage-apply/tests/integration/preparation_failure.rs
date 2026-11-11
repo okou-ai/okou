@@ -1,6 +1,7 @@
 use crate::binary_logging::BinaryLoggingFixture;
 use crate::process::CommandExecution;
 use crate::support::create_tar_gz;
+use cli_test_support::directory_permissions::DirectoryPermissions;
 use guest_contracts::storage_files::{self, StorageFile};
 use serde_json::json;
 use std::fs;
@@ -23,7 +24,7 @@ fn input_permission_failures_exit_nonzero_without_removing_existing_inputs() {
             create_tar_gz(&[("new-data.txt", b"current data")]).unwrap(),
         )
         .unwrap();
-        fs::set_permissions(&home, fs::Permissions::from_mode(0o555)).unwrap();
+        let permissions = DirectoryPermissions::set(&home, 0o555).unwrap();
         let entry =
             json!({"mountPath": home, "archiveUrl": format!("file://{}", archive.display())});
         let manifest = serde_json::to_vec(&json!({
@@ -43,7 +44,7 @@ fn input_permission_failures_exit_nonzero_without_removing_existing_inputs() {
             .unwrap()
             .wait()
             .unwrap();
-        fs::set_permissions(&home, fs::Permissions::from_mode(0o755)).unwrap();
+        permissions.restore().unwrap();
 
         assert_eq!(
             output.status.code(),

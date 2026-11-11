@@ -1102,6 +1102,7 @@ dependencies = [
  "serde_json",
  "shell-quote",
  "tar",
+ "tempfile",
  "tokio",
  "tokio-util",
 ]
@@ -2117,6 +2118,7 @@ dependencies = [
  "api-contracts",
  "base64 0.23.1",
  "chrono",
+ "cli-test-support",
  "libc",
  "serde",
  "serde_json",
