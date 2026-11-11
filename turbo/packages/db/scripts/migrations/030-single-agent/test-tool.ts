@@ -44,8 +44,9 @@ const rightsSchema = object({
 });
 
 const planSchema = object({
-  format: literal("single-agent-plan-v6"),
+  format: literal("single-agent-plan-v7"),
   executable: literal(false),
+  workflowMaintenancePolicy: literal("workflow-owner-or-host-writer"),
   workflowPublicationPolicy: literal("use-existing-target-permissions"),
   privateAgentWorkflowPolicy: literal("private-use-agent-owner"),
   privateAgentAssociationPolicy: literal("delete-non-owner-associations"),
@@ -822,7 +823,8 @@ try {
   const maintenance = await prepare(publicSource, "instruction-maintenance");
   assert.deepEqual(
     maintenance.result.convertedInstructions[0]?.maintenanceChanges,
-    [owner],
+    [],
+    "the converted public Instruction Workflow preserves its owner's maintenance rights",
   );
   assert.deepEqual(
     maintenance.result.movedWorkflows.find((row) => {
@@ -840,10 +842,10 @@ try {
     "accepting publication changes must not waive public maintenance changes",
   );
   assert.ok(
-    maintenance.result.blockers.some((row) => {
+    !maintenance.result.blockers.some((row) => {
       return row.code === "InstructionWorkflowRightsChange";
     }),
-    "a former public Agent owner cannot silently lose Instruction maintenance rights",
+    "owner maintenance follows the current public Workflow policy",
   );
   assert.equal(
     maintenance.result.movedWorkflows.find((row) => {
@@ -863,6 +865,68 @@ try {
       return row.targetOwner === administrator && row.ownershipChange === null;
     }),
     "public-Agent Workflows keep their existing owners even when their Agent owner differs",
+  );
+  assert.ok(
+    maintenance.result.blockers.some((row) => {
+      return row.code === "WorkflowRightsChange";
+    }),
+    "a source Agent owner who is not the public Workflow owner still cannot silently lose maintenance rights",
+  );
+
+  const publicOwned = structuredClone(publicSource);
+  for (const row of publicOwned.workflows) row.owner = owner;
+  const ownerMaintained = await prepare(
+    publicOwned,
+    "public-owner-maintenance-preserved",
+    0,
+  );
+  assert.equal(ownerMaintained.result.blockers.length, 0);
+  assert.deepEqual(
+    ownerMaintained.result.movedWorkflows.find((row) => {
+      return row.source.id === publicWorkflow;
+    })?.permissionChanges,
+    [],
+    "the public author and org admin retain maintenance while unrelated members gain nothing",
+  );
+  assert.deepEqual(
+    ownerMaintained.result.convertedInstructions[0]?.maintenanceChanges,
+    [],
+  );
+  assert.equal(ownerMaintained.result.executable, false);
+
+  const newHostWriter = structuredClone(publicOwned);
+  const memberHostedTarget = newHostWriter.agents.find((row) => {
+    return row.id === defaultAgent;
+  });
+  assert.ok(memberHostedTarget);
+  memberHostedTarget.owner = "saved-user";
+  const hostWriterGain = await prepare(
+    newHostWriter,
+    "public-host-writer-maintenance-gain",
+  );
+  assert.deepEqual(
+    hostWriterGain.result.convertedInstructions[0]?.maintenanceChanges,
+    ["saved-user"],
+    "a non-admin target Agent owner remains an audited maintenance change",
+  );
+  assert.ok(
+    hostWriterGain.result.blockers.some((row) => {
+      return row.code === "InstructionWorkflowRightsChange";
+    }),
+  );
+  assert.deepEqual(
+    hostWriterGain.result.movedWorkflows.find((row) => {
+      return row.source.id === publicWorkflow;
+    })?.permissionChanges,
+    [
+      {
+        userId: "saved-user",
+        before: { view: true, manage: false, publish: false },
+        after: { view: true, manage: true, publish: false },
+        acceptedChanges: [],
+        unresolvedChanges: ["manage"],
+      },
+    ],
   );
   const differentOwner = structuredClone(snapshot);
   const separatelyOwned = differentOwner.workflows.find((row) => {
@@ -945,15 +1009,19 @@ try {
   privacy.automationThreads = [];
   const narrowed = await prepare(privacy, "accepted-private-access", 0);
   assert.equal(narrowed.result.blockers.length, 0);
-  assert.deepEqual(narrowed.result.movedWorkflows[0]?.permissionChanges, [
-    {
-      userId: owner,
-      before: { view: true, manage: false, publish: false },
-      after: { view: false, manage: false, publish: false },
-      acceptedChanges: ["view"],
-      unresolvedChanges: [],
-    },
-  ]);
+  assert.deepEqual(
+    narrowed.result.movedWorkflows[0]?.permissionChanges,
+    [
+      {
+        userId: owner,
+        before: { view: true, manage: true, publish: false },
+        after: { view: false, manage: false, publish: false },
+        acceptedChanges: ["view", "manage"],
+        unresolvedChanges: [],
+      },
+    ],
+    "public Workflow owners can maintain content on private hosts before the approved ownership transfer",
+  );
   assert.equal(narrowed.result.movedWorkflows[0]?.targetOwner, "saved-user");
   assert.deepEqual(narrowed.result.movedWorkflows[0]?.ownershipChange, {
     before: owner,
