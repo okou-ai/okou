@@ -186,12 +186,14 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   and `background`; tiles, placeholders, media backdrops, zebra rows and tracks use the
   `state-hover` or `nested-fill` layers instead.
 - **Glass controls** use `OkouGlassControl`: native `.glassEffect(.regular.interactive())`
-  drawn on an exact 44 pt shape — `.circle` for a single glyph (menu, chat filter),
-  `.capsule` at the same 44 pt height for a labeled control (the sidebar's search
-  field, a chat filter other than Chats). Every bar control is the same clear glass, the sidebar's new chat included —
+  drawn on an exact 44 pt shape — `.circle` for a single glyph (the chat's menu),
+  `.capsule` at the same 44 pt height for a labeled control or a group (the sidebar's search
+  field; its chat list menu and back, which share one capsule). Every bar control is the
+  same clear glass, the sidebar's new chat included —
   no dark-tinted "prominent" circle. `.buttonStyle(.glass)`
   drew a ~35 pt circle inside its 44 pt frame and looked smaller than the UIKit glass
-  "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`.
+  "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`, unless a
+  glass group draws the glass around them (the sidebar's chat list menu is `.plain()`).
   Paired controls in one bar are the same size.
   The sidebar filter uses `ChatListFilterMenu` with that native configuration so
   `SidebarMenuButton` can suspend page swipes through the menu's dismissal
@@ -358,7 +360,8 @@ Reusable views, grouped by what they do. Each group is a folder in
   once at launch): Apple's SF chevron was half again as tall and heavier than the Lucide
   glyphs beside it, so a pushed page's Back never matched the header's menu or the ✕.
 - **A menu opens from what it is attached to.** A `Menu`'s label is only as wide as its
-  own content (the sidebar's chat filter is its glass control); a row that needs the full width widens
+  own content (the sidebar's chat list menu is its own 44 pt button inside the header's glass
+  group); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
 - **Search opens in a native sheet**, sliding up like the app's other sheets. Use a large
@@ -728,23 +731,21 @@ feature; the catalog shows each one.
 
 ### Sidebar
 
-- **The sidebar takes 85 % of the width** (`OkouControl.sidebarShare`) and pushes the chat
-  aside, as ChatGPT does. The chat becomes a card: corners grow to `OkouRadius.page` (44 pt,
-  continuous) as the list opens, edged by a very faint hairline (`border` at
-  `sidebarEdgeLineOpacity` 50 %) and a soft shadow (`sidebarEdgeRadius` 16 pt,
-  `sidebarEdgeOpacity` 12 %) drawn by a card-shaped fill behind it. Its strip is frosted by the
-  thinnest material at 60 % (`OkouElevation.sidebarFrost`) — light, and the messages still show
-  through — laid on top of the chat rather than blurring it: a `.blur` on the chat re-renders
-  the transcript, which re-read its safe area and jumped when the list closed, and the system
-  materials have no strength setting of their own. A tap anywhere on the strip returns to the
-  chat ("Close sidebar" for VoiceOver), so leaving the list never depends on knowing the swipe.
-  The list drifts in from a quarter of its width to the left (`OkouMotion.sidebarParallax`)
-  as the chat slides over it.
-- **Sidebar layout**: the workspace switcher top left and the chat filter (Lucide
-  `list-filter`) top right, both 44 pt glass controls. The filter is a circle on the
-  default Chats and a capsule naming any other filter ("Unread"), so a filtered list never
-  reads as missing chats. There is no back button: the chat's strip beside the list, a left
-  swipe and VoiceOver's escape gesture all return to the chat. The switcher is the workspace's
+- **The sidebar and the chat are two full pages**, as Grok has them: chat titles are long, and
+  the chat never shows beside the list. The pages cross-fade through a blur
+  (`OkouElevation.sidebarBlur`, 12 pt): the chat drifts a quarter of the screen right
+  (`OkouMotion.sidebarParallax`) as it blurs and fades away, and the list drifts in from a
+  quarter screen left as it comes into focus. The edge each page leads with fades out over up
+  to 35 % of the screen (`OkouMotion.sidebarFeather`) while it moves, so the pages meet in the
+  blur and never along a line. The blur is a `.visualEffect`, which never touches layout: a
+  `.blur` on the chat changed the transcript's safe area with every step of the radius, and
+  the messages jumped as the chat came back into focus.
+- **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
+  that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
+  (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
+  as iOS groups related bar buttons. The menu is an icon on the default Chats and names any
+  other filter ("Unread"), so a filtered list never reads as missing chats. A left swipe and
+  VoiceOver's escape gesture return to the chat too. The switcher is the workspace's
   logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
   `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
   name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's
@@ -775,8 +776,8 @@ feature; the catalog shows each one.
   With a hardware keyboard, ⌘1–⌘9 open the first nine chats outside projects. Everything
   starts on the `pageInset` edge.
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
-  left swipe anywhere in the sidebar closes it, as does a tap on the chat's strip beside it;
-  a swipe is never the only way back. Content that scrolls
+  left swipe anywhere in the sidebar closes it, as does its back button; a swipe is never
+  the only way back. Content that scrolls
   sideways (a code block or a table) keeps the finger, and from there the chat still opens
   the sidebar from its leading edge (`SidebarGesturePolicy`).
   A page swipe never also taps the row under it. Chat rows keep their actions on the

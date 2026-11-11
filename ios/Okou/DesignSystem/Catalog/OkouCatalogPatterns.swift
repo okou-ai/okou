@@ -146,9 +146,10 @@
     var body: some View {
       OkouCatalogPage(.sidebar, close: close) {
         OkouCatalogSection("Header") {
-          // The switcher: the workspace's logo as a glass button, its name beside it with no
-          // arrow; the menu lists each workspace's logo beside its name, a check on the
-          // current one. The chat filter is the glass circle on the right.
+          // The switcher: the workspace's logo as a glass button with its name beside it and
+          // no arrow (the menu lists each workspace's logo beside its name, a check on the
+          // current one), then the chat list menu and back to the chat grouped in one glass
+          // capsule.
           let name = OkouCatalogSamples.workspaces.first { $0.id == workspace }?.name ?? ""
           HStack(spacing: OkouSpace.md) {
             Menu {
@@ -170,8 +171,23 @@
             }
             .buttonStyle(.plain)
             Text(verbatim: name).font(.okou(.headline))
-            Spacer(minLength: 0)
-            OkouToolbarIcon("list-filter").modifier(OkouGlassControl(shape: .circle))
+              .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 0) {
+              Button {
+              } label: {
+                OkouToolbarIcon("list-filter")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              }
+              .accessibilityLabel("Chat list")
+              Button {
+              } label: {
+                OkouToolbarIcon("arrow-right")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              }
+              .accessibilityLabel("Close sidebar")
+            }
+            .buttonStyle(.plain)
+            .modifier(OkouGlassControl(shape: .capsule))
           }
         }
         OkouCatalogSection("Chats") {

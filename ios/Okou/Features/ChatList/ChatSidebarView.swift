@@ -184,9 +184,9 @@ struct ChatSidebarView: View {
   }
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
-  /// beside it with no arrow, and on the right the chat filter. A left swipe returns to the
-  /// chat the sidebar covers. The name leaves once rows scroll under the bar; the glass
-  /// buttons stay.
+  /// beside it with no arrow, and on the right the chat filter and the way back to the chat in
+  /// one glass group. A left swipe returns to the chat too. The name leaves once rows scroll
+  /// under the bar; the glass buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher
@@ -201,7 +201,7 @@ struct ChatSidebarView: View {
         .animation(OkouMotion.transition, value: isScrolled)
         // The switcher's label already names the workspace.
         .accessibilityHidden(true)
-      threadFilterMenu
+      headerActions
     }
     .frame(minHeight: headerHeight)
   }
@@ -538,16 +538,28 @@ struct ChatSidebarView: View {
 
   }
 
-  /// The chat list menu, top right: the filters, Mark all as read and New project, so the
-  /// header keeps one control. On the default Chats it is a glass circle; any other filter
-  /// names itself in a capsule, so a filtered list never reads as missing chats.
-  private var threadFilterMenu: some View {
-    ChatListFilterMenu(
-      sidebar: sidebar, store: store, selection: threadFilter,
-      newProject: { showEditor(creationEditor) }
-    )
-    .frame(height: OkouControl.minimumTarget)
-    .fixedSize(horizontal: true, vertical: false)
+  /// Top right, one glass capsule as iOS groups related bar buttons: the chat list menu on the
+  /// left (the filters, Mark all as read and New project) and the way back to the chat on the
+  /// right, toward the page it returns to. On the default Chats the menu is an icon; any other
+  /// filter names itself, so a filtered list never reads as missing chats.
+  private var headerActions: some View {
+    HStack(spacing: 0) {
+      ChatListFilterMenu(
+        sidebar: sidebar, store: store, selection: threadFilter,
+        newProject: { showEditor(creationEditor) }
+      )
+      .frame(height: OkouControl.minimumTarget)
+      .fixedSize(horizontal: true, vertical: false)
+      Button(action: close) {
+        OkouToolbarIcon("arrow-right")
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Close sidebar")
+      .accessibilityIdentifier("close-sidebar")
+    }
+    .modifier(OkouGlassControl(shape: .capsule))
   }
 
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
