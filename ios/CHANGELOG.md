@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.1](https://github.com/okou-ai/okou/compare/ios-v0.35.0...ios-v0.35.1) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** derive sidebar filters and groups with ccstate ([#46476](https://github.com/okou-ai/okou/issues/46476)) ([4ad354c](https://github.com/okou-ai/okou/commit/4ad354c8879331424d72a2e4f0790481ecfc79b1))
+
 ## [0.35.0](https://github.com/okou-ai/okou/compare/ios-v0.34.2...ios-v0.35.0) (2026-11-11)
 
 
