@@ -32,53 +32,48 @@ public enum ChatThreadReplay {
     }
   }
 
-  /// The prepend-only subset of fractional-indexing's generateKeyBetween(null, first).
+  /// fractional-indexing's generateKeyBetween(null, first), as the PWA prepends a new pin.
   /// Keep the base-62 keys compatible with the PWA and the existing pin API.
   public static func firstPinOrder(_ threads: [ChatThread]) throws -> String {
-    guard let first = sidebarOrder(threads).first(where: { $0.pinnedAt != nil }) else {
-      return "a0"
+    let first = sidebarOrder(threads).first(where: { $0.pinnedAt != nil })
+    return try ChatPinOrder.key(between: nil, and: first.map(pinRank))
+  }
+
+  public struct PinOrderUpdate: Equatable, Sendable {
+    public let threadID: String
+    public let pinOrder: String
+  }
+
+  public enum PinPlacement: Sendable { case before, after }
+
+  /// Ports the PWA's `moveChatThreadPinOrder`: only the moved rank changes, plus the run
+  /// of tied ranks it lands in when the insertion gap has no room.
+  public static func movePinOrder(
+    _ threads: [ChatThread], threadID: String, targetID: String, placement: PinPlacement
+  ) throws -> [PinOrderUpdate] {
+    let ordered = sidebarOrder(threads.filter { $0.pinnedAt != nil })
+    guard threadID != targetID, let moved = ordered.first(where: { $0.id == threadID }) else {
+      return []
     }
-    let key = Array(pinRank(first).utf8)
-    let digits = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".utf8)
-    guard let head = key.first else { throw ChatError.invalidContract("Invalid pin order.") }
-    let length: Int
-    switch head {
-    case 97...122: length = Int(head - 97) + 2
-    case 65...90: length = Int(90 - head) + 2
-    default: throw ChatError.invalidContract("Invalid pin order.")
+    let remaining = ordered.filter { $0.id != threadID }
+    guard let target = remaining.firstIndex(where: { $0.id == targetID }) else { return [] }
+    let index = target + (placement == .after ? 1 : 0)
+    if index < ordered.count, ordered[index].id == threadID { return [] }
+    let lower = index > 0 ? pinRank(remaining[index - 1]) : nil
+    let upper = index < remaining.count ? pinRank(remaining[index]) : nil
+    guard let lower, lower == upper else {
+      return [
+        PinOrderUpdate(
+          threadID: threadID, pinOrder: try ChatPinOrder.key(between: lower, and: upper))
+      ]
     }
-    guard key.count >= length, key.dropFirst().allSatisfy({ digits.contains($0) }),
-      key.count == length || key.last != digits[0]
-    else { throw ChatError.invalidContract("Invalid pin order.") }
-    var integer = Array(key.prefix(length))
-    let fraction = Array(key.dropFirst(length))
-    if head == 65, integer.dropFirst().allSatisfy({ $0 == digits[0] }) {
-      guard let index = fraction.firstIndex(where: { $0 != digits[0] }),
-        let digit = digits.firstIndex(of: fraction[index])
-      else { throw ChatError.invalidContract("Invalid pin order.") }
-      let prefix = Array(fraction.prefix(index))
-      let midpoint: [UInt8] =
-        digit > 1
-        ? [digits[(digit + 1) / 2]]
-        : (index + 1 < fraction.count ? [digits[1]] : [digits[0], digits[31]])
-      return String(decoding: integer + prefix + midpoint, as: UTF8.self)
-    }
-    if !fraction.isEmpty { return String(decoding: integer, as: UTF8.self) }
-    for index in (1..<integer.count).reversed() {
-      guard let digit = digits.firstIndex(of: integer[index]) else {
-        throw ChatError.invalidContract("Invalid pin order.")
-      }
-      if digit > 0 {
-        integer[index] = digits[digit - 1]
-        return String(decoding: integer, as: UTF8.self)
-      }
-      integer[index] = digits[61]
-    }
-    if head == 97 { return "Zz" }
-    guard head > 65 else { throw ChatError.invalidContract("Invalid pin order.") }
-    integer[0] = head - 1
-    if integer[0] < 90 { integer.append(digits[61]) } else { integer.removeLast() }
-    return String(decoding: integer, as: UTF8.self)
+    var end = index
+    while end < remaining.count, pinRank(remaining[end]) == lower { end += 1 }
+    let affected = [moved] + remaining[index..<end]
+    let keys = try ChatPinOrder.keys(
+      between: lower, and: end < remaining.count ? pinRank(remaining[end]) : nil,
+      count: affected.count)
+    return zip(affected, keys).map { PinOrderUpdate(threadID: $0.id, pinOrder: $1) }
   }
 
   private static func apply(

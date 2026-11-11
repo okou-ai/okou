@@ -270,15 +270,17 @@ private struct ChatModelPickerContent: View {
     .disabled(committing != nil)
   }
 
-  /// A new chat's choice can become the default too: a commit of its own, in `brand-text`
-  /// so it reads apart from the options above it, as ChatGPT tints its Reset.
+  /// A new chat's choice can become the default too: a commit of its own, in a card of its own
+  /// and medium-weight ink as text actions are, so it reads apart from the options above it.
   private var defaultSection: some View {
     Section {
       Button {
         Task { await commit(.defaultForNewChats) }
       } label: {
         HStack {
-          Text("Set as default for new chats").foregroundStyle(OkouColor.brandText)
+          Text("Set as default for new chats")
+            .fontWeight(.medium)
+            .foregroundStyle(OkouColor.foreground)
           Spacer()
           if committing == .defaultForNewChats {
             ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)

@@ -52,7 +52,10 @@ interface ShortcutSectionDefinition {
 type ShortcutSectionTitleId = "composer" | "global" | "messages" | "pinned";
 
 const GLOBAL_NAVIGATION_SHORTCUTS = [
-  { key: "shift+/", labelId: "showShortcuts" },
+  {
+    key: GLOBAL_KEYBOARD_SHORTCUTS.showShortcuts.binding,
+    labelId: "showShortcuts",
+  },
   {
     key: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
     labelId: "toggleSidebar",

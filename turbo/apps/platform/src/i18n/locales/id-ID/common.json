@@ -5507,6 +5507,11 @@
       "creditBalance_one": "{{value}} kredit",
       "creditBalance_other": "{{value}} kredit",
       "exportData": "Ekspor data",
+      "help": {
+        "docs": "Dokumentasi",
+        "keyboardShortcuts": "Pintasan",
+        "label": "Bantuan"
+      },
       "lab": "Lab",
       "settings": "Setelan",
       "signOut": "Keluar",

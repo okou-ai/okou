@@ -7,9 +7,10 @@ import { cn } from "@okouai/ui";
  * then centred in its card's drawing box, which stays clear of the copy and
  * the buttons; so every card's drawing reads at the same size.
  *
- * Motion runs once per hover, on one 1.2s timeline for every drawing: each
- * element's delay plus duration ends by 1.2s, and every keyframe ends on the
- * resting drawing, so nothing jumps when the pointer leaves.
+ * Motion runs once per hover, on one 2.4s timeline for every drawing: each
+ * element's delay plus duration ends by 2.4s, and every keyframe ends on the
+ * resting drawing, so nothing jumps when the pointer leaves. Motion moves
+ * shapes and never recolours them, so nothing flashes.
  */
 export type CapabilityArt =
   | "people"
@@ -70,14 +71,14 @@ const ARTS = {
                 d="M277 227C282.523 227 287 222.523 287 217C287 211.477 282.523 207 277 207C271.477 207 267 211.477 267 217C267 222.523 271.477 227 277 227Z"
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:200ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
               <path
                 d="M253 247C256 234 266 231 277 231C288 231 298 234 301 247C288 261 266 261 253 247Z"
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:200ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
             </g>
             <path
@@ -106,14 +107,14 @@ const ARTS = {
                 d="M399 184C404.523 184 409 179.523 409 174C409 168.477 404.523 164 399 164C393.477 164 389 168.477 389 174C389 179.523 393.477 184 399 184Z"
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:400ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
               <path
                 d="M375 204C378 191 388 188 399 188C410 188 420 191 423 204C410 218 388 218 375 204Z"
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:400ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
             </g>
             <path
@@ -146,14 +147,14 @@ const ARTS = {
                 d="M519 250C524.523 250 529 245.523 529 240C529 234.477 524.523 230 519 230C513.477 230 509 234.477 509 240C509 245.523 513.477 250 519 250Z"
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:600ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
               <path
                 d="M495 270C498 257 508 254 519 254C530 254 540 257 543 270C530 284 508 284 495 270Z"
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:600ms]"
+                className="fill-gray-200 stroke-gray-500/55"
               />
             </g>
             <path
@@ -191,7 +192,7 @@ const ARTS = {
         <path
           d="M277 325V374H371M399 282V315L407 332M519 348V374H457"
           pathLength={1}
-          strokeWidth={6}
+          strokeWidth={4}
           strokeLinecap="round"
           className="fill-none stroke-primary opacity-0 [stroke-dasharray:0.22_1.5] [stroke-dashoffset:0.22] motion-safe:group-hover/card:animate-capability-run motion-safe:group-focus-within/card:animate-capability-run"
         />
@@ -277,7 +278,7 @@ const ARTS = {
               />
               <path
                 d="M527 247H391C389.895 247 389 247.895 389 249V259C389 260.105 389.895 261 391 261H527C528.105 261 529 260.105 529 259V249C529 247.895 528.105 247 527 247Z"
-                className="fill-brand-subtle transform-fill origin-left motion-safe:group-hover/card:animate-capability-sweep motion-safe:group-focus-within/card:animate-capability-sweep [--capability-delay:400ms]"
+                className="fill-brand-subtle transform-fill origin-left motion-safe:group-hover/card:animate-capability-sweep motion-safe:group-focus-within/card:animate-capability-sweep [--capability-delay:800ms]"
               />
               <path
                 d="M394 254H521M390 276H546M401 297H532M419 318H502"
@@ -385,21 +386,21 @@ const ARTS = {
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:200ms]"
+                className="fill-gray-200 stroke-gray-500/55 transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:400ms]"
               />
               <path
                 d="M379 333L402 331L406 386L383 387L379 333Z"
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-gray-200 stroke-gray-500/55 transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:350ms]"
+                className="fill-gray-200 stroke-gray-500/55 transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:700ms]"
               />
               <path
                 d="M421 302L444 300L450 382L427 384L421 302Z"
                 strokeWidth={1.2}
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                className="fill-primary stroke-primary transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:500ms]"
+                className="fill-primary stroke-primary transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-delay:1000ms]"
               />
               <path
                 d="M317 305L324 392L484 380"
@@ -465,7 +466,7 @@ const ARTS = {
             <g>
               <path
                 d="M447 267C456.389 267 464 259.389 464 250C464 240.611 456.389 233 447 233C437.611 233 430 240.611 430 250C430 259.389 437.611 267 447 267Z"
-                className="fill-primary transform-fill motion-safe:group-hover/card:animate-capability-sun motion-safe:group-focus-within/card:animate-capability-sun [--capability-delay:200ms]"
+                className="fill-primary transform-fill motion-safe:group-hover/card:animate-capability-sun motion-safe:group-focus-within/card:animate-capability-sun [--capability-delay:400ms]"
               />
             </g>
             <g>
@@ -539,7 +540,7 @@ const ARTS = {
             <g>
               <path
                 d="M477 278H299C298.448 278 298 278.448 298 279V293C298 293.552 298.448 294 299 294H477C477.552 294 478 293.552 478 293V279C478 278.448 477.552 278 477 278Z"
-                className="fill-brand-subtle transform-fill origin-left motion-safe:group-hover/card:animate-capability-sweep motion-safe:group-focus-within/card:animate-capability-sweep [--capability-duration:600ms] [--capability-delay:600ms]"
+                className="fill-brand-subtle transform-fill origin-left motion-safe:group-hover/card:animate-capability-sweep motion-safe:group-focus-within/card:animate-capability-sweep [--capability-duration:1200ms] [--capability-delay:1200ms]"
               />
               <path
                 d="M289 282V290"
@@ -636,7 +637,7 @@ const ARTS = {
               className="fill-none stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:150ms]">
+          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:300ms]">
             <path
               d="M312 322H180V366H312V322Z"
               vectorEffect="non-scaling-stroke"
@@ -649,7 +650,7 @@ const ARTS = {
               className="fill-none stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:300ms]">
+          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:600ms]">
             <path
               d="M466 322H334V366H466V322Z"
               vectorEffect="non-scaling-stroke"
@@ -662,7 +663,7 @@ const ARTS = {
               className="fill-none stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:450ms]">
+          <g className="transform-fill motion-safe:group-hover/card:animate-capability-rise motion-safe:group-focus-within/card:animate-capability-rise [--capability-delay:900ms]">
             <path
               d="M620 322H488V366H620V322Z"
               vectorEffect="non-scaling-stroke"
@@ -702,7 +703,7 @@ const ARTS = {
               className="fill-none stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:600ms] ">
+          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:1200ms]">
             <path
               d="M269 330H231V400H269V330Z"
               strokeWidth={1.2}
@@ -710,7 +711,7 @@ const ARTS = {
               className="fill-gray-200 stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:600ms] [--capability-delay:80ms]">
+          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:1200ms] [--capability-delay:160ms]">
             <path
               d="M345 300H307V400H345V300Z"
               strokeWidth={1.2}
@@ -718,7 +719,7 @@ const ARTS = {
               className="fill-gray-200 stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:600ms] [--capability-delay:160ms]">
+          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:1200ms] [--capability-delay:320ms]">
             <path
               d="M421 265H383V400H421V265Z"
               strokeWidth={1.2}
@@ -726,7 +727,7 @@ const ARTS = {
               className="fill-gray-200 stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:600ms] [--capability-delay:240ms]">
+          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:1200ms] [--capability-delay:480ms]">
             <path
               d="M497 225H459V400H497V225Z"
               strokeWidth={1.2}
@@ -734,7 +735,7 @@ const ARTS = {
               className="fill-gray-200 stroke-gray-500/55"
             />
           </g>
-          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:600ms] [--capability-delay:320ms]">
+          <g className="transform-fill origin-bottom motion-safe:group-hover/card:animate-capability-grow motion-safe:group-focus-within/card:animate-capability-grow [--capability-duration:1200ms] [--capability-delay:640ms]">
             <path d="M573 180H535V400H573V180Z" className="fill-primary" />
           </g>
           <g>
@@ -744,7 +745,7 @@ const ARTS = {
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
               pathLength={1}
-              className="fill-none stroke-gray-500/55 [stroke-dasharray:1_1] motion-safe:group-hover/card:animate-capability-draw motion-safe:group-focus-within/card:animate-capability-draw [--capability-duration:800ms] [--capability-delay:400ms]"
+              className="fill-none stroke-gray-500/55 [stroke-dasharray:1_1] motion-safe:group-hover/card:animate-capability-draw motion-safe:group-focus-within/card:animate-capability-draw [--capability-duration:1600ms] [--capability-delay:800ms]"
             />
           </g>
         </g>
@@ -840,7 +841,7 @@ const ARTS = {
           cy="387"
           r="16"
           strokeWidth={4}
-          className="fill-none stroke-primary opacity-0 transform-fill origin-center motion-safe:group-hover/card:animate-capability-ring motion-safe:group-focus-within/card:animate-capability-ring [--capability-delay:600ms]"
+          className="fill-none stroke-primary opacity-0 transform-fill origin-center motion-safe:group-hover/card:animate-capability-ring motion-safe:group-focus-within/card:animate-capability-ring [--capability-delay:1200ms]"
         />
       </>
     ),
@@ -965,7 +966,7 @@ const ARTS = {
               d="M223 300H137C129.82 300 124 305.82 124 313V363C124 370.18 129.82 376 137 376H223C230.18 376 236 370.18 236 363V313C236 305.82 230.18 300 223 300Z"
               strokeWidth={1.2}
               vectorEffect="non-scaling-stroke"
-              className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit"
+              className="fill-gray-200 stroke-gray-500/55"
             />
             <path
               d="M162 319H144V337"
@@ -991,7 +992,7 @@ const ARTS = {
               d="M443 270H357C349.82 270 344 275.82 344 283V333C344 340.18 349.82 346 357 346H443C450.18 346 456 340.18 456 333V283C456 275.82 450.18 270 443 270Z"
               strokeWidth={1.2}
               vectorEffect="non-scaling-stroke"
-              className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:300ms]"
+              className="fill-gray-200 stroke-gray-500/55"
             />
             <path
               d="M382 289H364V307"
@@ -1018,7 +1019,7 @@ const ARTS = {
               d="M675 300H589C581.82 300 576 305.82 576 313V363C576 370.18 581.82 376 589 376H675C682.18 376 688 370.18 688 363V313C688 305.82 682.18 300 675 300Z"
               strokeWidth={1.2}
               vectorEffect="non-scaling-stroke"
-              className="fill-gray-200 stroke-gray-500/55 motion-safe:group-hover/card:animate-capability-lit motion-safe:group-focus-within/card:animate-capability-lit [--capability-delay:600ms]"
+              className="fill-gray-200 stroke-gray-500/55"
             />
             <path
               d="M614 319H596V337"
@@ -1086,16 +1087,16 @@ const ARTS = {
         <path
           d="M236 338C286 338 294 308 344 308"
           pathLength={1}
-          strokeWidth={6}
+          strokeWidth={4}
           strokeLinecap="round"
-          className="fill-none stroke-primary opacity-0 [stroke-dasharray:0.22_1.5] [stroke-dashoffset:0.22] motion-safe:group-hover/card:animate-capability-run motion-safe:group-focus-within/card:animate-capability-run [--capability-duration:600ms] [--capability-delay:150ms]"
+          className="fill-none stroke-primary opacity-0 [stroke-dasharray:0.22_1.5] [stroke-dashoffset:0.22] motion-safe:group-hover/card:animate-capability-run motion-safe:group-focus-within/card:animate-capability-run [--capability-duration:1200ms] [--capability-delay:300ms]"
         />
         <path
           d="M456 308C510 308 526 338 576 338"
           pathLength={1}
-          strokeWidth={6}
+          strokeWidth={4}
           strokeLinecap="round"
-          className="fill-none stroke-primary opacity-0 [stroke-dasharray:0.22_1.5] [stroke-dashoffset:0.22] motion-safe:group-hover/card:animate-capability-run motion-safe:group-focus-within/card:animate-capability-run [--capability-duration:600ms] [--capability-delay:600ms]"
+          className="fill-none stroke-primary opacity-0 [stroke-dasharray:0.22_1.5] [stroke-dashoffset:0.22] motion-safe:group-hover/card:animate-capability-run motion-safe:group-focus-within/card:animate-capability-run [--capability-duration:1200ms] [--capability-delay:1200ms]"
         />
       </>
     ),

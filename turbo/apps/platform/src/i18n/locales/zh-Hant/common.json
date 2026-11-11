@@ -5507,6 +5507,11 @@
       "creditBalance_one": "{{value}} 積分",
       "creditBalance_other": "{{value}} 積分",
       "exportData": "匯出資料",
+      "help": {
+        "docs": "文件",
+        "keyboardShortcuts": "快捷鍵",
+        "label": "說明"
+      },
       "lab": "實驗室",
       "settings": "設定",
       "signOut": "退出登入",

@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.20.1](https://github.com/okou-ai/okou/compare/cli-v10.20.0...cli-v10.20.1) (2026-11-11)
+
+
+### Refactoring
+
+* remove mercuryConnector feature switch ([#46576](https://github.com/okou-ai/okou/issues/46576)) ([2f848b1](https://github.com/okou-ai/okou/commit/2f848b148ae68294a462925699420763682bd086))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.49.1
+    * @okouai/core bumped to 8.828.1
+    * @okouai/pi-agent-runtime bumped to 1.51.101
+
 ## [10.20.0](https://github.com/okou-ai/okou/compare/cli-v10.19.10...cli-v10.20.0) (2026-11-11)
 
 

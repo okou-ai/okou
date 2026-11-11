@@ -1,7 +1,7 @@
 import { userLocaleSchema } from "@okouai/api-contracts/validators/user-preferences";
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 
-const SECURITY_PAGE_LOCALES: Readonly<Record<UserLocale, string>> = {
+const PUBLIC_SITE_LOCALES: Readonly<Record<UserLocale, string>> = {
   "de-DE": "de",
   "en-US": "en",
   "es-ES": "es",
@@ -16,8 +16,8 @@ const SECURITY_PAGE_LOCALES: Readonly<Record<UserLocale, string>> = {
   "zh-Hant": "zh-Hant",
 };
 
-/** The public security page, in the language the app is showing. */
-export function securityPageUrl(language: string): string {
-  const locale = SECURITY_PAGE_LOCALES[userLocaleSchema.parse(language)];
-  return `https://www.okou.ai/${locale}/security`;
+/** A page on the public site, in the language the app is showing. */
+export function publicSiteUrl(language: string, page: string): string {
+  const locale = PUBLIC_SITE_LOCALES[userLocaleSchema.parse(language)];
+  return `https://www.okou.ai/${locale}/${page}`;
 }

@@ -25508,6 +25508,334 @@
           }
         }
       }
+    },
+    "Move up": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Nach oben verschieben" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Move up" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mover hacia arriba" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Déplacer vers le haut" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ऊपर ले जाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Pindahkan ke atas" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Sposta su" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "上に移動" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "위로 이동" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mover para cima" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "上移" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "上移" }
+        }
+      }
+    },
+    "Move down": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Nach unten verschieben" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Move down" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mover hacia abajo" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Déplacer vers le bas" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नीचे ले जाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Pindahkan ke bawah" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Sposta giù" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "下に移動" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "아래로 이동" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mover para baixo" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "下移" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "下移" }
+        }
+      }
+    },
+    "No unread chats": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Keine ungelesenen Chats" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "No unread chats" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No hay conversaciones sin leer" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Aucune discussion non lue" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "कोई अपठित चैट नहीं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tidak ada chat belum dibaca" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nessuna chat non letta" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "未読のチャットはありません" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "읽지 않은 채팅 없음" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Nenhuma conversa não lida" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "没有未读聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "沒有未讀聊天" }
+        }
+      }
+    },
+    "No archived chats": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Keine archivierten Chats" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "No archived chats" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No hay chats archivados" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Aucune discussion archivée" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "कोई आर्काइव की गई चैट नहीं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tidak ada chat yang diarsipkan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nessuna chat archiviata" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "アーカイブ済みのチャットはありません" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "보관된 채팅 없음" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Nenhuma conversa arquivada" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "没有已归档的聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "沒有已歸檔的聊天" }
+        }
+      }
+    },
+    "No muted chats": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Keine stummgeschalteten Chats" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "No muted chats" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No hay chats silenciados" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Aucune discussion en sourdine" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "कोई म्यूट की गई चैट नहीं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tidak ada chat yang dibisukan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nessuna chat silenziata" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ミュート中のチャットはありません" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "음소거된 채팅 없음" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Nenhuma conversa silenciada" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "没有已静音的聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "沒有已靜音的聊天" }
+        }
+      }
+    },
+    "Show all chats": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Alle Chats anzeigen" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Show all chats" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mostrar todas las conversaciones" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Afficher toutes les discussions" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "सभी चैट दिखाएं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tampilkan semua chat" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Mostra tutte le chat" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "すべてのチャットを表示" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "모든 채팅 보기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mostrar todas as conversas" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "显示全部聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "顯示全部聊天" }
+        }
+      }
+    },
+    "Your inbox is empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Dein Posteingang ist leer" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Your inbox is empty" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Tu bandeja de entrada está vacía" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Votre boîte de réception est vide" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपका इनबॉक्स खाली है" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Kotak masuk Anda kosong" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "La tua posta in arrivo è vuota" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "受信トレイは空です" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "받은 편지함이 비어 있습니다" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Sua caixa de entrada está vazia" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "收件箱是空的" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "收件匣是空的" }
+        }
+      }
+    },
+    "Show archived chats": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Archivierte Chats anzeigen" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Show archived chats" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Mostrar chats archivados" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Afficher les discussions archivées" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आर्काइव की गई चैट दिखाएं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tampilkan chat yang diarsipkan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Mostra chat archiviate" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "アーカイブ済みのチャットを表示" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "보관된 채팅 표시" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Mostrar conversas arquivadas" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "显示已归档的聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "顯示已歸檔的聊天" }
+        }
+      }
     }
   },
   "version": "1.0"
