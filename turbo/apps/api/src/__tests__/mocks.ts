@@ -1488,6 +1488,7 @@ type AxiomSdkTelemetryFailure =
       readonly mode: "ingest";
       readonly datasets?: readonly string[];
       readonly eventTypes?: readonly string[];
+      readonly operationTypes?: readonly string[];
       readonly error?: Error;
     }
   // The SDK flushes a client, not a dataset, so this mode takes no filter.
@@ -1503,18 +1504,27 @@ export function mockAxiomSdkTelemetryFailure(
     );
     return;
   }
-  const { datasets, eventTypes, error } = failure;
+  const { datasets, eventTypes, operationTypes, error } = failure;
   apiTestMocks.axiom.sdkIngest.mockImplementation(
     (dataset: unknown, events: unknown) => {
       const matchesDataset =
         datasets === undefined ||
         (typeof dataset === "string" && datasets.includes(dataset));
       const matchesEvent =
-        eventTypes === undefined ||
-        array(object({ type: string().optional() }))
+        (eventTypes === undefined && operationTypes === undefined) ||
+        array(
+          object({ type: string().optional(), op_type: string().optional() }),
+        )
           .parse(events)
           .some((entry) => {
-            return entry.type !== undefined && eventTypes.includes(entry.type);
+            return (
+              (eventTypes === undefined ||
+                (entry.type !== undefined &&
+                  eventTypes.includes(entry.type))) &&
+              (operationTypes === undefined ||
+                (entry.op_type !== undefined &&
+                  operationTypes.includes(entry.op_type)))
+            );
           });
       if (matchesDataset && matchesEvent) {
         throw error ?? new Error("Axiom SDK ingest failed");

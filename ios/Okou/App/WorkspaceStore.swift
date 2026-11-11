@@ -25,6 +25,7 @@ final class WorkspaceStore {
   var error: String?
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
+  private(set) var threadPreview: ChatThreadPreviewResources?
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -279,7 +280,30 @@ final class WorkspaceStore {
     return conversation
   }
 
+  func previewChat(_ id: String) {
+    guard !closed, !needsUpgrade, threadPreview?.threadID != id,
+      list.threads.contains(where: { $0.id == id })
+    else { return }
+    threadPreview?.close()
+    // Share serialized history reads without retaining a conversation, draft or realtime work.
+    threadPreview = ChatThreadPreviewResources(
+      threadID: id, sync: sync,
+      didFinish: { [weak self, sync] in
+        guard self?.conversations[id] == nil else { return }
+        _ = await sync.releaseHistory(threadID: id)
+      },
+      didFail: { [weak self] in self?.handle($0) })
+  }
+
+  func dismissChatPreview(_ id: String) {
+    guard threadPreview?.threadID == id else { return }
+    threadPreview?.close()
+    threadPreview = nil
+  }
+
   func close() {
+    threadPreview?.close()
+    threadPreview = nil
     closed = true
     sidebar.close()
     startupGeneration = UUID()

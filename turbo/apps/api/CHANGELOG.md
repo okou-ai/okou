@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.60.0](https://github.com/okou-ai/okou/compare/api-v2.59.2...api-v2.60.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+    * @okouai/connectors bumped to 3.22.0
+    * @okouai/core bumped to 8.829.0
+    * @okouai/db bumped to 2.28.0
+    * @okouai/pi-agent-runtime bumped to 1.51.102
+
 ## [2.59.2](https://github.com/okou-ai/okou/compare/api-v2.59.1...api-v2.59.2) (2026-11-11)
 
 

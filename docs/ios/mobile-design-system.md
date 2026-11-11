@@ -366,18 +366,17 @@ Reusable views, grouped by what they do. Each group is a folder in
   trailing close button. Set `okouSheetBackground(OkouColor.background)` at the sheet's root.
   `OkouSearchPage` owns the shared search surface; its header, filters and results share
   `OkouColor.background` in light and dark appearances, with transparent list-row backgrounds.
-  - Opening search focuses the system field and brings up the keyboard immediately. Focus
+  - Opening search focuses the native field during the sheet's incoming transition. Focus
     belongs to the search presentation, not a query or filter update; dismissing the keyboard
     while browsing results must not cause it to open again.
-  - The field is the system's (it rises into the bar while typing), drawn with the app's
-    glyph: Lucide `search` in placeholder grey (`OkouNavigationBar.applySearchField()`).
-  - It has no clear button (`okouSearchPageField()`): the ✕ that ends search sits right
-    beside it, and two ✕ read as the same action twice. That ✕ is the system's glass button
-    drawn with the app's Lucide `x` at the toolbar size, like every other close.
-  - The filter row and the results follow the field as it rises and drops back:
-    `OkouUnderNavigationBar` lays the page out under the bar with UIKit, so it moves in the
-    bar's own animation (or a spring of `OkouMotion.barMove`) instead of jumping with
-    SwiftUI's safe area.
+  - The field and filters stay at the top whether the keyboard is visible or not. Use
+    `OkouSearchField` (a native `UITextField`) inside the shared `OkouSearchBar` capsule,
+    with Lucide `search` in placeholder grey. Keep editing, marked text, selection and
+    Dynamic Type native; request initial focus in `viewIsAppearing`, not after presentation.
+  - It has no clear button: the trailing `OkouCloseButton` in a glass circle closes the
+    entire sheet in one action, including while editing. Do not use a search controller's
+    cancel button as a page close. The keyboard's Search action only ends editing and
+    preserves the query and results; neither action moves the header.
   - Nothing matched, and a scope that only searches once something is typed (Messages,
     Artifacts), is one `OkouEmptyState` for the page, never a bare line of text. It sits
     over the list, centred in what is left of the screen: under the filters and above the
@@ -601,11 +600,11 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Navigation and search
 
-| Component                | Use / states                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouSearchBar`          | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`)                                                                                                                                                    |
-| `OkouSearchPage`         | A search surface in a large native sheet: the system field focused on opening (no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, transparent rows on the page background, and one `OkouEmptyState` centred above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search sheet |
-| `OkouUnderNavigationBar` | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller                                                                                                                                                                               |
+| Component         | Use / states                                                                                                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OkouSearchBar`   | Shared 44 pt clear glass capsule with the Lucide `search` glyph in placeholder grey; wraps the sidebar's search prompt or the search page's native input                                                 |
+| `OkouSearchPage`  | A large native sheet with a fixed search field, one-action trailing close, pinned filters on a solid header, transparent list rows and one empty state centred above the keyboard. Catalog: Search sheet |
+| `OkouSearchField` | Native text editing focused once during presentation, with IME composition and selection preserved; keyboard Search ends editing without closing the page                                                |
 
 #### Status and feedback
 

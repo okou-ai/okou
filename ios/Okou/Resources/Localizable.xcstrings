@@ -2518,6 +2518,80 @@
         }
       }
     },
+    "No messages yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Noch keine Nachrichten" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Aún no hay mensajes" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Aucun message pour le moment" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "अभी कोई संदेश नहीं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Belum ada pesan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nessun messaggio" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "まだメッセージはありません" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "아직 메시지가 없습니다" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Ainda não há mensagens" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂无消息" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "暫無訊息" }
+        }
+      }
+    },
+    "Open the chat to try again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Öffne den Chat, um es erneut zu versuchen." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abre el chat para volver a intentarlo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouvrez la conversation pour réessayer." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "फिर से कोशिश करने के लिए चैट खोलें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Buka chat untuk mencoba lagi." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apri la chat per riprovare." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットを開いてもう一度お試しください。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅을 열어 다시 시도하세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abra a conversa para tentar novamente." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "打开聊天后重试。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "開啟聊天後重試。" }
+        }
+      }
+    },
     "Project name": {
       "extractionState": "manual",
       "localizations": {
@@ -2570,6 +2644,43 @@
         },
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "搜索项目" }
+        }
+      }
+    },
+    "You": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Du" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Tú" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Vous" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आप" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Anda" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Tu" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "あなた" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "나" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Você" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "你" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "你" }
         }
       }
     },

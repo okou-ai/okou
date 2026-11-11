@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.10...runner-provider-v0.18.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
 ## [0.17.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.9...runner-provider-v0.17.10) (2026-11-11)
 
 ## [0.17.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.8...runner-provider-v0.17.9) (2026-11-11)
