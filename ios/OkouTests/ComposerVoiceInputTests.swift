@@ -100,7 +100,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let session = try VoiceDraftSession(
       client: client, storage: VoiceDraftStorage(directory: root),
       activityDetection: NativeVoiceActivityDetection())
-    let id = try await session.begin(context: VoiceEditorContext(before: "", selected: "", after: ""))
+    let id = try await session.begin(
+      context: VoiceEditorContext(before: "", selected: "", after: ""))
     // Reduce the recorded voice by 24 dB, preserving its waveform and duration.
     _ = try await session.append(recordedSpeech(seconds: 1, attenuation: 16), recordingID: id)
     let text = try await session.finish(recordingID: id)
@@ -118,7 +119,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let session = try VoiceDraftSession(
       client: client, storage: VoiceDraftStorage(directory: root),
       activityDetection: NativeVoiceActivityDetection())
-    let id = try await session.begin(context: VoiceEditorContext(before: "", selected: "", after: ""))
+    let id = try await session.begin(
+      context: VoiceEditorContext(before: "", selected: "", after: ""))
     _ = try await session.append(Data(repeating: 0, count: 64_000), recordingID: id)
     _ = try await session.append(
       recordedSpeech(seconds: 1, attenuation: 16, sampleLimit: 4_000), recordingID: id)
@@ -639,7 +641,9 @@ final class VoiceCaptureFixture: VoiceAudioCapture {
   }
   func speak(seconds: Int, attenuation: Int16 = 1, sampleLimit: Int? = nil) {
     do {
-      record(try recordedSpeech(seconds: seconds, attenuation: attenuation, sampleLimit: sampleLimit))
+      let audio = try recordedSpeech(
+        seconds: seconds, attenuation: attenuation, sampleLimit: sampleLimit)
+      record(audio)
     } catch {
       XCTFail("Cannot load the recorded speech fixture: \(error)")
     }
@@ -658,7 +662,8 @@ private func recordedSpeech(seconds: Int, attenuation: Int16 = 1, sampleLimit: I
   -> Data
 {
   let url = try XCTUnwrap(
-    Bundle(for: ComposerVoiceInputTests.self).url(forResource: "voice-speech", withExtension: "wav"))
+    Bundle(for: ComposerVoiceInputTests.self)
+      .url(forResource: "voice-speech", withExtension: "wav"))
   let wav = try Data(contentsOf: url)
   var pcm = Data(wav.dropFirst(44))
   pcm.withUnsafeMutableBytes { bytes in
