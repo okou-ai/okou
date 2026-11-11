@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.69](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.68...runner-rs-v0.244.69) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** unify usage flush timer retirement ([#46559](https://github.com/okou-ai/okou/issues/46559)) ([47ab56e](https://github.com/okou-ai/okou/commit/47ab56e683d43281cefe60067198836110d32325))
+
 ## [0.244.68](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.67...runner-rs-v0.244.68) (2026-11-11)
 
 
