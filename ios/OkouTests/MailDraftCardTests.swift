@@ -386,7 +386,8 @@ final class MailDraftCardTests: XCTestCase {
       let loadedDraft = try await card.read()
       let draft = try XCTUnwrap(loadedDraft)
       XCTAssertEqual(draft.needsReconnect, reconnect)
-      XCTAssertEqual(draft.to.isEmpty, !reconnect)
+      XCTAssertTrue(draft.to.isEmpty)
+      XCTAssertEqual(draft.detailAvailable, !reconnect)
       XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
       fixture.state.withLock {
         $0.reconnect = false
@@ -506,16 +507,32 @@ private final class MailDraftHTTPFixture: Sendable {
   }
 
   private static func draft(_ state: State) -> ChatHTTPResponse {
-    let draft: [String: Any] = [
+    let hasDetails = !state.reconnect && state.status != "deleted"
+    var draft: [String: Any] = [
       "version": 3, "provider": state.provider, "from": "sender@example.invalid",
-      "to": state.emptyRecipients ? [] : ["recipient@example.invalid"], "cc": [], "bcc": [],
-      "subject": state.subject, "body": "An isolated email for review, never sent live.",
-      "status": state.status, "detailAvailable": true,
+      "to": state.emptyRecipients || !hasDetails ? [] : ["recipient@example.invalid"],
+      "cc": [], "bcc": [], "references": [],
+      "subject": state.subject,
+      "body": hasDetails ? "An isolated email for review, never sent live." : "",
+      "status": state.status, "detailAvailable": hasDetails,
       "accessStatus": state.reconnect ? "reconnect" : "ready",
-      "attachments": [["filename": "review.txt", "size": 12]],
-      "outlookWebLink": "https://outlook.office.com/mail/deeplink/compose/test-draft",
+      "attachments": hasDetails
+        ? [["filename": "review.txt", "contentType": "text/plain", "size": 12]] : [],
+      "createdAt": "2026-11-11T00:00:00Z", "updatedAt": "2026-11-11T00:00:00Z",
     ]
-    let data = try! JSONSerialization.data(withJSONObject: ["mailDraft": draft])
+    if state.provider == "outlook" {
+      draft["outlookMessageId"] = "test-provider-draft"
+      draft["outlookConversationId"] = "test-provider-thread"
+      draft["outlookWebLink"] = "https://outlook.office.com/mail/deeplink/compose/test-draft"
+    } else {
+      draft["gmailDraftId"] = "test-provider-draft"
+      draft["gmailThreadId"] = "test-provider-thread"
+      draft["gmailMessageId"] = "test-provider-message"
+    }
+    let data = try! JSONSerialization.data(withJSONObject: [
+      "mailDraftId": id, "mailDraftUrl": "https://app.example.invalid/mail/drafts/\(id)",
+      "mailDraft": draft,
+    ])
     return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
   }
 }
