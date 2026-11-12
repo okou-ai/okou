@@ -37,8 +37,9 @@ enum OkouWidgetMoment {
 
 /// The mascot's moods, each the hero frame of one of Liangyou's 21 Okou moods, rendered from
 /// the avatar rig: ready 发呆, evening 开心, working 思考, needs 拜托, done 庆祝, oops 汗颜,
-/// sleep 困困. Every mood has a hero asset for large faces and a mini one for small faces
-/// (`Mascot-<mood>-hero` / `-mini`), each drawn with lines weighted for its size.
+/// sleep 困困. Each mood has two assets: `Avatar-<mood>`, the avatar lab's circular crop on the
+/// light-blue drop texture, for the Home Screen; and `Mascot-<mood>`, the plain bust, for the
+/// Lock Screen, which renders monochrome and would turn the texture into noise.
 enum OkouWidgetMood: String {
   case ready, evening, working, needs, done, oops, sleep
 }
