@@ -1,6 +1,9 @@
 package ai.okou.android
 
+import ai.okou.android.auth.SessionModel
 import android.view.KeyEvent
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -12,6 +15,9 @@ import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,12 +43,25 @@ class NativeChatListTest {
         }
         app.chatService = fixture.service
         var scenario: ActivityScenario<MainActivity>? = null
+        var chatJob: Job? = null
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(device.wait(Until.findObject(By.text(value)), 10_000))
             text(app.getString(R.string.chat_list_title))
+            scenario.onActivity { activity ->
+                chatJob =
+                    checkNotNull(
+                            ViewModelProvider(activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready
+                        )
+                        .chats
+                        .viewModelScope
+                        .coroutineContext[Job]
+            }
             text(app.getString(R.string.chat_loading))
             text(app.getString(R.string.settings)).click()
             text(app.getString(R.string.appearance))
@@ -72,6 +91,7 @@ class NativeChatListTest {
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },
+                    { runBlocking { withTimeout(10_000) { chatJob?.join() } } },
                     { fixture.close() },
                     { savedCache.restore() },
                     { app.restoreApiPreferences(savedPreferences) },

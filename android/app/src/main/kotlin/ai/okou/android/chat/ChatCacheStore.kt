@@ -189,6 +189,7 @@ class ChatCacheStore(
                     checkCurrent()
                     if (!directory.isDirectory && !directory.mkdirs())
                         throw IOException("Cannot create chat cache")
+                    reserveScope(key)
                     val file = AtomicFile(File(directory, "$key.json"))
                     val output = file.startWrite()
                     try {
@@ -225,20 +226,6 @@ class ChatCacheStore(
                         file.failWrite(output)
                         throw error
                     }
-                    // Evict whole AtomicFile groups, including interrupted .new/.bak companions.
-                    val groups =
-                        directory
-                            .listFiles()
-                            ?.filter {
-                                Regex("[0-9a-f]{64}\\.json(?:\\.new|\\.bak)?").matches(it.name)
-                            }
-                            ?.groupBy { it.name.substringBefore(".json") + ".json" }
-                            ?: throw IOException("Cannot inspect chat cache retention")
-                    groups.entries
-                        .filter { it.key != "$key.json" }
-                        .sortedByDescending { (_, files) -> files.maxOf { it.lastModified() } }
-                        .drop(3)
-                        .forEach { (name, _) -> AtomicFile(File(directory, name)).delete() }
                 }
             }
 
@@ -246,5 +233,38 @@ class ChatCacheStore(
             retired = true
             active.compareAndSet(this, null)
         }
+
+        suspend fun invalidate() =
+            withContext(dispatcher) {
+                val context = currentCoroutineContext()
+                synchronized(lock) {
+                    context.ensureActive()
+                    checkCurrent()
+                    val name = "$key.json"
+                    AtomicFile(File(directory, name)).delete()
+                    if (listOf("", ".new", ".bak").any { File(directory, name + it).exists() })
+                        throw IOException("Cannot invalidate chat cache")
+                }
+            }
+    }
+
+    /** Called under the IO lock, before publishing a new scope or creating its temporary file. */
+    private fun reserveScope(key: String) {
+        val groups =
+            directory
+                .listFiles()
+                ?.filter { Regex("[0-9a-f]{64}\\.json(?:\\.new|\\.bak)?").matches(it.name) }
+                ?.groupBy { it.name.substringBefore(".json") + ".json" }
+                ?: throw IOException("Cannot inspect chat cache retention")
+        groups.entries
+            .filter { it.key != "$key.json" }
+            .sortedByDescending { (_, files) -> files.maxOf { it.lastModified() } }
+            .drop(3)
+            .forEach { (name, _) ->
+                AtomicFile(File(directory, name)).delete()
+                if (listOf("", ".new", ".bak").any { File(directory, name + it).exists() }) {
+                    throw IOException("Cannot evict an old chat cache scope")
+                }
+            }
     }
 }

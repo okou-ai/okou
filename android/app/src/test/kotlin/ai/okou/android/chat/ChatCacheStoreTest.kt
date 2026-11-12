@@ -149,6 +149,26 @@ class ChatCacheStoreTest {
         }
 
     @Test
+    fun retentionFailureCannotPublishAFifthScope() = runTest {
+        val root = temporary.newFolder()
+        repeat(4) { index ->
+            // A damaged old AtomicFile group cannot be deleted as a regular cache file.
+            val old = root.resolve("${index.toString().padStart(64, '0')}.json")
+            check(old.mkdir())
+            old.resolve("unexpected-child").writeText("unavailable cache")
+        }
+        ChatCacheStore(root)
+            .open(identity) { true }
+            .use { lease ->
+                assertTrue(
+                    runCatching { lease.save(checkpoint(), 1234) }.exceptionOrNull() is IOException
+                )
+                assertNull(lease.load())
+            }
+        assertEquals(4, checkNotNull(root.listFiles()).size)
+    }
+
+    @Test
     fun retentionEvictsWholeOldScopesWithinTheFourScopeBudget() = runTest {
         val root = temporary.newFolder()
         val store = ChatCacheStore(root)

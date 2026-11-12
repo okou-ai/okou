@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectsProjectsItem
@@ -63,7 +64,11 @@ private data class PendingChatCacheWrite(
     val confirmedAt: Long,
     val navigation: CachedChatNavigation,
     val revision: Long,
-)
+) : ChatCacheChange
+
+private sealed interface ChatCacheChange
+
+private data class InvalidateChatCache(val revision: Long) : ChatCacheChange
 
 /** Workspace-retained HTTP observations; no row collector owns synchronization or durable state. */
 class ChatListModel(
@@ -77,7 +82,7 @@ class ChatListModel(
     private val mutable = MutableStateFlow(ChatListUiState())
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
-    private val cache = cacheStore.open(identity) { current() && mutable.value.enabled != false }
+    private val cache = cacheStore.open(identity) { current() }
     private val sync = ChatListSync(service, dispatcher)
     private var checkpoint: ChatCheckpoint? = null
     private var cacheRead = false
@@ -87,7 +92,7 @@ class ChatListModel(
     private var agentsJob: Job? = null
     private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
-    private val writes = MutableStateFlow<PendingChatCacheWrite?>(null)
+    private val writes = MutableStateFlow<ChatCacheChange?>(null)
     private var writeRevision = 0L
 
     init {
@@ -96,14 +101,22 @@ class ChatListModel(
             writes.collectLatest { pending ->
                 if (pending != null) {
                     try {
-                        cache.save(pending.checkpoint, pending.confirmedAt, pending.navigation)
-                        requireCurrent()
-                        mutable.value = mutable.value.copy(cacheUnavailable = false)
+                        when (pending) {
+                            is PendingChatCacheWrite ->
+                                cache.save(
+                                    pending.checkpoint,
+                                    pending.confirmedAt,
+                                    pending.navigation,
+                                )
+                            is InvalidateChatCache -> cache.invalidate()
+                        }
+                        currentCoroutineContext().ensureActive()
+                        if (current()) mutable.value = mutable.value.copy(cacheUnavailable = false)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
-                        requireCurrent()
-                        mutable.value = mutable.value.copy(cacheUnavailable = true)
+                        currentCoroutineContext().ensureActive()
+                        if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                     }
                 }
             }
@@ -160,7 +173,7 @@ class ChatListModel(
                         projectsJob?.cancel()
                         indicatorsJob?.cancel()
                         checkpoint = null
-                        writes.value = null
+                        writes.value = InvalidateChatCache(++writeRevision)
                         cacheRead = false
                         mutable.value =
                             ChatListUiState(
@@ -183,6 +196,7 @@ class ChatListModel(
                                     if (projects) mutable.value.projectsPhase
                                     else ChatReadPhase.Idle,
                             )
+                        queueSave()
                         refreshList()
                         refreshMetadata()
                         refreshIndicators()
@@ -241,7 +255,8 @@ class ChatListModel(
                                 else saved.navigation.projects?.let { ChatListSource.Cache },
                         )
                     if (
-                        state.source == ChatListSource.Network ||
+                        networkRollout ||
+                            state.source == ChatListSource.Network ||
                             state.agentsSource == ChatListSource.Network ||
                             state.projectsSource == ChatListSource.Network
                     )
@@ -348,7 +363,19 @@ class ChatListModel(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
-                        fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
+                        // The Projects collection itself returns 404 when its rollout is off.
+                        // A stale switch read must not turn that into workspace revocation.
+                        if (error is ApiFailure.Http && error.status == 404) {
+                            if (current()) {
+                                mutable.value =
+                                    mutable.value.copy(
+                                        projects = emptyList(),
+                                        projectsSource = null,
+                                        projectsPhase = ChatReadPhase.Failed,
+                                    )
+                                queueSave()
+                            }
+                        } else fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
                     }
                 }
         }

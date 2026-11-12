@@ -365,6 +365,8 @@ class ChatListModelTest {
             assertEquals(false, model.uiState.value.enabled)
             assertTrue(model.uiState.value.threads.isEmpty())
             assertEquals(ChatListSource.Network, model.uiState.value.rolloutSource)
+            store.clear()
+            cache.open(identity) { true }.use { assertNull(it.load()) }
         } finally {
             flags.complete(FeatureSwitches(emptyMap(), emptyMap()))
             list.complete(page())

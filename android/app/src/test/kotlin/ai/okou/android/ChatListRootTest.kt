@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.auth.SessionModel
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -9,8 +10,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.Job
 import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,17 +44,57 @@ class ChatListApplication : TestOkouApplication() {
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 class ChatListRootTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private var chatJob: Job? = null
+
+    @Before
+    fun retainActualOwnerForTeardown() {
+        compose.onNodeWithText("Chats").assertExists()
+        compose.runOnIdle {
+            chatJob =
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .viewModelScope
+                    .coroutineContext[Job]
+        }
+    }
 
     @After
     fun close() {
         val app = compose.activity.application as ChatListApplication
         app.flagsGate.countDown()
         compose.activityRule.scenario.close()
+        compose.waitUntil(10_000) { chatJob?.isCompleted != false }
         try {
             app.fixture.close()
         } finally {
             app.cacheSnapshot.restore()
         }
+    }
+
+    @Test
+    fun unavailableProjectsDoNotRevokeTheWorkspaceOrHideAuthorizedOutsideChats() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.projects = {
+            jsonResponse("""{"error":{"code":"NOT_FOUND","message":"Project not found"}}""")
+                .setResponseCode(404)
+        }
+        app.flagsGate.countDown()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Some Okou or Project information is unavailable.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
+        compose.onNodeWithText("Personal chat").assertExists()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Appearance").assertExists()
     }
 
     @Test
@@ -73,9 +118,7 @@ class ChatListRootTest {
         val retry = compose.activity.getString(R.string.retry)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText(retry))
         compose.onNodeWithText(retry).performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Loading chats…").fetchSemanticsNodes().isEmpty()
-        }
+        awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.onNodeWithText("Project chat").assertExists()
         compose.onNodeWithText("Settings").performClick()
@@ -90,9 +133,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Appearance").assertExists()
         (compose.activity.application as ChatListApplication).flagsGate.countDown()
         compose.onNodeWithText("Home").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Loading chats…").fetchSemanticsNodes().isEmpty()
-        }
+        awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.onNodeWithText("Project chat").assertExists()
         compose.onNodeWithText("Research Okou").assertExists()
@@ -103,5 +144,17 @@ class ChatListRootTest {
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
+    }
+
+    private fun awaitListAndNames() {
+        compose.waitUntil(10_000) {
+            listOf(R.string.chat_loading, R.string.chat_refreshing, R.string.chat_metadata_loading)
+                .all { label ->
+                    compose
+                        .onAllNodesWithText(compose.activity.getString(label))
+                        .fetchSemanticsNodes()
+                        .isEmpty()
+                }
+        }
     }
 }

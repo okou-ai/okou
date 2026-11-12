@@ -20,9 +20,10 @@ fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
     }
     val projects = if (state.projectsEnabled) state.projects else emptyList()
     val known = projects.mapTo(hashSetOf()) { it.id }
+    val byProject = visible.groupBy { it.projectId }
     val groups =
         projects.mapNotNull { project ->
-            val rows = visible.filter { it.projectId == project.id && matches(it) }
+            val rows = byProject[project.id].orEmpty().filter(matches)
             if (rows.isEmpty() && state.filter != ChatListFilter.Recent) null
             else ChatListGroup(project, rows)
         }

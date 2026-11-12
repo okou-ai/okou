@@ -77,15 +77,14 @@ private fun ChatListScreen(
     val metadataFailed =
         state.agentsPhase == ChatReadPhase.Failed ||
             state.projectsEnabled && state.projectsPhase == ChatReadPhase.Failed
+    val knownProjects =
+        remember(state.projectsEnabled, state.projects) {
+            if (state.projectsEnabled) state.projects.mapTo(hashSetOf()) { it.id } else emptySet()
+        }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
-            state.threads.any {
-                it.hidden != true &&
-                    groups.none { group ->
-                        group.project != null && group.project.id == it.projectId
-                    }
-            }
+            state.threads.any { it.hidden != true && it.projectId !in knownProjects }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = 760.dp).fillMaxWidth().testTag("chat_list"),
