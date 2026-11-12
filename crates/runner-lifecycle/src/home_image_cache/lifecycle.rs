@@ -973,7 +973,7 @@ impl HomeImageCache {
         committed_cache_keys: Option<&BTreeSet<String>>,
         collect_locked_commits: bool,
     ) -> HomeCacheInventory {
-        let mut inventory = HomeCacheInventory::default();
+        let mut inventory = super::inventory::HomeCacheInventoryBuilder::default();
         let mut inspected_cache_keys = BTreeSet::new();
         if let Some(committed_cache_keys) = committed_cache_keys {
             for cache_key in committed_cache_keys.iter().take(MAX_HELD_HOME_STATES) {
@@ -1013,13 +1013,8 @@ impl HomeImageCache {
             // A group evicted early can become recent again later in arbitrary
             // directory order. Revisit the selected groups to recover their
             // earlier profiles without retaining an unbounded root inventory.
-            let groups = inventory.completion_times.keys().cloned().collect();
-            let mut refill = HomeCacheInventory {
-                completion_times: inventory.completion_times,
-                locked_keys: inventory.locked_keys,
-                truncated: true,
-                ..Default::default()
-            };
+            let groups = inventory.selected_groups();
+            let mut refill = inventory.refill();
             self.scan_home_cache_inventory(
                 profile_image_sizes_bytes,
                 collect_locked_commits,
@@ -1030,7 +1025,7 @@ impl HomeImageCache {
             .await;
             inventory = refill;
         }
-        inventory
+        inventory.finish()
     }
 
     async fn scan_home_cache_inventory(
@@ -1039,7 +1034,7 @@ impl HomeImageCache {
         collect_locked_commits: bool,
         inspected_cache_keys: &BTreeSet<String>,
         groups: Option<&BTreeSet<String>>,
-        inventory: &mut HomeCacheInventory,
+        inventory: &mut super::inventory::HomeCacheInventoryBuilder,
     ) {
         #[cfg(any(test, feature = "test-support"))]
         self.inner
