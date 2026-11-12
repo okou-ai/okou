@@ -156,7 +156,7 @@
       case .statusAndFeedback:
         "Running, loading, failed reads, banners, chat feedback, empty states and usage."
       case .content: "Markdown, transcript cards, media tiles and results in a chat."
-      case .identity: "Agents, people, workspaces and partner logos."
+      case .identity: "Okou and its moods, people, workspaces and partner logos."
       case .chat: "The chat header, composer, suggestions, dictation, Add to chat and the greeting."
       case .sidebar: "Workspace switcher, chats, and the bottom bar."
       case .signInAndAccount: "The one sign-in screen and the Settings account card."

@@ -49,6 +49,7 @@ import {
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { CustomConnectorUpdateConfirm } from "./custom-connector-update-confirm.tsx";
+import { CustomConnectorNetworkField } from "./custom-connector-network-field.tsx";
 
 type CreateField = Exclude<
   keyof CustomConnectorCreateForm,
@@ -934,6 +935,7 @@ function oauthConfigFromForm(
 
 interface CustomConnectorSharedDefinition extends CustomConnectorDefinitionParts {
   readonly displayName: string;
+  readonly networkBinding?: CreateCustomConnectorBody["networkBinding"];
   readonly authMode: "none" | "manual" | "oauth" | "automatic";
   readonly oauthConfig?: NonNullable<UpdateCustomConnectorBody["oauthConfig"]>;
 }
@@ -971,6 +973,16 @@ function sharedDefinitionFromForm(
           : oauthDefinitionFromConnector(connector);
   return {
     displayName: form.displayName.trim(),
+    ...(form.cloudflareConfigId !== (connector?.networkBinding?.configId ?? "")
+      ? {
+          networkBinding: form.cloudflareConfigId
+            ? {
+                type: "cloudflare_access" as const,
+                configId: form.cloudflareConfigId,
+              }
+            : null,
+        }
+      : {}),
     ...definition,
     authMode,
     ...(authMode === "oauth"
@@ -1308,7 +1320,9 @@ function CustomConnectorForm({
   canSubmit,
   onSubmit,
   onCancel,
+  connector,
 }: AuthenticationFieldsProps & {
+  readonly connector?: CustomConnectorResponse;
   readonly setKind: (kind: CustomConnectorResponse["kind"]) => void;
   readonly submitting: boolean;
   readonly canSubmit: boolean;
@@ -1323,6 +1337,14 @@ function CustomConnectorForm({
         setField={setField}
         setKind={setKind}
         editing={editing}
+      />
+      <CustomConnectorNetworkField
+        connector={connector}
+        configId={form.cloudflareConfigId}
+        onChange={(value) => {
+          setField("cloudflareConfigId", value);
+        }}
+        disabled={submitting}
       />
       <AuthenticationFields
         form={form}
@@ -1471,6 +1493,7 @@ export function CustomConnectorCreateDialog({
             <CustomConnectorDialogTitle editing={editing} />
           </DialogHeader>
           <CustomConnectorForm
+            connector={connector}
             form={form}
             setField={setField}
             setKind={setKind}

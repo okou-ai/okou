@@ -46,6 +46,10 @@ and valid examples. The connector argument accepts a full slug, UUID, or exact
 unique display name, optionally prefixed with custom:. Use UUIDs for stable automation.
 OAuth updates may omit oauthConfig.clientSecret to preserve the encrypted
 current client secret. Never include an end-user token or values array.
+Omit networkBinding to preserve the current network requirement, including
+when the feature is disabled. Supply networkBinding: null to remove it explicitly.
+To change it, use {"type":"cloudflare_access","configId":"<configuration-uuid>"}.
+See create --help for HTTPS, organization scope and reserved-header requirements.
 
 Examples:
   okou connector custom update _acme-mcp --file ./connector.json

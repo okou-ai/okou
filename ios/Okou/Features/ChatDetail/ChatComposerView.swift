@@ -74,8 +74,11 @@ struct ChatComposerView: View {
     guard let voice = draftState?.voice else { return false }
     return voice.phase == .recording || voice.phase == .processing || voice.phase == .saved
   }
-  /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
-  private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
+  /// Expanded text entry reserves send before typing; only compact or voice-only input lets
+  /// the mic take its place, so the toolbar does not reflow on the first or last character.
+  private var replacesSendWithMic: Bool {
+    !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
+  }
   private var showsModelPicker: Bool { expandsInput && !voiceActive }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
@@ -217,7 +220,7 @@ struct ChatComposerView: View {
               .allowsHitTesting(showsModelPicker)
               .accessibilityHidden(!showsModelPicker)
           }
-          // The mic sits beside send once there is a draft; on an empty one it takes send's place.
+          // The mic and send are already side by side when the text editor opens.
           if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
@@ -242,16 +245,21 @@ struct ChatComposerView: View {
               }
               .font(.okou(size: 16, weight: .semibold))
               .foregroundStyle(
-                showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
+                showsStop
+                  ? OkouColor.interruptForeground
+                  : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
             }
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
-            .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
+            .tint(
+              showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
+            )
             .disabled(!canPerformPrimaryAction)
             .accessibilityLabel(showsStop ? "Stop" : "Send message")
             .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
             .frame(width: actionSize, height: actionSize)
             .contentShape(Circle())
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
           }
         }
       }

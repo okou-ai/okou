@@ -101,9 +101,19 @@ Types and authentication:
   automatic: MCP-only discovery of no-auth or OAuth during connection/reconnect.
     Use empty fields and injections, without static OAuth configuration.
 
+Cloudflare Access (when enabled):
+  Add "networkBinding": {"type":"cloudflare_access","configId":"<configuration-uuid>"}
+  to use an existing organization-scoped configuration from the same organization.
+  Every allowed request matching the connector firewall uses this network layer,
+  independently of application authentication. Targets must use HTTPS.
+  Cloudflare Access owns CF-Access-Client-Id and CF-Access-Client-Secret; do not
+  add those headers as application injections or copy the service token into JSON.
+  Omit networkBinding for no Cloudflare requirement when creating a connector.
+
 Definition file:
   Describe only the connector metadata, Header/Query injection templates, and
-  OAuth app configuration when applicable. Never include an API token,
+  OAuth app configuration and an optional network configuration reference.
+  Never include an API token,
   end-user OAuth token, or values array. Creating the definition is separate
   from connecting a member account, including for none and automatic modes.
 

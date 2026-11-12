@@ -1103,6 +1103,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         cancel_tokens: provider_state.cancel_tokens.clone(),
         spawn_ctx: spawn_ctx.clone(),
     });
+    let (dispatch_intake, mut dispatch_rx) =
+        crate::ingress::dispatch::DispatchIntake::new(claim_tasks.slots());
+    if let Some(ingress) = &ingress {
+        ingress.enable_dispatch(dispatch_intake);
+    }
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),
         Duration::from_secs(1),
@@ -1300,6 +1305,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let pending_retry_deadline =
             pending_candidates.next_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
+            Some(work) = dispatch_rx.recv(), if !claim_tasks.is_preparing() => {
+                claim_tasks.submit_supplied(work, &runner.profiles, &factories);
+            }
             result = soft_drain.join(), if soft_drain.is_in_flight() => {
                 if let Err(error) = soft_drain.complete(result, &lifecycle) {
                     warn!(%error, "idle drain cleanup producer lost");
@@ -1674,6 +1682,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // independently and must finish before idle or provider teardown; successful
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
+    dispatch_rx.close();
+    while let Some(work) = dispatch_rx.recv().await {
+        work.settle(crate::ingress::dispatch::Disposition::Rejected);
+    }
     teardown.event("drop_discover_fut");
     home_cache_observation.stop_watching();
     let phase = teardown.phase_start("claims_drain");
