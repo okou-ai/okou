@@ -38,6 +38,7 @@ mod finalizing_source;
 mod parallel_claim;
 mod preferred_claim_retry;
 mod silent_connection;
+mod supplied;
 mod template_guidance;
 
 fn api_client_for_url(api_url: String) -> ApiClient {

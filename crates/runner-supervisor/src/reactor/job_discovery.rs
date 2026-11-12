@@ -307,26 +307,31 @@ pub(super) fn prepare_discovered_job(
     let DiscoveredJob { mut candidate } = job;
     candidate.mark_main_loop_handling_started();
     let run_id = candidate.run_id();
-    let profile_name = candidate.profile_name().to_owned();
-    let Some(profile) = profiles.get(&profile_name) else {
-        warn!(run_id = %run_id, profile = %profile_name, "unknown profile, skipping");
+    let profile_name = candidate.profile_name();
+    let Some(profile) = prepare_job_profile(profile_name, profiles, factories) else {
+        warn!(run_id = %run_id, profile = %profile_name, "unknown profile or missing factory, skipping");
         return None;
     };
-    let Some((factory, restore_guest_state)) = factories.get(&profile_name) else {
-        warn!(run_id = %run_id, profile = %profile_name, "no factory for profile, skipping");
-        return None;
-    };
-    Some(PreparedDiscoveredJob {
-        candidate,
-        profile: DiscoveredJobProfile {
-            profile_name,
-            rootfs_hash: profile.rootfs_hash.clone(),
-            vcpu: profile.vcpu,
-            memory_mb: profile.memory_mb,
-            home_disk_mb: profile.home_disk_mb,
-            restore_guest_state: *restore_guest_state,
-            factory: Arc::clone(factory),
-        },
+    Some(PreparedDiscoveredJob { candidate, profile })
+}
+
+/// Profile lookup shared by discovery and authenticated complete-input intake.
+/// The intake path must not log an unknown caller-supplied profile or payload.
+pub(super) fn prepare_job_profile(
+    profile_name: &str,
+    profiles: &BTreeMap<String, ProfileConfig>,
+    factories: &BTreeMap<String, (SharedFactory, bool)>,
+) -> Option<DiscoveredJobProfile> {
+    let profile = profiles.get(profile_name)?;
+    let (factory, restore_guest_state) = factories.get(profile_name)?;
+    Some(DiscoveredJobProfile {
+        profile_name: profile_name.to_owned(),
+        rootfs_hash: profile.rootfs_hash.clone(),
+        vcpu: profile.vcpu,
+        memory_mb: profile.memory_mb,
+        home_disk_mb: profile.home_disk_mb,
+        restore_guest_state: *restore_guest_state,
+        factory: Arc::clone(factory),
     })
 }
 

@@ -17,6 +17,7 @@ mod local;
 mod worker_join;
 
 pub use api::ApiClient;
+pub use api::decode_execution_publication;
 pub use api::{ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths};
 pub use connector_runtime_sync::{ConnectorRuntimeSyncHandle, ConnectorRuntimeSyncRegistration};
 pub use local::LocalProvider;
@@ -836,6 +837,21 @@ pub struct ClaimedJobRunIdMismatch {
 }
 
 impl ClaimedJob {
+    /// Full context supplied by the control plane, with normal Run auth but no Claim observation.
+    pub fn supplied(
+        context: ExecutionContext,
+        active_input_source: Option<ActiveInputSource>,
+    ) -> Self {
+        let completion_auth =
+            CompletionAuth::sandbox_token(context.run_id, context.sandbox_token.clone());
+        Self {
+            context,
+            completion_auth,
+            active_input_source,
+            api_claim_timing: None,
+        }
+    }
+
     fn validate_run_id(
         expected_run_id: RunId,
         context: &ExecutionContext,
@@ -1028,6 +1044,14 @@ pub trait JobProvider: Send + Sync {
     /// termination are abnormal recovery boundaries where completion is not
     /// guaranteed.
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob>;
+
+    /// Bind already supplied work to this provider's reporting/control facilities.
+    /// This must not acquire or fetch execution inputs from a remote service.
+    async fn bind_supplied(&self, _context: ExecutionContext) -> ProviderResult<ClaimedJob> {
+        Err(crate::ProviderError::Config(
+            "provider does not support direct dispatch".into(),
+        ))
+    }
 
     /// Controls when reporting completion may make the terminal result
     /// externally observable.

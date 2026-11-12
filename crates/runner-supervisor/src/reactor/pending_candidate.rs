@@ -27,6 +27,16 @@ pub(super) struct PendingRetry {
     slot: Option<OwnedSemaphorePermit>,
 }
 
+impl PendingRetry {
+    pub(super) fn supplied() -> Self {
+        Self {
+            generation: 0,
+            delay: INITIAL_RECHECK,
+            slot: None,
+        }
+    }
+}
+
 struct Entry {
     candidate: JobCandidate,
     checked: PendingRetry,

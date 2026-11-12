@@ -322,7 +322,7 @@ async fn factory_startup_failure_stops_status_and_cleans_startup_resources() {
     wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
 }
 
-async fn configure_public_ingress(config: &mut RunConfig) -> PublicIngress {
+pub(super) async fn configure_public_ingress(config: &mut RunConfig) -> PublicIngress {
     use std::os::unix::fs::PermissionsExt;
     let directory = config.paths.home.ingress_dir();
     std::fs::create_dir_all(&directory).unwrap();

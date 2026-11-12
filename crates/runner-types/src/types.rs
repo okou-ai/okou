@@ -64,9 +64,9 @@ impl Job {
 // Claim (execution context)
 // ---------------------------------------------------------------------------
 
-/// Normalized inputs consumed by API-claimed and locally submitted jobs.
+/// Normalized inputs consumed by directly supplied, API-claimed and local jobs.
 ///
-/// The API provider normalizes claim publication inputs into this type before execution.
+/// The shared API publication normalizer constructs this type before execution.
 /// Deserialization handles shared scalar fields and ignores unknown fields for forward
 /// compatibility; Runner-only application metadata is never decoded from API JSON.
 /// The canonical producer schema is
@@ -81,7 +81,7 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
-    /// Managed-file application metadata supplied by the claim adapter.
+    /// Managed-file application metadata supplied by the publication normalizer.
     #[serde(skip)]
     pub instruction_file: Option<crate::storage_manifest::InstructionFile>,
     // Vars are passed to the proxy registry for auth header template resolution.
