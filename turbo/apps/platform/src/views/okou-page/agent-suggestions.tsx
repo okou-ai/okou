@@ -807,7 +807,9 @@ function HomeSuggestionProgress({
 
 /**
  * The greeting's line while suggestions wait. The whole line opens the review;
- * the progress segments and the feedback menu sit above that trigger.
+ * the progress segments and the feedback menu sit above that trigger. The
+ * trigger reaches 8px past the line on each side, so its focus ring clears the
+ * text instead of cutting into its first glyph.
  */
 function HomeSuggestionPreview({
   item,
@@ -835,7 +837,7 @@ function HomeSuggestionPreview({
           <Button
             variant="quiet"
             aria-label={item.title}
-            className="absolute inset-0 z-0 size-full rounded-surface-compact p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
+            className="absolute -inset-x-2 inset-y-0 z-0 h-auto w-auto rounded-surface-compact p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
           />
         }
       />
