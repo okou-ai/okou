@@ -42,6 +42,8 @@ DATA_ROOTS = (
     "/var/lib/vm0-runner/groups/vm0",
     "/var/lib/vm0-runner/stripe",
 )
+# Runner units allow 300s for graceful stop. Leave time for job/cgroup retirement.
+STOP_TIMEOUT = 330
 
 
 def command(*args, allow_failure=False):
@@ -291,13 +293,33 @@ class Host:
                     }
                 )
 
+        names_by_pr = {
+            pr: [unit["name"] for unit in before.get(pr, {}).get("units", [])]
+            for pr in selected
+        }
+        # Start every namespace's stop before waiting. One slow stop must not
+        # multiply the grace period by the batch size or delay sibling stops.
+        for pr, names in names_by_pr.items():
+            if not names:
+                continue
+            try:
+                teardown(pr, "stop", "--no-block", *names)
+            except (
+                OSError,
+                RuntimeError,
+                ValueError,
+                subprocess.SubprocessError,
+            ) as error:
+                outcomes[pr] = {"outcome": "failed", "error": str(error)}
+
+        deadline = time.monotonic() + STOP_TIMEOUT
         for pr in selected:
+            if pr in outcomes:
+                continue
             resource = before.get(pr, {"units": [], "directories": []})
             try:
-                names = [unit["name"] for unit in resource["units"]]
+                names = names_by_pr[pr]
                 if names:
-                    teardown(pr, "stop", "--no-block", *names)
-                    deadline = time.monotonic() + 60
                     while any(state["busy"] for state in self.states(names).values()):
                         if time.monotonic() >= deadline:
                             raise TimeoutError("service execution remains after stop")
@@ -420,7 +442,9 @@ class Host:
                         raise RuntimeError(
                             "cleanup selection is outside the locked namespaces"
                         )
-                    signal.alarm(120)
+                    # Covers the shared stop budget plus inventory and teardown.
+                    # The controller's response/batch deadlines must outlive it.
+                    signal.alarm(480)
                     try:
                         result = self.cleanup(selected)
                     finally:
