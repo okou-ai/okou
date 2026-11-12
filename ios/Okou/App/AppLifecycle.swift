@@ -6,6 +6,7 @@ import SwiftUI
 /// The root subscription owns orchestration; a temporary child disappearance does not.
 @MainActor @Observable
 final class AppLifecycle {
+  private var lifecycleTasks = LifecycleTasks()
   let authentication: AuthenticationService
   let configuration: AppConfiguration
   let notifications: NotificationService
@@ -53,6 +54,11 @@ final class AppLifecycle {
   }
 
   func run() async {
+    if closed {
+      let previous = lifecycleTasks.close()
+      lifecycleTasks = LifecycleTasks()
+      lifecycleTasks.track(previous)
+    }
     closed = false
     let generation = UUID()
     rootGeneration = generation
@@ -85,7 +91,7 @@ final class AppLifecycle {
     let data = notifications.data(
       authentication: authentication, configuration: configuration, session: session)
     if workspace?.data.scopeID != data?.scopeID {
-      workspace?.close()
+      if let workspace { lifecycleTasks.track(workspace.close()) }
       workspace = data.map {
         WorkspaceLifecycle(
           data: $0, configuration: configuration,
@@ -94,8 +100,13 @@ final class AppLifecycle {
     }
     workspace?.setForeground(phase == .active)
     if phase == .active { presentedScopeID = scopeID }
-    presentationTask = Task { await authentication.preparePresentation() }
+    presentationTask = Task {
+      guard !closed, !Task.isCancelled else { return }
+      await authentication.preparePresentation()
+    }
+    if let presentationTask { lifecycleTasks.track(presentationTask) }
     let task = Task {
+      guard ownsScope(scopeID), !Task.isCancelled else { return }
       await notifications.update(workspace: data)
       guard ownsScope(scopeID), !Task.isCancelled else { return }
       if !authentication.isLoading {
@@ -104,6 +115,7 @@ final class AppLifecycle {
       guard ownsScope(scopeID), !Task.isCancelled else { return }
       if phase == .active { await notifications.flushPrefetchReports() }
     }
+    lifecycleTasks.track(task)
     scopeTask = task
     return task
   }
@@ -119,6 +131,7 @@ final class AppLifecycle {
         await notifications.refreshNotificationState(userID: authentication.userID)
       }
     }
+    lifecycleTasks.track(task)
     notificationTask = task
     await task.value
   }
@@ -134,6 +147,7 @@ final class AppLifecycle {
     guard phase == .active else { return }
     let scopeID = authentication.presentationScopeID
     foregroundTask = Task {
+      guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
       await authentication.refresh()
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
       await notifications.refreshRegistration()
@@ -144,6 +158,7 @@ final class AppLifecycle {
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
       await notifications.flushPrefetchReports()
     }
+    if let foregroundTask { lifecycleTasks.track(foregroundTask) }
   }
 
   func reduceMemory() async {
@@ -154,7 +169,8 @@ final class AppLifecycle {
     !closed && authentication.presentationScopeID == scopeID
   }
 
-  func close() {
+  @discardableResult
+  func close() -> Task<Void, Never> {
     closed = true
     rootGeneration = UUID()
     hasScope = false
@@ -166,15 +182,17 @@ final class AppLifecycle {
     notificationTask = nil
     foregroundTask?.cancel()
     foregroundTask = nil
-    workspace?.close()
+    let shutdown = workspace?.close()
     workspace = nil
     presentedScopeID = nil
+    return lifecycleTasks.close(after: shutdown.map { [$0] } ?? [])
   }
 }
 
 /// One immutable workspace owns startup and native lifecycle work until scope retirement.
 @MainActor
 final class WorkspaceLifecycle {
+  private let lifecycleTasks = LifecycleTasks()
   let data: NotificationWorkspace
   let store: WorkspaceStore
   private let authentication: AuthenticationService
@@ -211,6 +229,7 @@ final class WorkspaceLifecycle {
       }
       store.setForeground(foreground)
       startupTask = Task { await store.start(userID: data.userID, workspaceID: data.workspaceID) }
+      if let startupTask { lifecycleTasks.track(startupTask) }
     }
     await startupTask?.value
   }
@@ -229,6 +248,7 @@ final class WorkspaceLifecycle {
       else { return false }
       return opened
     }
+    lifecycleTasks.track(task)
     navigation = (id, destination, task)
     return await task.value
   }
@@ -250,11 +270,13 @@ final class WorkspaceLifecycle {
       defer { memoryTask = nil }
       await store.reduceMemory()
     }
+    lifecycleTasks.track(task)
     memoryTask = task
     await task.value
   }
 
-  func close() {
+  @discardableResult
+  func close() -> Task<Void, Never> {
     closed = true
     startupTask?.cancel()
     startupTask = nil
@@ -262,6 +284,6 @@ final class WorkspaceLifecycle {
     navigation = nil
     memoryTask?.cancel()
     memoryTask = nil
-    store.close()
+    return lifecycleTasks.close(after: [store.close()])
   }
 }

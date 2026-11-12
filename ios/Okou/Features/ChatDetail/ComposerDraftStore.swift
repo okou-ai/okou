@@ -6,6 +6,7 @@ import Observation
 /// One composer owns device persistence, canonical draft hydration and a serialized save loop.
 @MainActor @Observable
 final class ComposerDraftStore {
+  private let lifecycleTasks: LifecycleTasks
   struct LocalRecord: Codable {
     var value: ComposerDraft
     var files: [AttachmentDraftStore.SavedItem]
@@ -154,7 +155,8 @@ final class ComposerDraftStore {
   }
   func requestSync() {
     guard !closed, isForeground, !Task.isCancelled, syncTask == nil else { return }
-    Task { [weak self] in await self?.synchronize() }
+    let task = Task { [weak self] in await self?.synchronize() }
+    lifecycleTasks.track(task)
   }
 
   func setForeground(_ active: Bool) {
@@ -195,8 +197,10 @@ final class ComposerDraftStore {
     voiceCapture: (any VoiceAudioCapture)? = nil,
     syncSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
-    }
+    },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.syncSleep = syncSleep
     self.target = target
     self.repository = repository
@@ -278,6 +282,7 @@ final class ComposerDraftStore {
       do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
       await self?.synchronize()
     }
+    if let debounceTask { lifecycleTasks.track(debounceTask) }
   }
 
   private func persist() {
@@ -387,6 +392,7 @@ final class ComposerDraftStore {
         }
       } while (dirty || retryPending) && !closed && !Task.isCancelled
     }
+    lifecycleTasks.track(task)
     syncTask = task
     await task.value
   }
@@ -424,7 +430,8 @@ final class ComposerDraftStore {
     guard !closed else { return }
     if let voice, voice.phase != .idle {
       voice.suspend()
-      Task { await voice.discard() }
+      let task = Task { await voice.discard() }
+      lifecycleTasks.track(task)
     }
     // Native focus callbacks must finish while their editor generation is still current.
     editor.dismissKeyboard()

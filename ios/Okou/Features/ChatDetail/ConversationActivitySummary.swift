@@ -5,6 +5,7 @@ import Observation
 /// One visible detail owns one demand. Summary failures never change authoritative chat state.
 @MainActor @Observable
 final class ConversationActivitySummary {
+  private let lifecycleTasks: LifecycleTasks
   private(set) var messages: [ChatActivitySummary.Message] = []
   private var currentID: String?
   var text: String? { (messages.first { $0.id == currentID } ?? messages.first)?.text }
@@ -22,8 +23,10 @@ final class ConversationActivitySummary {
 
   init(
     sync: ChatSync, threadID: String, didRequireUpgrade: @escaping @MainActor (Error) -> Void,
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.didRequireUpgrade = didRequireUpgrade
     self.sync = sync
     self.threadID = threadID
@@ -46,6 +49,7 @@ final class ConversationActivitySummary {
         }
       } catch {}
     }
+    if let polling { lifecycleTasks.track(polling) }
   }
 
   func setRotates(_ enabled: Bool) {
@@ -81,6 +85,7 @@ final class ConversationActivitySummary {
         if (error as? APIClientError)?.statusCode == 426 { self.didRequireUpgrade(error) }
       }
     }
+    if let request { lifecycleTasks.track(request) }
   }
 
   private func replace(_ next: [ChatActivitySummary.Message]) {
@@ -107,5 +112,6 @@ final class ConversationActivitySummary {
         }
       } catch {}
     }
+    if let rotation { lifecycleTasks.track(rotation) }
   }
 }
