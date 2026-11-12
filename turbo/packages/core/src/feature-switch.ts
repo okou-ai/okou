@@ -75,7 +75,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Email Okou and continue each email conversation in its own chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+    enabledEmailHashes: [
+      fnv1a("yuma@vm0.ai"),
+      fnv1a("qa-signup-20261112-21e53024@okou.io"),
+    ],
   },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
