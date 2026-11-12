@@ -83,6 +83,9 @@ async fn duplicate_generic_source_keeps_original_deadline_during_physical_wait()
         .unwrap();
     wait_cancel_handle(&env.cancel_tokens, successor, Duration::from_secs(5)).await;
     wait_discover_entered(&env, Duration::from_secs(2)).await;
+    env.start_observer
+        .wait_finalizing_handoff_requested(source, successor, Duration::from_secs(5))
+        .await;
     env.handle
         .discover_tx
         .send(generic_finalizing_candidate(

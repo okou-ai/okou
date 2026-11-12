@@ -166,15 +166,22 @@ struct FinalizingFallback<'a> {
     ctx: FinalizingSelectionResources<'a>,
 }
 
-/// Test-only wait checkpoint; not stored in a production request or context.
+/// Test-only selection checkpoints; not stored in a production request or context.
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
 pub struct FinalizingSelectionTestHooks {
+    pub on_handoff_requested: Option<Arc<dyn Fn(RunId, RunId) + Send + Sync>>,
     pub on_capacity_wait: Option<Arc<dyn Fn(RunId) + Send + Sync>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
 impl FinalizingSelectionTestHooks {
+    fn notify_handoff_requested(&self, predecessor_run_id: RunId, successor_run_id: RunId) {
+        if let Some(callback) = &self.on_handoff_requested {
+            callback(predecessor_run_id, successor_run_id);
+        }
+    }
+
     fn notify_capacity_wait(&self, run_id: RunId) {
         if let Some(callback) = &self.on_capacity_wait {
             callback(run_id);
@@ -238,6 +245,8 @@ async fn select_finalizing_resource_inner(
             ctx: resources,
         },
         reserved_exact,
+        #[cfg(any(test, feature = "test-support"))]
+        &test_hooks,
     )
     .await
     {
@@ -309,6 +318,7 @@ async fn select_finalizing_resource_inner(
 async fn wait_for_finalizing_resource(
     request: FinalizingWait<'_>,
     reserved_exact: &mut Option<ReservedIdleActivation>,
+    #[cfg(any(test, feature = "test-support"))] test_hooks: &FinalizingSelectionTestHooks,
 ) -> FinalizingWaitOutcome {
     let FinalizingWait {
         run_id,
@@ -321,6 +331,10 @@ async fn wait_for_finalizing_resource(
     let cancel = cancellation.token();
     let wait_started_at = tokio::time::Instant::now();
     let mut handoff = admission.predecessor.request_handoff(run_id);
+    #[cfg(any(test, feature = "test-support"))]
+    if handoff.is_some() {
+        test_hooks.notify_handoff_requested(admission.source_run_id, run_id);
+    }
     loop {
         if cancel.is_cancelled() {
             return FinalizingWaitOutcome::cancelled(handoff.as_mut());
