@@ -142,7 +142,10 @@ private struct RecentPhotoTile: View {
     )
     .accessibilityAddTraits(isSelected ? .isSelected : [])
     .task(id: asset.localIdentifier) {
-      image = await library.thumbnail(for: asset, side: OkouControl.mediaTile * displayScale)
+      let thumbnail = await library.thumbnail(
+        for: asset, side: OkouControl.mediaTile * displayScale)
+      guard !Task.isCancelled else { return }
+      image = thumbnail
     }
   }
 }
@@ -152,14 +155,14 @@ private struct RecentPhotoTile: View {
 @MainActor @Observable
 final class RecentPhotoLibrary {
   private(set) var recent: [PHAsset] = []
-  @ObservationIgnored private let images = PHCachingImageManager()
+  @ObservationIgnored private let images = PhotoLibraryImageManager()
 
   func load() async {
     var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     if status == .notDetermined {
       status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
-    guard status == .authorized || status == .limited else { return }
+    guard !Task.isCancelled, status == .authorized || status == .limited else { return }
     let options = PHFetchOptions()
     options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
     options.fetchLimit = 24
@@ -183,44 +186,42 @@ final class RecentPhotoLibrary {
     options.deliveryMode = .highQualityFormat
     options.resizeMode = .fast
     options.isNetworkAccessAllowed = true
-    return await withCheckedContinuation { continuation in
-      images.requestImage(
+    // A missing thumbnail keeps the existing placeholder; cancellation never updates the tile.
+    return try? await images.read { manager, complete in
+      manager.requestImage(
         for: asset, targetSize: CGSize(width: side, height: side), contentMode: .aspectFill,
         options: options
       ) { image, _ in
-        continuation.resume(returning: image)
+        complete(.success(image))
       }
     }
   }
 
-  /// The photo as a file under its own name, ready for the draft's usual import. An edited
-  /// photo keeps its edits and takes the extension of the data it now has.
-  static func file(for asset: PHAsset) async throws -> URL {
+  /// The importer owns all files; edited photos keep their original encoded bytes and extension.
+  static func attachment(for asset: PHAsset) async throws -> ImportedAttachmentFile {
     let options = PHImageRequestOptions()
     options.isNetworkAccessAllowed = true
     options.version = .current
     options.deliveryMode = .highQualityFormat
-    let (data, typeIdentifier): (Data, String?) = try await withCheckedThrowingContinuation {
-      continuation in
-      PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) {
+    let images = PhotoLibraryImageManager(PHImageManager.default())
+    let (data, typeIdentifier): (Data, String?) = try await images.read { manager, complete in
+      manager.requestImageDataAndOrientation(for: asset, options: options) {
         data, typeIdentifier, _, _ in
         if let data {
-          continuation.resume(returning: (data, typeIdentifier))
+          complete(.success((data, typeIdentifier)))
         } else {
-          continuation.resume(
-            throwing: ChatError.invalidContract(
-              "This photo or video could not be loaded. Select it again."))
+          complete(
+            .failure(
+              ChatError.invalidContract(
+                "This photo or video could not be loaded. Select it again.")))
         }
       }
     }
+    try Task.checkCancellation()
     var name = PHAssetResource.assetResources(for: asset).first?.originalFilename ?? "Photo"
     if let typeIdentifier, let fileExtension = UTType(typeIdentifier)?.preferredFilenameExtension {
       name = (name as NSString).deletingPathExtension + "." + fileExtension
     }
-    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let url = folder.appending(path: name)
-    try data.write(to: url, options: .atomic)
-    return url
+    return try await AttachmentFileImporter.shared.photo(data, filename: name)
   }
 }
