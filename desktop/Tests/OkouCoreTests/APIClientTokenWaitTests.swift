@@ -39,6 +39,13 @@ private actor TokenResponseGate {
   }
 }
 
+private final class PendingHTTPProtocol: URLProtocol, @unchecked Sendable {
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {}
+  override func stopLoading() {}
+}
+
 final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
   func testLookupDeadlineReturnsBeforeSharedTokenFailure() async {
     await assertCancelledTokenWait(refresh: false, callerCancels: false, tokenFails: true)
@@ -46,6 +53,35 @@ final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
 
   func testRefreshDeadlineReturnsBeforeSharedTokenSuccess() async {
     await assertCancelledTokenWait(refresh: true, callerCancels: false, tokenFails: false)
+  }
+
+  func testLookupDeadlineIsAttributedWithoutDiagnostics() async {
+    await assertCancelledTokenWait(
+      refresh: false, callerCancels: false, tokenFails: false, diagnostics: false)
+  }
+
+  func testRefreshDeadlineIsAttributedWithoutDiagnostics() async {
+    await assertCancelledTokenWait(
+      refresh: true, callerCancels: false, tokenFails: true, diagnostics: false)
+  }
+
+  func testHTTPDeadlineIsAttributedWithoutDiagnostics() async {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [PendingHTTPProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let api = APIClient(
+      baseURL: URL(string: "https://api.example.test")!, version: "0.56.3", session: session)
+    do {
+      _ = try await api.authenticatedRequest(
+        ApiRoutes.computerUseHostCommandNext(hostId: "host"), timeout: 0.15,
+        tokenProvider: { _ in "session" })
+      XCTFail("The pending HTTP request must expire")
+    } catch {
+      XCTAssertEqual((error as? DesktopFailure)?.code, "network_error")
+      XCTAssertEqual(error.localizedDescription,
+        "Desktop API request timed out (POST /api/computer-use/hosts/host/commands/next)")
+    }
   }
 
   func testCallerCancellationReturnsBeforeSharedTokenSuccess() async {
@@ -56,7 +92,9 @@ final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
     await assertCancelledTokenWait(refresh: true, callerCancels: true, tokenFails: true)
   }
 
-  private func assertCancelledTokenWait(refresh: Bool, callerCancels: Bool, tokenFails: Bool) async
+  private func assertCancelledTokenWait(
+    refresh: Bool, callerCancels: Bool, tokenFails: Bool, diagnostics: Bool = true
+  ) async
   {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [CachedTokenProtocol.self]
@@ -86,7 +124,7 @@ final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
       do {
         _ = try await api.authenticatedRequest(
           ApiRoutes.computerUseHostHeartbeat(hostId: "host"), body: .object([:]),
-          timeout: callerCancels ? 30 : 1, trace: trace,
+          timeout: callerCancels ? 30 : 1, trace: diagnostics ? trace : nil,
           tokenProvider: { force in
             if refresh && !force { return "cached-session" }
             waiting.fulfill()
@@ -99,6 +137,9 @@ final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
           XCTAssertTrue(error is CancellationError)
         } else {
           XCTAssertEqual((error as? DesktopFailure)?.code, "network_error")
+          let operation = refresh ? "refresh" : "lookup"
+          XCTAssertEqual(error.localizedDescription,
+            "Desktop session token \(operation) timed out (POST /api/computer-use/hosts/host/heartbeat)")
         }
       }
       returned.fulfill()
@@ -107,10 +148,12 @@ final class APIClientTokenWaitTests: XCTestCase, @unchecked Sendable {
     if callerCancels { call.cancel() }
     await fulfillment(of: [returned], timeout: 2)
     let before = await trace.snapshot()
-    XCTAssertEqual(before.phase, refresh ? .tokenRefresh : .tokenLookup)
-    XCTAssertEqual(before.deadline, callerCancels ? nil : .authenticatedRequest)
-    XCTAssertEqual(before.requests.map(\.status), refresh ? [401] : [])
-    XCTAssertEqual(before.authentication.last?.errorType, "CancellationError")
+    if diagnostics {
+      XCTAssertEqual(before.phase, refresh ? .tokenRefresh : .tokenLookup)
+      XCTAssertEqual(before.deadline, callerCancels ? nil : .authenticatedRequest)
+      XCTAssertEqual(before.requests.map(\.status), refresh ? [401] : [])
+      XCTAssertEqual(before.authentication.last?.errorType, "CancellationError")
+    }
 
     // An independent consumer still observes the SDK's actual result. Release
     // and await every owned task even when an earlier assertion failed.
