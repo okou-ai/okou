@@ -20,7 +20,7 @@ struct SSHAuthorizationCard: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active && loadsState { Task { await store.refresh() } }
     }
-    .accessibilityIdentifier("ssh-authorization-card")
+    .accessibilityElement(children: .contain)
   }
 }
 
@@ -71,8 +71,8 @@ struct SSHAuthorizationCardContent: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
-    TimelineView(.explicit(request.map { [$0.requestExpiresAt] } ?? [])) { context in
-      let status = request?.effectiveStatus(at: context.date)
+    TimelineView(.explicit(request.map { [$0.requestExpiresAt] } ?? [])) { _ in
+      let status = request?.effectiveStatus(at: .now)
       ChatActionCard {
         ChatCardHeader(
           title: title(status), icon: status == .approved ? "check" : "shield-check"
