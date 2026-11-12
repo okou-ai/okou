@@ -1,6 +1,6 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Loader2, LockKeyhole, RefreshCw, Send, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, Send, Trash2 } from "lucide-react";
 import { Button, CopyButton, Skeleton, buttonVariants } from "@okouai/ui";
 import {
   Dialog,
@@ -63,39 +63,28 @@ function EmailAddressRow({
         {sourceLabel}
       </td>
       <td className="py-3 align-middle">
-        {primary ? (
-          <span className="flex size-8 items-center justify-center text-muted-foreground">
-            <LockKeyhole size={14} aria-hidden="true" />
-            <span className="sr-only">
-              {t(($) => {
-                return $.works.email.loginNotice;
-              })}
-            </span>
-          </span>
-        ) : (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="quiet"
-            showTooltip
-            aria-label={t(
-              ($) => {
-                return $.works.email.deleteAria;
-              },
-              { email },
-            )}
-            disabled={operation.state === "loading"}
-            onClick={() => {
-              detach(remove(email, signal), Reason.DomCallback);
-            }}
-          >
-            {operation.state === "loading" ? (
-              <Loader2 className="animate-spin" aria-hidden="true" />
-            ) : (
-              <Trash2 aria-hidden="true" />
-            )}
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="quiet"
+          showTooltip
+          aria-label={t(
+            ($) => {
+              return $.works.email.deleteAria;
+            },
+            { email },
+          )}
+          disabled={operation.state === "loading"}
+          onClick={() => {
+            detach(remove(email, signal), Reason.DomCallback);
+          }}
+        >
+          {operation.state === "loading" ? (
+            <Loader2 className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Trash2 aria-hidden="true" />
+          )}
+        </Button>
       </td>
     </tr>
   );
@@ -211,13 +200,6 @@ export function EmailConnectDialog() {
               primaryEmail={primaryEmail}
             />
             <EmailAddAddressCode address={status.data.address} />
-            {primaryEmail && status.data.emails.includes(primaryEmail) ? (
-              <p className="text-xs text-muted-foreground">
-                {t(($) => {
-                  return $.works.email.loginNotice;
-                })}
-              </p>
-            ) : null}
             <p className="border-t border-border pt-3 text-xs text-muted-foreground">
               {t(($) => {
                 return $.works.email.healthNotice;

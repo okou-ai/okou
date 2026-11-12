@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1118.0](https://github.com/okou-ai/okou/compare/app-v0.1117.0...app-v0.1118.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Bug Fixes
+
+* **app:** show inline inbox links in the email integration ([#46744](https://github.com/okou-ai/okou/issues/46744)) ([fd9fa90](https://github.com/okou-ai/okou/commit/fd9fa9028ddd126712e4dbb6e21fe3ea0db9f60d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+    * @okouai/core bumped to 8.831.0
+    * @okouai/ui bumped to 1.21.1
+
 ## [0.1117.0](https://github.com/okou-ai/okou/compare/app-v0.1116.3...app-v0.1117.0) (2026-11-12)
 
 

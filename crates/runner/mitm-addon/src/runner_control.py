@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 MAX_FRAME_BYTES = 64 * 1024
 MAX_CONNECTIONS = 16
 CONNECTION_TIMEOUT_SECONDS = 5.0
+CATALOG_WARM_TIMEOUT_SECONDS = 10.0
+CATALOG_REPLY_MARGIN_SECONDS = 1.0
 LIFECYCLE_TIMEOUT_SECONDS = 5.0
 SOCKET_NAME = "control.sock"
 LOG_FLUSH_TIMEOUT_SECONDS = 4.0
@@ -172,11 +174,13 @@ class ControlServer:
 
     async def _handle(self, connection: socket.socket) -> None:
         try:
-            async with asyncio.timeout(CONNECTION_TIMEOUT_SECONDS):
+            async with asyncio.timeout(CONNECTION_TIMEOUT_SECONDS) as connection_timeout:
                 size = struct.unpack("!I", await _read_exact(connection, 4))[0]
                 if not 0 < size <= MAX_FRAME_BYTES:
                     return
-                response = await self._reply(await _read_exact(connection, size))
+                response = await self._reply(
+                    await _read_exact(connection, size), connection_timeout
+                )
                 payload = json.dumps(response, separators=(",", ":"), allow_nan=False).encode()
                 if len(payload) > MAX_FRAME_BYTES:
                     raise ValueError("control response exceeds frame limit")
@@ -191,7 +195,9 @@ class ControlServer:
             connection.close()
             self._connections.discard(connection)
 
-    async def _reply(self, payload: bytes) -> dict[str, object]:
+    async def _reply(
+        self, payload: bytes, connection_timeout: asyncio.Timeout
+    ) -> dict[str, object]:
         request_id: str | None = None
         try:
             request: object = json.loads(
@@ -229,7 +235,18 @@ class ControlServer:
                     return self._error(request_id, "invalid_request")
                 if self._registry_owner is None:
                     return self._error(request_id, "not_ready")
-                return await self._registry_operation(request_id, self._registry_owner.warm_catalog)
+                # Only validated catalog work gets a longer completion budget;
+                # partial peers and ordinary methods retain the connection limit.
+                connection_timeout.reschedule(
+                    asyncio.get_running_loop().time()
+                    + CATALOG_WARM_TIMEOUT_SECONDS
+                    + CATALOG_REPLY_MARGIN_SECONDS
+                )
+                return await self._registry_operation(
+                    request_id,
+                    self._registry_owner.warm_catalog,
+                    wait_seconds=CATALOG_WARM_TIMEOUT_SECONDS,
+                )
             if method == "registry.status":
                 if request["params"]:
                     return self._error(request_id, "invalid_request")
@@ -299,12 +316,14 @@ class ControlServer:
         self,
         request_id: str,
         operation: Callable[[], Future[dict[str, object] | None] | None],
+        *,
+        wait_seconds: float = 4.0,
     ) -> dict[str, object]:
         try:
             future = operation()
             if future is None:
                 return self._error(request_id, "busy")
-            async with asyncio.timeout(4.0):
+            async with asyncio.timeout(wait_seconds):
                 result = await asyncio.shield(asyncio.wrap_future(future))
         except TimeoutError:
             return self._error(request_id, "deadline")

@@ -7446,7 +7446,6 @@
       "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
       "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
       "loadError": "이메일 연결을 불러올 수 없습니다",
-      "loginNotice": "로그인 이메일은 항상 연결됩니다.",
       "manage": "관리",
       "manageDescription": "추가할 이메일 주소에서 코드를 보내세요.",
       "manageTitle": "이메일 연결",

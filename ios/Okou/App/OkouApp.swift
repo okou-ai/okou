@@ -95,7 +95,10 @@ struct OkouApp: App {
           await authentication?.start()
         }
       }
-      .onOpenURL { url in Task { await authentication?.handleURL(url) } }
+      .onOpenURL { url in
+        if OkouWidgetLinks.shared.receive(url) { return }
+        Task { await authentication?.handleURL(url) }
+      }
     }
   }
 
@@ -239,11 +242,23 @@ private struct WorkspaceRootView: View {
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
     }
+    // The widgets show this workspace's confirmed chat list; republish only when it changes.
+    .task(id: widgetSnapshot) { [snapshot = widgetSnapshot] in
+      OkouWidgetPublishing.publish(snapshot)
+    }
+    .task(id: OkouWidgetLinks.shared.requestID) {
+      guard let threadID = OkouWidgetLinks.shared.takeChat(in: workspaceID) else { return }
+      if await store.openChatLink(.thread(id: threadID, runID: nil)) { closeSidebar() }
+    }
     .modifier(
       NewChatNavigation(
         workspace: store, isAuthenticated: !authentication.isLoading,
         didOpen: closeSidebar)
     )
+    .onDisappear {
+      // Signing out or switching workspaces leaves no chat titles behind for the widgets.
+      OkouWidgetPublishing.clear()
+    }
     .alert(
       "Unable to update chats",
       isPresented: Binding(
@@ -392,6 +407,13 @@ private struct WorkspaceRootView: View {
     NewChatTagline.text(
       index: taglineIndex,
       name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  private var widgetSnapshot: OkouWidgetSnapshot {
+    OkouWidgetPublishing.snapshot(
+      workspaceID: workspaceID, threads: store.list.threads,
+      name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines),
+      hasDraft: store.hasDraft)
   }
 
   private func openPendingNotification() async {

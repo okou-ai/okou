@@ -5,6 +5,7 @@ import { hostedSites, hostedDeployments } from "@okouai/db/runtime/hosted-site";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { db$, writeDb$ } from "../external/db";
 import { hostedLinkOrigin } from "../../lib/link-layout";
+import { artifactPaywallApplies$ } from "./artifact-paywall.service";
 
 type Owner = {
   readonly siteId: string;
@@ -69,6 +70,12 @@ export const updateHostedSiteBanner$ = command(
     if (!current) {
       return { status: "not_found" as const };
     }
+    if (
+      !args.showBanner &&
+      (await set(artifactPaywallApplies$, args, signal))
+    ) {
+      return { status: "pro_required" as const };
+    }
     const [updated] = await set(writeDb$)
       .update(hostedSites)
       .set({ showBanner: args.showBanner, bannerRevision: randomUUID() })
@@ -94,9 +101,11 @@ export const updateHostedSiteBanner$ = command(
 
 /** Call only after delivery authority and the current viewer have been checked. */
 export const hostedSitePresentation$ = command(
-  async ({ get }, siteId: string, signal: AbortSignal) => {
+  async ({ get, set }, siteId: string, signal: AbortSignal) => {
     const [site] = await get(db$)
       .select({
+        orgId: hostedSites.orgId,
+        userId: hostedSites.userId,
         publicSlug: hostedSites.publicSlug,
         slug: hostedSites.slug,
         showBanner: hostedSites.showBanner,
@@ -123,8 +132,12 @@ export const hostedSitePresentation$ = command(
     if (!site) {
       return undefined;
     }
+    // The owner's current plan decides, so a downgrade restores the banner and
+    // withdraws downloads without rewriting the stored preference.
+    const paywalled = await set(artifactPaywallApplies$, site, signal);
     return {
-      showBanner: site.showBanner,
+      showBanner: site.showBanner || paywalled,
+      downloadAllowed: !paywalled,
       title: site.title ?? site.slug,
       siteUrl: `${hostedLinkOrigin("current", site.publicSlug)}/`,
     };
