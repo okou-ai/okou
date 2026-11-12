@@ -112,7 +112,7 @@ struct ChatSettingsView: View {
         } header: {
           Text("Preferences").okouSectionHeader()
         } footer: {
-          Group {
+          VStack(alignment: .leading, spacing: OkouSpace.sm) {
             Text(
               "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer."
             )
