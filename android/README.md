@@ -199,7 +199,116 @@ manifest audit; this is a location/contract exception, not a rule-wide exclusion
 or increased count baseline. See [public entry points](../docs/android/android-development.md#public-android-entry-points)
 before adding exported components, deep links or external Intent handling.
 
-This workflow is not a signing or store-publication pipeline. No release-please
-component, backend client header/floor, Android API consumption inventory, or
-FCM credentials are configured. Those boundaries must be implemented with the
-features that consume them; this scaffold makes no authenticated API requests.
+The validation workflow does not publish releases. FCM credentials are not
+configured. The transport below is available to feature owners; the local shell
+still makes no authenticated API requests.
+
+## GitHub Releases
+
+Release Please manages the independent `android` component through
+`version.txt` and `.release-please-manifest.json`. Gradle reads `version.txt` for
+`versionName` and derives a monotonic `versionCode` as
+`major * 1,000,000 + minor * 1,000 + patch`; minor and patch must be below 1,000
+and the result must fit a positive Android integer.
+
+When the normal release PR is merged, `release-please.yml` creates the
+`android-vX.Y.Z` release. Its `publish-android` job checks out the exact release
+target, builds the release APK, signs and verifies it, then uploads
+`okou-android-X.Y.Z.apk` to that release. The compatibility gate recognizes
+publication only after the APK upload completes. Store processing is not part
+of this distribution path.
+
+Signing is temporarily disposable: the build creates a fresh keystore, keeps
+its password in the signing tools' environment, and deletes the key on exit.
+Different releases therefore do not promise in-place upgrades. A user may need
+to uninstall an earlier APK, which removes local application data. The Release
+notes carry this limitation. Stable production signing is separate follow-up
+work before relying on upgrade continuity.
+
+## Canonical API Bindings And Transport
+
+Selected TypeScript/Zod contracts in
+`turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts` generate the
+Kotlin serialization models, Retrofit suspend declarations and client constants
+in `app/src/main/kotlin/ai/okou/android/api/generated`. The same route references
+register Android's installed-reader inventory, including error responses.
+Add only contracts a native consumer actually needs. Unsupported schema shapes
+fail generation; do not replace them with untyped JSON or parallel handwritten DTOs.
+
+Regenerate from the repository root with the Turbo workspace dependencies installed:
+
+```bash
+cd turbo
+pnpm -F @okouai/api-contracts generate:kotlin
+cd ../android
+./gradlew spotlessApply
+```
+
+The generated source is committed, so ordinary Android builds need no Node/pnpm.
+To verify it against the current canonical contracts, from `turbo/`:
+
+```bash
+pnpm -F @okouai/api-contracts check:kotlin
+pnpm -F @okouai/api-contracts lint-android-api-consumption
+```
+
+Drift comparison ignores comments, whitespace and optional trailing commas;
+Android Spotless owns formatting. Type/method/path changes still fail. Production
+Retrofit declarations belong in the generated boundary; the consumption check
+rejects manual `retrofit2.http` declarations/imports and raw API path literals
+elsewhere, including aliased/qualified declarations. First-party calls use this
+service; direct arbitrary HTTP in features is outside the transport contract.
+
+`ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
+identity and a suspending `WorkspaceTokenProvider` resolved for each request.
+The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
+cover current workspace and member preference bootstrap. The authentication
+owner captures the right origin/user/workspace, cancels retired consumers and
+closes their client; token renewal itself does not replace durable identity.
+Construction starts no token resolution or network work and is not wired into
+the local shell. A real bootstrap must render native UI while responses remain
+pending and keep protected data/actions behind their actual prerequisites.
+
+The client returns typed HTTP/network/incompatible-response failures, propagates
+coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
+64 KiB after gzip decompression, and closes responses. Error status remains
+available when its envelope is malformed/oversized. Unknown fields permit additive
+responses; required nullable fields and enum values retain the generated reader's contract.
+JSON field types follow Kotlin serialization semantics rather than recreating
+Zod's complete validation runtime. Decode failures expose a typed incompatible
+response error without serializer messages/input snippets that could disclose
+response data through exception reporting.
+
+Both clients accept a finite `callTimeout` for the owner's HTTP budget, with a
+30-second default. A deadline while consuming an incomplete error body preserves
+the already received HTTP status, including the blocking 426 state; the absent
+envelope metadata remains unknown. Coroutine cancellation still propagates.
+
+HTTP 426 retains a read-only `updateRequired` state and blocks further calls
+from that client; a malformed envelope keeps the minimum version unknown.
+The real authenticated root must observe this state and present its native
+blocking update destination. No self-clear/retry is provided for an installed
+version that needs an update. The backend Android floor starts unset; see
+[Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
+
+GitHub Release is the Android distribution source for the compatibility gate.
+Publish the packaged APK as a nonempty `.apk` asset on a non-draft, non-prerelease
+`android-vX.Y.Z` release, with the tag matching the APK's `versionName`. CI reads
+release metadata and uses the highest qualifying version among the 20 highest
+stable Android tags; it does not require an app-store availability check. The
+publisher owns APK signing, the packaged version and installability. A local
+build or an Actions artifact alone is not publication. The [release pipeline](#github-releases)
+owns packaging and upload; a floor raise still requires a reviewed policy change
+after the compatible build is available.
+
+API requests do not follow redirects or automatically retry connection/status
+failures, including `503 Retry-After: 0`. A lost response is not remote rollback;
+operation owners decide retry/readback. `SignedTransferClient` owns a separate
+HTTP client without the token provider, cookies or API/client headers. It accepts
+signed HTTPS download/upload URLs, rejects credential-header injection and
+redirects, and requires a download byte limit. Large file/streaming/resume owners
+should add their own bounded file APIs with the actual feature.
+
+Release network policy requires HTTPS. Debug permits cleartext only for
+`localhost`, `127.0.0.1` and `::1`, for local transport fixtures/development.
+This does not enable cleartext production endpoints or trust arbitrary certificates.

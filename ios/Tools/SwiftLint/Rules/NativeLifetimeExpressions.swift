@@ -18,6 +18,15 @@ extension NativeLifetimeTrace {
       return "self." + member.declName.baseName.text
     }
     if let subscriptCall = expression.as(SubscriptCallExprSyntax.self) {
+      let candidates = slots.filter {
+        key(subscriptCall.calledExpression, path: path) == "self." + $0.field
+      }
+      if !candidates.isEmpty {
+        guard subscriptCall.arguments.count == 1, let argument = subscriptCall.arguments.first
+        else { return nil }
+        let index = NativeLifetimeIndex.resolve(argument.expression, aliases: path.indexAliases)
+        return candidates.first { $0.index.identity == index.identity }?.storage
+      }
       return key(subscriptCall.calledExpression, path: path)
     }
     return nil
@@ -49,14 +58,12 @@ extension NativeLifetimeTrace {
       return value(forced.expression, path: &path)
     }
     if let array = expression.as(ArrayExprSyntax.self) {
-      return array.elements.map { value($0.expression, path: &path) }.contains(.handle)
-        ? .collection : .unknown
+      return collection(array.elements.map { value($0.expression, path: &path) })
     }
     if let dictionary = expression.as(DictionaryExprSyntax.self),
       case .elements(let elements) = dictionary.content
     {
-      return elements.map { value($0.value, path: &path) }.contains(.handle)
-        ? .collection : .unknown
+      return collection(elements.map { value($0.value, path: &path) })
     }
     if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1,
       let element = tuple.elements.first
@@ -70,7 +77,23 @@ extension NativeLifetimeTrace {
       {
         let source = value(parts[2], path: &path)
         path.values[target] =
-          parts[0].is(SubscriptCallExprSyntax.self) && source == .handle ? .collection : source
+          parts[0].is(SubscriptCallExprSyntax.self)
+            && !slots.contains(where: { $0.storage == target })
+            && [.handle, .completion].contains(source)
+          ? collection([source]) : source
+        for slot in slots where target == "self." + slot.field {
+          path.values[slot.storage] = .unknown
+        }
+        if slots.isEmpty, !teardown, source == .handle, target.hasPrefix("self."),
+          let subscriptCall = parts[0].as(SubscriptCallExprSyntax.self),
+          subscriptCall.arguments.count == 1, let index = subscriptCall.arguments.first?.expression
+        {
+          retainedSlots.append(
+            NativeLifetimeSlot(
+              field: String(target.dropFirst(5)),
+              index: NativeLifetimeIndex.resolve(index, aliases: path.indexAliases),
+              syntax: subscriptCall))
+        }
         retain(target, path: path)
         return .unknown
       }
@@ -83,11 +106,24 @@ extension NativeLifetimeTrace {
     if let member = expression.as(MemberAccessExprSyntax.self),
       member.declName.baseName.text == "values", let base = member.base
     {
-      return value(base, path: &path) == .collection ? .collection : .unknown
+      let stored = value(base, path: &path)
+      return [.collection, .completionCollection].contains(stored) ? stored : .unknown
     }
-    if !expression.is(SubscriptCallExprSyntax.self), let name = key(expression, path: path) {
+    if !expression.is(SubscriptCallExprSyntax.self) || !slots.isEmpty,
+      let name = key(expression, path: path)
+    {
+      let elements = slots.filter { name == "self." + $0.field }
+        .map { path.values[$0.storage] ?? .unknown }
+      let stored = collection(elements)
+      if stored != .unknown { return stored }
       return path.values[name] ?? .unknown
     }
+    return .unknown
+  }
+
+  private func collection(_ values: [NativeLifetimeValue]) -> NativeLifetimeValue {
+    if values.contains(.handle) { return .collection }
+    if values.contains(.completion) { return .completionCollection }
     return .unknown
   }
 
@@ -121,8 +157,10 @@ extension NativeLifetimeTrace {
       let results = block(closure.statements, states: [entering])
       return !path.released && results.allSatisfy(\.released) ? .completion : .unknown
     }
-    if kind.isTask, callName(call.calledExpression) == "Array", arguments == [.collection] {
-      return .collection
+    if kind.isTask, callName(call.calledExpression) == "Array", arguments.count == 1,
+      let first = arguments.first, [.collection, .completionCollection].contains(first)
+    {
+      return first
     }
     if let member {
       switch kind {
@@ -138,23 +176,41 @@ extension NativeLifetimeTrace {
         }
       }
       if ["append", "insert"].contains(member.declName.baseName.text),
-        arguments.contains(.handle), let base = member.base, let name = key(base, path: path)
+        collection(arguments) != .unknown, let base = member.base, let name = key(base, path: path)
       {
-        path.values[name] = .collection
+        path.values[name] = collection(arguments)
         retain(name, path: path)
       }
       if member.declName.baseName.text == "removeAll", let base = member.base,
         let name = key(base, path: path)
       {
         path.values[name] = .unknown
+        for slot in slots where name == "self." + slot.field {
+          path.values[slot.storage] = .unknown
+        }
       }
-      if member.declName.baseName.text == "forEach", receiver == .collection,
+      if member.declName.baseName.text == "removeValue",
+        call.arguments.count == 1, let argument = call.arguments.first,
+        argument.label?.text == "forKey",
+        let base = member.base,
+        let slot = slots.first(where: {
+          key(base, path: path) == "self." + $0.field
+            && NativeLifetimeIndex.resolve(argument.expression, aliases: path.indexAliases).identity
+              == $0.index.identity
+        })
+      {
+        let original = path.values[slot.storage] ?? .unknown
+        path.values[slot.storage] = .unknown
+        return original
+      }
+      if member.declName.baseName.text == "forEach",
+        [.collection, .completionCollection].contains(receiver),
         let closure = call.trailingClosure
       {
         var element = path
         let name = closureParameters(closure).first ?? "$0"
         element.locals.insert(name)
-        element.values[name] = .handle
+        element.values[name] = receiver == .collection ? .handle : .completion
         if block(closure.statements, states: [element]).allSatisfy(\.released) {
           path.released = true
         }
@@ -260,6 +316,12 @@ extension NativeLifetimeTrace {
           entering.immutable.insert(name)
           entering.values[name] = argument
         }
+        for (parameter, argument) in zip(
+          function.signature.parameterClause.parameters, call.arguments)
+        {
+          entering.indexAliases["parameter:\(parameter.position)"] = NativeLifetimeIndex.resolve(
+            argument.expression, aliases: path.indexAliases)
+        }
         results += block(body.statements, states: [entering])
       }
       calls.remove(function.position)
@@ -267,23 +329,22 @@ extension NativeLifetimeTrace {
     guard !results.isEmpty else { return }
     path.released = results.allSatisfy { result in
       if result.released { return true }
-      guard kind.isTask else { return false }
-      // A helper may move the original into a distinct owner-held drain collection.
+      // A helper may move the original into a distinct owner-held cleanup collection.
       return result.values.contains { name, value in
         name.hasPrefix("self.") && value != .unknown
           && path.values[name, default: .unknown] == .unknown
           && ownerReleases(String(name.dropFirst(5)), value: value)
       }
     }
-    for field in owner.fields {
-      let name = "self." + field
+    let names = Set(owner.fields.map { "self." + $0 }).union(slots.map(\.storage))
+    for name in names {
       let values = results.map { $0.values[name] ?? .unknown }
       path.values[name] = values.allSatisfy { $0 == values.first } ? values.first : .unknown
     }
   }
 
   private func retain(_ name: String, path: NativeLifetimePath) {
-    if kind.isTask, name.hasPrefix("self."), let value = path.values[name], value != .unknown {
+    if name.hasPrefix("self."), let value = path.values[name], value != .unknown {
       retained[String(name.dropFirst(5))] = value
     }
   }

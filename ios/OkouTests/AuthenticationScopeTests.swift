@@ -1,5 +1,6 @@
 import ChatDataTestSupport
 import ClerkKit
+import Synchronization
 import XCTest
 
 @testable import Okou
@@ -376,6 +377,293 @@ final class AuthenticationScopeTests: XCTestCase {
     XCTAssertTrue(caughtFailure)
     XCTAssertFalse(reachedDependentAction)
     XCTAssertNotNil(authentication.errorMessage)
+  }
+
+  func testMembershipPaginationPublishesTheCompleteOrderedList() async throws {
+    let expected = (0..<205).map { "org_page_\($0)" }
+    let (provider, authentication) = try await session {
+      $0.activeWorkspaceID = expected[0]
+      $0.workspaceIDs = expected
+    }
+    let queries = Mutex<[(String?, String?, String?)]>([])
+    provider.identityOverride.withLock {
+      $0 = { request in
+        if request.url?.path == "/v1/me/organization_memberships" {
+          let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+          let limit = query?.first { $0.name == "limit" }?.value
+          if limit == "100" {
+            queries.withLock {
+              $0.append(
+                (
+                  query?.first { $0.name == "offset" }?.value, limit,
+                  query?.first { $0.name == "_clerk_session_id" }?.value
+                ))
+            }
+          }
+        }
+        return nil
+      }
+    }
+
+    await authentication.refresh()
+
+    XCTAssertEqual(authentication.workspaces.map(\.id), expected)
+    XCTAssertEqual(queries.withLock { $0.compactMap(\.0) }, ["0", "100", "200"])
+    XCTAssertTrue(
+      queries.withLock { $0.allSatisfy { $0.2 == provider.state.withLock { $0.sessionID } } })
+    try await assertToken(authentication)
+  }
+
+  func testSharedMembershipReadSurvivesWorkspaceSwitchAndCancelledWaiter() async throws {
+    let (provider, authentication) = try await session { $0.workspaceIDs = ["org_one", "org_two"] }
+    await authentication.refresh()
+    provider.state.withLock { $0.workspaceIDs.append("org_three") }
+    await provider.memberships.hold()
+    let refresh = try await membershipReadUntilRequest(authentication, provider: provider)
+    let returned = expectation(description: "The shared waiter settles from the original HTTP")
+    let settled = Mutex(false)
+    let waiter = Task.immediate {
+      await authentication.refreshWorkspaces()
+      settled.withLock { $0 = true }
+      returned.fulfill()
+    }
+    addTeardownBlock {
+      waiter.cancel()
+      await provider.memberships.releaseAll()
+      await waiter.value
+    }
+    waiter.cancel()
+    try await authentication.switchWorkspace("org_two")
+    try await assertToken(authentication)
+    await provider.memberships.release(refresh.request)
+    await fulfillment(of: [returned], timeout: 3)
+    guard settled.withLock({ $0 }) else { return }
+    await refresh.task.value
+    await waiter.value
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one", "org_two", "org_three"])
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
+    try await assertToken(authentication)
+  }
+
+  func testLateSingleMembershipSnapshotCannotReplaceANewerSDKWorkspaceChoice() async throws {
+    let (provider, authentication) = try await session { $0.workspaceIDs = ["org_one", "org_two"] }
+    await authentication.refresh()
+    provider.state.withLock { $0.workspaceIDs = ["org_one"] }
+    await provider.memberships.hold()
+    let refresh = try await membershipReadUntilRequest(authentication, provider: provider)
+    // The provider re-adds the membership before confirming the user's selection,
+    // while its earlier membership response is still pending on the wire.
+    provider.state.withLock { $0.workspaceIDs = ["org_one", "org_two"] }
+    try await authentication.switchWorkspace("org_two")
+    let recheck = expectation(description: "A newer SDK choice gets fresh membership verification")
+    let observation = await provider.memberships.observeRequests()
+    let request = Mutex<Int?>(nil)
+    let observer = Task {
+      for await arrival in observation.arrivals {
+        request.withLock { $0 = arrival }
+        recheck.fulfill()
+        return
+      }
+    }
+    addTeardownBlock {
+      await provider.memberships.stopObserving(observation.id)
+      observer.cancel()
+      await observer.value
+    }
+    await provider.memberships.release(refresh.request)
+    await fulfillment(of: [recheck], timeout: 3)
+    await provider.memberships.stopObserving(observation.id)
+    await observer.value
+    let fresh = try XCTUnwrap(
+      request.withLock { $0 }, "The old list must not override SDK selection")
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
+    try await assertToken(authentication)
+    await provider.memberships.release(fresh)
+    await refresh.task.value
+
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one", "org_two"])
+    try await assertToken(authentication)
+  }
+
+  func testSignOutCancelsOriginalMembershipHTTPBeforeItsServerReply() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    let oldScope = try XCTUnwrap(authentication.scopeID)
+    await provider.memberships.hold()
+    let refresh = try await membershipReadUntilRequest(authentication, provider: provider)
+    let cancelled = expectation(description: "The original SDK membership HTTP disconnects")
+    let disconnected = Mutex(false)
+    provider.pendingRequestDisconnected.withLock {
+      $0 = { request in
+        if request.url?.path == "/v1/me/organization_memberships" {
+          disconnected.withLock { $0 = true }
+          cancelled.fulfill()
+        }
+      }
+    }
+
+    try await authentication.signOut()
+
+    await fulfillment(of: [cancelled], timeout: 3)
+    guard disconnected.withLock({ $0 }) else { return }
+    await refresh.task.value
+    XCTAssertTrue(authentication.workspaces.isEmpty)
+    XCTAssertNil(authentication.scopeID)
+    await assertRejected(authentication, workspace: "org_one", scope: oldScope)
+    await provider.memberships.releaseAll()
+  }
+
+  func testReplacementAccountResolvesBeforeRetiredMembershipServerReplies() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    let oldScope = try XCTUnwrap(authentication.scopeID)
+    await provider.memberships.hold()
+    let old = try await membershipReadUntilRequest(authentication, provider: provider)
+    provider.state.withLock {
+      $0.userID = "user_membership_replacement_" + UUID().uuidString
+      $0.sessionID = "sess_membership_replacement_" + UUID().uuidString
+      $0.activeWorkspaceID = "org_two"
+      $0.workspaceIDs = ["org_two"]
+    }
+    try await authentication.clerk?.refreshClient()
+    let current = try await membershipReadUntilRequest(authentication, provider: provider)
+    let settled = expectation(description: "The new account resolves and the retired read ends")
+    let completed = Mutex(false)
+    let resolution = Task {
+      await current.task.value
+      await old.task.value
+      completed.withLock { $0 = true }
+      settled.fulfill()
+    }
+    addTeardownBlock {
+      resolution.cancel()
+      await provider.memberships.releaseAll()
+      await resolution.value
+    }
+    await provider.memberships.release(current.request)
+    await fulfillment(of: [settled], timeout: 3)
+    guard completed.withLock({ $0 }) else { return }
+    await resolution.value
+
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_two"])
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
+    await assertRejected(authentication, workspace: "org_one", scope: oldScope)
+    try await assertToken(authentication)
+    await provider.memberships.releaseAll()
+  }
+
+  func testLateMembershipPageFailureKeepsConfirmedChoicesUntilExplicitRetry() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    let expected = ["org_one"] + (1..<120).map { "org_page_\($0)" }
+    provider.state.withLock {
+      $0.workspaceIDs = expected
+      $0.membershipFailureOffset = 100
+      $0.membershipFailureStatus = 403
+    }
+    await authentication.refreshWorkspaces()
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one"])
+    XCTAssertNotNil(authentication.errorMessage)
+    do {
+      try await authentication.switchWorkspace("org_page_119")
+      XCTFail("An incomplete, failed membership page cannot authorize a new workspace")
+    } catch let error as AuthenticationService.AuthenticationError {
+      XCTAssertEqual(error, .workspaceUnavailable)
+    }
+    provider.state.withLock { $0.membershipFailureOffset = nil }
+    XCTAssertEqual(authentication.workspaces.map(\.id), ["org_one"])
+    XCTAssertNotNil(authentication.errorMessage)
+
+    await authentication.refreshWorkspaces()
+
+    XCTAssertEqual(authentication.workspaces.map(\.id), expected)
+    XCTAssertNil(authentication.errorMessage)
+    try await authentication.switchWorkspace("org_page_119")
+    try await assertToken(authentication)
+  }
+
+  func testStoppingAuthenticationSubscriptionCancelsPendingMembershipHTTP() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    await provider.memberships.hold()
+    let observation = await provider.memberships.observeRequests()
+    let began = expectation(description: "Root subscription begins its membership HTTP")
+    let arrival = Mutex<Int?>(nil)
+    let observer = Task {
+      for await request in observation.arrivals {
+        arrival.withLock { $0 = request }
+        began.fulfill()
+        return
+      }
+    }
+    let stopped = expectation(description: "The root authentication subscription stops")
+    let cancelled = expectation(description: "Root teardown cancels the original membership HTTP")
+    provider.pendingRequestDisconnected.withLock {
+      $0 = { request in
+        if request.url?.path == "/v1/me/organization_memberships" { cancelled.fulfill() }
+      }
+    }
+    let startup = Task {
+      await authentication.start()
+      stopped.fulfill()
+      await provider.memberships.stopObserving(observation.id)
+    }
+    addTeardownBlock {
+      startup.cancel()
+      await provider.memberships.releaseAll()
+      await startup.value
+      await provider.memberships.stopObserving(observation.id)
+      observer.cancel()
+      await observer.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    await provider.memberships.stopObserving(observation.id)
+    await observer.value
+    _ = try XCTUnwrap(
+      arrival.withLock { $0 }, "Root subscription stopped without its membership request")
+
+    startup.cancel()
+
+    await fulfillment(of: [cancelled, stopped], timeout: 3)
+    await provider.memberships.releaseAll()
+    await startup.value
+    await authentication.refresh()
+    try await assertToken(authentication)
+  }
+
+  private func membershipReadUntilRequest(
+    _ authentication: AuthenticationService, provider: AuthenticationHTTPFixture
+  ) async throws -> (task: Task<Void, Never>, request: Int) {
+    let observation = await provider.memberships.observeRequests()
+    let began = expectation(description: "Membership read begins its original SDK HTTP")
+    let request = Mutex<Int?>(nil)
+    let observer = Task {
+      for await arrival in observation.arrivals {
+        request.withLock { $0 = arrival }
+        began.fulfill()
+        return
+      }
+    }
+    let reading = Task {
+      await authentication.refreshWorkspaces()
+      await provider.memberships.stopObserving(observation.id)
+    }
+    addTeardownBlock {
+      reading.cancel()
+      await provider.memberships.releaseAll()
+      await reading.value
+      await provider.memberships.stopObserving(observation.id)
+      observer.cancel()
+      await observer.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    await provider.memberships.stopObserving(observation.id)
+    await observer.value
+    return (
+      reading,
+      try XCTUnwrap(request.withLock { $0 }, "Membership read ended before its HTTP request")
+    )
   }
 
   private func session(_ configure: (inout AuthenticationHTTPFixture.State) -> Void = { _ in })

@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
@@ -12,10 +11,7 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import {
-  CapabilityHomeCompliance,
-  CapabilityHomeComplianceSpace,
-} from "./chat-home-compliance.tsx";
+import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -124,6 +120,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  OkouAvatar,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -3546,16 +3543,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     initialEventsReady &&
     hasEvents === false &&
     sharingPhase === "idle";
-  // The capability home carries a compliance line under its composer. A
-  // conversation keeps that line's room empty, so opening a chat from the home,
-  // or sending an empty chat's first message, leaves the composer's bottom edge
-  // where it was.
-  let belowComposer: ReactNode = null;
-  if (showCapabilities) {
-    belowComposer = <CapabilityHomeCompliance />;
-  } else if (capabilitiesEnabled) {
-    belowComposer = <CapabilityHomeComplianceSpace />;
-  }
 
   return (
     <>
@@ -3569,7 +3556,7 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           <ChatThreadBottomBar
             thread={thread}
             layout={showCapabilities ? "home" : "default"}
-            below={belowComposer}
+            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
           />
         </div>
       </div>
@@ -5824,13 +5811,9 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
-    <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt=""
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
-    </span>
+    // One per reply; only the replies on screen draw frames, so a long
+    // transcript stays cheap.
+    <OkouAvatar size={36} className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );

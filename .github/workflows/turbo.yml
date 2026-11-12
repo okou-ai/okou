@@ -860,8 +860,6 @@ jobs:
             echo "Create a NEW migration instead of modifying existing ones."
             exit 1
           fi
-      - name: Install PostgreSQL client for audit script tests
-        run: apt-get update && apt-get install -y --no-install-recommends postgresql-client
       - name: Test Migration Consistency
         working-directory: turbo/packages/db
         env:
@@ -2764,7 +2762,7 @@ jobs:
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
-    # Blocking for Desktop- and iOS-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
+    # Blocking for Desktop-, iOS- and Android-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
@@ -2833,6 +2831,13 @@ jobs:
             > /tmp/runtime-api-schema/desktop-base-floor.json
           git show "$base_sha:turbo/apps/api/src/lib/ios-client-compatibility.json" \
             > /tmp/runtime-api-schema/ios-base-floor.json
+          if git cat-file -e "$base_sha:turbo/apps/api/src/lib/android-client-compatibility.json" 2>/dev/null; then
+            git show "$base_sha:turbo/apps/api/src/lib/android-client-compatibility.json" \
+              > /tmp/runtime-api-schema/android-base-floor.json
+          else
+            # Before Android is registered there is no enforced Android floor.
+            printf '%s\n' '{"minimumSupportedVersion":null}' > /tmp/runtime-api-schema/android-base-floor.json
+          fi
 
           # Findings the base already has against production were proven by the
           # change that introduced them and must not block this one.
@@ -2880,9 +2885,26 @@ jobs:
             echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Read published Android GitHub Release version
+        id: android-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node .github/scripts/checks/android-published-version.mjs)
+          if [ -n "$version" ]; then
+            echo "Published Android version: $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check iOS API consumption inventory
         working-directory: turbo
         run: pnpm --filter @okouai/api-contracts run lint-ios-api-consumption
+
+      - name: Check generated Android API consumption
+        working-directory: turbo
+        run: pnpm --filter @okouai/api-contracts run lint-android-api-consumption
 
       - name: Check runtime API compatibility
         working-directory: turbo
@@ -2890,6 +2912,7 @@ jobs:
         env:
           DESKTOP_PUBLISHED_VERSION: ${{ steps.desktop-release.outputs.version }}
           IOS_PUBLISHED_VERSION: ${{ steps.ios-release.outputs.version }}
+          ANDROID_PUBLISHED_VERSION: ${{ steps.android-release.outputs.version }}
         run: |
           set -euo pipefail
           schema_dir=/tmp/runtime-api-schema
@@ -2902,10 +2925,13 @@ jobs:
             --report-out "$schema_dir/report.json"
             --block-owner desktop
             --block-owner ios
+            --block-owner android
             --desktop-floor "$PWD/apps/api/src/lib/desktop-compatibility.json"
             --desktop-base-floor "$schema_dir/desktop-base-floor.json"
             --ios-floor "$PWD/apps/api/src/lib/ios-client-compatibility.json"
             --ios-base-floor "$schema_dir/ios-base-floor.json"
+            --android-floor "$PWD/apps/api/src/lib/android-client-compatibility.json"
+            --android-base-floor "$schema_dir/android-base-floor.json"
           )
           if [ -f "$schema_dir/base.json" ]; then
             args+=(--base-schema "$schema_dir/base.json")
@@ -2915,6 +2941,9 @@ jobs:
           fi
           if [ -n "$IOS_PUBLISHED_VERSION" ]; then
             args+=(--ios-published-version "$IOS_PUBLISHED_VERSION")
+          fi
+          if [ -n "$ANDROID_PUBLISHED_VERSION" ]; then
+            args+=(--android-published-version "$ANDROID_PUBLISHED_VERSION")
           fi
           pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- "${args[@]}"
 

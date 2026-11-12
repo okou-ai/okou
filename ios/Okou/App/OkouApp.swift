@@ -253,7 +253,7 @@ private struct WorkspaceRootView: View {
           StoreProvider(store.projects.stateStore) {
             ChatSidebarView(
               store: store, authentication: authentication, workspaceID: workspaceID,
-              notifications: notifications, sidebar: sidebar,
+              notifications: notifications,
               headerHeight: headerHeight,
               accountError: $accountError,
               close: closeSidebar,
@@ -342,7 +342,7 @@ private struct WorkspaceRootView: View {
           conversation: conversation,
           agents: store.list,
           didSend: { await notifications.requestAfterSend() },
-          topContentInset: topContentHeight, sidebar: sidebar,
+          topContentInset: topContentHeight,
           mentionSource: ComposerMentionSource(
             agentID: conversation.thread.agentID,
             threads: store.list.threads),

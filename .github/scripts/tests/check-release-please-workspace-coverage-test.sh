@@ -299,3 +299,12 @@ write_json "$REPO/.release-please-manifest.json" '.desktop = "0.49.71"'
 expect_success "$REPO"
 printf '0.50.0\n' > "$REPO/desktop/version.txt"
 expect_failure "$REPO" "Desktop manifest and version.txt must agree"
+
+setup_repo "standalone-android"
+mkdir -p "$REPO/android"
+printf '0.1.0\n' > "$REPO/android/version.txt"
+write_json "$REPO/release-please-config.json" '.packages.android = {"release-type":"simple","version-file":"version.txt","component":"android"}'
+write_json "$REPO/.release-please-manifest.json" '.android = "0.1.0"'
+expect_success "$REPO"
+printf '0.1.1\n' > "$REPO/android/version.txt"
+expect_failure "$REPO" "Android manifest and version.txt must agree"

@@ -75,7 +75,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Email Okou and continue each email conversation in its own chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+    enabledEmailHashes: [
+      fnv1a("yuma@vm0.ai"),
+      fnv1a("qa-signup-20261112-21e53024@okou.io"),
+    ],
   },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
@@ -99,6 +102,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "My Okou",
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouAnimatedAvatar]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Animated Okou avatar",
+    description:
+      "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

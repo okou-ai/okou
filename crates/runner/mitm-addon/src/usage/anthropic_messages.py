@@ -212,19 +212,17 @@ def model_json_scalar_fields() -> dict:
 
 def model_json_usage_from_result(
     result: JsonExtractionResult,
-) -> tuple[dict | None, str | None]:
+) -> dict | None:
     """Map one complete shared JSON extraction into Anthropic usage."""
 
-    if not result.complete:
-        return None, result.error
     usage: dict = {}
     model = result.values.get(("model",))
     if isinstance(model, str) and model:
         usage["model"] = model
     _store_selected_usage_values(result.values, usage, ("usage",))
     if not usage:
-        return None, None
+        return None
     message_id = result.values.get(("id",))
     if isinstance(message_id, str) and message_id:
         usage["message_id"] = message_id
-    return usage, None
+    return usage

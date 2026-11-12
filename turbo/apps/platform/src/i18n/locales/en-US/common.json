@@ -550,6 +550,7 @@
       "openDocs": "Open in Google Docs",
       "openSheets": "Open in Google Sheets",
       "openSlides": "Open in Google Slides",
+      "reconnect": "Reconnect Google Drive",
       "synced": "Synced to Google Drive",
       "syncedFiles_one": "Synced to Google Drive",
       "syncedFiles_other": "Synced {{count}} files to Google Drive",
@@ -1627,13 +1628,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "All caught up",
-        "emptyTitle": "No new suggestions",
         "feedback": "Suggestion actions",
-        "loading": "Loading suggestions",
         "navigation": "Browse suggestions",
-        "next": "Next suggestion",
-        "previous": "Previous suggestion",
-        "retry": "Retry"
+        "show": "Show suggestion {{index}} of {{total}}"
       },
       "label": "Suggestions",
       "lessLikeThis": "Less like this",

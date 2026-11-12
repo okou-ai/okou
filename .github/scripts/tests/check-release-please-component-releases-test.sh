@@ -849,26 +849,28 @@ release_head=$(create_release_head "$REPO" release-both '.["turbo/apps/api"] = "
 merge_head=$(create_merge_head "$REPO" merge-both "$merge_base" '.["turbo/apps/api"] = "1.0.1" | .ios = "0.1.1"')
 expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 
-for desktop_source in desktop/Okou/App.swift desktop/ComputerUse/Package.swift desktop/ComputerUse/Package.resolved; do
-setup_repo "standalone-${desktop_source//\//-}"
-mkdir -p "$(dirname "$REPO/$desktop_source")"
-printf 'struct App {}\n' > "$REPO/$desktop_source"
-update_manifest "$REPO" '.desktop = "0.1.0"'
-jq '.packages.desktop = {"release-type":"simple","component":"desktop"}' "$REPO/release-please-config.json" > "$REPO/config.next"
+for native_source in desktop/Okou/App.swift desktop/ComputerUse/Package.swift desktop/ComputerUse/Package.resolved \
+  android/app/src/main/kotlin/App.kt android/app/build.gradle.kts android/gradle/libs.versions.toml; do
+component=${native_source%%/*}
+setup_repo "standalone-${native_source//\//-}"
+mkdir -p "$(dirname "$REPO/$native_source")"
+printf 'source\n' > "$REPO/$native_source"
+update_manifest "$REPO" ".$component = \"0.1.0\""
+jq --arg component "$component" '.packages[$component] = {"release-type":"simple","component":$component}' "$REPO/release-please-config.json" > "$REPO/config.next"
 mv "$REPO/config.next" "$REPO/release-please-config.json"
 git -C "$REPO" add --all
-git -C "$REPO" commit -qm "baseline desktop"
+git -C "$REPO" commit -qm "baseline $component"
 BASE=$(git -C "$REPO" rev-parse HEAD)
 release_head=$(create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"')
 git -C "$REPO" switch -q main
-printf 'struct NewView {}\n' >> "$REPO/$desktop_source"
+printf 'updated source\n' >> "$REPO/$native_source"
 git -C "$REPO" add --all
-git -C "$REPO" commit -qm "feat(desktop): add a view"
+git -C "$REPO" commit -qm "feat($component): change native source"
 merge_base=$(git -C "$REPO" rev-parse HEAD)
 merge_head=$(create_merge_head "$REPO" merge-api "$merge_base" '.["turbo/apps/api"] = "1.0.1"')
-expect_failure "$REPO" "$merge_base" "$merge_head" "$release_head" "desktop has intervening source changes in desktop but no new release"
-release_head=$(create_release_head "$REPO" release-both '.["turbo/apps/api"] = "1.0.1" | .desktop = "0.1.1"')
-merge_head=$(create_merge_head "$REPO" merge-both "$merge_base" '.["turbo/apps/api"] = "1.0.1" | .desktop = "0.1.1"')
+expect_failure "$REPO" "$merge_base" "$merge_head" "$release_head" "$component has intervening source changes in $component but no new release"
+release_head=$(create_release_head "$REPO" release-both ".[\"turbo/apps/api\"] = \"1.0.1\" | .$component = \"0.1.1\"")
+merge_head=$(create_merge_head "$REPO" merge-both "$merge_base" ".[\"turbo/apps/api\"] = \"1.0.1\" | .$component = \"0.1.1\"")
 expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 done
 

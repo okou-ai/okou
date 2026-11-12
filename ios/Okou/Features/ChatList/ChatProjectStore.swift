@@ -99,7 +99,7 @@ final class ChatProjectStore {
 
   func activate() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    if !active {
+    if !active, subscription == nil {
       do {
         subscription = try stateStore.watch(listValue) { [weak self] in
           self?.confirmProjects()

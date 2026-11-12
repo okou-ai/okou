@@ -75,9 +75,8 @@ def validate(directory):
             raise ValueError("malformed native producer-loss receipt")
     if any(tuple(e[key] for key in ("sandbox_id", "backing_generation")) != identity for e in ordered[1:]):
         raise ValueError("producer uncertainty changed original physical ownership")
-    for clock in ("monotonic_ns", "unix_ns"):
-        if any(a[clock] >= b[clock] for a, b in zip(ordered, ordered[1:])):
-            raise ValueError("producer uncertainty clocks were replayed or unordered")
+    report.validate_witness_clock_order(
+        ordered, "producer uncertainty clocks were replayed or unordered")
     durable, waiting, progress, joined, sticky, retained = [e["evidence"] for e in events]
     history, run = later.identifier(waiting.get("history_run_id")), later.identifier(waiting.get("claim_run_id"))
     if len({*identity, history, run}) != 4 or waiting.get("reuse_key") != "thread:native-guarded-"+history:

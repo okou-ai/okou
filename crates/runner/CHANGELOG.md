@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.245.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.4...runner-rs-v0.245.5) (2026-11-12)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.3...runner-rs-v0.245.4) (2026-11-12)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.2...runner-rs-v0.245.3) (2026-11-12)
+
+
+### Refactoring
+
+* **runner:** reuse existing domain error conversion paths ([#46663](https://github.com/okou-ai/okou/issues/46663)) ([e520c67](https://github.com/okou-ai/okou/commit/e520c67b283822d3a9b36db29bc3fdef86849619))
+
 ## [0.245.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.1...runner-rs-v0.245.2) (2026-11-11)
 
 

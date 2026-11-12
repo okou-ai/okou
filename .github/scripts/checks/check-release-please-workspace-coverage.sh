@@ -26,7 +26,7 @@ release_config=$(jq -ce '
   select(
     type == "object" and
     (.packages | type == "object" and length > 0) and
-    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust" or ((.key == "ios" or .key == "desktop") and .value["release-type"] == "simple")))
+    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust" or ((.key == "ios" or .key == "desktop" or .key == "android") and .value["release-type"] == "simple")))
   )
 ' "$release_config_path" 2>/dev/null) ||
   fail "Release Please config must contain Node, Rust, or standalone native package entries"
@@ -88,6 +88,11 @@ if jq -e '.packages | has("desktop")' <<<"$release_config" >/dev/null; then
   desktop_version=$(cat desktop/version.txt) || fail "missing Desktop version file"
   desktop_manifest_version=$(jq -r '.desktop' <<<"$release_manifest")
   [ "$desktop_version" = "$desktop_manifest_version" ] || fail "Desktop manifest and version.txt must agree"
+fi
+if jq -e '.packages | has("android")' <<<"$release_config" >/dev/null; then
+  android_version=$(cat android/version.txt) || fail "missing Android version file"
+  android_manifest_version=$(jq -r '.android' <<<"$release_manifest")
+  [ "$android_version" = "$android_manifest_version" ] || fail "Android manifest and version.txt must agree"
 fi
 comm -13 "$managed_paths" "$manifest_paths" >"$difference_paths"
 if [ -s "$difference_paths" ]; then

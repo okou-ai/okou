@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.17...runner-executor-v0.21.18) (2026-11-12)
+
+
+### Refactoring
+
+* **runner:** reuse existing domain error conversion paths ([#46663](https://github.com/okou-ai/okou/issues/46663)) ([e520c67](https://github.com/okou-ai/okou/commit/e520c67b283822d3a9b36db29bc3fdef86849619))
+
 ## [0.21.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.16...runner-executor-v0.21.17) (2026-11-11)
 
 ## [0.21.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.15...runner-executor-v0.21.16) (2026-11-11)

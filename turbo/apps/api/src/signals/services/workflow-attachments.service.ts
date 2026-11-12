@@ -34,6 +34,19 @@ export interface PreparedWorkflowAttachments {
   readonly cleanupJobId: string | null;
 }
 
+/** Only attachment preparation/provider failures; database publication is separate. */
+export class WorkflowAttachmentError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error
+        ? cause.message
+        : "Workflow attachments could not be prepared or uploaded",
+      { cause },
+    );
+    this.name = "WorkflowAttachmentError";
+  }
+}
+
 /** Authorize the Workflow before supplying its captured descriptor here. */
 export function workflowAttachmentFiles(input: {
   readonly orgId: string;
@@ -116,25 +129,33 @@ export const prepareWorkflowAttachments$ = command(
     ) {
       return { attachments: input.current, cleanupJobId: null };
     }
-    const prepared = await prepareWorkflowAttachmentBundle(
-      input.orgId,
-      input.workflowId,
-      files,
+    const preparation = await settle(
+      prepareWorkflowAttachmentBundle(input.orgId, input.workflowId, files),
+      signal,
     );
-    signal.throwIfAborted();
+    if (!preparation.ok) {
+      throw new WorkflowAttachmentError(preparation.error);
+    }
+    const prepared = preparation.value;
     if (prepared.descriptor.kind === "bundle" && prepared.archive !== null) {
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       const objectKey = prepared.descriptor.objectKey;
-      const uploadId = await get(
-        createMultipartS3Upload(
-          bucket,
-          objectKey,
-          "application/gzip",
-          undefined,
-          signal,
+      const upload = await settle(
+        get(
+          createMultipartS3Upload(
+            bucket,
+            objectKey,
+            "application/gzip",
+            undefined,
+            signal,
+          ),
         ),
+        signal,
       );
-      signal.throwIfAborted();
+      if (!upload.ok) {
+        throw new WorkflowAttachmentError(upload.error);
+      }
+      const uploadId = upload.value;
       const job = workflowAttachmentCleanupValues({
         orgId: input.orgId,
         userId: input.userId,
@@ -163,23 +184,39 @@ export const prepareWorkflowAttachments$ = command(
         throw registered.error;
       }
       signal.throwIfAborted();
-      const part = await get(
-        uploadMultipartS3Part(
-          {
-            bucket,
-            key: objectKey,
-            uploadId,
-            partNumber: 1,
-            body: prepared.archive,
-          },
-          signal,
+      const part = await settle(
+        get(
+          uploadMultipartS3Part(
+            {
+              bucket,
+              key: objectKey,
+              uploadId,
+              partNumber: 1,
+              body: prepared.archive,
+            },
+            signal,
+          ),
         ),
+        signal,
       );
-      signal.throwIfAborted();
-      await get(
-        completeMultipartS3Upload(bucket, objectKey, uploadId, [part], signal),
+      if (!part.ok) {
+        throw new WorkflowAttachmentError(part.error);
+      }
+      const completion = await settle(
+        get(
+          completeMultipartS3Upload(
+            bucket,
+            objectKey,
+            uploadId,
+            [part.value],
+            signal,
+          ),
+        ),
+        signal,
       );
-      signal.throwIfAborted();
+      if (!completion.ok) {
+        throw new WorkflowAttachmentError(completion.error);
+      }
       return { attachments: prepared.descriptor, cleanupJobId: job.id };
     }
     return { attachments: prepared.descriptor, cleanupJobId: null };

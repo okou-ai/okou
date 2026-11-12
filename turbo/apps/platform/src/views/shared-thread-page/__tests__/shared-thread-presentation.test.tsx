@@ -1,4 +1,5 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -107,6 +108,43 @@ test("A public conversation renders shared messages with Okou branding", async (
     "src",
     platformOkouWordmarkLightImg,
   );
+});
+
+test("A shared conversation draws Okou with the animated avatar once it is on", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          {
+            messageIndex: 0,
+            role: "user",
+            content: "What should we launch?",
+            runIndex: 0,
+          },
+          {
+            messageIndex: 1,
+            role: "assistant",
+            content: "The plain status is ready.",
+            runIndex: 0,
+          },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "avatar-share-reader", fullName: "Share Reader" } },
+    featureSwitches: { [FeatureSwitchKey.OkouAnimatedAvatar]: true },
+  });
+
+  await expect(
+    screen.findByText("The plain status is ready."),
+  ).resolves.toBeInTheDocument();
+  const avatar = document.querySelector("[data-shared-assistant-avatar]");
+  expect(avatar).toHaveAttribute("data-okou-avatar", "animated");
+  expect(avatar).toHaveAccessibleName("Okou");
 });
 
 test("A shared conversation renders CJK emphasis", async () => {

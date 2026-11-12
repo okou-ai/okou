@@ -8,7 +8,6 @@ struct ChatSidebarView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
-  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
@@ -18,14 +17,13 @@ struct ChatSidebarView: View {
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
-    notifications: NotificationService, sidebar: SidebarInteraction, headerHeight: CGFloat,
+    notifications: NotificationService, headerHeight: CGFloat,
     accountError: Binding<String?>, close: @escaping () -> Void, newChat: @escaping () -> Void
   ) {
     self.store = store
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.notifications = notifications
-    self.sidebar = sidebar
     self.headerHeight = headerHeight
     _accountError = accountError
     self.close = close
@@ -551,7 +549,7 @@ struct ChatSidebarView: View {
   private var headerActions: some View {
     HStack(spacing: 0) {
       ChatListFilterMenu(
-        sidebar: sidebar, store: store, selection: threadFilter,
+        store: store, selection: threadFilter,
         newProject: { showEditor(creationEditor) }
       )
       .frame(height: OkouControl.minimumTarget)

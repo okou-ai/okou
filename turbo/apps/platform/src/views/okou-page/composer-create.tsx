@@ -1,13 +1,8 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  ChartNoAxesCombined,
-  Globe,
-  Route,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import type { ReactNode } from "react";
+import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { cn } from "@okouai/ui/lib/utils";
@@ -47,13 +42,14 @@ const TASK_ICONS = {
  * area is the whole chip rather than a 28px square.
  */
 export function ComposerChoiceChip({
-  Icon,
+  icon,
   label,
   labelClassName,
   removeLabel,
   onRemove,
 }: {
-  readonly Icon: LucideIcon;
+  /** A 16px icon. */
+  readonly icon: ReactNode;
   readonly label: string;
   readonly labelClassName: string;
   readonly removeLabel: string;
@@ -76,11 +72,12 @@ export function ComposerChoiceChip({
         change between rest and hover.
       */}
       <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-        <Icon
-          size={16}
-          className="transition-opacity group-hover:opacity-0"
+        <span
+          className="flex transition-opacity group-hover:opacity-0"
           aria-hidden
-        />
+        >
+          {icon}
+        </span>
         <X
           size={16}
           className="absolute opacity-0 transition-opacity group-hover:opacity-100"
@@ -109,9 +106,10 @@ function ComposerSelectedTask({
   if (!task) {
     return null;
   }
+  const Icon = TASK_ICONS[task];
   return (
     <ComposerChoiceChip
-      Icon={TASK_ICONS[task]}
+      icon={<Icon size={16} />}
       label={labels[task]}
       labelClassName={TASK_CONTROL_LABEL}
       removeLabel={t(

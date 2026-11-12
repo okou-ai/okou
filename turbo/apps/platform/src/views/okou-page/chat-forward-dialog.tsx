@@ -1,5 +1,4 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import type { ChatThreadFeedbackSignals } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -17,6 +16,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  OkouAvatar,
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
@@ -38,7 +38,7 @@ import {
 } from "../../signals/okou-page/sidebar-state.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ASSISTANT_NAME } from "../../signals/branding.ts";
-import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
+import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
 function ForwardContent({ text }: { readonly text: string }) {
@@ -67,11 +67,7 @@ function ForwardTargetContent({
   return (
     <span className="flex min-w-0 items-center gap-2">
       {singleAgent ? (
-        <AvatarFromUrl
-          avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-          alt=""
-          className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
-        />
+        <OkouAvatar size={32} />
       ) : (
         <AgentAvatarImg
           name={avatarAgentId}

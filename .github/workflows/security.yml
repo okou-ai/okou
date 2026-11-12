@@ -291,6 +291,7 @@ jobs:
           shellcheck \
             .github/scripts/artifacts/build-okou-cli-artifact.sh \
             .github/scripts/artifacts/build-okou-desktop-artifact.sh \
+            .github/scripts/artifacts/build-okou-android-apk.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/checks/check-release-please-component-releases.sh \
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
@@ -347,6 +348,8 @@ jobs:
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
             .github/scripts/tests/ios-published-version-test.sh \
+            .github/scripts/tests/android-published-version-test.sh \
+            .github/scripts/tests/android-release-workflow-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
             .github/scripts/tests/download-verified-test.sh \

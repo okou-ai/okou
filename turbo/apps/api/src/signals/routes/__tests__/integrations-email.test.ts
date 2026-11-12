@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
-import { array, object, string, record } from "zod";
+import { array, boolean, object, string, record } from "zod";
 import {
   integrationsEmailContract,
   integrationsEmailUploadContract,
@@ -19,6 +19,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { integrationsEmailRoutes } from "../integrations-email";
 import { emailInboundRoutes } from "../email-inbound";
 import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
@@ -898,6 +899,7 @@ async function setGmailContextReadPermission(action: "allow" | "deny") {
         grants: [
           { permission: "messages.read", action },
           { permission: "messages.detail", action },
+          { permission: "threads.read", action },
         ],
       },
     }),
@@ -922,10 +924,41 @@ function mockEmailMessageLookup(
   messageId: string,
   body: string,
   found = true,
+  history: readonly {
+    readonly id: string;
+    readonly messageId: string;
+    readonly body: string;
+    readonly receivedAt: number;
+    readonly conversationId?: string;
+    readonly isDraft?: boolean;
+  }[] = [],
 ) {
   const providerMessageId = `source-${randomUUID()}`;
   const providerConversationId = `conversation-${randomUUID()}`;
+  const receivedAt = now();
   if (provider === "gmail") {
+    const gmailMessage = (entry: (typeof history)[number]) => {
+      return {
+        id: entry.id,
+        threadId: entry.conversationId ?? providerConversationId,
+        internalDate: String(entry.receivedAt),
+        labelIds: entry.isDraft ? ["DRAFT"] : [],
+        payload: {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Message-ID", value: entry.messageId },
+            { name: "Subject", value: "API message subject" },
+          ],
+          body: { data: Buffer.from(entry.body).toString("base64url") },
+        },
+      };
+    };
+    const current = gmailMessage({
+      id: providerMessageId,
+      messageId,
+      body,
+      receivedAt,
+    });
     server.use(
       http.get(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages",
@@ -941,26 +974,50 @@ function mockEmailMessageLookup(
       http.get(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${providerMessageId}`,
         () => {
+          return HttpResponse.json(current);
+        },
+      ),
+      http.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${providerConversationId}`,
+        () => {
           return HttpResponse.json({
-            id: providerMessageId,
-            threadId: providerConversationId,
-            payload: {
-              mimeType: "text/plain",
-              headers: [
-                { name: "Message-ID", value: messageId },
-                { name: "Subject", value: "API message subject" },
-              ],
-              body: { data: Buffer.from(body).toString("base64url") },
-            },
+            id: providerConversationId,
+            messages: [...history.map(gmailMessage), current],
           });
         },
       ),
     );
   } else {
+    const outlookMessage = (entry: (typeof history)[number]) => {
+      return {
+        id: entry.id,
+        conversationId: entry.conversationId ?? providerConversationId,
+        internetMessageId: entry.messageId,
+        receivedDateTime: new Date(entry.receivedAt).toISOString(),
+        isDraft: entry.isDraft ?? false,
+        subject: "API message subject",
+        body: { contentType: "text", content: entry.body },
+      };
+    };
+    const current = outlookMessage({
+      id: providerMessageId,
+      messageId,
+      body,
+      receivedAt,
+    });
     server.use(
       http.get(
         "https://graph.microsoft.com/v1.0/me/messages",
         ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("$filter");
+          if (filter?.startsWith("receivedDateTime le ")) {
+            expect(filter).toBe(
+              `receivedDateTime le ${new Date(receivedAt).toISOString()} and conversationId eq '${providerConversationId}' and isDraft eq false`,
+            );
+            return HttpResponse.json({
+              value: [current, ...history.map(outlookMessage)],
+            });
+          }
           expect(new URL(request.url).searchParams.get("$filter")).toBe(
             `internetMessageId eq '${messageId.replaceAll("'", "''")}'`,
           );
@@ -977,13 +1034,7 @@ function mockEmailMessageLookup(
       http.get(
         `https://graph.microsoft.com/v1.0/me/messages/${providerMessageId}`,
         () => {
-          return HttpResponse.json({
-            id: providerMessageId,
-            conversationId: providerConversationId,
-            internetMessageId: messageId,
-            subject: "API message subject",
-            body: { contentType: "text", content: body },
-          });
+          return HttpResponse.json(current);
         },
       ),
     );
@@ -1003,6 +1054,29 @@ function sentEmails() {
       ).optional(),
     }).parse(call[0]);
   });
+}
+
+function mailboxHistory(prompt: string | null) {
+  const block = prompt
+    ?.split("# Mailbox Message Context (untrusted data)")[1]
+    ?.split("# This Chat Thread")[0];
+  if (!block) {
+    throw new Error("Expected source mailbox context");
+  }
+  return object({
+    history: object({
+      status: string(),
+      truncated: boolean().optional(),
+      messages: array(
+        object({
+          providerMessageId: string(),
+          body: string().optional(),
+          bodyAlreadyIncluded: boolean(),
+          bodyTruncated: boolean(),
+        }),
+      ).optional(),
+    }),
+  }).parse(JSON.parse(block.slice(block.indexOf("{")))).history;
 }
 
 describe("Email integration", () => {
@@ -1044,10 +1118,20 @@ describe("Email integration", () => {
         inReplyTo: parentId,
       });
       const sourceBody = `Provider-only message body ${randomUUID()}`;
+      const historyBody = `Prior reviewer discussion ${randomUUID()}`;
       const source = mockEmailMessageLookup(
         provider,
         message.messageId,
         sourceBody,
+        true,
+        [
+          {
+            id: randomUUID(),
+            messageId: `<${randomUUID()}@original.example>`,
+            body: historyBody,
+            receivedAt: now() - 1000,
+          },
+        ],
       );
       await message.send();
       await runs.heartbeatRunner(group);
@@ -1061,6 +1145,12 @@ describe("Email integration", () => {
       expect(claim.prompt).not.toContain(sourceBody);
       expect(claim.prompt).not.toContain("# Mailbox Message Context");
       expect(claim.appendSystemPrompt).toContain(sourceBody);
+      expect(claim.appendSystemPrompt).toContain(historyBody);
+      expect(mailboxHistory(claim.appendSystemPrompt)).toMatchObject({
+        status: "found",
+        truncated: false,
+        messages: [{ body: historyBody }],
+      });
       expect(claim.appendSystemPrompt).toContain(source.providerMessageId);
       expect(claim.appendSystemPrompt).toContain(source.providerConversationId);
       expect(claim.appendSystemPrompt).toMatch(
@@ -1106,13 +1196,22 @@ describe("Email integration", () => {
         text: "A follow-up while the Run is active",
       });
       const followUpBody = `API follow-up body ${randomUUID()}`;
-      mockEmailMessageLookup(provider, followUp.messageId, followUpBody);
+      const followUpHistory = `Earlier thread context for active input ${randomUUID()}`;
+      mockEmailMessageLookup(provider, followUp.messageId, followUpBody, true, [
+        {
+          id: randomUUID(),
+          messageId: message.messageId,
+          body: followUpHistory,
+          receivedAt: now() - 1000,
+        },
+      ]);
       await followUp.send();
       const next = await runs.nextSteerableInput(claim.sandboxToken, runId);
       expect(next.input?.prompt).toContain(
         "A follow-up while the Run is active",
       );
       expect(next.input?.prompt).toContain(followUpBody);
+      expect(next.input?.prompt).toContain(followUpHistory);
       expect(next.input?.prompt).toMatch(
         /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*A follow-up while the Run is active/,
       );
@@ -1144,6 +1243,284 @@ describe("Email integration", () => {
       }
     },
   );
+
+  it.each(["gmail", "outlook-mail"] as const)(
+    "adds chronological %s history without repeating quoted bodies, current messages or unrelated mail",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      await connectEmailMailbox(actor, provider, actor.email);
+      verifiedDirectory(actor);
+      if (provider === "gmail") {
+        await setGmailContextReadPermission("allow");
+      }
+      const receivedBody =
+        "Please explain this reply.\n\nAlready forwarded\noriginal text";
+      const message = incoming({ sender: actor.email, text: receivedBody });
+      const older = {
+        id: randomUUID(),
+        messageId: `<${randomUUID()}@original.example>`,
+        body: "The first application was submitted in March.",
+        receivedAt: now() - 3000,
+      };
+      const newer = {
+        id: randomUUID(),
+        messageId: `<${randomUUID()}@original.example>`,
+        body: "The October submission was a rebrand.",
+        receivedAt: now() - 1000,
+      };
+      mockEmailMessageLookup(provider, message.messageId, receivedBody, true, [
+        newer,
+        older,
+        { ...newer, id: randomUUID() },
+        {
+          id: randomUUID(),
+          messageId: `<${randomUUID()}@original.example>`,
+          body: "Already forwarded\r\noriginal text",
+          receivedAt: now() - 2000,
+        },
+        {
+          id: randomUUID(),
+          messageId: message.messageId,
+          body: "A second provider copy of the current message",
+          receivedAt: now(),
+        },
+        {
+          id: randomUUID(),
+          messageId: `<${randomUUID()}@original.example>`,
+          body: "A reply received after the current forward",
+          receivedAt: now() + 60_000,
+        },
+        {
+          id: randomUUID(),
+          messageId: `<${randomUUID()}@other.example>`,
+          body: "Private mail in another conversation",
+          receivedAt: now() - 1000,
+          conversationId: randomUUID(),
+        },
+        {
+          id: randomUUID(),
+          messageId: `<${randomUUID()}@original.example>`,
+          body: "An unsent draft in this conversation",
+          receivedAt: now() - 1000,
+          isDraft: true,
+        },
+      ]);
+      await message.send();
+      const claim = await claimPendingEmail(group);
+      expect(mailboxHistory(claim.appendSystemPrompt)).toMatchObject({
+        status: "found",
+        truncated: false,
+        messages: [
+          { body: older.body, bodyAlreadyIncluded: false },
+          { bodyAlreadyIncluded: true },
+          { body: newer.body, bodyAlreadyIncluded: false },
+        ],
+      });
+      expect(claim.appendSystemPrompt).not.toContain("Already forwarded");
+      expect(claim.appendSystemPrompt).not.toContain("second provider copy");
+      expect(claim.appendSystemPrompt).not.toContain(
+        "after the current forward",
+      );
+      expect(claim.appendSystemPrompt).not.toContain("Private mail");
+      expect(claim.appendSystemPrompt).not.toContain("unsent draft");
+    },
+  );
+
+  it.each(["gmail", "outlook-mail"] as const)(
+    "bounds %s history and explicitly reports omitted messages and body truncation",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      await connectEmailMailbox(actor, provider, actor.email);
+      verifiedDirectory(actor);
+      if (provider === "gmail") {
+        await setGmailContextReadPermission("allow");
+      }
+      const message = incoming({ sender: actor.email });
+      const history = Array.from({ length: 25 }, (_, index) => {
+        return {
+          id: randomUUID(),
+          messageId: `<${randomUUID()}@original.example>`,
+          body: `${index}: ` + String(index).repeat(9000),
+          receivedAt: now() - (25 - index) * 1000,
+        };
+      });
+      mockEmailMessageLookup(
+        provider,
+        message.messageId,
+        "Current reply",
+        true,
+        history,
+      );
+      await message.send();
+      const claim = await claimPendingEmail(group);
+      const loaded = mailboxHistory(claim.appendSystemPrompt);
+      expect(loaded.status).toBe("found");
+      expect(loaded.truncated).toBeTruthy();
+      expect(loaded.messages).toHaveLength(20);
+      expect(loaded.messages?.[0]?.providerMessageId).toBe(history[5]?.id);
+      expect(loaded.messages?.at(-1)?.body).toHaveLength(8000);
+      expect(loaded.messages?.at(-1)?.bodyTruncated).toBeTruthy();
+      expect(
+        loaded.messages?.reduce((total, entry) => {
+          return total + (entry.body?.length ?? 0);
+        }, 0),
+      ).toBeLessThanOrEqual(40_000);
+    },
+  );
+
+  it("retains the exact message and reports denied thread history without reading it", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    await accept(
+      setupApp({ context, routes: connectorPermissionsRoutes })(
+        connectorPermissionsContract,
+      ).apply({
+        headers: authHeaders(),
+        body: {
+          target: { kind: "builtin", connectorSlug: "gmail" },
+          mode: "patch",
+          grants: [{ permission: "threads.read", action: "deny" }],
+        },
+      }),
+      [200],
+    );
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Exact message retained",
+    );
+    server.use(
+      http.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${source.providerConversationId}`,
+        () => {
+          throw new Error("Denied history must not be requested");
+        },
+      ),
+    );
+    await message.send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.appendSystemPrompt).toContain("Exact message retained");
+    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
+      status: "permission-required",
+    });
+  });
+
+  it.each([
+    { status: 404, expected: "not-found" },
+    { status: 503, expected: "provider-unavailable" },
+    { status: 200, expected: "provider-unavailable" },
+  ])(
+    "retains the exact message when the history response has status $status or invalid data",
+    async ({ status, expected }) => {
+      const { actor, group } = await entitledActor();
+      await connectEmailMailbox(actor, "gmail", actor.email);
+      verifiedDirectory(actor);
+      await setGmailContextReadPermission("allow");
+      const message = incoming({ sender: actor.email });
+      const source = mockEmailMessageLookup(
+        "gmail",
+        message.messageId,
+        "Current message survives history failure",
+      );
+      server.use(
+        http.get(
+          `https://gmail.googleapis.com/gmail/v1/users/me/threads/${source.providerConversationId}`,
+          () => {
+            return HttpResponse.json({ error: "unavailable" }, { status });
+          },
+        ),
+      );
+      await message.send();
+      const claim = await claimPendingEmail(group);
+      expect(claim.appendSystemPrompt).toContain(
+        "Current message survives history failure",
+      );
+      expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
+        status: expected,
+      });
+    },
+  );
+
+  it("marks Outlook history incomplete when the provider has another page", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "outlook-mail", actor.email);
+    verifiedDirectory(actor);
+    const message = incoming({ sender: actor.email });
+    mockEmailMessageLookup(
+      "outlook-mail",
+      message.messageId,
+      "Current message",
+    );
+    server.use(
+      http.get(
+        "https://graph.microsoft.com/v1.0/me/messages",
+        ({ request }) => {
+          if (
+            !new URL(request.url).searchParams
+              .get("$filter")
+              ?.startsWith("receivedDateTime le ")
+          ) {
+            return;
+          }
+          return HttpResponse.json({
+            value: [],
+            "@odata.nextLink":
+              "https://graph.microsoft.com/v1.0/me/messages?$skip=10",
+          });
+        },
+      ),
+    );
+    await message.send();
+    const claim = await claimPendingEmail(group);
+    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
+      status: "found",
+      truncated: true,
+      messages: [],
+    });
+  });
+
+  it("retains the exact message when thread history exceeds the lookup deadline", async () => {
+    const { actor, group } = await entitledActor();
+    await connectEmailMailbox(actor, "gmail", actor.email);
+    verifiedDirectory(actor);
+    await setGmailContextReadPermission("allow");
+    const message = incoming({ sender: actor.email });
+    const source = mockEmailMessageLookup(
+      "gmail",
+      message.messageId,
+      "Current message survives a slow history provider",
+    );
+    server.use(
+      http.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${source.providerConversationId}`,
+        async ({ request }) => {
+          const blocked = createDeferredPromise<Response>(context.signal);
+          const finish = () => {
+            blocked.resolve(
+              HttpResponse.json({ error: "cancelled" }, { status: 504 }),
+            );
+          };
+          if (request.signal.aborted) {
+            finish();
+          } else {
+            request.signal.addEventListener("abort", finish, { once: true });
+          }
+          return await blocked.promise;
+        },
+      ),
+    );
+    await message.send();
+    const claim = await claimPendingEmail(group);
+    expect(claim.appendSystemPrompt).toContain(
+      "Current message survives a slow history provider",
+    );
+    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
+      status: "lookup-timed-out",
+    });
+  }, 15_000);
 
   it.each(["gmail", "outlook-mail"] as const)(
     "retains the received email when %s has no exact RFC Message-ID match",
@@ -1306,6 +1683,7 @@ describe("Email integration", () => {
           return HttpResponse.json({
             id: source.providerMessageId,
             threadId: source.providerConversationId,
+            internalDate: String(now()),
             payload: {
               mimeType: "text/plain",
               headers: [

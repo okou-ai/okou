@@ -160,7 +160,10 @@ function compareResponses(
   current: RuntimeApiRouteSnapshot,
   findings: RuntimeApiCompatFinding[],
 ): void {
-  const nativeClient = online.owner === "desktop" || online.owner === "ios";
+  const nativeClient =
+    online.owner === "desktop" ||
+    online.owner === "ios" ||
+    online.owner === "android";
   const statuses = nativeClient
     ? new Set([
         ...Object.keys(online.responses),
@@ -675,7 +678,7 @@ function impactFor(
   direction: RuntimeApiCompatFinding["direction"],
   owner: RuntimeApiRouteOwner,
 ): string {
-  if (owner === "desktop" || owner === "ios") {
+  if (owner === "desktop" || owner === "ios" || owner === "android") {
     return nativeImpactFor(direction, owner);
   }
 
@@ -692,15 +695,16 @@ function impactFor(
 
 function nativeImpactFor(
   direction: RuntimeApiCompatFinding["direction"],
-  owner: "desktop" | "ios",
+  owner: "desktop" | "ios" | "android",
 ): string {
-  const label = owner === "ios" ? "iOS" : "Desktop";
+  const label =
+    owner === "android" ? "Android" : owner === "ios" ? "iOS" : "Desktop";
   if (direction === "request") {
     return `Affects the Okou ${label} client. Installed ${label} builds keep sending the production request shape, so the new API may reject them with HTTP 400 until users install an update; the API deploys minutes after merge, while a ${label} release reaches users much later.`;
   }
 
   if (direction === "response") {
-    return `Affects the Okou ${label} client. Installed ${label} builds decode this response strictly against their ${owner === "desktop" ? "generated Swift bindings" : "Swift models"}, so every installed build fails at decode time once the API deploys, until users install an update that reads the new shape.`;
+    return `Affects the Okou ${label} client. Installed ${label} builds decode this response strictly against their ${owner === "desktop" ? "generated Swift bindings" : owner === "android" ? "generated Kotlin models" : "Swift models"}, so every installed build fails at decode time once the API deploys, until users install an update that reads the new shape.`;
   }
 
   return `Affects the Okou ${label} client. Installed ${label} builds keep calling the production method and path and fail against the new API until users install an update.`;

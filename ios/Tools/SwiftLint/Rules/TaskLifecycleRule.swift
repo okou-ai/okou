@@ -47,7 +47,9 @@ struct TaskLifecycleRule: NativeRule {
           scope.statements,
           states: [NativeLifetimePath(locals: scope.locals, immutable: scope.locals)])
         let retained = trace.retained.filter { fields.contains($0.key) }
-        if !retained.isEmpty, !paths.allSatisfy({ trace.finished($0) }) {
+        let dictionaries = dictionaryFields(syntax)
+        let slots = trace.retainedSlots.filter { dictionaries.contains($0.field) }
+        if slots.isEmpty, !retained.isEmpty, !paths.allSatisfy({ trace.finished($0) }) {
           report(
             node, "The newly retained Task loses its original handle before release or transfer")
         }
@@ -57,48 +59,36 @@ struct TaskLifecycleRule: NativeRule {
               node,
               "Retained Task '\(field)' needs cancellation or completion in its owner's teardown")
           }
-          // Initializers create the first handle; indexed collections can add independent keys.
-          // Replacement checks here cover single, explicitly typed owner handles.
-          if value == .handle, !scope.initializer || repeatedScope(node) != nil {
-            let replacement = NativeLifetimeTrace(
-              kind: .task, creation: nil, owner: owner)
-            func preserves(_ statements: CodeBlockItemListSyntax) -> Bool {
-              let original = NativeLifetimePath(
-                values: ["self." + field: .handle], locals: scope.locals,
-                immutable: scope.locals, acquired: true)
-              return replacement.block(statements, states: [original])
-                .allSatisfy { replacement.finished($0) }
-            }
-            var preserved = scope.initializer || preserves(scope.statements)
-            if let repeated = repeatedScope(node) {
-              let iteration = NativeLifetimeTrace(
-                kind: .task, creation: node.position, owner: owner)
-              let body =
-                repeated.as(ForStmtSyntax.self)?.body
-                ?? repeated.as(WhileStmtSyntax.self)?.body
-                ?? repeated.as(RepeatStmtSyntax.self)?.body
-              let completes =
-                body.map {
-                  iteration.block(
-                    $0.statements,
-                    states: [NativeLifetimePath(locals: scope.locals, immutable: scope.locals)]
-                  ).allSatisfy {
-                    !$0.acquired || $0.released || $0.transferred
-                      || [.breakLoop, .returned, .thrown].contains($0.exit)
-                  }
-                } ?? false
-              let original = NativeLifetimePath(
-                values: ["self." + field: .handle], locals: scope.locals,
-                immutable: scope.locals, acquired: true)
-              let retains = replacement.step(repeated, path: original)
-                .allSatisfy { replacement.finished($0) }
-              preserved = preserved && (completes || retains)
-            }
-            if !preserved {
-              report(
-                node,
-                "Replacing '\(field)' loses its original Task; cancel, await, or preserve it first")
-            }
+          if value == .handle,
+            !trace.preserves(node, scope: scope, storage: "self." + field)
+          {
+            report(
+              node,
+              "Replacing '\(field)' loses its original Task; cancel, await, or preserve it first")
+          }
+        }
+        if !slots.isEmpty {
+          let acquisition = NativeLifetimeTrace(
+            kind: .task, creation: node.position, owner: owner, slots: slots)
+          let preserved = acquisition.block(
+            scope.statements,
+            states: [NativeLifetimePath(locals: scope.locals, immutable: scope.locals)]
+          ).allSatisfy { acquisition.finished($0) }
+          if !preserved {
+            report(
+              node,
+              "The newly retained dictionary Task loses its original handle before release or transfer"
+            )
+          }
+        }
+        for slot in slots {
+          if !slot.fresh(in: scope.statements, repeated: scope.repeated(node)),
+            !trace.preserves(node, scope: scope, storage: slot.storage, slot: slot)
+          {
+            report(
+              node,
+              "Replacing '\(slot.syntax.trimmedDescription)' loses its original Task; cancel, await, or preserve it first"
+            )
           }
         }
       } else if let binding = ancestors(of: node).compactMap({ $0.as(PatternBindingSyntax.self) })
@@ -119,29 +109,48 @@ struct TaskLifecycleRule: NativeRule {
       return .visitChildren
     }
 
-    private func repeatedScope(_ node: FunctionCallExprSyntax) -> Syntax? {
-      for ancestor in ancestors(of: node) {
-        if ancestor.is(ClosureExprSyntax.self) || ancestor.is(FunctionDeclSyntax.self)
-          || ancestor.is(InitializerDeclSyntax.self)
-        {
-          return nil
+    private func dictionaryFields(_ owner: MemberBlockSyntax) -> Set<String> {
+      func dictionary(_ type: TypeSyntax) -> Bool {
+        if let optional = type.as(OptionalTypeSyntax.self) {
+          return dictionary(optional.wrappedType)
         }
-        if ancestor.is(ForStmtSyntax.self) || ancestor.is(WhileStmtSyntax.self)
-          || ancestor.is(RepeatStmtSyntax.self)
+        if let named = type.as(IdentifierTypeSyntax.self), named.name.text == "Optional",
+          let wrapped = named.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self)
         {
-          return ancestor
+          return dictionary(wrapped)
         }
+        if let indexed = type.as(DictionaryTypeSyntax.self) { return taskStorage(indexed.value) }
+        if let named = type.as(IdentifierTypeSyntax.self), named.name.text == "Dictionary",
+          let value = named.genericArgumentClause?.arguments.last?.argument.as(TypeSyntax.self)
+        {
+          return taskStorage(value)
+        }
+        if let named = type.as(MemberTypeSyntax.self), named.baseType.trimmedDescription == "Swift"
+        {
+          if named.name.text == "Optional",
+            let wrapped = named.genericArgumentClause?.arguments.first?.argument.as(TypeSyntax.self)
+          {
+            return dictionary(wrapped)
+          }
+          if named.name.text == "Dictionary",
+            let value = named.genericArgumentClause?.arguments.last?.argument.as(TypeSyntax.self)
+          {
+            return taskStorage(value)
+          }
+        }
+        return false
       }
-      return nil
+      return Set(
+        owner.members.flatMap { member -> [String] in
+          guard let variable = member.decl.as(VariableDeclSyntax.self) else { return [] }
+          return variable.bindings.compactMap { binding in
+            guard let type = binding.typeAnnotation?.type, dictionary(type) else { return nil }
+            return binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+          }
+        })
     }
 
-    private struct Scope {
-      let statements: CodeBlockItemListSyntax
-      let locals: Set<String>
-      var initializer = false
-    }
-
-    private func scope(_ node: FunctionCallExprSyntax) -> Scope? {
+    private func scope(_ node: FunctionCallExprSyntax) -> NativeLifetimeScope? {
       for ancestor in ancestors(of: node) {
         if let closure = ancestor.as(ClosureExprSyntax.self) {
           if let (call, _) = closureCall(closure),
@@ -149,7 +158,8 @@ struct TaskLifecycleRule: NativeRule {
           {
             return nil  // Evaluation-owned acquisitions use okou_resource_cancellation.
           }
-          return Scope(statements: closure.statements, locals: Set(closureParameters(closure)))
+          return NativeLifetimeScope(
+            statements: closure.statements, locals: Set(closureParameters(closure)))
         }
         if let function = ancestor.as(FunctionDeclSyntax.self), let body = function.body {
           let parameters = function.signature.parameterClause.parameters
@@ -160,12 +170,12 @@ struct TaskLifecycleRule: NativeRule {
           {
             return nil
           }
-          return Scope(
+          return NativeLifetimeScope(
             statements: body.statements,
             locals: Set(parameters.map { ($0.secondName ?? $0.firstName).text }))
         }
         if let initializer = ancestor.as(InitializerDeclSyntax.self), let body = initializer.body {
-          return Scope(
+          return NativeLifetimeScope(
             statements: body.statements,
             locals: Set(
               initializer.signature.parameterClause.parameters.map {
@@ -229,6 +239,15 @@ struct TaskLifecycleRule: NativeRule {
         ["Swift", "_Concurrency"].contains(member.baseType.trimmedDescription)
       {
         return member.genericArgumentClause != nil
+      }
+      if let member = type.as(MemberTypeSyntax.self), member.baseType.trimmedDescription == "Swift",
+        ["Optional", "Array", "Dictionary"].contains(member.name.text),
+        let element =
+          (member.name.text == "Dictionary"
+          ? member.genericArgumentClause?.arguments.last
+          : member.genericArgumentClause?.arguments.first)?.argument.as(TypeSyntax.self)
+      {
+        return taskStorage(element)
       }
       return false
     }

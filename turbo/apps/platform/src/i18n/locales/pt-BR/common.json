@@ -566,6 +566,7 @@
       "openDocs": "Abrir no Google Docs",
       "openSheets": "Abrir no Google Sheets",
       "openSlides": "Abrir no Google Slides",
+      "reconnect": "Reconectar o Google Drive",
       "synced": "Sincronizado com o Google Drive",
       "syncedFiles_one": "Sincronizado com o Google Drive",
       "syncedFiles_many": "{{count}} arquivos sincronizados com o Google Drive",
@@ -1651,13 +1652,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Tudo em dia",
-        "emptyTitle": "Nenhuma sugestão nova",
         "feedback": "Ações da sugestão",
-        "loading": "Carregando sugestões",
         "navigation": "Explorar sugestões",
-        "next": "Próxima sugestão",
-        "previous": "Sugestão anterior",
-        "retry": "Tentar novamente"
+        "show": "Mostrar sugestão {{index}} de {{total}}"
       },
       "label": "Sugestões",
       "lessLikeThis": "Less like this",

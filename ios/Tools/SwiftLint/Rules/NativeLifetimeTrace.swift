@@ -1,6 +1,6 @@
 import SwiftSyntax
 
-enum NativeLifetimeValue: Int { case unknown, handle, collection, completion }
+enum NativeLifetimeValue: Int { case unknown, handle, collection, completion, completionCollection }
 
 struct NativeLifetimeCleanup {
   let statements: CodeBlockItemListSyntax
@@ -17,28 +17,41 @@ struct NativeLifetimePath {
   var transferred = false
   var exit = Exit.normal
   var deferred: [NativeLifetimeCleanup] = []
+  var indexAliases: [String: NativeLifetimeIndex] = [:]
 }
 
 final class NativeLifetimeTrace {
   let kind: NativeLifetimeKind
   let creation: AbsolutePosition?
   let owner: NativeLifetimeOwner
+  let slots: [NativeLifetimeSlot]
   var checking: Set<String> = []
   var calls: Set<AbsolutePosition> = []
   var teardown = false
   var reachedCreation = false
   var retained: [String: NativeLifetimeValue] = [:]
+  var retainedSlots: [NativeLifetimeSlot] = []
 
-  init(kind: NativeLifetimeKind, creation: AbsolutePosition?, owner: NativeLifetimeOwner) {
+  init(
+    kind: NativeLifetimeKind, creation: AbsolutePosition?, owner: NativeLifetimeOwner,
+    slot: NativeLifetimeSlot? = nil, slots: [NativeLifetimeSlot] = []
+  ) {
     self.kind = kind
     self.creation = creation
     self.owner = owner
+    self.slots = slots + (slot.map { [$0] } ?? [])
   }
 
   func finished(_ path: NativeLifetimePath) -> Bool {
     if !path.acquired || path.released || path.transferred { return true }
     return path.values.contains { name, value in
-      name.hasPrefix("self.") && value != .unknown
+      if let slot = slots.first(where: { $0.storage == name }),
+        [.handle, .completion].contains(value)
+      {
+        return ownerReleases(
+          slot.field, value: value == .handle ? .collection : .completionCollection)
+      }
+      return name.hasPrefix("self.") && value != .unknown
         && ownerReleases(String(name.dropFirst(5)), value: value)
     }
   }
@@ -185,13 +198,29 @@ final class NativeLifetimeTrace {
     if let loop = node.as(ForStmtSyntax.self) {
       let sequence = value(loop.sequence, path: &path)
       var iteration = path
+      let bindings = nativeLifetimeBindings(loop.pattern)
+      iteration.locals.formUnion(bindings)
+      iteration.immutable.formUnion(bindings)
+      for name in bindings { iteration.values[name] = .unknown }
       if let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text {
         iteration.locals.insert(name)
         iteration.immutable.insert(name)
-        iteration.values[name] = sequence == .collection ? .handle : .unknown
+        iteration.values[name] =
+          sequence == .collection
+          ? .handle
+          : sequence == .completionCollection ? .completion : .unknown
       }
-      let results = block(loop.body.statements, states: [iteration])
-      if sequence == .collection, loop.whereClause == nil,
+      let entering: [NativeLifetimePath]
+      if let filter = loop.whereClause {
+        var matching = iteration
+        var skipped = iteration
+        constrain(filter.condition, count: 1, initial: iteration, yes: &matching, no: &skipped)
+        entering = [matching]
+      } else {
+        entering = [iteration]
+      }
+      let results = block(loop.body.statements, states: entering)
+      if [.collection, .completionCollection].contains(sequence), loop.whereClause == nil,
         results.allSatisfy({ $0.released && ($0.exit == .normal || $0.exit == .continueLoop) })
       {
         path.released = true
@@ -281,6 +310,24 @@ final class NativeLifetimeTrace {
     }
     if initial.acquired, !initial.released, facts.throws {
       var failure = path
+      if let parts = expression?.as(SequenceExprSyntax.self).map({ Array($0.elements) }),
+        parts.count == 3, parts[1].is(AssignmentExprSyntax.self),
+        let attempt = parts[2].as(TryExprSyntax.self),
+        attempt.questionOrExclamationMark == nil,
+        case .subscription = kind,
+        let registration = attempt.expression.as(FunctionCallExprSyntax.self),
+        let member = registration.calledExpression.as(MemberAccessExprSyntax.self),
+        member.declName.baseName.text == "watch", let base = member.base,
+        owner.isStore(base, at: registration),
+        registration.arguments.allSatisfy({
+          $0.expression.is(DeclReferenceExprSyntax.self)
+            || $0.expression.is(MemberAccessExprSyntax.self)
+        })
+      {
+        // Direct watch registration does not invoke its listener. On failure,
+        // the assignment keeps the previous handle; arbitrary helpers may mutate it.
+        failure = initial
+      }
       failure.exit = .thrown
       return [path, failure]
     }
@@ -336,54 +383,59 @@ final class NativeLifetimeTrace {
         bindings.insert(name)
         if conditions.count == 1, original != .unknown { no.released = true }
       } else if let expression = element.condition.as(ExprSyntax.self) {
-        _ = value(expression, path: &yes)
-        if kind.isTask {
-          if let member = expression.as(MemberAccessExprSyntax.self),
-            member.declName.baseName.text == "isEmpty", let base = member.base,
-            value(base, path: &yes) == .collection
-          {
-            yes.released = true
-          }
-          if conditions.count == 1,
-            let prefix = expression.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "!",
-            let member = prefix.expression.as(MemberAccessExprSyntax.self),
-            member.declName.baseName.text == "isEmpty", let base = member.base,
-            value(base, path: &yes) == .collection
-          {
-            no.released = true
-          }
-          if let parts = expression.as(SequenceExprSyntax.self).map({ Array($0.elements) }),
-            parts.count == 3,
-            let operation = parts[1].as(BinaryOperatorExprSyntax.self)?.operator.text,
-            ["==", "!="].contains(operation)
-          {
-            for index in [0, 2] where parts[2 - index].is(NilLiteralExprSyntax.self) {
-              var evaluating = initial
-              if value(parts[index], path: &evaluating) == .handle {
-                if operation == "==" {
-                  yes.released = true
-                } else if conditions.count == 1 {
-                  no.released = true
-                }
-              }
-            }
-          }
-          if teardown, conditions.count == 1,
-            let prefix = expression.as(PrefixOperatorExprSyntax.self),
-            prefix.operator.text == "!",
-            let name = key(prefix.expression, path: initial),
-            ["self.closed", "self.isClosed"].contains(name)
-          {
-            // An idempotent close may return when the owner has already closed.
-            no.released = true
-          }
-        }
+        constrain(expression, count: conditions.count, initial: initial, yes: &yes, no: &no)
         if conditions.count == 1, let literal = expression.as(BooleanLiteralExprSyntax.self) {
           return literal.literal.text == "true" ? ([yes], [], bindings) : ([], [no], bindings)
         }
       }
     }
     return ([yes], [no], bindings)
+  }
+
+  private func constrain(
+    _ expression: ExprSyntax, count: Int, initial: NativeLifetimePath,
+    yes: inout NativeLifetimePath, no: inout NativeLifetimePath
+  ) {
+    _ = value(expression, path: &yes)
+    if let member = expression.as(MemberAccessExprSyntax.self),
+      member.declName.baseName.text == "isEmpty", let base = member.base,
+      [.collection, .completionCollection].contains(value(base, path: &yes))
+    {
+      yes.released = true
+    }
+    if count == 1,
+      let prefix = expression.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "!",
+      let member = prefix.expression.as(MemberAccessExprSyntax.self),
+      member.declName.baseName.text == "isEmpty", let base = member.base,
+      [.collection, .completionCollection].contains(value(base, path: &yes))
+    {
+      no.released = true
+    }
+    if let parts = expression.as(SequenceExprSyntax.self).map({ Array($0.elements) }),
+      parts.count == 3,
+      let operation = parts[1].as(BinaryOperatorExprSyntax.self)?.operator.text,
+      ["==", "!="].contains(operation)
+    {
+      for index in [0, 2] where parts[2 - index].is(NilLiteralExprSyntax.self) {
+        var evaluating = initial
+        if value(parts[index], path: &evaluating) == .handle {
+          if operation == "==" {
+            yes.released = true
+          } else if count == 1 {
+            no.released = true
+          }
+        }
+      }
+    }
+    if kind.isTask, teardown, count == 1,
+      let prefix = expression.as(PrefixOperatorExprSyntax.self),
+      prefix.operator.text == "!",
+      let name = key(prefix.expression, path: initial),
+      ["self.closed", "self.isClosed"].contains(name)
+    {
+      // An idempotent close may return when the owner has already closed.
+      no.released = true
+    }
   }
 }
 

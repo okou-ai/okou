@@ -548,6 +548,7 @@
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
       "openSlides": "Buka di Google Slides",
+      "reconnect": "Hubungkan ulang Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
@@ -1624,13 +1625,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Semua beres",
-        "emptyTitle": "Belum ada saran baru",
         "feedback": "Tindakan saran",
-        "loading": "Memuat saran",
         "navigation": "Jelajahi saran",
-        "next": "Saran berikutnya",
-        "previous": "Saran sebelumnya",
-        "retry": "Coba lagi"
+        "show": "Tampilkan saran {{index}} dari {{total}}"
       },
       "label": "Saran",
       "lessLikeThis": "Less like this",

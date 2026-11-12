@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.3](https://github.com/okou-ai/okou/compare/ios-v0.36.2...ios-v0.36.3) (2026-11-12)
+
+
+### Refactoring
+
+* **ios:** own conversation history and recovery reads ([#46672](https://github.com/okou-ai/okou/issues/46672)) ([335ad62](https://github.com/okou-ai/okou/commit/335ad62be0a2dbde459cf02165a1d7b3601440c9))
+
 ## [0.36.2](https://github.com/okou-ai/okou/compare/ios-v0.36.1...ios-v0.36.2) (2026-11-11)
 
 

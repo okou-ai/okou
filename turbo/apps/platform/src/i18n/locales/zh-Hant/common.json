@@ -548,6 +548,7 @@
       "openDocs": "在 Google 文件中開啟",
       "openSheets": "在 Google 試算表中開啟",
       "openSlides": "在 Google 簡報中開啟",
+      "reconnect": "重新連線 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已將 {{count}} 個檔案同步到 Google Drive",
@@ -1624,13 +1625,9 @@
       "editReason": "修改原因",
       "homeCard": {
         "completeTitle": "全部處理完了",
-        "emptyTitle": "暫時沒有新建議",
         "feedback": "建議操作",
-        "loading": "正在載入建議",
         "navigation": "切換建議",
-        "next": "下一則建議",
-        "previous": "上一則建議",
-        "retry": "重試"
+        "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",

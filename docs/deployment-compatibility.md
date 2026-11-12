@@ -429,6 +429,61 @@ after an API promotion publishes its first snapshot; until then CI explicitly
 warns that its baseline is absent. Register a new inventory without changing
 its existing API shapes, then publish that baseline before contracting them.
 
+### Android Contract Gate
+
+Android is an independent installed client, with exact `X-Client-Type: Android`,
+its stable build version, and session/request identifiers. The canonical API
+enforces its source-controlled
+[`android-client-compatibility.json`](../turbo/apps/api/src/lib/android-client-compatibility.json)
+floor independently of Web, Desktop and iOS. A parseable older version receives
+HTTP 426, `Cache-Control: no-store`, and
+`{ "error": { "code": "ANDROID_UPDATE_REQUIRED", "message": "..." }, "minimumSupportedVersion": "x.y.z" }`.
+Missing/unparseable versions are not excluded by this mechanism. The native
+transport retains an update-required state; the authenticated root must render
+the blocking native destination. This state never establishes data readiness.
+
+Selected canonical contracts in
+[`kotlin-bindings/bindings.ts`](../turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts)
+generate Kotlin wire DTOs/Retrofit methods and derive
+[`android-routes.ts`](../turbo/packages/api-contracts/src/runtime-api-schema/android-routes.ts).
+The existing runtime compatibility job verifies generated consumption even on
+native-only PRs and compares Android request input, route identity and every
+declared response status, including the global 426 envelope. Generated drift
+or unregistered Retrofit declarations fail before a new call can silently
+escape the installed-reader inventory. Android builds also run for canonical
+contract/validator/binding changes. Regeneration and native ownership commands
+belong in the [Android README](../android/README.md#canonical-api-bindings-and-transport).
+
+The native two-proof policy applies independently: an available, verified
+Android floor raise can prove a breaking change, or a matching Android-only
+`2xx` response transform can preserve the old body. Transform entries belong in
+[`client-transforms/android.ts`](../turbo/packages/api-contracts/src/client-transforms/android.ts)
+and their actual runtime route; a proof for another client never covers Android.
+Request/error/route changes cannot be proven by a success transform. Lowered or
+removed floors and unreachable transforms fail as for Desktop/iOS.
+
+The Android publication oracle reads GitHub Releases with the job's read-only
+contents permission. A non-draft, non-prerelease `android-vX.Y.Z` release with
+at least one nonempty `.apk` asset in the `uploaded` state establishes publication;
+the tag identifies the packaged Android version. CI checks the 20 highest stable
+Android tags in numeric version order and selects the highest qualifying release.
+A tag alone, an unfinished asset upload, or a CI build artifact does not establish
+publication. No app-store processing or TestFlight-style availability step is required.
+APK version, signing and installability remain the publisher's responsibility.
+
+The Android floor starts `null`. Once an APK has been published, a reviewed floor
+raise cannot exceed the published version; review must confirm that build supports
+the changed contract. Missing or unreadable publication evidence blocks a floor
+raise or a bounded transform proof, while unrelated changes remain unaffected.
+A base commit from before Android registration has no Android floor; its initial
+policy is null. Existing policy files are read and validated, including failures.
+
+The new inventory first becomes a production comparison baseline when the
+existing API promotion republishes the runtime schema snapshot. CI warns while
+that Android baseline is absent. Publish it before contracting Android-consumed
+APIs; this registration alone does not certify production baseline publication,
+available builds, provider integration or device acceptance.
+
 ### Coupled Guest Disk and Retained-Image Contracts
 
 A Guest disk cutover couples the Runner/Guest build, device and mount identity,

@@ -4,6 +4,7 @@ import {
   CLIENT_TYPE_APP,
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_IOS,
+  CLIENT_TYPE_ANDROID,
 } from "../../contracts/client-headers";
 import { selectClientResponseTransforms } from "../select";
 import type { ClientResponseTransform } from "../types";
@@ -50,6 +51,22 @@ function select(
 }
 
 describe("selectClientResponseTransforms", () => {
+  it("selects Android independently with exact identity and inclusive bounds", () => {
+    const android = fixtureTransform({ client: "android" });
+    const ios = fixtureTransform({ client: "ios" });
+    const entries = [bounded, ios, android];
+    expect(select(entries, { client: CLIENT_TYPE_ANDROID })).toStrictEqual([
+      android,
+    ]);
+    expect(
+      select(entries, { client: CLIENT_TYPE_ANDROID, version: "1.2.4" }),
+    ).toStrictEqual([]);
+    expect(select(entries, { client: "android" })).toStrictEqual([]);
+    expect(select(entries, { client: CLIENT_TYPE_IOS })).toStrictEqual([ios]);
+    expect(select(entries, { client: CLIENT_TYPE_DESKTOP })).toStrictEqual([
+      bounded,
+    ]);
+  });
   it("selects iOS transforms independently from Desktop with inclusive version bounds", () => {
     const ios = fixtureTransform({ client: "ios", maxVersion: "1.2.3" });
     const entries = [bounded, ios];

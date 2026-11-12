@@ -36,11 +36,21 @@ elif any(a.endswith('/actions/runs') for a in args):
  if data.get('reopen_during_owners'):
   data['reopen']=data['reopen_during_owners'];(root/'github.json').write_text(json.dumps(data))
  status=next(a.split('=',1)[1] for a in args if a.startswith('status='))
+ if status in data.get('run_pages',{}):
+  scans=data['run_pages'][status];pages=scans[0]
+  if len(scans)>1:
+   scans.pop(0);(root/'github.json').write_text(json.dumps(data))
+  print(json.dumps(pages));sys.exit(0)
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
  if data.get('churn'):
   for run in runs:run['id']+=len((root/'github.log').read_text().splitlines())
  pages=[{'total_count':len(runs),'workflow_runs':runs[offset:offset+100]} for offset in range(0,min(len(runs),1000),100)]
  print(json.dumps(pages or [{'total_count':0,'workflow_runs':[]}]))
+elif any('/actions/runs/' in a for a in args):
+ run_id=next(a.rsplit('/',1)[1] for a in args if '/actions/runs/' in a)
+ record=data.get('run_details',{}).get(run_id)
+ if record is None:sys.exit(1)
+ print(json.dumps(record))
 elif any('/commits/' in a for a in args):print(json.dumps([[{'number':n} for n in data.get('associated',[])]]))
 else:raise SystemExit('unexpected gh call')
 """
@@ -308,6 +318,14 @@ class CleanupTests(unittest.TestCase):
         name = "vm0-runner-pr-42-api.service"
         self.state(name, LoadState="loaded", ActiveState="failed")
         sibling = self.resource("etc/systemd/system/vm0-runner-pr-43-api.service")
+        self.github(
+            run_pages={
+                "queued": [
+                    [{"total_count": 1, "workflow_runs": []}],
+                    [{"total_count": 0, "workflow_runs": []}],
+                ]
+            }
+        )
         result = self.controller(MUTATION_ERROR="1")
         self.assertEqual(result.returncode, 1, result.stderr)
         records = [
@@ -467,6 +485,84 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"deferred_owner": 1', result.stdout)
+
+    def test_short_owner_scan_recovers_and_preserves_cleanup_outcomes(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        unrelated = {**self.owner(99), "status": "queued"}
+        self.github(
+            run_pages={
+                "queued": [
+                    [{"total_count": 2, "workflow_runs": [unrelated]}],
+                    [{"total_count": 1, "workflow_runs": [unrelated]}],
+                ]
+            }
+        )
+        result = self.controller()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse(config.exists())
+        decision = next(
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.startswith('{"pr":42,')
+        )
+        self.assertEqual(decision["outcome"], "cleaned")
+        self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
+        self.assertEqual(decision["hosts"]["metal-b"]["outcome"], "already_absent")
+
+    def test_disappeared_run_is_rechecked_before_cleanup(self):
+        unrelated = {**self.owner(99), "id": 20}
+        complete = [{"total_count": 1, "workflow_runs": [unrelated]}]
+        empty = [{"total_count": 0, "workflow_runs": []}]
+        short = [{"total_count": 3, "workflow_runs": [self.owner(), unrelated]}]
+        for status in ("queued", "completed", None):
+            with self.subTest(status=status):
+                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+                refreshed = {**self.owner(), "status": status}
+                self.github(
+                    run_pages={
+                        "queued": [
+                            empty,
+                            empty,
+                            [{"total_count": 1, "workflow_runs": [refreshed]}]
+                            if status == "queued"
+                            else empty,
+                        ],
+                        "in_progress": [complete, short, complete],
+                    },
+                    run_details={"10": refreshed} if status else {},
+                )
+                result = self.controller()
+                self.assertEqual(result.returncode, int(status is None), result.stderr)
+                self.assertEqual(config.exists(), status != "completed")
+                outcome = {
+                    "queued": "deferred_owner",
+                    "completed": "cleaned",
+                    None: "unverified",
+                }[status]
+                self.assertIn(f'"{outcome}": 1', result.stdout)
+
+    def test_short_owner_retry_must_prove_distinct_id_coverage(self):
+        first = {**self.owner(99), "status": "queued"}
+        second = {**first, "id": 20}
+        for reported in (2, 1000):
+            with self.subTest(reported=reported):
+                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+                self.github(
+                    run_pages={
+                        "queued": [
+                            [{"total_count": 2, "workflow_runs": [first]}],
+                            [
+                                {"total_count": reported, "workflow_runs": [second]},
+                                {"total_count": reported, "workflow_runs": [second]},
+                            ],
+                        ]
+                    },
+                    run_details={"10": first},
+                )
+                result = self.controller()
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(config.exists())
+                self.assertIn('"unverified": 1', result.stdout)
 
     def test_capped_owner_search_retains_unlisted_owner_resources(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")

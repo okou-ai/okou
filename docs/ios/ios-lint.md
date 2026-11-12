@@ -20,10 +20,10 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_test_synchronization`  | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
 | `okou_check_after_await`     | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
-| `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
+| `okou_subscription_teardown` | Release original CCState subscriptions and block-based notification tokens at teardown and before replacing a stored handle or dictionary slot.                                         | Native lifecycle ownership                                        |
 | `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
 | `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
-| `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle when replacing it.                                               | Native extension of async ownership; no identical Web rule        |
+| `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -102,8 +102,16 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   same-owner helpers. Collections cancel every element; an early break/return,
   filtered iteration, clearing the collection, or an uncalled closure is not
   cleanup. Cancellation through optional bindings and immutable snapshots is
-  valid; shadowed or overwritten handles do not release the original. Block
-  observers are removed from their original notification center. Native
+  valid; shadowed or overwritten handles do not release the original.
+  Replacing a stored handle or directly indexed dictionary slot first releases
+  the previous registration, proves that the handle is absent, or retains the
+  original under another explicit cleanup owner. A business active/busy flag
+  alone does not prove absence. Same-key checks follow visible immutable aliases,
+  loop `where` guards, and synchronous same-owner helper arguments. Cancelling
+  another key or simply removing an entry is insufficient. A fresh local UUID
+  permits independent dictionary insertions, but every loop iteration must preserve its preceding
+  registration and newly acquired handles cannot be discarded.
+  Block observers are removed from their original notification center. Native
   `UIView`/`UIViewController` destruction is a valid control lifetime; a retained
   business owner's `deinit` alone is not an explicit close path. Selector-based
   notification registration retains its system-managed semantics.
@@ -115,12 +123,19 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   snapshots, all-element loops, and same-owner helpers. Dropping the property,
   clearing a collection, cancelling a different handle, a filtered loop, or an
   uncalled cleanup closure does not release the work.
-  Single-handle replacement first cancels/awaits the old Task, proves that the
-  handle is absent, or transfers it to another explicit completion owner. A UI
+  Single-handle and directly indexed dictionary replacements first cancel or
+  await the old Task, prove that the handle is absent, or transfer it to another
+  explicit completion owner. A UI
   busy flag alone is not proof; use the actual handle for operation exclusion.
   A loop must establish safe replacement on each iteration or complete the
   newly created work before continuing; cancellation only before the loop is
   insufficient.
+  Dictionary checks distinguish the replaced key from other keys, including
+  immutable local aliases and same-owner helper arguments. Removing an entry or
+  clearing the dictionary does not cancel its original Task. A fresh UUID
+  constructed locally (including its UUID string) can identify an independent
+  insertion; reusing that key still cannot discard newly acquired work. A UUID
+  constructed before a loop is not a fresh key on every iteration.
   An awaited `value` or `result` establishes completion. A derived Task that
   awaits the original preserves its completion dependency; cancelling that
   derived Task does not cancel the original. A synchronous teardown may return
@@ -167,19 +182,27 @@ and same-file helpers rather than proving every control-flow path, dynamic
 dispatch target, or cross-file teardown contract.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
-Inferred/cross-file factories, tuple-held handles, dictionary-key replacement,
+Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,
 arbitrary collection mutation, actor reentrancy, owners without a recognized
 teardown entry (including process/SDK lifetimes), and view-owned Task handles
 still require review.
+Key matching uses visible immutable bindings and direct member/literal syntax,
+not runtime equality. Use an immutable snapshot for a mutable or computed key
+when establishing same-key cancellation or absence. Key matching does not prove
+that an object's key property remains unchanged across suspension or that
+arbitrary UUID factories create independent keys.
 The rule does not require a borrower to cancel a shared Task or prove that every
 caller invokes teardown and awaits a returned cleanup Task. A syntactically
 recognized completion dependency is not proof of upstream cancellation.
 Subscription checks recognize local handle transfers, direct Store spellings,
 `store`/`stateStore` members, known notification centers, and local immutable
 center aliases. Cross-file factories, custom callback lifetimes, dynamic
-receivers, arbitrary collection mutations, and whether a caller actually invokes
-its owner's close path still need review. Returning a handle is an ownership
-transfer, not proof that its eventual caller releases it.
+receivers, whole-collection replacement, arbitrary collection mutations, actor
+reentrancy, and whether a caller actually invokes its owner's close path still
+need review. Direct-slot checks use the same visible key identity limits as Task
+checks; they do not prove runtime key equality or cross-file factory ownership.
+Returning a handle is an ownership transfer, not proof that its eventual caller
+releases it.
 Import checks inspect declarations, including attributed, scoped and
 conditional imports, at known source paths. They do not resolve transitive
 dependencies, inferred SDK values, type aliases or every future UI/SDK module.

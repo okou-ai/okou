@@ -35,19 +35,17 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   ) {
     navigation.applySelection = nil
     navigation.delegate = nil
-    coordinator.sidebar.setNavigationGestures([])
     coordinator.sidebar.setTransitioning(false)
   }
 
   @MainActor
-  final class Coordinator: NSObject, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
+  final class Coordinator: NSObject, UINavigationControllerDelegate {
     let sidebar: SidebarInteraction
     // Retain both hosts across a pop so drafts, list position and transcript state survive.
     let list = UIHostingController(rootView: AnyView(EmptyView()))
     let chat = UIHostingController(rootView: AnyView(EmptyView()))
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
-    private var forward: UISwipeGestureRecognizer?
     private var transitionTarget: Bool?
 
     init(sidebar: SidebarInteraction) {
@@ -57,27 +55,15 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
 
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
-      // UIKit installs its pop recognizers when the navigation controller loads its view.
       navigation.loadViewIfNeeded()
+      // Hidden bars need this opt-in; UIKit still owns recognition and the interactive pop.
+      navigation.interactivePopGestureRecognizer?.delegate = nil
+      navigation.interactiveContentPopGestureRecognizer?.delegate = nil
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
       let forward = UISwipeGestureRecognizer(target: self, action: #selector(returnToChat))
       forward.direction = .left
-      forward.delegate = self
       list.view.addGestureRecognizer(forward)
-      self.forward = forward
-      configureGestures()
-    }
-
-    private func configureGestures() {
-      guard let navigation else { return }
-      let gestures = [
-        navigation.interactivePopGestureRecognizer,
-        navigation.interactiveContentPopGestureRecognizer,
-        forward,
-      ].compactMap { $0 }
-      for gesture in gestures { gesture.delegate = self }
-      sidebar.setNavigationGestures(gestures)
     }
 
     private func applySelection() {
@@ -94,7 +80,6 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     }
 
     @objc private func returnToChat() {
-      guard sidebar.allowsDragging else { return }
       requestedSidebarOpen = false
       sidebar.setOpen(false)
       applySelection()
@@ -127,45 +112,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       }
       transitionTarget = nil
       sidebar.setTransitioning(false)
-      configureGestures()
       navigationController.view.setNeedsLayout()
-    }
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      guard let navigation, sidebar.allowsDragging, transitionTarget == nil,
-        navigation.transitionCoordinator == nil
-      else { return false }
-      if gestureRecognizer is UISwipeGestureRecognizer {
-        return navigation.topViewController === list
-      }
-      // A hidden navigation bar has no Back item. The stack still owns the native pop.
-      guard navigation.viewControllers.count > 1,
-        let pan = gestureRecognizer as? UIPanGestureRecognizer
-      else { return false }
-      let velocity = pan.velocity(in: navigation.view)
-      let leadingVelocity =
-        navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
-        ? -velocity.x : velocity.x
-      return leadingVelocity > abs(velocity.y) * 1.5
-    }
-
-    func gestureRecognizer(
-      _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
-    ) -> Bool {
-      guard gestureRecognizer === navigation?.interactiveContentPopGestureRecognizer else {
-        return true
-      }
-      // Horizontal content keeps its gesture; the system's screen-edge pop remains available.
-      var view = touch.view
-      while let current = view {
-        if let scroll = current as? UIScrollView,
-          scroll.contentSize.width > scroll.bounds.width + 1
-        {
-          return false
-        }
-        view = current.superview
-      }
-      return true
     }
   }
 }

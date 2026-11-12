@@ -33,11 +33,7 @@ pub(crate) use ExecutorResult as RunnerResult;
 
 impl From<runner_host::HostError> for ExecutorError {
     fn from(error: runner_host::HostError) -> Self {
-        match error {
-            runner_host::HostError::Config(message) => Self::Config(message),
-            runner_host::HostError::Internal(message) => Self::Internal(message),
-            runner_host::HostError::Io(error) => Self::Io(error),
-        }
+        runner_provider::ProviderError::from(error).into()
     }
 }
 

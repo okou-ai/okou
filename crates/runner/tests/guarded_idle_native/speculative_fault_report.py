@@ -98,9 +98,8 @@ def validate(directory):
             raise ValueError("speculative fault changed original physical owner")
         ordered = [terminal[1], *events[:3], terminal[2], terminal[3], *events[3:6],
                    terminal[4], *events[6:], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("speculative fault phase clocks lost ordering")
+        report.validate_witness_clock_order(
+            ordered, "speculative fault phase clocks lost ordering")
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         path = initial.get("status_path")
