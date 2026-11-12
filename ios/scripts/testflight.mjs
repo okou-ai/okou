@@ -140,9 +140,10 @@ export async function distribute(
         const detail = response.included?.find(
           (item) => item.type === "buildBetaDetails" && item.id === detailId,
         );
+        // Apple can report a build VALID before its beta detail carries an
+        // internal state. Nothing is assigned until it does; the deadline still
+        // bounds the wait.
         const internal = detail?.attributes.internalBuildState;
-        if (!internal)
-          throw new Error("Apple omitted the internal build state");
         if (
           [
             "PROCESSING_EXCEPTION",
@@ -187,7 +188,10 @@ export async function distribute(
           )
             return build.id;
         }
-        console.log(`Waiting for internal distribution: ${internal}`);
+        const reported =
+          internal ??
+          `not reported (beta detail ${detail ? "has no state" : "missing"})`;
+        console.log(`Waiting for internal distribution: ${reported}`);
       } else if (state !== "PROCESSING") {
         throw new Error(`Unknown Apple processing state: ${state}`);
       }

@@ -114,6 +114,15 @@ function buildResponse(state = "IN_BETA_TESTING", processing = "VALID") {
   };
 }
 
+// A VALID build whose beta detail Apple has not filled in yet.
+function unreportedState({ included = true } = {}) {
+  const response = buildResponse();
+  response.body.included = included
+    ? [{ type: "buildBetaDetails", id: "detail", attributes: {} }]
+    : [];
+  return response;
+}
+
 test("resolves the production bundle, internal group and next build across pages", async (t) => {
   const { client, requests } = await apple(t, setup);
   assert.deepEqual(await prepare(client, "0.1.1", "Internal"), release);
@@ -198,6 +207,40 @@ test("waits for processing and persisted internal group availability", async (t)
   assert.equal(requests.filter((r) => r.method === "POST").length, 1);
 });
 
+test("waits for Apple to report a valid build's internal state", async (t) => {
+  let reads = 0;
+  let assigned = false;
+  const { client, requests } = await apple(t, ({ url, method }) => {
+    if (url.pathname === "/v1/builds") {
+      reads++;
+      if (reads === 1) return unreportedState({ included: false });
+      if (reads === 2) return unreportedState();
+      return buildResponse(
+        assigned ? "IN_BETA_TESTING" : "READY_FOR_BETA_TESTING",
+      );
+    }
+    if (url.pathname === "/v1/betaGroups/group")
+      return { body: { data: { attributes: { isInternalGroup: true } } } };
+    if (method === "POST") {
+      assigned = true;
+      return { status: 204 };
+    }
+    return {
+      body: { data: assigned ? [{ id: "build", type: "builds" }] : [] },
+    };
+  });
+  assert.equal(
+    await distribute(client, release, { pollMs: 1, timeoutMs: 2000 }),
+    "build",
+  );
+  // The group is neither read nor written until Apple reports a state.
+  assert.deepEqual(
+    requests.slice(0, 2).map((r) => r.url.pathname),
+    ["/v1/builds", "/v1/builds"],
+  );
+  assert.equal(requests.filter((r) => r.method === "POST").length, 1);
+});
+
 test("already distributed build is verified without another mutation", async (t) => {
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
@@ -227,6 +270,8 @@ for (const [label, response, error] of [
     buildResponse("PROCESSING", "PROCESSING"),
     /Timed out/,
   ],
+  ["unreported internal state", unreportedState(), /Timed out/],
+  ["missing beta detail", unreportedState({ included: false }), /Timed out/],
 ]) {
   test(`does not report success for ${label}`, async (t) => {
     const { client, requests } = await apple(t, () => response);

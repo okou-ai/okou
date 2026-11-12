@@ -112,8 +112,10 @@ required for the final archive.
 - Upload completion is not publication completion. The job waits up to 30 minutes
   for the exact app/version/build to finish processing, assigns it only to the
   configured internal group, and reads back both group membership and the
-  `IN_BETA_TESTING` state. Missing export compliance, invalid builds, API access
-  errors, and timeouts fail the job. This is API evidence of availability;
+  `IN_BETA_TESTING` state. Apple can report a build `VALID` before its internal
+  state; the job keeps waiting and assigns nothing until one is reported.
+  Missing export compliance, invalid builds, API access errors, and timeouts
+  fail the job. This is API evidence of availability;
   installation and login require separate device acceptance.
 - A missing or mismatched canonical archive/test record stops publication before
   App Store Connect preparation. Restore the exact object or correct the cause;
