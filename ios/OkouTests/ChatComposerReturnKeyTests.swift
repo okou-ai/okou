@@ -30,7 +30,8 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     input.insertText("\n")
     input.insertText("\n")
     try await waitForBusinessResult {
-      !conversation.isSending && conversation.pending.contains { $0.needsRetry }
+      !conversation.isSending && !conversation.isStopping
+        && conversation.pending.contains { $0.needsRetry }
     }
     let writes = try fixture.requests.sentMessages.withLock {
       try $0.map { try JSONDecoder().decode([String: JSONValue].self, from: $0) }
