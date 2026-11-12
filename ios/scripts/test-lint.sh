@@ -68,6 +68,24 @@ for path in "${test_paths[@]}"; do
   rm "$fixture/$path/Duplicate.swift"
 done
 
+# The production-only state rule must be enabled by the real root config.
+for path in "${production_paths[@]}"; do
+  printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"
+done
+if run_lint; then
+  echo 'Global production state passed the configured lint entry point.' >&2
+  exit 1
+fi
+for path in "${production_paths[@]}"; do
+  grep -F "$path/GlobalState.swift" "$test_root/lint.log" >/dev/null
+  rm "$fixture/$path/GlobalState.swift"
+done
+grep -F 'okou_global_mutable_state' "$test_root/lint.log" >/dev/null
+for path in "${test_paths[@]}"; do
+  printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
+done
+run_lint
+
 printf 'only_rules: [\n' > "$fixture/.swiftlint.yml"
 if run_lint; then
   echo 'Malformed lint configuration passed.' >&2

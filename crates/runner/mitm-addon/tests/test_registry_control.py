@@ -16,6 +16,7 @@ import registry
 import registry_control
 import runner_control
 from tests.control_helpers import (
+    assert_closed,
     control_connection,
     exchange,
     frame,
@@ -166,9 +167,16 @@ async def test_catalog_warmup_reports_missing_invalid_and_recovered_source(
         assert recovered["digest"] == "b" * 64
 
 
-@pytest.mark.parametrize("phase", ["catalog_read", "diagnostic_compile"])
+@pytest.mark.parametrize(
+    ("phase", "completion"),
+    [
+        ("catalog_read", "released"),
+        pytest.param("diagnostic_compile", "partial_peer", marks=pytest.mark.shard_cost(5)),
+        pytest.param("diagnostic_compile", "deadline", marks=pytest.mark.shard_cost(10)),
+    ],
+)
 async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observational(
-    tmp_path, control, mitm_ctx, monkeypatch, phase
+    tmp_path, control, mitm_ctx, monkeypatch, phase, completion
 ):
     cache = tmp_path / "catalog.json"
     entered = threading.Event()
@@ -178,7 +186,7 @@ async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observatio
 
     def pause():
         entered.set()
-        assert release.wait(5), "test peer did not release catalog preparation"
+        assert release.wait(20), "test peer did not release catalog preparation"
 
     def blocked_read(fd, count):
         if os.fstat(fd).st_ino == inode:
@@ -194,19 +202,39 @@ async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observatio
     def peer():
         try:
             with control_connection(tmp_path) as connection:
+                connection.settimeout(15)
                 connection.sendall(frame(json.dumps(request).encode()))
                 assert entered.wait(5)
                 assert exchange(tmp_path)["data"] == {"state": "running"}
                 assert exchange(tmp_path, request)["code"] == "busy"
                 assert exchange(tmp_path, registry_apply_request("a" * 64))["code"] == "busy"
-                release.set()
-                assert response_data(read_reply(connection))["state"] == "available"
+                if completion == "deadline":
+                    reply = read_reply(connection)
+                    assert reply["code"] == "deadline"
+                    assert exchange(tmp_path, request)["code"] == "busy"
+                else:
+                    if completion == "partial_peer":
+                        # A real partial peer's framing expiry proves that catalog
+                        # work outlives the ordinary connection budget.
+                        with control_connection(tmp_path) as partial:
+                            partial.sendall(b"\x00")
+                            assert_closed(partial)
+                    release.set()
+                    reply = read_reply(connection)
+                    assert response_data(reply)["state"] == "available"
+                assert reply["requestId"] == request["requestId"]
+                assert reply["generation"] == request["generation"]
         finally:
             release.set()
 
     with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache)):
         # First startup configures the addon before the provider publishes its catalog.
         mitm_addon.configure({"okou_builtin_firewall_catalog_cache_path"})
+        assert response_data(await asyncio.to_thread(exchange, tmp_path, request)) == {
+            "state": "unavailable",
+            "file": None,
+            "reason": "cache_file_missing",
+        }
         write_catalog_cache(
             cache,
             digest="sha256:" + "a" * 64,
@@ -221,6 +249,9 @@ async def test_stalled_catalog_warmup_owns_admission_and_keeps_status_observatio
                 builtin_connector_diagnostics, "_compile_diagnostic_catalog", blocked_compile
             )
         await asyncio.to_thread(peer)
+        warmed = response_data(await asyncio.to_thread(exchange, tmp_path, request))
+        assert warmed["state"] == "available"
+        assert warmed["digest"] == "a" * 64
 
 
 async def test_catalog_warmup_rejects_caller_selected_paths(tmp_path, control):

@@ -130,7 +130,7 @@ struct ChatSidebarView: View {
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
-    // VoiceOver's escape gesture returns to the chat, as the left swipe does.
+    // VoiceOver's escape gesture returns to the chat.
     .accessibilityAction(.escape, close)
     .background { chatNumberShortcuts }
     .background(OkouColor.sidebar)
@@ -183,8 +183,7 @@ struct ChatSidebarView: View {
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
   /// beside it with no arrow, and on the right the chat filter and the way back to the chat in
-  /// one glass group. A left swipe returns to the chat too. The name leaves once rows scroll
-  /// under the bar; the glass buttons stay.
+  /// one glass group. The name leaves once rows scroll under the bar; the glass buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher
@@ -526,7 +525,7 @@ struct ChatSidebarView: View {
       ChatThreadPreview(thread: thread, workspace: store)
     }
     .menuOrder(.fixed)
-    // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
+    // Chat rows expose read state and archive actions with a right swipe.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)

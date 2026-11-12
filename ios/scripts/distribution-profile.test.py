@@ -72,6 +72,23 @@ class DistributionProfileTests(unittest.TestCase):
             if bundle == "ai.okou.ios":
                 self.assertEqual(entitlements["aps-environment"], "production")
 
+    def test_prepares_the_widget_signature_with_only_the_shared_app_group(self):
+        profile = self.profile("ai.okou.ios.widgets")
+        result, output = self.invoke(profile, "ai.okou.ios.widgets")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        entitlements = plistlib.loads(output.read_bytes())
+        self.assertEqual(
+            entitlements["application-identifier"], f"{TEAM}.ai.okou.ios.widgets"
+        )
+        self.assertEqual(
+            entitlements["com.apple.security.application-groups"], ["group.ai.okou.ios"]
+        )
+        self.assertNotIn("keychain-access-groups", entitlements)
+        profile["Entitlements"]["com.apple.security.application-groups"] = []
+        result, output = self.invoke(profile, "ai.okou.ios.widgets")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(output.exists())
+
     def test_rejects_profiles_that_cannot_share_the_cache_or_session(self):
         for capability in (
             "com.apple.security.application-groups",

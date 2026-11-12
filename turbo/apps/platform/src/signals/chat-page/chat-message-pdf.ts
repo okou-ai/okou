@@ -60,7 +60,12 @@ export const generateMessagePdf$ = command(
     for (const source of imageSources) {
       // Resolve under this click's access and cancellation, not a preview's
       // cached presigned URL, which may already have expired.
-      const resource = await set(attachmentDownloadSource$, source, signal);
+      const resource = await set(
+        attachmentDownloadSource$,
+        source,
+        "app",
+        signal,
+      );
       imageUrls.set(source, resource.resourceUrl);
     }
     const sources = input.contents.map((content) => {

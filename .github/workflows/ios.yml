@@ -322,8 +322,8 @@ jobs:
       - name: Check Swift formatting and property lists
         run: |
           xcodebuild -version
-          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push
-          plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Okou.xcodeproj/project.pbxproj
+          xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push ios/Widgets
+          plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Widgets/Info.plist ios/Widgets/OkouWidgets.entitlements ios/Okou.xcodeproj/project.pbxproj
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh

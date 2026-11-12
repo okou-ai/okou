@@ -48,6 +48,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { joinAll } from "../../utils";
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
@@ -2122,25 +2123,29 @@ describe("Suggestion feedback context", () => {
       isolatePg: true,
     });
     const fixture = await primaryRun();
-    for (let index = 0; index < 101; index++) {
-      const created = await accept(
-        client().create({ headers: fixture.headers, body: input() }),
-        [200],
-      );
-      await accept(
-        client().feedback({
-          headers: humanHeaders,
-          params: { id: created.body.id },
-          body: {
-            id: randomUUID(),
-            kind: "not_planned",
-            targetId: null,
-            note: "",
-          },
-        }),
-        [200],
-      );
-    }
+    // Cards are independent; each card still needs creation before its feedback.
+    const preparations = [0, 1, 2, 3].map(async (offset) => {
+      for (let index = offset; index < 101; index += 4) {
+        const created = await accept(
+          client().create({ headers: fixture.headers, body: input() }),
+          [200],
+        );
+        await accept(
+          client().feedback({
+            headers: humanHeaders,
+            params: { id: created.body.id },
+            body: {
+              id: randomUUID(),
+              kind: "not_planned",
+              targetId: null,
+              note: "",
+            },
+          }),
+          [200],
+        );
+      }
+    });
+    await joinAll(preparations);
     const feedback = await feedbackContext(fixture);
     expect(feedback.complete).toBeFalsy();
     expect(feedback.feedback).toHaveLength(100);

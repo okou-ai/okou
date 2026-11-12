@@ -26,15 +26,8 @@ type SkillVolumeSource =
   | "system_skill"
   | "connector_skill"
   | "custom_connector_skill"
-  | "workflow_skill"
   // Template guidance packages keep their existing storage provenance.
   | "request_additional_volume";
-
-interface SkillVolumeStorage {
-  readonly name: string;
-  readonly version?: string;
-  readonly system?: boolean;
-}
 
 type BundleSkillSource = Extract<
   SkillVolumeSource,
@@ -53,18 +46,7 @@ export type SkillVolume =
       readonly source: BundleSkillSource;
       readonly skillName: string;
       readonly contentBundle: ContentBundle;
-    }
-  | (SkillVolumeStorage &
-      (
-        | {
-            readonly source: "workflow_skill";
-            readonly skillName: string;
-          }
-        | {
-            readonly source: "request_additional_volume";
-            readonly mountPath: string;
-          }
-      ));
+    };
 
 /** Prompt text and skill or template guidance packages for one run. */
 export interface RunPromptAndSkills {
@@ -77,7 +59,6 @@ const VOLUME_SOURCE_ORDER = {
   custom_connector_skill: 0,
   system_skill: 1,
   connector_skill: 2,
-  workflow_skill: 3,
   request_additional_volume: 4,
 } as const satisfies Readonly<Record<SkillVolumeSource, number>>;
 
@@ -121,10 +102,6 @@ export function mergeRunPromptAndSkills(
 
 type ResolvedSkillVolume =
   | TemplateBundleVolume
-  | (SkillVolumeStorage & {
-      readonly source: "workflow_skill" | "request_additional_volume";
-      readonly mountPath: string;
-    })
   | {
       readonly source: BundleSkillSource;
       readonly contentBundle: ContentBundle;

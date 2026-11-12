@@ -46,7 +46,6 @@ export interface SidebarChatThreadListSignals {
   readonly rows$: Computed<readonly SidebarChatThreadRow[]>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
-  readonly inboxEmptyOutsideProjects$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
 }
 
@@ -319,7 +318,6 @@ function createSidebarChatThreadViewportSignals(
     rows$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
-    inboxEmptyOutsideProjects$: list.inboxEmptyOutsideProjects$,
     window$,
   };
 }

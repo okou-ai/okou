@@ -82,23 +82,6 @@ export function useComplianceTitle(): string {
   });
 }
 
-/**
- * The framework names on one line, for a compact trigger that opens the full
- * list with each framework's status.
- */
-export function ComplianceFrameworkSummary() {
-  const items = useComplianceItems();
-  return (
-    <>
-      {items
-        .map((item) => {
-          return item.name;
-        })
-        .join(" · ")}
-    </>
-  );
-}
-
 /** Opens the compliance section of the public security page. */
 export function SecurityDetailsLink({ className }: { className: string }) {
   const { t } = useTranslation();

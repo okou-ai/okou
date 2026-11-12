@@ -4084,7 +4084,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.245.5"
+version = "0.245.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4158,7 +4158,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.18"
+version = "0.21.19"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4262,7 +4262,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.18.1"
+version = "0.18.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4339,7 +4339,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.44"
+version = "0.31.45"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4485,19 +4485,24 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.22.18"
+version = "0.22.19"
 dependencies = [
  "api-contracts",
  "async-trait",
+ "bytes",
  "chrono",
  "cli-test-support",
  "flate2",
  "futures-util",
  "guest-contracts",
  "hex",
+ "http-body-util",
  "httpmock",
+ "hyper",
+ "hyper-util",
  "libc",
  "raw-http-test-support",
+ "rcgen",
  "reqwest",
  "runner-executor",
  "runner-host",
@@ -4506,15 +4511,18 @@ dependencies = [
  "runner-provider",
  "runner-storage",
  "runner-types",
+ "rustls",
  "sandbox",
  "sandbox-mock",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "subtle",
  "tar",
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "tracing",
  "tracing-subscriber",

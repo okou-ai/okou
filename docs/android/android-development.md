@@ -45,6 +45,29 @@ view scopes do not grant ownership of Send or authorization. Cancellation is
 not remote rollback, and transport failure is not proof that a write failed.
 Use stable operation/event identity and authoritative readback where required.
 
+## First Display And API Loading
+
+API requests must not block the first native screen from opening. Render the
+native root/navigation and an appropriate destination while responses are still
+pending. Do not await bootstrap, session, configuration or catalog requests before
+setting root content, or keep the splash screen visible until they complete.
+
+Start requests under their actual asynchronous owners independently of rendering;
+they may run concurrently with the first frame. Keep request preparation and
+decoding main-safe. Moving a request off-main is insufficient if the UI still
+waits for its result before rendering. Do not introduce an artificial delay before
+starting requests to satisfy this rule.
+
+Show truthful destination-local loading, error and retry states, or a native
+identity-checking screen when the destination is not yet known. Initial display
+does not establish usable data, freshness or authorized access. Protected content
+and actions still require their actual identity, permission and initialization
+prerequisites; cached content and late results remain scoped to the correct owner.
+
+Apply [first-display verification](android-testing.md#first-display-with-pending-api-requests)
+when introducing the corresponding API consumers. A standalone benchmark target
+or numerical startup budget is not a prerequisite for applying this contract.
+
 ## Native Presentation
 
 Use Kotlin and Compose for application UI and native APIs for OS interactions.

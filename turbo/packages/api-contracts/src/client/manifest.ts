@@ -81,6 +81,7 @@ export const clientDescriptorManifest = [
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
+      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",

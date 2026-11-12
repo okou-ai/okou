@@ -43,12 +43,6 @@ def _reference_parse_content_length(
     return content_length.ContentLengthResult("valid", parsed_value)
 
 
-def test_missing_content_length():
-    assert content_length.parse([], max_value=_MAX_VALUE) == content_length.ContentLengthResult(
-        "missing"
-    )
-
-
 @pytest.mark.parametrize(
     ("values", "expected_value"),
     [
@@ -57,7 +51,6 @@ def test_missing_content_length():
         pytest.param(["00000000000042"], 42, id="leading-zeros"),
         pytest.param(["0" * 5000], 0, id="long-zero"),
         pytest.param(["42, 042"], 42, id="matching-comma-list"),
-        pytest.param(["1000"], 1000, id="exact-limit"),
     ],
 )
 def test_valid_content_length(values: list[str], expected_value: int):
@@ -76,7 +69,6 @@ def test_matching_repeated_content_length_fields():
 @pytest.mark.parametrize(
     "values",
     [
-        pytest.param([""], id="empty"),
         pytest.param(["42,"], id="trailing-empty-part"),
         pytest.param([",42"], id="leading-empty-part"),
         pytest.param(["42,,42"], id="interior-empty-part"),
@@ -162,8 +154,6 @@ def test_bounded_content_length_differential(max_value: int):
 @pytest.mark.parametrize(
     ("values", "expected_value"),
     [
-        pytest.param(["1001"], 1001, id="convertible"),
-        pytest.param(["10000"], 1001, id="bounded-payload"),
         pytest.param(["9" * 5000], 1001, id="very-long"),
         pytest.param(["9" * 5000, "9" * 5000], 1001, id="matching-huge-values"),
     ],

@@ -9,6 +9,7 @@ mod debootstrap;
 mod filesystem;
 mod image_refs;
 mod images;
+mod ingress;
 mod job_logs;
 mod lock_file;
 mod nbd;
@@ -25,6 +26,7 @@ mod test_support;
 use debootstrap::gc_debootstrap;
 use image_refs::{ProtectedImageRefs, protected_image_refs_for_gc};
 use images::gc_nested_images_with_protected_refs;
+use ingress::gc_ingress_sockets;
 use job_logs::gc_job_logs;
 use nbd::gc_nbd_orphans;
 use orphaned_locks::gc_orphaned_locks;
@@ -59,6 +61,7 @@ pub struct GcArgs {
 }
 
 trait GcOperations {
+    async fn gc_ingress(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport>;
     async fn analyze_versions(
         &mut self,
         home: &HomePaths,
@@ -123,6 +126,9 @@ trait GcOperations {
 struct RealGcOperations;
 
 impl GcOperations for RealGcOperations {
+    async fn gc_ingress(&mut self, home: &HomePaths, dry_run: bool) -> RunnerResult<GcReport> {
+        gc_ingress_sockets(home, dry_run).await
+    }
     async fn analyze_versions(
         &mut self,
         home: &HomePaths,
@@ -283,6 +289,9 @@ async fn run_gc_with_operations(
 
     let storage_report = operations.gc_storage_cache(home, args.dry_run).await?;
     record_gc_phase(&mut report, "storage cache", storage_report, args.dry_run);
+
+    let ingress_report = operations.gc_ingress(home, args.dry_run).await?;
+    record_gc_phase(&mut report, "ingress sockets", ingress_report, args.dry_run);
 
     log_gc_summary(&report, args.dry_run);
 

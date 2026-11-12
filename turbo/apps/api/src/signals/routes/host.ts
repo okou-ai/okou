@@ -1,6 +1,10 @@
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
 import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
 import { hostedSitePresentation$ } from "../services/hosted-site-banner.service";
+import {
+  appDownloadPaywalled$,
+  artifactPaywallRequired,
+} from "../services/artifact-paywall.service";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
@@ -175,6 +179,9 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const filesInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
+  if (await set(appDownloadPaywalled$, signal)) {
+    return artifactPaywallRequired("Downloading artifacts");
+  }
   const auth = get(authContext$);
   const params = get(filesParams$);
   const query = get(filesQuery$);

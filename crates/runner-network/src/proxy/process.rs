@@ -20,8 +20,8 @@ use super::runtime::{CANONICAL_RUNTIME_MARKER_ENV, MitmdumpRuntime};
 use super::stderr::log_mitmdump_stderr_line;
 use crate::error::{RunnerError, RunnerResult};
 
-/// Timeout for waiting for mitmdump to become ready after spawn.
-const READY_TIMEOUT: Duration = Duration::from_secs(10);
+/// Includes startup probes and catalog warmup (5s framing + 11s completion).
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
 const START_MAX_ATTEMPTS: usize = 3;
 /// Maximum raw bytes retained from one mitmdump stdout or stderr record.
 const MITMDUMP_LOG_RECORD_MAX_BYTES: usize = 64 * 1024;

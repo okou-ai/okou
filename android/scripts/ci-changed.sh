@@ -20,7 +20,7 @@ git diff --no-renames --name-only -z "$base" HEAD > "$changed_files"
 needed=false
 while IFS= read -r -d '' path; do
   case "$path" in
-    android/* | docs/android/* | CLAUDE.md | docs/docs.md | docs/testing.md | .github/workflows/android.yml | .github/workflows/release-please.yml | .github/scripts/artifacts/build-okou-android-apk.sh | .github/scripts/checks/changed-base-ref.sh | .github/scripts/checks/android_launcher.py | .github/scripts/checks/semgrep-results.py | .github/scripts/tests/semgrep-results-test.sh | ios/scripts/sync-design-tokens.py | ios/Okou/Resources/Fonts/* | ios/Assets/AppIcon.svg | turbo/packages/ui/src/styles/globals.css | turbo/packages/api-contracts/src/contracts/* | turbo/packages/api-contracts/src/validators/* | turbo/packages/api-contracts/src/kotlin-bindings/*) needed=true ;;
+    android/* | docs/android/* | CLAUDE.md | docs/docs.md | docs/testing.md | .github/workflows/android.yml | .github/workflows/release-please.yml | .github/scripts/artifacts/*okou-android-apk.sh | .github/scripts/checks/changed-base-ref.sh | .github/scripts/checks/android_launcher.py | .github/scripts/checks/semgrep-results.py | .github/scripts/tests/semgrep-results-test.sh | ios/scripts/sync-design-tokens.py | ios/Okou/Resources/Fonts/* | ios/Assets/AppIcon.svg | turbo/packages/ui/src/styles/globals.css | turbo/packages/api-contracts/src/contracts/* | turbo/packages/api-contracts/src/validators/* | turbo/packages/api-contracts/src/kotlin-bindings/*) needed=true ;;
   esac
 done < "$changed_files"
 echo "$needed"

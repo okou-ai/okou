@@ -1067,11 +1067,8 @@ function ChatThreadListEmptyState({
   );
 }
 
-/**
- * What the inbox says where it lists no chat outside Projects: its archived
- * chats are one filter away, and without any it waits for the first chat.
- */
-export function InboxEmptyState({
+/** The inbox is empty only when it lists neither Projects nor chats. */
+function InboxEmptyState({
   listSignals,
 }: {
   listSignals: SidebarChatThreadListSignals;
@@ -1114,13 +1111,9 @@ function VirtualizedChatThreads({
   const searchOpen = useGet(threeColumnSearchOpen$);
   const rowCount = useGet(listSignals.rowCount$);
   const count = useGet(listSignals.count$);
-  const inboxEmptyOutsideProjects = useGet(
-    listSignals.inboxEmptyOutsideProjects$,
-  );
 
-  // Only list rows have a fixed height. Keep the filter action and the notice
-  // for an inbox without chats outside Projects in normal flow, so their
-  // spacing remains reachable at the end of a long list.
+  // Only list rows have a fixed height. Keep the filter action in normal flow
+  // so its divider and spacing remain reachable at the end of a long list.
   return (
     <div ref={setShortcutRoot} className="w-full">
       <ChatThreadListRows
@@ -1132,9 +1125,6 @@ function VirtualizedChatThreads({
         height={count * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
       />
       {rowCount > count ? <ShowAllChatsRow /> : null}
-      {inboxEmptyOutsideProjects ? (
-        <InboxEmptyState listSignals={listSignals} />
-      ) : null}
     </div>
   );
 }

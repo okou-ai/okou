@@ -116,9 +116,13 @@ final class ConversationHistoryFixture: Sendable {
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        return rows.values.withLock { values in
+        return try rows.values.withLock { values in
           let last = min(values.count, after + 50)
-          let cursorID = last == 0 ? "null" : "\"\(Self.id(last))\""
+          let identity =
+            last == 0
+            ? nil
+            : try JSONDecoder().decode(EventIdentity.self, from: Data(values[last - 1].utf8)).id
+          let cursorID = identity.map { "\"\($0)\"" } ?? "null"
           return ChatHTTPResponse(
             body: """
               {"rows":[\(values[after..<last].joined(separator: ","))],"cursor":{"lastEventId":\(cursorID),"lastSeqId":\(last)},"hasMore":\(last < values.count)}
@@ -207,6 +211,7 @@ final class ConversationHistoryFixture: Sendable {
       """
   }
 
+  private struct EventIdentity: Decodable { let id: String }
   private struct UserPayload: Encodable { let userMessage: Document }
   private struct Document: Encodable {
     let version = 1

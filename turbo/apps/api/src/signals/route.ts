@@ -1,5 +1,6 @@
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
+import { integrationsEmailSessionRoutes } from "./routes/integrations-email-session";
 import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
@@ -32,6 +33,7 @@ import { billingInvoicesRoutes } from "./routes/billing-invoices";
 import { billingPortalRoutes } from "./routes/billing-portal";
 import { billingRedeemRoutes } from "./routes/billing-redeem";
 import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
+import { billingSurveyRoutes } from "./routes/billing-survey";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
@@ -337,6 +339,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingInvoicesRoutes,
   ...billingPortalRoutes,
   ...billingRedeemCodeRoutes,
+  ...billingSurveyRoutes,
   ...billingRedeemRoutes,
   ...billingRestoreRoutes,
   ...billingStatusRoutes,
@@ -372,6 +375,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailInboundRoutes,
   ...integrationsEmailRoutes,
   ...integrationsEmailUploadCompleteRoutes,
+  ...integrationsEmailSessionRoutes,
   ...featureSwitchesRoutes,
   ...featureGuidesRoutes,
   ...hostRoutes,
