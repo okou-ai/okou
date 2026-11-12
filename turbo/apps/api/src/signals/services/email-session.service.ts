@@ -16,12 +16,10 @@ import {
   emailUserLinks,
 } from "@okouai/db/schema/email-integration";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { waitUntil } from "../context/wait-until";
 import { emailChannelOutboxValues } from "./email-channel-delivery.service";
-import { drainEmailOutboxBatch$ } from "./email-common.service";
 import type { EmailRunSource } from "./email-run-source.service";
 
 /** Retire this exact binding and queue a fixed confirmation in one statement. */
@@ -142,7 +140,6 @@ export const changeEmailSession$ = command(
     }
     await publishUserSignal([args.userId], "email:changed");
     signal.throwIfAborted();
-    waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
     return true;
   },
 );

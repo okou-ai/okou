@@ -3,13 +3,16 @@ import { integrationsEmailContract as contract } from "@okouai/api-contracts/con
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { conflict, resourceUnavailable } from "../../lib/error";
+import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
 import { clerk$ } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { emailRunSource$ } from "../services/email-run-source.service";
 import { changeEmailSession$ } from "../services/email-session.service";
+import { drainEmailOutboxBatch$ } from "../services/email-common.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -123,6 +126,7 @@ const switchWorkspace$ = command(async ({ get, set }, signal: AbortSignal) => {
       "The Email binding changed. Continue in a new email conversation.",
     );
   }
+  waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
   return {
     status: 200 as const,
     body: { emailAddress: session.source.emailAddress, workspace },
@@ -144,6 +148,7 @@ const logout$ = command(async ({ set }, signal: AbortSignal) => {
       "The Email binding changed. Continue in a new email conversation.",
     );
   }
+  waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
   return {
     status: 200 as const,
     body: { emailAddress: session.source.emailAddress },
