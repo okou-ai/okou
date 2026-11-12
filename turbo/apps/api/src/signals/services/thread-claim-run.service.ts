@@ -4267,6 +4267,18 @@ export function createThreadClaimRunObjects(
         if (get(internalCommittedRunId$) !== null) {
           throw settled.error;
         }
+        // Temporary staff cutover reader: a preparation can capture the old
+        // Chat binding just before SQL reassigns it. The atomic binding fence
+        // rolled back publication; keep its input queued for a fresh normal
+        // pick instead of permanently rejecting it. No admission guard is
+        // bypassed. Remove after pre-cutover request preparations have drained
+        // and their rollback consumers are excluded (#46783).
+        if (
+          claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+          settled.error instanceof ChatThreadBindingChanged
+        ) {
+          return null;
+        }
         await settle(
           set(
             rejectChatQueueHead$,
