@@ -2150,14 +2150,16 @@ def _finish_response_handling(
     # us the token is no longer valid, overriding whatever the DB believes.
     # request_force_refresh enforces a cooldown so a persistent non-token 401
     # can't amplify into a loop of provider refresh calls (#9860).
+    application_challenge = (
+        flow.response.headers.get("www-authenticate", "").split(maxsplit=1) if flow.response else []
+    )
     network_rejected = bool(
         flow.response
         and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
         and flow.response.status_code in (401, 403)
-        and not flow.response.headers.get("www-authenticate", "")
-        .strip()
-        .lower()
-        .startswith("bearer ")
+        and (
+            not application_challenge or application_challenge[0].lower() not in {"bearer", "basic"}
+        )
     )
     if network_rejected:
         log_proxy_entry(

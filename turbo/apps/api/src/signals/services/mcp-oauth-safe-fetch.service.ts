@@ -60,7 +60,7 @@ export class McpOAuthNetworkRejectedError extends Error {
 
 async function hasApplicationChallenge(response: Response): Promise<boolean> {
   if (
-    /^(?:Bearer|Basic)\s/iu.test(
+    /^(?:Bearer|Basic)(?:\s|$)/iu.test(
       response.headers.get("www-authenticate")?.trim() ?? "",
     )
   ) {

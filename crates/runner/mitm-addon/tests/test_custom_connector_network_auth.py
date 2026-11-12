@@ -27,10 +27,29 @@ def _network_response(secret: str, generation: int) -> dict:
     }
 
 
-@pytest.mark.parametrize("application_auth", [False, True])
-@pytest.mark.parametrize("upstream_status", [200, 401, 403])
+@pytest.mark.parametrize(
+    ("application_auth", "upstream_status", "application_challenge", "refresh_application_auth"),
+    [
+        (application_auth, upstream_status, None, False)
+        for application_auth in (False, True)
+        for upstream_status in (200, 401, 403)
+    ]
+    + [
+        (True, 401, "Bearer", True),
+        (True, 401, 'bEaReR\trealm="application"', True),
+        (True, 401, "Basic", True),
+        (True, 401, 'Basic realm="application"', True),
+        (True, 401, "Bearerish", False),
+    ],
+)
 async def test_each_physical_request_admits_network_even_with_cached_or_no_app_auth(
-    tmp_path, real_flow, mitm_ctx, application_auth, upstream_status
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    application_auth,
+    upstream_status,
+    application_challenge,
+    refresh_application_auth,
 ):
     sandbox = _single_firewall_sandbox(
         tmp_path,
@@ -55,6 +74,10 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
             firewall_auth_success_response({"Authorization": "Bearer app"})
         )
     endpoint.queue_json_response(_network_response("rotated-pair", 2))
+    if refresh_application_auth:
+        endpoint.queue_json_response(
+            firewall_auth_success_response({"Authorization": "Bearer refreshed-app"})
+        )
     flows = [
         real_flow(
             with_response=False,
@@ -79,7 +102,12 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
             await mitm_addon.request(flow)
             assert flow.response is None
             if index == 0:
-                flow.response = http.Response.make(upstream_status)
+                flow.response = http.Response.make(
+                    upstream_status,
+                    headers={"WWW-Authenticate": application_challenge}
+                    if application_challenge
+                    else {},
+                )
                 continuation = mitm_addon.response(flow)
                 if continuation is not None:
                     await continuation
@@ -96,10 +124,13 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
         request_target = body["networkRequest"]
         assert isinstance(request_target, dict)
         assert request_target["url"] == "https://custom.example.test/api/items"
-    assert len(bodies) == (3 if application_auth else 2)
+    assert len(bodies) == (3 if application_auth else 2) + int(refresh_application_auth)
     if application_auth:
-        assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
-        assert all(flow.request.headers["Authorization"] == "Bearer app" for flow in flows)
+        assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is (not refresh_application_auth)
+        assert [flow.request.headers["Authorization"] for flow in flows] == [
+            "Bearer app",
+            "Bearer refreshed-app" if refresh_application_auth else "Bearer app",
+        ]
     for flow in flows:
         if flow.response is None:
             flow.response = http.Response.make(200)

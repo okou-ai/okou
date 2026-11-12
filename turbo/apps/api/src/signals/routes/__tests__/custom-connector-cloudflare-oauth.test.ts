@@ -245,9 +245,15 @@ test.each([
   scenario,
 );
 
-test.each(["none", "cimd", "dcr"] as const)(
-  "initializes MCP %s with Access and keeps public OAuth credentials separate",
-  async (registration) => {
+test.each([
+  ["none", false],
+  ["cimd", false],
+  ["dcr", false],
+  ["cimd", true],
+  ["dcr", true],
+] as const)(
+  "initializes MCP %s with Access and keeps public OAuth credentials separate (bare challenge: %s)",
+  async (registration, bareChallenge) => {
     const owner = createPublicConnectorActor(context);
     owner.ownsFeatureSwitches();
     await owner.run(async () => {
@@ -283,6 +289,9 @@ test.each(["none", "cimd", "dcr"] as const)(
       ).body;
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
+        ...(bareChallenge
+          ? { discovery: "well-known-oidc" as const, challengeScope: null }
+          : {}),
         ...(registration === "none" ? { authentication: "none" as const } : {}),
       });
       const connector = await connectors.createCustomConnector(actor, {
