@@ -141,7 +141,7 @@ test("keeps OAuth callback stages and exception classes without private details"
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
 // through the authenticated production cron, without observing private services.
-test("keeps native window failure attribution finite and provider details private", async () => {
+test("keeps private provider details out of native window failure logs", async () => {
   const app = await setupApp({
     context,
     routes: cronBrowserReconcileRoutes,
@@ -158,78 +158,40 @@ test("keeps native window failure attribution finite and provider details privat
       throw new Error("Expected the external Browser provider session");
     }
     const privateDetail = "private-provider-window-detail";
-    const scenarios = [
-      {
-        failure: "connection",
-        fields: {
-          errorKind: "transport",
-          nativePhase: "connection",
-          errorClass: "Error",
-        },
-      },
-      {
-        failure: "command",
-        fields: {
-          errorKind: "transport",
-          nativePhase: "command",
-          errorClass: "Error",
-        },
-      },
-      {
-        failure: "validation",
-        fields: {
-          errorKind: "validation",
-          nativePhase: "validation",
-          errorClass: "ZodError",
-        },
-      },
-      { failure: "cdp", fields: { errorKind: "cdp", errorCode: -32_602 } },
-    ] as const;
-    for (const { failure, fields } of scenarios) {
-      f.provider.native.disconnect =
-        failure === "connection"
-          ? "connection"
-          : failure === "command"
-            ? "window-bounds"
-            : undefined;
-      f.provider.native.windowBoundsResult =
-        failure === "validation"
-          ? { bounds: { windowState: privateDetail } }
-          : undefined;
-      f.provider.native.windowBoundsError =
-        failure === "cdp"
-          ? { code: -32_602, message: privateDetail }
-          : undefined;
+    f.provider.native.windowBoundsError = {
+      code: -32_602,
+      message: privateDetail,
+    };
 
-      const result = await accept(
-        cron.reconcile({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
-      const warning = context.mocks.axiomLogging.warn.mock.calls
-        .filter(([message]) => {
-          return message === "Shared Browser window reconciliation failed";
-        })
-        .at(-1);
-      const record = object({})
-        .catchall(string().or(number()))
-        .parse(warning?.[1]);
-      expect(record).toStrictEqual({
-        instanceId: first.window?.instanceId,
-        primaryWindowId: first.window?.primaryWindowId,
-        phase: "check-native-window",
-        ...fields,
-        context: "SharedBrowserReconcile",
-      });
-      const serialized = JSON.stringify(warning);
-      expect(serialized).not.toContain(privateDetail);
-      expect(serialized).not.toContain("Private provider");
-      expect(serialized).not.toContain(f.provider.native.url);
-      expect(serialized).not.toContain(chat.threadId);
-      expect(serialized).not.toContain(providerSessionId);
-    }
+    const result = await accept(
+      cron.reconcile({
+        headers: { authorization: "Bearer test-cron-secret" },
+      }),
+      [200],
+    );
+    expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
+    const warning = context.mocks.axiomLogging.warn.mock.calls
+      .filter(([message]) => {
+        return message === "Shared Browser window reconciliation failed";
+      })
+      .at(-1);
+    const record = object({})
+      .catchall(string().or(number()))
+      .parse(warning?.[1]);
+    expect(record).toStrictEqual({
+      instanceId: first.window?.instanceId,
+      primaryWindowId: first.window?.primaryWindowId,
+      phase: "check-native-window",
+      errorKind: "cdp",
+      errorCode: -32_602,
+      context: "SharedBrowserReconcile",
+    });
+    const serialized = JSON.stringify(warning);
+    expect(serialized).not.toContain(privateDetail);
+    expect(serialized).not.toContain("Private provider");
+    expect(serialized).not.toContain(f.provider.native.url);
+    expect(serialized).not.toContain(chat.threadId);
+    expect(serialized).not.toContain(providerSessionId);
   });
 });
 

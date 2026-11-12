@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { connectors } from "@okouai/db/schema/connector";
+import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 
 import { db$ } from "../external/db";
 import {
@@ -51,6 +52,7 @@ export const readCurrentCustomConnectorAuthRefs$ = command(
       readonly userId: string;
       readonly customConnectorId: string;
       readonly sourceId: string;
+      readonly networkIntent?: CustomConnectorNetworkIntent;
     },
   ): Promise<CurrentCustomConnectorAuthRefsResolution> => {
     const db = get(db$);
@@ -158,6 +160,7 @@ export const readCurrentCustomConnectorAuthRefs$ = command(
     return currentCustomConnectorAuthRefsFromRuntime(
       runtime,
       memberConnectorId,
+      args.networkIntent,
     );
   },
 );
@@ -166,8 +169,19 @@ function currentCustomConnectorAuthRefsFromRuntime(
   runtime:
     ReturnType<typeof customConnectorRuntimeDataFromRows>[number] | undefined,
   memberConnectorId: string,
+  networkIntent?: CustomConnectorNetworkIntent,
 ): CurrentCustomConnectorAuthRefsResolution {
   if (!runtime) {
+    return { kind: "unavailable" };
+  }
+  const binding = runtime.connector.networkBinding;
+  if (
+    binding
+      ? networkIntent?.kind !== "cloudflare_access" ||
+        networkIntent.configId !== binding.configId ||
+        binding.status !== "available"
+      : networkIntent?.kind === "cloudflare_access"
+  ) {
     return { kind: "unavailable" };
   }
   if (runtime.credentialAccess.kind === "incompatible") {

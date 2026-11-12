@@ -40,6 +40,11 @@ final class FailureRecoveryFixture: Sendable {
     var accountGate: ModelResponseGate?
     var accountRequested: (@Sendable () -> Void)?
     var accountStatus = 200
+    var accountStatusAfterReset: Int?
+    var billingStatus = 200
+    var billingGate: ModelResponseGate?
+    var billingRequested: (@Sendable () -> Void)?
+    var billingCancelled: (@Sendable () -> Void)?
     var billingAdmin = true
     var canBuyCredits = true
     var credits = 0
@@ -214,19 +219,43 @@ final class FailureRecoveryFixture: Sendable {
               status: value.sendStatus, body: #"{"error":{"message":"Response lost"}}"#)
         }
       case "/api/me/3rd-party-subscriptions":
-        let (gate, requested) = state.value.withLock { ($0.accountGate, $0.accountRequested) }
+        let (response, gate, requested) = state.value.withLock { value in
+          let response =
+            value.accountStatus == 200
+            ? ChatHTTPResponse(body: value.accounts)
+            : ChatHTTPResponse(
+              status: value.accountStatus, body: #"{"error":{"message":"Accounts unavailable"}}"#)
+          let gate = value.accountGate
+          let requested = value.accountRequested
+          value.accountGate = nil
+          value.accountRequested = nil
+          return (response, gate, requested)
+        }
         requested?()
         if let gate { await gate.wait() }
-        return state.value.withLock {
-          $0.accountStatus == 200
-            ? ChatHTTPResponse(body: $0.accounts)
-            : ChatHTTPResponse(
-              status: $0.accountStatus, body: #"{"error":{"message":"Accounts unavailable"}}"#)
-        }
+        return response
       case "/api/billing/status":
-        return state.value.withLock {
-          ChatHTTPResponse(
-            body: "{\"canBuyCredits\":\($0.canBuyCredits),\"credits\":\($0.credits)}")
+        let (response, gate, requested, cancelled) = state.value.withLock { value in
+          let response =
+            value.billingStatus == 200
+            ? ChatHTTPResponse(
+              body: "{\"canBuyCredits\":\(value.canBuyCredits),\"credits\":\(value.credits)}")
+            : ChatHTTPResponse(
+              status: value.billingStatus, body: #"{"error":{"message":"Billing unavailable"}}"#)
+          let gate = value.billingGate
+          let requested = value.billingRequested
+          let cancelled = value.billingCancelled
+          value.billingGate = nil
+          value.billingRequested = nil
+          value.billingCancelled = nil
+          return (response, gate, requested, cancelled)
+        }
+        requested?()
+        return await withTaskCancellationHandler {
+          if let gate { await gate.wait() }
+          return response
+        } onCancel: {
+          cancelled?()
         }
       case "/api/org":
         return state.value.withLock {
@@ -243,7 +272,8 @@ final class FailureRecoveryFixture: Sendable {
           requested?()
           if let gate { await gate.wait() }
           return state.value.withLock { value in
-            value.resetOutcome == "failure"
+            if let status = value.accountStatusAfterReset { value.accountStatus = status }
+            return value.resetOutcome == "failure"
               ? ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Reset unavailable"}}"#)
               : ChatHTTPResponse(body: "{\"outcome\":\"\(value.resetOutcome)\"}")
           }
@@ -257,7 +287,8 @@ final class FailureRecoveryFixture: Sendable {
     cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil,
     isVisible: @escaping @MainActor () -> Bool = { false }
   ) async -> (ConversationStore, ChatModelStore) {
-    let resource = ChatModelStore(client: http.client, webURL: http.baseURL, didFail: { _ in })
+    let resource = ChatModelStore(
+      client: http.client, webURL: http.baseURL, readRetrySleep: { _ in }, didFail: { _ in })
     let thread = ChatThread(
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
       title: "Failure recovery", selectedModel: "codex-model", createdAt: .now, updatedAt: .now,

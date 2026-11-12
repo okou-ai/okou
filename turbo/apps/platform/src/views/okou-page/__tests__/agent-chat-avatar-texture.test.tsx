@@ -28,7 +28,8 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -40,6 +41,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000031";
+/** The organization default agent the onboarding mock reports. */
+const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 /**
  * The flattest hair in the cast on a `round` face: the artwork covers the least
@@ -221,4 +224,54 @@ test("Give the organization default agent its own texture", async () => {
     "src",
     DEFAULT_AGENT_AVATAR_URL,
   );
+});
+
+test("Draw the organization default agent with the animated Okou avatar once it is on", async () => {
+  // Outside My Okou the default agent is drawn from its stored avatar, the flat
+  // default artwork. With the switch on, that artwork gives way to the shared
+  // animated avatar wherever an agent avatar is drawn.
+  mountedAgent(DEFAULT_AGENT_AVATAR_URL);
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    featureSwitches: { [FeatureSwitchKey.OkouAnimatedAvatar]: true },
+  });
+  await waitFor(() => {
+    expect(avatarFrame()).toBeInTheDocument();
+  });
+
+  expect(avatarFrame().querySelector("[data-okou-avatar]")).toHaveAttribute(
+    "data-okou-avatar",
+    "animated",
+  );
+});
+
+test("Greet with Okou's own animated avatar under My Okou", async () => {
+  // My Okou draws Okou on the home greeting whatever the default agent's own
+  // avatar is, through the shared avatar: textured, framed, and moving.
+  const agent: AgentResponse = {
+    agentId: DEFAULT_AGENT_ID,
+    isDefaultAgent: true,
+    ownerId: "test-user-123",
+    displayName: "Okou",
+    description: null,
+    sound: null,
+    avatarUrl: avatarComposerUrl(AVATAR),
+    visibility: "public",
+  };
+  context.mocks.data.agents([agent]);
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
+    return respond(200, agent);
+  });
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${DEFAULT_AGENT_ID}/chat?compose=1`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  const greeting = await screen.findByTestId("chat-greeting");
+
+  const avatar = greeting.querySelector("[data-okou-avatar]");
+  expect(avatar).toHaveAttribute("data-okou-avatar", "animated");
 });

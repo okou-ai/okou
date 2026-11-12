@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">홈</string>
+    <string name="settings">설정</string>
+    <string name="back">뒤로</string>
+    <string name="home_title">다음 아이디어를 위한 공간</string>
+    <string name="home_description">초안을 작성하고 이 기기에서 미리 보세요.</string>
+    <string name="draft_label">초안</string>
+    <string name="draft_hint">어떤 생각을 하고 있나요?</string>
+    <string name="local_preview">초안 미리 보기</string>
+    <string name="preview_title">미리 보기</string>
+    <string name="appearance">화면 모드</string>
+    <string name="appearance_description">이 기기에서 Okou가 표시되는 방식을 선택하세요.</string>
+    <string name="appearance_system">시스템 설정 따르기</string>
+    <string name="appearance_light">밝게</string>
+    <string name="appearance_dark">어둡게</string>
+    <string name="on_this_device">이 기기</string>
+    <string name="appearance_local">화면 모드 설정은 이 기기에만 저장됩니다.</string>
+    <string name="appearance_loading">화면 모드 불러오는 중…</string>
+    <string name="appearance_saving">화면 모드 저장 중…</string>
+    <string name="appearance_read_failed">화면 모드를 불러올 수 없습니다. 다시 시도하세요.</string>
+    <string name="appearance_write_failed">화면 모드를 저장할 수 없습니다. 다시 시도하세요.</string>
+    <string name="retry">다시 시도</string>
+    <plurals name="draft_lines">
+        <item quantity="other">%1$d줄</item>
+    </plurals>
+    <string name="auth_welcome">Okou에 오신 것을 환영합니다</string>
+    <string name="auth_restoring">로그인 상태 복원 중…</string>
+    <string name="auth_preparing_workspace">워크스페이스 준비 중…</string>
+    <string name="auth_choose_workspace">워크스페이스 선택</string>
+    <string name="auth_no_workspace">아직 접근할 수 있는 워크스페이스가 없습니다.</string>
+    <string name="auth_workspace_setup">웹에서 워크스페이스 설정</string>
+    <string name="auth_access_removed">로그인 상태 또는 접근 권한이 변경되었습니다. 다시 로그인하거나 권한을 새로고침하세요.</string>
+    <string name="auth_update_required">계속하려면 Okou를 업데이트하세요.</string>
+    <string name="auth_unavailable">로그인 상태 또는 워크스페이스를 불러오지 못했습니다. 다시 시도하세요.</string>
+    <string name="auth_sign_out">로그아웃</string>
+    <string name="auth_signing_out">로그아웃 중…</string>
+    <string name="auth_workspace">워크스페이스</string>
+    <string name="auth_switch_workspace">워크스페이스 전환</string>
+    <string name="auth_browser_unavailable">워크스페이스 설정을 열려면 브라우저를 설치하세요.</string>
+</resources>

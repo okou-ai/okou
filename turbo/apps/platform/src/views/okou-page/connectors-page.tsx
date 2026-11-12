@@ -227,8 +227,8 @@ function CustomScopeCount() {
 }
 
 function RemoteControlScopeCount() {
-  const ssh = useLoadable(sshSummary$);
-  const vnc = useLoadable(vncSummary$);
+  const ssh = useLastLoadable(sshSummary$);
+  const vnc = useLastLoadable(vncSummary$);
   return (
     <ConnectorsScopeCount
       value={
@@ -240,7 +240,7 @@ function RemoteControlScopeCount() {
 }
 
 function PrivateNetworkScopeCount() {
-  const summary = useLoadable(privateNetworkDirectorySummary$);
+  const summary = useLastLoadable(privateNetworkDirectorySummary$);
   return (
     <ConnectorsScopeCount value={configuredRemoteAccessResources(summary)} />
   );
@@ -1212,6 +1212,7 @@ interface SettingsConnectorCardProps {
 
 function ConnectorCatalogHeader() {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   const count = useLastLoadable(connectorDirectoryPageSignals.catalogCount$);
   const connectorCatalogCount = count.state === "hasData" ? count.data : null;
   const scope = useGet(connectorsScope$);
@@ -1223,12 +1224,16 @@ function ConnectorCatalogHeader() {
       : connectorCatalogCount !== null
         ? t(
             ($) => {
-              return $.connectors.catalog.descriptionWithCount;
+              return singleAgent
+                ? $.connectors.catalog.myOkouDescriptionWithCount
+                : $.connectors.catalog.descriptionWithCount;
             },
             { value: formatLocalizedNumber(connectorCatalogCount) },
           )
         : t(($) => {
-            return $.connectors.catalog.description;
+            return singleAgent
+              ? $.connectors.catalog.myOkouDescription
+              : $.connectors.catalog.description;
           });
   return (
     <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-0 md:pt-10 pb-0">

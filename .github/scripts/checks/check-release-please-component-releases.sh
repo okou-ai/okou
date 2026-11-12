@@ -127,6 +127,9 @@ for component in "${components[@]}"; do
   if [ "$component" = "desktop" ] && [ "$release_type" = "simple" ]; then
     pathspecs=(":(top,glob)desktop/Okou/**" ":(top,glob)desktop/ComputerUse/Sources/**" ":(top)desktop/ComputerUse/Package.swift" ":(top)desktop/ComputerUse/Package.resolved" ":(top,glob)desktop/Resources/**" ":(top,glob)desktop/Okou.xcodeproj/**" ":(top,glob)desktop/scripts/**" ":(top)desktop/Package.swift")
   fi
+  if [ "$component" = "android" ] && [ "$release_type" = "simple" ]; then
+    pathspecs=(":(top,glob)android/app/src/main/**" ":(top,glob)android/app/src/release/**" ":(top)android/app/build.gradle.kts" ":(top)android/build.gradle.kts" ":(top)android/settings.gradle.kts" ":(top)android/gradle.properties" ":(top,glob)android/gradle/**" ":(top,glob)android/scripts/**")
+  fi
   if [ "$release_type" = "node" ]; then
     # Match only colocated JS/TS test modules from turbo/vitest.config.ts and
     # Platform's tsconfig.production.json. Helpers, fixtures and other assets
@@ -168,7 +171,7 @@ for component in "${components[@]}"; do
   node) ((node_component_count += 1)) ;;
   rust) ((rust_component_count += 1)) ;;
   simple)
-    [ "$component" = "ios" ] || [ "$component" = "desktop" ] || fail "unsupported standalone release component: ${component}"
+    [ "$component" = "ios" ] || [ "$component" = "desktop" ] || [ "$component" = "android" ] || fail "unsupported standalone release component: ${component}"
     ;;
   *)
     fail "unsupported release type for dependency graph: ${component} (${component_release_types[$component]})"

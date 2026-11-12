@@ -119,6 +119,7 @@ fn custom_runtime_firewall_with_source(
         firewall: Firewall {
             name: format!("custom_connector_{}", custom_connector_id.replace('-', "")),
             apis: vec![FirewallApi {
+                network_intent: None,
                 id: "custom-api:0".to_string(),
                 base: "https://custom.example.test/api/".to_string(),
                 auth: FirewallAuth {

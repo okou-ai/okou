@@ -4,6 +4,7 @@
 # 41737313806, 41749283984, 41751513317, 41753481232, 41754890091, 41757795041.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
 1 check-action-pins-test.sh
+2 provision-runner-caddy-test.sh
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
 1 check-packaged-addon-control-test.sh
@@ -14,7 +15,6 @@
 1 cloudflare-ssh-native-diagnostics-test.sh
 1 cloudflare-ssh-tcp-test.sh
 1 crates-runner-image-waiters-test.sh
-1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh
 1 neon-credential-mask-test.sh
@@ -42,6 +42,8 @@
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
 2 ios-published-version-test.sh
+2 android-published-version-test.sh
+2 android-release-workflow-test.sh
 2 ios-testflight-workflow-test.sh
 2 native-only-ci-test.sh
 2 crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh
@@ -78,7 +80,6 @@
 3 cancel-superseded-merge-group-runs-test.sh
 3 changed-environment-test.sh
 3 check-file-size-test.sh
-3 cleanup-pr-runner-test.sh
 3 crates-detect-workflow-test.sh
 3 crates-parallel-checks-workflow-test.sh
 3 deploy-okou-app-worker-workflow-test.sh

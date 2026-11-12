@@ -56,6 +56,7 @@ import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
+import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
@@ -78,6 +79,34 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
+import { ThreadRemoteAccessDialog } from "./remote-access-controls.tsx";
+import { ChatForwardDialogMount } from "./chat-feedback-selection.tsx";
+
+function ThreadComposerDialogs({ thread }: { thread: ChatPanelSignals }) {
+  return (
+    <>
+      <ThreadRemoteAccessDialog signals={thread.composer} />
+      <ChatForwardDialogMount feedback={thread.feedback} />
+    </>
+  );
+}
+
+function ThreadComposerDialogsMount() {
+  const route = useGet(activeRoute$);
+  const left = useGet(currentLeftThread$);
+  const right = useGet(currentRightThread$);
+  if (route !== "chat") {
+    return null;
+  }
+  return (
+    <>
+      {left && <ThreadComposerDialogs key={left.threadId} thread={left} />}
+      {right && right !== left && (
+        <ThreadComposerDialogs key={right.threadId} thread={right} />
+      )}
+    </>
+  );
+}
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -493,10 +522,14 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <ConcurrencyConfirmDialog />
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
+      <CheckoutAbandonedSurveyDialog />
       <AttachmentLightboxMount />
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
+      {/* Workspace content remounts when mobile navigation adds its wrapper.
+          Keep in-flight remote permission actions outside that subtree. */}
+      <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>
           <ChatThreadDialogs />

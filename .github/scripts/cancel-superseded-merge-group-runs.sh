@@ -18,51 +18,20 @@ if [[ ! "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
-owner_scope=${RUNNER_OWNER_SCOPE:-superseded}
-assert_idle=${RUNNER_OWNER_ASSERT_IDLE:-false}
-case "$assert_idle" in
-  true|false) ;;
-  *)
-    echo "invalid RUNNER_OWNER_ASSERT_IDLE: ${assert_idle}" >&2
-    exit 2
-    ;;
-esac
-case "$owner_scope" in
-  superseded)
-    require_env GITHUB_SHA
-    require_env MERGE_GROUP_HEAD_REF
-    pr_number=$(
-      printf '%s\n' "$MERGE_GROUP_HEAD_REF" |
-        grep -oE 'pr-[0-9]+' |
-        head -1 |
-        sed 's/pr-//' || true
-    )
-    if [ -z "$pr_number" ]; then
-      echo "failed to extract PR number from merge_group head_ref: ${MERGE_GROUP_HEAD_REF}" >&2
-      exit 2
-    fi
-    selected_runs_label="superseded CI runs"
-    selected_run_label="superseded run"
-    completion_boundary="shared resources were reused"
-    cancel_selected_runs=true
-    ;;
-  closed-pr-cleanup)
-    require_env PR_NUMBER
-    pr_number=${PR_NUMBER:-}
-    selected_runs_label="active runner-owner CI runs"
-    selected_run_label="active runner-owner run"
-    completion_boundary="closed-PR resource cleanup starts"
-    cancel_selected_runs=false
-    ;;
-  *)
-    echo "invalid RUNNER_OWNER_SCOPE: ${owner_scope}" >&2
-    exit 2
-    ;;
-esac
-if [ "$assert_idle" = "true" ] && [ "$owner_scope" != "closed-pr-cleanup" ]; then
-  echo "RUNNER_OWNER_ASSERT_IDLE is only valid for closed-PR cleanup" >&2
+require_env GITHUB_SHA
+require_env MERGE_GROUP_HEAD_REF
+pr_number=$(
+  printf '%s\n' "$MERGE_GROUP_HEAD_REF" |
+    grep -oE 'pr-[0-9]+' |
+    head -1 |
+    sed 's/pr-//' || true
+)
+if [ -z "$pr_number" ]; then
+  echo "failed to extract PR number from merge_group head_ref: ${MERGE_GROUP_HEAD_REF}" >&2
   exit 2
 fi
+selected_runs_label="superseded CI runs"
+selected_run_label="superseded run"
 
 if [[ ! "$pr_number" =~ ^[0-9]+$ ]]; then
   echo "invalid PR number: ${pr_number}" >&2
@@ -83,13 +52,9 @@ if [ -z "$pr_head_ref" ] || [ -z "$pr_head_repository" ]; then
   exit 1
 fi
 
-poll_seconds=${SUPERSEDED_RUN_POLL_SECONDS:-2}
 timeout_seconds=${SUPERSEDED_RUN_TIMEOUT_SECONDS:-180}
-completion_timeout_seconds=${SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS:-$timeout_seconds}
-if [[ ! "$poll_seconds" =~ ^[0-9]+$ ||
-  ! "$timeout_seconds" =~ ^[0-9]+$ ||
-  ! "$completion_timeout_seconds" =~ ^[0-9]+$ ]]; then
-  echo "superseded run polling values must be non-negative integers" >&2
+if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]]; then
+  echo "superseded run discovery timeout must be a non-negative integer" >&2
   exit 2
 fi
 
@@ -110,18 +75,11 @@ discover_selected_runs() {
     jq -r \
       --argjson current_run_id "$GITHUB_RUN_ID" \
       --arg current_head_sha "${GITHUB_SHA:-}" \
-      --arg owner_scope "$owner_scope" \
       --argjson pr_number "$pr_number" \
       --arg pr_head_ref "$pr_head_ref" \
       --arg pr_head_repository "$pr_head_repository" '
         .[] | .workflow_runs[]?
-        | select(
-            if $owner_scope == "closed-pr-cleanup" then
-              .id != $current_run_id
-            else
-              .id < $current_run_id and .head_sha != $current_head_sha
-            end
-          )
+        | select(.id < $current_run_id and .head_sha != $current_head_sha)
         | select(
             .path == ".github/workflows/turbo.yml" or
             .path == ".github/workflows/crates.yml" or
@@ -182,91 +140,30 @@ if [ -z "$selected_runs" ]; then
   exit 0
 fi
 
-if [ "$assert_idle" = "true" ]; then
-  echo "::error::A runner owner appeared while closed-PR cleanup held the namespace lifecycle lock:" >&2
-  printf '%s\n' "$selected_runs" >&2
-  exit 1
-fi
-
-if $cancel_selected_runs; then
-  echo "Cancelling ${selected_runs_label} for PR #${pr_number}:"
-else
-  echo "Awaiting ${selected_runs_label} for PR #${pr_number}:"
-fi
+echo "Cancelling ${selected_runs_label} for PR #${pr_number}:"
 printf '%s\n' "$selected_runs"
 
-# Closed-PR cleanup retains its completion barrier. Superseded runs return
-# after cancellation requests without reading their individual statuses.
-started_at=$SECONDS
-
-read_run_status() {
-  local run_id=$1 current_status
-  if ! current_status=$(gh api --method GET \
-    "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status' 2>&1); then
-    echo "failed to query ${selected_run_label} ${run_id}: ${current_status}" >&2
-    return 1
-  fi
-  case "$current_status" in
-    completed|queued|in_progress|pending|waiting|requested) printf '%s\n' "$current_status" ;;
-    *) echo "invalid status for ${selected_run_label} ${run_id}: ${current_status}" >&2; return 1 ;;
-  esac
-}
-
-process_phase() {
-  local records=$1 phase_label=$2 run_record run_id cancel_error cancel_status current_status
-  local run_ids=() pending_runs=()
+cancel_runs() {
+  local records=$1 run_record run_id cancel_error cancel_status
   [ -n "$records" ] || return 0
-
   while IFS= read -r run_record; do
     run_id=${run_record%%$'\t'*}
-    if $cancel_selected_runs; then
-      # Stop always()-guarded jobs as well as ordinary steps. A 409 may race
-      # with cancellation elsewhere; do not read or await the run afterward.
-      if ! cancel_error=$(gh api --method POST \
-        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
-        cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
-        if [ "$cancel_status" != "409" ]; then
-          echo "failed to cancel ${selected_run_label} ${run_id}: ${cancel_error}" >&2
-          return 1
-        fi
-        echo "Cancellation conflict for ${selected_run_label} ${run_id}; continuing without waiting."
+    # A conflict may race with cancellation elsewhere. Do not read or await
+    # individual statuses, and do not replay an uncertain cancellation.
+    if ! cancel_error=$(gh api --method POST \
+      "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
+      cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
+      if [ "$cancel_status" != "409" ]; then
+        echo "failed to cancel ${selected_run_label} ${run_id}: ${cancel_error}" >&2
+        return 1
       fi
+      echo "Cancellation conflict for ${selected_run_label} ${run_id}; continuing without waiting."
     fi
-    run_ids+=("$run_id")
   done <<<"$records"
-
-  if $cancel_selected_runs; then
-    return 0
-  fi
-
-  while true; do
-    pending_runs=()
-    for run_id in "${run_ids[@]}"; do
-      current_status=$(read_run_status "$run_id")
-      if [ "$current_status" != "completed" ]; then
-        pending_runs+=("${run_id}:${current_status}")
-      fi
-    done
-    if [ "${#pending_runs[@]}" -eq 0 ]; then
-      echo "All ${phase_label} completed."
-      return 0
-    fi
-    if ((SECONDS - started_at >= completion_timeout_seconds)); then
-      echo "::error::Timed out after ${completion_timeout_seconds}s waiting for ${selected_runs_label} to complete: ${pending_runs[*]}" >&2
-      return 1
-    fi
-    echo "Waiting for ${selected_runs_label} (${phase_label}): ${pending_runs[*]}"
-    sleep "$poll_seconds"
-  done
 }
 
-if $cancel_selected_runs; then
-  consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
-  producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
-  process_phase "$consumers" "superseded runner consumers"
-  process_phase "$producers" "superseded runner image producers"
-  echo "Requested cancellation of ${selected_runs_label}; continuing without waiting for completion."
-else
-  process_phase "$selected_runs" "$selected_runs_label"
-  echo "All ${selected_runs_label} completed before ${completion_boundary}."
-fi
+consumers=$(awk -F '\t' '$7 != ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+producers=$(awk -F '\t' '$7 == ".github/workflows/runner-image.yml"' <<<"$selected_runs")
+cancel_runs "$consumers"
+cancel_runs "$producers"
+echo "Requested cancellation of ${selected_runs_label}; continuing without waiting for completion."

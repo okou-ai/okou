@@ -63,7 +63,16 @@ final class ConversationStore {
   @ObservationIgnored lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
     didFail: didFail)
-  private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
+  // Confirmed input for delivery, Stop, read watermarks and the native render window.
+  // Independent resource phases remain in their original Tasks, not in this snapshot.
+  @ObservationIgnored private let projection = ConversationProjection()
+  private(set) var history: ChatHistory? {
+    get { projection.history }
+    set {
+      projection.confirmHistory(newValue)
+      reconcileActivitySummary()
+    }
+  }
 
   /// Text of the running run's messages as it streams, before the durable events arrive.
   struct StreamedOutput: Equatable {
@@ -73,7 +82,7 @@ final class ConversationStore {
     let createdAt: Date
   }
 
-  private(set) var streamedOutputs: [StreamedOutput] = []
+  var streamedOutputs: [StreamedOutput] { projection.streamed }
   /// Subscribes to a run's live output; set by the workspace, which owns the realtime client.
   @ObservationIgnored var runOutput:
     (
@@ -85,10 +94,14 @@ final class ConversationStore {
   @ObservationIgnored private var streamBuffer: [String: StreamedOutput] = [:]
   @ObservationIgnored private var streamOrder: [String] = []
   @ObservationIgnored private var streamFlush: Task<Void, Never>?
-  private(set) var pending: [PendingMessage] = [] {
-    didSet { persistPending() }
+  private(set) var pending: [PendingMessage] {
+    get { projection.pending }
+    set {
+      projection.replacePending(newValue)
+      persistPending()
+    }
   }
-  private(set) var messages: [ChatMessage] = []
+  var messages: [ChatMessage] { projection.messages }
   private(set) var visibleItems: [ConversationItem] = []
   var visibleMessages: [ChatMessage] { visibleItems.compactMap(\.message) }
   private(set) var hasEarlierMessages = false
@@ -99,7 +112,8 @@ final class ConversationStore {
     let id = UUID()
     let position: ConversationReadingPosition
   }
-  private(set) var isLoading = false
+  /// The complete semantic refresh, including publication and read confirmation.
+  var isLoading: Bool { refreshTask != nil }
   private(set) var isSending = false
   enum DeliveryFailure {
     case notSent(String)
@@ -113,15 +127,9 @@ final class ConversationStore {
     return String(localized: "Delivery not confirmed")
   }
   private(set) var isRecoveringFailure = false
-  private var failureAccountsReadyID: String?
-  private var failureAccountBaseline: Int?
-  private var failureAccountError: String?
-  private var failureContextRevision = UUID()
-  private var failureAccountsRequestedID: String?
-  private var failureAccountsTask: Task<Void, Never>?
+  private(set) var failureContext: FailureRecoveryResources?
+  private var failureReadsEnabled = true
   private var failureRecoveryTask: Task<Void, Never>?
-  private var failureBilling: ChatBillingRecovery?
-  private var failureBillingError: String?
   private let didRequestNewChat: @MainActor () -> Void
   private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
   private(set) var error: String?
@@ -137,6 +145,7 @@ final class ConversationStore {
   private var detailOwner: UUID?
 
   private let sync: ChatSync
+  private let readResources: ConversationReadResources
   private let commands: ChatCommands
   /// Shares one answer together with the request that led to it, as the web does for a
   /// single message: the answer's event plus the user's prompts directly before its turn.
@@ -179,14 +188,12 @@ final class ConversationStore {
   private var refreshAgain = false
   private var refreshTask: Task<Void, Never>?
   private var refreshGeneration = UUID()
-  private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private var sendTask: Task<Bool, Never>?
   private var stopTask: Task<Void, Never>?
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
   @ObservationIgnored private var preservesRenderWindow = false
-  private var items: [ConversationItem] = []
-  private var expandedWorkSections: Set<String> = []
+  private var items: [ConversationItem] { projection.items }
   private var closed = false
   private var suppressAutomaticRead = false
   private var manualUnreadThrough: Date?
@@ -215,7 +222,8 @@ final class ConversationStore {
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
-    self.readRetrySleep = readRetrySleep
+    readResources = ConversationReadResources(
+      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail)
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
@@ -240,9 +248,10 @@ final class ConversationStore {
     self.didFail = didFail
     self.didSettle = didSettle
     do {
-      pending =
+      var restored =
         try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
-      for index in pending.indices { pending[index].needsRetry = true }
+      for index in restored.indices { restored[index].needsRetry = true }
+      projection.replacePending(restored)
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
       if pending.contains(where: {
         $0.document != nil
@@ -251,7 +260,7 @@ final class ConversationStore {
       }) {
         composer.clear()
       }
-      rebuildMessages()
+      reconcileProjection()
     } catch { show(error) }
   }
 
@@ -277,7 +286,7 @@ final class ConversationStore {
     else { return }
     history = cached.withCancellationRecoveryPending(history?.executionState == .recovering)
     pending.removeAll { cached.persistedEventIDs.contains($0.id) }
-    rebuildMessages()
+    reconcileProjection()
   }
 
   func refresh(waitForCurrent: Bool = false) async {
@@ -292,7 +301,6 @@ final class ConversationStore {
       guard let self else { return }
       defer {
         if refreshGeneration == generation {
-          isLoading = false
           refreshTask = nil
         }
         didSettle()
@@ -300,17 +308,13 @@ final class ConversationStore {
       guard !Task.isCancelled, refreshGeneration == generation else { return }
       await restoreCached()
       guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-      isLoading = true
       repeat {
         refreshAgain = false
         do {
-          async let recovery = ChatReadRecovery.read("cancellation recovery", sleep: readRetrySleep)
-          {
-            try await self.sync.cancellationRecoveryPending(threadID: self.thread.id)
-          }
-          let events = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
-            try await sync.eventHistory(threadID: thread.id)
-          }
+          let reads = try readResources.refresh()
+          // A failed history read must retire its unused recovery without waiting for it.
+          defer { reads.cancel() }
+          let events = try await reads.history.value
           // Keep a confirmed recovery visible until its independent read finishes.
           let result = events.withCancellationRecoveryPending(
             history?.executionState == .recovering)
@@ -319,8 +323,8 @@ final class ConversationStore {
           guard !closed, refreshGeneration == generation else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
-          rebuildMessages()
-          let recovering = try await recovery
+          reconcileProjection()
+          let recovering = try await reads.recovery.value
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
           let verified = events.withCancellationRecoveryPending(recovering)
@@ -341,7 +345,7 @@ final class ConversationStore {
           {
             do {
               let watermark = try await commands.markRead(threadID: thread.id)
-              guard !closed, !Task.isCancelled else { return }
+              guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
               readSyncError = nil
               if let watermark {
                 locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
@@ -351,7 +355,9 @@ final class ConversationStore {
               }
               if !suppressAutomaticRead { didMarkRead(watermark) }
             } catch {
-              guard !closed, !Task.isCancelled, !(error is CancellationError) else { return }
+              guard !closed, !Task.isCancelled, refreshGeneration == generation,
+                !(error is CancellationError)
+              else { return }
               readSyncError = error.localizedDescription
               report(error)
             }
@@ -424,7 +430,7 @@ final class ConversationStore {
     }
     message.computerAccess = initialComputerAccess
     pending.append(message)
-    rebuildMessages()
+    reconcileProjection()
     composer.clear()
     composer.requestSync()
     await submit(message)
@@ -439,23 +445,54 @@ final class ConversationStore {
     await submit(message)
   }
 
-  func failureState(_ failure: ChatFailure) -> AssistantFailureState {
+  func failureState(
+    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
+    accounts: [PersonalSubscription]? = nil,
+    accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
+  ) -> AssistantFailureState {
     var state = AssistantFailureState.make(
       failure: failure,
-      current: !closed && !needsUpgrade && pending.isEmpty
-        && history?.latestFailureID == failure.id,
-      selection: modelSelection,
-      accountsReady: failureAccountsReadyID == failure.id
-        || (failureAccountsRequestedID == failure.id
-          && failureAccountBaseline.map {
-            (modelSelection?.models.subscriptions.accountRevision ?? 0) > $0
-          } == true),
-      busy: isRecoveringFailure || isSending, accountsError: failureAccountError)
+      current: !closed && !needsUpgrade && failureReadsEnabled && pending.isEmpty
+        && history?.latestFailureID == failure.id
+        && (context == nil || failureContext === context),
+      selection: modelSelection, accounts: accounts,
+      busy: isRecoveringFailure || isSending,
+      accountsError: accountsError.map(ChatRequestFailure.message(for:)))
     if state.isCurrent {
-      state.billing = failureBilling
-      state.billingError = failureBillingError
+      state.billing = billing
+      state.billingError = billingError.map(ChatRequestFailure.message(for:))
     }
     return state
+  }
+
+  /// Commands await the same original reads as the card, then recheck the failure owner.
+  func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {
+    guard let context = failureContext, context.failureID == failure.id else {
+      return failureState(failure)
+    }
+    do {
+      if context.accounts != nil {
+        let accounts = try await context.readAccounts()
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        return failureState(failure, context: context, accounts: accounts)
+      }
+      if let signal = context.billing {
+        let result = await (try context.store.get(signal)).result
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        switch result {
+        case .success(let billing): return failureState(failure, context: context, billing: billing)
+        case .failure(let error):
+          return failureState(failure, context: context, billingError: error)
+        }
+      }
+    } catch {
+      guard failureContext === context else { return failureState(failure) }
+      if context.accounts != nil {
+        return failureState(failure, context: context, accountsError: error)
+      }
+      return failureState(failure, context: context, billingError: error)
+    }
+    return failureState(failure)
   }
 
   func newChatAfterFailure(_ id: String) {
@@ -464,53 +501,20 @@ final class ConversationStore {
   }
 
   func refreshFailureAccounts() async {
-    guard !closed, let id = history?.latestFailureID else { return }
-    let request = UUID()
-    failureContextRevision = request
-    failureAccountsReadyID = nil
-    failureAccountError = nil
-    if let failure = messages.first(where: { $0.id == id })?.failure,
-      failure.recovery(personalFramework: nil).kind == .billing
-    {
-      do {
-        let result = try await commands.billingRecovery()
-        guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-          failureContextRevision == request
-        else { return }
-        failureBilling = result
-        failureBillingError = nil
-      } catch {
-        guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-          failureContextRevision == request
-        else { return }
-        failureBillingError = error.localizedDescription
-        report(error)
-      }
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    requestFailureAccounts()
+    guard let context = failureContext else { return }
+    do { try context.retry() } catch is CancellationError {} catch { report(error) }
+    guard let failure = messages.first(where: { $0.id == context.failureID })?.failure else {
       return
     }
-    guard let modelSelection,
-      let failure = messages.first(where: { $0.id == id })?.failure,
-      failure.recovery(personalFramework: nil).kind == .usage
-    else { return }
-    failureAccountBaseline = modelSelection.models.subscriptions.accountRevision
-    do {
-      _ = try await modelSelection.models.subscriptions.readAccounts(force: true)
-      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-        failureContextRevision == request
-      else { return }
-      failureAccountsReadyID = id
-      failureAccountError = nil
-    } catch is CancellationError {} catch {
-      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
-        failureContextRevision == request
-      else { return }
-      failureAccountError = ChatRequestFailure.message(for: error)
-    }
+    _ = await readFailureState(failure)
   }
 
   /// Execution recovery appends a new input. Uncertain delivery still uses retry(_:).
   func recoverFailure(_ id: String, resetUsage: Bool = false) async {
-    guard !closed, !needsUpgrade, !isRecoveringFailure, !isSending, pending.isEmpty,
+    guard !closed, !needsUpgrade, failureReadsEnabled, !Task.isCancelled,
+      failureRecoveryTask == nil, !isSending, pending.isEmpty,
       history?.latestFailureID == id, let failure = messages.first(where: { $0.id == id })?.failure,
       failureState(failure).recovery.canRetry,
       modelSelection?.canSendConfirmedSelection != false, modelSelection?.isMutating != true
@@ -538,7 +542,7 @@ final class ConversationStore {
         await modelSelection?.refresh()
         guard modelSelection?.canSend != false else { return }
         await refreshFailureAccounts()
-        let state = failureState(failure)
+        let state = await readFailureState(failure)
         guard !closed, !needsUpgrade, !Task.isCancelled, detailOwner == owner,
           history?.latestFailureID == id, modelSelection?.canSendConfirmedSelection != false,
           let accountID = state.resetAccountID,
@@ -555,7 +559,7 @@ final class ConversationStore {
         id: UUID().uuidString.lowercased(), text: "continue", createdAt: Date(), attachments: [],
         modelSelection: modelSelection?.selection, reasoningEffort: modelSelection?.requestedEffort)
       pending.append(message)
-      rebuildMessages()
+      reconcileProjection()
       await submit(message)
     }
     failureRecoveryTask = task
@@ -563,7 +567,7 @@ final class ConversationStore {
   }
 
   private func submit(_ message: PendingMessage) async {
-    guard !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard sendTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isSending = true
     modelSelection?.isSending = true
     let task = Task { [weak self] in
@@ -621,7 +625,7 @@ final class ConversationStore {
   }
 
   func stop() async {
-    guard !isStopping, !closed, !needsUpgrade, !Task.isCancelled else { return }
+    guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
     isStopping = true
     stopIssue = nil
     let task = Task { [weak self] in
@@ -650,6 +654,11 @@ final class ConversationStore {
 
   func setDetailVisible(_ visible: Bool, owner: UUID) {
     if visible {
+      if detailOwner != owner {
+        failureContext?.close()
+        failureContext = nil
+      }
+      failureReadsEnabled = true
       detailOwner = owner
       permissionActions.activate(owner: owner)
       approvals.activate()
@@ -660,9 +669,9 @@ final class ConversationStore {
       detailOwner = nil
       attachmentViewer.deactivate()
       artifacts.deactivate()
-      failureAccountsTask?.cancel()
-      failureAccountsTask = nil
-      failureAccountsRequestedID = nil
+      failureReadsEnabled = false
+      failureContext?.close()
+      failureContext = nil
       failureRecoveryTask?.cancel()
       if isRecoveringFailure { sendTask?.cancel() }
       permissionActions.deactivate()
@@ -738,10 +747,7 @@ final class ConversationStore {
   }
 
   private func publishStream() {
-    let next = streamOrder.compactMap { streamBuffer[$0] }.filter {
-      !$0.text.isEmpty && !isPersisted($0.eventID)
-    }
-    if next != streamedOutputs { streamedOutputs = next }
+    projection.publishStream(streamOrder.compactMap { streamBuffer[$0] })
   }
 
   func close() {
@@ -753,10 +759,13 @@ final class ConversationStore {
     runUsage.close()
     modelSelection?.close()
     cancelRefresh()
+    readResources.close()
+    projection.close()
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
-    failureAccountsTask?.cancel()
+    failureContext?.close()
+    failureContext = nil
     failureRecoveryTask?.cancel()
     measurements.clear()
     composer.close()
@@ -771,8 +780,8 @@ final class ConversationStore {
     refreshGeneration = UUID()
     refreshTask?.cancel()
     refreshTask = nil
+    readResources.pause()
     refreshAgain = false
-    isLoading = false
   }
 
   func artifactImageSources(for messageID: String) -> [String] {
@@ -859,80 +868,40 @@ final class ConversationStore {
   func releaseRenderWindow() { preservesRenderWindow = false }
 
   func toggleWorkHistory(_ sectionID: String) {
-    guard !closed, let section = history?.workSections.first(where: { $0.id == sectionID }),
-      section.isCollapsible
-    else { return }
-    if !expandedWorkSections.insert(sectionID).inserted {
-      expandedWorkSections.remove(sectionID)
-    }
-    rebuildMessages()
+    guard !closed else { return }
+    projection.toggleWorkHistory(sectionID)
+    reconcileProjection()
   }
 
-  private func rebuildMessages() {
-    let persisted = history?.persistedEventIDs ?? []
+  /// Hand a derived projection to the native window after confirmed business changes.
+  private func reconcileProjection() {
     let pendingIDs = Set(pending.map(\.id))
     deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
-    let next =
-      (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
-    if messages != next { messages = next }
     requestFailureAccounts()
-    let sections = history?.workSections ?? []
-    expandedWorkSections.formIntersection(sections.map(\.id))
-    let headers = Dictionary(
-      uniqueKeysWithValues: sections.map { ($0.hiddenMessageIDs.first ?? $0.anchorMessageID, $0) })
-    let hiddenSections = Dictionary(
-      uniqueKeysWithValues: sections.flatMap { section in
-        section.hiddenMessageIDs.map { ($0, section) }
-      })
-    var nextItems: [ConversationItem] = []
-    let usageAnchors = history?.runUsageAnchors ?? [:]
-    for message in next {
-      if let section = headers[message.id] {
-        nextItems.append(.work(section, expanded: expandedWorkSections.contains(section.id)))
-      }
-      if let section = hiddenSections[message.id] {
-        if section.isCollapsible && !expandedWorkSections.contains(section.id) { continue }
-        nextItems.append(.message(message, isWorkHistory: true))
-      } else {
-        nextItems.append(.message(message))
-      }
-      if let runID = message.runID, usageAnchors[runID] == message.id,
-        history?.usageEventIDs[runID] != nil
-      {
-        nextItems.append(.usage(runID: runID))
-      }
-    }
-    guard items != nextItems else {
+    let nextItems = items
+    let position = renderWindow.rebased(readingPosition, to: nextItems)
+    guard renderWindow.update(nextItems, preservingBoundary: preservesRenderWindow) else {
       reconcileRunUsage()
       return
     }
-    if let position = readingPosition, !nextItems.contains(where: { $0.id == position.messageID }) {
-      let surviving = Set(nextItems.map(\.id))
-      if let index = items.firstIndex(where: { $0.id == position.messageID }),
-        let replacement = items.dropFirst(index + 1).first(where: { surviving.contains($0.id) })
-          ?? items.prefix(index).last(where: { surviving.contains($0.id) })
-      {
-        readingPosition = ConversationReadingPosition(
-          messageID: replacement.id, offset: position.offset)
-      } else {
-        readingPosition = nil
-      }
-    }
-    items = nextItems
-    renderWindow.update(nextItems, preservingBoundary: preservesRenderWindow)
+    readingPosition = position
     if let readingPosition { renderWindow.include(readingPosition.messageID) }
     publishWindow()
   }
 
   private func requestFailureAccounts() {
-    let id = pending.isEmpty ? history?.latestFailureID : nil
-    guard let id, id != failureAccountsRequestedID else { return }
-    failureAccountsTask?.cancel()
-    failureAccountsRequestedID = id
-    failureAccountsReadyID = nil
-    failureBilling = nil
-    failureBillingError = nil
-    failureAccountsTask = Task { [weak self] in await self?.refreshFailureAccounts() }
+    let id =
+      !closed && !needsUpgrade && failureReadsEnabled && pending.isEmpty
+      ? history?.latestFailureID : nil
+    guard id != failureContext?.failureID else { return }
+    failureContext?.close()
+    failureContext = nil
+    guard let id, let failure = messages.first(where: { $0.id == id })?.failure else { return }
+    let context = FailureRecoveryResources(
+      failure: failure, subscriptions: modelSelection?.models.subscriptions.resources,
+      commands: commands, didFail: { [weak self] in self?.report($0) })
+    failureContext = context
+    do { try context.start() } catch is CancellationError {} catch { report(error) }
   }
 
   private func publishWindow() {

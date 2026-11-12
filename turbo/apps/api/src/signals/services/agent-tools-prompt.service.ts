@@ -41,7 +41,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
     "Before publishing, check `okou host --help`. When `--title` is supported, supply a concise human-readable display title separately from the URL slug. Use `okou host title <site> <title>` to rename an existing site when that command is available.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     "For file delivery, use the current integration's `upload-file` command.",
-    "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read the `office` skill's `SKILL.md` entry point and follow its task routing. Read only the selected route and references needed for the task.",
+    "For Word documents, PDFs, or spreadsheets, if no relevant template is selected, read the mounted `office` skill's `SKILL.md` entry point when available; otherwise read https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md directly from the official repository. Follow its task routing and load only the selected route and supporting files needed for the task.",
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {
@@ -58,11 +58,11 @@ export interface AgentToolsPromptInputs {
   readonly larkEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  readonly browserNativeInputEnabled: boolean;
   readonly browserSharedOwnerEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
+  readonly sshChatApprovalEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -79,6 +79,10 @@ export function buildAgentToolsPromptInputs(args: {
       FeatureSwitchKey.ConnectorChatAccountAccess,
       context,
     ),
+    sshChatApprovalEnabled: isFeatureEnabled(
+      FeatureSwitchKey.SshChatApproval,
+      context,
+    ),
     wechatEnabled: isFeatureEnabled(
       FeatureSwitchKey.WechatIntegration,
       context,
@@ -87,10 +91,6 @@ export function buildAgentToolsPromptInputs(args: {
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
-    browserNativeInputEnabled: isFeatureEnabled(
-      FeatureSwitchKey.BrowserNativeInput,
       context,
     ),
     browserSharedOwnerEnabled: isFeatureEnabled(
@@ -144,6 +144,7 @@ function buildGenerationToolsPrompt(
   );
   return [
     "- An attached generation template takes precedence for content, style, and QA. Follow platform instructions for publishing and delivery. Use the template's commands and resources; do not run `okou generate -h` or list providers unless the template names them as a fallback.",
+    "- When creating event flyers, read and follow https://github.com/okou-ai/okou-skills/blob/main/event-flyer-pack/SKILL.md, loading only the supporting resources needed for the requested deliverables.",
     `- Without an attached generation template, when the user asks to generate anything (supported generation content: ${imageGenerationEnabled ? "built-in image, " : ""}presentation, website, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, code, or document), run \`okou generate -h\`. Run \`okou generate <type>\` with no generation input to list every provider available for that type.`,
     `- Before executing a generation command, run \`okou generate <type> -h\` and follow its type-specific input flags. Image accepts ${imageGenerationEnabled ? "`--provider built-in` or " : ""}\`--provider <connector>\`; music, text, code, and document require \`--provider <connector>\` and the returned connector skill guidance; the other types run on Okou without \`--provider\`.`,
     "- If you choose an Okou generation command, wait for it to finish and use its returned artifact.",
@@ -158,6 +159,12 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
     "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
+    ...(args.sshChatApprovalEnabled
+      ? [
+          "- SSH chat access: in Web Chat, for a configured host missing from authorized inventory, use `okou ssh request-access <connection-id> --reason <purpose>` and share its exact review URL, then end the Run. The user approves in a message card and the next round continues automatically; do not direct them to find a Remote control switch. If connector permissions also need approval, use `--require-permission <connector/permission>` for every diagnosed permission, share the existing permission/batch link alongside the SSH request, and attach continuation only to the SSH request. If the request API reports the feature unavailable, use the existing owner-controlled host selection.",
+          "- VNC chat access: in Web Chat, use `okou vnc request-access <connection-id> --reason <purpose>` for a configured VNC host missing from authorized inventory. This covers every saved VNC security profile and Direct, SSH, Cloudflare Access, and Tailscale routes. First inspect the configured VNC transport and any SSH-backed KDC: if a required SSH host is not authorized, request its access with `okou ssh request-access` and end the Run; after approval, recheck all dependencies before requesting VNC access. Never grant SSH implicitly or treat its approval as VNC access. Share the exact VNC review URL and end the Run; owner approval continues automatically. Use `--require-permission` for accompanying diagnosed connector approvals, with continuation only on the host request.",
+        ]
+      : []),
     "- Remote SSH failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command or check.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
@@ -181,13 +188,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
                 "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
               ]
             : []),
-          ...(args.browserNativeInputEnabled === true
-            ? [
-                "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
-                "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
-                "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
-              ]
-            : []),
+          "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
+          "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
+          "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
           "- Direct Browser takeover is a last resort, not the default for login: when you need the user to operate the Browser, share `okou browser view` only if the required user-only interaction cannot be handled with available exact native input controls and `agent-browser` (for example, a passkey prompt or unsupported widget), or native input is unavailable. Explain the specific step and ask the user to reply when finished or blocked; stop using the Browser in this turn. If the user explicitly asks to view the Browser, you may share its live view without treating that request as a takeover.",
         ]
       : []),
@@ -253,10 +256,14 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     ...(args.batchConnectorPermissionsEnabled
       ? [
           "- Batch permission approvals: after diagnosing each concrete builtin HTTP operation with `okou connector check`, use `okou connector permission-request --batch-file <path>` for multiple permissions. The JSON file contains `{ connector, permission, url, method }` entries, with the existing AWS diagnostic selectors when needed; use only the exact diagnosed operations, never provider OAuth scopes. The CLI rechecks every item and skips permissions already allowed. Return its single batch URL verbatim. A single batch approval may carry one `--callback-prompt <prompt>` when it is this turn's only access action; after sharing it, end the current turn. The user chooses one permission duration for the batch.",
-          "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. Return all generated links in one response, one link per line, and wait for the user to finish all of them.",
+          args.sshChatApprovalEnabled
+            ? "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. For Web Chat SSH or VNC host access plus connector permission approvals, a host `request-access` request declaring every `--require-permission` can own continuation; use ordinary non-callback permission links alongside it. Otherwise, return all generated links in one response, one link per line, and wait for the user to finish all of them."
+            : "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. Return all generated links in one response, one link per line, and wait for the user to finish all of them.",
         ]
       : [
-          "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
+          args.sshChatApprovalEnabled
+            ? "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. The exception is a Web Chat SSH or VNC access request that declares every required connector permission with `--require-permission`: only that request owns continuation. Otherwise, return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them."
+            : "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
         ]),
     "- Keep temporary downloads, synchronized chat histories, diffs, inventories and backups outside personal Memory. Store chat history caches under `/tmp/okou-chat-history` and other task scratch under `/tmp` or the workspace. Memory is saved after each Run; retain only durable knowledge and intentional evidence there, under the existing Memory authorization rules.",
     ...(args.singleAgent

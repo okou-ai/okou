@@ -123,6 +123,8 @@ import * as claimedWorkflowAttachmentSchema from "./schema/claimed-workflow-atta
 import * as workflowAutomationRuntime from "./runtime/workflow-automation";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
+import * as vncAuthorizationSchema from "./schema/vnc-authorization";
+import * as sshAuthorizationSchema from "./schema/ssh-authorization";
 import * as desktopShellAuthorizationSchema from "./schema/desktop-shell-authorization";
 import * as computerUseHostRuntime from "./runtime/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
@@ -139,6 +141,7 @@ import * as chatThreadSnapshotSchema from "./schema/chat-thread-snapshot";
 import * as runOutputMaterializationSchema from "./schema/run-output-materialization";
 import * as runOutputLegacyPiEventSchema from "./schema/run-output-legacy-pi-event";
 import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
+import * as orgCustomConnectorCloudflareBindingSchema from "./schema/org-custom-connector-cloudflare-binding";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
 import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-connector-dcr-registration";
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
@@ -301,6 +304,8 @@ export const schema = {
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...desktopShellAuthorizationSchema,
+  ...sshAuthorizationSchema,
+  ...vncAuthorizationSchema,
   ...computerUseHostRuntime,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,
@@ -349,6 +354,7 @@ export const schema = {
   ...vncCredentialSchema,
   ...vncConnectionSchema,
   ...cloudflareAccessConfigSchema,
+  ...orgCustomConnectorCloudflareBindingSchema,
   ...tailscaleConfigSchema,
 };
 

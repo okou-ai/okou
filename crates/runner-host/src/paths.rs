@@ -211,6 +211,7 @@ shared_home_dirs! {
     pub fn bin_dir => "bin";
     pub fn ca_dir => "ca";
     pub fn runner_control_dir => "control";
+    pub fn ingress_dir => "ingress";
     pub fn debootstrap_dir => "debootstrap";
     fn firecracker_root_dir => "firecracker";
     pub fn groups_dir => "groups";

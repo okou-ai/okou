@@ -211,6 +211,7 @@ import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authorization-block.ts";
+import { createHostAuthorizationCardSignalsRegistry } from "./host-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
@@ -1564,6 +1565,12 @@ interface EventTreeRegistries {
   readonly browserAuthorizationCardSignals: ReturnType<
     typeof createBrowserAuthorizationCardSignalsRegistry
   >;
+  readonly vncAuthorizationCardSignals: ReturnType<
+    typeof createHostAuthorizationCardSignalsRegistry
+  >;
+  readonly sshAuthorizationCardSignals: ReturnType<
+    typeof createHostAuthorizationCardSignalsRegistry
+  >;
   readonly desktopShellAuthorizationCardSignals: ReturnType<
     typeof createDesktopShellAuthorizationCardSignalsRegistry
   >;
@@ -1606,10 +1613,59 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
   );
 }
 
+type HostAuthorizationDescriptorBlock = Extract<
+  CardDescriptorBlock,
+  {
+    type:
+      "ssh-authorization" | "vnc-authorization" | "desktop-shell-authorization";
+  }
+>;
+
+function createHostAuthorizationCardRefRegistrar(cards: EventTreeRegistries) {
+  return command(
+    (
+      { set },
+      descriptor: HostAuthorizationDescriptorBlock,
+    ): MarkdownCardRef => {
+      switch (descriptor.type) {
+        case "vnc-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.vncAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "ssh-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.sshAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "desktop-shell-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.desktopShellAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+      }
+    },
+  );
+}
+
 function createCardRefRegistrar(
   cards: EventTreeRegistries,
 ): Command<MarkdownCardRef, [CardDescriptorBlock]> {
   const registerPermissionCardRef$ = createPermissionCardRefRegistrar(cards);
+  const registerHostAuthorizationCardRef$ =
+    createHostAuthorizationCardRefRegistrar(cards);
   return command(
     ({ set }, descriptor: CardDescriptorBlock): MarkdownCardRef => {
       switch (descriptor.type) {
@@ -1692,14 +1748,10 @@ function createCardRefRegistrar(
             ),
           };
         }
+        case "ssh-authorization":
+        case "vnc-authorization":
         case "desktop-shell-authorization": {
-          return {
-            kind: descriptor.type,
-            signals: set(
-              cards.desktopShellAuthorizationCardSignals.register$,
-              descriptor.descriptor,
-            ),
-          };
+          return set(registerHostAuthorizationCardRef$, descriptor);
         }
         case "plan-upgrade": {
           return {
@@ -1961,6 +2013,8 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.connectorCardSignals.subscribe$, signal);
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
+      set(registries.sshAuthorizationCardSignals.subscribe$, signal);
+      set(registries.vncAuthorizationCardSignals.subscribe$, signal);
       set(registries.computerUseAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);
       set(registries.browserAuthorizationCardSignals.subscribe$, signal);
@@ -2020,6 +2074,10 @@ function createPagedEventResources({
     createComputerUseAuthorizationCardSignalsRegistry(threadId);
   const browserAuthorizationCardSignals =
     createBrowserAuthorizationCardSignalsRegistry(chatActionContext);
+  const vncAuthorizationCardSignals =
+    createHostAuthorizationCardSignalsRegistry("vnc", threadId);
+  const sshAuthorizationCardSignals =
+    createHostAuthorizationCardSignalsRegistry("ssh", threadId);
   const desktopShellAuthorizationCardSignals =
     createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
@@ -2041,6 +2099,8 @@ function createPagedEventResources({
       computerUseAuthorizationCardSignals,
       browserAuthorizationCardSignals,
       desktopShellAuthorizationCardSignals,
+      sshAuthorizationCardSignals,
+      vncAuthorizationCardSignals,
       planUpgradeCardSignals,
       mailDraftCardSignals,
       browserSessionSignals,

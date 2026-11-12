@@ -11,6 +11,10 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 mod disk;
 
+// Bump when deterministic admission limits, archive shapes or validation change.
+// Ordinary Runner releases and transient worker/memory pressure do not change it.
+const ADMISSION_POLICY_VERSION: u32 = 2;
+
 const CAPACITY: usize = 64 * 1024 * 1024;
 const MAX_COMPRESSED_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const MAX_ADMITTED_FILES: usize = 4096;

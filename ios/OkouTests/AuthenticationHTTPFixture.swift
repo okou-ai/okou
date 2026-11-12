@@ -18,10 +18,13 @@ final class AuthenticationHTTPFixture: Sendable {
     var pending = false
     var signedOut = false
     var failMemberships = false
+    var membershipFailureOffset: Int?
+    var membershipFailureStatus = 400
     var failActivation = false
   }
 
   let identityOverride = Mutex<(@Sendable (URLRequest) throws -> ChatHTTPResponse?)?>(nil)
+  let pendingRequestDisconnected = Mutex<(@Sendable (URLRequest) -> Void)?>(nil)
   let state = Mutex(State())
   let memberships = AuthenticationRequestGate()
   let activation = AuthenticationRequestGate()
@@ -172,6 +175,15 @@ final class AuthenticationHTTPFixture: Sendable {
         }
         request.httpBody = body
         let received = request
+        let responded = Mutex(false)
+        // Observe the client's original HTTP cancellation while its server reply is held.
+        // Normal responses mark completion before closing their connection.
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) {
+          [weak self] _, _, complete, error in
+          if complete || error != nil, !responded.withLock({ $0 }) {
+            self?.pendingRequestDisconnected.withLock { $0 }?(received)
+          }
+        }
         let task = Task { @Sendable [self] in
           do {
             let result = try await response(received)
@@ -183,6 +195,7 @@ final class AuthenticationHTTPFixture: Sendable {
             let header = headers.map { "\($0.key): \($0.value)\r\n" }.joined()
             var bytes = Data("HTTP/1.1 \(result.status) Response\r\n\(header)\r\n".utf8)
             bytes.append(body)
+            responded.withLock { $0 = true }
             connection.send(
               content: bytes, completion: .contentProcessed { [self] _ in close(connection) })
           } catch { connection.cancel() }
@@ -259,8 +272,13 @@ final class AuthenticationHTTPFixture: Sendable {
     case "/v1/me/organization_memberships":
       let snapshot = state.withLock { $0 }
       await memberships.enter()
-      if snapshot.failMemberships { return failure("Memberships unavailable") }
-      let rows = snapshot.workspaceIDs.map { id in
+      let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+      let offset = try XCTUnwrap(query?.first { $0.name == "offset" }?.value.flatMap(Int.init))
+      let limit = try XCTUnwrap(query?.first { $0.name == "limit" }?.value.flatMap(Int.init))
+      if snapshot.failMemberships || snapshot.membershipFailureOffset == offset {
+        return failure("Memberships unavailable", status: snapshot.membershipFailureStatus)
+      }
+      let rows = snapshot.workspaceIDs.dropFirst(offset).prefix(limit).map { id in
         var membership = OrganizationMembership.mockWithoutUserData
         membership.id = "membership_" + id
         membership.organization.id = id
@@ -270,7 +288,8 @@ final class AuthenticationHTTPFixture: Sendable {
         return membership
       }
       return try json(
-        ResponseEnvelope(response: MembershipEnvelope(data: rows, totalCount: rows.count)))
+        ResponseEnvelope(
+          response: MembershipEnvelope(data: rows, totalCount: snapshot.workspaceIDs.count)))
     case let path where path.hasSuffix("/touch"):
       await activation.enter()
       if state.withLock({ $0.failActivation }) { return failure("Activation unavailable") }
@@ -334,9 +353,9 @@ final class AuthenticationHTTPFixture: Sendable {
       ])
   }
 
-  private func failure(_ message: String) -> ChatHTTPResponse {
+  private func failure(_ message: String, status: Int = 400) -> ChatHTTPResponse {
     ChatHTTPResponse(
-      status: 400,
+      status: status,
       body:
         "{\"errors\":[{\"code\":\"fixture_unavailable\",\"message\":\"\(message)\",\"long_message\":\"\(message)\"}]}"
     )

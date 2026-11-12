@@ -21,14 +21,8 @@ content addressed and shared independently of the retained Storage copies.
 
 ## Run
 
-The manual **Copy Production Presentation Templates** GitHub workflow runs this
-operator from `main` inside the protected `production` environment. It defaults
-to `dry-run`; `copy` inspects before writing, verifies every destination package,
-and compares legacy row/Storage/HEAD fingerprints afterward. It stops if the
-inventory exceeds 100 records. It retains identifier-only receipts and refuses
-an apply job rerun; reconcile any uncertain result before dispatching again.
-
-Run from `turbo/packages/db` with locked workspace dependencies. Set
+Run directly on an authorized machine from `turbo/packages/db` with locked
+workspace dependencies and a separately reviewed target and scope. Set
 `DATABASE_URL_FILE` to a private file containing the database URL. Supply
 `R2_ENDPOINT`, `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID` and
 `R2_SECRET_ACCESS_KEY` securely through the environment.
@@ -71,4 +65,4 @@ objects, new package identity and bytes, permissions/audit/page preservation,
 independent edits and replay, missing/mismatched packages, target collisions,
 source changes during upload, and failed object publication. Ordinary PR CI and
 the normal schema-migration runner never perform production copies. Retire this
-operator and its manual workflow after the production copy is accepted.
+operator after the production copy is accepted.

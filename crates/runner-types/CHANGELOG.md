@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-types-v0.15.0...runner-types-v0.16.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-types-v0.14.0...runner-types-v0.15.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-types-v0.13.6...runner-types-v0.14.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+## [0.13.6](https://github.com/okou-ai/okou/compare/runner-types-v0.13.5...runner-types-v0.13.6) (2026-11-11)
+
+## [0.13.5](https://github.com/okou-ai/okou/compare/runner-types-v0.13.4...runner-types-v0.13.5) (2026-11-11)
+
 ## [0.13.4](https://github.com/okou-ai/okou/compare/runner-types-v0.13.3...runner-types-v0.13.4) (2026-11-09)
 
 ## [0.13.3](https://github.com/okou-ai/okou/compare/runner-types-v0.13.2...runner-types-v0.13.3) (2026-11-09)

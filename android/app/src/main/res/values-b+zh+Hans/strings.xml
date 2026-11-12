@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">首页</string>
+    <string name="settings">设置</string>
+    <string name="back">返回</string>
+    <string name="home_title">为下一个灵感留出空间</string>
+    <string name="home_description">撰写草稿，并在此设备上预览。</string>
+    <string name="draft_label">草稿</string>
+    <string name="draft_hint">你在想什么？</string>
+    <string name="local_preview">预览草稿</string>
+    <string name="preview_title">预览</string>
+    <string name="appearance">外观</string>
+    <string name="appearance_description">选择 Okou 在此设备上的外观。</string>
+    <string name="appearance_system">跟随系统</string>
+    <string name="appearance_light">浅色</string>
+    <string name="appearance_dark">深色</string>
+    <string name="on_this_device">此设备</string>
+    <string name="appearance_local">外观设置仅保存在此设备上。</string>
+    <string name="appearance_loading">正在加载外观…</string>
+    <string name="appearance_saving">正在保存外观…</string>
+    <string name="appearance_read_failed">无法加载外观设置，请重试。</string>
+    <string name="appearance_write_failed">无法保存外观设置，请重试。</string>
+    <string name="retry">重试</string>
+    <plurals name="draft_lines">
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="auth_welcome">欢迎使用 Okou</string>
+    <string name="auth_restoring">正在恢复登录状态…</string>
+    <string name="auth_preparing_workspace">正在准备工作区…</string>
+    <string name="auth_choose_workspace">选择工作区</string>
+    <string name="auth_no_workspace">你尚无可访问的工作区。</string>
+    <string name="auth_workspace_setup">前往网页创建工作区</string>
+    <string name="auth_access_removed">登录状态或工作区访问权限已变化。请重新登录或刷新权限。</string>
+    <string name="auth_update_required">请更新 Okou 后继续。</string>
+    <string name="auth_unavailable">无法加载登录状态或工作区，请重试。</string>
+    <string name="auth_sign_out">退出登录</string>
+    <string name="auth_signing_out">正在退出登录…</string>
+    <string name="auth_workspace">工作区</string>
+    <string name="auth_switch_workspace">切换工作区</string>
+    <string name="auth_browser_unavailable">请安装浏览器以打开工作区设置页面。</string>
+</resources>

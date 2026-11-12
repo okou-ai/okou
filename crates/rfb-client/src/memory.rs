@@ -8,7 +8,11 @@ use std::{
 
 use crate::Error;
 
-pub(crate) const MAX_MEMORY: usize = 128 * 1024 * 1024;
+// A 6K frame and coverage use ~84 MiB. ZRLE additionally retains ~83 MiB
+// inflated scratch plus either <=88 MiB compressed input or 81 MiB RGBA.
+// This shared, demand-allocated budget also charges retained captures and PNG
+// growth's simultaneous old/new capacities; it is not a process RSS bound.
+pub(crate) const MAX_MEMORY: usize = 256 * 1024 * 1024;
 
 #[derive(Clone, Default)]
 pub(crate) struct Budget(Arc<Accounting>);

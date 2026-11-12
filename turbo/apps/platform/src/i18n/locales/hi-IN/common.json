@@ -550,6 +550,7 @@
       "openDocs": "Google Docs में खोलें",
       "openSheets": "Google Sheets में खोलें",
       "openSlides": "Google Slides में खोलें",
+      "reconnect": "Google Drive फिर से कनेक्ट करें",
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",
@@ -1063,6 +1064,8 @@
       "invalid": "अनुमति का यह लिंक अमान्य या अनुपलब्ध है।",
       "loadFailed": "सभी अनुरोधित अनुमतियों की पुष्टि नहीं हो सकी। किसी भी अनुमति में बदलाव नहीं किया जा सकता।",
       "loading": "अनुमतियाँ लोड हो रही हैं",
+      "myOkouScopeNote": "इस कार्यक्षेत्र में आपके Okou के इस्तेमाल पर लागू है, केवल मौजूदा काम पर नहीं।",
+      "myOkouSharedScopeNote": "इस कार्यक्षेत्र में आपकी सभी चैट में इस कनेक्टर पर लागू है। आपके साथियों की अनुमतियाँ अलग हैं।",
       "notNow": "अभी नहीं",
       "review": "अनुमतियों की समीक्षा करें",
       "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
@@ -1314,6 +1317,40 @@
     "sidebar": {
       "description": "अधिक क्रेडिट और समवर्ती रन",
       "getPlan": "{{plan}} प्राप्त करें"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "बस कीमत देख रहा था",
+          "needs_approval": "किसी और की मंज़ूरी चाहिए",
+          "not_ready_yet": "अभी तय करने के लिए तैयार नहीं हूँ",
+          "not_seeing_value": "अभी तक इसकी उपयोगिता नहीं दिखी",
+          "other": "कुछ और",
+          "payment_issue": "भुगतान में समस्या आई",
+          "price_higher_than_expected": "कीमत उम्मीद से ज़्यादा थी",
+          "results_not_good_enough": "नतीजों से संतुष्ट नहीं था"
+        },
+        "description": "बस एक सवाल। आपका जवाब हमें बेहतर बनने में मदद करता है।",
+        "question": "आपको खरीदारी पूरी करने से किस बात ने रोका?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "अभी और की ज़रूरत नहीं है",
+          "not_sure_worth_it": "अभी पक्का नहीं कि यह इसके लायक है",
+          "other": "कुछ और",
+          "still_trying": "पहले इसे और आज़माना चाहता हूँ",
+          "too_expensive": "यह बहुत महंगा है"
+        },
+        "question": "आज अपग्रेड करने से आपको क्या रोक रहा है?",
+        "reward": "इस कार्यक्षेत्र में पहले पात्र उत्तर पर {{credits}} बोनस क्रेडिट मिलते हैं, जो 30 दिनों तक मान्य हैं।",
+        "thanksWithCredits": "धन्यवाद! {{credits}} क्रेडिट जोड़ दिए गए हैं, आप जारी रख सकते हैं।"
+      },
+      "error": "आपका जवाब नहीं भेजा जा सका। फिर से कोशिश करें।",
+      "notNow": "अभी नहीं",
+      "otherLabel": "आपका जवाब",
+      "otherPlaceholder": "और बताएँ (वैकल्पिक)",
+      "submit": "भेजें",
+      "thanks": "बताने के लिए धन्यवाद।"
     },
     "toasts": {
       "autoRechargeUpdated": "स्वतः-रिचार्ज अद्यतन किया गया",
@@ -1627,13 +1664,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "सब पूरा हो गया",
-        "emptyTitle": "कोई नया सुझाव नहीं",
         "feedback": "सुझाव के विकल्प",
-        "loading": "सुझाव लोड हो रहे हैं",
         "navigation": "सुझाव देखें",
-        "next": "अगला सुझाव",
-        "previous": "पिछला सुझाव",
-        "retry": "फिर कोशिश करें"
+        "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
       },
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
@@ -1870,7 +1903,9 @@
         "title": "बनाएँ"
       },
       "explore": "एक्सप्लोर करें",
+      "exploreWhatsNew": "देखें क्या नया है",
       "research": {
+        "description": "ट्रैफ़िक, विज्ञापन, उत्पाद, विषय",
         "items": {
           "ads": "विज्ञापन सामग्री देखें",
           "products": "उत्पादों पर शोध करें",
@@ -1883,6 +1918,7 @@
         "title": "शोध"
       },
       "search": {
+        "description": "ग्राहक, क्रिएटर, निर्णयकर्ता",
         "items": {
           "affiliates": "अफ़िलिएट कार्यक्रम",
           "creators": "क्रिएटर साझेदारी",
@@ -1913,6 +1949,7 @@
           "title": "निर्धारित कार्य"
         },
         "suggestions": "एक सुझाव से शुरू करें और उसे अपनी ज़रूरत के मुताबिक बदलें।",
+        "summary": "शेड्यूल या ट्रिगर पर चलता है",
         "triggers": {
           "description": "किसी घटना के होने पर शुरू करें।",
           "eventPrompt": "{{source}} के साथ {{task}} सेट करने में मदद करें। क्रम: {{event}} → {{action}} → {{result}}। स्रोत, फ़िल्टर और परिणाम का स्थान पूछें। वर्कफ़्लो का मसौदा तैयार करें और चालू करने से पहले सेटिंग की पुष्टि करें।",
@@ -2145,6 +2182,8 @@
         "outputLimitTitle": "जवाब लंबाई की सीमा तक पहुँच गया",
         "personalAccount": "निजी सदस्यता {{account}}",
         "personalAccountDisconnected": "निजी सदस्यता डिस्कनेक्ट है",
+        "providerBadRequestDescription": "फिर से कोशिश करें या जारी रखने के लिए दूसरा मॉडल चुनें।",
+        "providerBadRequestTitle": "मॉडल प्रदाता ने एक त्रुटि लौटाई",
         "providerBalanceDescription": "अपने सब्सक्रिप्शन खाते का उपयोग या क्रेडिट बैलेंस जाँचें, फिर से कोशिश करें।",
         "providerBalanceTitle": "आपके सब्सक्रिप्शन खाते में और क्रेडिट चाहिए",
         "providerConnectionDescription": "सेटिंग्स > मॉडल में खाता फिर से जोड़ें या अपडेट करें, फिर दोबारा कोशिश करें।",
@@ -2354,17 +2393,35 @@
       "untitled": "बिना शीर्षक"
     },
     "remoteAccess": {
+      "all": "सभी",
+      "allowed": "अनुमति है",
+      "autoSave": "बदलाव इस चैट के लिए अपने-आप सहेजे जाते हैं",
+      "connections": "कनेक्शन",
       "default": "डिफ़ॉल्ट",
       "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
-      "disabled": "बंद",
-      "enabled": "चालू",
+      "draft": "पहला संदेश भेजने पर लागू होगा",
       "enabledCount_one": "{{count}} सक्षम",
       "enabledCount_other": "{{count}} सक्षम",
+      "enableInChat": "इस चैट में चालू करें",
+      "enableSsh": "इस चैट में SSH {{name}} चालू करें",
+      "filterHint": "फ़िल्टर बदलने तक बदले गए कनेक्शन दिखते रहेंगे",
+      "fromChat": "यह चैट",
       "loadFailed": "रिमोट एक्सेस लोड नहीं हो सका।",
       "loading": "रिमोट एक्सेस लोड हो रहा है…",
+      "manage": "कनेक्शन प्रबंधित करें",
+      "needsReload": "अनुमतियों की पुष्टि के लिए दोबारा लोड करें",
+      "noConnections": "कोई SSH या VNC कनेक्शन सेट नहीं है",
+      "noneAllowed": "इस चैट में किसी कनेक्शन को अनुमति नहीं है",
+      "notAllowed": "अनुमति नहीं है",
       "off": "बंद",
       "on": "चालू",
+      "reload": "दोबारा लोड करें",
       "requiresSsh": "SSH आवश्यक: {{name}}",
+      "saved": "इस चैट के लिए सहेजा गया",
+      "saveUnconfirmed": "बदलाव सहेजा गया या नहीं, इसकी पुष्टि नहीं हो सकी। फिर से बदलाव करने से पहले अनुमतियाँ दोबारा लोड करें।",
+      "saving": "सहेजा जा रहा है…",
+      "scope": "इस चैट में Okou जिन कनेक्शनों का उपयोग कर सकता है, उन्हें चुनें",
+      "showAll": "सभी कनेक्शन दिखाएँ",
       "sshDisabled": "SSH चालू करें: {{name}}",
       "sshEnabled": "SSH चालू: {{name}}",
       "title": "रिमोट एक्सेस",
@@ -3175,6 +3232,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} सदस्य",
     "affectedMembers_other": "{{count}} सदस्य",
+    "bindingUnavailable": "उपलब्ध नहीं",
     "cancel": "रद्द करें",
     "changed": "संपादन के दौरान यह Cloudflare Access बदल गया। आपके बदलाव सहेजे नहीं गए।",
     "clientIdPlaceholder": "Service Token का Client ID पेस्ट करें",
@@ -3187,7 +3245,7 @@
     "failed": "Cloudflare Access बदलाव सहेजा नहीं जा सका।",
     "forbidden": "साझा Cloudflare Access केवल संगठन के एडमिन बदल सकते हैं।",
     "impactChanged": "प्रभावित होस्ट बदल गए हैं। बदलाव लागू नहीं किया गया।",
-    "inUse": "एक SSH होस्ट इस Cloudflare Access का उपयोग कर रहा है। उसके स्वामी को पहले उसे फिर से बाँधना या हटाना होगा।",
+    "inUse": "यह Cloudflare Access अभी उपयोग में है। पहले इस पर निर्भर होस्ट और कस्टम कनेक्टर का बंधन हटाएँ या बदलें।",
     "invalidInput": "कुछ Cloudflare Access सेटिंग अमान्य हैं। फ़ील्ड जाँचें और फिर से कोशिश करें।",
     "loadFailed": "Cloudflare Access लोड नहीं हो सका।",
     "loading": "Cloudflare Access लोड हो रहा है…",
@@ -3421,6 +3479,8 @@
         "unshared": "किसी एजेंट के साथ साझा नहीं"
       },
       "filterWith": "फ़िल्टर: {{category}}",
+      "myOkouDescription": "अपने Okou के इस्तेमाल के लिए बाहरी सेवाएँ जोड़ें।",
+      "myOkouDescriptionWithCount": "अपने Okou के इस्तेमाल के लिए {{value}} सेवाएँ जोड़ें।",
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
@@ -5116,7 +5176,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5480,6 +5539,7 @@
     "modelTemporarilyUnavailable": "मॉडल अस्थायी रूप से उपलब्ध नहीं है",
     "modelUnavailable": "वर्तमान मॉडल उपलब्ध नहीं है।",
     "overloaded": "{{model}} पर अधिक लोड है। किसी दूसरे मॉडल पर स्विच करें।",
+    "providerBadRequest": "मॉडल प्रदाता ने एक त्रुटि लौटाई। फिर से कोशिश करें या जारी रखने के लिए दूसरा मॉडल चुनें।",
     "providerBalance": "आपके कनेक्ट किए गए सब्सक्रिप्शन खाते में पर्याप्त बैलेंस नहीं है।",
     "transient": "कुछ गड़बड़ हो गई।",
     "vm0Credits": "पर्याप्त क्रेडिट नहीं हैं। जारी रखने के लिए क्रेडिट जोड़ें या अपनी व्यक्तिगत Codex या Claude सदस्यता कनेक्ट करें।"
@@ -5504,6 +5564,11 @@
       "creditBalance_one": "{{value}} क्रेडिट",
       "creditBalance_other": "{{value}} क्रेडिट",
       "exportData": "डेटा निर्यात करें",
+      "help": {
+        "docs": "दस्तावेज़",
+        "keyboardShortcuts": "शॉर्टकट",
+        "label": "सहायता"
+      },
       "lab": "प्रयोगशाला",
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
@@ -6214,6 +6279,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "अनुपालन छिपाएँ",
       "link": "सुरक्षा विवरण",
       "status": {
         "aligned": "संरेखित",
@@ -6362,6 +6428,33 @@
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
   },
+  "sshAuthorization": {
+    "allow": "इस चैट में अनुमति दें",
+    "blocked": {
+      "chat_busy": "अनुमति देने से पहले इस चैट का मौजूदा Run पूरा होने दें।",
+      "host_changed": "होस्ट कॉन्फ़िगरेशन बदल गया है। नया अनुरोध करें।",
+      "permissions_required": "पहले संबंधित कनेक्टर अनुमतियाँ स्वीकृत करें।",
+      "run_active": "अनुमति देने से पहले अनुरोध करने वाला Run पूरा होने दें।",
+      "run_unavailable": "अनुरोध करने वाला Run उपलब्ध नहीं है। इस चैट में नया अनुरोध माँगें।",
+      "ssh_access_required": "पहले ज़रूरी SSH होस्ट को अनुमति दें।"
+    },
+    "continue": "कार्य जारी रखें",
+    "details": "ऐक्सेस का विवरण",
+    "effect": "ऐक्सेस बंद होने तक इस रिमोट उपयोगकर्ता के रूप में कमांड और फ़ाइल ट्रांसफ़र की अनुमति देता है।",
+    "failed": "कार्रवाई पूरी नहीं हो सकी। ऐक्सेस जाँचने और जारी रखने के लिए फिर कोशिश करें।",
+    "retry": "फिर कोशिश करें",
+    "scope": "यह होस्ट · केवल यह चैट",
+    "status": {
+      "approved": "SSH ऐक्सेस की अनुमति दी गई",
+      "denied": "SSH ऐक्सेस अस्वीकार किया गया",
+      "expired": "SSH अनुरोध की समय-सीमा समाप्त",
+      "pending": "SSH ऐक्सेस",
+      "revoked": "SSH ऐक्सेस रद्द किया गया",
+      "stale": "SSH अनुरोध बदला गया"
+    },
+    "title": "SSH ऐक्सेस",
+    "unavailable": "यह अनुरोध उपलब्ध नहीं है। नया अनुरोध करें।"
+  },
   "tailscale": {
     "changed": "यह Tailscale नेटवर्क बदल गया। आपके बदलाव सहेजे नहीं गए; आपका ड्राफ़्ट सुरक्षित है।",
     "delete": "Tailscale हटाएं",
@@ -6473,16 +6566,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "वर्कफ़्लो पर वापस जाएँ",
+      "disabled": "बंद",
       "disabledAt": "{{time}} पर बंद किया गया",
       "loadFailed": "यह ऑटोमेशन लोड नहीं हो सका",
       "loadingAutomation": "ऑटोमेशन लोड हो रहा है",
+      "notNow": "अभी नहीं",
       "otherWorkspace": "यह ऑटोमेशन {{workspace}} में है। इसे देखने के लिए वर्कस्पेस बदलें।",
-      "reason_one": "लगातार {{count}} निष्पादन विफलता के बाद अपने आप बंद कर दिया गया।",
-      "reason_other": "लगातार {{count}} निष्पादन विफलताओं के बाद अपने आप बंद कर दिया गया।",
+      "reason_one": "{{count}} रन विफल हुआ। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
+      "reason_other": "लगातार {{count}} रन विफल हुए। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
       "switchFailed": "वर्कस्पेस बदला नहीं जा सका। फिर से कोशिश करें या वर्कस्पेस चयन मेनू का उपयोग करें।",
       "switchWorkspace": "वर्कस्पेस बदलें",
       "systemManaged": "यह ऑटोमेशन सिस्टम द्वारा प्रबंधित है। इसकी वर्तमान स्थिति नीचे दिखाई गई है।",
       "systemSource": "सिस्टम सूचना",
+      "title": "ऑटोमेशन बंद है",
       "unavailable": "ऑटोमेशन नहीं मिला या आपको एक्सेस नहीं है",
       "viewAutomation": "ऑटोमेशन देखें",
       "workspace": "वर्कस्पेस",
@@ -6695,6 +6791,34 @@
       "via": "SSH होस्ट:"
     },
     "unavailable": "इस कार्यक्षेत्र में VNC उपलब्ध नहीं है।"
+  },
+  "vncAuthorization": {
+    "allow": "इस चैट में अनुमति दें",
+    "blocked": {
+      "chat_busy": "अनुमति देने से पहले इस चैट का मौजूदा Run पूरा होने दें।",
+      "host_changed": "होस्ट कॉन्फ़िगरेशन बदल गया है। नया अनुरोध करें।",
+      "permissions_required": "पहले संबंधित कनेक्टर अनुमतियाँ स्वीकृत करें।",
+      "run_active": "अनुमति देने से पहले अनुरोध करने वाला Run पूरा होने दें।",
+      "run_unavailable": "अनुरोध करने वाला Run उपलब्ध नहीं है। इस चैट में नया अनुरोध माँगें।",
+      "ssh_access_required": "पहले ज़रूरी SSH होस्ट को अनुमति दें।"
+    },
+    "continue": "कार्य जारी रखें",
+    "dependencies": "ज़रूरी SSH होस्ट (अलग से अनुमति दें)",
+    "details": "ऐक्सेस का विवरण",
+    "effect": "ऐक्सेस बंद किए जाने तक इस डेस्कटॉप को देखने और नियंत्रित करने की अनुमति देता है। SSH होस्ट के लिए अलग अनुमति चाहिए।",
+    "failed": "कार्रवाई पूरी नहीं हो सकी। ऐक्सेस जाँचने और जारी रखने के लिए फिर कोशिश करें।",
+    "retry": "फिर कोशिश करें",
+    "scope": "यह होस्ट · केवल यह चैट",
+    "status": {
+      "approved": "VNC ऐक्सेस की अनुमति दी गई",
+      "denied": "VNC ऐक्सेस अस्वीकार किया गया",
+      "expired": "VNC अनुरोध की समय-सीमा समाप्त",
+      "pending": "VNC ऐक्सेस",
+      "revoked": "VNC ऐक्सेस रद्द किया गया",
+      "stale": "VNC अनुरोध बदला गया"
+    },
+    "title": "VNC ऐक्सेस",
+    "unavailable": "यह अनुरोध उपलब्ध नहीं है। नया अनुरोध करें।"
   },
   "workflows": {
     "automations": {
@@ -7375,12 +7499,11 @@
       "codeInstructions": "जिस ईमेल पते को जोड़ना है, उससे यह कोड Okou को भेजें। इसे विषय या संदेश की पहली पंक्ति में लिखें।",
       "connected": "ईमेल कनेक्ट हो गया",
       "deleteAria": "{{email}} हटाएँ",
-      "description": "Okou को ईमेल करें और हर बातचीत अलग चैट में रखें",
+      "description": "ईमेल पर अपने Okou से बात करें",
       "emailAddress": "ईमेल पता",
       "healthNotice": "HIPAA के तहत आने वाली मरीज़ों की जानकारी के लिए इस इंटीग्रेशन का उपयोग न करें।",
       "invalidLink": "यह कनेक्शन लिंक अमान्य है। Okou को नया ईमेल भेजें।",
       "loadError": "आपका ईमेल कनेक्शन लोड नहीं हो सका",
-      "loginNotice": "आपका लॉगिन ईमेल हमेशा कनेक्ट रहता है।",
       "manage": "प्रबंधित करें",
       "manageDescription": "जिस ईमेल को जोड़ना है, उससे यह कोड भेजें।",
       "manageTitle": "ईमेल कनेक्शन",

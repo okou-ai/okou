@@ -48,7 +48,7 @@ export const clickProjectName$ = command(
     if (open) {
       event.preventDefault();
     }
-    // The second click of a rename double-click leaves the fold alone.
+    // A double-click counts once, so its second click leaves the fold alone.
     if (event.detail > 1) {
       return;
     }

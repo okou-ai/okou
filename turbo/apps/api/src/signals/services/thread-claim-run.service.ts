@@ -1,3 +1,8 @@
+import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
+import { buildEmailPrompt } from "./email-prompt";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
+import { renderRunPrompts } from "./run-prompt-and-skills";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
@@ -329,8 +334,6 @@ import {
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import {
-  type AdditionalVolumeSources,
-  type AgentRunCreateAdditionalVolume,
   prepareRunOutputMetadata,
   type ResolvedAgentExecution,
   type ResolvedRunExecution,
@@ -1099,6 +1102,22 @@ interface InternalRunCallbackInput {
   readonly payload: unknown;
 }
 
+function withEmailSystemPrompt(
+  plan: RunPlan,
+  appendSystemPrompt: string | null,
+): RunPlan {
+  if (appendSystemPrompt === null) {
+    return plan;
+  }
+  const body = { ...plan.persisted.body, appendSystemPrompt };
+  return {
+    ...plan,
+    args: { ...plan.args, body: { ...plan.args.body, appendSystemPrompt } },
+    persisted: { ...plan.persisted, body },
+    runner: { ...plan.runner, body },
+  };
+}
+
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
     args: claimCommitArguments(input.args),
@@ -1291,7 +1310,15 @@ export function createThreadClaimRunObjects(
             "top_level",
             committedAt - requestReceivedAt,
             committedAt,
-            { capture_scope: "request_observed_commit" },
+            {
+              capture_scope: "request_observed_commit",
+              ...(requestFacts?.input.enqueueObservationId
+                ? {
+                    enqueue_observation_id:
+                      requestFacts.input.enqueueObservationId,
+                  }
+                : {}),
+            },
           );
         }
         timing.recordDuration(
@@ -2035,7 +2062,13 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      workflowName: event.workflowName,
+      // Staff migration retains queued event bytes while reassigning the live
+      // Automation. Resolve its new execution name without rewriting history.
+      // Remove after every pre-cutover queued input has drained.
+      workflowName:
+        target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
+          ? target.workflow.name
+          : event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
       automation: target.automation,
@@ -2949,8 +2982,6 @@ export function createThreadClaimRunObjects(
       officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
-      body,
-      resolved,
     });
     return {
       body,
@@ -3439,7 +3470,11 @@ export function createThreadClaimRunObjects(
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      bodyOverride: BuildRunnerJobPayloadInput["body"] | undefined,
+      signal: AbortSignal,
+    ) => {
       const args = await get(runnerArgs$);
       signal.throwIfAborted();
       if (!args || isRouteError(args)) {
@@ -3453,7 +3488,7 @@ export function createThreadClaimRunObjects(
       // Keep acquisition before storage preparation without retaining the DB.
       set(writeDb$);
       return prepareRunnerLaunchInput({
-        args,
+        args: bodyOverride ? { ...args, body: bodyOverride } : args,
         okouToken,
         disabledPaidTools,
         previewBypassAuthorized: !!get(previewAutomationBypass$),
@@ -3516,9 +3551,13 @@ export function createThreadClaimRunObjects(
     return get(preparedStorage$);
   });
   const prepareRunnerStorage$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      bodyOverride: BuildRunnerJobPayloadInput["body"] | undefined,
+      signal: AbortSignal,
+    ) => {
       const [input, preparedStorage, piSessionId] = await Promise.all([
-        set(prepareRunnerInput$, signal),
+        set(prepareRunnerInput$, bodyOverride, signal),
         get(preparedStorage$),
         get(piSessionId$),
       ]);
@@ -3667,13 +3706,80 @@ export function createThreadClaimRunObjects(
       return head;
     },
   );
+  const prepareEmailSystemPrompt$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+      const email = await get(threadContext.emailContext$);
+      signal.throwIfAborted();
+      if (!email) {
+        return null;
+      }
+      const mailboxes = await get(threadContext.emailMailboxConnections$);
+      signal.throwIfAborted();
+      if (mailboxes.length === 0) {
+        return null;
+      }
+      const [snapshot, policies, featureSwitchContext, promptAndSkills] =
+        await Promise.all([
+          get(bootstrap.catalog$),
+          get(bootstrap.permissionPolicies$),
+          get(bootstrap.featureSwitches$),
+          get(promptAndSkillVolumes$),
+        ]);
+      signal.throwIfAborted();
+      if (!snapshot) {
+        throw new Error(
+          "Email mailbox context requires its authorized catalog",
+        );
+      }
+      const messageContext = await set(
+        loadEmailSourceMessageContext$,
+        {
+          email,
+          mailboxes,
+          snapshot,
+          policies,
+          featureSwitchContext,
+          orgId: bootstrap.orgId,
+          userId: bootstrap.userId,
+        },
+        signal,
+      );
+      return renderRunPrompts({
+        systemPromptVariables: {
+          ...promptAndSkills.systemPromptVariables,
+          integrationContext: buildEmailPrompt(
+            email,
+            resolveIntegrationNotePrompt({
+              triggerSource: "email",
+              featureSwitchContext,
+              emailHasConnectedMailbox: true,
+            }),
+            mailboxes,
+            messageContext,
+          ),
+        },
+        userPromptVariables: { message: promptAndSkills.userPrompt },
+        skillVolumes: promptAndSkills.skillVolumes,
+      }).systemPrompt;
+    },
+  );
   /** Runner input owns the random token; storage then reads its result. */
   const prepareRunnerResources$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [plan, storage] = await Promise.all([
-        get(runPlan$),
-        set(prepareRunnerStorage$, signal),
-      ]);
+      const original = await get(runPlan$);
+      signal.throwIfAborted();
+      const plan =
+        original && !isRouteError(original)
+          ? withEmailSystemPrompt(
+              original,
+              await set(prepareEmailSystemPrompt$, signal),
+            )
+          : original;
+      const storage = await set(
+        prepareRunnerStorage$,
+        plan && !isRouteError(plan) ? plan.runner.body : undefined,
+        signal,
+      );
       signal.throwIfAborted();
       const runnerInput: RunnerInputResult =
         storage && !isRouteError(storage) ? storage.input : storage;
@@ -4160,6 +4266,18 @@ export function createThreadClaimRunObjects(
         // telemetry or cancellation fails. Never reject its consumed input.
         if (get(internalCommittedRunId$) !== null) {
           throw settled.error;
+        }
+        // Temporary staff cutover reader: a preparation can capture the old
+        // Chat binding just before SQL reassigns it. The atomic binding fence
+        // rolled back publication; keep its input queued for a fresh normal
+        // pick instead of permanently rejecting it. No admission guard is
+        // bypassed. Remove after pre-cutover request preparations have drained
+        // and their rollback consumers are excluded (#46783).
+        if (
+          claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+          settled.error instanceof ChatThreadBindingChanged
+        ) {
+          return null;
         }
         await settle(
           set(
@@ -5011,25 +5129,10 @@ interface BuildRunnerJobPayloadInput {
   readonly body: CreateRunBody;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly apiStartTime: number | undefined;
-  readonly additionalVolumes:
-    readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly chatThreadId: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
-}
-
-function protectedWorkflowMountPaths(
-  volumes: readonly AgentRunCreateAdditionalVolume[] | undefined,
-  sources: AdditionalVolumeSources,
-) {
-  return (volumes ?? []).flatMap((volume, index) => {
-    const source = sources?.[index];
-    return source === "request_additional_volume" || source === "unknown"
-      ? [volume.mountPath]
-      : [];
-  });
 }
 
 /** Capture selectors and request receipts only; Claim owns runtime assembly. */
@@ -5056,15 +5159,9 @@ function prepareRunnerLaunchInput(input: {
             ...(args.workflowAutomationId === null
               ? {}
               : { automationId: args.workflowAutomationId }),
-            protectedMountPaths: [
-              ...protectedWorkflowMountPaths(
-                args.additionalVolumes,
-                args.additionalVolumeSources,
-              ),
-              ...(args.templateGuidanceBundles ?? []).map(
-                templateGuidanceMountPath,
-              ),
-            ],
+            protectedMountPaths: (args.templateGuidanceBundles ?? []).map(
+              templateGuidanceMountPath,
+            ),
           },
         }
       : {}),
@@ -5292,7 +5389,6 @@ function createRunBody(args: {
   return {
     prompt: args.prompt.userPrompt,
     agentId: args.agent.id,
-    additionalVolumes: args.body.additionalVolumes,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
     permissionPolicies: args.permissionPolicies ?? undefined,

@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { createHash } from "node:crypto";
+import { cloudflareCustomConnectorReferencesQuery } from "./cloudflare-custom-connector-references";
 import type {
   ScopedCloudflareAccessConfig,
   CreateCloudflareAccessConfigRequest,
@@ -32,6 +34,11 @@ import {
   type NetworkReference,
 } from "./network-config-model";
 import { publishNetworkHostInvalidation$ } from "./network-config-invalidation.service";
+import {
+  publishConnectorRuntimeSyncWakeups$,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+} from "./connector-runtime-wakeup.service";
+import { rootSignal$ } from "../context/root";
 
 interface Owner {
   readonly orgId: string;
@@ -79,7 +86,8 @@ const failures = {
   inUse: {
     kind: "conflict",
     code: CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE,
-    message: "Cloudflare Access is used by an SSH host",
+    message:
+      "Cloudflare Access is still in use. Unbind or rebind its dependent hosts and custom connectors first.",
   },
   exhausted: {
     kind: "conflict",
@@ -123,21 +131,34 @@ function organizationConfig(owner: Owner, id: string) {
 function response(
   row: Metadata,
   references: readonly NetworkReference[],
+  customConnectors?: readonly {
+    id: string;
+    displayName: string;
+    kind: "http" | "mcp";
+  }[],
 ): ScopedCloudflareAccessConfig {
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ...networkHostMetadata(references),
+    ...(customConnectors === undefined
+      ? {}
+      : { customConnectors: [...customConnectors] }),
   };
 }
 export const listCloudflareAccessConfigs$ = command(
-  async ({ set }, owner: Owner): Promise<ScopedCloudflareAccessConfig[]> => {
+  async (
+    { set },
+    owner: Owner,
+    includeCustomConnectors = false,
+  ): Promise<ScopedCloudflareAccessConfig[]> => {
+    const db = set(writeDb$);
     const { table, refs, predicate } = networkConfigListReads(
       "cloudflare_access",
       owner,
     );
-    const rows = await set(writeDb$)
+    const rows = await db
       .select({ config: metadata, host: { ...refs._.selectedFields } })
       .from(table)
       .leftJoinLateral(refs, eq(refs.userId, owner.userId))
@@ -163,8 +184,27 @@ export const listCloudflareAccessConfigs$ = command(
         entry.hosts.push(host);
       }
     }
+    const connectorReferences = includeCustomConnectors
+      ? await db
+          .select()
+          .from(
+            cloudflareCustomConnectorReferencesQuery(owner.orgId).as(
+              "listed_cloudflare_connectors",
+            ),
+          )
+      : undefined;
     return [...configs.values()].map(({ config, hosts }) => {
-      return response(config, hosts);
+      return response(
+        config,
+        hosts,
+        connectorReferences
+          ?.filter((ref) => {
+            return ref.configId === config.id;
+          })
+          .map(({ id, displayName, kind }) => {
+            return { id, displayName, kind };
+          }),
+      );
     });
   },
 );
@@ -270,11 +310,12 @@ function ownReferences(hosts: readonly NetworkReference[], owner: Owner) {
 }
 const publishUpdateInvalidation$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly actor: Actor;
       readonly scope: AccessScope;
       readonly affectedHosts: readonly NetworkReference[];
+      readonly rotatedConfigId?: string;
     },
   ) => {
     await publishCloudflareAccessClientInvalidation(args.actor, args.scope);
@@ -282,6 +323,35 @@ const publishUpdateInvalidation$ = command(
       orgId: args.actor.orgId,
       hosts: args.affectedHosts,
     });
+    if (args.scope === "organization" && args.rotatedConfigId) {
+      const references = cloudflareCustomConnectorReferencesQuery(
+        args.actor.orgId,
+        args.rotatedConfigId,
+      ).as("rotated_cloudflare_connector_references");
+      const dependents = await settle(
+        get(db$).select({ id: references.id }).from(references),
+      );
+      if (!dependents.ok) {
+        reportConnectorRuntimeWakeupDiscoveryFailure({
+          orgId: args.actor.orgId,
+          scopedToUser: false,
+          scopedToAgent: false,
+          targetCount: 0,
+          error: dependents.error,
+        });
+        return;
+      }
+      await set(
+        publishConnectorRuntimeSyncWakeups$,
+        {
+          scope: { orgId: args.actor.orgId },
+          targets: dependents.value.map(({ id }) => {
+            return { kind: "custom" as const, customConnectorId: id };
+          }),
+        },
+        get(rootSignal$),
+      );
+    }
   },
 );
 
@@ -409,6 +479,7 @@ export const updateCloudflareAccessConfig$ = command(
       actor: args.owner,
       scope: result.scope,
       affectedHosts: result.invalidatedHosts,
+      rotatedConfigId: args.configId,
     });
     return {
       ok: true as const,
@@ -486,6 +557,7 @@ const previewCloudflareAccessImpact$ = command(
     { set },
     args: ConfigArgs & {
       readonly operation: "convert" | "delete";
+      readonly includeCustomConnectors?: boolean;
     },
   ) => {
     if (args.operation === "delete" && args.owner.orgRole !== "admin") {
@@ -508,6 +580,27 @@ const previewCloudflareAccessImpact$ = command(
       args.configId,
     ).as("cloudflare_impact_hosts");
     const hosts = await db.select().from(query);
+    const customConnectors = await db
+      .select()
+      .from(
+        cloudflareCustomConnectorReferencesQuery(
+          args.owner.orgId,
+          args.configId,
+        ).as("impact_cloudflare_connectors"),
+      );
+    const hostSnapshot = networkImpactSnapshot(config, hosts);
+    const impactSnapshot =
+      customConnectors.length === 0
+        ? hostSnapshot
+        : createHash("sha256")
+            .update(
+              `${hostSnapshot}:${customConnectors
+                .map((ref) => {
+                  return `${ref.id}:${ref.storageVersion}`;
+                })
+                .join(",")}`,
+            )
+            .digest("hex");
     const others = hosts.filter((host) => {
       return host.userId !== args.owner.userId;
     });
@@ -526,13 +619,25 @@ const previewCloudflareAccessImpact$ = command(
         ].sort((a, b) => {
           return a.localeCompare(b);
         }),
-        impactSnapshot: networkImpactSnapshot(config, hosts),
+        impactSnapshot,
+        ...(args.includeCustomConnectors
+          ? {
+              customConnectors: customConnectors.map(
+                ({ id, displayName, kind }) => {
+                  return { id, displayName, kind };
+                },
+              ),
+            }
+          : {}),
       },
     };
   },
 );
 export const previewCloudflareAccessDeletion$ = command(
-  async ({ set }, args: ConfigArgs) => {
+  async (
+    { set },
+    args: ConfigArgs & { readonly includeCustomConnectors?: boolean },
+  ) => {
     return await set(previewCloudflareAccessImpact$, {
       ...args,
       operation: "delete",
@@ -540,7 +645,10 @@ export const previewCloudflareAccessDeletion$ = command(
   },
 );
 export const previewCloudflareAccessConversion$ = command(
-  async ({ set }, args: ConfigArgs) => {
+  async (
+    { set },
+    args: ConfigArgs & { readonly includeCustomConnectors?: boolean },
+  ) => {
     return await set(previewCloudflareAccessImpact$, {
       ...args,
       operation: "convert",

@@ -863,16 +863,14 @@ def model_json_scalar_fields() -> dict:
 
 def model_json_usage_from_result(
     result: JsonExtractionResult,
-) -> tuple[dict | None, str | None]:
+) -> dict | None:
     """Map one complete shared JSON extraction into Responses usage."""
 
-    if not result.complete:
-        return None, result.error
     usage: dict = {}
     _store_response_values(result.values, usage)
     if not any(category in usage for category in MODEL_USAGE_CATEGORIES):
-        return None, None
-    return usage, None
+        return None
+    return usage
 
 
 def extract_openai_responses_usage_from_event(

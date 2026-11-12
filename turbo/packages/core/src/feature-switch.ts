@@ -46,6 +46,21 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SshChatApproval]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Remote host chat approval",
+    description:
+      "Review SSH and VNC host access in chat and continue after approval.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Custom connector Cloudflare Access",
+    description:
+      "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",
@@ -61,7 +76,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Email Okou and continue each email conversation in its own chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+    enabledEmailHashes: [
+      fnv1a("yuma@vm0.ai"),
+      fnv1a("qa-signup-20261112-21e53024@okou.io"),
+    ],
   },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
@@ -85,6 +103,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "My Okou",
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouAnimatedAvatar]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Animated Okou avatar",
+    description:
+      "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -141,6 +167,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactPreviewToolbar]: {
     maintainer: "bingjie@okou.ai",
@@ -194,6 +221,22 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
   },
+  [FeatureSwitchKey.FreePlanArtifactPaywall]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Free plan artifact paywall",
+    description:
+      "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.BillingSurvey]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Billing one-question surveys",
+    description:
+      "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -225,13 +268,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.BrowserNativeInput]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Create native web forms that apply user-provided values to exact managed Browser controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.BrowserSharedOwner]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Shared Browser",
@@ -248,11 +284,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.MercuryConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mercury banking connector",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {

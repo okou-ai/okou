@@ -53,6 +53,7 @@ import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-sn
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
+import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
@@ -78,6 +79,7 @@ import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-stora
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
+import { validateCustomConnectorCloudflareStorage } from "./test-custom-connector-cloudflare-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
@@ -1520,7 +1522,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "58aacbf9b312b8369002b5504da92f2f",
+    bodyHash: "f2e5f682ff62b79b2310e58ce21e4d39",
   },
   {
     schemaName: "public",
@@ -3184,12 +3186,6 @@ async function main(): Promise<void> {
     console.log("=== Frozen template guidance backfill CLI ===");
     console.log(
       execCommand(
-        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts",
-        { cwd: PACKAGE_DIR },
-      ),
-    );
-    console.log(
-      execCommand(
         "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
@@ -3230,6 +3226,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
+    await validateCustomConnectorCloudflareStorage(dbUrl1);
     await validatePermanentNativeVncStorage(dbUrl1);
     await validateTeamsIdentityRetirement(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
@@ -3245,6 +3242,7 @@ async function main(): Promise<void> {
     // Transition regression uses retained SQL before fresh-schema generation.
     await validateOfficialWorkflowStorageRetirement(dbUrl1);
     await validateWorkflowPublicationContraction(dbUrl1);
+    await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
@@ -3286,6 +3284,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
+    await validateCustomConnectorCloudflareStorage(dbUrl2);
     await validateCanonicalBillingSources(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
     await validateTeamsIdentityRetirement(dbUrl2);

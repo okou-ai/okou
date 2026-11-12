@@ -275,7 +275,26 @@ impl Firewall {
 
 /// A single firewall API entry with base URL and auth headers for proxy-side matching.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum CustomConnectorNetworkIntent {
+    #[serde(rename = "direct")]
+    Direct,
+    #[serde(rename = "cloudflare_access")]
+    CloudflareAccess {
+        #[serde(rename = "configId")]
+        config_id: String,
+        generation: u32,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FirewallApi {
+    #[serde(
+        default,
+        rename = "networkIntent",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub network_intent: Option<CustomConnectorNetworkIntent>,
     /// Stable API identifier used as one component of mitm-addon auth cache keys.
     /// Builtin catalogs leave this empty for the Python registry loader to
     /// assign. Synced custom connector firewalls provide a stable ID.
@@ -295,6 +314,9 @@ pub struct FirewallApi {
 
 impl FirewallApi {
     fn validate_for_cache(&self) -> Result<(), String> {
+        if self.network_intent.is_some() {
+            return Err("network intent is only valid for custom connector runtime".to_string());
+        }
         if !self.id.is_empty() {
             return Err("id must be empty because the runner assigns api ids".to_string());
         }
@@ -1766,6 +1788,8 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    /// Host-local ingress service activity, not public reachability or admission.
+    pub ingress_service_active: bool,
     /// Configured advisory host identity, independent of cache contents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_hostname: Option<String>,

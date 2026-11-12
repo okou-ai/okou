@@ -2,10 +2,11 @@ use std::io;
 use std::time::Duration;
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, MSG_ERROR, MSG_HOME_DRIVE_MOUNT_RESULT,
-    decode_home_drive_mount_result, encode_home_drive_mount_request_frame_into,
+    ExecTermination, MSG_ERROR, MSG_HOME_DRIVE_MOUNT_RESULT, decode_home_drive_mount_result,
+    encode_home_drive_mount_request_frame_into,
 };
 
+use crate::helper_output::owned_capture;
 use crate::{
     FrameWriteObserver, GuestControlClient,
     normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
@@ -105,8 +106,8 @@ fn decode_result(response: guest_control_proto::RawMessage) -> io::Result<HomeDr
 
     let decoded =
         decode_home_drive_mount_result(&response.payload).map_err(protocol_invalid_data)?;
-    let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
-    let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+    let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "home drive mount", "stdout")?;
+    let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "home drive mount", "stderr")?;
     Ok(HomeDriveMountResult {
         termination: decoded.termination,
         duration_ms: decoded.duration_ms,
@@ -116,16 +117,6 @@ fn decode_result(response: guest_control_proto::RawMessage) -> io::Result<HomeDr
         stderr_truncated,
         diagnostic: decoded.diagnostic.to_owned(),
     })
-}
-
-fn owned_capture(output: ExecCapturedOutput<'_>, name: &str) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecCapturedOutput::Captured { bytes, truncated } => Ok((bytes.to_vec(), truncated)),
-        ExecCapturedOutput::Discarded => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("home drive mount result discarded {name}"),
-        )),
-    }
 }
 
 fn protocol_invalid_input(error: impl ToString) -> io::Error {

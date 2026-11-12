@@ -62,6 +62,7 @@ import {
   billingRedeemContract as OriginalBillingRedeemContract,
   billingRestoreContract as OriginalBillingRestoreContract,
   billingStatusContract as OriginalBillingStatusContract,
+  billingSurveyContract as OriginalBillingSurveyContract,
   billingUsagePackCatalogContract as OriginalBillingUsagePackCatalogContract,
   billingUsagePackCheckoutContract as OriginalBillingUsagePackCheckoutContract,
   billingUsagePackCreditsContract as OriginalBillingUsagePackCreditsContract,
@@ -81,6 +82,7 @@ import {
   billingRedeemContract,
   billingRestoreContract,
   billingStatusContract,
+  billingSurveyContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
@@ -660,6 +662,8 @@ import { slackOauthContract as OriginalSlackOauthContract } from "../contracts/s
 import { slackOauthContract } from "./slack-oauth";
 import { sshHostsContract as OriginalSshHostsContract } from "../contracts/ssh-access";
 import { sshHostsContract } from "./ssh-access";
+import { sshAuthorizationContract as OriginalSshAuthorizationContract } from "../contracts/ssh-authorization";
+import { sshAuthorizationContract } from "./ssh-authorization";
 import { sshConnectionsContract as OriginalSshConnectionsContract } from "../contracts/ssh-connections";
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
@@ -702,6 +706,8 @@ import { userTemplatesContract as OriginalUserTemplatesContract } from "../contr
 import { userTemplatesContract } from "./user-templates";
 import { vncHostsContract as OriginalVncHostsContract } from "../contracts/vnc-access";
 import { vncHostsContract } from "./vnc-access";
+import { vncAuthorizationContract as OriginalVncAuthorizationContract } from "../contracts/vnc-authorization";
+import { vncAuthorizationContract } from "./vnc-authorization";
 import { vncConnectionsContract as OriginalVncConnectionsContract } from "../contracts/vnc-connections";
 import { vncConnectionsContract } from "./vnc-connections";
 import { vncCredentialsContract as OriginalVncCredentialsContract } from "../contracts/vnc-credentials";
@@ -823,6 +829,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [billingRedeemContract, OriginalBillingRedeemContract],
   [billingRestoreContract, OriginalBillingRestoreContract],
   [billingStatusContract, OriginalBillingStatusContract],
+  [billingSurveyContract, OriginalBillingSurveyContract],
   [billingUsagePackCatalogContract, OriginalBillingUsagePackCatalogContract],
   [billingUsagePackCheckoutContract, OriginalBillingUsagePackCheckoutContract],
   [billingUsagePackCreditsContract, OriginalBillingUsagePackCreditsContract],
@@ -1289,6 +1296,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [slackOauthCallbackContract, OriginalSlackOauthCallbackContract],
   [slackOauthContract, OriginalSlackOauthContract],
   [sshHostsContract, OriginalSshHostsContract],
+  [sshAuthorizationContract, OriginalSshAuthorizationContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
   [suggestionsContract, OriginalSuggestionsContract],
@@ -1313,6 +1321,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
   [vncHostsContract, OriginalVncHostsContract],
+  [vncAuthorizationContract, OriginalVncAuthorizationContract],
   [vncConnectionsContract, OriginalVncConnectionsContract],
   [vncCredentialsContract, OriginalVncCredentialsContract],
   [voiceIoPolishSegmentsContract, OriginalVoiceIoPolishSegmentsContract],

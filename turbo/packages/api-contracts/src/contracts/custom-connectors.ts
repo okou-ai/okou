@@ -37,6 +37,7 @@ import { initContract, authHeadersSchema } from "./base";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
 import { connectorAccountMutationIntentSchema } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
+import { customConnectorCloudflareBindingSchema } from "../validators/custom-connector-network";
 
 export {
   CUSTOM_CONNECTOR_INJECTION_TEMPLATE_MAX_CHARS,
@@ -148,7 +149,12 @@ export function isHttpCustomConnectorResponse(
   return connector.kind === "http";
 }
 
+const networkBindingWriteSchema = customConnectorCloudflareBindingSchema
+  .nullable()
+  .optional();
+
 const customConnectorDefinitionWriteBaseSchema = object({
+  networkBinding: networkBindingWriteSchema,
   displayName: string().min(1).max(128),
   fields: array(customConnectorFieldSchema),
   headerInjections: array(customConnectorHeaderInjectionSchema),
@@ -381,6 +387,7 @@ export type SetCustomConnectorValuesBody = zInfer<
 >;
 
 export const customConnectorProposalSchema = object({
+  networkBinding: networkBindingWriteSchema,
   operation: zEnum(["create", "update"]),
   connectorId: uuid().optional(),
   displayName: string().min(1).max(128),

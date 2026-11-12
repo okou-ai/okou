@@ -17,48 +17,60 @@ import {
 
 const context = testContext();
 
-test.each(["agent", "thread"] as const)(
-  "Whitespace-only %s drafts clear saved content without trimming meaningful text",
-  async (kind) => {
-    const thread = continuityThread(41, 1, "Whitespace draft conversation");
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 41,
-      threads: [thread],
-    });
-    let agentDraft = textContinuityDraft("");
-    const agentPatches: ComposerDraft[] = [];
-    context.mocks.api(agentDraftContract.get, ({ respond }) => {
-      return respond(200, agentDraft);
-    });
-    context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
-      agentDraft = {
-        draftUserMessage: body.draftUserMessage,
-        draftAttachments: body.draftAttachments ?? null,
-      };
-      agentPatches.push(agentDraft);
-      return respond(204);
-    });
-    const latestPatch = () => {
-      return kind === "agent"
-        ? agentPatches.at(-1)
-        : workspace.draftPatches.at(-1);
+async function openWhitespaceDraft(kind: "agent" | "thread") {
+  const thread = continuityThread(41, 1, "Whitespace draft conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 41,
+    threads: [thread],
+  });
+  let agentDraft = textContinuityDraft("");
+  const agentPatches: ComposerDraft[] = [];
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, agentDraft);
+  });
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    agentDraft = {
+      draftUserMessage: body.draftUserMessage,
+      draftAttachments: body.draftAttachments ?? null,
     };
+    agentPatches.push(agentDraft);
+    return respond(204);
+  });
+  const latestPatch = () => {
+    return kind === "agent"
+      ? agentPatches.at(-1)
+      : workspace.draftPatches.at(-1);
+  };
 
-    await setupPage({
-      context,
-      path:
-        kind === "agent"
-          ? `/agents/${thread.agentId}/chat`
-          : `/chats/${thread.id}`,
-      ...workspace.pageOptions,
-    });
-    const composer = await screen.findByRole("textbox", { name: "Message" });
+  await setupPage({
+    context,
+    path:
+      kind === "agent"
+        ? `/agents/${thread.agentId}/chat`
+        : `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  return { composer, latestPatch };
+}
+
+test.each(["agent", "thread"] as const)(
+  "A blank %s draft stays empty after whitespace-only input",
+  async (kind) => {
+    const { composer, latestPatch } = await openWhitespaceDraft(kind);
     const empty = { draftUserMessage: null, draftAttachments: null };
     await fill(composer, " \t ");
     await waitFor(() => {
       expect(latestPatch()).toMatchObject(empty);
     });
+  },
+);
 
+test.each(["agent", "thread"] as const)(
+  "Whitespace-only %s drafts clear saved content without trimming meaningful text",
+  async (kind) => {
+    const { composer, latestPatch } = await openWhitespaceDraft(kind);
+    const empty = { draftUserMessage: null, draftAttachments: null };
     const text = "  Keep this draft\n\n    indented line  ";
     await fill(composer, text);
     await waitFor(() => {

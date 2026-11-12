@@ -7,7 +7,6 @@ struct ChatDetailView: View {
   let agents: ThreadListStore?
   var didSend: (@MainActor () async -> Void)? = nil
   let topContentInset: CGFloat
-  let sidebar: SidebarInteraction?
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
   private var thread: ChatThread { conversation.thread }
@@ -26,14 +25,13 @@ struct ChatDetailView: View {
     conversation: ConversationStore, agents: ThreadListStore? = nil,
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
-    sidebar: SidebarInteraction? = nil, mentionSource: ComposerMentionSource? = nil,
+    mentionSource: ComposerMentionSource? = nil,
     onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.agents = agents
     self.didSend = didSend
     self.topContentInset = topContentInset
-    self.sidebar = sidebar
     self.mentionSource = mentionSource
     self.onFirstMessagePresented = onFirstMessagePresented
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
@@ -189,7 +187,7 @@ struct ChatDetailView: View {
         top: topContentInset, leading: 0, bottom: composerHeight, trailing: 0),
       anchor: scrolling.anchor,
       scroll: scrolling.scroll,
-      followsBottom: scrolling.followsBottom, sidebar: sidebar,
+      followsBottom: scrolling.followsBottom,
       sendTransition: scrolling.sendTransition,
       isLoadingHistory: conversation.isLoading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
@@ -373,8 +371,8 @@ struct ChatDetailView: View {
   {
     switch row {
     case .failure(let message, let state, let topSpacing, let providerMessage):
-      AssistantFailureCard(
-        state: state, conversation: conversation, providerMessage: providerMessage
+      AssistantFailureRecoveryCard(
+        failure: state.failure, conversation: conversation, providerMessage: providerMessage
       )
       .background {
         if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }

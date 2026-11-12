@@ -9,10 +9,14 @@ Like Desktop, publication uses GitHub-hosted macOS and the existing `production`
 environment approval. No local Mac, Apple account password, external beta review,
 or App Store release submission is part of routine publication. The release job
 checks out the exact release target and consumes its verified, immutable device
-archive from merge-group CI. It signs/exports an **internal-only** IPA and uploads
-it to App Store Connect without resolving packages, compiling, or retesting.
-An internal-only build cannot later be used for external testing or an App Store
-release; that would require a new build and a deliberate export-policy change.
+archive from merge-group CI. It signs/exports a standard **TestFlight & App Store**
+IPA (`testFlightInternalTestingOnly=false`) and uploads it to App Store Connect
+without resolving packages, compiling, or retesting. Automated distribution still
+assigns builds only to the configured internal group. After internal acceptance,
+select the same build in App Store Connect for external testing and submit it for
+TestFlight App Review, or submit it separately for an App Store release. Neither
+review nor external distribution is automatic. Previously uploaded internal-only
+builds remain restricted; this policy applies only to newly exported uploads.
 
 ## One-time setup
 
@@ -26,12 +30,14 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    assigns each processed build to this group; automatic distribution may also
    be enabled in App Store Connect.
 3. Provision an **Apple Distribution** certificate and its private key, plus
-   separate **App Store Connect** distribution profiles for `ai.okou.ios` and
-   `ai.okou.ios.notifications`. Register the latter as an explicit iOS App ID.
-   Enable the App Group `group.ai.okou.ios` on both identifiers and profiles;
-   retain production Push Notifications on the main app. Both bundles request
-   the existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
-   sessions. The extension does not need a separate APNs key or push topic.
+   separate **App Store Connect** distribution profiles for `ai.okou.ios`,
+   `ai.okou.ios.notifications` and `ai.okou.ios.widgets`. Register both
+   extensions as explicit iOS App IDs. Enable the App Group `group.ai.okou.ios`
+   on all three identifiers and profiles; retain production Push Notifications
+   on the main app. The app and the notification extension request the
+   existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
+   sessions; the widget extension only reads the App Group and requests no
+   Keychain group. Neither extension needs a separate APNs key or push topic.
    The Desktop Developer ID Application certificate is not suitable for iOS.
    Store the following secrets in GitHub's existing `production` environment
    and retain recoverable copies in the Production vault:
@@ -42,6 +48,7 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | `IOS_DISTRIBUTION_P12_PASSWORD`             | Password protecting that export                                                   |
    | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app distribution profile with the shared App Group             |
    | `IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64` | Base64 of the notification extension distribution profile with the same App Group |
+   | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the same App Group       |
 
    Before storing the PKCS#12 export, verify it with macOS `security import`
    in a disposable keychain and confirm that it lists the Apple Distribution
@@ -165,7 +172,7 @@ bash .github/scripts/tests/ios-testflight-workflow-test.sh
 ```
 
 The HTTP tests use a real loopback server and generated test signing keys. They
-cover JWT verification, pagination, internal-only enforcement, build selection,
+cover JWT verification, pagination, internal-group enforcement, build selection,
 processing, persistent group assignment, access errors, and timeout behavior.
 They do not upload an app, read production data, or replace a signed CI archive
 and TestFlight installation check.

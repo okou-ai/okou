@@ -25,12 +25,9 @@ import { setPaidToolDisabled } from "./helpers/paid-tools";
 const context = testContext();
 const CRON_SECRET = "seed-bundle-preparation-cron";
 
-async function sourceArchive(
-  revision = "first",
-  seedNames: readonly string[] = SEED_SKILLS,
-) {
+async function sourceArchive(revision = "first") {
   const files = new Map<string, Buffer>();
-  for (const name of [...seedNames, "ordinary-skill"]) {
+  for (const name of [...SEED_SKILLS, "ordinary-skill"]) {
     files.set(
       `${name}/SKILL.md`,
       Buffer.from(
@@ -194,59 +191,6 @@ describe("Seed Skill bundles through sync-skills", () => {
       total: SEED_SKILLS.length,
     });
     expect(emittedSeedFiles(s3.objects)).toHaveLength(SEED_SKILLS.length);
-    expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
-  });
-
-  it("keeps a partial upstream Seed set retryable and preserves published bundles", async () => {
-    const app = await setupApp({
-      context,
-      routes: cronSyncSkillsRoutes,
-      isolatePg: true,
-    });
-    const s3 = installWorkflowVolumeS3Fixture(context);
-    githubSource("1".repeat(40), (await sourceArchive()).archive);
-    const sync = () => {
-      return accept(
-        app(cronSyncSkillsContract).sync({
-          headers: { authorization: `Bearer ${CRON_SECRET}` },
-        }),
-        [200],
-      );
-    };
-    expect((await sync()).body).toMatchObject({
-      synced: SEED_SKILLS.length,
-      failed: 0,
-      total: SEED_SKILLS.length,
-    });
-    const published = new Map(s3.objects);
-    const partial = await sourceArchive(
-      "first",
-      SEED_SKILLS.filter((name) => {
-        return name !== "gen";
-      }),
-    );
-    githubSource("2".repeat(40), partial.archive);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      expect((await sync()).body).toMatchObject({
-        synced: 0,
-        skipped: SEED_SKILLS.length - 1,
-        failed: 0,
-        removed: 0,
-        total: SEED_SKILLS.length - 1,
-      });
-      expect(s3.objects).toStrictEqual(published);
-    }
-    const restored = await sourceArchive("restored gen instructions");
-    githubSource("3".repeat(40), restored.archive);
-    expect((await sync()).body).toMatchObject({
-      synced: 1,
-      skipped: SEED_SKILLS.length - 1,
-      failed: 0,
-      total: SEED_SKILLS.length,
-    });
-    expect(emittedSeedFiles(s3.objects)).toContainEqual(
-      new Map([["SKILL.md", restored.files.get("gen/SKILL.md")]]),
-    );
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 

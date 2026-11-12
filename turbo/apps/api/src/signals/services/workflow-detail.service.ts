@@ -137,6 +137,7 @@ export const workflowDetail$ = command(
               orgId: args.orgId,
               workflowId: workflow.id,
               attachments: workflow.attachments,
+              contentBundle: workflow.contentBundle,
             }),
           )
         : null;

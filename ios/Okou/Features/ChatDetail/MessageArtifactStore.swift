@@ -6,23 +6,6 @@ import Observation
 /// One detail owns previews, catalog metadata and cancellation. No signed URL survives this scope.
 @MainActor @Observable
 final class MessageArtifactStore {
-  struct Preview: Identifiable {
-    let id = UUID()
-    var artifact: ChatArtifact
-    var images: [ChatArtifact]
-    let loadsMetadata: Bool
-    var file: ChatAttachmentFile?
-    var thumbnail: Data?
-    var contentURL: URL?
-    var htmlExpiresAt: Date?
-    var text: ArtifactTextContent?
-    var error: String?
-    var canRetry = true
-    var renewedHTMLSignature = false
-    var isDownloading = false
-    var downloadError: String?
-  }
-
   struct Share: Identifiable {
     let id = UUID()
     let file: ChatAttachmentFile
@@ -35,7 +18,7 @@ final class MessageArtifactStore {
     var title: String? = nil
   }
 
-  private(set) var preview: Preview?
+  private(set) var preview: MessageArtifactPreviewRead?
   private(set) var sharing: Share?
   private(set) var reads: MessageArtifactResources
   private let service: ChatArtifacts
@@ -46,10 +29,6 @@ final class MessageArtifactStore {
   let webURL: URL
   var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
-  private var operations: [UUID: @MainActor () -> Void] = [:]
-  private var previewTask: Task<Void, Never>?
-  private var saveTask: Task<Void, Never>?
-  private var generation = UUID()
   private var closed = false
 
   init(
@@ -86,196 +65,82 @@ final class MessageArtifactStore {
   ) {
     guard !closed else { return }
     dismiss()
-    let artifact = metadata(resource)
-    let file = service.uploadedFile(resource)
-    let loadsMetadata = file == nil || artifact.kind != .image || !imageSources.isEmpty
-    var item = Preview(artifact: artifact, images: images, loadsMetadata: loadsMetadata)
-    // The clicked card hands its resolved cover to the preview; there is no second cover cache.
-    item.thumbnail = thumbnail
-    item.file = file
-    item.renewedHTMLSignature = renewedHTMLSignature
-    let previewID = item.id
+    let item = MessageArtifactPreviewRead(
+      artifact: reads.metadata(resource), images: images, imageSources: imageSources,
+      thumbnail: thumbnail, renewedHTMLSignature: renewedHTMLSignature,
+      reads: reads, service: service, markdown: markdown, webURL: webURL, didFail: didFail)
     preview = item
-    if !loadsMetadata { return }
-    previewTask = Task { [weak self] in
-      guard let self else { return }
-      do {
-        try await reads.prepareMetadata()
-        let artifact = metadata(resource)
-        let service = service
-        let resolved = try await perform { try await service.resolve(artifact) }
-        guard !Task.isCancelled, preview?.id == previewID else { return }
-        preview?.artifact = resolved.artifact
-        if resolved.artifact.kind == .image, !imageSources.isEmpty {
-          var group: [ChatArtifact] = []
-          var seen = Set<ChatArtifact.Source>()
-          for source in imageSources {
-            let content = await markdown.content(for: source)
-            guard !Task.isCancelled, preview?.id == previewID else { return }
-            for image in MessageArtifactBody.resources(content, resolve: self.resource).map(
-              metadata)
-            where image.kind == .image && seen.insert(image.id).inserted { group.append(image) }
-          }
-          preview?.images = group
-        }
-        if resolved.artifact.kind == .html {
-          preview?.contentURL = resolved.contentURL
-          preview?.htmlExpiresAt = resolved.expiresAt
-        } else {
-          let kind = resolved.artifact.kind
-          let isText = [.markdown, .text, .json, .csv].contains(kind)
-          let (downloaded, file) = try await perform {
-            try await service.download(
-              resolved, maximumSize: isText ? 2 * 1024 * 1024 : ChatAttachment.maximumSize)
-          }
-          let text = isText ? try await ArtifactTextReader.shared.read(file, kind: kind) : nil
-          guard !Task.isCancelled, preview?.id == previewID else { return }
-          preview?.artifact = downloaded
-          preview?.file = file
-          preview?.text = text
-        }
-      } catch {
-        guard !Task.isCancelled, preview?.id == previewID else { return }
-        preview?.error = Self.message(for: error)
-        preview?.canRetry = ChatRequestFailure.canRetry(error)
-      }
-    }
+    do { try item.start() } catch { didFail(error) }
   }
 
-  func renewHTMLSignature(status: Int?) -> Bool {
-    guard let item = preview, !item.renewedHTMLSignature else { return false }
-    let expired = item.htmlExpiresAt.map { $0 <= Date() } ?? false
+  func renewHTMLSignature(
+    status: Int?, content: MessageArtifactPreviewRead.Content, previewID: UUID
+  ) -> Bool {
+    guard !closed, let item = preview, item.id == previewID, !item.renewedHTMLSignature else {
+      return false
+    }
+    let expired = content.htmlExpiresAt.map { $0 <= Date() } ?? false
     guard [401, 403].contains(status ?? 0) || (status == 404 && expired) else { return false }
-    switch item.artifact.source {
+    switch content.artifact.source {
     case .reference, .file, .hostedSite:
-      open(item.artifact, images: item.images, renewedHTMLSignature: true)
+      open(content.artifact, images: content.images, renewedHTMLSignature: true)
       return true
     case .published: return false
     }
   }
 
-  func navigateImage(_ direction: Int) {
-    guard let preview else { return }
-    let images = preview.images.map(metadata).filter { $0.kind == .image }
-    guard let index = images.firstIndex(where: { $0.id == preview.artifact.id }),
-      images.indices.contains(index + direction)
-    else { return }
-    open(images[index + direction], images: images)
+  func navigateImage(
+    _ direction: Int, content: MessageArtifactPreviewRead.Content, previewID: UUID
+  ) {
+    guard !closed, preview?.id == previewID, let image = content.image(direction) else { return }
+    open(image, images: content.images)
   }
 
-  func canNavigateImage(_ direction: Int) -> Bool {
-    guard let preview else { return false }
-    let images = preview.images.map(metadata).filter { $0.kind == .image }
-    guard let index = images.firstIndex(where: { $0.id == preview.artifact.id }) else {
-      return false
-    }
-    return images.indices.contains(index + direction)
-  }
-
-  func share() {
-    guard !closed, let file = preview?.file else { return }
+  func share(_ file: ChatAttachmentFile, previewID: UUID) {
+    guard !closed, preview?.id == previewID else { return }
     sharing = Share(file: file)
   }
 
   func dismissSharing() { sharing = nil }
 
-  func downloadForSharing() {
-    guard !closed, let item = preview, !item.isDownloading, item.file == nil else { return }
-    preview?.isDownloading = true
-    preview?.downloadError = nil
-    let service = service
-    saveTask = Task { [weak self] in
-      guard let self else { return }
-      defer { if preview?.id == item.id { preview?.isDownloading = false } }
-      do {
-        let (_, file) = try await perform { try await service.download(item.artifact) }
-        guard !Task.isCancelled, preview?.id == item.id else { return }
-        preview?.file = file
-      } catch {
-        guard !Task.isCancelled, preview?.id == item.id else { return }
-        preview?.downloadError = Self.message(for: error)
-      }
-    }
+  func downloadForSharing(previewID: UUID, retry: Bool = false) {
+    guard !closed, let preview, preview.id == previewID else { return }
+    do { try preview.downloadForSharing(retry: retry) } catch { didFail(error) }
   }
 
-  func refreshDetails() async {
-    guard !closed, let id = preview?.id else { return }
+  func refreshDetails() {
+    guard !closed, preview != nil else { return }
     do {
       try reads.refreshCatalog()
-      try await reads.prepareMetadata()
-      guard !closed, !Task.isCancelled, preview?.id == id, let artifact = preview?.artifact else {
-        return
-      }
-      preview?.artifact = metadata(artifact)
-    } catch {
-      guard !closed, !Task.isCancelled, preview?.id == id else { return }
-      preview?.error = Self.message(for: error)
-      preview?.canRetry = ChatRequestFailure.canRetry(error)
-    }
+    } catch { didFail(error) }
   }
 
   func retry() {
     guard let preview else { return }
     do { try reads.refreshCatalog() } catch { didFail(error) }
-    open(preview.artifact, images: preview.images, thumbnail: preview.thumbnail)
+    open(
+      preview.artifact, images: preview.images, imageSources: preview.imageSources,
+      thumbnail: preview.thumbnail)
   }
 
   func dismiss() {
-    previewTask?.cancel()
-    saveTask?.cancel()
-    previewTask = nil
-    saveTask = nil
+    preview?.close()
     preview = nil
     sharing = nil
   }
 
   func deactivate() {
-    generation = UUID()
     dismiss()
     reads.close()
     if !closed {
       reads = MessageArtifactResources(
         service: service, threadID: threadID, webURL: webURL, didFail: didFail)
     }
-    for cancel in operations.values { cancel() }
-    operations.removeAll()
   }
 
   func close() {
     closed = true
     deactivate()
-  }
-
-  private func metadata(_ artifact: ChatArtifact) -> ChatArtifact {
-    reads.metadata(artifact)
-  }
-
-  private func perform<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T)
-    async throws -> T
-  {
-    guard !closed else { throw CancellationError() }
-    let scope = generation
-    let id = UUID()
-    let task = Task { try await operation() }
-    operations[id] = { task.cancel() }
-    defer { operations[id] = nil }
-    do {
-      let result = try await withTaskCancellationHandler {
-        try await task.value
-      } onCancel: {
-        task.cancel()
-      }
-      try Task.checkCancellation()
-      guard !closed, generation == scope else { throw CancellationError() }
-      return result
-    } catch {
-      if !closed, generation == scope, !Task.isCancelled,
-        let status = (error as? APIClientError)?.statusCode, [401, 426].contains(status)
-      {
-        didFail(error)
-      }
-      throw error
-    }
   }
 
   /// A result that cannot be shown however often the card retries — deleted, or not this

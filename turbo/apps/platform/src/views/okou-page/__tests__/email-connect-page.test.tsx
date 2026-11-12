@@ -351,7 +351,7 @@ test("manages multiple connections and adds another mailbox without leaving Work
   });
 });
 
-test("keeps the login email connected while other emails can be deleted", async () => {
+test("deletes the login email while keeping other addresses connected", async () => {
   const secondary = "removable@example.com";
   let emails = [emailAddress, secondary];
   context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
@@ -364,8 +364,9 @@ test("keeps the login email connected while other emails can be deleted", async 
     });
   });
   context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
-    expect(body.emailAddress).toBe(secondary);
-    emails = [emailAddress];
+    emails = emails.filter((email) => {
+      return email !== body.emailAddress;
+    });
     return respond(204);
   });
   await setupPage({
@@ -393,15 +394,25 @@ test("keeps the login email connected while other emails can be deleted", async 
     emailSource(emailRow(dialog, emailAddress), "Login email"),
   ).toBeInTheDocument();
   click(
-    getAction("button", `Delete ${secondary}`, emailRow(dialog, secondary)),
+    getAction(
+      "button",
+      `Delete ${emailAddress}`,
+      emailRow(dialog, emailAddress),
+    ),
   );
   await waitFor(() => {
-    expect(within(dialog).queryByText(secondary)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(emailAddress)).not.toBeInTheDocument();
   });
-  expect(
-    emailSource(emailRow(dialog, emailAddress), "Login email"),
-  ).toBeInTheDocument();
+  expect(within(dialog).getByText(secondary)).toBeInTheDocument();
   click(getAction("button", "Close", dialog));
+  click(getAction("button", "Email options", card));
+  click(getAction("button", "Manage"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "Email connections",
+  });
+  expect(within(reopened).getByText(secondary)).toBeInTheDocument();
+  expect(within(reopened).queryByText(emailAddress)).not.toBeInTheDocument();
+  click(getAction("button", "Close", reopened));
   await waitFor(() => {
     expect(getAction("button", "Email options", card)).toHaveFocus();
   });

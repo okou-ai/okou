@@ -6,6 +6,7 @@ use guest_agent_tests as common;
 use guest_agent::cli;
 use guest_agent::masker::SecretMasker;
 use guest_agent::run_context::GuestRuntime;
+use guest_contracts::runtime_environment::TRUSTED_ROOTFS_ENVIRONMENT;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
@@ -39,13 +40,11 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
             "runner-control-endpoint",
         );
         std::env::set_var("OKOU_TEST_ALLOW_UNMANAGED_PROCESS_CONTROL", "true");
+        for &(key, value) in TRUSTED_ROOTFS_ENVIRONMENT {
+            std::env::set_var(key, value);
+        }
         std::env::set_var("NODE_EXTRA_CA_CERTS", "/rootfs/vm0-proxy-ca.crt");
-        std::env::set_var("AGENT_BROWSER_USE_SYSTEM_CA", "1");
-        std::env::set_var("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
-        std::env::set_var("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt");
-        std::env::set_var("CARGO_HTTP_CAINFO", "/etc/ssl/certs/ca-certificates.crt");
-        std::env::set_var("RUSTUP_HOME", "/usr/local/rustup");
-        std::env::set_var("NPM_CONFIG_UPDATE_NOTIFIER", "false");
+        std::env::set_var("LANG", "C");
         std::env::set_var("CLI_AGENT_TYPE", "claude-code");
         std::env::set_var(
             guest_contracts::env::CANONICAL_AGENT_EXECUTION_TIMEOUT_SECS_ENV,
@@ -165,6 +164,17 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     let cli_env: BTreeMap<String, String> = serde_json::from_slice(&std::fs::read(&cli_env_path)?)?;
+
+    // Cover new catalog entries automatically while retaining concrete runtime
+    // expectations below, including a user override and a non-default locale.
+    for &(key, default) in TRUSTED_ROOTFS_ENVIRONMENT {
+        let expected = match key {
+            "NODE_EXTRA_CA_CERTS" => "/tmp/user-ca.pem",
+            "LANG" => "C",
+            _ => default,
+        };
+        assert_eq!(cli_env.get(key).map(String::as_str), Some(expected));
+    }
 
     assert_eq!(
         cli_env.get("CUSTOM_USER_ENV").map(String::as_str),
@@ -335,7 +345,63 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
     )
     .await?;
     assert_user_runtime_env_reaches_claude(&mock, &tmp.path().join("empty-home-case"), "").await?;
+    for empty in [false, true] {
+        assert_missing_runtime_defaults_stay_absent(
+            &mock,
+            &tmp.path().join(format!("absent-runtime-defaults-{empty}")),
+            empty,
+        )
+        .await?;
+    }
 
+    Ok(())
+}
+
+async fn assert_missing_runtime_defaults_stay_absent(
+    mock: &Path,
+    workdir: &Path,
+    empty: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cli_env_path = workdir.join("cli-env.json");
+    let prompt = format!("@write-env-json:{}", cli_env_path.display());
+    unsafe {
+        common::setup_env(mock, workdir, &prompt, 3, 1)?;
+        for key in
+            std::iter::once("PATH").chain(TRUSTED_ROOTFS_ENVIRONMENT.iter().map(|&(key, _)| key))
+        {
+            if empty {
+                std::env::set_var(key, "");
+            } else {
+                std::env::remove_var(key);
+            }
+        }
+    }
+    let runtime = GuestRuntime::from_process_env()?;
+    let active_input = guest_agent::active_input::ActiveInputRuntime::new_disabled(
+        &runtime.config.run_id,
+        &runtime.config.prompt,
+    );
+    let result = cli::execute_cli_with_active_input_for_config(
+        &SecretMasker::from_raw(""),
+        common::spawn_dummy_heartbeat(),
+        runtime.http.clone(),
+        active_input.into_writer(),
+        &runtime.config,
+        &runtime.paths,
+    )
+    .await?;
+    assert_eq!(result.exit_code, common::CLEAN_EXIT);
+    let cli_env: BTreeMap<String, String> = serde_json::from_slice(&std::fs::read(cli_env_path)?)?;
+    assert_eq!(
+        cli_env.get("PATH").map(String::as_str),
+        Some("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+    );
+    for &(key, _) in TRUSTED_ROOTFS_ENVIRONMENT {
+        assert!(
+            !cli_env.contains_key(key),
+            "CLI synthesized absent setting {key}"
+        );
+    }
     Ok(())
 }
 

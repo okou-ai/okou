@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { defaultAgentId$ } from "../../../../signals/agent.ts";
 import type { ReactNode } from "react";
@@ -29,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
   cn,
+  OkouAvatar,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
@@ -169,11 +169,15 @@ function AgentAccessRow({
 
   return (
     <div className="flex items-center gap-2 px-1 py-4">
-      <AvatarFromUrl
-        avatarUrl={singleAgent ? DEFAULT_AGENT_AVATAR_URL : row.agent.avatarUrl}
-        alt={name}
-        className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
-      />
+      {singleAgent ? (
+        <OkouAvatar size={32} label={name} />
+      ) : (
+        <AvatarFromUrl
+          avatarUrl={row.agent.avatarUrl}
+          alt={name}
+          className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
+        />
+      )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">{name}</p>
       </div>

@@ -550,6 +550,7 @@
       "openDocs": "Open in Google Docs",
       "openSheets": "Open in Google Sheets",
       "openSlides": "Open in Google Slides",
+      "reconnect": "Reconnect Google Drive",
       "synced": "Synced to Google Drive",
       "syncedFiles_one": "Synced to Google Drive",
       "syncedFiles_other": "Synced {{count}} files to Google Drive",
@@ -1063,6 +1064,8 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
+      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
+      "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
@@ -1314,6 +1317,40 @@
     "sidebar": {
       "description": "More credits & concurrent runs",
       "getPlan": "Get {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "I was just checking the price",
+          "needs_approval": "I need approval from someone else",
+          "not_ready_yet": "I'm not ready to commit yet",
+          "not_seeing_value": "I didn't see the value yet",
+          "other": "Something else",
+          "payment_issue": "I had trouble paying",
+          "price_higher_than_expected": "The price was higher than I expected",
+          "results_not_good_enough": "I wasn't happy with the results"
+        },
+        "description": "One quick question. Your answer helps us improve.",
+        "question": "What stopped you from completing your purchase?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "I don't need more right now",
+          "not_sure_worth_it": "I'm not sure it's worth it yet",
+          "other": "Something else",
+          "still_trying": "I want to try it more first",
+          "too_expensive": "It's too expensive"
+        },
+        "question": "What's stopping you from upgrading today?",
+        "reward": "The first eligible answer in this workspace earns {{credits}} bonus credits, valid for 30 days.",
+        "thanksWithCredits": "Thanks! {{credits}} credits were added, so you can keep going."
+      },
+      "error": "Couldn't send your answer. Try again.",
+      "notNow": "Not now",
+      "otherLabel": "Your answer",
+      "otherPlaceholder": "Tell us more (optional)",
+      "submit": "Submit",
+      "thanks": "Thanks for telling us."
     },
     "toasts": {
       "autoRechargeUpdated": "Auto-recharge updated",
@@ -1627,13 +1664,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "All caught up",
-        "emptyTitle": "No new suggestions",
         "feedback": "Suggestion actions",
-        "loading": "Loading suggestions",
         "navigation": "Browse suggestions",
-        "next": "Next suggestion",
-        "previous": "Previous suggestion",
-        "retry": "Retry"
+        "show": "Show suggestion {{index}} of {{total}}"
       },
       "label": "Suggestions",
       "lessLikeThis": "Less like this",
@@ -1870,7 +1903,9 @@
         "title": "Create"
       },
       "explore": "Explore",
+      "exploreWhatsNew": "Explore what's new",
       "research": {
+        "description": "Traffic, ads, products, topics",
         "items": {
           "ads": "Explore ad creatives",
           "products": "Research products",
@@ -1883,6 +1918,7 @@
         "title": "Research"
       },
       "search": {
+        "description": "Customers, creators, decision-makers",
         "items": {
           "affiliates": "Affiliate programs",
           "creators": "Creator partnerships",
@@ -1913,6 +1949,7 @@
           "title": "Scheduled tasks"
         },
         "suggestions": "Start with a suggestion, then make it yours.",
+        "summary": "Runs on a schedule or a trigger",
         "triggers": {
           "description": "Start when something happens.",
           "eventPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which source, filters and output destination to use. Prepare a draft workflow and confirm the setup before enabling it.",
@@ -2145,6 +2182,8 @@
         "outputLimitTitle": "The response reached its length limit",
         "personalAccount": "Personal subscription {{account}}",
         "personalAccountDisconnected": "Personal subscription disconnected",
+        "providerBadRequestDescription": "Try again, or switch to another model to continue.",
+        "providerBadRequestTitle": "The model provider returned an error",
         "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
         "providerBalanceTitle": "Your subscription account needs more credit",
         "providerConnectionDescription": "Open Settings > Models to reconnect or update your account, then try again.",
@@ -2354,17 +2393,35 @@
       "untitled": "Untitled"
     },
     "remoteAccess": {
+      "all": "All",
+      "allowed": "Allowed",
+      "autoSave": "Changes save automatically for this chat",
+      "connections": "Connections",
       "default": "Default",
       "defaultEnabled": "Enabled by default for chats",
-      "disabled": "Disabled",
-      "enabled": "Enabled",
+      "draft": "Applied when you send the first message",
       "enabledCount_one": "{{count}} enabled",
       "enabledCount_other": "{{count}} enabled",
+      "enableInChat": "Enable in this chat",
+      "enableSsh": "Enable SSH {{name}} in this chat",
+      "filterHint": "Changed connections stay visible until you switch filters",
+      "fromChat": "This chat",
       "loadFailed": "Couldn't load remote access.",
       "loading": "Loading remote access…",
+      "manage": "Manage connections",
+      "needsReload": "Reload to confirm permissions",
+      "noConnections": "No SSH or VNC connections configured",
+      "noneAllowed": "No connections are allowed in this chat",
+      "notAllowed": "Not allowed",
       "off": "Off",
       "on": "On",
+      "reload": "Reload",
       "requiresSsh": "Requires SSH: {{name}}",
+      "saved": "Saved for this chat",
+      "saveUnconfirmed": "Couldn't confirm whether your change was saved. Reload permissions before making another change.",
+      "saving": "Saving…",
+      "scope": "Choose connections Okou can use in this chat",
+      "showAll": "Show all connections",
       "sshDisabled": "Enable SSH: {{name}}",
       "sshEnabled": "SSH enabled: {{name}}",
       "title": "Remote access",
@@ -3175,6 +3232,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} member",
     "affectedMembers_other": "{{count}} members",
+    "bindingUnavailable": "Unavailable",
     "cancel": "Cancel",
     "changed": "This Cloudflare Access changed while you were editing. Your changes were not saved.",
     "clientIdPlaceholder": "Paste the Service Token Client ID",
@@ -3187,7 +3245,7 @@
     "failed": "Could not save the Cloudflare Access change.",
     "forbidden": "Only organization admins can change shared Cloudflare Access.",
     "impactChanged": "The affected hosts changed. The change was not applied.",
-    "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
+    "inUse": "This Cloudflare Access is still in use. Unbind or rebind its dependent hosts and custom connectors first.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
     "loadFailed": "Could not load Cloudflare Access.",
     "loading": "Loading Cloudflare Access…",
@@ -3419,6 +3477,8 @@
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Connect third-party services for your Okou to use.",
+      "myOkouDescriptionWithCount": "Connect {{value}} services for your Okou to use.",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
@@ -5114,7 +5174,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5478,6 +5537,7 @@
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
     "overloaded": "{{model}} is overloaded. Switch to another model.",
+    "providerBadRequest": "The model provider returned an error. Try again, or switch to another model to continue.",
     "providerBalance": "Your connected subscription account has insufficient balance.",
     "transient": "Oops, something went wrong.",
     "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
@@ -5502,6 +5562,11 @@
       "creditBalance_one": "{{value}} credit",
       "creditBalance_other": "{{value}} credits",
       "exportData": "Export data",
+      "help": {
+        "docs": "Docs",
+        "keyboardShortcuts": "Shortcuts",
+        "label": "Help"
+      },
       "lab": "Lab",
       "settings": "Settings",
       "signOut": "Sign out",
@@ -6212,6 +6277,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Hide compliance",
       "link": "Security details",
       "status": {
         "aligned": "Aligned",
@@ -6360,6 +6426,33 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
+  "sshAuthorization": {
+    "allow": "Allow in this chat",
+    "blocked": {
+      "chat_busy": "Wait for the current Run in this chat to finish before approving.",
+      "host_changed": "The host configuration changed. Ask for a new request.",
+      "permissions_required": "Approve the accompanying connector permissions first.",
+      "run_active": "Wait for the requesting Run to finish before approving.",
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat.",
+      "ssh_access_required": "Approve the required SSH hosts first."
+    },
+    "continue": "Continue task",
+    "details": "Access details",
+    "effect": "Allows commands and file transfers as this remote user until access is disabled.",
+    "failed": "Could not complete the action. Retry to check access and continue.",
+    "retry": "Retry",
+    "scope": "This host · This chat only",
+    "status": {
+      "approved": "SSH access allowed",
+      "denied": "SSH access denied",
+      "expired": "SSH request expired",
+      "pending": "SSH access",
+      "revoked": "SSH access revoked",
+      "stale": "SSH request changed"
+    },
+    "title": "SSH access",
+    "unavailable": "This request is unavailable. Ask for a new request."
+  },
   "tailscale": {
     "changed": "This Tailscale network changed. Your changes were not saved; your draft is preserved.",
     "delete": "Delete Tailscale",
@@ -6471,16 +6564,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Back to workflows",
+      "disabled": "Disabled",
       "disabledAt": "Disabled at {{time}}",
       "loadFailed": "Couldn’t load this automation",
       "loadingAutomation": "Loading automation",
+      "notNow": "Not now",
       "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
-      "reason_one": "Automatically disabled after {{count}} consecutive execution failure.",
-      "reason_other": "Automatically disabled after {{count}} consecutive execution failures.",
+      "reason_one": "{{count}} run failed. Review the automation before re-enabling it.",
+      "reason_other": "{{count}} consecutive runs failed. Review the automation before re-enabling it.",
       "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
       "switchWorkspace": "Switch workspace",
       "systemManaged": "This automation is managed by the system. Its current status is shown below.",
       "systemSource": "System notification",
+      "title": "Automation disabled",
       "unavailable": "Automation not found or you do not have access",
       "viewAutomation": "View automation",
       "workspace": "Workspace",
@@ -6692,6 +6788,34 @@
       "via": "SSH host:"
     },
     "unavailable": "VNC is not available in this workspace."
+  },
+  "vncAuthorization": {
+    "allow": "Allow in this chat",
+    "blocked": {
+      "chat_busy": "Wait for the current Run in this chat to finish before approving.",
+      "host_changed": "The host configuration changed. Ask for a new request.",
+      "permissions_required": "Approve the accompanying connector permissions first.",
+      "run_active": "Wait for the requesting Run to finish before approving.",
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat.",
+      "ssh_access_required": "Approve the required SSH hosts first."
+    },
+    "continue": "Continue task",
+    "dependencies": "Required SSH hosts (approved separately)",
+    "details": "Access details",
+    "effect": "Allows viewing and controlling this desktop until access is disabled. SSH hosts require separate approval.",
+    "failed": "Could not complete the action. Retry to check access and continue.",
+    "retry": "Retry",
+    "scope": "This host · This chat only",
+    "status": {
+      "approved": "VNC access allowed",
+      "denied": "VNC access denied",
+      "expired": "VNC request expired",
+      "pending": "VNC access",
+      "revoked": "VNC access revoked",
+      "stale": "VNC request changed"
+    },
+    "title": "VNC access",
+    "unavailable": "This request is unavailable. Ask for a new request."
   },
   "workflows": {
     "automations": {
@@ -7372,12 +7496,11 @@
       "codeInstructions": "Send this code to Okou from the email address you want to add. Use it as the subject or the first line of your message.",
       "connected": "Email connected",
       "deleteAria": "Delete {{email}}",
-      "description": "Email your Okou and keep each conversation in its own thread",
+      "description": "Chat with your Okou by email",
       "emailAddress": "Email address",
       "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
       "invalidLink": "This connection link is invalid. Send a new email to Okou.",
       "loadError": "Unable to load your email connection",
-      "loginNotice": "Your login email stays connected.",
       "manage": "Manage",
       "manageDescription": "Send the code from the email you want to add.",
       "manageTitle": "Email connections",

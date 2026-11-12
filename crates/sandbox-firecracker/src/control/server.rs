@@ -21,8 +21,7 @@ use super::protocol::{
     read_frame_payload_len, write_frame,
 };
 use crate::exec_operation_result::{
-    captured_exec_output_bytes, exec_termination_from_vsock_termination, reject_stream_overflow,
-    validate_exec_capture_timeout,
+    captured_exec_result, exec_termination_from_vsock_termination, validate_exec_capture_timeout,
 };
 use crate::guest_operations::{GuestOperationStartError, GuestOperationStartGate};
 use crate::park_coordinator::{ParkCoordinator, RunControlMismatch, TerminateAdmission};
@@ -598,26 +597,15 @@ fn control_write_admission(
 fn exec_result_from_operation_result(
     result: guest_control_client::ExecOperationResult,
 ) -> io::Result<ExecResult> {
-    reject_stream_overflow(&result)?;
-
-    let guest_control_client::ExecOperationResult {
-        termination,
-        stdout,
-        stderr,
-        diagnostic,
-        ..
-    } = result;
-
-    let (stdout, stdout_truncated) = captured_exec_output_bytes("stdout", stdout)?;
-    let (stderr, stderr_truncated) = captured_exec_output_bytes("stderr", stderr)?;
+    let result = captured_exec_result(result)?;
 
     Ok(ExecResult::Success {
-        termination: exec_termination_from_vsock_termination(termination),
-        stdout,
-        stderr,
-        stdout_truncated,
-        stderr_truncated,
-        diagnostic,
+        termination: exec_termination_from_vsock_termination(result.termination),
+        stdout: result.stdout,
+        stderr: result.stderr,
+        stdout_truncated: result.stdout_truncated,
+        stderr_truncated: result.stderr_truncated,
+        diagnostic: result.diagnostic,
     })
 }
 

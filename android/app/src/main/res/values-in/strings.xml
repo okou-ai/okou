@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Beranda</string>
+    <string name="settings">Setelan</string>
+    <string name="back">Kembali</string>
+    <string name="home_title">Ruang untuk ide berikutnya</string>
+    <string name="home_description">Tulis draf dan lihat pratinjaunya di perangkat ini.</string>
+    <string name="draft_label">Draf</string>
+    <string name="draft_hint">Apa yang sedang Anda pikirkan?</string>
+    <string name="local_preview">Pratinjau draf</string>
+    <string name="preview_title">Pratinjau</string>
+    <string name="appearance">Tampilan</string>
+    <string name="appearance_description">Pilih tampilan Okou di perangkat ini.</string>
+    <string name="appearance_system">Ikuti sistem</string>
+    <string name="appearance_light">Terang</string>
+    <string name="appearance_dark">Gelap</string>
+    <string name="on_this_device">Di perangkat ini</string>
+    <string name="appearance_local">Tampilan hanya disimpan di perangkat ini.</string>
+    <string name="appearance_loading">Memuat tampilan…</string>
+    <string name="appearance_saving">Menyimpan tampilan…</string>
+    <string name="appearance_read_failed">Tidak dapat memuat tampilan. Coba lagi.</string>
+    <string name="appearance_write_failed">Tidak dapat menyimpan tampilan. Coba lagi.</string>
+    <string name="retry">Coba lagi</string>
+    <plurals name="draft_lines">
+        <item quantity="other">%1$d baris</item>
+    </plurals>
+    <string name="auth_welcome">Selamat datang di Okou</string>
+    <string name="auth_restoring">Memulihkan sesi Anda…</string>
+    <string name="auth_preparing_workspace">Menyiapkan ruang kerja Anda…</string>
+    <string name="auth_choose_workspace">Pilih ruang kerja</string>
+    <string name="auth_no_workspace">Anda belum memiliki akses ke ruang kerja.</string>
+    <string name="auth_workspace_setup">Siapkan ruang kerja di web</string>
+    <string name="auth_access_removed">Sesi atau akses Anda berubah. Masuk lagi atau muat ulang akses.</string>
+    <string name="auth_update_required">Perbarui Okou untuk melanjutkan.</string>
+    <string name="auth_unavailable">Tidak dapat memuat sesi atau ruang kerja. Coba lagi.</string>
+    <string name="auth_sign_out">Keluar</string>
+    <string name="auth_signing_out">Sedang keluar…</string>
+    <string name="auth_workspace">Ruang kerja</string>
+    <string name="auth_switch_workspace">Ganti ruang kerja</string>
+    <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
+</resources>

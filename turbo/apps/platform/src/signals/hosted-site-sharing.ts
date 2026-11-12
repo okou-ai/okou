@@ -25,6 +25,7 @@ import {
   throttleCommand,
 } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
+import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
@@ -152,7 +153,7 @@ function createSiteUrlEditorSignals(
   const edit$ = command(async ({ get, set }, signal: AbortSignal) => {
     const details = await get(details$);
     signal.throwIfAborted();
-    if (!details?.isActive) {
+    if (!details?.isActive || !(await set(passArtifactPaywall$, signal))) {
       return;
     }
     set(draft$, details.publicSlug);

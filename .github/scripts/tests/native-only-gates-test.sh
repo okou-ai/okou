@@ -25,7 +25,7 @@ for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
         'the required CodeQL job must initialize and execute its scanner'
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
-           'test-other', 'test-browser-extension']
+           'test-other', 'test-browser-extension-package', 'test-browser-extension']
 artifacts = ['deploy-app']
 
 def context(ios=True, ts=False, event='pull_request', release=False):
@@ -52,7 +52,10 @@ def context(ios=True, ts=False, event='pull_request', release=False):
 def condition(job, values, cancelled=False):
     expression = job.get('if', 'True').strip().removeprefix('${{').removesuffix('}}').strip()
     has_status = any(f'{function}(' in expression for function in ['success', 'failure', 'cancelled', 'always'])
-    if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in job.get('needs', [])):
+    dependencies = job.get('needs', [])
+    if isinstance(dependencies, str):
+        dependencies = [dependencies]
+    if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in dependencies):
         return False
     expression = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
     expression = expression.replace('cancelled()', str(cancelled)).replace('always()', 'True')
@@ -69,7 +72,9 @@ def gate(jobs, name, values, expected):
     env = dict(os.environ)
     env.update({key: render(value) for key, value in step.get('env', {}).items()})
     result = subprocess.run(['bash', '-c', render(step['run'])], env=env, text=True, capture_output=True)
-    assert (result.returncode == 0) == expected, result.stdout + result.stderr
+    assert (result.returncode == 0) == expected, (
+        f'{name}: expected success={expected}, got status={result.returncode}, context={values}\n'
+        + result.stdout + result.stderr)
 
 native = context()
 for event in ['pull_request', 'merge_group', 'push']:
@@ -108,6 +113,9 @@ for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True, event='merge_group')), job
     assert not condition(turbo[job], context(ios=False, ts=True, event='push')), job
     assert not condition(turbo[job], context(ios=False, ts=False)), job
+for job in ['test-browser-extension-package', 'test-browser-extension']:
+    for result in ['failure', 'cancelled', 'skipped']:
+        gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True) | {f'needs.{job}.result': result}, False)
 for job in artifacts:
     assert 'detect-turbo-ts-checks' in turbo[job]['needs']
     assert condition(turbo[job], context(ios=False, ts=True)), job
@@ -203,6 +211,33 @@ for event in ['pull_request', 'merge_group', 'push']:
             values['needs.action-pins.result'] = result
             assert condition(security['action-pins'], values)
             gate(security, 'ci-gate-security', values, False)
+
+# Android must publish a result even when detection fails or native work is skipped.
+android = workflow('android')
+android_gate = android['ci-gate-android']
+assert {'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
+for needed in ['true', 'false']:
+    values = {
+        'needs.detect.result': 'success',
+        'needs.detect.outputs.needed': needed,
+        'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
+        'needs.instrumentation.result': 'success' if needed == 'true' else 'skipped',
+    }
+    assert condition(android['instrumentation'], values) == (needed == 'true')
+    assert condition(android_gate, values, cancelled=True)
+    gate(android, 'ci-gate-android', values, True)
+    for failure in ['failure', 'cancelled', 'skipped']:
+        blocked = values | {'needs.detect.result': failure}
+        assert not condition(android['instrumentation'], blocked)
+        assert condition(android_gate, blocked)
+        gate(android, 'ci-gate-android', blocked, False)
+    for job in ['build-test', 'instrumentation']:
+        for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
+            blocked = values | {f'needs.{job}.result': result}
+            assert condition(android_gate, blocked)
+            gate(android, 'ci-gate-android', blocked, False)
+    for invalid in ['', 'unknown']:
+        gate(android, 'ci-gate-android', values | {'needs.detect.outputs.needed': invalid}, False)
 
 print('native-only workflow selection and gates: ok')
 PY

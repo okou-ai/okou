@@ -197,7 +197,10 @@ test.each([
     }
     await page("/connectors?scope=connected");
     click(screen.getByTestId("connectors-scope-remote-control"));
-    await screen.findByText("Loading…");
+    const loading = await screen.findByRole("status", {
+      name: "Remote connections",
+    });
+    expect(loading).toHaveTextContent("Loading…");
     expect(queryAction("button", "Add connection")).toBeNull();
     expect(screen.queryByText("No devices added yet")).toBeNull();
     release.resolve();
@@ -3883,6 +3886,83 @@ test.each(["Tailscale", "Cloudflare Access"] as const)(
     expect(
       screen.queryByRole("region", { name: "Organization networks" }),
     ).toBeNull();
+  },
+);
+
+test("Remote control keeps its count while entering the scope refreshes connections", async () => {
+  const refreshStarted = context.mocks.deferred<void>();
+  const releaseRefresh = context.mocks.deferred<void>();
+  let refreshing = false;
+  context.mocks.api(
+    sshConnectionsContract.summary,
+    async ({ respond, withSignal }) => {
+      if (refreshing) {
+        refreshStarted.resolve();
+        await withSignal(releaseRefresh.promise);
+      }
+      return respond(200, { configuredCount: refreshing ? 2 : 1 });
+    },
+  );
+  await page("/connectors?scope=custom");
+  const segment = screen.getByTestId("connectors-scope-remote-control");
+  await waitFor(() => {
+    expect(segment).toHaveTextContent("Remote control1");
+  });
+
+  refreshing = true;
+  click(segment);
+  await refreshStarted.promise;
+  expect(segment).toHaveAttribute("data-checked");
+  expect(segment).toHaveTextContent("Remote control1");
+
+  releaseRefresh.resolve();
+  await waitFor(() => {
+    expect(segment).toHaveTextContent("Remote control2");
+  });
+});
+
+test.each(["Tailscale", "Cloudflare Access"] as const)(
+  "Private network keeps its count while entering the scope refreshes %s",
+  async (provider) => {
+    const refreshStarted = context.mocks.deferred<void>();
+    const releaseRefresh = context.mocks.deferred<void>();
+    let refreshing = false;
+    const config = provider === "Tailscale" ? network : cloudflareNetwork;
+    const contract =
+      provider === "Tailscale" ? tailscaleContract : cloudflareAccessContract;
+    context.mocks.api(contract.list, async ({ respond, withSignal }) => {
+      if (refreshing) {
+        refreshStarted.resolve();
+        await withSignal(releaseRefresh.promise);
+      }
+      return respond(200, {
+        configs: refreshing
+          ? [
+              config,
+              {
+                ...config,
+                id: "a0000000-0000-4000-8000-000000000002",
+                name: "Home network",
+              },
+            ]
+          : [config],
+      });
+    });
+    await page("/connectors?scope=custom");
+    const segment = screen.getByTestId("connectors-scope-private-network");
+    await waitFor(() => {
+      expect(segment).toHaveTextContent("Private network1");
+    });
+
+    refreshing = true;
+    click(segment);
+    await refreshStarted.promise;
+    expect(segment).toHaveAttribute("data-checked");
+    expect(segment).toHaveTextContent("Private network1");
+
+    releaseRefresh.resolve();
+    await screen.findByText("Home network");
+    expect(segment).toHaveTextContent("Private network2");
   },
 );
 

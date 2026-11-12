@@ -31,7 +31,21 @@ type ArtifactGoogleDriveSyncFile = {
   readonly mode: GoogleDriveUploadMode;
 };
 
+type GoogleDriveUploadDenied = {
+  readonly status: 403;
+  readonly body: zInfer<
+    (typeof SourceArtifactGoogleDriveContract.uploadWithMode.responses)[403]
+  >;
+};
+
 type ArtifactGoogleDriveSyncResult =
+  | {
+      readonly kind: "scope-required";
+      readonly response: GoogleDriveUploadDenied;
+      readonly recovery: NonNullable<
+        GoogleDriveUploadDenied["body"]["recovery"]
+      >;
+    }
   | { readonly kind: "uploaded"; readonly file: GoogleDriveUploadedFile }
   | {
       readonly kind: "conversion-unconfirmed";
@@ -46,7 +60,7 @@ async function syncArtifactFileToGoogleDrive(
 ): Promise<ArtifactGoogleDriveSyncResult> {
   signal.throwIfAborted();
   const client = params.createClient(artifactGoogleDriveContract);
-  const response = await accept(
+  const attempted = await accept(
     client.uploadWithMode({
       params: { artifactId: params.artifactId },
       body: {
@@ -56,10 +70,24 @@ async function syncArtifactFileToGoogleDrive(
       },
       fetchOptions: { signal },
     }),
-    [200],
+    [200, 403],
     signal,
   );
   signal.throwIfAborted();
+  if (
+    attempted.status === 403 &&
+    attempted.body.error.code === "GOOGLE_DRIVE_SCOPE_REQUIRED" &&
+    attempted.body.recovery
+  ) {
+    return {
+      kind: "scope-required",
+      response: attempted,
+      recovery: attempted.body.recovery,
+    };
+  }
+  // Preserve normal error presentation for unrelated denials, without sending
+  // another request or treating a generic 403 as a consent problem.
+  const response = await accept(Promise.resolve(attempted), [200], signal);
   const target = googleWorkspaceTarget(params.filename ?? "");
   if (
     params.mode === "google" &&
@@ -106,6 +134,7 @@ type GoogleDriveSyncAccount = {
   readonly agentId: string;
   readonly connectionId: string | undefined;
   readonly ready: boolean;
+  readonly recovery?: NonNullable<GoogleDriveUploadDenied["body"]["recovery"]>;
   readonly googleImport?: GoogleDriveUploadedFile | undefined;
 };
 
@@ -156,6 +185,22 @@ export const syncArtifactAndRefresh$ = command(
       account?.artifactId === params.artifactId &&
       account.agentId === params.agentId &&
       account.connectionId === params.connectionId;
+    if (result.kind === "scope-required") {
+      // This lookup failed before any file upload. Offer exact-account OAuth
+      // only on the user's next action; never replay this request here.
+      set(account$, {
+        artifactId: params.artifactId,
+        agentId: params.agentId,
+        connectionId: result.recovery.connectionId,
+        ready: false,
+        recovery: result.recovery,
+        googleImport: sameCurrentAccount ? account.googleImport : undefined,
+      });
+      await accept(Promise.resolve(result.response), [200], signal, {
+        expectedErrors: { 403: ["GOOGLE_DRIVE_SCOPE_REQUIRED"] },
+      });
+      return;
+    }
     if (result.kind === "uploaded") {
       set(account$, {
         artifactId: params.artifactId,
@@ -172,6 +217,37 @@ export const syncArtifactAndRefresh$ = command(
     } else if (sameCurrentAccount) {
       set(account$, { ...account, ready: false });
     }
+  },
+);
+
+/** A confirmed reconnect restores the action, but never resumes an upload. */
+export const finishArtifactDriveReconnect$ = command(
+  (
+    { get, set },
+    params: {
+      readonly artifactId: string;
+      readonly agentId: string;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): void => {
+    signal.throwIfAborted();
+    const account$ = get(pageGoogleDriveSyncAccount$);
+    const account = get(account$);
+    if (
+      account?.artifactId !== params.artifactId ||
+      account.agentId !== params.agentId ||
+      account.recovery?.connectionId !== params.connectionId
+    ) {
+      return;
+    }
+    set(account$, {
+      artifactId: account.artifactId,
+      agentId: account.agentId,
+      connectionId: params.connectionId,
+      ready: true,
+      googleImport: account.googleImport,
+    });
   },
 );
 

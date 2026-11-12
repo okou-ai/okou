@@ -172,3 +172,8 @@
     - name: Reset SSH connection to pick up new group membership
       meta: reset_connection
       when: group_change.changed
+
+    - name: Provision Runner Caddy ingress
+      ansible.builtin.import_tasks: ../tasks/provision-runner-caddy.yml
+      become: true
+      tags: runner_caddy

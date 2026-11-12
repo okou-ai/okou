@@ -548,6 +548,7 @@
       "openDocs": "Google Docs에서 열기",
       "openSheets": "Google Sheets에서 열기",
       "openSlides": "Google Slides에서 열기",
+      "reconnect": "Google Drive 다시 연결",
       "synced": "Google Drive에 동기화됨",
       "syncedFiles_one": "Google Drive에 동기화됨",
       "syncedFiles_other": "Google Drive에 {{count}}개 파일 동기화됨",
@@ -1060,6 +1061,8 @@
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
       "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
       "loading": "권한을 불러오는 중",
+      "myOkouScopeNote": "현재 작업뿐 아니라 이 워크스페이스에서 내 Okou 사용에 적용됩니다.",
+      "myOkouSharedScopeNote": "이 워크스페이스의 내 모든 채팅에서 이 커넥터에 적용됩니다. 팀원의 권한은 각자 독립적입니다.",
       "notNow": "나중에",
       "review": "권한 검토",
       "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "더 많은 크레딧 및 동시 실행",
       "getPlan": "{{plan}} 받기"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "가격만 확인하고 있었어요",
+          "needs_approval": "다른 사람의 승인이 필요해요",
+          "not_ready_yet": "아직 결정할 준비가 안 됐어요",
+          "not_seeing_value": "아직 가치를 느끼지 못했어요",
+          "other": "기타",
+          "payment_issue": "결제 중 문제가 있었어요",
+          "price_higher_than_expected": "가격이 예상보다 높았어요",
+          "results_not_good_enough": "결과가 만족스럽지 않았어요"
+        },
+        "description": "질문은 하나뿐이에요. 답변은 서비스 개선에 도움이 됩니다.",
+        "question": "구매를 완료하지 않은 이유가 무엇인가요?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "지금은 더 필요하지 않아요",
+          "not_sure_worth_it": "아직 그만한 가치가 있는지 모르겠어요",
+          "other": "기타",
+          "still_trying": "좀 더 써 보고 싶어요",
+          "too_expensive": "너무 비싸요"
+        },
+        "question": "오늘 업그레이드하지 않는 이유가 무엇인가요?",
+        "reward": "이 워크스페이스에서 조건을 충족하는 첫 답변에 30일 동안 유효한 보너스 크레딧 {{credits}}개가 지급됩니다.",
+        "thanksWithCredits": "감사합니다! 크레딧 {{credits}}개가 추가되어 계속 사용할 수 있어요."
+      },
+      "error": "답변을 보내지 못했어요. 다시 시도해 주세요.",
+      "notNow": "나중에",
+      "otherLabel": "답변",
+      "otherPlaceholder": "자세히 알려 주세요(선택)",
+      "submit": "제출",
+      "thanks": "알려 주셔서 감사합니다."
     },
     "toasts": {
       "autoRechargeUpdated": "자동 충전이 업데이트되었습니다",
@@ -1624,13 +1661,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "모두 확인했어요",
-        "emptyTitle": "새 제안이 없습니다",
         "feedback": "제안 작업",
-        "loading": "제안 불러오는 중",
         "navigation": "제안 둘러보기",
-        "next": "다음 제안",
-        "previous": "이전 제안",
-        "retry": "다시 시도"
+        "show": "제안 {{index}}/{{total}} 보기"
       },
       "label": "제안",
       "lessLikeThis": "Less like this",
@@ -1865,7 +1898,9 @@
         "title": "만들기"
       },
       "explore": "탐색",
+      "exploreWhatsNew": "새로운 소식 보기",
       "research": {
+        "description": "트래픽, 광고, 제품, 주제",
         "items": {
           "ads": "광고 소재 살펴보기",
           "products": "제품 조사",
@@ -1878,6 +1913,7 @@
         "title": "리서치"
       },
       "search": {
+        "description": "고객, 크리에이터, 의사결정자",
         "items": {
           "affiliates": "제휴 프로그램",
           "creators": "크리에이터 협업",
@@ -1908,6 +1944,7 @@
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
+        "summary": "예약 또는 트리거로 실행",
         "triggers": {
           "description": "이벤트가 발생하면 시작하세요.",
           "eventPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 소스, 필터, 결과 저장 위치를 물어보고 워크플로 초안을 준비한 뒤 설정을 확인하고 활성화해 주세요.",
@@ -2137,6 +2174,8 @@
         "outputLimitTitle": "응답이 길이 제한에 도달했습니다",
         "personalAccount": "개인 구독 {{account}}",
         "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
+        "providerBadRequestDescription": "다시 시도하거나 다른 모델로 전환하여 계속하세요.",
+        "providerBadRequestTitle": "모델 제공업체에서 오류를 반환했습니다",
         "providerBalanceDescription": "구독 계정의 사용량 또는 크레딧 잔액을 확인한 후 다시 시도하세요.",
         "providerBalanceTitle": "구독 계정에 크레딧이 더 필요합니다",
         "providerConnectionDescription": "'설정 > 모델'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.",
@@ -2346,16 +2385,34 @@
       "untitled": "제목 없음"
     },
     "remoteAccess": {
+      "all": "전체",
+      "allowed": "허용됨",
+      "autoSave": "변경 사항은 이 채팅에 자동 저장됩니다",
+      "connections": "연결",
       "default": "기본값",
       "defaultEnabled": "채팅에서 기본적으로 사용",
-      "disabled": "비활성화됨",
-      "enabled": "활성화됨",
+      "draft": "첫 메시지를 보낼 때 적용됩니다",
       "enabledCount_other": "{{count}}개 사용 중",
+      "enableInChat": "이 채팅에서 활성화",
+      "enableSsh": "이 채팅에서 SSH {{name}} 활성화",
+      "filterHint": "변경한 연결은 필터를 전환할 때까지 표시됩니다",
+      "fromChat": "이 채팅",
       "loadFailed": "원격 액세스를 불러올 수 없습니다.",
       "loading": "원격 액세스 로드 중…",
+      "manage": "연결 관리",
+      "needsReload": "권한을 확인하려면 다시 불러오세요",
+      "noConnections": "설정된 SSH 또는 VNC 연결이 없습니다",
+      "noneAllowed": "이 채팅에서 허용된 연결이 없습니다",
+      "notAllowed": "허용되지 않음",
       "off": "끄기",
       "on": "켜기",
+      "reload": "다시 불러오기",
       "requiresSsh": "SSH 필요: {{name}}",
+      "saved": "이 채팅에 저장됨",
+      "saveUnconfirmed": "변경 사항이 저장되었는지 확인할 수 없습니다. 권한을 다시 불러온 후 변경하세요.",
+      "saving": "저장 중…",
+      "scope": "이 채팅에서 Okou가 사용할 수 있는 연결을 선택하세요",
+      "showAll": "모든 연결 보기",
       "sshDisabled": "SSH 켜기: {{name}}",
       "sshEnabled": "SSH 켜짐: {{name}}",
       "title": "원격 액세스",
@@ -3162,6 +3219,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "구성원 {{count}}명",
+    "bindingUnavailable": "사용 불가",
     "cancel": "취소",
     "changed": "편집하는 동안 이 Cloudflare Access가 변경되었습니다. 변경 사항은 저장되지 않았습니다.",
     "clientIdPlaceholder": "Service Token의 Client ID 붙여넣기",
@@ -3174,7 +3232,7 @@
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
     "impactChanged": "영향을 받는 호스트가 변경되었습니다. 변경 사항이 적용되지 않았습니다.",
-    "inUse": "SSH 호스트가 이 Cloudflare Access를 사용 중입니다. 호스트 소유자가 먼저 다시 연결하거나 호스트를 삭제해야 합니다.",
+    "inUse": "이 Cloudflare Access는 사용 중입니다. 먼저 연결된 호스트와 사용자 지정 커넥터의 연결을 해제하거나 변경하세요.",
     "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
     "loadFailed": "Cloudflare Access를 불러오지 못했습니다.",
     "loading": "Cloudflare Access 불러오는 중…",
@@ -3406,6 +3464,8 @@
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },
       "filterWith": "필터: {{category}}",
+      "myOkouDescription": "내 Okou가 사용할 외부 서비스를 연결하세요.",
+      "myOkouDescriptionWithCount": "내 Okou가 사용할 {{value}}개 서비스를 연결하세요.",
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",
@@ -5098,7 +5158,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5462,6 +5521,7 @@
     "modelTemporarilyUnavailable": "모델을 일시적으로 사용할 수 없음",
     "modelUnavailable": "현재 모델을 사용할 수 없습니다.",
     "overloaded": "{{model}}이(가) 과부하 상태입니다. 다른 모델로 전환하세요.",
+    "providerBadRequest": "모델 제공업체에서 오류를 반환했습니다. 다시 시도하거나 다른 모델로 전환하여 계속하세요.",
     "providerBalance": "연결된 구독 계정의 잔액이 부족합니다.",
     "transient": "오류가 발생했습니다.",
     "vm0Credits": "크레딧이 부족합니다. 계속하려면 크레딧을 추가하거나 개인 Codex 또는 Claude 구독을 연결하세요."
@@ -5486,6 +5546,11 @@
       "creditBalance_one": "{{value}} 크레딧",
       "creditBalance_other": "{{value}} 크레딧",
       "exportData": "데이터 내보내기",
+      "help": {
+        "docs": "문서",
+        "keyboardShortcuts": "단축키",
+        "label": "도움말"
+      },
       "lab": "랩",
       "settings": "설정",
       "signOut": "로그아웃",
@@ -6195,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "컴플라이언스 숨기기",
       "link": "보안 세부 정보",
       "status": {
         "aligned": "정렬",
@@ -6341,6 +6407,33 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
+  "sshAuthorization": {
+    "allow": "이 채팅에서 허용",
+    "blocked": {
+      "chat_busy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
+      "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
+      "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
+      "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요.",
+      "ssh_access_required": "먼저 필요한 SSH 호스트를 승인하세요."
+    },
+    "continue": "작업 계속",
+    "details": "접근 권한 상세",
+    "effect": "액세스를 비활성화할 때까지 이 원격 사용자로 명령 실행 및 파일 전송을 허용합니다.",
+    "failed": "작업을 완료하지 못했습니다. 다시 시도하여 권한을 확인하고 계속하세요.",
+    "retry": "다시 시도",
+    "scope": "이 호스트 · 이 채팅만",
+    "status": {
+      "approved": "SSH 액세스 허용됨",
+      "denied": "SSH 액세스 거부됨",
+      "expired": "SSH 요청 만료됨",
+      "pending": "SSH 액세스",
+      "revoked": "SSH 액세스 취소됨",
+      "stale": "SSH 요청 변경됨"
+    },
+    "title": "SSH 액세스",
+    "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
+  },
   "tailscale": {
     "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
     "delete": "Tailscale 삭제",
@@ -6452,16 +6545,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "워크플로로 돌아가기",
+      "disabled": "비활성화됨",
       "disabledAt": "비활성화 시간: {{time}}",
       "loadFailed": "이 자동화를 불러올 수 없습니다",
       "loadingAutomation": "자동화 불러오는 중",
+      "notNow": "나중에",
       "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
-      "reason_one": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",
-      "reason_other": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",
+      "reason_one": "{{count}}회 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "reason_other": "{{count}}회 연속 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
       "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
       "switchWorkspace": "워크스페이스 전환",
       "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
       "systemSource": "시스템 알림",
+      "title": "자동화가 비활성화됨",
       "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",
       "viewAutomation": "자동화 보기",
       "workspace": "워크스페이스",
@@ -6671,6 +6767,34 @@
       "via": "SSH 호스트:"
     },
     "unavailable": "이 워크스페이스에서는 VNC를 사용할 수 없습니다."
+  },
+  "vncAuthorization": {
+    "allow": "이 채팅에서 허용",
+    "blocked": {
+      "chat_busy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
+      "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
+      "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
+      "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요.",
+      "ssh_access_required": "먼저 필요한 SSH 호스트를 승인하세요."
+    },
+    "continue": "작업 계속",
+    "dependencies": "필요한 SSH 호스트(별도 승인)",
+    "details": "접근 권한 상세",
+    "effect": "접근이 비활성화될 때까지 이 데스크톱의 화면 보기와 제어를 허용합니다. SSH 호스트는 별도 승인이 필요합니다.",
+    "failed": "작업을 완료하지 못했습니다. 다시 시도하여 권한을 확인하고 계속하세요.",
+    "retry": "다시 시도",
+    "scope": "이 호스트 · 이 채팅만",
+    "status": {
+      "approved": "VNC 액세스 허용됨",
+      "denied": "VNC 액세스 거부됨",
+      "expired": "VNC 요청 만료됨",
+      "pending": "VNC 액세스",
+      "revoked": "VNC 액세스 취소됨",
+      "stale": "VNC 요청 변경됨"
+    },
+    "title": "VNC 액세스",
+    "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
   },
   "workflows": {
     "automations": {
@@ -7351,12 +7475,11 @@
       "codeInstructions": "추가할 이메일 주소에서 이 코드를 제목이나 본문의 첫 줄에 넣어 Okou로 보내세요.",
       "connected": "이메일 연결됨",
       "deleteAria": "{{email}} 삭제",
-      "description": "Okou에 이메일을 보내고 각 대화를 별도 채팅으로 유지하세요",
+      "description": "이메일로 Okou와 대화하세요",
       "emailAddress": "이메일 주소",
       "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
       "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
       "loadError": "이메일 연결을 불러올 수 없습니다",
-      "loginNotice": "로그인 이메일은 항상 연결됩니다.",
       "manage": "관리",
       "manageDescription": "추가할 이메일 주소에서 코드를 보내세요.",
       "manageTitle": "이메일 연결",

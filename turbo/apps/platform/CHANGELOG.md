@@ -13,6 +13,239 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1120.0](https://github.com/okou-ai/okou/compare/app-v0.1119.0...app-v0.1120.0) (2026-11-12)
+
+
+### Features
+
+* **app:** hang the capability tabs on a lighter home tray ([#46807](https://github.com/okou-ai/okou/issues/46807)) ([ffe9a03](https://github.com/okou-ai/okou/commit/ffe9a03074d4b3d6aa9e72797428464b21468d51))
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+
+
+### Bug Fixes
+
+* **app:** add remote control list loading skeleton ([#46830](https://github.com/okou-ai/okou/issues/46830)) ([f5c2a16](https://github.com/okou-ai/okou/commit/f5c2a166b39919a93893e06b6694c10a9dc0ec7e))
+* **app:** default chart output to report ([#46842](https://github.com/okou-ai/okou/issues/46842)) ([44fb1f8](https://github.com/okou-ai/okou/commit/44fb1f825ee43766380a083482b0ed9bf98020de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.54.0
+    * @okouai/connectors bumped to 3.23.0
+    * @okouai/core bumped to 8.832.0
+    * @okouai/ui bumped to 1.21.3
+
+## [0.1119.0](https://github.com/okou-ai/okou/compare/app-v0.1118.0...app-v0.1119.0) (2026-11-12)
+
+
+### Features
+
+* **app:** move home compliance under the cards and settle the first home in ([#46782](https://github.com/okou-ai/okou/issues/46782)) ([20d176e](https://github.com/okou-ai/okou/commit/20d176eb7552739897d55330f334087963258803))
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+* allow unlinking the login email integration ([#46749](https://github.com/okou-ai/okou/issues/46749)) ([d6f52fc](https://github.com/okou-ai/okou/commit/d6f52fcb2b01ba376fd83e41b4f2494a264f2567))
+* **app:** hide unavailable credits in personal account status ([#46790](https://github.com/okou-ai/okou/issues/46790)) ([66d49b3](https://github.com/okou-ai/okou/commit/66d49b38e827b356691c49b56f4bd33e2162e0dd))
+* **platform:** count projects when deciding inbox empty state ([#46764](https://github.com/okou-ai/okou/issues/46764)) ([00f749c](https://github.com/okou-ai/okou/commit/00f749c3f70e845e17eb142429bd49842499750c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/ui bumped to 1.21.2
+
+## [0.1118.0](https://github.com/okou-ai/okou/compare/app-v0.1117.0...app-v0.1118.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Bug Fixes
+
+* **app:** show inline inbox links in the email integration ([#46744](https://github.com/okou-ai/okou/issues/46744)) ([fd9fa90](https://github.com/okou-ai/okou/commit/fd9fa9028ddd126712e4dbb6e21fe3ea0db9f60d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+    * @okouai/core bumped to 8.831.0
+    * @okouai/ui bumped to 1.21.1
+
+## [0.1117.0](https://github.com/okou-ai/okou/compare/app-v0.1116.3...app-v0.1117.0) (2026-11-12)
+
+
+### Features
+
+* **app:** draw every okou avatar with the animated design-system avatar ([#46728](https://github.com/okou-ai/okou/issues/46728)) ([2b40ec0](https://github.com/okou-ai/okou/commit/2b40ec0063dc9b4f64a0cbe17c88978eff8c88e6))
+* **app:** rotate home suggestions in the greeting and move explore to the corner ([#46721](https://github.com/okou-ai/okou/issues/46721)) ([3f0798a](https://github.com/okou-ai/okou/commit/3f0798a1790d117931743aa056350e7d2b72ff5b))
+
+
+### Bug Fixes
+
+* **app:** show a project's emoji on the composer's folder as the sidebar does ([#46731](https://github.com/okou-ai/okou/issues/46731)) ([c979329](https://github.com/okou-ai/okou/commit/c979329ac0f930b6813be7341f30169313b403a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+    * @okouai/core bumped to 8.830.0
+    * @okouai/ui bumped to 1.21.0
+
+## [0.1116.3](https://github.com/okou-ai/okou/compare/app-v0.1116.2...app-v0.1116.3) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.829.3
+
+## [0.1116.2](https://github.com/okou-ai/okou/compare/app-v0.1116.1...app-v0.1116.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **app:** keep composer steady when model notices appear ([#46707](https://github.com/okou-ai/okou/issues/46707)) ([f36fefd](https://github.com/okou-ai/okou/commit/f36fefdbc4778a40f433ba549424156cb3ae2016))
+* **platform:** restore the my okou greeting texture and lead the home corner with its icons ([#46714](https://github.com/okou-ai/okou/issues/46714)) ([ca7efe7](https://github.com/okou-ai/okou/commit/ca7efe78fef4fd196f1662a904276b1e08397488))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.2
+    * @okouai/core bumped to 8.829.2
+
+## [0.1116.1](https://github.com/okou-ai/okou/compare/app-v0.1116.0...app-v0.1116.1) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.1
+    * @okouai/core bumped to 8.829.1
+
+## [0.1116.0](https://github.com/okou-ai/okou/compare/app-v0.1115.0...app-v0.1116.0) (2026-11-11)
+
+
+### Features
+
+* **app:** add help submenu to the account menu ([#46575](https://github.com/okou-ai/okou/issues/46575)) ([1363c14](https://github.com/okou-ai/okou/commit/1363c145ffbf8507f72e13f628c7d1fe2f4bc567))
+* **app:** graduate the account help menu to general availability ([#46594](https://github.com/okou-ai/okou/issues/46594)) ([3f65aed](https://github.com/okou-ai/okou/commit/3f65aed5ceb7682d657950e002bb2e6bec27f46e))
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Bug Fixes
+
+* **app:** attach safe diagnostics to terminal upload failures ([#46588](https://github.com/okou-ai/okou/issues/46588)) ([552e38c](https://github.com/okou-ai/okou/commit/552e38c77c6065d2f18b50e556698bd7f118c876))
+* **app:** calm the capability home motion and close the gap above the composer ([#46582](https://github.com/okou-ai/okou/issues/46582)) ([a2c5b68](https://github.com/okou-ai/okou/commit/a2c5b683c56169e01d5ae3165ba371cfad60b01b))
+* **app:** explain upstream model request rejections ([#46595](https://github.com/okou-ai/okou/issues/46595)) ([792e7dd](https://github.com/okou-ai/okou/commit/792e7ddbb742e91be84d388f5fefb942ff09807d))
+* **platform:** keep the composer in place across home, chat and project ([#46579](https://github.com/okou-ai/okou/issues/46579)) ([b1bce63](https://github.com/okou-ai/okou/commit/b1bce630a6f7cd4b9d2aa6b37168c8ec4aec56b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+    * @okouai/connectors bumped to 3.22.0
+    * @okouai/core bumped to 8.829.0
+
+## [0.1115.0](https://github.com/okou-ai/okou/compare/app-v0.1114.2...app-v0.1115.0) (2026-11-11)
+
+
+### Features
+
+* **app:** show a project name's emoji as a badge on its folder ([#46565](https://github.com/okou-ai/okou/issues/46565)) ([9402fdf](https://github.com/okou-ai/okou/commit/9402fdfb07cc2572870c243e7610c33451da7cb7))
+* **platform:** align project chat list empty states, pin order and rename with its design ([#46568](https://github.com/okou-ai/okou/issues/46568)) ([e03d0a1](https://github.com/okou-ai/okou/commit/e03d0a180d1763ecfa30a75209b6db968e439b88))
+
+
+### Refactoring
+
+* **platform:** bound the notification membership scan by its pages ([#46572](https://github.com/okou-ai/okou/issues/46572)) ([6c809fc](https://github.com/okou-ai/okou/commit/6c809fc872bae541db9415d2cf32b7b0d0128b19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.1
+    * @okouai/core bumped to 8.828.1
+
+## [0.1114.2](https://github.com/okou-ai/okou/compare/app-v0.1114.1...app-v0.1114.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **platform:** clarify remote access selection across connection states ([#46520](https://github.com/okou-ai/okou/issues/46520)) ([ff03d11](https://github.com/okou-ai/okou/commit/ff03d11c1f6a7a0d256c126481fbc1401b5d14a4))
+
+## [0.1114.1](https://github.com/okou-ai/okou/compare/app-v0.1114.0...app-v0.1114.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **app:** simplify automation disablement notifications ([#46538](https://github.com/okou-ai/okou/issues/46538)) ([0471cae](https://github.com/okou-ai/okou/commit/0471cae5607a931c1798ea2728d4bcc875e18966))
+
+## [0.1114.0](https://github.com/okou-ai/okou/compare/app-v0.1113.0...app-v0.1114.0) (2026-11-11)
+
+
+### Features
+
+* **ssh:** approve chat host access from message cards ([#46522](https://github.com/okou-ai/okou/issues/46522)) ([e2ffb56](https://github.com/okou-ai/okou/commit/e2ffb56490b707b96cd6af58b82aaa8e6bc7711c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.49.0
+    * @okouai/core bumped to 8.828.0
+
+## [0.1113.0](https://github.com/okou-ai/okou/compare/app-v0.1112.2...app-v0.1113.0) (2026-11-11)
+
+
+### Features
+
+* add meeting notes to document templates ([#46428](https://github.com/okou-ai/okou/issues/46428)) ([821606a](https://github.com/okou-ai/okou/commit/821606a3d093f8d51d0c39834acccc4a232329d2))
+* **app:** redesign the capability home cards and choice tray ([#46432](https://github.com/okou-ai/okou/issues/46432)) ([590283f](https://github.com/okou-ai/okou/commit/590283f4984a42888949d15b00a3ad84ead3b221))
+
+
+### Bug Fixes
+
+* **platform:** keep connector scope counts stable during refresh ([#46506](https://github.com/okou-ai/okou/issues/46506)) ([1906e7c](https://github.com/okou-ai/okou/commit/1906e7c70193d78f61960c376f4516c3e1cf3e49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.3
+    * @okouai/core bumped to 8.827.0
+
+## [0.1112.2](https://github.com/okou-ai/okou/compare/app-v0.1112.1...app-v0.1112.2) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.2
+    * @okouai/core bumped to 8.826.2
+
 ## [0.1112.1](https://github.com/okou-ai/okou/compare/app-v0.1112.0...app-v0.1112.1) (2026-11-10)
 
 

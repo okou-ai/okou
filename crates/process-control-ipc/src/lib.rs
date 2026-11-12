@@ -72,11 +72,13 @@
 mod codec;
 /// Separate, additive version-one managed-task channel; legacy tool IPC is unchanged.
 pub mod managed_task;
+mod placement;
 mod transport;
 
 pub use codec::{
     read_hello, read_request, read_response, write_hello, write_request, write_response,
 };
+pub use placement::write_self_to_cgroup;
 pub use transport::{
     accept_with_timeout, bind_abstract_listener, connect_abstract, connect_abstract_with_timeout,
     endpoint_name, read_tool_placement_ack, read_tool_placement_confirmation,

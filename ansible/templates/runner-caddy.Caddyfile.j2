@@ -1,0 +1,23 @@
+# Managed by ansible/playbooks/provision-runner.yml.
+{
+	admin off
+	auto_https disable_redirects
+}
+
+{{ inventory_hostname }} {
+	# TLS-ALPN-01 keeps public ingress on 443; certificate storage is persistent.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	@runner path_regexp runner ^/runners/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:/|$)
+	# Matchers inspect decoded paths; reject ambiguous encoded routing segments
+	# against the original URI before selecting a process. Queries are separate.
+	@ambiguous expression `{http.request.uri}.matches('(?i)^/runners/[^?]*%(2f|5c|2e)')`
+	route {
+		respond @ambiguous 404
+		reverse_proxy @runner unix//var/lib/vm0-runner/ingress/{re.runner.1}.sock
+		respond 404
+	}
+}

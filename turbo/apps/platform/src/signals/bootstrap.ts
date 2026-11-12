@@ -81,6 +81,10 @@ import {
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
+import {
+  setupSshAuthorizationPage$,
+  setupVncAuthorizationPage$,
+} from "./host-authorization/host-authorization-page-setup.ts";
 import { setupDesktopShellAuthorizationPage$ } from "./desktop-shell-authorization/desktop-shell-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
@@ -298,6 +302,14 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.computerUseAuthorize,
     setup: setupAuthPageWrapper(setupComputerUseAuthorizationPage$),
+  },
+  {
+    path: ROUTES.vncAuthorize,
+    setup: setupAuthPageWrapper(setupVncAuthorizationPage$),
+  },
+  {
+    path: ROUTES.sshAuthorize,
+    setup: setupAuthPageWrapper(setupSshAuthorizationPage$),
   },
   {
     path: ROUTES.desktopShellAuthorize,

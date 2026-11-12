@@ -1,4 +1,5 @@
 use super::*;
+use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStringExt;
 
 mod oom_priority;
@@ -41,7 +42,7 @@ fn self_placement_writes_kernel_self_selector() {
 
     let mut file = tempfile::tempfile().unwrap();
     let placement: OwnedFd = file.try_clone().unwrap().into();
-    write_self_to_cgroup(&placement).unwrap();
+    process_control_ipc::write_self_to_cgroup(placement.as_fd()).unwrap();
     file.seek(SeekFrom::Start(0)).unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();

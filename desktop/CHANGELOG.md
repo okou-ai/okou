@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.56.4](https://github.com/okou-ai/okou/compare/desktop-v0.56.3...desktop-v0.56.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **desktop:** restore recovered host status and identify timeout phases ([#46828](https://github.com/okou-ai/okou/issues/46828)) ([17b5b03](https://github.com/okou-ai/okou/commit/17b5b037ffd031b51d24daf15819fdad017e15a0))
+
+## [0.56.3](https://github.com/okou-ai/okou/compare/desktop-v0.56.2...desktop-v0.56.3) (2026-11-11)
+
+
+### Bug Fixes
+
+* **desktop:** clear latest snapshot references on eviction ([#46551](https://github.com/okou-ai/okou/issues/46551)) ([b081dc9](https://github.com/okou-ai/okou/commit/b081dc9a0f7eb5b798a05fc279d2625cbfd244f7))
+
 ## [0.56.2](https://github.com/okou-ai/okou/compare/desktop-v0.56.1...desktop-v0.56.2) (2026-11-09)
 
 

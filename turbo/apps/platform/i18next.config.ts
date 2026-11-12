@@ -28,6 +28,9 @@ export default defineConfig({
     defaultNS: "common",
     functions: ["i18n.t"],
     preservePatterns: [
+      // Shared host review cards select their protocol, states and blockers at runtime.
+      "sshAuthorization.*",
+      "vncAuthorization.*",
       // VNC settings select one allow-listed connection failure at runtime.
       "vnc.connectionStatus.reasons.*",
       "activity.network.details.*",
@@ -49,6 +52,9 @@ export default defineConfig({
       "onboarding.sourcesFirst.outputFormats.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
       "settings.paidTools.tools.*",
+      // Billing surveys label each contract-defined answer at runtime.
+      "billing.survey.creditsExhausted.answers.*",
+      "billing.survey.checkoutAbandoned.answers.*",
     ],
     primaryLanguage: "en-US",
     useTranslationNames: ["useTranslation"],

@@ -39,7 +39,9 @@ struct ResourceFailuresRule: NativeRule {
         {
           return true
         }
-        guard isCancelledRead(handler),
+        guard
+          isCancelledRead(handler)
+            || isDataRead(handler) && cancellationPaths(handler).cancelledCatch,
           let call = statement.expression.as(FunctionCallExprSyntax.self)
         else { return false }
         return ["CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError"]
@@ -53,7 +55,14 @@ struct ResourceFailuresRule: NativeRule {
 
     override func visit(_ node: CatchClauseSyntax) -> SyntaxVisitorContinueKind {
       let cancelledRead = isCancelledRead(node)
-      guard caughtError(node) != nil || cancelledRead, inResource(node) else {
+      let paths = cancellationPaths(node)
+      let dataRead = isDataRead(node) && inReadExecution(node)
+      let cancelledPath = dataRead && paths.swallowsCancellation()
+      guard
+        caughtError(node) != nil || cancelledRead || cancelledPath
+          || dataRead && paths.cancelledCatch,
+        inResource(node)
+      else {
         return .visitChildren
       }
       let statements = node.body.statements
@@ -66,7 +75,7 @@ struct ResourceFailuresRule: NativeRule {
         cancelledRead
         && ReturnsVisitor(viewMode: .sourceAccurate).walk(
           tree: node.body, handler: \.found)
-      if statements.isEmpty || emptyReturn || returnsSuccess {
+      if statements.isEmpty || emptyReturn || returnsSuccess || cancelledPath {
         positions.append(node.positionAfterSkippingLeadingTrivia)
       }
       return .visitChildren
@@ -75,6 +84,10 @@ struct ResourceFailuresRule: NativeRule {
     private func isCancelledRead(_ node: CatchClauseSyntax) -> Bool {
       let catchesCancellation = node.catchItems.contains { cancellationName($0) != nil }
       guard catchesCancellation else { return false }
+      return isDataRead(node)
+    }
+
+    private func isDataRead(_ node: CatchClauseSyntax) -> Bool {
       // A command may deliberately end a cancelled UI operation. A resource
       // read must keep cancellation in its Task rather than publish data.
       for ancestor in ancestors(of: node) {
@@ -87,11 +100,33 @@ struct ResourceFailuresRule: NativeRule {
       return false
     }
 
+    private func inReadExecution(_ node: CatchClauseSyntax) -> Bool {
+      for parent in ancestors(of: node) {
+        if parent.is(FunctionDeclSyntax.self) || parent.is(AccessorBlockSyntax.self) {
+          return false
+        }
+        guard let closure = parent.as(ClosureExprSyntax.self) else { continue }
+        guard let (call, _) = closureCall(closure) else { return false }
+        if isGraphCall(call, names: graphCallbacks) { return true }
+        if !nativeTaskCall(call) { return false }
+      }
+      return false
+    }
+
     private func cancellationBinding(_ node: CatchClauseSyntax) -> String? {
-      guard isCancelledRead(node), node.catchItems.count == 1,
+      guard isDataRead(node), node.catchItems.count == 1,
         let item = node.catchItems.first
       else { return nil }
-      return cancellationName(item)
+      let paths = cancellationPaths(node)
+      return cancellationName(item) ?? (paths.cancelledCatch ? paths.binding : nil)
+    }
+
+    private func cancellationPaths(_ node: CatchClauseSyntax) -> ResourceCancellationPaths {
+      let callback = ancestors(of: node).compactMap { $0.as(ClosureExprSyntax.self) }.first {
+        closureCall($0).map { isGraphCall($0.0, names: graphCallbacks) } == true
+      }
+      return ResourceCancellationPaths(
+        handler: node, signals: callback.map(nativeSignalNames) ?? [])
     }
 
     private func cancellationName(_ item: CatchItemSyntax) -> String? {

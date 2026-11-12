@@ -1,0 +1,141 @@
+name: Android
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: false
+
+concurrency:
+  group: android-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.changes.outputs.needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 32
+      - name: Verify change detection and scripts
+        run: |
+          for script in android/scripts/*.sh; do bash -n "$script"; done
+          shellcheck android/scripts/*.sh
+          python3 android/scripts/ci-changed.test.py
+      - name: Select Android checks
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          needed=$(bash android/scripts/ci-changed.sh)
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+
+  build-test:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+      - name: Install Android SDK
+        run: bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Test native state and application, lint, and assemble
+        run: bash android/scripts/check.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: okou-android-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  instrumentation:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+      - name: Install Android SDK
+        run: bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Enable emulator hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Test the native shell on Android API 35
+        shell: bash
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p build/reports/instrumentation
+          ./gradlew :app:pixel2Api35DebugAndroidTest \
+            -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
+            --no-daemon --stacktrace --console=plain \
+            2>&1 | tee build/reports/instrumentation/gradle.log
+      - name: Retain Android test reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-instrumentation-api35-${{ github.sha }}
+          path: |
+            android/build/reports/instrumentation/
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/outputs/managed_device_android_test_additional_output/
+          if-no-files-found: warn
+          retention-days: 7
+
+  ci-gate-android:
+    needs: [detect, build-test, instrumentation]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate CI results
+        env:
+          DETECT: ${{ needs.detect.result }}
+          NEEDED: ${{ needs.detect.outputs.needed }}
+          BUILD: ${{ needs.build-test.result }}
+          INSTRUMENTATION: ${{ needs.instrumentation.result }}
+        run: |
+          if [ "$DETECT" != success ]; then
+            echo "::error::Android change detection must succeed; got $DETECT"
+            exit 1
+          fi
+          case "$NEEDED:$BUILD:$INSTRUMENTATION" in
+            true:success:success)
+              echo 'Android JVM tests, emulator instrumentation, lint and APK assembly passed.'
+              ;;
+            false:skipped:skipped)
+              echo 'Android checks were not needed for these changes.'
+              ;;
+            *)
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, instrumentation=$INSTRUMENTATION"
+              exit 1
+              ;;
+          esac

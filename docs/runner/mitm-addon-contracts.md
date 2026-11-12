@@ -334,7 +334,7 @@ Runner and its embedded addon ship together. `okou_control_socket_dir` selects
 the current managed launch directory; `okou_usage_state_id` is also the control
 generation and rotates on restart. Readiness requires a correlated `proxy.status`
 reply followed by EOF, then the existing TCP listener probe and one completed
-`catalog.warm` request, within the original 10-second startup deadline. A socket
+`catalog.warm` request, within the original 20-second startup deadline. A socket
 inode alone is not readiness. Only observational startup probes retry, with at
 most one second per control attempt; an uncertain warmup is not replayed.
 
@@ -382,9 +382,16 @@ tree. Each side connects/binds through its own live directory descriptor's
 Each Unix stream carries one request and at most one terminal reply: a four-byte
 big-endian unsigned length followed by UTF-8 JSON. Frames are 1–65,536 bytes;
 there are at most 16 admitted connections, a backlog of 16, and a five-second
-whole-connection deadline. Partial frames, oversize lengths, disconnected or
-slow peers cannot retain admission indefinitely. Overload closes without reading
-or inventing a request ID. Malformed or pipelined peers can observe a reset.
+whole-connection deadline for ordinary requests. Only a fully validated,
+current-generation `catalog.warm` with an available registry owner reschedules
+connection completion to eleven seconds from dispatch: ten seconds for owner
+work plus one second for its correlated reply. Its initial framing still has
+the five-second limit. The Rust 20-second readiness/preparation deadline bounds
+the entire exchange. An expired catalog waiter returns `deadline` without
+cancelling owner work or releasing its admission slot. Partial frames, oversize
+lengths, disconnected or slow peers cannot retain admission indefinitely.
+Overload closes without reading or inventing a request ID. Malformed or pipelined
+peers can observe a reset.
 
 Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
 match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
@@ -958,6 +965,49 @@ auth-base credentials. `test_firewall_method_override.py` covers the Mailchimp
 audience deletion bypass through these hooks. Old runners keep their previous
 behavior until deployed; permission catalogs that rely on this boundary must
 wait for the runner rollout.
+
+## Ordinary query-auth work boundary
+
+Ordinary connector authentication with a nonempty resolved query accepts at most
+65,536 raw request-target bytes and 8,192 aggregate query work items. These are
+inclusive input limits, checked in the shared injector before any resolved
+header mutation, complete query-pair parsing/decoding, or query writeback.
+The byte check uses `Request.data.path` before URL component extraction. Within
+that bound, the pair check counts raw `&`-separated client query segments,
+including empty and shadowed segments, plus the number of resolved query keys.
+A genuinely empty query contributes zero client segments. Semicolons and
+percent-encoded separators remain data under the pinned mitmproxy parser.
+
+The limits use the existing auth.base/SigV4 work scale, retaining ample room for
+ordinary connector requests while bounding both target scanning and pair
+materialization. Their separately named constants allow independent policies.
+Conservative counting limits pre-merge work even when duplicate credentials or
+empty segments would make the final query smaller. This is not a new limit on
+the post-injection URL length; resolved data retains the existing auth-service
+response bound.
+
+Over-budget requests receive a local 414 with
+`query_auth_request_target_too_large` or `query_auth_query_too_many_pairs` through
+both public hooks. Header-phase failures complete through native local-response
+framing without fallback, a second credential lookup, or upstream bytes. Header
+probe rollback restores raw target fields and headers without reparsing the URL,
+so native non-ASCII query bytes also retain the local error and exact target.
+Diagnostics contain limits and fixed failure text, not query values.
+
+Accepted inputs retain mitmproxy's parser/serializer and the existing single-pass
+merge: managed keys replace all decoded equivalents at their first occurrence,
+unrelated duplicates/blanks survive, absent keys append in resolved-map order,
+and path parameters/fragments remain intact. Missing or empty resolved queries
+do not invoke this policy; header-only auth and auth.base retain their separate
+behavior. These limits do not bound mitmproxy's initial native HTTP-head buffer.
+No Runner/API or persisted-state format changes; old/draining Runners retain
+their previous policy until replaced.
+
+`test_query_auth_work_limits.py` exercises exact/first-over bounds, multibyte
+targets, empty/shadowed segments, cache reuse, accepted semantics and header-only
+auth through public hooks, including partitioned native HTTP/1 admission and
+terminal cleanup. It observes the real dependency parsing/writeback boundary
+without wall-clock assertions or live provider traffic.
 
 ## WebSocket Framing Contract
 

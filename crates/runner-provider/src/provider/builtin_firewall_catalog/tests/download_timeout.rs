@@ -104,6 +104,55 @@ impl CatalogBodyPeer {
     }
 }
 
+// This fixture varies names while keeping every API definition identical.
+// Keep the full expected objects for the real cache oracle, but encode APIs once.
+fn catalog_body_with_shared_apis(
+    expected: &BuiltinFirewallCatalog,
+    apis: &[FirewallApi],
+) -> Vec<u8> {
+    let apis = serde_json::to_vec(apis).unwrap();
+    let mut body = Vec::new();
+    body.extend_from_slice(b"{\"catalogDigest\":");
+    serde_json::to_writer(&mut body, &expected.catalog_digest).unwrap();
+    body.extend_from_slice(b",\"catalogVersion\":");
+    serde_json::to_writer(&mut body, &expected.catalog_version).unwrap();
+    body.extend_from_slice(b",\"firewalls\":{");
+    for (index, (key, firewall)) in expected.firewalls.iter().enumerate() {
+        if index != 0 {
+            body.push(b',');
+        }
+        serde_json::to_writer(&mut body, key).unwrap();
+        body.extend_from_slice(b":{\"name\":");
+        serde_json::to_writer(&mut body, &firewall.name).unwrap();
+        body.extend_from_slice(b",\"apis\":");
+        body.extend_from_slice(&apis);
+        body.push(b'}');
+    }
+    body.extend_from_slice(b"}}");
+    body
+}
+
+#[test]
+fn shared_api_catalog_body_matches_canonical_serialization() {
+    let mut expected = catalog("template");
+    expected.catalog_version.push_str("-\"-\\-界");
+    let firewall = expected.firewalls.remove("template").unwrap();
+    for count in [0, 1, 3] {
+        expected.firewalls = (0..count)
+            .rev()
+            .map(|index| {
+                let mut entry = firewall.clone();
+                entry.name = format!("connector-{index:04}");
+                (entry.name.clone(), entry)
+            })
+            .collect();
+        assert_eq!(
+            catalog_body_with_shared_apis(&expected, &firewall.apis),
+            serde_json::to_vec(&expected).unwrap()
+        );
+    }
+}
+
 fn large_catalog() -> (BuiltinFirewallCatalog, Vec<u8>) {
     let mut expected = catalog("template");
     let mut firewall = expected.firewalls.remove("template").unwrap();
@@ -117,7 +166,7 @@ fn large_catalog() -> (BuiltinFirewallCatalog, Vec<u8>) {
             (entry.name.clone(), entry)
         })
         .collect();
-    let body = serde_json::to_vec(&expected).unwrap();
+    let body = catalog_body_with_shared_apis(&expected, &firewall.apis);
     assert!(body.len() > 10 * 1024 * 1024);
     assert!(u64::try_from(body.len()).unwrap() < BUILTIN_FIREWALL_CATALOG_MAX_BYTES);
     (expected, body)

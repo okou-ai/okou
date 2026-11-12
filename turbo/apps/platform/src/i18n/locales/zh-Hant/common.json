@@ -548,6 +548,7 @@
       "openDocs": "在 Google 文件中開啟",
       "openSheets": "在 Google 試算表中開啟",
       "openSlides": "在 Google 簡報中開啟",
+      "reconnect": "重新連線 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已將 {{count}} 個檔案同步到 Google Drive",
@@ -1060,6 +1061,8 @@
       "invalid": "此權限連結無效或無法使用。",
       "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
       "loading": "正在載入權限",
+      "myOkouScopeNote": "適用於你在本工作區使用 Okou，不限於目前任務。",
+      "myOkouSharedScopeNote": "適用於你在本工作區所有聊天中使用此連接器。同事的授權各自獨立。",
       "notNow": "暫不允許",
       "review": "檢視並授權",
       "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "更多積分和併發執行",
       "getPlan": "獲取{{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "只是看看價格",
+          "needs_approval": "需要其他人核准",
+          "not_ready_yet": "還沒準備好付費",
+          "not_seeing_value": "還沒看到它的價值",
+          "other": "其他原因",
+          "payment_issue": "付款時遇到問題",
+          "price_higher_than_expected": "價格比預期高",
+          "results_not_good_enough": "對產出結果不滿意"
+        },
+        "description": "只有一個問題，你的回答會幫助我們改進。",
+        "question": "是什麼讓你沒有完成購買？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "目前用不到更多",
+          "not_sure_worth_it": "還不確定是否值得",
+          "other": "其他原因",
+          "still_trying": "想再多試用一下",
+          "too_expensive": "價格太高"
+        },
+        "question": "是什麼讓你今天還沒有升級？",
+        "reward": "此工作區首個符合條件的回答可獲得 {{credits}} 獎勵 credits，有效期 30 天。",
+        "thanksWithCredits": "感謝！已為你新增 {{credits}} credits，可以繼續使用了。"
+      },
+      "error": "送出失敗，請再試一次。",
+      "notNow": "暫不回答",
+      "otherLabel": "你的回答",
+      "otherPlaceholder": "補充說明（選填）",
+      "submit": "送出",
+      "thanks": "感謝你的回饋。"
     },
     "toasts": {
       "autoRechargeUpdated": "自動充值已更新",
@@ -1624,13 +1661,9 @@
       "editReason": "修改原因",
       "homeCard": {
         "completeTitle": "全部處理完了",
-        "emptyTitle": "暫時沒有新建議",
         "feedback": "建議操作",
-        "loading": "正在載入建議",
         "navigation": "切換建議",
-        "next": "下一則建議",
-        "previous": "上一則建議",
-        "retry": "重試"
+        "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",
@@ -1865,7 +1898,9 @@
         "title": "創作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什麼新功能",
       "research": {
+        "description": "流量、廣告、產品、話題",
         "items": {
           "ads": "探索廣告創意",
           "products": "研究產品",
@@ -1878,6 +1913,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客戶、創作者、決策者",
         "items": {
           "affiliates": "聯盟行銷計畫",
           "creators": "創作者合作",
@@ -1908,6 +1944,7 @@
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",
+        "summary": "依排程或觸發器自動執行",
         "triggers": {
           "description": "事件發生時自動開始。",
           "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",
@@ -2137,6 +2174,8 @@
         "outputLimitTitle": "回覆達到了長度上限",
         "personalAccount": "個人訂閱 {{account}}",
         "personalAccountDisconnected": "個人訂閱已中斷",
+        "providerBadRequestDescription": "可以重試，或切換模型繼續。",
+        "providerBadRequestTitle": "模型服務商傳回錯誤",
         "providerBalanceDescription": "請檢查訂閱帳號的用量或額度餘額，然後重試。",
         "providerBalanceTitle": "你的訂閱帳號需要更多額度",
         "providerConnectionDescription": "到「設定 > 模型」中重新連線或更新帳戶，然後再試。",
@@ -2346,16 +2385,34 @@
       "untitled": "未命名"
     },
     "remoteAccess": {
+      "all": "全部",
+      "allowed": "已允許",
+      "autoSave": "變更自動儲存，僅用於此對話",
+      "connections": "連線",
       "default": "預設",
       "defaultEnabled": "聊天預設啟用",
-      "disabled": "已停用",
-      "enabled": "已啟用",
+      "draft": "傳送第一則訊息時套用",
       "enabledCount_other": "已啟用 {{count}} 個",
+      "enableInChat": "在此對話開啟",
+      "enableSsh": "在此對話開啟 SSH {{name}}",
+      "filterHint": "修改過的連線會保留到切換篩選時",
+      "fromChat": "此對話",
       "loadFailed": "無法載入遠端存取權限。",
       "loading": "正在載入遠端存取…",
+      "manage": "管理連線",
+      "needsReload": "重新載入以確認權限",
+      "noConnections": "尚未設定 SSH 或 VNC 連線",
+      "noneAllowed": "此對話尚未允許任何連線",
+      "notAllowed": "未允許",
       "off": "關閉",
       "on": "開啟",
+      "reload": "重新載入",
       "requiresSsh": "需要 SSH：{{name}}",
+      "saved": "已儲存，僅用於此對話",
+      "saveUnconfirmed": "無法確認變更是否已儲存，請重新載入權限後再修改。",
+      "saving": "正在儲存…",
+      "scope": "選擇 Okou 可在此對話中使用的連線",
+      "showAll": "查看全部連線",
       "sshDisabled": "需開啟 SSH：{{name}}",
       "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
@@ -3162,6 +3219,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 位成員",
+    "bindingUnavailable": "無法使用",
     "cancel": "取消",
     "changed": "此 Cloudflare Access 在編輯期間發生了變更。變更未儲存。",
     "clientIdPlaceholder": "貼上 Service Token Client ID",
@@ -3174,7 +3232,7 @@
     "failed": "無法儲存 Cloudflare Access 更改。",
     "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
     "impactChanged": "受影響的主機已發生變更，此次變更未套用。",
-    "inUse": "有 SSH 主機正在使用此 Cloudflare Access。主機擁有者須先重新綁定或刪除該主機。",
+    "inUse": "此 Cloudflare Access 仍被引用。請先解除或更換依賴它的主機和自訂連接器的網路綁定。",
     "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
     "loadFailed": "無法載入 Cloudflare Access。",
     "loading": "正在載入 Cloudflare Access…",
@@ -3406,6 +3464,8 @@
         "unshared": "未共享給任何智能體"
       },
       "filterWith": "篩選：{{category}}",
+      "myOkouDescription": "連結第三方服務，供你的 Okou 使用。",
+      "myOkouDescriptionWithCount": "連結 {{value}} 項服務，供你的 Okou 使用。",
       "noConnectorsAlt": "暫無連接器",
       "otherCategory": "其他",
       "remoteAccess": "遠端訪問",
@@ -5098,7 +5158,6 @@
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
@@ -5462,6 +5521,7 @@
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
     "overloaded": "{{model}}負載過高。請改用其他模型。",
+    "providerBadRequest": "模型服務商傳回錯誤。可以重試，或切換模型繼續。",
     "providerBalance": "你連結的訂閱帳號餘額不足。",
     "transient": "出了點問題。",
     "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
@@ -5486,6 +5546,11 @@
       "creditBalance_one": "{{value}} 積分",
       "creditBalance_other": "{{value}} 積分",
       "exportData": "匯出資料",
+      "help": {
+        "docs": "文件",
+        "keyboardShortcuts": "快捷鍵",
+        "label": "說明"
+      },
       "lab": "實驗室",
       "settings": "設定",
       "signOut": "退出登入",
@@ -6195,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "隱藏合規資訊",
       "link": "安全詳情",
       "status": {
         "aligned": "已對標",
@@ -6341,6 +6407,33 @@
     "unavailable": "該帳號無法使用 SSH 訪問。",
     "username": "SSH 使用者名稱"
   },
+  "sshAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。",
+      "ssh_access_required": "請先批准所需的 SSH 主機。"
+    },
+    "continue": "繼續任務",
+    "details": "存取詳細資訊",
+    "effect": "允許以此遠端使用者執行命令和傳輸檔案，直到關閉存取。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 SSH 存取",
+      "denied": "已拒絕 SSH 存取",
+      "expired": "SSH 申請已過期",
+      "pending": "SSH 存取",
+      "revoked": "已撤銷 SSH 存取",
+      "stale": "SSH 申請已變更"
+    },
+    "title": "SSH 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
     "delete": "刪除 Tailscale",
@@ -6452,16 +6545,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "返回工作流程",
+      "disabled": "已停用",
       "disabledAt": "停用時間：{{time}}",
       "loadFailed": "無法載入此自動化",
       "loadingAutomation": "正在載入自動化",
+      "notNow": "暫時不用",
       "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
-      "reason_one": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
-      "reason_other": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
+      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
       "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
       "switchWorkspace": "切換工作區",
       "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
       "systemSource": "系統通知",
+      "title": "自動化已停用",
       "unavailable": "找不到此自動化，或你無權存取",
       "viewAutomation": "查看自動化",
       "workspace": "工作區",
@@ -6671,6 +6767,34 @@
       "via": "SSH 主機："
     },
     "unavailable": "當前工作區不支援 VNC。"
+  },
+  "vncAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。",
+      "ssh_access_required": "請先批准所需的 SSH 主機。"
+    },
+    "continue": "繼續任務",
+    "dependencies": "依賴的 SSH 主機（需單獨批准）",
+    "details": "存取詳細資訊",
+    "effect": "允許檢視和控制此桌面，直到存取權限被關閉。依賴的 SSH 主機需單獨批准。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 VNC 存取",
+      "denied": "已拒絕 VNC 存取",
+      "expired": "VNC 申請已過期",
+      "pending": "VNC 存取",
+      "revoked": "已撤銷 VNC 存取",
+      "stale": "VNC 申請已變更"
+    },
+    "title": "VNC 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
   },
   "workflows": {
     "automations": {
@@ -7351,12 +7475,11 @@
       "codeInstructions": "從要新增的信箱將此驗證碼寄給 Okou，放在郵件主旨或內文第一行皆可。",
       "connected": "信箱已連線",
       "deleteAria": "刪除 {{email}}",
-      "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "description": "透過郵件與 Okou 對話",
       "emailAddress": "電子郵件地址",
       "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
       "invalidLink": "連線連結無效，請重新寄信給 Okou。",
       "loadError": "無法載入信箱連線",
-      "loginNotice": "登入信箱始終保持連接。",
       "manage": "管理",
       "manageDescription": "從要新增的信箱寄出驗證碼。",
       "manageTitle": "信箱連線",

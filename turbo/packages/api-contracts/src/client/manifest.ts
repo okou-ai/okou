@@ -81,6 +81,7 @@ export const clientDescriptorManifest = [
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
+      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",
@@ -696,6 +697,10 @@ export const clientDescriptorManifest = [
     contracts: ["sshHostsContract"],
   },
   {
+    module: "ssh-authorization",
+    contracts: ["sshAuthorizationContract"],
+  },
+  {
     module: "ssh-connections",
     contracts: ["sshConnectionsContract"],
   },
@@ -778,6 +783,10 @@ export const clientDescriptorManifest = [
   {
     module: "vnc-access",
     contracts: ["vncHostsContract"],
+  },
+  {
+    module: "vnc-authorization",
+    contracts: ["vncAuthorizationContract"],
   },
   {
     module: "vnc-connections",

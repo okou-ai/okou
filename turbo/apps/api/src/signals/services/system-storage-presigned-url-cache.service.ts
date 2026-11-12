@@ -41,10 +41,6 @@ export type StorageManifestPresignedUrlCacheScope = Exclude<
   | "content_bundle"
 >;
 
-export type StorageManifestCacheBranch = "requested" | "captured";
-export type StorageManifestCacheEntryKind =
-  "compose" | "additional" | "artifact";
-
 export const SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS =
   PRESIGNED_URL_TTL_SECONDS;
 const SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY = "system-storage-url-v1";
@@ -72,11 +68,6 @@ export const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS =
 const deletedCacheRowSchema = object({ cacheKey: string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
-
-export type SystemStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
-export type WorkflowSkillStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
 
 export interface SystemStoragePresignedUrlRequest {
   readonly bucket: string;
@@ -536,17 +527,12 @@ export interface StorageManifestPresignedUrlCacheSnapshot {
     StorageManifestPresignedUrlCacheScope,
     ReadonlyMap<string, SelectedStoragePresignedUrlCacheRow>
   >;
-  readonly cacheKeysByRequest: WeakMap<
-    object,
-    StorageManifestPresignedUrlCacheLookupPair
-  >;
 }
 
 export interface StorageManifestPresignedUrlCachePrefetchInput {
   readonly systemRequests: readonly SystemStoragePresignedUrlRequest[];
   readonly workflowSkillRequests: readonly WorkflowSkillStoragePresignedUrlRequest[];
   readonly readOnlyRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
-  readonly logicalLookupCount: number;
 }
 
 interface StoragePresignedUrlFreshRequest {
@@ -566,109 +552,6 @@ function presentationTemplatePreviewRequests(
     );
   }
   return requestsByCacheKey;
-}
-
-interface StorageManifestPresignedUrlCacheLookupPair {
-  readonly scope: StorageManifestPresignedUrlCacheScope;
-  readonly cacheKey: string;
-}
-
-export function storageManifestPresignedUrlCacheLookupPairs(
-  input: StorageManifestPresignedUrlCachePrefetchInput,
-  memoizeByValue: boolean,
-): {
-  readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
-  readonly cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"];
-} {
-  const cacheKeysByScope = new Map<
-    StorageManifestPresignedUrlCacheScope,
-    Set<string>
-  >();
-  const cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"] =
-    new WeakMap();
-  const cacheKeysByValue = memoizeByValue
-    ? new Map<string, string>()
-    : undefined;
-  const lookupCacheKey = <TRequest extends SystemStoragePresignedUrlRequest>(
-    scope: StorageManifestPresignedUrlCacheScope,
-    request: TRequest,
-    calculate: (value: TRequest) => string,
-  ): string => {
-    if (!cacheKeysByValue) {
-      return calculate(request);
-    }
-    const signature = JSON.stringify([
-      scope,
-      request.bucket,
-      request.objectKey,
-      request.storageVersionId,
-      "resolvedOrgId" in request ? request.resolvedOrgId : null,
-      request.publicEndpoint,
-    ]);
-    const cached = cacheKeysByValue.get(signature);
-    if (cached) {
-      return cached;
-    }
-    const cacheKey = calculate(request);
-    cacheKeysByValue.set(signature, cacheKey);
-    return cacheKey;
-  };
-  const add = (
-    scope: StorageManifestPresignedUrlCacheScope,
-    request: object,
-    cacheKey: string,
-  ) => {
-    const cacheKeys = cacheKeysByScope.get(scope) ?? new Set<string>();
-    cacheKeys.add(cacheKey);
-    cacheKeysByScope.set(scope, cacheKeys);
-    cacheKeysByRequest.set(request, { scope, cacheKey });
-  };
-  for (const request of input.systemRequests) {
-    add(
-      "system_storage",
-      request,
-      lookupCacheKey(
-        "system_storage",
-        request,
-        systemStoragePresignedUrlCacheKey,
-      ),
-    );
-  }
-  for (const request of input.workflowSkillRequests) {
-    add(
-      "workflow_skill_storage",
-      request,
-      lookupCacheKey(
-        "workflow_skill_storage",
-        request,
-        workflowSkillStoragePresignedUrlCacheKey,
-      ),
-    );
-  }
-  for (const request of input.readOnlyRequests) {
-    add(
-      "readonly_storage",
-      request,
-      lookupCacheKey(
-        "readonly_storage",
-        request,
-        readOnlyStoragePresignedUrlCacheKey,
-      ),
-    );
-  }
-  const pairs = [...cacheKeysByScope]
-    .flatMap(([scope, cacheKeys]) => {
-      return [...cacheKeys].map((cacheKey) => {
-        return { scope, cacheKey };
-      });
-    })
-    .sort((left, right) => {
-      return (
-        left.scope.localeCompare(right.scope) ||
-        left.cacheKey.localeCompare(right.cacheKey)
-      );
-    });
-  return { pairs, cacheKeysByRequest };
 }
 
 function hasReusablePresignedUrlLifetime(args: {

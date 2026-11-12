@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES } from "@okouai/api-contracts/contracts/browser-user-actions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
 import { setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { browserUserActionRoutes } from "../browser-user-actions";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const limit = BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES;
@@ -15,11 +14,10 @@ const headers = Object.freeze({
   "content-type": "application/json",
 });
 
-async function inputRequest() {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` },
-    { [FeatureSwitchKey.BrowserNativeInput]: true },
+function inputRequest() {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
   );
   return setupRawAppRequest({ context, routes: browserUserActionRoutes });
 }
@@ -30,7 +28,7 @@ function applyPath() {
 
 describe("Browser input request body policy", () => {
   it("rejects a declared body above the limit before JSON parsing", async () => {
-    const request = await inputRequest();
+    const request = inputRequest();
     const response = await request(applyPath(), {
       method: "POST",
       headers: { ...headers, "content-length": String(limit + 1) },
@@ -45,7 +43,7 @@ describe("Browser input request body policy", () => {
   it.each([undefined, "1"])(
     "bounds actual streamed bytes and cancels the producer with content-length=%s",
     async (contentLength) => {
-      const request = await inputRequest();
+      const request = inputRequest();
       // The character count fits; the extra UTF-8 byte exceeds the limit.
       const bytes = new TextEncoder().encode(
         JSON.stringify({ values: [{ key: "name", value: "é" }] }).padEnd(
@@ -95,7 +93,7 @@ describe("Browser input request body policy", () => {
   );
 
   it("accepts the exact byte limit and decodes UTF-8 across stream chunks", async () => {
-    const request = await inputRequest();
+    const request = inputRequest();
     const json = JSON.stringify({ values: [{ key: "name", value: "é" }] });
     const text =
       json + " ".repeat(limit - new TextEncoder().encode(json).length);
@@ -133,7 +131,7 @@ describe("Browser input request body policy", () => {
       "values: Invalid input: expected array, received string",
     ],
   ])("preserves JSON and schema validation for %s", async (body, message) => {
-    const request = await inputRequest();
+    const request = inputRequest();
     const response = await request(applyPath(), {
       method: "POST",
       headers,

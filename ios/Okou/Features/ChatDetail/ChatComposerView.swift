@@ -33,6 +33,7 @@ struct ChatComposerView: View {
   @State private var showsPhotos = false
   @State private var showsFiles = false
   @State private var showsConnectors = false
+  @State private var showsModels = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
   @State private var showsCamera = false
   @State private var showsAddSheet = false
@@ -52,11 +53,12 @@ struct ChatComposerView: View {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
-  /// one truncated line under the controls. Voice input opens it too.
+  /// one truncated line under the controls. Voice input opens it too, and the model sheet
+  /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
     isFocused || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-      || voiceActive
+      || voiceActive || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
@@ -65,6 +67,10 @@ struct ChatComposerView: View {
   }
   /// On an empty draft the mic takes the send slot; once there is content it sits beside send.
   private var replacesSendWithMic: Bool { !hasContent && !canStop && draftState?.voice != nil }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var showsVoiceInput: Bool {
+    replacesSendWithMic || (expandsInput && !voiceActive)
+  }
   private var resolvedPlaceholder: String { placeholder ?? String(localized: "Message Okou") }
 
   var body: some View {
@@ -188,19 +194,27 @@ struct ChatComposerView: View {
             connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
           )
           .disabled(isBusy || needsUpgrade)
-          // The model control lives in the header beside the menu (ChatWorkspaceHeader).
         }
       } trailing: {
         HStack(spacing: OkouSpace.xs) {
-          // The mic sits beside send once there is a draft; on an empty one it takes send's place.
-          if let voice = draftState?.voice, expandsInput && !replacesSendWithMic && !voiceActive {
-            ComposerVoiceInputButton(voice: voice)
-              .disabled(isBusy || needsUpgrade || draftState?.canEditVoice != true)
+          // The chat's model, only while the composer is open, where the next message is written.
+          // Keep controls mounted so they enter with the moving toolbar, not at its final position.
+          if let modelSelection {
+            ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+              .disabled(needsUpgrade)
+              .opacity(showsModelPicker ? 1 : 0)
+              .allowsHitTesting(showsModelPicker)
+              .accessibilityHidden(!showsModelPicker)
           }
-          if replacesSendWithMic, let voice = draftState?.voice {
+          // The mic sits beside send once there is a draft; on an empty one it takes send's place.
+          if let voice = draftState?.voice {
             ComposerVoiceInputButton(voice: voice)
               .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-          } else {
+              .opacity(showsVoiceInput ? 1 : 0)
+              .allowsHitTesting(showsVoiceInput)
+              .accessibilityHidden(!showsVoiceInput)
+          }
+          if !replacesSendWithMic {
             Button {
               if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
               // The send operation captures native text for motion before ending editing.
@@ -282,6 +296,9 @@ struct ChatComposerView: View {
         showsAddSheet = false
       }
     }
+    .sheet(isPresented: $showsModels) {
+      if let modelSelection { ChatModelPickerView(selection: modelSelection) }
+    }
     .sheet(isPresented: $showsConnectors) {
       if let connectorSelection {
         ComposerConnectorSheet(store: connectorSelection)
@@ -291,7 +308,7 @@ struct ChatComposerView: View {
       }
     }
     // Model settings decide whether the draft can be sent, so a mounted composer loads them
-    // while the reader types; the header's model capsule shows what they resolve to.
+    // while the reader types; the open composer's model control shows what they resolve to.
     .task(id: modelSelection.map { ObjectIdentifier($0) }) {
       await modelSelection?.open()
     }
@@ -313,6 +330,7 @@ struct ChatComposerView: View {
       pendingAdd = nil
       showsAddSheet = false
       showsConnectors = false
+      showsModels = false
       showsCamera = false
       showsScanner = false
       showsPhotos = false

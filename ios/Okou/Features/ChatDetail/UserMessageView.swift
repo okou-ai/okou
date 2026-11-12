@@ -149,7 +149,8 @@ struct UserMessageInlineText: View {
           }
         }
       case "chat_thread", "agent", "project", "template":
-        text.foregroundColor = OkouColor.brandText
+        // The muted chip marks a mention; its text stays ink.
+        text.foregroundColor = OkouColor.foreground
         text.font = .okou(.body).weight(.medium)
         text.backgroundColor = OkouColor.muted
         let path: String?

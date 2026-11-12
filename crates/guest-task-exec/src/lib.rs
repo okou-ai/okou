@@ -4,7 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitCode};
@@ -193,17 +193,7 @@ fn place(report: File) -> io::Result<()> {
         return Err(invalid("task launcher identity mismatch"));
     }
     let placement: OwnedFd = process_control_ipc::receive_tool_placement(&stream)?;
-    loop {
-        // SAFETY: placement is write-only and the one-byte buffer is valid.
-        let written = unsafe { libc::write(placement.as_raw_fd(), b"0".as_ptr().cast(), 1) };
-        if written == 1 {
-            break;
-        }
-        if written < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-            continue;
-        }
-        return Err(io::Error::last_os_error());
-    }
+    process_control_ipc::write_self_to_cgroup(placement.as_fd())?;
     drop(placement);
     let membership = std::fs::read_to_string("/proc/self/cgroup")?;
     let path = membership

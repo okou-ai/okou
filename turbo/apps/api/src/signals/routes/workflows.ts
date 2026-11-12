@@ -82,6 +82,7 @@ import { updateWorkflow$ } from "../services/workflow-update.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
 import {
   prepareWorkflowAttachments$,
+  WorkflowAttachmentError,
   publishWorkflowContentBundle$,
   workflowAttachmentFiles,
   type PreparedWorkflowAttachments,
@@ -656,19 +657,29 @@ const prepareAndCreateWorkflow$ = command(
       },
       signal,
     );
-    const contentBundle = await set(
-      publishWorkflowContentBundle$,
-      {
-        orgId: args.orgId,
-        workflowId,
-        name: args.body.name,
-        description: args.body.description ?? null,
-        instruction: args.body.instruction ?? null,
-        attachments: prepared.attachments,
-        files: args.body.files ?? [],
-      },
+    const publicationPreparation = await settle(
+      set(
+        publishWorkflowContentBundle$,
+        {
+          orgId: args.orgId,
+          workflowId,
+          name: args.body.name,
+          description: args.body.description ?? null,
+          instruction: args.body.instruction ?? null,
+          attachments: prepared.attachments,
+          files: args.body.files ?? [],
+        },
+        signal,
+      ),
       signal,
     );
+    if (!publicationPreparation.ok) {
+      if (args.importSource && args.body.files?.length) {
+        throw new WorkflowAttachmentError(publicationPreparation.error);
+      }
+      throw publicationPreparation.error;
+    }
+    const contentBundle = publicationPreparation.value;
     const pendingPublication = set(
       commitPreparedWorkflow$,
       { ...args, workflowId, ...prepared, contentBundle },
@@ -1443,6 +1454,7 @@ const copyWorkflowInner$ = command(
               orgId: auth.orgId,
               workflowId: sourceWorkflow.id,
               attachments: sourceWorkflow.attachments,
+              contentBundle: sourceWorkflow.contentBundle,
             }),
           )
         : null;

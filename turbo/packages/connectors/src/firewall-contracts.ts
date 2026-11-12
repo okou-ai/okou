@@ -2,6 +2,7 @@ import {
   array,
   boolean,
   discriminatedUnion,
+  int,
   literal,
   object,
   record,
@@ -292,6 +293,14 @@ export const firewallBaseHostPolicySchema = union([
 ]);
 
 export const firewallApiSchema = object({
+  networkIntent: discriminatedUnion("kind", [
+    object({ kind: literal("direct") }).strict(),
+    object({
+      kind: literal("cloudflare_access"),
+      configId: uuid(),
+      generation: int().positive().max(2_147_483_647),
+    }).strict(),
+  ]).optional(),
   base: string(),
   hostPolicy: firewallBaseHostPolicySchema.optional(),
   auth: firewallAuthSchema,

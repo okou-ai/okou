@@ -40,6 +40,7 @@ async fn rootfs_identity_frames_paired_home_layout_independently_of_guest_bytes(
         (b"home_layout:", HOME_DRIVE_LAYOUT.as_bytes().to_vec()),
         (b"template:", b"template".to_vec()),
         (b"customize_script:", CUSTOMIZE_SCRIPT.as_bytes().to_vec()),
+        (b"runtime_environment:", rootfs_environment().into_bytes()),
         (b"rootfs_disk_mb:", 12288_u32.to_be_bytes().to_vec()),
         (b"ca_fingerprint:", b"ca".to_vec()),
         (

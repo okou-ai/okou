@@ -24,6 +24,8 @@ import {
   type Column,
 } from "drizzle-orm";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
+import type { CustomConnectorNetworkSnapshot } from "./custom-connector-network-authority.service";
+import { customConnectorNetworkPublicationCondition } from "./custom-connector-network-publication";
 
 export const customConnectorOAuthStartResultSchema = object({
   contractValid: boolean(),
@@ -32,6 +34,8 @@ export const customConnectorOAuthStartResultSchema = object({
 });
 
 interface CustomOAuthStart {
+  readonly definitionUpdatedAt: Date;
+  readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -66,6 +70,7 @@ export function customConnectorOAuthStartSql(args: CustomOAuthStart) {
         eq(orgCustomConnectors.orgId, args.orgId),
         eq(orgCustomConnectors.authMode, args.authMode),
         eq(orgCustomConnectors.storageVersion, args.storageVersion),
+        customConnectorNetworkPublicationCondition(args),
       ),
     )
     .for("update")
@@ -295,6 +300,10 @@ function insertAutomaticNoAuthAccount(
 export function automaticNoAuthPublicationSql(
   args: ConnectorConnectionWriteArgs,
   preserveOAuth: boolean,
+  network: {
+    readonly definitionUpdatedAt: Date;
+    readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
+  },
 ): SQL {
   if (args.target.kind !== "custom" || args.authMethod !== "none") {
     throw new Error("Automatic no-auth publication requires a custom target");
@@ -310,6 +319,7 @@ export function automaticNoAuthPublicationSql(
       and(
         eq(orgCustomConnectors.id, args.target.customConnectorId),
         eq(orgCustomConnectors.orgId, args.orgId),
+        customConnectorNetworkPublicationCondition(network),
       ),
     )
     .for("update")

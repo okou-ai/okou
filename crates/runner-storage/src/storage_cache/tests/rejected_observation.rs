@@ -6,7 +6,7 @@ fn entry_dir(home: &HomePaths, name: &str, rejected: bool) -> PathBuf {
     home.storages_dir().join(short_digest(name)).join(format!(
         "{}{}",
         if rejected {
-            "decoded-v1-rejected-"
+            "decoded-rejected-p2-"
         } else {
             "decoded-v2-"
         },
@@ -91,6 +91,61 @@ async fn telemetry_server() -> MockServer {
         })
         .await;
     server
+}
+
+#[tokio::test]
+async fn background_warming_reconsiders_legacy_rejection_and_keeps_ready_data_after_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let name = "previous-policy";
+    let bytes = tarball_bytes();
+    write_cached_archive(&home, name, VERSION, &bytes);
+    write_storage_lock(&home, name, VERSION);
+    let legacy = home
+        .storages_dir()
+        .join(short_digest(name))
+        .join(format!("decoded-v1-rejected-{}", short_digest(VERSION)));
+    std::fs::create_dir_all(&legacy).unwrap();
+    let index = serde_json::to_vec(&serde_json::json!({
+        "name": name, "version": VERSION, "compressed_bytes": bytes.len(), "files": null
+    }))
+    .unwrap();
+    std::fs::write(legacy.join("index.json"), &index).unwrap();
+    let cache = decoded::DecodedCache::new(home.clone());
+    let api = telemetry_server().await;
+    let mut telemetry = new_telemetry_for_api_url(&api.base_url());
+    let coordinator = StorageCacheBackgroundFillCoordinator::new().unwrap();
+    prepare(
+        &home,
+        &cache,
+        &[name],
+        "https://storage.example/unused",
+        bytes.len(),
+        &mut telemetry,
+    )
+    .await
+    .start(&coordinator, &mut telemetry);
+    idle(&coordinator).await;
+    let ready = cache.get_ready(name, VERSION).await.unwrap().unwrap();
+    assert_eq!(ready.files[0].content, b"storage cache test file\n");
+    assert_eq!(
+        std::fs::read(home.storage_cache_dir(name, VERSION).join("archive.tar.gz")).unwrap(),
+        bytes
+    );
+    assert_eq!(std::fs::read(legacy.join("index.json")).unwrap(), index);
+    coordinator.shutdown().await;
+    cache.shutdown().await;
+    let restarted = decoded::DecodedCache::new(home);
+    assert_eq!(
+        restarted
+            .get_ready(name, VERSION)
+            .await
+            .unwrap()
+            .unwrap()
+            .files,
+        ready.files
+    );
+    restarted.shutdown().await;
 }
 
 #[tokio::test]

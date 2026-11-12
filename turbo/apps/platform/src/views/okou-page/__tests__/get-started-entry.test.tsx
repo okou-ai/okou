@@ -219,6 +219,43 @@ test("The invitation gift is hidden when friend referrals are disabled", async (
   ).toBeUndefined();
 });
 
+test("The corner's icon buttons lead into the labelled Get started entry", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.FriendReferrals]: true,
+      [FeatureSwitchKey.UserNotifications]: true,
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
+    auth: {
+      user: { id: "test-user-123", fullName: "Corner User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Corner Workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  const entry = await screen.findByTestId("get-started-entry");
+  const gift = await waitFor(() => {
+    return buttonNamed("Invite your friends", document.body);
+  });
+  const bell = await waitFor(() => {
+    return buttonNamed("Notifications", document.body);
+  });
+
+  // Reading order, and with it keyboard order, runs gift, bell, then the
+  // labelled entry, which closes the row in the page's corner.
+  const buttons = queryAllByRoleFast("button");
+  expect(buttons).toContain(entry);
+  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(bell));
+  expect(buttons.indexOf(bell)).toBeLessThan(buttons.indexOf(entry));
+});
+
 function normalizedText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
 }

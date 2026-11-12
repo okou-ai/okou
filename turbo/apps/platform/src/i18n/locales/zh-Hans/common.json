@@ -548,6 +548,7 @@
       "openDocs": "在 Google 文档中打开",
       "openSheets": "在 Google 表格中打开",
       "openSlides": "在 Google 幻灯片中打开",
+      "reconnect": "重新连接 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已将 {{count}} 个文件同步到 Google Drive",
@@ -1060,6 +1061,8 @@
       "invalid": "此权限链接无效或不可用。",
       "loadFailed": "无法验证全部请求的权限，暂时无法更改权限。",
       "loading": "正在加载权限",
+      "myOkouScopeNote": "适用于你在本工作区使用 Okou，不限于当前任务。",
+      "myOkouSharedScopeNote": "适用于你在本工作区所有聊天中使用此连接器。同事的授权各自独立。",
       "notNow": "暂不允许",
       "review": "查看并授权",
       "scopeNote": "适用于此智能体，而不仅限于当前任务。",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "更多积分和并发运行",
       "getPlan": "获取{{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "只是看看价格",
+          "needs_approval": "需要其他人审批",
+          "not_ready_yet": "还没准备好付费",
+          "not_seeing_value": "还没看到它的价值",
+          "other": "其他原因",
+          "payment_issue": "付款时遇到问题",
+          "price_higher_than_expected": "价格比预期高",
+          "results_not_good_enough": "对产出结果不满意"
+        },
+        "description": "只有一个问题，你的回答会帮助我们改进。",
+        "question": "是什么让你没有完成购买？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "目前用不到更多",
+          "not_sure_worth_it": "还不确定是否值得",
+          "other": "其他原因",
+          "still_trying": "想再多试用一下",
+          "too_expensive": "价格太高"
+        },
+        "question": "是什么让你今天还没有升级？",
+        "reward": "此工作区首个符合条件的回答可获得 {{credits}} 奖励 credits，有效期 30 天。",
+        "thanksWithCredits": "感谢！已为你添加 {{credits}} credits，可以继续使用了。"
+      },
+      "error": "提交失败，请重试。",
+      "notNow": "暂不回答",
+      "otherLabel": "你的回答",
+      "otherPlaceholder": "补充说明（可选）",
+      "submit": "提交",
+      "thanks": "感谢你的反馈。"
     },
     "toasts": {
       "autoRechargeUpdated": "自动充值已更新",
@@ -1624,13 +1661,9 @@
       "editReason": "修改原因",
       "homeCard": {
         "completeTitle": "全部处理完了",
-        "emptyTitle": "暂时没有新建议",
         "feedback": "建议操作",
-        "loading": "正在加载建议",
         "navigation": "切换建议",
-        "next": "下一条建议",
-        "previous": "上一条建议",
-        "retry": "重试"
+        "show": "查看第 {{index}} 条建议（共 {{total}} 条）"
       },
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
@@ -1865,7 +1898,9 @@
         "title": "创作"
       },
       "explore": "探索",
+      "exploreWhatsNew": "看看有什么新功能",
       "research": {
+        "description": "流量、广告、产品、话题",
         "items": {
           "ads": "探索广告创意",
           "products": "研究产品",
@@ -1878,6 +1913,7 @@
         "title": "研究"
       },
       "search": {
+        "description": "客户、创作者、决策者",
         "items": {
           "affiliates": "联盟营销计划",
           "creators": "创作者合作",
@@ -1908,6 +1944,7 @@
           "title": "定时任务"
         },
         "suggestions": "从一条建议开始，按你的需要调整。",
+        "summary": "按计划或触发器自动运行",
         "triggers": {
           "description": "事件发生时自动开始。",
           "eventPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认具体来源、筛选条件和输出位置，准备工作流草稿，确认设置后再启用。",
@@ -2137,6 +2174,8 @@
         "outputLimitTitle": "回复达到了长度上限",
         "personalAccount": "个人订阅 {{account}}",
         "personalAccountDisconnected": "个人订阅已断开",
+        "providerBadRequestDescription": "可以重试，或切换模型继续。",
+        "providerBadRequestTitle": "模型服务商返回错误",
         "providerBalanceDescription": "请检查订阅账号的用量或额度余额，然后重试。",
         "providerBalanceTitle": "你的订阅账号需要更多额度",
         "providerConnectionDescription": "到「设置 > 模型」中重新连接或更新账户，然后再试。",
@@ -2346,16 +2385,34 @@
       "untitled": "未命名"
     },
     "remoteAccess": {
+      "all": "全部",
+      "allowed": "已允许",
+      "autoSave": "更改自动保存，仅用于此对话",
+      "connections": "连接",
       "default": "默认",
       "defaultEnabled": "聊天默认启用",
-      "disabled": "已禁用",
-      "enabled": "已启用",
+      "draft": "发送第一条消息时应用",
       "enabledCount_other": "已启用 {{count}} 个",
+      "enableInChat": "在此对话开启",
+      "enableSsh": "在此对话开启 SSH {{name}}",
+      "filterHint": "修改过的连接会保留到切换筛选时",
+      "fromChat": "此对话",
       "loadFailed": "无法加载远程访问权限。",
       "loading": "正在加载远程访问…",
+      "manage": "管理连接",
+      "needsReload": "重新加载以确认权限",
+      "noConnections": "尚未配置 SSH 或 VNC 连接",
+      "noneAllowed": "此对话尚未允许任何连接",
+      "notAllowed": "未允许",
       "off": "关闭",
       "on": "开启",
+      "reload": "重新加载",
       "requiresSsh": "需要 SSH：{{name}}",
+      "saved": "已保存，仅用于此对话",
+      "saveUnconfirmed": "未能确认更改是否已保存，请重新加载权限后再修改。",
+      "saving": "正在保存…",
+      "scope": "选择 Okou 可在此对话中使用的连接",
+      "showAll": "查看全部连接",
       "sshDisabled": "需开启 SSH：{{name}}",
       "sshEnabled": "已开启 SSH：{{name}}",
       "title": "远程访问",
@@ -3162,6 +3219,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 位成员",
+    "bindingUnavailable": "不可用",
     "cancel": "取消",
     "changed": "此 Cloudflare Access 在编辑期间发生了变化。更改未保存。",
     "clientIdPlaceholder": "粘贴 Service Token Client ID",
@@ -3174,7 +3232,7 @@
     "failed": "无法保存 Cloudflare Access 更改。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
     "impactChanged": "受影响的主机已发生变化，此次更改未应用。",
-    "inUse": "有 SSH 主机正在使用此 Cloudflare Access。主机所有者须先重新绑定或删除该主机。",
+    "inUse": "此 Cloudflare Access 仍被引用。请先解除或更换依赖它的主机和自定义连接器的网络绑定。",
     "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
     "loadFailed": "无法加载 Cloudflare Access。",
     "loading": "正在加载 Cloudflare Access…",
@@ -3406,6 +3464,8 @@
         "unshared": "未共享给任何智能体"
       },
       "filterWith": "筛选：{{category}}",
+      "myOkouDescription": "连接第三方服务，供你的 Okou 使用。",
+      "myOkouDescriptionWithCount": "连接 {{value}} 项服务，供你的 Okou 使用。",
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
@@ -5098,7 +5158,6 @@
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
@@ -5462,6 +5521,7 @@
     "modelTemporarilyUnavailable": "模型暂时不可用",
     "modelUnavailable": "当前模型不可用。",
     "overloaded": "{{model}}负载过高。请改用其他模型。",
+    "providerBadRequest": "模型服务商返回错误。可以重试，或切换模型继续。",
     "providerBalance": "你连接的订阅账号余额不足。",
     "transient": "出了点问题。",
     "vm0Credits": "积分不足。请充值积分，或连接个人 Codex 或 Claude 订阅后继续。"
@@ -5486,6 +5546,11 @@
       "creditBalance_one": "{{value}} 积分",
       "creditBalance_other": "{{value}} 积分",
       "exportData": "导出数据",
+      "help": {
+        "docs": "文档",
+        "keyboardShortcuts": "快捷键",
+        "label": "帮助"
+      },
       "lab": "实验室",
       "settings": "设置",
       "signOut": "退出登录",
@@ -6195,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "隐藏合规信息",
       "link": "安全详情",
       "status": {
         "aligned": "已对标",
@@ -6341,6 +6407,33 @@
     "unavailable": "该账号无法使用 SSH 访问。",
     "username": "SSH 用户名"
   },
+  "sshAuthorization": {
+    "allow": "允许当前聊天访问",
+    "blocked": {
+      "chat_busy": "当前聊天正在运行，结束后即可批准。",
+      "host_changed": "主机配置已变更，请重新申请。",
+      "permissions_required": "请先批准配套的连接器权限。",
+      "run_active": "发起申请的运行尚未结束，结束后即可批准。",
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。",
+      "ssh_access_required": "请先批准所需的 SSH 主机。"
+    },
+    "continue": "继续任务",
+    "details": "访问详情",
+    "effect": "允许以此远程用户执行命令和传输文件，直到关闭访问。",
+    "failed": "操作未完成，请重试以检查权限并继续。",
+    "retry": "重试",
+    "scope": "仅此主机 · 仅当前聊天",
+    "status": {
+      "approved": "已允许 SSH 访问",
+      "denied": "已拒绝 SSH 访问",
+      "expired": "SSH 申请已过期",
+      "pending": "SSH 访问",
+      "revoked": "已撤销 SSH 访问",
+      "stale": "SSH 申请已变更"
+    },
+    "title": "SSH 访问",
+    "unavailable": "此申请不可用，请重新申请。"
+  },
   "tailscale": {
     "changed": "此 Tailscale 网络已发生变化。更改未保存，草稿已保留。",
     "delete": "删除 Tailscale",
@@ -6452,16 +6545,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "返回工作流",
+      "disabled": "已停用",
       "disabledAt": "停用时间：{{time}}",
       "loadFailed": "无法加载此自动化",
       "loadingAutomation": "正在加载自动化",
+      "notNow": "暂时不用",
       "otherWorkspace": "此自动化位于 {{workspace}}。请切换工作区以查看。",
-      "reason_one": "连续执行失败 {{count}} 次后，已被系统自动停用。",
-      "reason_other": "连续执行失败 {{count}} 次后，已被系统自动停用。",
+      "reason_one": "执行失败 {{count}} 次。请在重新启用前检查此自动化。",
+      "reason_other": "连续执行失败 {{count}} 次。请在重新启用前检查此自动化。",
       "switchFailed": "无法切换工作区。请重试或使用工作区切换器。",
       "switchWorkspace": "切换工作区",
       "systemManaged": "此自动化由系统管理。下方显示其当前状态。",
       "systemSource": "系统通知",
+      "title": "自动化已停用",
       "unavailable": "找不到此自动化，或你无权访问",
       "viewAutomation": "查看自动化",
       "workspace": "工作区",
@@ -6671,6 +6767,34 @@
       "via": "SSH 主机："
     },
     "unavailable": "当前工作区不支持 VNC。"
+  },
+  "vncAuthorization": {
+    "allow": "允许当前聊天访问",
+    "blocked": {
+      "chat_busy": "当前聊天正在运行，结束后即可批准。",
+      "host_changed": "主机配置已变更，请重新申请。",
+      "permissions_required": "请先批准配套的连接器权限。",
+      "run_active": "发起申请的运行尚未结束，结束后即可批准。",
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。",
+      "ssh_access_required": "请先批准所需的 SSH 主机。"
+    },
+    "continue": "继续任务",
+    "dependencies": "依赖的 SSH 主机（需单独批准）",
+    "details": "访问详情",
+    "effect": "允许查看和控制此桌面，直到访问权限被关闭。依赖的 SSH 主机需单独批准。",
+    "failed": "操作未完成，请重试以检查权限并继续。",
+    "retry": "重试",
+    "scope": "仅此主机 · 仅当前聊天",
+    "status": {
+      "approved": "已允许 VNC 访问",
+      "denied": "已拒绝 VNC 访问",
+      "expired": "VNC 申请已过期",
+      "pending": "VNC 访问",
+      "revoked": "已撤销 VNC 访问",
+      "stale": "VNC 申请已变更"
+    },
+    "title": "VNC 访问",
+    "unavailable": "此申请不可用，请重新申请。"
   },
   "workflows": {
     "automations": {
@@ -7351,12 +7475,11 @@
       "codeInstructions": "从待添加的邮箱给 Okou 发送此验证码，放在邮件主题或正文首行均可。",
       "connected": "邮箱已连接",
       "deleteAria": "删除 {{email}}",
-      "description": "给 Okou 发邮件，每个邮件会话对应一个独立对话",
+      "description": "通过邮件与 Okou 对话",
       "emailAddress": "邮箱地址",
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
       "loadError": "无法加载邮箱连接",
-      "loginNotice": "登录邮箱始终保持连接。",
       "manage": "管理",
       "manageDescription": "从要添加的邮箱发送验证码。",
       "manageTitle": "邮箱连接",

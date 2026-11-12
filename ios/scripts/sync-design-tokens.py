@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "turbo/packages/ui/src/styles/globals.css"
-OUTPUT = ROOT / "ios/Okou/DesignSystem/OkouColor.generated.swift"
+OUTPUT = ROOT / "ios/Okou/DesignSystem/Foundations/OkouColor.generated.swift"
 
 
 def block(source, selector):
@@ -97,7 +97,9 @@ def main():
         ["xcrun", "swift-format", "format"], input="\n".join(lines),
         capture_output=True, text=True, check=True).stdout
     files = {OUTPUT: formatted}
-    assets = {"AccentColor": "brand-text", "SignInPrimary": "brand-text", "SignInCard": "card", "StartupBackground": "background"}
+    # The system tint (caret, alert actions, plain buttons) and the sign-in primary are neutral
+    # ink, as resting controls are; brand-text reads brown, and iOS and Clerk fill with them.
+    assets = {"AccentColor": "foreground", "SignInPrimary": "foreground", "SignInCard": "card", "StartupBackground": "background"}
     for asset, token in assets.items():
         colors = []
         for scheme, variables in (("light", light), ("dark", dark)):

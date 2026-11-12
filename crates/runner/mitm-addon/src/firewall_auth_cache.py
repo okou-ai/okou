@@ -1,14 +1,14 @@
 """Firewall auth cache, fetch admission, and force-refresh lifecycle.
 
 The cache separates credential identity from registry ownership freshness. A cache key is
-credential-equivalent when its ``(run_id, api_id, auth_identity)`` fields match. Its optional
-``registry_generation`` records which published registry snapshot authorized the lookup, but is
+credential-equivalent when its ``(run_id, api_id, auth_identity, purpose)`` fields match.
+Its optional ``registry_generation`` records which registry snapshot authorized the lookup, but is
 not part of credential identity, so an unchanged auth identity can reuse its cached payload and
 refresh lifecycle across registry snapshots.
 
-Shared ownership is limited to one auth identity per ``(run_id, api_id)`` scope. A current registry
-generation may claim that scope or replace its previous identity. A stale generation can use
-existing equivalent state, but cannot create, replace, or reclaim shared ownership; when no
+Shared ownership is limited to one auth identity per ``(run_id, api_id, purpose)`` scope.
+A current registry generation may claim that scope or replace its previous identity.
+A stale generation can use equivalent state, but cannot create or reclaim ownership; when no
 equivalent state remains, its fetch uses detached state instead. Registry reconciliation also
 removes ownership for runs that are no longer active.
 """
@@ -16,6 +16,7 @@ removes ownership for runs that are no longer active.
 import asyncio
 import time
 from dataclasses import dataclass, field
+from typing import Literal
 
 from aws_sigv4 import AwsSigV4Credentials
 from firewall_auth_client import (
@@ -49,9 +50,9 @@ class FirewallAuthCacheKey:
     identity reuses its cached payload and refresh lifecycle across registry generations. Lookup
     checks the generation separately before allowing a key to mutate shared ownership.
 
-    The shared owner scope is one auth identity per ``(run_id, api_id)``. A current key with a
-    different ``auth_identity`` replaces the previous owner's state. A stale key cannot reclaim
-    that ownership; it can reuse equivalent existing state, or otherwise receives detached state
+    The shared owner scope is one auth identity per ``(run_id, api_id, purpose)``.
+    A current key with a different ``auth_identity`` replaces the previous state.
+    A stale key cannot reclaim ownership; it can reuse equivalent state or receives detached state
     that is not stored in the shared cache.
     """
 
@@ -64,6 +65,7 @@ class FirewallAuthCacheKey:
         hash=False,
         repr=False,
     )
+    purpose: Literal["application", "network"] = "application"
 
 
 @dataclass
@@ -103,7 +105,7 @@ class FirewallAuthStateSnapshotForTests:
 
 
 FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE = "_firewall_auth_registry_generation"
-type _FirewallAuthScope = tuple[str, str]
+type _FirewallAuthScope = tuple[str, str, str]
 
 _auth_state: dict[FirewallAuthCacheKey, _FirewallAuthState] = {}
 _owned_auth_keys: dict[_FirewallAuthScope, FirewallAuthCacheKey] = {}
@@ -125,7 +127,7 @@ _FORCE_REFRESH_COOLDOWN_SECS = 120.0
 def _get_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState:
     """Return shared state, or detached state for a stale registry key.
 
-    A current key owns one ``(run_id, api_id)`` scope. Claiming that scope with a different
+    A current key owns one ``(run_id, api_id, purpose)`` scope. Claiming that scope with a different
     ``auth_identity`` evicts the previous shared state. Because ``registry_generation`` is excluded
     from key equality, an unchanged auth identity reuses its lifecycle state across generations.
     A stale key may use equivalent existing state, but cannot mutate shared ownership; if that
@@ -140,7 +142,7 @@ def _get_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState:
     if not is_current_registry_generation:
         return state if state is not None else _FirewallAuthState()
 
-    scope = (cache_key.run_id, cache_key.api_id)
+    scope = (cache_key.run_id, cache_key.api_id, cache_key.purpose)
     owned_key = _owned_auth_keys.get(scope)
     if owned_key is not None and owned_key != cache_key:
         _auth_state.pop(owned_key, None)
@@ -183,6 +185,8 @@ def request_force_refresh(cache_key: FirewallAuthCacheKey) -> None:
       Absolute webhook ``expiresAt`` checks remain wall-clock based elsewhere
       in this module.
     """
+    if cache_key.purpose == "network":
+        return
     state = _auth_state.get(cache_key)
     if state is None:
         return
@@ -199,7 +203,7 @@ def invalidate_cached_firewall_headers(
     cache_key: FirewallAuthCacheKey,
     cache_entry_identity: FirewallAuthCacheEntryIdentity,
 ) -> None:
-    """Invalidate and request refresh only for the currently cached entry."""
+    """Invalidate the matching entry; only application keys force OAuth refresh."""
     state = _auth_state.get(cache_key)
     if state is None or state.cache is None or state.cache.identity is not cache_entry_identity:
         return
@@ -212,8 +216,8 @@ def reconcile_registry_cache_ownership(active_run_generations: dict[str, int]) -
 
     ``active_run_generations`` maps each active run to the generation of the registry snapshot just
     published. Replacing this map makes only matching generations current for ownership mutation.
-    The ``(run_id, api_id)`` owner remains reusable across generations when the auth identity is
-    unchanged, because generation is excluded from cache-key equality. A current key with a new
+    The ``(run_id, api_id, purpose)`` owner remains reusable across generations when auth identity
+    is unchanged, because generation is excluded from cache-key equality. A current key with a new
     identity replaces the prior owner, while stale keys cannot reclaim it.
 
     Runs absent from ``active_run_generations`` are no longer active owners, so their entries are
@@ -241,9 +245,7 @@ def reset_cache_for_tests() -> None:
     global _admitted_firewall_auth_fetches
     global _firewall_auth_fetch_semaphore
 
-    _auth_state.clear()
-    _owned_auth_keys.clear()
-    _active_registry_generations.clear()
+    evict_all_cache_keys()
     _admitted_firewall_auth_fetches = 0
     _firewall_auth_fetch_semaphore = None
 
@@ -383,6 +385,8 @@ def _build_token_meta(
         token_meta["query"] = dict(payload.query)
     if payload.aws_sigv4 is not None:
         token_meta["aws_sigv4"] = payload.aws_sigv4
+    if payload.network_admission is not None:
+        token_meta["network_admission"] = payload.network_admission
     return token_meta
 
 
@@ -444,6 +448,15 @@ async def _fetch_and_cache_firewall_headers(
     finally:
         state.in_flight = None
         _release_firewall_auth_fetch()
+
+
+async def get_network_admission(
+    cache_key: FirewallAuthCacheKey, request: FirewallAuthRequest
+) -> dict:
+    """Use the shared credential-expiry and registry lifecycle in a separate cache scope."""
+    if not request.network_admission or cache_key.purpose != "network":
+        raise ValueError("network admission requires its own cache identity")
+    return await get_firewall_headers(cache_key, request)
 
 
 async def get_firewall_headers(

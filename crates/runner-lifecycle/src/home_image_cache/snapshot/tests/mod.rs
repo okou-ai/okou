@@ -22,7 +22,7 @@ fn held_home_state(reuse_key: &str, last_completed_at: &str, profiles: &[&str]) 
 }
 
 fn inventory(states: Vec<HeldHomeState>) -> HomeCacheInventory {
-    let mut inventory = HomeCacheInventory::default();
+    let mut inventory = super::super::inventory::HomeCacheInventoryBuilder::default();
     for state in states {
         for home in state.home_caches {
             let key = format!("{}:{}", state.reuse_key, home.profile);
@@ -36,7 +36,7 @@ fn inventory(states: Vec<HeldHomeState>) -> HomeCacheInventory {
             );
         }
     }
-    inventory
+    inventory.finish()
 }
 
 fn refresh_snapshot(snapshot: &HomeCacheStateSnapshot, states: Vec<HeldHomeState>) {

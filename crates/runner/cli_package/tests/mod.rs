@@ -177,7 +177,25 @@ fn rejects_decompression_beyond_the_archive_budget() {
     // The same valid metadata must succeed without oversized padding, so
     // missing identity cannot mask a decompression-budget regression.
     assert!(read_identity(&package_with_padding(1)).is_ok());
-    let bytes = package_with_padding(MAX_ARCHIVE_BYTES + 1);
+    // The stored result of package_with_padding(256 * 1024 * 1024 + 1),
+    // gzip-compressed once more for fixture storage. The inner .tgz retains the
+    // original Compression::fast bytes and full zero padding for read_identity.
+    let mut bytes = Vec::new();
+    flate2::read::GzDecoder::new(include_bytes!("data/oversized-padding.tgz.gz").as_slice())
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(
+        hex::encode(Sha256::digest(&bytes)),
+        "dcc4e8a03218b6b21af44a22b0f89ab01733d5d277a225dbad20063302b9b8b5",
+        "stored fixture must retain the original valid gzip stream"
+    );
+    // Bind the stored padding to the current boundary instead of silently
+    // retaining an unrelated oversized workload after a limit change.
+    let mut archive = tar::Archive::new(MultiGzDecoder::new(bytes.as_slice()));
+    assert_eq!(
+        archive.entries().unwrap().nth(1).unwrap().unwrap().size(),
+        MAX_ARCHIVE_BYTES + 1
+    );
     assert!(bytes.len() < MAX_PACKAGE_BYTES);
     assert!(read_identity(&bytes).is_err());
 }

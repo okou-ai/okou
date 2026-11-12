@@ -35,6 +35,56 @@ const mcpNone = {
   queryInjections: [],
 } as const;
 
+describe("Custom connector network metadata protocol", () => {
+  const response = {
+    id: "33333333-3333-4333-8333-333333333333",
+    slug: "_public-api",
+    displayName: "Protected API",
+    kind: "http",
+    authMode: "none",
+    prefixTemplates: ["https://api.example.com/"],
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+    storageVersion: 1,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+  };
+  const network = {
+    type: "cloudflare_access",
+    configId: "44444444-4444-4444-8444-444444444444",
+    status: "available",
+    name: "Corporate gateway",
+    generation: 1,
+  };
+  it("preserves readable available and unavailable bindings without network credentials", () => {
+    expect(
+      customConnectorHttpResponseSchema.parse({
+        ...response,
+        networkBinding: network,
+      }).networkBinding,
+    ).toStrictEqual(network);
+    const unavailable = {
+      type: network.type,
+      configId: network.configId,
+      status: "unavailable",
+      name: null,
+    };
+    expect(
+      customConnectorHttpResponseSchema.parse({
+        ...response,
+        networkBinding: unavailable,
+      }).networkBinding,
+    ).toStrictEqual(unavailable);
+    expect(
+      customConnectorHttpResponseSchema.safeParse({
+        ...response,
+        networkBinding: { ...network, clientSecret: "not-metadata" },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("Custom connector no-auth contracts", () => {
   it("accepts strict HTTP and MCP none definitions", () => {
     expect(customConnectorHttpCreateBodySchema.parse(httpNone)).toStrictEqual(

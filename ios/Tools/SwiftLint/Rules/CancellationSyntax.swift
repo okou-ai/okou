@@ -5,12 +5,24 @@ func nativeTaskCall(_ call: FunctionCallExprSyntax) -> Bool {
   if let generic = expression.as(GenericSpecializationExprSyntax.self) {
     expression = generic.expression
   }
-  let name = expression.trimmedDescription
-  return [
-    "Task", "Swift.Task", "_Concurrency.Task", "Task.immediate", "Task.detached",
-    "Swift.Task.immediate", "_Concurrency.Task.immediate", "_Concurrency.Task.detached",
-  ]
-  .contains(name)
+  if nativeTaskType(expression) { return true }
+  guard let member = expression.as(MemberAccessExprSyntax.self), let base = member.base,
+    ["init", "immediate", "detached"].contains(member.declName.baseName.text)
+  else { return false }
+  return nativeTaskType(base)
+}
+
+private func nativeTaskType(_ expression: ExprSyntax) -> Bool {
+  if let generic = expression.as(GenericSpecializationExprSyntax.self) {
+    return nativeTaskType(generic.expression)
+  }
+  return ["Task", "Swift.Task", "_Concurrency.Task"].contains(expression.trimmedDescription)
+}
+
+func nativeTaskBody(_ call: FunctionCallExprSyntax) -> ClosureExprSyntax? {
+  call.trailingClosure
+    ?? call.arguments.first(where: { $0.label?.text == "operation" })?.expression
+    .as(ClosureExprSyntax.self)
 }
 
 func nativeOwner(_ node: some SyntaxProtocol) -> MemberBlockSyntax? {

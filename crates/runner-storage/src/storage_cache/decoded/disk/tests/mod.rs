@@ -104,7 +104,7 @@ fn persisted_paths(
     let version_hash = hex::encode(Sha256::digest(version.as_bytes()));
     let name_hash = &name_hash[..16];
     let prefix = if rejected {
-        "decoded-v1-rejected-"
+        "decoded-rejected-p2-"
     } else {
         "decoded-v2-"
     };

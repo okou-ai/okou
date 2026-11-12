@@ -146,6 +146,7 @@ export const clientContractImportManifest = [
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
+      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",
@@ -153,6 +154,21 @@ export const clientContractImportManifest = [
       "billingUsagePackMigrationContract",
     ],
     bindings: [
+      {
+        name: "BILLING_SURVEY_CHECKOUT_KINDS",
+        source: "validators/billing",
+        imported: "BILLING_SURVEY_CHECKOUT_KINDS",
+      },
+      {
+        name: "CHECKOUT_ABANDONED_SURVEY_ANSWERS",
+        source: "validators/billing",
+        imported: "CHECKOUT_ABANDONED_SURVEY_ANSWERS",
+      },
+      {
+        name: "CREDITS_EXHAUSTED_SURVEY_ANSWERS",
+        source: "validators/billing",
+        imported: "CREDITS_EXHAUSTED_SURVEY_ANSWERS",
+      },
       {
         name: "USAGE_PACKS_USD",
         source: "validators/billing",
@@ -460,7 +476,7 @@ export const clientContractImportManifest = [
     bindings: [
       {
         name: "CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH",
-        source: "validators/cloudflare-access",
+        source: "validators/cloudflare-access-credentials",
         imported: "CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH",
       },
       {
@@ -470,7 +486,7 @@ export const clientContractImportManifest = [
       },
       {
         name: "cloudflareAccessCredentialsSchema",
-        source: "validators/cloudflare-access",
+        source: "validators/cloudflare-access-credentials",
         imported: "cloudflareAccessCredentialsSchema",
       },
       {
@@ -1688,6 +1704,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "ssh-authorization",
+    contracts: ["sshAuthorizationContract"],
+    bindings: [],
+  },
+  {
     module: "ssh-connections",
     contracts: ["sshConnectionsContract"],
     bindings: [
@@ -1951,6 +1972,11 @@ export const clientContractImportManifest = [
   {
     module: "vnc-access",
     contracts: ["vncHostsContract"],
+    bindings: [],
+  },
+  {
+    module: "vnc-authorization",
+    contracts: ["vncAuthorizationContract"],
     bindings: [],
   },
   {

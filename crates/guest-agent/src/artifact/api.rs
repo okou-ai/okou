@@ -15,12 +15,14 @@ pub(super) struct PrepareSnapshotRequest<'a> {
     pub(super) storage_id: &'a str,
     pub(super) files: &'a [FileEntry],
     pub(super) parent_version_id: &'a str,
+    pub(super) include_memory_merge: bool,
 }
 
 pub(super) struct PreparedSnapshot {
     pub(super) version_id: String,
     pub(super) existing: bool,
     pub(super) uploads: Option<PreparedUploads>,
+    pub(super) memory_merge: Option<storage_prepare::ResponseMemoryMerge>,
 }
 
 pub(super) struct PreparedUploads {
@@ -56,6 +58,8 @@ struct PrepareSnapshotPayload<'a> {
     files: &'a [FileEntry],
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_version_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    include_memory_merge: bool,
 }
 
 #[derive(Serialize)]
@@ -80,6 +84,7 @@ pub(super) async fn prepare_snapshot(
         storage_id: request.storage_id,
         files: request.files,
         parent_version_id: non_empty_str(request.parent_version_id),
+        include_memory_merge: request.include_memory_merge,
     };
 
     let url = http
@@ -119,6 +124,7 @@ pub(super) async fn prepare_snapshot(
     Ok(PreparedSnapshot {
         version_id: response.version_id,
         existing: response.existing,
+        memory_merge: response.memory_merge,
         uploads: response.uploads.map(|uploads| PreparedUploads {
             archive_url: uploads.archive.presigned_url,
             manifest_url: uploads.manifest.presigned_url,

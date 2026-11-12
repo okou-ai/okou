@@ -388,7 +388,7 @@ fn oversized_input_near_misses_remain_error_level() {
 
 #[test]
 fn pi_result_source_logs_pi_attribution() {
-    let diagnostic = FailureDiagnostic::new(
+    let mut diagnostic = FailureDiagnostic::new(
         FailureClass::CliNonzero,
         AgentFramework::Pi,
         PromptMetadata::from_prompt("plain prompt"),
@@ -396,7 +396,15 @@ fn pi_result_source_logs_pi_attribution() {
     .with_cli_exit_code(1)
     .with_failure_detail_source(FailureDetailSource::PiResult)
     .with_session_history_status(SessionHistoryStatus::NotApplicable);
-    let failure = executor::ExecutionFailure::new(1, "provider failed", Some(diagnostic));
+    diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+        http_status: Some(200),
+        transport_attempts: 1,
+        retry_attempts: 0,
+        retry_limit: None,
+        transport_failure: None,
+    });
+    let error = "Unexpected end of JSON input";
+    let failure = executor::ExecutionFailure::new(1, error, Some(diagnostic));
 
     let event = capture_job_failure_log(&failure);
 
@@ -408,10 +416,12 @@ fn pi_result_source_logs_pi_attribution() {
     assert_field_eq(&event, "failure_class", "cli_nonzero");
     assert_field_eq(&event, "failure_framework", "pi");
     assert_field_eq(&event, "failure_detail_source", "pi_result");
+    assert_field_eq(&event, "error", error);
+    assert_field_eq(&event, "model_http_status", "200");
 }
 
 #[test]
-fn pi_provider_rejections_remain_errors_with_original_request_evidence() {
+fn pi_provider_rejections_log_info_with_original_request_evidence() {
     for (reason, status, error) in [
         (
             FailureReason::ProviderModelRestricted,
@@ -444,7 +454,7 @@ fn pi_provider_rejections_remain_errors_with_original_request_evidence() {
 
         let event = capture_job_failure_log(&failure);
 
-        assert_eq!(event.level, Level::ERROR);
+        assert_eq!(event.level, Level::INFO);
         assert_field_eq(&event, "error", error);
         assert_field_eq(&event, "failure_reason", reason.as_str());
         assert_field_eq(&event, "failure_framework", "pi");
@@ -454,6 +464,55 @@ fn pi_provider_rejections_remain_errors_with_original_request_evidence() {
         assert_field_eq(&event, "model_http_status", &status.to_string());
         assert_field_eq(&event, "model_transport_attempts", "1");
         assert_field_eq(&event, "model_retry_attempts", "0");
+    }
+}
+
+#[test]
+fn generic_pi_provider_stream_failure_logs_info_only_with_upstream_evidence() {
+    let error = "Provider finish_reason: error";
+    for (class, reason, status, expected_level) in [
+        (FailureClass::CliNonzero, None, Some(200), Level::INFO),
+        (FailureClass::CliNonzero, None, None, Level::ERROR),
+        (
+            FailureClass::CliExecutionError,
+            None,
+            Some(200),
+            Level::ERROR,
+        ),
+        (
+            FailureClass::CliNonzero,
+            Some(FailureReason::FirewallAuthFailed),
+            Some(200),
+            Level::ERROR,
+        ),
+    ] {
+        let mut diagnostic = FailureDiagnostic::new(
+            class,
+            AgentFramework::Pi,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_detail_source(FailureDetailSource::PiResult)
+        .with_cli_exit_code(1);
+        diagnostic.failure_reason = reason;
+        diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+            http_status: status,
+            transport_attempts: 1,
+            retry_attempts: 0,
+            retry_limit: None,
+            transport_failure: None,
+        });
+        let failure = executor::ExecutionFailure::new(1, error, Some(diagnostic));
+        let event = capture_job_failure_log(&failure);
+
+        assert_eq!(event.level, expected_level);
+        assert_field_eq(&event, "error", error);
+        assert_field_eq(&event, "exit_code", "1");
+        assert_field_eq(&event, "failure_class", class.as_str());
+        assert_field_eq(&event, "failure_detail_source", "pi_result");
+        assert_field_eq(&event, "model_transport_attempts", "1");
+        if let Some(status) = status {
+            assert_field_eq(&event, "model_http_status", &status.to_string());
+        }
     }
 }
 

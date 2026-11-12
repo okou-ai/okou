@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Start</string>
+    <string name="settings">Einstellungen</string>
+    <string name="back">Zurück</string>
+    <string name="home_title">Platz für deine nächste Idee</string>
+    <string name="home_description">Schreibe einen Entwurf und sieh ihn dir auf diesem Gerät an.</string>
+    <string name="draft_label">Entwurf</string>
+    <string name="draft_hint">Woran denkst du?</string>
+    <string name="local_preview">Entwurf ansehen</string>
+    <string name="preview_title">Vorschau</string>
+    <string name="appearance">Erscheinungsbild</string>
+    <string name="appearance_description">Wähle das Erscheinungsbild von Okou auf diesem Gerät.</string>
+    <string name="appearance_system">Systemeinstellung</string>
+    <string name="appearance_light">Hell</string>
+    <string name="appearance_dark">Dunkel</string>
+    <string name="on_this_device">Auf diesem Gerät</string>
+    <string name="appearance_local">Das Erscheinungsbild wird nur auf diesem Gerät gespeichert.</string>
+    <string name="appearance_loading">Erscheinungsbild wird geladen…</string>
+    <string name="appearance_saving">Erscheinungsbild wird gespeichert…</string>
+    <string name="appearance_read_failed">Erscheinungsbild konnte nicht geladen werden. Versuche es erneut.</string>
+    <string name="appearance_write_failed">Erscheinungsbild konnte nicht gespeichert werden. Versuche es erneut.</string>
+    <string name="retry">Erneut versuchen</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d Zeile</item>
+        <item quantity="other">%1$d Zeilen</item>
+    </plurals>
+    <string name="auth_welcome">Willkommen bei Okou</string>
+    <string name="auth_restoring">Sitzung wird wiederhergestellt…</string>
+    <string name="auth_preparing_workspace">Arbeitsbereich wird vorbereitet…</string>
+    <string name="auth_choose_workspace">Arbeitsbereich auswählen</string>
+    <string name="auth_no_workspace">Du hast noch keinen Zugriff auf einen Arbeitsbereich.</string>
+    <string name="auth_workspace_setup">Arbeitsbereich im Web einrichten</string>
+    <string name="auth_access_removed">Deine Sitzung oder dein Zugriff hat sich geändert. Melde dich erneut an oder aktualisiere den Zugriff.</string>
+    <string name="auth_update_required">Aktualisiere Okou, um fortzufahren.</string>
+    <string name="auth_unavailable">Sitzung oder Arbeitsbereich konnte nicht geladen werden. Versuche es erneut.</string>
+    <string name="auth_sign_out">Abmelden</string>
+    <string name="auth_signing_out">Abmeldung läuft…</string>
+    <string name="auth_workspace">Arbeitsbereich</string>
+    <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
+    <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
+</resources>

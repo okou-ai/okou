@@ -35,6 +35,8 @@ export const ROUTES = {
   connectors: "/connectors",
   me: "/me",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
+  vncAuthorize: "/vnc/authorize/:vncAuthorizationId",
+  sshAuthorize: "/ssh/authorize/:sshAuthorizationId",
   desktopShellAuthorize: "/computer-use/shell/authorize/:shellAuthorizationId",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",

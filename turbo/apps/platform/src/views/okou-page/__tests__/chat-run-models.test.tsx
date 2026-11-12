@@ -287,8 +287,10 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     picker: true,
   },
   provider_bad_request: {
-    title: "This run couldn't finish",
-    description: "Oops, something went wrong.",
+    title: "The model provider returned an error",
+    description: "Try again, or switch to another model to continue.",
+    action: "Try again",
+    picker: true,
   },
   firewall_auth_failed: {
     title: "This run couldn't finish",
@@ -1345,56 +1347,74 @@ const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
 // The card does not track which model failed. It offers the picker and a
 // retry on whatever the thread selects, and holds the retry back while a model
 // switch is still being written, because the retry runs on the persisted model.
-test("Continue on a replacement model after the connected account rejects one", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentModels: (string | undefined)[] = [];
-  const selectionWritten = context.mocks.deferred<void>();
-  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    chatEvents: failedRunEvents(UNSUPPORTED_MODEL_ERROR, "gpt-5.6-sol"),
-    onRunCreate: (body) => {
-      const model = body.userMessage?.parts.find((part) => {
-        return part.type === "model";
-      });
-      sentModels.push(
-        model?.type === "model" ? model.selectedModel : undefined,
-      );
-    },
-  });
-  context.mocks.api(
-    chatThreadModelSelectionContract.update,
-    async ({ respond }) => {
-      await selectionWritten.promise;
-      return respond(204);
-    },
-  );
+test.each([
+  {
+    label: "an unsupported model",
+    error: UNSUPPORTED_MODEL_ERROR,
+    failureReason: undefined,
+    title: "Selected model isn't available",
+  },
+  {
+    label: "an opaque provider rejection",
+    error: '{"detail":"Bad Request"}',
+    failureReason: "provider_bad_request",
+    title: "The model provider returned an error",
+  },
+] as const)(
+  "Continue on a replacement model after $label",
+  async ({ error, failureReason, title }) => {
+    const user = userEvent.setup({ delay: null });
+    const sentModels: (string | undefined)[] = [];
+    const selectionWritten = context.mocks.deferred<void>();
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(error, "gpt-5.6-sol", failureReason),
+      onRunCreate: (body) => {
+        const model = body.userMessage?.parts.find((part) => {
+          return part.type === "model";
+        });
+        sentModels.push(
+          model?.type === "model" ? model.selectedModel : undefined,
+        );
+      },
+    });
+    context.mocks.api(
+      chatThreadModelSelectionContract.update,
+      async ({ respond }) => {
+        await selectionWritten.promise;
+        return respond(204);
+      },
+    );
 
-  await setupPage({ context, path: RUN_PATH });
+    await setupPage({ context, path: RUN_PATH });
 
-  await readyChat();
-  await expect(
-    screen.findByText("Selected model isn't available"),
-  ).resolves.toBeVisible();
-  expect(queryButton("Reset · 1 left")).toBeNull();
-  const recovery = await recoveryCard();
-  await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
+    await readyChat();
+    await expect(screen.findByText(title)).resolves.toBeVisible();
+    expect(queryButton("Reset · 1 left")).toBeNull();
+    const recovery = await recoveryCard();
+    await expect(
+      findEnabledButton("Try again", recovery),
+    ).resolves.toBeVisible();
 
-  const picker = within(recovery).getByRole("combobox");
-  await user.click(picker);
-  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
+    const picker = within(recovery).getByRole("combobox");
+    await user.click(picker);
+    await user.click(
+      await screen.findByRole("option", { name: "GPT 5.6 Luna" }),
+    );
 
-  expect(picker).toHaveTextContent("GPT 5.6 Luna");
-  await waitFor(() => {
-    expect(queryButton("Try again", recovery)).toBeDisabled();
-  });
-  expect(sentModels).toHaveLength(0);
+    expect(picker).toHaveTextContent("GPT 5.6 Luna");
+    await waitFor(() => {
+      expect(queryButton("Try again", recovery)).toBeDisabled();
+    });
+    expect(sentModels).toHaveLength(0);
 
-  selectionWritten.resolve();
-  click(await findEnabledButton("Try again", recovery));
+    selectionWritten.resolve();
+    click(await findEnabledButton("Try again", recovery));
 
-  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(sentModels).toStrictEqual(["gpt-5.6-luna"]);
-  });
-});
+    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentModels).toStrictEqual(["gpt-5.6-luna"]);
+    });
+  },
+);

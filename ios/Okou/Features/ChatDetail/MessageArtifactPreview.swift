@@ -6,71 +6,18 @@ import SwiftUI
 struct MessageArtifactPreview: View {
   let viewer: MessageArtifactStore
   let markdown: MessageMarkdownCache
-  @State private var webError: String?
-  @State private var webLoading = true
 
   var body: some View {
     Group {
       if let preview = viewer.preview {
-        MessagePreviewSheet(title: preview.artifact.filename, dismiss: viewer.dismiss) {
-          VStack(spacing: 0) {
-            content(preview).frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let error = preview.downloadError {
-              Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
-                OkouSpace.md)
-            }
-            if preview.loadsMetadata {
-              StoreProvider(viewer.reads.store) {
-                ArtifactCatalogWarning(reads: viewer.reads) { await viewer.refreshDetails() }
-              }
-              .id(ObjectIdentifier(viewer.reads))
-            }
-          }
-        } actions: {
-          if preview.artifact.kind == .image {
-            Button {
-              viewer.navigateImage(-1)
-            } label: {
-              OkouToolbarIcon("chevron-left")
-            }
-            .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
-            Button {
-              viewer.navigateImage(1)
-            } label: {
-              OkouToolbarIcon("chevron-right")
-            }
-            .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
-          }
-          if let text = preview.text {
-            Button {
-              UIPasteboard.general.string = text.text
-            } label: {
-              OkouToolbarIcon("copy")
-            }
-            .accessibilityLabel("Copy content")
-          }
-          if preview.file != nil {
-            Button {
-              viewer.share()
-            } label: {
-              OkouToolbarIcon("share")
-            }
-            .accessibilityLabel("Share or save to Files")
-          } else if preview.isDownloading {
-            ProgressView().accessibilityLabel("Downloading file")
+        StoreProvider(preview.store) {
+          if preview.loadsMetadata {
+            ArtifactMetadataPreview(viewer: viewer, preview: preview, markdown: markdown)
           } else {
-            Button {
-              viewer.downloadForSharing()
-            } label: {
-              OkouToolbarIcon("download")
-            }
-            .accessibilityLabel("Download file to share or save")
+            ArtifactPreviewContent(viewer: viewer, preview: preview, markdown: markdown)
           }
         }
-        .onChange(of: preview.id) { _, _ in
-          webError = nil
-          webLoading = true
-        }
+        .id(preview.id)
       }
     }
     .sheet(
@@ -79,20 +26,142 @@ struct MessageArtifactPreview: View {
       ArtifactShareSheet(file: share.file) { viewer.dismissSharing() }
     }
   }
+}
 
-  @ViewBuilder private func content(_ preview: MessageArtifactStore.Preview) -> some View {
-    if let error = preview.error {
-      OkouEmptyState("Unable to open result", icon: "file-warning", description: Text(error)) {
-        if preview.canRetry {
+private struct ArtifactMetadataPreview: View {
+  let viewer: MessageArtifactStore
+  let preview: MessageArtifactPreviewRead
+  let markdown: MessageMarkdownCache
+  @LoadableValue private var catalog: Loadable<[ChatArtifact]>
+
+  init(
+    viewer: MessageArtifactStore, preview: MessageArtifactPreviewRead,
+    markdown: MessageMarkdownCache
+  ) {
+    self.viewer = viewer
+    self.preview = preview
+    self.markdown = markdown
+    _catalog = LoadableValue(task: preview.reads.catalog, keepLast: true)
+  }
+
+  var body: some View {
+    ArtifactPreviewContent(viewer: viewer, preview: preview, markdown: markdown, catalog: catalog)
+  }
+}
+
+private struct ArtifactPreviewContent: View {
+  let viewer: MessageArtifactStore
+  let preview: MessageArtifactPreviewRead
+  let markdown: MessageMarkdownCache
+  let catalog: Loadable<[ChatArtifact]>?
+  @LoadableValue private var value: Loadable<MessageArtifactPreviewRead.Content>
+  @LoadableValue private var download: Loadable<ChatAttachmentFile?>
+  @State private var webError: String?
+  @State private var webLoading = true
+
+  init(
+    viewer: MessageArtifactStore, preview: MessageArtifactPreviewRead,
+    markdown: MessageMarkdownCache,
+    catalog: Loadable<[ChatArtifact]>? = nil
+  ) {
+    self.viewer = viewer
+    self.preview = preview
+    self.markdown = markdown
+    self.catalog = catalog
+    _value = LoadableValue(task: preview.value)
+    _download = LoadableValue(task: preview.download)
+  }
+
+  private var artifact: ChatArtifact {
+    preview.reads.metadata(value.data?.artifact ?? preview.artifact)
+  }
+
+  var body: some View {
+    MessagePreviewSheet(title: artifact.filename, dismiss: viewer.dismiss) {
+      VStack(spacing: 0) {
+        content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        if let error = download.error {
+          Text(MessageArtifactStore.message(for: error))
+            .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
+        }
+        if let catalog {
+          ArtifactCatalogWarning(catalog: catalog, retry: viewer.refreshDetails)
+        }
+      }
+    } actions: {
+      if artifact.kind == .image {
+        Button {
+          if let content = value.data {
+            viewer.navigateImage(-1, content: content, previewID: preview.id)
+          }
+        } label: {
+          OkouToolbarIcon("chevron-left")
+        }
+        .disabled(value.data?.image(-1) == nil).accessibilityLabel("Previous image")
+        Button {
+          if let content = value.data {
+            viewer.navigateImage(1, content: content, previewID: preview.id)
+          }
+        } label: {
+          OkouToolbarIcon("chevron-right")
+        }
+        .disabled(value.data?.image(1) == nil).accessibilityLabel("Next image")
+      }
+      if let text = value.data?.text {
+        Button {
+          UIPasteboard.general.string = text.text
+        } label: {
+          OkouToolbarIcon("copy")
+        }
+        .accessibilityLabel("Copy content")
+      }
+      if let file = (download.data ?? nil) ?? value.data?.file {
+        Button {
+          viewer.share(file, previewID: preview.id)
+        } label: {
+          OkouToolbarIcon("share")
+        }
+        .accessibilityLabel("Share or save to Files")
+      } else if case .loading = download {
+        ProgressView().accessibilityLabel("Downloading file")
+      } else {
+        Button {
+          viewer.downloadForSharing(previewID: preview.id, retry: download.error != nil)
+        } label: {
+          OkouToolbarIcon("download")
+        }
+        .accessibilityLabel("Download file to share or save")
+      }
+    }
+  }
+
+  @ViewBuilder private var content: some View {
+    switch value {
+    case .hasError(let error):
+      OkouEmptyState(
+        "Unable to open result", icon: "file-warning",
+        description: Text(MessageArtifactStore.message(for: error))
+      ) {
+        if ChatRequestFailure.canRetry(error) {
           Button("Retry") { viewer.retry() }
             .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
-        if case .hostedSite(let url) = preview.artifact.source {
+        if case .hostedSite(let url) = artifact.source {
           Link("Open in browser", destination: url)
             .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
       }
-    } else if let url = preview.contentURL {
+    case .hasData(let content):
+      resolvedContent(content)
+    case .loading:
+      fileContent(nil)
+    }
+  }
+
+  @ViewBuilder private func resolvedContent(_ content: MessageArtifactPreviewRead.Content)
+    -> some View
+  {
+    if let url = content.contentURL {
       VStack(spacing: 0) {
         if let webError {
           OkouLoadErrorRow(message: webError, actionTitle: "Retry") {
@@ -106,7 +175,10 @@ struct MessageArtifactPreview: View {
             url: url,
             didFail: { message, status in
               guard viewer.preview?.id == preview.id else { return }
-              if !viewer.renewHTMLSignature(status: status) { webError = message }
+              if !viewer.renewHTMLSignature(status: status, content: content, previewID: preview.id)
+              {
+                webError = message
+              }
             },
             loadingChanged: { value in
               guard viewer.preview?.id == preview.id else { return }
@@ -122,27 +194,25 @@ struct MessageArtifactPreview: View {
           }
         }
       }
-    } else if let text = preview.text {
+    } else if let text = content.text {
       ArtifactTextView(
-        content: text, kind: preview.artifact.kind, markdown: markdown, baseURL: viewer.webURL)
+        content: text, kind: artifact.kind, markdown: markdown, baseURL: viewer.webURL)
     } else {
-      MessageFilePreview(
-        kind: preview.artifact.kind, symbol: preview.artifact.symbol, file: preview.file,
-        thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
-        canRetry: preview.canRetry, retry: viewer.retry)
+      fileContent(content.file)
     }
   }
 
+  private func fileContent(_ file: ChatAttachmentFile?) -> some View {
+    MessageFilePreview(
+      kind: artifact.kind, symbol: artifact.symbol, file: file,
+      thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
+      canRetry: true, retry: viewer.retry)
+  }
 }
 
 private struct ArtifactCatalogWarning: View {
-  @LoadableValue private var catalog: Loadable<[ChatArtifact]>
-  let retry: @MainActor () async -> Void
-
-  init(reads: MessageArtifactResources, retry: @escaping @MainActor () async -> Void) {
-    _catalog = LoadableValue(task: reads.catalog, keepLast: true)
-    self.retry = retry
-  }
+  let catalog: Loadable<[ChatArtifact]>
+  let retry: @MainActor () -> Void
 
   var body: some View {
     if let error = catalog.error,
@@ -151,7 +221,7 @@ private struct ArtifactCatalogWarning: View {
     {
       DisclosureGroup("File details unavailable") {
         Text("Some file details could not be loaded.").font(.okou(.caption))
-        Button("Refresh file details") { Task { await retry() } }
+        Button("Refresh file details", action: retry)
       }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
     }
   }

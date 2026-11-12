@@ -78,7 +78,13 @@ impl Drop for Measurement {
     }
 }
 
-fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
+struct ClaimBody {
+    bytes: Vec<u8>,
+    decoded_len: usize,
+    expected: ExecutionContext,
+}
+
+fn claim_body(value_bytes: usize) -> TestResult<ClaimBody> {
     let mut context: serde_json::Value = serde_json::from_str(include_str!(
         "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-claim-response.json"
     ))?;
@@ -128,12 +134,17 @@ fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
     expected.instruction_file = Some(InstructionFile {
         storage_mount: "/home/user/.vm0/agent-instructions/codex".into(),
     });
-    Ok((bytes, expected))
+    Ok(ClaimBody {
+        decoded_len: bytes.len(),
+        bytes,
+        expected,
+    })
 }
 
 fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContext) -> TestResult {
     assert_eq!(actual.storage_manifest, expected.storage_manifest);
     assert_eq!(actual.instruction_file, expected.instruction_file);
+    assert_eq!(actual.environment, expected.environment);
     macro_rules! same_fields {
         ($($field:ident),+ $(,)?) => {
             $(assert_eq!(
@@ -150,7 +161,6 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
         append_system_prompt,
         vars,
         sandbox_token,
-        environment,
         platform_environment,
         native_continuation,
         secret_values,
@@ -186,135 +196,138 @@ fn assert_complete_context(actual: &ExecutionContext, expected: &ExecutionContex
 async fn successful_split_claim_bodies_use_one_aggregate_output() -> TestResult {
     let mut measurements = Vec::new();
     let mut fragmented_largest = None;
-    for (chunked, fragmented, compressed) in [
-        (false, false, false),
-        (true, false, false),
-        (true, true, false),
-        (false, false, true),
-        (true, false, true),
-        (true, true, true),
-    ] {
-        let (body, expected) = claim_body(if fragmented { 128 } else { 8192 })?;
-        let source_bytes = body.len();
-        let (body, encoding) = if compressed {
-            let mut encoder =
-                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-            encoder.write_all(&body)?;
-            (encoder.finish()?, "gzip")
-        } else {
-            (body, "identity")
-        };
-        let wire_bytes = body.len();
-        let framing = if chunked {
-            "Transfer-Encoding: chunked\r\n\r\n".to_owned()
-        } else {
-            format!("Content-Length: {wire_bytes}\r\n\r\n")
-        };
-        let mut response = format!(
+    let mut large = claim_body(8192)?;
+    let mut small = claim_body(128)?;
+    for compressed in [false, true] {
+        if compressed {
+            // Release the plain buffers before measuring the gzip claims.
+            for fixture in [&mut large, &mut small] {
+                let mut encoder =
+                    flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+                encoder.write_all(&fixture.bytes)?;
+                fixture.bytes = encoder.finish()?;
+            }
+        }
+        for (chunked, fragmented) in [(false, false), (true, false), (true, true)] {
+            let fixture = if fragmented { &small } else { &large };
+            let body = fixture.bytes.as_slice();
+            let source_bytes = fixture.decoded_len;
+            let expected = &fixture.expected;
+            let encoding = if compressed { "gzip" } else { "identity" };
+            let wire_bytes = body.len();
+            let framing = if chunked {
+                "Transfer-Encoding: chunked\r\n\r\n".to_owned()
+            } else {
+                format!("Content-Length: {wire_bytes}\r\n\r\n")
+            };
+            let mut response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: {encoding}\r\nConnection: close\r\n{framing}"
         )
         .into_bytes();
-        if chunked {
-            if fragmented {
-                // Tiny/large/tiny ordering also exercises partial-group flushing.
-                let mut offset = 0;
-                while offset < body.len() {
-                    let length = if offset == 512 {
-                        (8 * 1024).min(body.len() - offset)
-                    } else {
-                        1
-                    };
-                    let chunk = &body[offset..offset + length];
-                    if length == 1 {
-                        response.extend_from_slice(b"1\r\n");
-                    } else {
-                        response.extend_from_slice(format!("{length:x}\r\n").as_bytes());
+            if chunked {
+                if fragmented {
+                    // Tiny/large/tiny ordering also exercises partial-group flushing.
+                    let mut offset = 0;
+                    while offset < body.len() {
+                        let length = if offset == 512 {
+                            (8 * 1024).min(body.len() - offset)
+                        } else {
+                            1
+                        };
+                        let chunk = &body[offset..offset + length];
+                        if length == 1 {
+                            response.extend_from_slice(b"1\r\n");
+                        } else {
+                            response.extend_from_slice(format!("{length:x}\r\n").as_bytes());
+                        }
+                        response.extend_from_slice(chunk);
+                        response.extend_from_slice(b"\r\n");
+                        offset += length;
                     }
-                    response.extend_from_slice(chunk);
+                } else {
+                    response.extend_from_slice(format!("{wire_bytes:x}\r\n").as_bytes());
+                    response.extend_from_slice(body);
                     response.extend_from_slice(b"\r\n");
-                    offset += length;
                 }
+                response.extend_from_slice(b"0\r\n\r\n");
             } else {
-                response.extend_from_slice(format!("{wire_bytes:x}\r\n").as_bytes());
-                response.extend_from_slice(&body);
-                response.extend_from_slice(b"\r\n");
+                response.extend_from_slice(body);
             }
-            response.extend_from_slice(b"0\r\n\r\n");
-        } else {
-            response.extend_from_slice(&body);
-        }
-        let peer = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
-        let directory = tempfile::tempdir()?;
-        let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)?;
-        let http = HttpClient::new(HttpClientConfig {
-            api_url: peer.url(),
-            vercel_bypass: None,
-            client_session_id: "claim-body-memory-test".into(),
-            runner_version: env!("CARGO_PKG_VERSION"),
-        })?;
-        let provider = ApiProvider::new(
-            http,
-            "synthetic-runner-token".into(),
-            ApiProviderConfig {
-                ably_side_message_handler: None,
-                runner_identity: identity,
-                runner_hostname: None,
-                group: "test".into(),
-                supported_profiles: vec![],
-                installed_okou_cli: None,
-            },
-            BuiltinFirewallCatalogCachePaths {
-                cache_path: directory.path().join("catalog.json"),
-                lock_path: directory.path().join("catalog.lock"),
-            },
-            CancellationToken::new(),
-            RunCancellationRegistry::new(),
-        );
-        let candidate = JobCandidate::new(expected.run_id, "vm0/default".into());
-        let measurement = Measurement::start(source_bytes);
-        let result = tokio::time::timeout(Duration::from_secs(5), provider.claim(candidate)).await;
-        drop(measurement);
-        let requests = AGGREGATE_REQUESTS.load(Ordering::Relaxed);
-        let allocated_bytes = AGGREGATE_BYTES.load(Ordering::Relaxed);
-        let largest = LARGEST.load(Ordering::Relaxed);
-        provider.shutdown().await;
-        let captured = peer.assert_finished_with_requests().await;
+            let peer = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
+            let directory = tempfile::tempdir()?;
+            let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)?;
+            let http = HttpClient::new(HttpClientConfig {
+                api_url: peer.url(),
+                vercel_bypass: None,
+                client_session_id: "claim-body-memory-test".into(),
+                runner_version: env!("CARGO_PKG_VERSION"),
+            })?;
+            let provider = ApiProvider::new(
+                http,
+                "synthetic-runner-token".into(),
+                ApiProviderConfig {
+                    ably_side_message_handler: None,
+                    runner_identity: identity,
+                    runner_hostname: None,
+                    group: "test".into(),
+                    supported_profiles: vec![],
+                    installed_okou_cli: None,
+                },
+                BuiltinFirewallCatalogCachePaths {
+                    cache_path: directory.path().join("catalog.json"),
+                    lock_path: directory.path().join("catalog.lock"),
+                },
+                CancellationToken::new(),
+                RunCancellationRegistry::new(),
+            );
+            let candidate = JobCandidate::new(expected.run_id, "vm0/default".into());
+            let measurement = Measurement::start(source_bytes);
+            let result =
+                tokio::time::timeout(Duration::from_secs(5), provider.claim(candidate)).await;
+            drop(measurement);
+            let requests = AGGREGATE_REQUESTS.load(Ordering::Relaxed);
+            let allocated_bytes = AGGREGATE_BYTES.load(Ordering::Relaxed);
+            let largest = LARGEST.load(Ordering::Relaxed);
+            provider.shutdown().await;
+            let captured = peer.assert_finished_with_requests().await;
 
-        let claimed = result?.ok_or_else(|| io::Error::other("complete claim was not returned"))?;
-        assert_complete_context(claimed.context(), &expected)?;
-        let timing = claimed
-            .api_claim_timing()
-            .ok_or_else(|| io::Error::other("API claim timing missing"))?;
-        assert_eq!(
-            timing.response_attribution().body_size_bucket(),
-            if fragmented { "64_256_kib" } else { "ge_1_mib" },
-        );
-        assert_eq!(
-            timing.response_attribution().content_encoding(),
-            if compressed {
-                "absent_or_decoded"
+            let claimed =
+                result?.ok_or_else(|| io::Error::other("complete claim was not returned"))?;
+            assert_complete_context(claimed.context(), expected)?;
+            let timing = claimed
+                .api_claim_timing()
+                .ok_or_else(|| io::Error::other("API claim timing missing"))?;
+            assert_eq!(
+                timing.response_attribution().body_size_bucket(),
+                if fragmented { "64_256_kib" } else { "ge_1_mib" },
+            );
+            assert_eq!(
+                timing.response_attribution().content_encoding(),
+                if compressed {
+                    "absent_or_decoded"
+                } else {
+                    "identity"
+                },
+            );
+            assert_eq!(captured.len(), 1);
+            assert_eq!(
+                captured[0].lines().next(),
+                Some(
+                    format!(
+                        "POST /api/runners/jobs/{}/claim?workflowSkills=2 HTTP/1.1",
+                        expected.run_id
+                    )
+                    .as_str()
+                ),
+            );
+            eprintln!(
+                "chunked={chunked}, fragmented={fragmented}, compressed={compressed}: decoded={source_bytes}, encoded={wire_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"
+            );
+            if fragmented {
+                fragmented_largest = Some(fragmented_largest.unwrap_or(0).max(largest));
             } else {
-                "identity"
-            },
-        );
-        assert_eq!(captured.len(), 1);
-        assert_eq!(
-            captured[0].lines().next(),
-            Some(
-                format!(
-                    "POST /api/runners/jobs/{}/claim?workflowSkills=2 HTTP/1.1",
-                    expected.run_id
-                )
-                .as_str()
-            ),
-        );
-        eprintln!(
-            "chunked={chunked}, fragmented={fragmented}, compressed={compressed}: decoded={source_bytes}, encoded={wire_bytes}, aggregate requests={requests}, aggregate requested bytes={allocated_bytes}, largest={largest}"
-        );
-        if fragmented {
-            fragmented_largest = Some(fragmented_largest.unwrap_or(0).max(largest));
-        } else {
-            measurements.push((chunked, compressed, source_bytes, requests, allocated_bytes));
+                measurements.push((chunked, compressed, source_bytes, requests, allocated_bytes));
+            }
         }
     }
     // Individual requests only: this does not bound RSS, retained chunks,

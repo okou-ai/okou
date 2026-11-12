@@ -3,8 +3,8 @@ import XCTest
 
 @testable import OkouCore
 
-private func registeredHostResponse(generation: Int = 1) -> JSONValue {
-  .object([
+private func registeredHostResponse(generation: Int = 1, presence: Bool = false) -> JSONValue {
+  var response = JSONValue.object([
     "hostId": .string("00000000-0000-0000-0000-000000000001"),
     "connectionGeneration": .number(Double(generation)),
     "commandNotifications": .object([
@@ -13,6 +13,8 @@ private func registeredHostResponse(generation: Int = 1) -> JSONValue {
       "eventName": .string("commandsChanged"),
     ]),
   ])
+  if presence { response["livenessMode"] = .string("presence") }
+  return response
 }
 
 private actor NotificationBoundary: CommandNotifications {
@@ -710,6 +712,226 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await runtime.stop()
   }
 
+  func testPresenceClaimRetryClearsRecoveryWhenQueueIsIdle() async {
+    await assertPresenceClaimRecovery(withCommand: false)
+  }
+
+  func testPresenceClaimRetryClearsRecoveryBeforeExecutingACommand() async {
+    await assertPresenceClaimRecovery(withCommand: true)
+  }
+
+  private func assertPresenceClaimRecovery(withCommand: Bool) async {
+    let online = expectation(description: "The initial presence state is synchronized")
+    let first = expectation(description: "The first claim is in flight")
+    let recovering = expectation(description: "The failed claim enters recovery")
+    let recovered = expectation(description: "The retry clears the displayed error and retry state")
+    let reported = withCommand ? expectation(description: "A recovered command is reported") : nil
+    let executing = withCommand ? expectation(description: "The recovered command executes online") : nil
+    let pending = PendingResponse()
+    let claims = RequestCount()
+    let transitions = StateTransitions()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse(presence: true))
+      } else if path.hasSuffix("/next") {
+        switch claims.next() {
+        case 1:
+          pending.hold(connection)
+          first.fulfill()
+        case 2 where withCommand:
+          connection.reply(commandResponse("recovered-command"))
+        default:
+          connection.reply(.object(["status": .string("idle")]))
+        }
+      } else if path.hasSuffix("/state") {
+        connection.reply(heartbeatResponse(pending: false))
+      } else if path.hasSuffix("/complete") {
+        connection.reply(.object([:]))
+        reported?.fulfill()
+      } else if path.hasSuffix("/connection-events") || path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request for a presence host: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications,
+      onChange: { state in
+        if let executing, let command = state.commands.first, command.response == nil {
+          XCTAssertEqual(state.status, "online")
+          transitions.notify("executing", expectation: executing)
+        }
+        if state.status == "recovering" {
+          XCTAssertEqual(state.lastError, "Command claim failed (HTTP 503)")
+          XCTAssertEqual(state.recoveryAttempt, 1)
+          XCTAssertNotNil(state.retryAt)
+          transitions.notify("recovering", expectation: recovering)
+        } else if state.status == "online" {
+          if transitions.hasSeen("recovering") {
+            XCTAssertNil(state.lastError)
+            XCTAssertEqual(state.recoveryAttempt, 0)
+            XCTAssertNil(state.retryAt)
+            transitions.notify("recovered", expectation: recovered)
+          } else {
+            transitions.notify("online", expectation: online)
+          }
+        }
+      })
+    await runtime.start()
+    await fulfillment(of: [online, first], timeout: 3)
+    pending.reply(.object([:]), status: 503)
+    await fulfillment(of: [recovering, recovered], timeout: 4, enforceOrder: true)
+    if let executing { await fulfillment(of: [executing], timeout: 1) }
+    if let reported { await fulfillment(of: [reported], timeout: 1) }
+    await runtime.stop()
+  }
+
+  func testClaimRecoveryPreservesAnEarlierStateSynchronizationFailure() async {
+    let online = expectation(description: "Initial host state is online")
+    let first = expectation(description: "The first claim is in flight")
+    let stateFailed = expectation(description: "State synchronization fails first")
+    let claimFailed = expectation(description: "The claim then fails independently")
+    let retained = expectation(description: "Claim recovery restores the outstanding state error")
+    let stateRetry = expectation(description: "State synchronization retry remains in flight")
+    let recovered = expectation(description: "Both operations recover before going online")
+    let pendingClaim = PendingResponse()
+    let pendingState = PendingResponse()
+    let claims = RequestCount()
+    let states = RequestCount()
+    let transitions = StateTransitions()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse(presence: true))
+      } else if path.hasSuffix("/state") {
+        switch states.next() {
+        case 1: connection.reply(heartbeatResponse(pending: false))
+        case 2: connection.reply(.object([:]), status: 503)
+        default:
+          pendingState.hold(connection)
+          stateRetry.fulfill()
+        }
+      } else if path.hasSuffix("/next") {
+        if claims.next() == 1 {
+          pendingClaim.hold(connection)
+          first.fulfill()
+        } else {
+          connection.reply(.object(["status": .string("idle")]))
+        }
+      } else if path.hasSuffix("/connection-events") || path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(),
+      onChange: { state in
+        if state.status == "online" {
+          if transitions.hasSeen("claim-failed") {
+            XCTAssertTrue(transitions.hasSeen("retained"))
+            XCTAssertNil(state.lastError)
+            transitions.notify("recovered", expectation: recovered)
+          } else {
+            transitions.notify("online", expectation: online)
+          }
+        } else if state.lastError == "Command claim failed (HTTP 503)" {
+          transitions.notify("claim-failed", expectation: claimFailed)
+        } else if state.lastError == "Host state synchronization failed (HTTP 503)" {
+          XCTAssertEqual(state.status, "recovering")
+          XCTAssertNotNil(state.retryAt)
+          if transitions.hasSeen("claim-failed") {
+            transitions.notify("retained", expectation: retained)
+          } else {
+            transitions.notify("state-failed", expectation: stateFailed)
+          }
+        }
+      })
+    await runtime.start()
+    await fulfillment(of: [online, first], timeout: 3)
+    await runtime.updatePermissions(.object(["accessibility": .bool(true)]))
+    await fulfillment(of: [stateFailed], timeout: 1)
+    pendingClaim.reply(.object([:]), status: 503)
+    await fulfillment(of: [claimFailed, retained], timeout: 4, enforceOrder: true)
+    await fulfillment(of: [stateRetry], timeout: 1)
+    pendingState.reply(heartbeatResponse(pending: false))
+    await fulfillment(of: [recovered], timeout: 1)
+    await runtime.stop()
+  }
+
+  func testClaimRecoveryKeepsUnavailableNotificationsRecovering() async {
+    let online = expectation(description: "Initial host state is online")
+    let first = expectation(description: "The first claim is in flight")
+    let retry = expectation(description: "The failed claim is retried")
+    let unavailable = expectation(description: "Notification failure is displayed")
+    let retained = expectation(description: "Successful claim leaves the notification error visible")
+    let recovered = expectation(description: "Notification reattachment restores online status")
+    let pending = PendingResponse()
+    let claims = RequestCount()
+    let released = CompletionFlag()
+    let transitions = StateTransitions()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        connection.reply(registeredHostResponse(presence: true))
+      } else if path.hasSuffix("/next") {
+        switch claims.next() {
+        case 1:
+          pending.hold(connection)
+          first.fulfill()
+        case 2:
+          pending.hold(connection)
+          retry.fulfill()
+        default: connection.reply(.object(["status": .string("idle")]))
+        }
+      } else if path.hasSuffix("/state") {
+        connection.reply(heartbeatResponse(pending: false))
+      } else if path.hasSuffix("/connection-events") || path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications,
+      onChange: { state in
+        if state.status == "online" {
+          if released.value {
+            XCTAssertTrue(transitions.hasSeen("retained"))
+            XCTAssertNil(state.lastError)
+            transitions.notify("recovered", expectation: recovered)
+          } else {
+            transitions.notify("online", expectation: online)
+          }
+        } else if state.lastError == "Notification connection unavailable" {
+          XCTAssertEqual(state.status, "recovering")
+          if released.value {
+            transitions.notify("retained", expectation: retained)
+          } else {
+            transitions.notify("unavailable", expectation: unavailable)
+          }
+        }
+      })
+    await runtime.start()
+    await fulfillment(of: [online, first], timeout: 3)
+    pending.reply(.object([:]), status: 503)
+    await fulfillment(of: [retry], timeout: 4)
+    await notifications.unavailable()
+    await fulfillment(of: [unavailable], timeout: 1)
+    released.finish()
+    pending.reply(.object(["status": .string("idle")]))
+    await fulfillment(of: [retained], timeout: 1)
+    await notifications.reconnect()
+    await fulfillment(of: [recovered], timeout: 1)
+    await runtime.stop()
+  }
+
   func testRealtimeRenewalUsesTheSharedEndpointAndCurrentSessionToken() async throws {
     let started = expectation(description: "Notification adapter is ready")
     let rotated = CompletionFlag()
@@ -983,7 +1205,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(error.code, "network_error")
       XCTAssertEqual(
         error.message,
-        authenticated ? "Desktop authentication request timed out" : "Desktop API request timed out")
+        "Desktop API request timed out (POST /api/computer-use/hosts/host/commands/next)")
     } catch let error as URLError {
       XCTAssertFalse(expired, "An exhausted total budget must explain the native timeout")
       XCTAssertEqual(error.code, .timedOut)
@@ -1595,7 +1817,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTFail("The total operation must expire while its HTTP request is pending")
     } catch let error as DesktopFailure {
       XCTAssertEqual(error.code, "network_error")
-      XCTAssertEqual(error.message, "Desktop authentication request timed out")
+      XCTAssertEqual(error.message,
+        "Desktop API request timed out (POST /api/computer-use/hosts/host/heartbeat)")
       let operation = await trace.snapshot()
       var diagnostics = HostRequestDiagnostics()
       diagnostics.failed(

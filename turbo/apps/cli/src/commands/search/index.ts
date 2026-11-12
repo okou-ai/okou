@@ -8,15 +8,12 @@ import type {
   ChatSearchMessage,
   ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { parseTime } from "../../lib/utils/time-parser";
 import { formatIsoTimestamp } from "../../lib/utils/time-format";
 import { parseSearchQuery } from "../../lib/utils/search-query";
 import { isUuid } from "../../lib/utils/uuid";
 
 const SUPPORTED_SOURCES = ["agent-session", "chat", "slack"] as const;
 type Source = (typeof SUPPORTED_SOURCES)[number];
-
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const SEARCH_EXPLAINER = `
 Available sources:
@@ -53,14 +50,13 @@ To verify the token and network policy end-to-end:
 
 Slack API docs: https://api.slack.com/methods/search.messages
 
-Note: --since is ignored for the slack source.
+Note: --agent is ignored for the slack source.
 Add time filters directly to the Slack search query.`;
 }
 
 interface SearchOptions {
   source: string[];
   agent?: string;
-  since?: string;
 }
 
 function collectSource(value: string, previous: string[]): string[] {
@@ -111,24 +107,14 @@ async function runChatSource(
     process.exit(1);
   }
 
-  const since =
-    options.since !== undefined
-      ? parseTime(options.since)
-      : Date.now() - SEVEN_DAYS_MS;
-
   const response = await searchChat({
     keyword: query,
     agentId: personal ? await personalExecutorId() : options.agent,
-    since,
   });
 
   if (response.results.length === 0) {
     console.log(chalk.dim("No matches found"));
-    console.log(
-      chalk.dim(
-        "  Try a broader search with --since 30d or a different keyword",
-      ),
-    );
+    console.log(chalk.dim("  Try a different keyword"));
     return;
   }
 
@@ -160,7 +146,6 @@ export const searchCommand = new Command()
     [] as string[],
   )
   .option("--agent <id>", "Filter by agent ID")
-  .option("--since <time>", "Time window (e.g., 7d, 2h)")
   .addHelpText("after", SEARCH_EXPLAINER)
   .action(
     withErrorHandler(async (query: string, options: SearchOptions) => {

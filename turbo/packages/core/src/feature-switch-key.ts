@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   UserNotifications = "userNotifications",
   AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",
@@ -11,16 +12,17 @@ export enum FeatureSwitchKey {
   PastedTextAttachments = "pastedTextAttachments",
   ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
+  OkouAnimatedAvatar = "okouAnimatedAvatar",
   FriendReferrals = "friendReferrals",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
+  SshChatApproval = "sshChatApproval",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",
   DocuSignConnector = "docusignConnector",
-  MercuryConnector = "mercuryConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
   SpotifyConnector = "spotifyConnector",
@@ -39,7 +41,6 @@ export enum FeatureSwitchKey {
   CodexExecution = "_codexExecution",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
-  BrowserNativeInput = "browserNativeInput",
   BrowserSharedOwner = "browserSharedOwner",
   AgentSuggestion = "agentSuggestion",
   ProactiveLearning = "proactiveLearning",
@@ -50,4 +51,6 @@ export enum FeatureSwitchKey {
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
+  FreePlanArtifactPaywall = "freePlanArtifactPaywall",
+  BillingSurvey = "billingSurvey",
 }

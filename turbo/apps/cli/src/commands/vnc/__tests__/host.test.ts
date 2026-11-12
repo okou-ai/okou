@@ -159,7 +159,7 @@ describe("okou vnc host list", () => {
     await invoke();
 
     expect(output).toHaveBeenCalledExactlyOnceWith(
-      "No VNC hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
+      "No VNC hosts available to this Run. Inspect configured hosts with okou vnc host list --scope configured --json, then use okou vnc request-access <connection-id> --reason <purpose>. Approve required SSH tunnel and KDC hosts first.",
     );
   });
 

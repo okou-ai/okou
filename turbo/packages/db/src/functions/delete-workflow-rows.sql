@@ -20,6 +20,7 @@ DECLARE
   removed_automations jsonb;
   attachment_key text;
   attachment_prefix text;
+  inherited_attachment boolean;
 BEGIN
   SELECT workflow.agent_id INTO observed_agent_id
   FROM public.workflows AS workflow
@@ -93,26 +94,36 @@ BEGIN
 
   IF locked_workflow.attachments->>'kind' = 'bundle' THEN
     attachment_key := locked_workflow.attachments->>'objectKey';
-    attachment_prefix := 'workflow-attachments/' || locked_workflow.org_id
-      || '/' || locked_workflow.id::text || '/';
-    IF attachment_key IS NULL
-      OR left(attachment_key, length(attachment_prefix)) COLLATE "C"
-        <> attachment_prefix COLLATE "C"
-      OR NOT (attachment_key COLLATE "C"
-        ~ '^workflow-attachments/[^/]+/[a-f0-9-]{36}/[a-f0-9-]{36}/archive[.]tar[.]gz$') THEN
-      RAISE EXCEPTION USING
-        ERRCODE = 'P0001',
-        CONSTRAINT = 'workflow_deletion_attachment_owner',
-        MESSAGE = 'Workflow attachment package has a foreign owner';
+    -- Temporary staff copy reader: only the deterministic copy may inherit the
+    -- source's upload. Remove after copies own their descriptors and old Runs
+    -- and incompatible rollback consumers have drained (#46783).
+    inherited_attachment := (locked_workflow.org_id = 'org_3ANttyrbWYJk6JKRSTRLEsbsDLe'
+      AND split_part(attachment_key, '/', 2) = locked_workflow.org_id
+      AND attachment_key ~ '^workflow-attachments/[^/]+/[a-f0-9-]{36}/[a-f0-9-]{36}/archive[.]tar[.]gz$'
+      AND overlay(overlay(md5('staff-single-agent-workflow-v1:' || split_part(attachment_key, '/', 3))
+        placing '5' from 13 for 1) placing '8' from 17 for 1)::uuid = locked_workflow.id) IS TRUE;
+    IF NOT inherited_attachment THEN
+      attachment_prefix := 'workflow-attachments/' || locked_workflow.org_id
+        || '/' || locked_workflow.id::text || '/';
+      IF attachment_key IS NULL
+        OR left(attachment_key, length(attachment_prefix)) COLLATE "C"
+          <> attachment_prefix COLLATE "C"
+        OR NOT (attachment_key COLLATE "C"
+          ~ '^workflow-attachments/[^/]+/[a-f0-9-]{36}/[a-f0-9-]{36}/archive[.]tar[.]gz$') THEN
+        RAISE EXCEPTION USING
+          ERRCODE = 'P0001',
+          CONSTRAINT = 'workflow_deletion_attachment_owner',
+          MESSAGE = 'Workflow attachment package has a foreign owner';
+      END IF;
+      INSERT INTO public.background_jobs
+        (id, kind, handler_version, org_id, user_id, input)
+      VALUES (
+        gen_random_uuid(), 'workflow-attachment-cleanup', 1,
+        locked_workflow.org_id, locked_workflow.owner_user_id,
+        jsonb_build_object('workflowId', locked_workflow.id,
+          'objectKey', attachment_key)
+      );
     END IF;
-    INSERT INTO public.background_jobs
-      (id, kind, handler_version, org_id, user_id, input)
-    VALUES (
-      gen_random_uuid(), 'workflow-attachment-cleanup', 1,
-      locked_workflow.org_id, locked_workflow.owner_user_id,
-      jsonb_build_object('workflowId', locked_workflow.id,
-        'objectKey', attachment_key)
-    );
   END IF;
 
   RETURN jsonb_build_object('deleted', true,

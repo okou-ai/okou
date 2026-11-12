@@ -548,6 +548,7 @@
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
       "openSlides": "Buka di Google Slides",
+      "reconnect": "Hubungkan ulang Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
@@ -1060,6 +1061,8 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
+      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
+      "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "Lebih banyak kredit & eksekusi bersamaan",
       "getPlan": "Dapatkan {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Hanya ingin melihat harga",
+          "needs_approval": "Perlu persetujuan orang lain",
+          "not_ready_yet": "Belum siap berlangganan",
+          "not_seeing_value": "Belum melihat manfaatnya",
+          "other": "Lainnya",
+          "payment_issue": "Ada masalah saat membayar",
+          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan",
+          "results_not_good_enough": "Tidak puas dengan hasilnya"
+        },
+        "description": "Hanya satu pertanyaan. Jawaban Anda membantu kami menjadi lebih baik.",
+        "question": "Apa yang membuat Anda tidak menyelesaikan pembelian?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Saat ini belum butuh lebih",
+          "not_sure_worth_it": "Belum yakin sepadan",
+          "other": "Lainnya",
+          "still_trying": "Ingin mencoba lebih lama dulu",
+          "too_expensive": "Terlalu mahal"
+        },
+        "question": "Apa yang membuat Anda belum upgrade hari ini?",
+        "reward": "Jawaban pertama yang memenuhi syarat di ruang kerja ini mendapat {{credits}} kredit bonus, berlaku selama 30 hari.",
+        "thanksWithCredits": "Terima kasih! {{credits}} kredit telah ditambahkan, Anda bisa melanjutkan."
+      },
+      "error": "Jawaban Anda gagal dikirim. Coba lagi.",
+      "notNow": "Nanti saja",
+      "otherLabel": "Jawaban Anda",
+      "otherPlaceholder": "Ceritakan lebih lanjut (opsional)",
+      "submit": "Kirim",
+      "thanks": "Terima kasih atas masukan Anda."
     },
     "toasts": {
       "autoRechargeUpdated": "Isi ulang otomatis diperbarui",
@@ -1624,13 +1661,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Semua beres",
-        "emptyTitle": "Belum ada saran baru",
         "feedback": "Tindakan saran",
-        "loading": "Memuat saran",
         "navigation": "Jelajahi saran",
-        "next": "Saran berikutnya",
-        "previous": "Saran sebelumnya",
-        "retry": "Coba lagi"
+        "show": "Tampilkan saran {{index}} dari {{total}}"
       },
       "label": "Saran",
       "lessLikeThis": "Less like this",
@@ -1865,7 +1898,9 @@
         "title": "Buat"
       },
       "explore": "Jelajahi",
+      "exploreWhatsNew": "Lihat yang baru",
       "research": {
+        "description": "Trafik, iklan, produk, topik",
         "items": {
           "ads": "Jelajahi materi iklan",
           "products": "Riset produk",
@@ -1878,6 +1913,7 @@
         "title": "Riset"
       },
       "search": {
+        "description": "Pelanggan, kreator, pengambil keputusan",
         "items": {
           "affiliates": "Program afiliasi",
           "creators": "Kemitraan kreator",
@@ -1908,6 +1944,7 @@
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
+        "summary": "Berjalan sesuai jadwal atau pemicu",
         "triggers": {
           "description": "Mulai saat suatu peristiwa terjadi.",
           "eventPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan sumber, filter, dan tujuan hasil. Siapkan draf alur kerja dan konfirmasi pengaturan sebelum mengaktifkannya.",
@@ -2137,6 +2174,8 @@
         "outputLimitTitle": "Jawaban mencapai batas panjang",
         "personalAccount": "Langganan pribadi {{account}}",
         "personalAccountDisconnected": "Langganan pribadi terputus",
+        "providerBadRequestDescription": "Coba lagi atau beralih ke model lain untuk melanjutkan.",
+        "providerBadRequestTitle": "Penyedia model mengembalikan kesalahan",
         "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
         "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
         "providerConnectionDescription": "Buka Setelan > Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
@@ -2346,16 +2385,34 @@
       "untitled": "Tanpa judul"
     },
     "remoteAccess": {
+      "all": "Semua",
+      "allowed": "Diizinkan",
+      "autoSave": "Perubahan disimpan otomatis untuk chat ini",
+      "connections": "Koneksi",
       "default": "Default",
       "defaultEnabled": "Aktif secara default untuk chat",
-      "disabled": "Dinonaktifkan",
-      "enabled": "Diaktifkan",
+      "draft": "Diterapkan saat mengirim pesan pertama",
       "enabledCount_other": "{{count}} aktif",
+      "enableInChat": "Aktifkan di chat ini",
+      "enableSsh": "Aktifkan SSH {{name}} di chat ini",
+      "filterHint": "Koneksi yang diubah tetap terlihat hingga filter diganti",
+      "fromChat": "Chat ini",
       "loadFailed": "Gagal memuat akses jarak jauh.",
       "loading": "Memuat akses jarak jauh…",
+      "manage": "Kelola koneksi",
+      "needsReload": "Muat ulang untuk memastikan izin",
+      "noConnections": "Belum ada koneksi SSH atau VNC yang dikonfigurasi",
+      "noneAllowed": "Belum ada koneksi yang diizinkan di chat ini",
+      "notAllowed": "Tidak diizinkan",
       "off": "Nonaktif",
       "on": "Aktif",
+      "reload": "Muat ulang",
       "requiresSsh": "Memerlukan SSH: {{name}}",
+      "saved": "Tersimpan untuk chat ini",
+      "saveUnconfirmed": "Belum dapat memastikan perubahan tersimpan. Muat ulang izin sebelum mengubah lagi.",
+      "saving": "Menyimpan…",
+      "scope": "Pilih koneksi yang dapat digunakan Okou di chat ini",
+      "showAll": "Tampilkan semua koneksi",
       "sshDisabled": "Aktifkan SSH: {{name}}",
       "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
@@ -3162,6 +3219,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} anggota",
+    "bindingUnavailable": "Tidak tersedia",
     "cancel": "Batal",
     "changed": "Cloudflare Access ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan.",
     "clientIdPlaceholder": "Tempel Client ID Service Token",
@@ -3174,7 +3232,7 @@
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
     "impactChanged": "Host yang terdampak telah berubah. Perubahan tidak diterapkan.",
-    "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
+    "inUse": "Cloudflare Access ini masih digunakan. Lepaskan atau ubah pengaitan host dan konektor kustom yang bergantung padanya terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
     "loadFailed": "Tidak dapat memuat Cloudflare Access.",
     "loading": "Memuat Cloudflare Access…",
@@ -3406,6 +3464,8 @@
         "unshared": "Tidak dibagikan ke agen mana pun"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
+      "myOkouDescriptionWithCount": "Hubungkan {{value}} layanan untuk digunakan Okou Anda.",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",
@@ -5098,7 +5158,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5462,6 +5521,7 @@
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
     "overloaded": "{{model}} sedang kelebihan beban. Beralih ke model lain.",
+    "providerBadRequest": "Penyedia model mengembalikan kesalahan. Coba lagi atau beralih ke model lain untuk melanjutkan.",
     "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
@@ -5486,6 +5546,11 @@
       "creditBalance_one": "{{value}} kredit",
       "creditBalance_other": "{{value}} kredit",
       "exportData": "Ekspor data",
+      "help": {
+        "docs": "Dokumentasi",
+        "keyboardShortcuts": "Pintasan",
+        "label": "Bantuan"
+      },
       "lab": "Lab",
       "settings": "Setelan",
       "signOut": "Keluar",
@@ -6195,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Sembunyikan kepatuhan",
       "link": "Detail keamanan",
       "status": {
         "aligned": "Selaras",
@@ -6341,6 +6407,33 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
+  "sshAuthorization": {
+    "allow": "Izinkan di chat ini",
+    "blocked": {
+      "chat_busy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
+      "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
+      "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini.",
+      "ssh_access_required": "Setujui host SSH yang diperlukan terlebih dahulu."
+    },
+    "continue": "Lanjutkan tugas",
+    "details": "Detail akses",
+    "effect": "Mengizinkan perintah dan transfer file sebagai pengguna jarak jauh ini hingga akses dinonaktifkan.",
+    "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
+    "retry": "Coba lagi",
+    "scope": "Host ini · Hanya chat ini",
+    "status": {
+      "approved": "Akses SSH diizinkan",
+      "denied": "Akses SSH ditolak",
+      "expired": "Permintaan SSH kedaluwarsa",
+      "pending": "Akses SSH",
+      "revoked": "Akses SSH dicabut",
+      "stale": "Permintaan SSH berubah"
+    },
+    "title": "Akses SSH",
+    "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
     "delete": "Hapus Tailscale",
@@ -6452,16 +6545,19 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Kembali ke alur kerja",
+      "disabled": "Dinonaktifkan",
       "disabledAt": "Dinonaktifkan pada {{time}}",
       "loadFailed": "Tidak dapat memuat otomatisasi ini",
       "loadingAutomation": "Memuat otomatisasi",
+      "notNow": "Tidak sekarang",
       "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
-      "reason_one": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
-      "reason_other": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
       "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
       "switchWorkspace": "Ganti ruang kerja",
       "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
       "systemSource": "Notifikasi sistem",
+      "title": "Otomatisasi dinonaktifkan",
       "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
       "viewAutomation": "Lihat otomatisasi",
       "workspace": "Ruang kerja",
@@ -6671,6 +6767,34 @@
       "via": "Host SSH:"
     },
     "unavailable": "VNC tidak tersedia di ruang kerja ini."
+  },
+  "vncAuthorization": {
+    "allow": "Izinkan di chat ini",
+    "blocked": {
+      "chat_busy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
+      "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
+      "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini.",
+      "ssh_access_required": "Setujui host SSH yang diperlukan terlebih dahulu."
+    },
+    "continue": "Lanjutkan tugas",
+    "dependencies": "Host SSH yang diperlukan (disetujui terpisah)",
+    "details": "Detail akses",
+    "effect": "Mengizinkan melihat dan mengendalikan desktop ini hingga akses dinonaktifkan. Host SSH memerlukan persetujuan terpisah.",
+    "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
+    "retry": "Coba lagi",
+    "scope": "Host ini · Hanya chat ini",
+    "status": {
+      "approved": "Akses VNC diizinkan",
+      "denied": "Akses VNC ditolak",
+      "expired": "Permintaan VNC kedaluwarsa",
+      "pending": "Akses VNC",
+      "revoked": "Akses VNC dicabut",
+      "stale": "Permintaan VNC berubah"
+    },
+    "title": "Akses VNC",
+    "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
   },
   "workflows": {
     "automations": {
@@ -7351,12 +7475,11 @@
       "codeInstructions": "Kirim kode ini ke Okou dari alamat email yang ingin ditambahkan. Gunakan sebagai subjek atau baris pertama pesan.",
       "connected": "Email terhubung",
       "deleteAria": "Hapus {{email}}",
-      "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "description": "Mengobrol dengan Okou lewat email",
       "emailAddress": "Alamat email",
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
       "loadError": "Tidak dapat memuat koneksi email Anda",
-      "loginNotice": "Email login Anda tetap terhubung.",
       "manage": "Kelola",
       "manageDescription": "Kirim kode dari alamat email yang ingin ditambahkan.",
       "manageTitle": "Koneksi email",

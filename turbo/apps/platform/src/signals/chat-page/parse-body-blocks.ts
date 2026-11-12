@@ -40,6 +40,10 @@ import {
   type BrowserAuthorizationDescriptor,
 } from "./browser-authorization-block.ts";
 import {
+  parseHostAuthorizationUrl,
+  type HostAuthorizationDescriptor,
+} from "./host-authorization-block.ts";
+import {
   parseDesktopShellAuthorizationUrl,
   type DesktopShellAuthorizationDescriptor,
 } from "./desktop-shell-authorization-block.ts";
@@ -59,7 +63,10 @@ import {
   type BrowserUserActionDescriptor,
 } from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
-import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
+import {
+  isOfficialTemplatePreviewUrl,
+  officialTemplatePreviewContentType,
+} from "./official-template-preview.ts";
 import {
   parseSubscriptionResetUrl,
   subscriptionResetResourceKey,
@@ -134,6 +141,11 @@ export type ParsedBodyBlock =
       type: "computer-use-authorization";
       resourceKey: string;
       descriptor: ComputerUseAuthorizationDescriptor;
+    }
+  | {
+      type: "ssh-authorization" | "vnc-authorization";
+      resourceKey: string;
+      descriptor: HostAuthorizationDescriptor;
     }
   | {
       type: "desktop-shell-authorization";
@@ -609,12 +621,16 @@ export function previewAttachmentFromUrl(
   url: string,
   title?: string,
 ): ChatAttachmentDescriptor {
+  const filename = filenameFromUrl(url);
+  const officialContentType = officialTemplatePreviewContentType(url);
+  if (officialContentType) {
+    return { filename, url, contentType: officialContentType };
+  }
   const hosted = hostedSiteAttachment(url, title);
   if (hosted) {
     return hosted;
   }
 
-  const filename = filenameFromUrl(url);
   const trimmedTitle = title?.trim();
   if (trimmedTitle && /\.(?:html|htm)$/i.test(filename)) {
     return { filename: trimmedTitle, url, contentType: "text/html" };
@@ -793,6 +809,22 @@ function createComputerAuthorizationBlock(
     };
   }
 
+  const vncAuthorization = parseHostAuthorizationUrl("vnc", url);
+  if (vncAuthorization) {
+    return {
+      type: "vnc-authorization",
+      resourceKey: vncAuthorization.id,
+      descriptor: vncAuthorization,
+    };
+  }
+  const sshAuthorization = parseHostAuthorizationUrl("ssh", url);
+  if (sshAuthorization) {
+    return {
+      type: "ssh-authorization",
+      resourceKey: sshAuthorization.id,
+      descriptor: sshAuthorization,
+    };
+  }
   const desktopShellAuthorization = parseDesktopShellAuthorizationUrl(url);
   if (desktopShellAuthorization) {
     return {
@@ -1582,6 +1614,8 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "computer-use-authorization": {
       return block.descriptor.originalUrl;
     }
+    case "vnc-authorization":
+    case "ssh-authorization":
     case "desktop-shell-authorization": {
       return block.descriptor.originalUrl;
     }

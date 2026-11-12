@@ -210,6 +210,45 @@ it("decorates authorized standalone HTML with a shared banner and a credential-f
   expect(response.headers.get("Cache-Control")).toBe("private, no-store");
 });
 
+it("withholds Site downloads when the owner's plan does not include them", async () => {
+  server.use(
+    http.get(endpoint, () => {
+      return HttpResponse.json({
+        allowed: true,
+        decision: "allow",
+        presentation: {
+          showBanner: true,
+          title: "Report",
+          siteUrl: "https://demo.okou.app/",
+          downloadAllowed: false,
+        },
+      });
+    }),
+  );
+  const env = {
+    ...environment(),
+    HOSTED_SITE_AUTH_URL: "https://app.okou.ai/hosted-site-authorize",
+  };
+  const page = await fetchWorker(
+    new Request("https://demo.okou.app/", {
+      headers: { "Sec-Fetch-Dest": "document" },
+    }),
+    env,
+  );
+  expect(page.status).toBe(200);
+  const html = await page.text();
+  expect(html).toContain("Continue with Okou");
+  expect(html).not.toContain('data-okou-banner-download=""');
+  const download = await fetchWorker(
+    new Request("https://demo.okou.app/.okou/files", {
+      headers: { Accept: "application/json" },
+    }),
+    env,
+  );
+  expect(download.status).toBe(402);
+  expect(download.headers.get("Cache-Control")).toBe("private, no-store");
+});
+
 it("requires the trusted App origin when authorized HTML requests an enabled banner", async () => {
   server.use(
     http.get(endpoint, () => {

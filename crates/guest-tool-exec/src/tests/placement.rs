@@ -1,7 +1,7 @@
 use super::*;
 use cli_test_support::child::KillAndWaitChild as TestChild;
 use std::mem::{MaybeUninit, size_of};
-use std::os::fd::{AsFd, FromRawFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 use std::os::unix::net::UnixListener;
 use std::thread;
 use std::time::Instant;
@@ -171,4 +171,32 @@ fn placement_writes_descriptor_and_requires_broker_acknowledgement() {
         placement.read_to_string(&mut contents).unwrap();
         assert_eq!(contents, "0");
     }
+}
+
+#[test]
+fn placement_write_failure_never_confirms_to_broker() {
+    let endpoint = format!("vm0-test-tool-write-failure-{}", std::process::id());
+    let listener = process_control_ipc::bind_abstract_listener(&endpoint).unwrap();
+    let placement = std::fs::File::open("/dev/null").unwrap();
+    let broker = thread::spawn(move || {
+        let stream =
+            process_control_ipc::accept_with_timeout(&listener, Duration::from_secs(1)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        process_control_ipc::send_tool_placement(&stream, placement.as_fd()).unwrap();
+        process_control_ipc::read_tool_placement_confirmation(&stream)
+    });
+
+    let result = place_current_process(&endpoint);
+    let confirmation = broker.join().unwrap();
+
+    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EBADF));
+    assert_eq!(
+        confirmation.unwrap_err().kind(),
+        io::ErrorKind::UnexpectedEof
+    );
 }

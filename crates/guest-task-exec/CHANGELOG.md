@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.66](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.65...guest-task-exec-v0.2.66) (2026-11-12)
+
+## [0.2.65](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.64...guest-task-exec-v0.2.65) (2026-11-11)
+
+
+### Refactoring
+
+* **ipc:** centralize cgroup self-placement writes ([#46641](https://github.com/okou-ai/okou/issues/46641)) ([f89ce04](https://github.com/okou-ai/okou/commit/f89ce0406f37c41e1eb2b451f1f2f3b007b920c6))
+
+## [0.2.64](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.63...guest-task-exec-v0.2.64) (2026-11-11)
+
+## [0.2.63](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.62...guest-task-exec-v0.2.63) (2026-11-11)
+
+## [0.2.62](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.61...guest-task-exec-v0.2.62) (2026-11-11)
+
 ## [0.2.61](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.60...guest-task-exec-v0.2.61) (2026-11-09)
 
 ## [0.2.60](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.59...guest-task-exec-v0.2.60) (2026-11-08)

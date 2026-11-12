@@ -6,6 +6,7 @@ export const CLIENT_FORCE_UPGRADE_STATUS = 426;
 
 // Canonical X-Client-Type wire values emitted by first-party clients.
 export const CLIENT_TYPE_APP = "App";
+export const CLIENT_TYPE_ANDROID = "Android";
 export const CLIENT_TYPE_CLI = "CLI";
 export const CLIENT_TYPE_DESKTOP = "Desktop";
 export const CLIENT_TYPE_GUEST_AGENT = "GuestAgent";

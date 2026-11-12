@@ -1,4 +1,4 @@
-import { object, string, uuid, enum as zEnum } from "zod";
+import { literal, object, string, uuid, enum as zEnum } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -26,7 +26,12 @@ const uploadRoute = {
     }),
     400: apiErrorSchema,
     401: apiErrorSchema,
-    403: apiErrorSchema,
+    403: apiErrorSchema.extend({
+      recovery: object({
+        action: literal("reconnect"),
+        connectionId: uuid(),
+      }).optional(),
+    }),
     404: apiErrorSchema,
     503: apiErrorSchema,
   },

@@ -1,6 +1,7 @@
 //! Bounded observations of physical cache keys; disk metadata remains authority.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use runner_types::types::{HeldHomeState, MAX_HELD_HOME_STATES, MAX_HOME_CACHES_PER_REUSE_KEY};
 
@@ -8,12 +9,14 @@ use super::{HomeImageCache, cap_held_home_states, entry::is_cache_key_name};
 use crate::error::{LifecycleError, LifecycleResult};
 use runner_types::ids::RunId;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Default)]
 pub struct HomeCacheInventory {
     pub entries: BTreeMap<String, HeldHomeState>,
     /// Retain the group's maximum even when its newest profile is omitted.
     pub completion_times: BTreeMap<String, String>,
-    pub(super) omitted_groups: bool,
     pub locked_keys: BTreeSet<String>,
     /// Valid entries were omitted by the bounded projection's limits.
     pub truncated: bool,
@@ -49,30 +52,107 @@ impl HomeCacheInventory {
             .map(|(key, _)| key.clone())
             .collect()
     }
+}
 
+struct InventoryGroup {
+    completed_at: String,
+    entries: BTreeMap<String, HeldHomeState>,
+}
+
+/// Scan-owned selection; the published inventory has no mutable derived index.
+#[derive(Default)]
+pub(super) struct HomeCacheInventoryBuilder {
+    groups: BTreeMap<String, InventoryGroup>,
+    // The last tuple is the worst group, including the reuse-key tie break.
+    completion_order: BTreeSet<(Reverse<String>, String)>,
+    pub(super) omitted_groups: bool,
+    pub(super) locked_keys: BTreeSet<String>,
+    pub(super) truncated: bool,
+    pub(super) incomplete: bool,
+}
+
+impl HomeCacheInventoryBuilder {
     pub(super) fn insert(&mut self, key: String, state: HeldHomeState) {
         let reuse_key = state.reuse_key.clone();
-        // Every retained group has a completion time, so a new group has only
-        // this entry and cannot exceed the per-group profile cap.
-        let existing_group = self.completion_times.contains_key(&reuse_key);
-        let completed_at = self.completion_times.entry(reuse_key.clone()).or_default();
-        if state.last_completed_at > *completed_at {
-            completed_at.clone_from(&state.last_completed_at);
+        match self.groups.entry(reuse_key.clone()) {
+            Entry::Vacant(entry) => {
+                self.completion_order
+                    .insert((Reverse(state.last_completed_at.clone()), reuse_key.clone()));
+                entry.insert(InventoryGroup {
+                    completed_at: state.last_completed_at.clone(),
+                    entries: BTreeMap::new(),
+                });
+            }
+            Entry::Occupied(mut entry) => {
+                let group = entry.get_mut();
+                if state.last_completed_at > group.completed_at {
+                    self.completion_order
+                        .remove(&(Reverse(group.completed_at.clone()), reuse_key.clone()));
+                    group.completed_at.clone_from(&state.last_completed_at);
+                    self.completion_order
+                        .insert((Reverse(group.completed_at.clone()), reuse_key.clone()));
+                }
+            }
         }
-        self.entries.insert(key, state);
-        self.omitted_groups |= self.completion_times.len() > MAX_HELD_HOME_STATES;
-        if self.completion_times.len() > MAX_HELD_HOME_STATES
-            || (existing_group
-                && self
+        if self.groups.len() > MAX_HELD_HOME_STATES {
+            if let Some((_, evicted)) = self.completion_order.pop_last() {
+                self.groups.remove(&evicted);
+            }
+            self.omitted_groups = true;
+            self.truncated = true;
+        }
+        if let Some(group) = self.groups.get_mut(&reuse_key) {
+            group.entries.insert(key, state);
+            if group.entries.len() > MAX_HOME_CACHES_PER_REUSE_KEY {
+                let profiles = group
                     .entries
                     .values()
-                    .filter(|state| state.reuse_key == reuse_key)
-                    .count()
-                    > MAX_HOME_CACHES_PER_REUSE_KEY)
-        {
-            self.truncated |= cap_inventory_entries(&mut self.entries, &mut self.completion_times);
+                    .flat_map(|state| state.home_caches.iter().map(|home| home.profile.as_str()))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .take(MAX_HOME_CACHES_PER_REUSE_KEY)
+                    .map(str::to_owned)
+                    .collect::<BTreeSet<_>>();
+                let before = group.entries.len();
+                group.entries.retain(|_, state| {
+                    state
+                        .home_caches
+                        .iter()
+                        .any(|home| profiles.contains(&home.profile))
+                });
+                self.truncated |= group.entries.len() != before;
+            }
         }
-        self.truncated |= self.entries.len() > MAX_HELD_HOME_STATES;
+    }
+
+    pub(super) fn selected_groups(&self) -> BTreeSet<String> {
+        self.groups.keys().cloned().collect()
+    }
+
+    /// Recover earlier profiles of groups that re-entered late in the first scan.
+    pub(super) fn refill(mut self) -> Self {
+        for group in self.groups.values_mut() {
+            group.entries.clear();
+        }
+        self.omitted_groups = false;
+        self.truncated = true;
+        self
+    }
+
+    pub(super) fn finish(self) -> HomeCacheInventory {
+        let mut entries = BTreeMap::new();
+        let mut completion_times = BTreeMap::new();
+        for (reuse_key, group) in self.groups {
+            completion_times.insert(reuse_key, group.completed_at);
+            entries.extend(group.entries);
+        }
+        HomeCacheInventory {
+            truncated: self.truncated || entries.len() > MAX_HELD_HOME_STATES,
+            entries,
+            completion_times,
+            locked_keys: self.locked_keys,
+            incomplete: self.incomplete,
+        }
     }
 }
 

@@ -22,24 +22,25 @@ extension ChatListFilter {
   }
 }
 
-/// UIKit owns the lifted button and keeps the sidebar still until it returns to its source.
+/// UIKit owns the button and menu presentation.
 struct ChatListFilterMenu: UIViewRepresentable {
-  let sidebar: SidebarInteraction
   let store: WorkspaceStore
   @Binding var selection: ChatListFilter
+  /// Names a new Project; the sidebar owns its name dialog.
+  let newProject: () -> Void
 
-  func makeUIView(context: Context) -> SidebarMenuButton {
-    let button = SidebarMenuButton(sidebar: sidebar)
+  func makeUIView(context: Context) -> UIButton {
+    let button = UIButton(type: .system)
     button.showsMenuAsPrimaryAction = true
     button.accessibilityIdentifier = "chat-list-filter"
     button.accessibilityLabel = String(localized: "Chat list")
     return button
   }
 
-  func updateUIView(_ button: SidebarMenuButton, context: Context) {
+  func updateUIView(_ button: UIButton, context: Context) {
     let filter = selection
-    var configuration = UIButton.Configuration.glass()
-    configuration.cornerStyle = .capsule
+    // The header's glass group draws the glass around this and the back button.
+    var configuration = UIButton.Configuration.plain()
     configuration.image = OkouIcon.uiImage("list-filter")
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: 0, leading: filter == .recent ? 0 : OkouSpace.lg,
@@ -84,20 +85,28 @@ struct ChatListFilterMenu: UIViewRepresentable {
             ) { _ in Task { await list.markAgentRead(agentID) } }
           ]))
     }
+    let newProject = newProject
+    groups.append(
+      UIMenu(
+        options: .displayInline,
+        children: [
+          UIAction(
+            title: String(localized: "New project"), image: OkouIcon.uiImage("folder-plus"),
+            attributes: store.needsUpgrade ? .disabled : []
+          ) { _ in newProject() }
+        ]))
     let menu = UIMenu(children: groups)
     button.menu = menu
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }
   }
 
-  func sizeThatFits(_ proposal: ProposedViewSize, uiView: SidebarMenuButton, context: Context)
-    -> CGSize?
-  {
+  func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
     CGSize(
       width: max(OkouControl.minimumTarget, uiView.intrinsicContentSize.width),
       height: OkouControl.minimumTarget)
   }
 
-  static func dismantleUIView(_ button: SidebarMenuButton, coordinator: ()) {
-    button.endMenuPresentations()
+  static func dismantleUIView(_ button: UIButton, coordinator: ()) {
+    button.contextMenuInteraction?.dismissMenu()
   }
 }

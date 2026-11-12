@@ -5,6 +5,7 @@
 # template from either R2 or a local build. It mounts the rootfs, injects
 # guest binaries, resolver/host environment files, and the host-local proxy CA,
 # then rebuilds trust stores. The resulting image is the bootable rootfs.
+# Runner stages the build-owned rootfs-environment data beside this script.
 #
 # Runs inside a private mount namespace so loopback/proc mounts are reclaimed
 # by the kernel if the script is hard-killed before the EXIT trap runs.
@@ -395,20 +396,8 @@ printf '%s\n' \
 install_host_file "$ca_cert" "/${CA_ROOTFS_DEST}" 644
 
 # /etc/environment is read by PAM for all login sessions.
-# [sync:etc-environment] Keep in sync with:
-# - crates/runner/tests/behavior/exec/inventory.sh
-# - crates/guest-control-server/src/user.rs
-printf '%s\n' \
-  "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  "LANG=C.UTF-8" \
-  "RUSTUP_HOME=/usr/local/rustup" \
-  "NPM_CONFIG_UPDATE_NOTIFIER=false" \
-  "NODE_EXTRA_CA_CERTS=/${CA_ROOTFS_DEST}" \
-  "AGENT_BROWSER_USE_SYSTEM_CA=1" \
-  "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
-  "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt" \
-  "CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt" \
-  | install_inline_file "/etc/environment" 644
+# Install the compiled catalog projection as data; never source a workload file.
+install_host_file "$(dirname -- "${BASH_SOURCE[0]}")/rootfs-environment" "/etc/environment" 644
 
 # Match the rootfs customization chroot environment for trust-store updates.
 # Keytool runs through the JVM, which uses /proc/self/exe for $ORIGIN RPATH

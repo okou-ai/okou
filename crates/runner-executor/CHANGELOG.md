@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.21.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.20...runner-executor-v0.21.21) (2026-11-12)
+
+## [0.21.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.19...runner-executor-v0.21.20) (2026-11-12)
+
+## [0.21.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.18...runner-executor-v0.21.19) (2026-11-12)
+
+## [0.21.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.17...runner-executor-v0.21.18) (2026-11-12)
+
+
+### Refactoring
+
+* **runner:** reuse existing domain error conversion paths ([#46663](https://github.com/okou-ai/okou/issues/46663)) ([e520c67](https://github.com/okou-ai/okou/commit/e520c67b283822d3a9b36db29bc3fdef86849619))
+
+## [0.21.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.16...runner-executor-v0.21.17) (2026-11-11)
+
+## [0.21.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.15...runner-executor-v0.21.16) (2026-11-11)
+
+## [0.21.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.14...runner-executor-v0.21.15) (2026-11-11)
+
+## [0.21.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.13...runner-executor-v0.21.14) (2026-11-11)
+
+## [0.21.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.12...runner-executor-v0.21.13) (2026-11-11)
+
+## [0.21.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.11...runner-executor-v0.21.12) (2026-11-11)
+
 ## [0.21.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.10...runner-executor-v0.21.11) (2026-11-11)
 
 ## [0.21.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.9...runner-executor-v0.21.10) (2026-11-10)

@@ -7,6 +7,7 @@ import SwiftUI
 struct OkouApp: App {
   @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var delegate
   @State private var authentication: AuthenticationService?
+  @State private var lifecycle: AppLifecycle?
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
@@ -60,6 +61,10 @@ struct OkouApp: App {
     _authentication = State(initialValue: authentication)
     if let authentication, case .success(let configuration) = configuration {
       delegate.notifications.configure(authentication: authentication, configuration: configuration)
+      _lifecycle = State(
+        initialValue: AppLifecycle(
+          authentication: authentication, configuration: configuration,
+          notifications: delegate.notifications))
     }
   }
 
@@ -83,19 +88,26 @@ struct OkouApp: App {
         #endif
       }
       .modifier(OkouAppearance())
-      .task { await authentication?.start() }
-      .onOpenURL { url in Task { await authentication?.handleURL(url) } }
+      .task {
+        if let lifecycle {
+          await lifecycle.run()
+        } else {
+          await authentication?.start()
+        }
+      }
+      .onOpenURL { url in
+        if OkouWidgetLinks.shared.receive(url) { return }
+        Task { await authentication?.handleURL(url) }
+      }
     }
   }
 
   private var productRoot: some View {
     Group {
-      if let authentication {
+      if authentication != nil {
         switch configuration {
-        case .success(let configuration):
-          AppRootView(
-            authentication: authentication, configuration: configuration,
-            notifications: delegate.notifications)
+        case .success:
+          if let lifecycle { AppRootView(lifecycle: lifecycle) }
         case .failure(let error):
           OkouEmptyState(
             "Unable to start Okou", icon: "triangle-alert",
@@ -109,28 +121,13 @@ struct OkouApp: App {
 }
 
 struct AppRootView: View {
-  let authentication: AuthenticationService
-  let configuration: AppConfiguration
-  let session: URLSession
-  let notifications: NotificationService
-  @State private var workspaceData: NotificationWorkspace?
-  @State private var presentedScopeID: String?
+  let lifecycle: AppLifecycle
   @State private var accountError: String?
-  @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
 
-  init(
-    authentication: AuthenticationService, configuration: AppConfiguration,
-    session: URLSession = .shared, notifications: NotificationService
-  ) {
-    self.authentication = authentication
-    self.configuration = configuration
-    self.session = session
-    self.notifications = notifications
-    let data = notifications.data(
-      authentication: authentication, configuration: configuration, session: session)
-    _workspaceData = State(initialValue: data)
-  }
+  private var authentication: AuthenticationService { lifecycle.authentication }
+  private var configuration: AppConfiguration { lifecycle.configuration }
+  private var notifications: NotificationService { lifecycle.notifications }
 
   var body: some View {
     Group {
@@ -138,13 +135,13 @@ struct AppRootView: View {
         let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
-        if let workspaceData, workspaceData.scopeID == scopeID,
-          scenePhase != .background || presentedScopeID == scopeID
+        if let workspace = lifecycle.workspace, workspace.data.scopeID == scopeID,
+          scenePhase != .background || lifecycle.presentedScopeID == scopeID
         {
           WorkspaceRootView(
-            authentication: authentication, configuration: configuration,
-            workspaceID: workspaceID, userID: userID, scopeID: scopeID,
-            accountError: $accountError, data: workspaceData, notifications: notifications
+            authentication: authentication,
+            workspaceID: workspaceID, userID: userID,
+            accountError: $accountError, lifecycle: workspace, notifications: notifications
           )
           .id(scopeID)
         } else {
@@ -154,46 +151,14 @@ struct AppRootView: View {
         SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
-    .task(id: authentication.presentationScopeID) {
-      await authentication.preparePresentation()
+    .task(id: authentication.presentationScopeID) { await lifecycle.updateScope() }
+    .task(id: lifecycle.notificationIdentity) { await lifecycle.updateNotificationDemand() }
+    .onChange(of: scenePhase, initial: true) { _, phase in lifecycle.setPhase(phase) }
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+    ) { _ in
+      Task { await lifecycle.reduceMemory() }
     }
-    .task(id: authentication.presentationScopeID) {
-      let data = notifications.data(
-        authentication: authentication, configuration: configuration, session: session)
-      workspaceData = data
-      if scenePhase == .active { presentedScopeID = data?.scopeID }
-      await notifications.update(workspace: data)
-      if !authentication.isLoading {
-        await notifications.refreshNotificationState(userID: authentication.userID)
-      }
-      if scenePhase == .active { await notifications.flushPrefetchReports() }
-    }
-    .task(
-      id: NotificationNavigationIdentity(
-        userID: authentication.userID, isLoading: authentication.isLoading,
-        destination: notifications.pendingDestination)
-    ) {
-      notifications.preparePending(authentication: authentication)
-      if !authentication.isLoading {
-        await notifications.refreshNotificationState(userID: authentication.userID)
-      }
-    }
-    .onChange(of: scenePhase, initial: true) { _, phase in
-      notifications.setForeground(phase == .active)
-      if phase == .active { presentedScopeID = authentication.presentationScopeID }
-      foregroundRefresh?.cancel()
-      foregroundRefresh =
-        phase == .active
-        ? Task {
-          await authentication.refresh()
-          await notifications.refreshRegistration()
-          if !authentication.isLoading {
-            await notifications.refreshNotificationState(userID: authentication.userID)
-          }
-          await notifications.flushPrefetchReports()
-        } : nil
-    }
-    .onDisappear { foregroundRefresh?.cancel() }
     .onChange(of: notifications.error) { _, error in accountError = error }
     .alert(
       "Unable to update account",
@@ -213,201 +178,54 @@ private struct WorkspaceRootView: View {
   let workspaceID: String
   let userID: String
   let notifications: NotificationService
-  @State private var store: WorkspaceStore
+  let lifecycle: WorkspaceLifecycle
+  private var store: WorkspaceStore { lifecycle.store }
   @State private var sidebar = SidebarInteraction()
   @State private var topContentHeight: CGFloat = 0
   @State private var taglineIndex = Int.random(in: 0..<64)
   @Binding private var accountError: String?
-  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let headerHeight: CGFloat = 44
 
   init(
-    authentication: AuthenticationService, configuration: AppConfiguration,
-    workspaceID: String, userID: String, scopeID: String,
-    accountError: Binding<String?>, data: NotificationWorkspace, notifications: NotificationService
+    authentication: AuthenticationService,
+    workspaceID: String, userID: String,
+    accountError: Binding<String?>, lifecycle: WorkspaceLifecycle,
+    notifications: NotificationService
   ) {
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.userID = userID
     _accountError = accountError
     self.notifications = notifications
-    let cacheScope = ChatCacheScope(
-      apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)
-    _store = State(
-      initialValue: WorkspaceStore(
-        client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(scope: cacheScope), measurementScope: cacheScope,
-        didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
+    self.lifecycle = lifecycle
   }
 
   var body: some View {
-    GeometryReader { geometry in
-      // The sidebar takes most of the width and pushes the chat aside, as ChatGPT and Gmail do:
-      // a strip of the chat stays on screen, dimmed, and a tap on it returns there, so leaving
-      // the list never depends on knowing the swipe. The list drifts in from a quarter of its
-      // width to the left as the chat slides over it.
-      let sidebarWidth = (geometry.size.width * OkouControl.sidebarShare).rounded()
-      let sidebarProgress =
-        min(
-          max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
-        / sidebarWidth
-      let drift = sidebarWidth * OkouMotion.sidebarParallax
-      ZStack(alignment: .leading) {
-        OkouColor.sidebar.ignoresSafeArea()
-
-        Group {
-          // Identity restoration gates the sidebar, never the new-chat screen.
-          if authentication.presentation?.userID == userID,
-            authentication.presentation?.preparedWorkspaceID == workspaceID
-          {
-            StoreProvider(store.projects.stateStore) {
-              ChatSidebarView(
-                store: store, authentication: authentication, workspaceID: workspaceID,
-                notifications: notifications, sidebar: sidebar,
-                headerHeight: headerHeight,
-                accountError: $accountError,
-                close: closeSidebar,
-                newChat: startNewChat
-              )
-              .id(ObjectIdentifier(store))
-            }
-          }
-        }
-        .frame(width: sidebarWidth, height: geometry.size.height)
-        .offset(x: -drift * (1 - sidebarProgress))
-        .allowsHitTesting(sidebar.isOpen)
-        .accessibilityHidden(!sidebar.isOpen)
-
-        Group {
-          if let conversation = store.selectedConversation {
-            ChatDetailView(
-              conversation: conversation,
-              agents: store.list,
-              didSend: { await notifications.requestAfterSend() },
-              topContentInset: topContentHeight, sidebar: sidebar,
-              mentionSource: ComposerMentionSource(
-                agentID: conversation.thread.agentID,
-                threads: store.list.threads),
-              onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+    WorkspaceNavigation(sidebar: sidebar) {
+      // Identity restoration gates the sidebar, never the new-chat screen.
+      Group {
+        if authentication.presentation?.userID == userID,
+          authentication.presentation?.preparedWorkspaceID == workspaceID
+        {
+          StoreProvider(store.projects.stateStore) {
+            ChatSidebarView(
+              store: store, authentication: authentication, workspaceID: workspaceID,
+              notifications: notifications,
+              headerHeight: headerHeight,
+              accountError: $accountError,
+              close: closeSidebar,
+              newChat: startNewChat
             )
-            .id(conversation.thread.id)
-          } else {
-            newChatHome
-              .frame(minHeight: 0, maxHeight: .infinity)
-              .safeAreaInset(edge: .bottom, spacing: 0) {
-                newChatComposer
-              }
-              .animation(
-                reduceMotion ? nil : .easeInOut(duration: 0.22),
-                value: store.newComposer.voice?.phase ?? .idle)
+            .id(ObjectIdentifier(store))
           }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
-        .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
-        .overlay {
-          if let submission = store.newChatSubmission, submission.isPresenting {
-            NewChatSubmissionView(submission: submission, webURL: store.webURL)
-              .id(submission.message.id)
-              .background { OkouColor.background.ignoresSafeArea() }
-          }
-        }
-        .safeAreaBar(edge: .top, spacing: 0) {
-          VStack(spacing: 0) {
-            // Sync problems float below the header with the rest of the chat feedback.
-            ChatWorkspaceHeader(
-              store: store, height: headerHeight, openSidebar: openSidebar,
-              modelSelection: store.selectedConversation.map { $0.modelSelection }
-                ?? store.newModelSelection)
-          }
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            topContentHeight = $0
-          }
-        }
-        .frame(width: geometry.size.width, height: geometry.size.height)
-        .background { OkouColor.background.ignoresSafeArea() }
-        .accessibilityHidden(sidebar.isOpen)
-        .allowsHitTesting(!sidebar.isOpen)
-        .sensoryFeedback(.selection, trigger: sidebar.isOpen)
-        // The strip of the chat beside the list frosts lightly as the list opens: the thinnest
-        // material laid on top at part strength, not a blur of the chat itself, so the transcript
-        // is never re-rendered (a blurred transcript re-read its safe area and jumped on the way
-        // back) and its messages still show through the frost. The page turns into a card with large corners and a very faint edge.
-        .overlay {
-          Rectangle().fill(.ultraThinMaterial)
-            .opacity(OkouElevation.sidebarFrost * sidebarProgress)
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-        .mask {
-          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
-            .ignoresSafeArea()
-        }
-        .overlay {
-          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
-            .strokeBorder(
-              OkouColor.border.opacity(OkouElevation.sidebarEdgeLineOpacity * sidebarProgress),
-              lineWidth: OkouSpace.hairline
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-        .background {
-          // The edge's shadow comes from a plain card-shaped fill, so dragging never re-renders
-          // the chat's own content for it.
-          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
-            .fill(OkouColor.background)
-            .shadow(
-              color: .black.opacity(OkouElevation.sidebarEdgeOpacity * sidebarProgress),
-              radius: OkouElevation.sidebarEdgeRadius
-            )
-            .ignoresSafeArea()
-        }
-        .offset(x: sidebarWidth * sidebarProgress)
-
-        // The strip is the way back: a tap anywhere on it returns to the chat. It lies over the
-        // chat, which takes no touches while the list is open.
-        Color.clear
-          .contentShape(Rectangle())
-          .frame(width: max(geometry.size.width - sidebarWidth * sidebarProgress, 0))
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-          .ignoresSafeArea()
-          .onTapGesture { closeSidebar() }
-          .allowsHitTesting(sidebar.isOpen)
-          .accessibilityElement()
-          .accessibilityLabel("Close sidebar")
-          .accessibilityAddTraits(.isButton)
-          .accessibilityAction { closeSidebar() }
-          .accessibilityHidden(!sidebar.isOpen)
       }
-      .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
-      .gesture(
-        SidebarPanGesture(
-          interaction: sidebar, sidebarWidth: sidebarWidth,
-          changed: { translation in
-            if sidebar.translation == nil {
-              UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-            sidebar.dragChanged(translation)
-          },
-          ended: { translation, velocity, cancelled in
-            let wasOpen = sidebar.isOpen
-            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-              sidebar.endDrag(
-                translation: translation, velocity: velocity, cancelled: cancelled,
-                sidebarWidth: sidebarWidth)
-            }
-            if sidebar.isOpen && !wasOpen { Task { await store.refreshNavigation() } }
-          })
-      )
-      .composerSuggestionOverlay(
-        topInset: topContentHeight, isEnabled: !sidebar.isOpen && sidebar.translation == nil
-      )
+    } chat: {
+      chatPage
     }
+    .ignoresSafeArea()
+    .sensoryFeedback(.selection, trigger: sidebar.isOpen)
     .overlay(alignment: .top) {
       ChatFeedbackBanner(store: store)
         .padding(.top, headerHeight)
@@ -415,16 +233,19 @@ private struct WorkspaceRootView: View {
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
     .task {
-      let target = store
-      notifications.didSynchronize = { [weak target] in
-        target?.requestRefresh(.history(threadID: $0))
-      }
-      store.setForeground(scenePhase == .active)
-      await store.start(userID: userID, workspaceID: workspaceID)
-      await openPendingNotification()
+      await lifecycle.start()
+      if !Task.isCancelled { await openPendingNotification() }
     }
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
+    }
+    // The widgets show this workspace's confirmed chat list; republish only when it changes.
+    .task(id: widgetSnapshot) { [snapshot = widgetSnapshot] in
+      OkouWidgetPublishing.publish(snapshot)
+    }
+    .task(id: OkouWidgetLinks.shared.requestID) {
+      guard let threadID = OkouWidgetLinks.shared.takeChat(in: workspaceID) else { return }
+      if await store.openChatLink(.thread(id: threadID, runID: nil)) { closeSidebar() }
     }
     .modifier(
       NewChatNavigation(
@@ -432,17 +253,8 @@ private struct WorkspaceRootView: View {
         didOpen: closeSidebar)
     )
     .onDisappear {
-      sidebar.cancelDrag()
-      store.close()
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
-    ) { _ in
-      Task { await store.reduceMemory() }
-    }
-    .onChange(of: scenePhase) { _, phase in
-      store.setForeground(phase == .active)
-      if phase == .active { store.requestRefresh() }
+      // Signing out or switching workspaces leaves no chat titles behind for the widgets.
+      OkouWidgetPublishing.clear()
     }
     .alert(
       "Unable to update chats",
@@ -471,6 +283,55 @@ private struct WorkspaceRootView: View {
       .background(OkouColor.background)
       .interactiveDismissDisabled()
     }
+  }
+
+  private var chatPage: some View {
+    Group {
+      if let conversation = store.selectedConversation {
+        ChatDetailView(
+          conversation: conversation,
+          agents: store.list,
+          didSend: { await notifications.requestAfterSend() },
+          topContentInset: topContentHeight,
+          mentionSource: ComposerMentionSource(
+            agentID: conversation.thread.agentID,
+            threads: store.list.threads),
+          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+        )
+        .id(conversation.thread.id)
+      } else {
+        newChatHome
+          .frame(minHeight: 0, maxHeight: .infinity)
+          .safeAreaInset(edge: .bottom, spacing: 0) {
+            newChatComposer
+          }
+          .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.22),
+            value: store.newComposer.voice?.phase ?? .idle)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
+    .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
+    .overlay {
+      if let submission = store.newChatSubmission, submission.isPresenting {
+        NewChatSubmissionView(submission: submission, webURL: store.webURL)
+          .id(submission.message.id)
+          .background { OkouColor.background.ignoresSafeArea() }
+      }
+    }
+    .safeAreaBar(edge: .top, spacing: 0) {
+      ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          topContentHeight = $0
+        }
+    }
+    .background { OkouColor.background.ignoresSafeArea() }
+    .composerSuggestionOverlay(
+      topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
+    )
   }
 
   @ViewBuilder private var newChatComposer: some View {
@@ -545,8 +406,15 @@ private struct WorkspaceRootView: View {
       name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
+  private var widgetSnapshot: OkouWidgetSnapshot {
+    OkouWidgetPublishing.snapshot(
+      workspaceID: workspaceID, threads: store.list.threads,
+      name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines),
+      hasDraft: store.hasDraft)
+  }
+
   private func openPendingNotification() async {
-    if await notifications.openPending(authentication: authentication, store: store) {
+    if await lifecycle.openPendingNotification(), !Task.isCancelled {
       closeSidebar()
     }
   }
@@ -554,16 +422,11 @@ private struct WorkspaceRootView: View {
   private func openSidebar() {
     UIApplication.shared.sendAction(
       #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      sidebar.setOpen(true)
-    }
-    Task { await store.refreshNavigation() }
+    sidebar.setOpen(true)
   }
 
   private func closeSidebar() {
-    withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)) {
-      sidebar.setOpen(false)
-    }
+    sidebar.setOpen(false)
   }
 
   private func startNewChat() {
@@ -572,10 +435,4 @@ private struct WorkspaceRootView: View {
     store.startNewChat()
     closeSidebar()
   }
-}
-
-private struct NotificationNavigationIdentity: Hashable {
-  let userID: String?
-  let isLoading: Bool
-  let destination: NotificationDestination?
 }

@@ -2,11 +2,11 @@ use std::io;
 use std::time::Duration;
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, GuestStateRestoreTimezone, MSG_ERROR,
-    MSG_GUEST_STATE_RESTORE_RESULT, decode_guest_state_restore_result,
-    encode_guest_state_restore_request_frame_into,
+    ExecTermination, GuestStateRestoreTimezone, MSG_ERROR, MSG_GUEST_STATE_RESTORE_RESULT,
+    decode_guest_state_restore_result, encode_guest_state_restore_request_frame_into,
 };
 
+use crate::helper_output::owned_capture;
 use crate::{
     FrameWriteObserver, GuestControlClient,
     normal_request_on_shared_with_write_observer_frame_builder, validate_fixed_helper_response,
@@ -74,7 +74,8 @@ impl GuestControlClient {
 
         let decoded =
             decode_guest_state_restore_result(&response.payload).map_err(protocol_invalid_data)?;
-        let (stderr, stderr_truncated) = owned_capture(decoded.stderr)?;
+        let (stderr, stderr_truncated) =
+            owned_capture(decoded.stderr, "guest state restore", "stderr")?;
         Ok(GuestStateRestoreResult {
             termination: decoded.termination,
             duration_ms: decoded.duration_ms,
@@ -82,16 +83,6 @@ impl GuestControlClient {
             stderr_truncated,
             diagnostic: decoded.diagnostic.to_owned(),
         })
-    }
-}
-
-fn owned_capture(output: ExecCapturedOutput<'_>) -> io::Result<(Vec<u8>, bool)> {
-    match output {
-        ExecCapturedOutput::Captured { bytes, truncated } => Ok((bytes.to_vec(), truncated)),
-        ExecCapturedOutput::Discarded => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "guest state restore result discarded stderr",
-        )),
     }
 }
 

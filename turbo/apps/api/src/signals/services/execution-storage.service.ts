@@ -19,7 +19,6 @@ import {
 import {
   readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
-  storageManifestPresignedUrlCacheLookupPairs,
   systemStoragePresignedUrlCacheKey,
   workflowSkillStoragePresignedUrlCacheKey,
   type SelectedStoragePresignedUrlCacheRow,
@@ -338,11 +337,6 @@ function signingRequests(
     readOnlyRequests: selected.flatMap(({ cache }) => {
       return cache?.scope === "readonly_storage" ? [cache.request] : [];
     }),
-    logicalLookupCount: new Set(
-      selected.flatMap(({ cache }) => {
-        return cache ? [cache.scope] : [];
-      }),
-    ).size,
   };
   return { selected, input };
 }
@@ -416,12 +410,7 @@ function createExecutionStorageObjects(
   });
   const cacheRows$ = computed(async (get): Promise<CacheSnapshot> => {
     const { cacheRows } = await get(input$);
-    const { input } = await get(requests$);
-    const { cacheKeysByRequest } = storageManifestPresignedUrlCacheLookupPairs(
-      input,
-      false,
-    );
-    return cacheSnapshot(cacheRows, cacheKeysByRequest);
+    return cacheSnapshot(cacheRows);
   });
   const signed$ = computed(async (get) => {
     const [requests, rows] = await Promise.all([
@@ -447,10 +436,7 @@ function createExecutionStorageObjects(
   return { preparedMounts$ };
 }
 
-function cacheSnapshot(
-  rows: ExecutionStorageCacheRows,
-  cacheKeysByRequest: NonNullable<CacheSnapshot>["cacheKeysByRequest"],
-): CacheSnapshot {
+function cacheSnapshot(rows: ExecutionStorageCacheRows): CacheSnapshot {
   const rowsByScope = new Map<
     StorageManifestPresignedUrlCacheScope,
     Map<string, SelectedStoragePresignedUrlCacheRow>
@@ -470,5 +456,5 @@ function cacheSnapshot(
     }
     scoped.set(row.cacheKey, row);
   }
-  return { rowsByScope, cacheKeysByRequest };
+  return { rowsByScope };
 }

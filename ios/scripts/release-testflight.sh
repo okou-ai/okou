@@ -11,7 +11,7 @@ proof=false
 if [ "$1" = --verify-archive ]; then proof=true; fi
 required=(RUNNER_TEMP IOS_VERSION IOS_BUILD_NUMBER
   IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD IOS_PROVISIONING_PROFILE_BASE64
-  IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64)
+  IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64 IOS_WIDGETS_EXTENSION_PROFILE_BASE64)
 if [ "$proof" = false ]; then
   required+=(IOS_APP_ID APP_STORE_CONNECT_API_KEY_BASE64 APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID)
 fi
@@ -51,20 +51,31 @@ python3 ios/scripts/archive-proof.py prepare "$archive" "$work/Okou.xcarchive" \
 printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 -D > "$work/distribution.p12"
 profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 mkdir -p "$profiles"
-# Validate both identities and shared capabilities before installing profiles or signing.
-for bundle in app extension; do
-  if [ "$bundle" = app ]; then
-    encoded_profile=$IOS_PROVISIONING_PROFILE_BASE64
-    bundle_id=ai.okou.ios
-  else
-    encoded_profile=$IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64
-    bundle_id=ai.okou.ios.notifications
-  fi
+# Validate every identity and shared capability before installing profiles or signing.
+for bundle in app extension widgets; do
+  case "$bundle" in
+    app)
+      encoded_profile=$IOS_PROVISIONING_PROFILE_BASE64
+      bundle_id=ai.okou.ios
+      ;;
+    extension)
+      encoded_profile=$IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64
+      bundle_id=ai.okou.ios.notifications
+      ;;
+    widgets)
+      encoded_profile=$IOS_WIDGETS_EXTENSION_PROFILE_BASE64
+      bundle_id=ai.okou.ios.widgets
+      ;;
+  esac
   printf '%s' "$encoded_profile" | base64 -D > "$work/$bundle.mobileprovision"
   security cms -D -i "$work/$bundle.mobileprovision" > "$work/$bundle-profile.plist"
   profile_uuid=$(python3 ios/scripts/distribution-profile.py "$work/$bundle-profile.plist" \
     "$work/$bundle-entitlements.plist" --bundle-id "$bundle_id")
-  if [ "$bundle" = app ]; then app_profile_uuid=$profile_uuid; else extension_profile_uuid=$profile_uuid; fi
+  case "$bundle" in
+    app) app_profile_uuid=$profile_uuid ;;
+    extension) extension_profile_uuid=$profile_uuid ;;
+    widgets) widgets_profile_uuid=$profile_uuid ;;
+  esac
   profile_path="$profiles/$profile_uuid.mobileprovision"
   # Hosted runners are ephemeral. Never replace an existing user's profile locally.
   if [ -e "$profile_path" ]; then
@@ -92,20 +103,29 @@ extension="$app/PlugIns/OkouNotificationService.appex"
 cp "$work/extension.mobileprovision" "$extension/embedded.mobileprovision"
 codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
   --entitlements "$work/extension-entitlements.plist" "$extension"
+widgets="$app/PlugIns/OkouWidgets.appex"
+cp "$work/widgets.mobileprovision" "$widgets/embedded.mobileprovision"
+codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
+  --entitlements "$work/widgets-entitlements.plist" "$widgets"
 cp "$work/app.mobileprovision" "$app/embedded.mobileprovision"
 codesign --force --sign "$identity" --keychain "$keychain" --generate-entitlement-der \
   --entitlements "$work/app-entitlements.plist" "$app"
 
-python3 - "$work/ExportOptions.plist" "$app_profile_uuid" "$extension_profile_uuid" "$identity" <<'PYEXPORT'
+python3 - "$work/ExportOptions.plist" "$app_profile_uuid" "$extension_profile_uuid" "$identity" \
+  "$widgets_profile_uuid" <<'PYEXPORT'
 import plistlib, sys
 with open(sys.argv[1], 'wb') as f:
     plistlib.dump({
         'method': 'app-store-connect', 'destination': 'export',
         'signingStyle': 'manual', 'teamID': 'C5UWSXYB67',
         'signingCertificate': sys.argv[4],
-        'provisioningProfiles': {'ai.okou.ios': sys.argv[2], 'ai.okou.ios.notifications': sys.argv[3]},
+        'provisioningProfiles': {
+            'ai.okou.ios': sys.argv[2],
+            'ai.okou.ios.notifications': sys.argv[3],
+            'ai.okou.ios.widgets': sys.argv[5],
+        },
         'manageAppVersionAndBuildNumber': False,
-        'testFlightInternalTestingOnly': True,
+        'testFlightInternalTestingOnly': False,
         'uploadSymbols': True,
     }, f)
 PYEXPORT
@@ -116,11 +136,12 @@ python3 ios/scripts/archive-proof.py verify-export "$archive" "$work/export/Okou
 mkdir "$work/unpacked"
 ditto -x -k "$work/export/Okou.ipa" "$work/unpacked"
 codesign --verify --deep --strict "$work/unpacked/Payload/Okou.app"
-for bundle_id in ai.okou.ios ai.okou.ios.notifications; do
+for bundle_id in ai.okou.ios ai.okou.ios.notifications ai.okou.ios.widgets; do
   signed_bundle="$work/unpacked/Payload/Okou.app"
-  if [ "$bundle_id" = ai.okou.ios.notifications ]; then
-    signed_bundle="$signed_bundle/PlugIns/OkouNotificationService.appex"
-  fi
+  case "$bundle_id" in
+    ai.okou.ios.notifications) signed_bundle="$signed_bundle/PlugIns/OkouNotificationService.appex" ;;
+    ai.okou.ios.widgets) signed_bundle="$signed_bundle/PlugIns/OkouWidgets.appex" ;;
+  esac
   codesign --display --entitlements - --xml "$signed_bundle" > "$work/entitlements.plist" 2>/dev/null
   python3 - "$work/entitlements.plist" "$bundle_id" <<'PYVERIFY'
 import plistlib, sys
@@ -134,7 +155,8 @@ if sys.argv[2] == 'ai.okou.ios' and entitlements.get('aps-environment') != 'prod
     raise ValueError('Exported app must have production APNs')
 if entitlements.get('com.apple.security.application-groups') != ['group.ai.okou.ios']:
     raise ValueError('Exported bundle must share the Okou cache App Group')
-if entitlements.get('keychain-access-groups') != ['C5UWSXYB67.ai.okou.ios']:
+# The widgets read the App's snapshot from the App Group; only signed-in bundles share the Keychain.
+if sys.argv[2] != 'ai.okou.ios.widgets' and entitlements.get('keychain-access-groups') != ['C5UWSXYB67.ai.okou.ios']:
     raise ValueError('Exported bundle must share the existing Okou Keychain group')
 if entitlements.get('get-task-allow'):
     raise ValueError('Exported bundle is development-signed')

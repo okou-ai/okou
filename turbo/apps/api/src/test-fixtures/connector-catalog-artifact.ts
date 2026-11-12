@@ -1195,6 +1195,10 @@ const connectors = [
             rules: ["GET /v1/users/{userId}/messages/{messageId}"],
           },
           {
+            name: "threads.read",
+            rules: ["GET /v1/users/{userId}/threads/{threadId}"],
+          },
+          {
             name: "messages.write",
             rules: ["POST /v1/users/{userId}/messages/send"],
           },
@@ -1545,6 +1549,7 @@ const connectors = [
         scopes: ["read", "offline_access"],
       }),
       manualMethod({
+        visible: false,
         label: "API Token",
         description: "Enter a Mercury API token.",
         fields: [

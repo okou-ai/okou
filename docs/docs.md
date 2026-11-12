@@ -54,6 +54,7 @@ not precedent for adding another one.
 - `docs/app/`: browser application behavior, React/ccstate, styling,
   and application testing.
 - `docs/ios/`: native iOS development, ccstate, design, testing, and verification.
+- `docs/android/`: native Android development, state ownership, and testing.
 - `docs/desktop/`: native Desktop application behavior, testing, and release contracts.
 - `docs/api/`: server-side ccstate, database policy and lint, and API testing.
 - `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
@@ -127,6 +128,16 @@ owning surface.
 - [iOS testing](ios/ios-testing.md): native entry points, package contracts,
   observable assertions, layout synchronization, isolation, and device acceptance.
 - [iOS setup and CI](../ios/README.md): local commands and required checks.
+
+## Android
+
+- [Android development](android/android-development.md): native ownership,
+  concurrency, shared design sources, and service/release boundaries.
+- [CCState principles on Android](android/android-ccstate.md): single-source
+  state, native derivation/actions, coroutine ownership and lifecycle collection.
+- [Android testing](android/android-testing.md): public boundaries, causal
+  synchronization, host Compose tests, and device acceptance.
+- [Android setup and CI](../android/README.md): toolchain and verification commands.
 
 ## Desktop
 

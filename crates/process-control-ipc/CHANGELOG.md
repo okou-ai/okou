@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.66](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.65...process-control-ipc-v0.5.66) (2026-11-12)
+
+## [0.5.65](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.64...process-control-ipc-v0.5.65) (2026-11-11)
+
+
+### Refactoring
+
+* **ipc:** centralize cgroup self-placement writes ([#46641](https://github.com/okou-ai/okou/issues/46641)) ([f89ce04](https://github.com/okou-ai/okou/commit/f89ce0406f37c41e1eb2b451f1f2f3b007b920c6))
+
+## [0.5.64](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.63...process-control-ipc-v0.5.64) (2026-11-11)
+
+## [0.5.63](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.62...process-control-ipc-v0.5.63) (2026-11-11)
+
+## [0.5.62](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.61...process-control-ipc-v0.5.62) (2026-11-11)
+
 ## [0.5.61](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.60...process-control-ipc-v0.5.61) (2026-11-09)
 
 ## [0.5.60](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.59...process-control-ipc-v0.5.60) (2026-11-08)

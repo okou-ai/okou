@@ -34,6 +34,7 @@ import {
   DialogTitle,
   DialogDescription,
   LoadErrorRow,
+  Skeleton,
 } from "@okouai/ui";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { Link } from "../router/link.tsx";
@@ -247,6 +248,51 @@ function RemoteConnectionRows({
     </Card>
   );
 }
+
+function RemoteConnectionSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <Card
+      role="status"
+      aria-label={t(($) => {
+        return $.remoteControlSetup.title;
+      })}
+      className="overflow-hidden rounded-3xl border-divider"
+    >
+      <span className="sr-only">
+        {t(($) => {
+          return $.remoteControlSetup.loading;
+        })}
+      </span>
+      <div aria-hidden="true" className="divide-y divide-divider">
+        {[0, 1].map((index) => {
+          return (
+            <div
+              key={index}
+              className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-6 sm:p-5"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <Skeleton className="size-9 shrink-0" />
+                <div className="grid min-w-0 flex-1 grid-cols-1 gap-1">
+                  <Skeleton className="h-5 w-28 max-w-full" />
+                  <Skeleton className="h-5 w-80 max-w-full" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-4 sm:shrink-0 sm:gap-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Skeleton className="h-5 w-44 max-w-full" />
+                  <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
+                </div>
+                <Skeleton className="h-8 w-20 shrink-0" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function RemoteDirectoryContent({
   description,
   actionLabel,
@@ -256,6 +302,7 @@ function RemoteDirectoryContent({
   onAdd,
   empty,
   loading,
+  loadingPlaceholder,
   hasRows,
   children,
 }: {
@@ -267,6 +314,7 @@ function RemoteDirectoryContent({
   readonly onAdd: () => void;
   readonly empty: boolean;
   readonly loading: boolean;
+  readonly loadingPlaceholder?: ReactNode;
   readonly hasRows: boolean;
   readonly children: ReactNode;
 }) {
@@ -293,15 +341,18 @@ function RemoteDirectoryContent({
           </p>
         )}
         {children}
-        {(empty || (loading && !hasRows)) && (
-          <RemoteDirectoryPlaceholder
-            loading={loading}
-            icon={icon}
-            title={emptyTitle}
-            actionLabel={emptyActionLabel}
-            onAdd={onAdd}
-          />
-        )}
+        {(empty || (loading && !hasRows)) &&
+          (loading && loadingPlaceholder ? (
+            loadingPlaceholder
+          ) : (
+            <RemoteDirectoryPlaceholder
+              loading={loading}
+              icon={icon}
+              title={emptyTitle}
+              actionLabel={emptyActionLabel}
+              onAdd={onAdd}
+            />
+          ))}
       </div>
     </>
   );
@@ -412,6 +463,7 @@ function OwnerRemoteConnectionDirectory() {
       }}
       empty={empty}
       loading={loading}
+      loadingPlaceholder={<RemoteConnectionSkeleton />}
       hasRows={hasRows}
     >
       {ssh.state === "hasError" && <SshLoadError />}

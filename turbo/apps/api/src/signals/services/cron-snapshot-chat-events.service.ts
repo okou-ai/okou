@@ -1066,6 +1066,20 @@ const archiveThread$ = command(async function archiveThread(
     };
   }
   if (archive.count === 0 && source === null) {
+    // A thread can be deleted after candidate selection but before this read.
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, candidate.chatThreadId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (thread === undefined) {
+      return {
+        archivedEvents: null,
+        skippedHead: null,
+        normalization: NO_DUPLICATE_EVENT_ID_NORMALIZATION,
+      };
+    }
     throw new Error(
       `chat event snapshot rebuild for ${candidate.chatThreadId} contained no events through indexed seq ${candidate.indexedSeqId.toString()}`,
     );

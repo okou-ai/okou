@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Okou</string>
+    <string name="home">Home</string>
+    <string name="settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="home_title">Make space for your next idea</string>
+    <string name="home_description">Write a draft and preview it on this device.</string>
+    <string name="draft_label">Draft</string>
+    <string name="draft_hint">What are you thinking about?</string>
+    <string name="local_preview">Preview draft</string>
+    <string name="preview_title">Preview</string>
+    <string name="appearance">Appearance</string>
+    <string name="appearance_description">Choose how Okou looks on this device.</string>
+    <string name="appearance_system">Follow system</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
+    <string name="on_this_device">On this device</string>
+    <string name="appearance_local">Appearance is saved only on this device.</string>
+    <string name="appearance_loading">Loading appearance…</string>
+    <string name="appearance_saving">Saving appearance…</string>
+    <string name="appearance_read_failed">Could not load appearance. Try again.</string>
+    <string name="appearance_write_failed">Could not save appearance. Try again.</string>
+    <string name="retry">Try again</string>
+    <string name="auth_welcome">Welcome to Okou</string>
+    <string name="auth_restoring">Restoring your session…</string>
+    <string name="auth_preparing_workspace">Preparing your workspace…</string>
+    <string name="auth_choose_workspace">Choose your workspace</string>
+    <string name="auth_no_workspace">You do not have access to a workspace yet.</string>
+    <string name="auth_workspace_setup">Set up a workspace on the web</string>
+    <string name="auth_access_removed">Your session or workspace access has changed. Sign in again or refresh your access.</string>
+    <string name="auth_update_required">Update Okou to continue.</string>
+    <string name="auth_unavailable">Could not load your session or workspace. Please try again.</string>
+    <string name="auth_sign_out">Sign out</string>
+    <string name="auth_signing_out">Signing out…</string>
+    <string name="auth_workspace">Workspace</string>
+    <string name="auth_switch_workspace">Switch workspace</string>
+    <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+</resources>

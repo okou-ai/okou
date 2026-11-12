@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.169](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.168...guest-control-tests-v0.12.169) (2026-11-12)
+
+## [0.12.168](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.167...guest-control-tests-v0.12.168) (2026-11-12)
+
+## [0.12.167](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.166...guest-control-tests-v0.12.167) (2026-11-11)
+
+## [0.12.166](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.165...guest-control-tests-v0.12.166) (2026-11-11)
+
+## [0.12.165](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.164...guest-control-tests-v0.12.165) (2026-11-11)
+
+## [0.12.164](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.163...guest-control-tests-v0.12.164) (2026-11-11)
+
+## [0.12.163](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.162...guest-control-tests-v0.12.163) (2026-11-11)
+
 ## [0.12.162](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.161...guest-control-tests-v0.12.162) (2026-11-10)
 
 ## [0.12.161](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.160...guest-control-tests-v0.12.161) (2026-11-10)

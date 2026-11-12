@@ -1,5 +1,112 @@
 # Changelog
 
+## [0.36.7](https://github.com/okou-ai/okou/compare/ios-v0.36.6...ios-v0.36.7) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** autoplay video previews on open ([#46803](https://github.com/okou-ai/okou/issues/46803)) ([9c9bc36](https://github.com/okou-ai/okou/commit/9c9bc36c4140f8a05b0cadca66a165679474fad8))
+* **ios:** avoid refreshing agents when reopening the sidebar ([#46804](https://github.com/okou-ai/okou/issues/46804)) ([1da7df3](https://github.com/okou-ai/okou/commit/1da7df37a318f1eb00eef6e87f3272915784f859))
+* **ios:** detect swallowed resource cancellation branches ([#46811](https://github.com/okou-ai/okou/issues/46811)) ([3aa476e](https://github.com/okou-ai/okou/commit/3aa476ed7b889811f6a340984eae8aa6b371fe36))
+* **ios:** remove agent subtitle from chat search results ([#46805](https://github.com/okou-ai/okou/issues/46805)) ([20e7991](https://github.com/okou-ai/okou/commit/20e7991691308cb3b52189f1162b6ec6e5895a34))
+
+
+### Refactoring
+
+* **ios:** organize the design system into foundations, components and patterns ([#46132](https://github.com/okou-ai/okou/issues/46132)) ([018fd7a](https://github.com/okou-ai/okou/commit/018fd7a3d9732ec5ed2fc76f3a36454986a43c6d))
+* **ios:** own app lifecycle coordination by scope ([#46780](https://github.com/okou-ai/okou/issues/46780)) ([a34188d](https://github.com/okou-ai/okou/commit/a34188dc2049df0190c907aa91167985b4674171))
+
+## [0.36.6](https://github.com/okou-ai/okou/compare/ios-v0.36.5...ios-v0.36.6) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** remove sidebar left-swipe navigation ([#46763](https://github.com/okou-ai/okou/issues/46763)) ([7ed3520](https://github.com/okou-ai/okou/commit/7ed35209d876c6425672c52ec44c934ce88d821d))
+
+## [0.36.5](https://github.com/okou-ai/okou/compare/ios-v0.36.4...ios-v0.36.5) (2026-11-12)
+
+
+### Refactoring
+
+* **ios:** derive conversation projections with ccstate ([#46741](https://github.com/okou-ai/okou/issues/46741)) ([4c85af9](https://github.com/okou-ai/okou/commit/4c85af9f1351df685b44d28c163cb89c0394fedb))
+
+## [0.36.4](https://github.com/okou-ai/okou/compare/ios-v0.36.3...ios-v0.36.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** use native navigation gestures without custom interaction locks ([#46681](https://github.com/okou-ai/okou/issues/46681)) ([80482b8](https://github.com/okou-ai/okou/commit/80482b8e402082c5f77338058ed9e0785da57be6))
+
+
+### Refactoring
+
+* **ios:** own workspace memberships at account scope ([#46709](https://github.com/okou-ai/okou/issues/46709)) ([20a7704](https://github.com/okou-ai/okou/commit/20a77046ac2ee0caaf1c63cbe60a56f0fce4106c))
+
+## [0.36.3](https://github.com/okou-ai/okou/compare/ios-v0.36.2...ios-v0.36.3) (2026-11-12)
+
+
+### Refactoring
+
+* **ios:** own conversation history and recovery reads ([#46672](https://github.com/okou-ai/okou/issues/46672)) ([335ad62](https://github.com/okou-ai/okou/commit/335ad62be0a2dbde459cf02165a1d7b3601440c9))
+
+## [0.36.2](https://github.com/okou-ai/okou/compare/ios-v0.36.1...ios-v0.36.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** badge a folded project's folder and overlap the unread badge ([#46651](https://github.com/okou-ai/okou/issues/46651)) ([80fb3be](https://github.com/okou-ai/okou/commit/80fb3bef905a255b7206f39fdd4827d3a678b200))
+* **ios:** fade composer controls with the keyboard ([#46669](https://github.com/okou-ai/okou/issues/46669)) ([0702f33](https://github.com/okou-ai/okou/commit/0702f33e5c5aaa099ca4a91e8f4448330a27e176))
+* **ios:** keep empty editor height stable during focus ([#46636](https://github.com/okou-ai/okou/issues/46636)) ([cb7c831](https://github.com/okou-ai/okou/commit/cb7c8313b9d8c0a116b9593605fdf0c3e293c487))
+
+
+### Refactoring
+
+* **ios:** own mail draft card reads with ccstate ([#46613](https://github.com/okou-ai/okou/issues/46613)) ([ebfecbd](https://github.com/okou-ai/okou/commit/ebfecbd2b153b09e1a9f53a99f2dd59ca33bfd22))
+* **ios:** retire computer authorization read owners ([#46656](https://github.com/okou-ai/okou/issues/46656)) ([b5c49ba](https://github.com/okou-ai/okou/commit/b5c49bad63eec5d9085db7b56eeec9b27c3d424d))
+* **ios:** use native navigation for the chat sidebar ([#46659](https://github.com/okou-ai/okou/issues/46659)) ([137d86e](https://github.com/okou-ai/okou/commit/137d86e92b9c8f595a32c30e28ed0110ebb1cb47))
+
+## [0.36.1](https://github.com/okou-ai/okou/compare/ios-v0.36.0...ios-v0.36.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** allow testflight builds to progress beyond internal testing ([#46626](https://github.com/okou-ai/okou/issues/46626)) ([8e0e118](https://github.com/okou-ai/okou/commit/8e0e1187f3b6bb1048d6619482419128d13fb81d))
+* **ios:** keep search fixed at the top of its sheet ([#46617](https://github.com/okou-ai/okou/issues/46617)) ([aacfa85](https://github.com/okou-ai/okou/commit/aacfa8560e3e9e194cedb13ae290898d55e8935c))
+
+## [0.36.0](https://github.com/okou-ai/okou/compare/ios-v0.35.3...ios-v0.36.0) (2026-11-11)
+
+
+### Features
+
+* **ios:** order the sidebar by projects and neutralize the brown accent ([#46586](https://github.com/okou-ai/okou/issues/46586)) ([8ad7f1e](https://github.com/okou-ai/okou/commit/8ad7f1e2b471d08ddbd0cf67e63e1428f1bbc6e0))
+
+
+### Refactoring
+
+* **ios:** persist project disclosure in sqlite ([#46546](https://github.com/okou-ai/okou/issues/46546)) ([b82ee92](https://github.com/okou-ai/okou/commit/b82ee92b4d09e499175a224ba5b9bb51ca7b503a))
+* **ios:** share permission card read resources ([#46584](https://github.com/okou-ai/okou/issues/46584)) ([5335094](https://github.com/okou-ai/okou/commit/53350940c22251d11f8ea1351af172e8ea9bfe05))
+
+## [0.35.3](https://github.com/okou-ai/okou/compare/ios-v0.35.2...ios-v0.35.3) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own connector action status reads with ccstate ([#46554](https://github.com/okou-ai/okou/issues/46554)) ([3e0d3dd](https://github.com/okou-ai/okou/commit/3e0d3dda2a3a24c890b8fd91b8418d1c14d86c02))
+
+## [0.35.2](https://github.com/okou-ai/okou/compare/ios-v0.35.1...ios-v0.35.2) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** own failure recovery context reads with ccstate ([#46504](https://github.com/okou-ai/okou/issues/46504)) ([f86603d](https://github.com/okou-ai/okou/commit/f86603db4e80fb6be0cb4cf17d2b29af36166c42))
+
+## [0.35.1](https://github.com/okou-ai/okou/compare/ios-v0.35.0...ios-v0.35.1) (2026-11-11)
+
+
+### Refactoring
+
+* **ios:** derive sidebar filters and groups with ccstate ([#46476](https://github.com/okou-ai/okou/issues/46476)) ([4ad354c](https://github.com/okou-ai/okou/commit/4ad354c8879331424d72a2e4f0790481ecfc79b1))
+
 ## [0.35.0](https://github.com/okou-ai/okou/compare/ios-v0.34.2...ios-v0.35.0) (2026-11-11)
 
 

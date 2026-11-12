@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.22.11"
+version = "0.23.1"
 edition.workspace = true
 description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
@@ -9,6 +9,10 @@ test-support = []
 
 [dependencies]
 api-contracts.workspace = true
+bytes.workspace = true
+http-body-util = { version = "0.1", default-features = false }
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 async-trait.workspace = true
 guest-contracts.workspace = true
 hex = { workspace = true, features = ["std"] }
@@ -25,6 +29,7 @@ sandbox.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
+subtle.workspace = true
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 futures-util = { workspace = true, features = ["async-await", "std"] }
 thiserror = { workspace = true, features = ["std"] }
@@ -33,6 +38,9 @@ tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+rcgen = { workspace = true, features = ["crypto", "ring"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 cli-test-support = { workspace = true, features = ["test-support"] }
 raw-http-test-support = { workspace = true, features = ["test-support"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }

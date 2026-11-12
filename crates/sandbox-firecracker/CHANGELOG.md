@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.53.94](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.93...sandbox-firecracker-v0.53.94) (2026-11-12)
+
+## [0.53.93](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.92...sandbox-firecracker-v0.53.93) (2026-11-12)
+
+## [0.53.92](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.91...sandbox-firecracker-v0.53.92) (2026-11-12)
+
+
+### Refactoring
+
+* **firecracker:** centralize buffered exec result validation ([#46693](https://github.com/okou-ai/okou/issues/46693)) ([6b36acc](https://github.com/okou-ai/okou/commit/6b36acce9a6bb5135bd6bdec446d298c71e5f673))
+
+## [0.53.91](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.90...sandbox-firecracker-v0.53.91) (2026-11-11)
+
+## [0.53.90](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.89...sandbox-firecracker-v0.53.90) (2026-11-11)
+
+## [0.53.89](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.88...sandbox-firecracker-v0.53.89) (2026-11-11)
+
+## [0.53.88](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.87...sandbox-firecracker-v0.53.88) (2026-11-11)
+
 ## [0.53.87](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.86...sandbox-firecracker-v0.53.87) (2026-11-10)
 
 

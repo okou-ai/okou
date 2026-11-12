@@ -513,3 +513,44 @@ def test_rejects_too_many_wildcard_keys():
 
     assert result.complete is False
     assert result.error == "max wildcard keys exceeded"
+
+
+@pytest.mark.parametrize(
+    ("kind", "first", "different", "wrong", "first_value", "different_value"),
+    [
+        pytest.param("string", b'"a"', b'"b"', b"0", "a", "b", id="string"),
+        pytest.param("int", b"1", b"2", b"true", 1, 2, id="integer"),
+        pytest.param("bool", b"false", b"true", b"0", False, True, id="boolean"),
+    ],
+)
+def test_scalar_consistency_retains_overwritten_occurrences(
+    kind, first, different, wrong, first_value, different_value
+):
+    path = ("p", "v")
+    cases = [
+        (b'{"p":{"v":' + first + b"}}", {path: first_value}, True),
+        (b'{"p":{"v":' + first + b',"v":' + first + b"}}", {path: first_value}, True),
+        (
+            b'{"p":{"v":' + first + b',"v":' + different + b"}}",
+            {path: different_value},
+            False,
+        ),
+        (b'{"p":{"v":' + wrong + b',"v":' + first + b"}}", {path: first_value}, False),
+        (b'{"p":{"v":' + first + b',"v":' + wrong + b"}}", {}, False),
+        (b'{"p":{"v":' + first + b'},"p":{}}', {}, True),
+    ]
+    for payload, expected_values, expected_consistent in cases:
+        for chunk_size in (1, len(payload)):
+            extractor = JsonSelectiveExtractor(
+                scalar_fields={path: ScalarField(kind)}, scalar_consistency_paths={path}
+            )
+            for offset in range(0, len(payload), chunk_size):
+                extractor.feed(payload[offset : offset + chunk_size])
+            result = extractor.finish()
+
+            assert result.complete, (payload, chunk_size)
+            assert result.values == expected_values, (payload, chunk_size)
+            assert extractor.selected_scalar_values_are_consistent(path) is expected_consistent, (
+                payload,
+                chunk_size,
+            )

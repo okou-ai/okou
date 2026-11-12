@@ -77,6 +77,7 @@ const prepareWorkflowUpdateContent$ = command(
             ? workflow.instruction
             : body.instruction,
         attachments,
+        contentBundle: workflow.contentBundle,
         ...(body.files === undefined ? {} : { files: body.files }),
       },
       signal,

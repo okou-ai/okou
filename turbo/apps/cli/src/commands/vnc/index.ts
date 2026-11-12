@@ -1,3 +1,4 @@
+import { createHostRequestAccessCommand } from "../host-request-access";
 import { Command } from "commander";
 import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
 import { createCheckCommand } from "../../lib/remote-check";
@@ -152,7 +153,7 @@ export function createVncCommand() {
     .addHelpText(
       "after",
       `
-Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. ${REBIND_HELP} Read the relevant subcommand's --help. Execution uses saved credentials and trust configuration, with no endpoint, password or insecure override. Manage owned configuration with host list --scope configured and credential commands (connector:read/write); management does not grant VNC execution access. Supply credential-bearing JSON only through --input <file|->.
+Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. ${REBIND_HELP} Read the relevant subcommand's --help. Execution uses saved credentials and trust configuration, with no endpoint, password or insecure override. Manage owned configuration with host list --scope configured and credential commands (connector:read/write); management does not grant VNC execution access. Request current-chat access with okou vnc request-access <connection-id> --reason <purpose>; share its exact URL and end this Run for approval and automatic continuation. Approve required SSH tunnel and KDC hosts first. Supply credential-bearing JSON only through --input <file|->.
 
 Choose session start --mode shared or --mode exclusive explicitly. Shared viewers can interfere; exclusive requests may disconnect other viewers or be refused/overridden by the server. Neither mode provides an Okou-wide control lock.
 
@@ -160,6 +161,7 @@ Take a screenshot with --output <file> --json before coordinate input. Reuse its
 
 VNC requires a supporting Runner and the host to be enabled for this chat (an SSH-backed host also needs its SSH host enabled). Ready means configured to attempt, not connectivity-tested. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
     )
+    .addCommand(createHostRequestAccessCommand("vnc"))
     .addCommand(createVncHostCommand())
     .addCommand(createVncCredentialCommand())
     .addCommand(createSessionCommand());
@@ -177,7 +179,7 @@ VNC requires a supporting Runner and the host to be enabled for this chat (an SS
       .option("--json", "Print image metadata, geometry, path and SHA-256")
       .addHelpText(
         "after",
-        "\nPNG is at most 16 MiB and excludes the cursor. Existing targets are refused unless --overwrite is explicit. Partial data remains private and is never published. A complete frame does not establish that the application has settled.",
+        "\nNative desktop capture supports 6K (6144x3456), including Apple 6K and 5K, with at most 21,233,664 pixels and 8192 per dimension. PNG is at most 96 MiB and excludes the cursor. Existing targets are refused unless --overwrite is explicit. Partial data remains private and is never published. A complete frame does not establish that the application has settled.",
       )
       .action(
         withErrorHandler(

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Home</string>
+    <string name="settings">Impostazioni</string>
+    <string name="back">Indietro</string>
+    <string name="home_title">Spazio per la tua prossima idea</string>
+    <string name="home_description">Scrivi una bozza e visualizzala su questo dispositivo.</string>
+    <string name="draft_label">Bozza</string>
+    <string name="draft_hint">A cosa stai pensando?</string>
+    <string name="local_preview">Visualizza bozza</string>
+    <string name="preview_title">Anteprima</string>
+    <string name="appearance">Aspetto</string>
+    <string name="appearance_description">Scegli l’aspetto di Okou su questo dispositivo.</string>
+    <string name="appearance_system">Segui il sistema</string>
+    <string name="appearance_light">Chiaro</string>
+    <string name="appearance_dark">Scuro</string>
+    <string name="on_this_device">Su questo dispositivo</string>
+    <string name="appearance_local">L’aspetto viene salvato solo su questo dispositivo.</string>
+    <string name="appearance_loading">Caricamento dell’aspetto…</string>
+    <string name="appearance_saving">Salvataggio dell’aspetto…</string>
+    <string name="appearance_read_failed">Impossibile caricare l’aspetto. Riprova.</string>
+    <string name="appearance_write_failed">Impossibile salvare l’aspetto. Riprova.</string>
+    <string name="retry">Riprova</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d riga</item>
+        <item quantity="many">%1$d righe</item>
+        <item quantity="other">%1$d righe</item>
+    </plurals>
+    <string name="auth_welcome">Ti diamo il benvenuto su Okou</string>
+    <string name="auth_restoring">Ripristino della sessione…</string>
+    <string name="auth_preparing_workspace">Preparazione dello spazio di lavoro…</string>
+    <string name="auth_choose_workspace">Scegli lo spazio di lavoro</string>
+    <string name="auth_no_workspace">Non hai ancora accesso a uno spazio di lavoro.</string>
+    <string name="auth_workspace_setup">Configura uno spazio di lavoro sul web</string>
+    <string name="auth_access_removed">La sessione o il tuo accesso è cambiato. Accedi di nuovo o aggiorna l’accesso.</string>
+    <string name="auth_update_required">Aggiorna Okou per continuare.</string>
+    <string name="auth_unavailable">Impossibile caricare la sessione o lo spazio di lavoro. Riprova.</string>
+    <string name="auth_sign_out">Esci</string>
+    <string name="auth_signing_out">Disconnessione…</string>
+    <string name="auth_workspace">Spazio di lavoro</string>
+    <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
+    <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
+</resources>

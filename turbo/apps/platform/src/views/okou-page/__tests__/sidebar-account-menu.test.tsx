@@ -192,3 +192,32 @@ test("Sign out from the account menu", async () => {
     );
   });
 });
+
+test("Help opens shortcuts and links to the docs", async () => {
+  prepareDefaultAgent();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Alex Rivera",
+        email: "alex.rivera@example.test",
+      },
+    },
+  });
+
+  const menu = await openAccountMenu();
+  click(within(menu).getByText("Help"));
+
+  const docs = (await screen.findByText("Docs")).closest("a");
+  expect(docs).toHaveAttribute("href", "https://www.okou.ai/en/docs");
+  expect(docs).toHaveAttribute("target", "_blank");
+
+  click(screen.getByText("Shortcuts"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Keyboard Shortcuts",
+  });
+  expect(within(dialog).getByText("Show shortcuts")).toBeInTheDocument();
+});

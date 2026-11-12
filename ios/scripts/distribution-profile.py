@@ -14,6 +14,7 @@ BUNDLES = {
     "ai.okou.ios.notifications": Path(
         "ios/NotificationExtension/NotificationExtension.entitlements"
     ),
+    "ai.okou.ios.widgets": Path("ios/Widgets/OkouWidgets.entitlements"),
 }
 
 

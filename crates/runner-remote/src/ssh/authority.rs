@@ -13,8 +13,6 @@ use runner_types::ids::RunId;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::HttpClient;
 
-const MAX_API_BYTES: usize = 512 * 1024;
-
 pub(super) struct Authority {
     pub(super) http: HttpClient,
     transport: reqwest::Client,
@@ -155,38 +153,13 @@ impl Authority {
             .http
             .json_request(route, &self.token, &body)
             .map_err(|_| FailureReason::AuthorityFailure)?;
-        let mut response = self
+        let response = self
             .transport
             .execute(request)
             .await
             .map_err(|_| FailureReason::AuthorityFailure)?;
-        if response.status() != reqwest::StatusCode::OK
-            || response
-                .content_length()
-                .is_some_and(|len| len > MAX_API_BYTES as u64)
-        {
-            return Err(FailureReason::AuthorityFailure);
-        }
-        // Fixed capacity avoids leaving reallocated plaintext response buffers behind.
-        let created_at = response
-            .headers()
-            .get("x-ssh-connection-created-at")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-            .map(|value| value.with_timezone(&chrono::Utc));
-        let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_API_BYTES));
-        while let Some(chunk) = response
-            .chunk()
+        crate::authority_response::decode(response, "x-ssh-connection-created-at")
             .await
-            .map_err(|_| FailureReason::AuthorityFailure)?
-        {
-            if chunk.len() > MAX_API_BYTES - bytes.len() {
-                return Err(FailureReason::AuthorityFailure);
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        serde_json::from_slice(&bytes)
-            .map(|body| (body, created_at))
             .map_err(|_| FailureReason::AuthorityFailure)
     }
 

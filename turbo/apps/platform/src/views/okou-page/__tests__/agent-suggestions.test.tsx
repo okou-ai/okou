@@ -1,6 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -100,7 +100,7 @@ function makeOption(
 }
 function button(
   name: string,
-  role: "button" | "tab" = "button",
+  role: "button" | "tab" | "radio" = "button",
   container: ParentNode = document.body,
 ) {
   const found = queryAllByRoleFast(role, container).find((element) => {
@@ -367,7 +367,7 @@ test("The Okou row leads the chat list, counts waiting cards and opens home", as
   });
 });
 
-test("My Okou's home previews one suggestion inside its capabilities and opens its complete actions", async () => {
+test("My Okou's home speaks the waiting suggestion in its greeting, rotates through them and opens its complete actions", async () => {
   mockPool(numberedSuggestions(3));
   await setupPage({
     context,
@@ -384,14 +384,27 @@ test("My Okou's home previews one suggestion inside its capabilities and opens i
     name: "Explore Okou capabilities",
   });
   expect(within(capabilities).getByText("Workflow")).toBeInTheDocument();
-  expect(within(capabilities).getByText("Explore")).toBeInTheDocument();
-  expect(capabilities).toContainElement(list);
-  expect(button("Previous suggestion", "button", list)).toBeDisabled();
-  click(button("Next suggestion", "button", list));
+  // The suggestion takes the greeting's own line beside the avatar, in place
+  // of the tagline, so it never pushes the cards.
+  expect(capabilities).not.toContainElement(list);
+  expect(screen.getByTestId("chat-greeting")).toContainElement(list);
+  expect(screen.queryByTestId("chat-tagline")).toBeNull();
+  const segments = within(list).getByRole("radiogroup", {
+    name: "Browse suggestions",
+  });
+  expect(button("Show suggestion 1 of 3", "radio", segments)).toBeChecked();
+  // jsdom runs no CSS animation; the end of the current segment's fill is the
+  // end of that suggestion's turn.
+  fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
   await within(list).findByRole("heading", { name: "Suggested action 2" });
-  click(button("Next suggestion", "button", list));
+  expect(button("Show suggestion 2 of 3", "radio", segments)).toBeChecked();
+  click(button("Show suggestion 3 of 3", "radio", segments));
   await within(list).findByRole("heading", { name: "Suggested action 3" });
-  expect(button("Next suggestion", "button", list)).toBeDisabled();
+  // The rotation wraps from the last suggestion back to the first.
+  fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
+  await within(list).findByRole("heading", { name: "Suggested action 1" });
+  click(button("Show suggestion 3 of 3", "radio", segments));
+  await within(list).findByRole("heading", { name: "Suggested action 3" });
   click(button("Suggested action 3", "button", list));
   const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
   await within(dialog).findByRole("article", { name: "Suggested action 3" });
@@ -410,8 +423,8 @@ test("My Okou's home previews one suggestion inside its capabilities and opens i
   });
 });
 
-test("Enabled homepage suggestions keep their place when there are no suggestions", async () => {
-  mockPool([]);
+test("Arrow keys choose suggestion segments that hold one tab stop", async () => {
+  mockPool(numberedSuggestions(3));
   await setupPage({
     context,
     path: "/",
@@ -421,14 +434,24 @@ test("Enabled homepage suggestions keep their place when there are no suggestion
       [FeatureSwitchKey.SingleAgent]: true,
     },
   });
-  const capabilities = await screen.findByRole("group", {
-    name: "Explore Okou capabilities",
+  const list = await screen.findByRole("region", { name: "Suggestions" });
+  await within(list).findByRole("heading", { name: "Suggested action 1" });
+  const segments = within(list).getByRole("radiogroup", {
+    name: "Browse suggestions",
   });
-  const card = within(capabilities).getByRole("region", {
-    name: "Suggestions",
-  });
-  const emptyState = await within(card).findByText("No new suggestions");
-  expect(emptyState).toBeVisible();
+  const first = button("Show suggestion 1 of 3", "radio", segments);
+  expect(first).toHaveAttribute("tabindex", "0");
+  expect(button("Show suggestion 2 of 3", "radio", segments)).toHaveAttribute(
+    "tabindex",
+    "-1",
+  );
+  first.focus();
+  await userEvent.keyboard("{ArrowLeft}");
+  await within(list).findByRole("heading", { name: "Suggested action 3" });
+  expect(button("Show suggestion 3 of 3", "radio", segments)).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await within(list).findByRole("heading", { name: "Suggested action 1" });
+  expect(first).toHaveFocus();
 });
 
 test("The homepage suggestion card is absent when the Suggestions switch is off", async () => {
@@ -448,13 +471,12 @@ test("The homepage suggestion card is absent when the Suggestions switch is off"
     within(capabilities).getByRole("region", { name: "Workflow" }),
   ).toBeInTheDocument();
   expect(
-    queryAllByRoleFast("link", capabilities).find((link) => {
-      return link.getAttribute("aria-label") === "Explore";
+    queryAllByRoleFast("link").find((link) => {
+      return link.textContent?.trim() === "Explore what's new";
     }),
   ).toBeInTheDocument();
-  expect(
-    within(capabilities).queryByRole("region", { name: "Suggestions" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Suggestions" })).toBeNull();
+  expect(screen.getByTestId("chat-tagline")).toBeInTheDocument();
 });
 
 test("A homepage suggestion keeps custom directions and sends inside its detail dialog", async () => {
@@ -506,12 +528,8 @@ test("The review advances in its original order, returns to earlier waiting sugg
   });
   const card = await screen.findByRole("region", { name: "Suggestions" });
   await within(card).findByRole("heading", { name: "Suggested action 1" });
-  for (const index of [2, 3]) {
-    click(button("Next suggestion", "button", card));
-    await within(card).findByRole("heading", {
-      name: `Suggested action ${index}`,
-    });
-  }
+  click(button("Show suggestion 3 of 8", "radio", card));
+  await within(card).findByRole("heading", { name: "Suggested action 3" });
   click(button("Suggested action 3", "button", card));
   const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
   for (const index of [3, 4, 5, 6, 7, 8, 2, 1]) {
@@ -649,7 +667,7 @@ test("Retrying unavailable feedback completes the review after the server pool e
   expect(completeTitle).toHaveFocus();
 });
 
-test("Homepage feedback menu supports Undo from the empty state", async () => {
+test("Handling the last homepage suggestion returns the greeting to its tagline until Undo", async () => {
   mockPool();
   await setupPage({
     context,
@@ -670,11 +688,18 @@ test("Homepage feedback menu supports Undo from the empty state", async () => {
     }),
   ).toStrictEqual(["Dismiss", "Already done", "Not planned", "Less like this"]);
   click(within(menu).getByText("Already done"));
-  await within(card).findByText("No new suggestions");
   await screen.findByText("Noted — this is already done");
+  await screen.findByTestId("chat-tagline");
+  expect(screen.queryByRole("region", { name: "Suggestions" })).toBeNull();
   click(button("Undo"));
-  await within(card).findByRole("heading", { name: makeSuggestion().title });
-  expect(button(makeSuggestion().title, "button", card)).toBeInTheDocument();
+  const restored = await screen.findByRole("region", { name: "Suggestions" });
+  await within(restored).findByRole("heading", {
+    name: makeSuggestion().title,
+  });
+  expect(
+    button(makeSuggestion().title, "button", restored),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId("chat-tagline")).toBeNull();
 });
 
 test("The Okou row's count follows committed suggestion changes", async () => {

@@ -13,7 +13,7 @@ import urllib.error
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, nullcontext, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -572,6 +572,43 @@ class TestPostPlatformJson:
 
 
 class TestFetchFirewallHeaders:
+    async def test_explicit_direct_network_admission_survives_the_http_protocol(self, mitm_ctx):
+        endpoint = FakeAuthEndpoint()
+        endpoint.queue_json_response(
+            firewall_auth_success_response({}) | {"networkAdmission": {"kind": "direct"}}
+        )
+        request = replace(
+            firewall_auth_request(),
+            network_admission=True,
+            network_request={
+                "method": "GET",
+                "url": "https://api.example.com/items",
+                "intent": {"kind": "direct"},
+            },
+        )
+        with endpoint.run(), mitm_ctx(api_url=endpoint.api_url):
+            result = await auth_client.fetch_firewall_headers(request)
+        assert result.payload.headers == {}
+        assert endpoint.requests[0].json_body()["networkAdmission"] is True
+
+    @pytest.mark.parametrize(
+        "admission", [None, {"kind": "cloudflare_access"}, {"kind": "direct", "headers": {}}]
+    )
+    async def test_missing_or_unsupported_network_admission_fails_closed(self, mitm_ctx, admission):
+        endpoint = FakeAuthEndpoint()
+        body = firewall_auth_success_response({})
+        if admission is not None:
+            body["networkAdmission"] = admission
+        endpoint.queue_json_response(body)
+        with (
+            endpoint.run(),
+            mitm_ctx(api_url=endpoint.api_url),
+            pytest.raises(auth_client.FirewallAuthInvalidResponseError),
+        ):
+            await auth_client.fetch_firewall_headers(
+                replace(firewall_auth_request(), network_admission=True)
+            )
+
     async def test_sends_request_and_maps_basic_success(self, mitm_ctx):
         endpoint = FakeAuthEndpoint()
         endpoint.queue_json_response(

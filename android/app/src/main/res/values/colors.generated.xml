@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from shared Web color roles. Run android/scripts/sync-design-tokens.py. -->
+<resources>
+    <color name="okou_primary">#FFFFA500</color>
+    <color name="okou_primary_foreground">#FF242321</color>
+    <color name="okou_background">#FFFFFFFF</color>
+    <color name="okou_foreground">#FF242424</color>
+    <color name="okou_card">#FFFFFFFF</color>
+    <color name="okou_card_foreground">#FF242424</color>
+    <color name="okou_muted">#FFFAF5F3</color>
+    <color name="okou_muted_foreground">#FF4E4C4C</color>
+    <color name="okou_accent">#FFFAF5F3</color>
+    <color name="okou_accent_foreground">#FF242424</color>
+    <color name="okou_border">#FFE0DDDC</color>
+    <color name="okou_destructive">#FFBC3500</color>
+    <color name="okou_destructive_foreground">#FFFFFFFF</color>
+</resources>

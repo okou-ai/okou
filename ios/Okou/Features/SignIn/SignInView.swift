@@ -1,3 +1,6 @@
+import CCState
+import CCStateSwiftUI
+import ChatData
 import ClerkKit
 import SwiftUI
 
@@ -66,8 +69,38 @@ struct SignInView: View {
 private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
   let webURL: URL
+
+  var body: some View {
+    if let resources = authentication.membershipResources {
+      StoreProvider(resources.store) {
+        WorkspaceSignInContent(
+          authentication: authentication, webURL: webURL, scopeID: resources.scopeID,
+          memberships: resources.value)
+      }
+      .id(resources.scopeID)
+    } else {
+      OkouLoadingRow("Loading workspaces…")
+    }
+  }
+}
+
+private struct WorkspaceSignInContent: View {
+  let authentication: AuthenticationService
+  let webURL: URL
+  private let scopeID: String
+  @LoadableValue private var memberships: Loadable<[WorkspacePresentation]>
   @State private var actionError: String?
   @State private var confirmsSignOut = false
+
+  init(
+    authentication: AuthenticationService, webURL: URL, scopeID: String,
+    memberships: Signal<Task<[WorkspacePresentation], Error>>
+  ) {
+    self.authentication = authentication
+    self.webURL = webURL
+    self.scopeID = scopeID
+    _memberships = LoadableValue(task: memberships)
+  }
 
   var body: some View {
     ViewThatFits(in: .vertical) {
@@ -86,9 +119,11 @@ private struct WorkspaceSignInView: View {
       Text("Continue with one of your workspaces.")
         .font(.okou(.subheadline))
         .foregroundStyle(OkouColor.mutedForeground)
-      if authentication.isLoadingWorkspaces && authentication.workspaces.isEmpty {
+      if memberships.state == .loading && authentication.workspaces.isEmpty {
         OkouLoadingRow("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty && authentication.errorMessage == nil {
+      } else if authentication.workspaces.isEmpty && memberships.error == nil
+        && authentication.errorMessage == nil
+      {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
           Text("Finish setting up your workspace on the web, then return here.")
             .foregroundStyle(OkouColor.mutedForeground)
@@ -105,6 +140,8 @@ private struct WorkspaceSignInView: View {
                 do {
                   try await authentication.switchWorkspace(workspace.id)
                 } catch {
+                  guard !Task.isCancelled, authentication.membershipResources?.scopeID == scopeID
+                  else { return }
                   actionError = error.localizedDescription
                 }
               }
@@ -130,7 +167,9 @@ private struct WorkspaceSignInView: View {
           }
         }
       }
-      if let error = actionError ?? authentication.errorMessage {
+      if let error = actionError ?? memberships.error?.localizedDescription
+        ?? authentication.errorMessage
+      {
         OkouLoadErrorRow(message: error) {
           actionError = nil
           await authentication.refresh()
@@ -143,6 +182,8 @@ private struct WorkspaceSignInView: View {
             do {
               try await authentication.signOut()
             } catch {
+              guard !Task.isCancelled, authentication.membershipResources?.scopeID == scopeID
+              else { return }
               actionError = error.localizedDescription
             }
           }

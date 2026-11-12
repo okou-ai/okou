@@ -405,6 +405,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly discovery?: "challenge" | "well-known-oidc";
   readonly resourceMetadataStatus?: number;
   readonly challengeScope?: string | null;
+  readonly challengeHeader?: string;
   readonly metadataScopes?: readonly string[];
   readonly authorizationServerScopes?: readonly string[];
   readonly grantTypesSupported?: readonly string[] | null;
@@ -436,6 +437,8 @@ interface AutomaticMcpOAuthProviderOptions {
 interface AutomaticMcpOAuthProviderRecorder {
   readonly endpoint: string;
   readonly endpointRequests: readonly string[];
+  readonly endpointHeaders: readonly Headers[];
+  readonly tokenHeaders: readonly Headers[];
   readonly issuer: string;
   readonly registrationBodies: readonly Record<string, unknown>[];
   advertiseAuthorizationServers(issuers: readonly string[]): void;
@@ -595,6 +598,8 @@ export function mockAutomaticMcpOAuthProvider(
   };
   const registrationBodies: Record<string, unknown>[] = [];
   const endpointRequests: string[] = [];
+  const endpointHeaders: Headers[] = [];
+  const tokenHeaders: Headers[] = [];
   const tokenBodies: URLSearchParams[] = [];
   const tokenAuthorizationHeaders: (string | null)[] = [];
   let authorizationServerDiscoveryCallCount = 0;
@@ -638,6 +643,7 @@ export function mockAutomaticMcpOAuthProvider(
     }),
     http.post(endpointMatcher, async ({ request }) => {
       endpointRequests.push(request.url);
+      endpointHeaders.push(new Headers(request.headers));
       if (options.authentication === "invalid") {
         return new HttpResponse(null, { status: 403 });
       }
@@ -704,9 +710,11 @@ export function mockAutomaticMcpOAuthProvider(
       return new HttpResponse(null, {
         status: 401,
         headers: {
-          "www-authenticate": `Bearer${resourceMetadataParameter}${
-            challengeScope === null ? "" : ` scope="${challengeScope}"`
-          }`,
+          "www-authenticate":
+            options.challengeHeader ??
+            `Bearer${resourceMetadataParameter}${
+              challengeScope === null ? "" : ` scope="${challengeScope}"`
+            }`,
         },
       });
     }),
@@ -841,6 +849,7 @@ export function mockAutomaticMcpOAuthProvider(
       });
     }),
     http.post(tokenUrl, async ({ request }) => {
+      tokenHeaders.push(new Headers(request.headers));
       const body = new URLSearchParams(await request.text());
       tokenBodies.push(body);
       const authorization = request.headers.get("authorization");
@@ -907,6 +916,8 @@ export function mockAutomaticMcpOAuthProvider(
   return {
     endpoint,
     endpointRequests,
+    endpointHeaders,
+    tokenHeaders,
     issuer,
     registrationBodies,
     advertiseAuthorizationServerScopes(scopes: readonly string[]): void {

@@ -510,6 +510,8 @@ Handle other responses as follows:
 
 201:
 - Imported successfully.
+- If the response includes skippedFiles, report each path and reason as an
+  omitted attachment. The skill instruction was imported without those files.
 - Continue with the next skill.
 
 200:

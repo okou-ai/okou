@@ -207,6 +207,73 @@
   --animate-avatar-dice-spin: avatar-dice-spin 0.6s ease-out;
   --animate-avatar-firework: avatar-firework 0.6s ease-out forwards;
 
+  /* Capability home line drawings. A drawing fades in when it mounts or when
+     a Create or Workflow choice swaps it in; a fade rather than a wipe, so
+     running the pointer along the choices does not sweep the eye across the
+     card once per choice. Hovering or focusing its card then plays each
+     drawing's motion once, on one 2.4s timeline shared by every drawing: an
+     element's delay plus duration ends by 2.4s, and every keyframe ends on the
+     resting drawing, so nothing jumps when the pointer leaves and nothing
+     loops. The motion is deliberately slow and small: sine easing with no
+     snap in the middle, about half the travel a first pass used, and no
+     element changes colour, because a stroke or fill flipping to the primary
+     and back reads as a flash. An element shifts its slot on that timeline
+     through `--capability-delay` and `--capability-duration`, because
+     `animate-*` compiles to the `animation` shorthand, which would reset a
+     separate `animation-delay` rule back to zero. Consumers reach every entry
+     through `motion-safe:animate-*`, so reduced motion drops the class and the
+     drawing is simply present. Keyframes stay below. */
+  --animate-capability-art-in: capability-art-in 500ms
+    cubic-bezier(0.33, 1, 0.68, 1) both;
+  --animate-capability-run: capability-run var(--capability-duration, 1800ms)
+    cubic-bezier(0.37, 0, 0.63, 1) var(--capability-delay, 0ms) both;
+  --animate-capability-pulse: capability-pulse 1200ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-scan: capability-scan 2400ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-sweep: capability-sweep
+    var(--capability-duration, 1600ms) cubic-bezier(0.37, 0, 0.63, 1)
+    var(--capability-delay, 0ms) backwards;
+  --animate-capability-fan-a: capability-fan-a 2400ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-fan-b: capability-fan-b 2400ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-grow: capability-grow var(--capability-duration, 1400ms)
+    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-tilt: capability-tilt 2400ms
+    cubic-bezier(0.33, 1, 0.68, 1);
+  --animate-capability-sun: capability-sun 2000ms cubic-bezier(0.33, 1, 0.68, 1)
+    var(--capability-delay, 0ms) backwards;
+  --animate-capability-draw: capability-draw var(--capability-duration, 1800ms)
+    cubic-bezier(0.37, 0, 0.63, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-rise: capability-rise 1500ms
+    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms) backwards;
+  --animate-capability-spin: capability-spin 2400ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-ring: capability-ring 1200ms
+    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms);
+  --animate-capability-travel: capability-travel 2400ms
+    cubic-bezier(0.37, 0, 0.63, 1);
+  --animate-capability-receive: capability-receive 2400ms
+    cubic-bezier(0.33, 1, 0.68, 1);
+  /* A capability's choices slide up from behind the composer they feed. */
+  --animate-capability-tray-in: capability-tray-in 360ms
+    cubic-bezier(0.23, 1, 0.32, 1) both;
+
+  /* Home suggestions rotate in the greeting row. The current suggestion's
+     progress segment fills over 8s, and its `animationend` shows the next
+     suggestion. The fill animates `--okou-suggestion-progress` rather than a
+     width or scale: the segment is 16px, so it moves 2px a second, and a width
+     or scale edge snaps to whole pixels and ticks every half second. A gradient
+     edge with a 1px ramp carries the sub-pixel position instead. Pausing is
+     `animation-play-state`. Consumers reach it through `motion-safe:`, so
+     reduced motion never advances on its own and the property resolves to its
+     registered initial value of 1, a full segment. A new title rises into
+     place once. Keyframes and the registration stay below. */
+  --animate-suggestion-progress: okou-suggestion-progress 8s linear both;
+  --animate-suggestion-title-in: okou-suggestion-title-in 240ms
+    cubic-bezier(0, 0, 0.2, 1);
+
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
      and its shared hairline rather than a competing value for it: an
@@ -230,6 +297,21 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
+  /* On the session's first home, the capability rows and the compliance block
+     under them settle in after the greeting: an 8px rise and a fade on the
+     greeting's own curve, one 70ms step apart through
+     `--capability-row-delay`. It lives in this inline block so the utility
+     carries the value itself: a theme variable is a custom property on
+     `:root`, where its own `var(--capability-row-delay)` would resolve before
+     any card could set one, leaving every row at 0ms. `animate-*` compiles to
+     the `animation` shorthand, so the delay rides inside it rather than in a
+     separate `animation-delay` rule it would reset. `backwards` holds the start
+     through the delay and then lets go, so nothing the element does later —
+     such as the compliance block folding away — fights a held end state.
+     Consumers reach it through `motion-safe:`. Keyframes stay below. */
+  --animate-capability-row-in: capability-row-in 560ms
+    cubic-bezier(0.22, 1, 0.36, 1) var(--capability-row-delay, 0ms) backwards;
+
   --color-palette-anchor: var(--okou-color-theme-anchor);
   --background-image-palette-gradient: linear-gradient(
     135deg,
@@ -604,6 +686,26 @@ body {
   }
 }
 
+@keyframes okou-suggestion-progress {
+  from {
+    --okou-suggestion-progress: 0;
+  }
+  to {
+    --okou-suggestion-progress: 1;
+  }
+}
+
+@keyframes okou-suggestion-title-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes avatar-option-appear {
   from {
     opacity: 0;
@@ -675,6 +777,164 @@ body {
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
+  }
+}
+
+/* Capability home drawings. Every motion keyframe ends on the resting
+   drawing, so a finished or interrupted run leaves nothing out of place.
+   Shapes animate `transform` from the origin the consumer pins with
+   `transform-fill`. */
+@keyframes capability-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@keyframes capability-art-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A dash runs the length of a wire drawn with `pathLength="1"`. */
+@keyframes capability-run {
+  from {
+    opacity: 1;
+    stroke-dashoffset: 0.22;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: -1;
+  }
+}
+
+@keyframes capability-pulse {
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes capability-scan {
+  50% {
+    transform: translate(-20px, 8px);
+  }
+}
+
+@keyframes capability-sweep {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes capability-fan-a {
+  40%,
+  60% {
+    transform: translate(10px, -8px) rotate(2deg);
+  }
+}
+
+@keyframes capability-fan-b {
+  40%,
+  60% {
+    transform: translate(5px, -4px) rotate(1deg);
+  }
+}
+
+@keyframes capability-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes capability-tilt {
+  from {
+    transform: rotate(-2deg);
+  }
+}
+
+@keyframes capability-sun {
+  from {
+    transform: translateY(90px);
+  }
+}
+
+/* Lines drawn with `pathLength="1"` write themselves out. */
+@keyframes capability-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes capability-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* A quarter turn of the hand: time passing, not a dial spun. */
+@keyframes capability-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+}
+
+/* A faint ripple rather than a ping: it starts at under half strength. */
+@keyframes capability-ring {
+  from {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+
+/* The signal crosses the connector, fades at the action, then the dot is
+   back at rest in the middle of the wire. */
+@keyframes capability-travel {
+  0% {
+    opacity: 0;
+    transform: translateX(-76px);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(70px);
+  }
+  65% {
+    opacity: 0;
+    transform: translateX(70px);
+  }
+  66% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+@keyframes capability-receive {
+  55% {
+    transform: none;
+  }
+  70% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes capability-tray-in {
+  from {
+    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+    transform: translateY(24px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
   }
 }
 
@@ -911,6 +1171,15 @@ body {
   syntax: "<number>";
   inherits: true;
   initial-value: 0;
+}
+
+/* The home suggestion progress segment draws its edge at this fraction. It is
+   registered so the keyframes interpolate a number; the initial value of 1 is
+   what a segment shows when reduced motion drops the animation. */
+@property --okou-suggestion-progress {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
 }
 
 /* Resolve container units to lengths before atan2 converts them into scale

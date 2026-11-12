@@ -11,6 +11,7 @@ import {
   CLIENT_TYPE_APP,
   CLIENT_TYPE_HEADER,
   CLIENT_TYPE_IOS,
+  CLIENT_TYPE_ANDROID,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
@@ -28,6 +29,11 @@ import {
   iosUpgradeRequired,
   isSupportedIosClientVersion,
 } from "./lib/ios-client-compatibility";
+import {
+  androidMinimumSupportedVersion,
+  androidUpgradeRequired,
+  isSupportedAndroidClientVersion,
+} from "./lib/android-client-compatibility";
 import { flushLogs, logger } from "./lib/log";
 import {
   cookieHeaderValue,
@@ -452,6 +458,22 @@ async function clientCompatibilityMiddleware(
     ) {
       return context.json(
         iosUpgradeRequired(minimumSupportedVersion),
+        CLIENT_FORCE_UPGRADE_STATUS,
+        {
+          "Cache-Control": "no-store",
+        },
+      );
+    }
+  }
+
+  if (clientType === CLIENT_TYPE_ANDROID && clientVersion) {
+    const minimumSupportedVersion = androidMinimumSupportedVersion();
+    if (
+      minimumSupportedVersion !== null &&
+      !isSupportedAndroidClientVersion(clientVersion)
+    ) {
+      return context.json(
+        androidUpgradeRequired(minimumSupportedVersion),
         CLIENT_FORCE_UPGRADE_STATUS,
         {
           "Cache-Control": "no-store",

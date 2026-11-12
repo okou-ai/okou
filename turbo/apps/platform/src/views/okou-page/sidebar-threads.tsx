@@ -1067,6 +1067,41 @@ function ChatThreadListEmptyState({
   );
 }
 
+/** The inbox is empty only when it lists neither Projects nor chats. */
+function InboxEmptyState({
+  listSignals,
+}: {
+  listSignals: SidebarChatThreadListSignals;
+}) {
+  const { t } = useTranslation();
+  const hasHiddenArchivedThreads = useGet(
+    listSignals.hasHiddenArchivedThreads$,
+  );
+
+  if (hasHiddenArchivedThreads) {
+    return (
+      <ChatThreadListEmptyState
+        message={t(($) => {
+          return $.chat.sidebar.inboxEmpty;
+        })}
+        action={{
+          filter: "archived",
+          label: t(($) => {
+            return $.chat.sidebar.showArchivedChats;
+          }),
+        }}
+      />
+    );
+  }
+  return (
+    <ChatThreadListEmptyState
+      message={t(($) => {
+        return $.chat.sidebar.empty;
+      })}
+    />
+  );
+}
+
 function VirtualizedChatThreads({
   listSignals,
 }: {
@@ -1103,9 +1138,6 @@ function ChatThreads({
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const rowCount = useGet(listSignals.count$);
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
 
   if (rowCount === 0) {
     const showAllChats = {
@@ -1134,28 +1166,7 @@ function ChatThreads({
         />
       );
     }
-    if (hasHiddenArchivedThreads) {
-      return (
-        <ChatThreadListEmptyState
-          message={t(($) => {
-            return $.chat.sidebar.inboxEmpty;
-          })}
-          action={{
-            filter: "archived",
-            label: t(($) => {
-              return $.chat.sidebar.showArchivedChats;
-            }),
-          }}
-        />
-      );
-    }
-    return (
-      <ChatThreadListEmptyState
-        message={t(($) => {
-          return $.chat.sidebar.empty;
-        })}
-      />
-    );
+    return <InboxEmptyState listSignals={listSignals} />;
   }
   return <VirtualizedChatThreads listSignals={listSignals} />;
 }

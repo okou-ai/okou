@@ -1,5 +1,10 @@
 import { command } from "ccstate";
-import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
+import type { CustomConnectorNetworkSnapshot } from "./custom-connector-network-authority.service";
+import { customConnectorNetworkPublicationCondition } from "./custom-connector-network-publication";
+import type {
+  FetchLike,
+  OAuthClientMetadata,
+} from "@modelcontextprotocol/client";
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   array,
@@ -247,6 +252,8 @@ export function customConnectorAutomaticOAuthErrorCode(
     case "unsafe-url": {
       return CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL;
     }
+    case "network-unavailable":
+    case "response-unattributed":
     case "temporary-upstream": {
       return CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE;
     }
@@ -418,6 +425,8 @@ const createCustomDcrRegistration$ = command(
       readonly endpoint: string;
       readonly featureContext: FeatureSwitchContext;
       readonly registration: McpAutomaticOAuthDcrRegistrationInput;
+      readonly definitionUpdatedAt: Date;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
     },
     signal: AbortSignal,
   ): Promise<McpAutomaticOAuthDcrRegistration> => {
@@ -430,39 +439,74 @@ const createCustomDcrRegistration$ = command(
         )
       : null;
     signal.throwIfAborted();
-    const [definition] = await db
-      .select({ id: orgCustomConnectors.id })
-      .from(orgCustomConnectors)
-      .where(
-        and(
-          eq(orgCustomConnectors.id, args.customConnectorId),
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.authMode, "automatic"),
-          eq(orgCustomConnectors.storageVersion, args.storageVersion),
-          eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!definition) {
-      throw new Error(
-        "Custom connector credential contract changed during Automatic OAuth registration",
-      );
-    }
+    const definition = db.$with("network_admitted_dcr_definition").as(
+      db
+        .select({ id: orgCustomConnectors.id })
+        .from(orgCustomConnectors)
+        .where(
+          and(
+            eq(orgCustomConnectors.id, args.customConnectorId),
+            eq(orgCustomConnectors.orgId, args.orgId),
+            eq(orgCustomConnectors.authMode, "automatic"),
+            eq(orgCustomConnectors.storageVersion, args.storageVersion),
+            eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
+            customConnectorNetworkPublicationCondition(args),
+          ),
+        )
+        .limit(1),
+    );
     const [stored] = await db
+      .with(definition)
       .insert(orgCustomConnectorDcrRegistrations)
-      .values({
-        orgId: args.orgId,
-        customConnectorId: args.customConnectorId,
-        issuer: registration.issuer,
-        clientId: registration.clientId,
-        encryptedClientSecret,
-        tokenEndpointAuthMethod: registration.tokenEndpointAuthMethod,
-        registeredScopes: [...registration.registeredScopes],
-        redirectUri: registration.redirectUri,
-        issuedAt: registration.issuedAt,
-        expiresAt: registration.expiresAt,
-      })
+      .select(
+        db
+          .select({
+            id: sql`gen_random_uuid()`
+              .mapWith(orgCustomConnectorDcrRegistrations.id)
+              .as("id"),
+            orgId: sql`${args.orgId}`
+              .mapWith(orgCustomConnectorDcrRegistrations.orgId)
+              .as("org_id"),
+            customConnectorId: definition.id,
+            issuer: sql`${registration.issuer}`
+              .mapWith(orgCustomConnectorDcrRegistrations.issuer)
+              .as("issuer"),
+            clientId: sql`${registration.clientId}`
+              .mapWith(orgCustomConnectorDcrRegistrations.clientId)
+              .as("client_id"),
+            encryptedClientSecret: sql`${encryptedClientSecret}`
+              .mapWith(orgCustomConnectorDcrRegistrations.encryptedClientSecret)
+              .as("encrypted_client_secret"),
+            tokenEndpointAuthMethod:
+              sql`${registration.tokenEndpointAuthMethod}`
+                .mapWith(
+                  orgCustomConnectorDcrRegistrations.tokenEndpointAuthMethod,
+                )
+                .as("token_endpoint_auth_method"),
+            registeredScopes:
+              sql`${sql.param([...registration.registeredScopes], orgCustomConnectorDcrRegistrations.registeredScopes)}`
+                .mapWith(orgCustomConnectorDcrRegistrations.registeredScopes)
+                .as("registered_scopes"),
+            redirectUri: sql`${registration.redirectUri}`
+              .mapWith(orgCustomConnectorDcrRegistrations.redirectUri)
+              .as("redirect_uri"),
+            issuedAt:
+              sql`${sql.param(registration.issuedAt, orgCustomConnectorDcrRegistrations.issuedAt)}`
+                .mapWith(orgCustomConnectorDcrRegistrations.issuedAt)
+                .as("issued_at"),
+            expiresAt:
+              sql`${sql.param(registration.expiresAt, orgCustomConnectorDcrRegistrations.expiresAt)}`
+                .mapWith(orgCustomConnectorDcrRegistrations.expiresAt)
+                .as("expires_at"),
+            createdAt: sql`now()`
+              .mapWith(orgCustomConnectorDcrRegistrations.createdAt)
+              .as("created_at"),
+            updatedAt: sql`now()`
+              .mapWith(orgCustomConnectorDcrRegistrations.updatedAt)
+              .as("updated_at"),
+          })
+          .from(definition),
+      )
       .returning();
     signal.throwIfAborted();
     if (!stored) {
@@ -479,6 +523,7 @@ export type CustomConnectorAutomaticOAuthStateContext =
   McpAutomaticOAuthContext & {
     readonly connectorId: string;
     readonly storageVersion: number;
+    readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   };
 
 export type CustomConnectorCanonicalAutomaticOAuthStateContext =
@@ -498,9 +543,12 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
   async (
     { set },
     args: {
+      readonly fetchFn?: FetchLike;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly orgId: string;
       readonly customConnectorId: string;
       readonly storageVersion: number;
+      readonly definitionUpdatedAt: Date;
       readonly endpoint: string;
       readonly redirectUri: string;
       readonly state: string;
@@ -556,6 +604,9 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
         authMode: "automatic",
         connectorId: args.customConnectorId,
         storageVersion: args.storageVersion,
+        ...(args.networkSnapshot
+          ? { networkSnapshot: args.networkSnapshot }
+          : {}),
       } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
     };
   },
@@ -565,6 +616,8 @@ export const prepareCustomConnectorAutomaticOAuthReauthorization$ = command(
   async (
     { set },
     args: {
+      readonly fetchFn?: FetchLike;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly binding: CustomConnectorAutomaticOAuthBinding;
       readonly storageVersion: number;
       readonly endpoint: string;
@@ -599,6 +652,9 @@ export const prepareCustomConnectorAutomaticOAuthReauthorization$ = command(
         authMode: "automatic",
         connectorId: args.binding.customConnectorId,
         storageVersion: args.storageVersion,
+        ...(args.networkSnapshot
+          ? { networkSnapshot: args.networkSnapshot }
+          : {}),
       } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
     };
   },
@@ -608,6 +664,8 @@ export const exchangeCustomConnectorAutomaticOAuthCode$ = command(
   async (
     { set },
     args: {
+      readonly fetchFn?: FetchLike;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly context: CustomConnectorAutomaticOAuthStateContext;
       readonly redirectUri: string;
       readonly cimdClientId: string;
@@ -640,6 +698,8 @@ export const refreshCustomConnectorAutomaticOAuthToken$ = command(
   async (
     { set },
     args: {
+      readonly fetchFn?: FetchLike;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly binding: CustomConnectorAutomaticOAuthBinding;
       readonly endpoint: string;
       readonly redirectUri: string;

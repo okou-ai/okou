@@ -566,6 +566,7 @@
       "openDocs": "Abrir en Google Docs",
       "openSheets": "Abrir en Google Sheets",
       "openSlides": "Abrir en Google Slides",
+      "reconnect": "Volver a conectar Google Drive",
       "synced": "Sincronizado con Google Drive",
       "syncedFiles_one": "Sincronizado con Google Drive",
       "syncedFiles_many": "Se sincronizaron {{count}} archivos con Google Drive",
@@ -1084,6 +1085,8 @@
       "invalid": "Este enlace de permisos no es válido o no está disponible.",
       "loadFailed": "No se han podido verificar todos los permisos solicitados. No se puede cambiar ningún permiso.",
       "loading": "Cargando permisos",
+      "myOkouScopeNote": "Se aplica a tu uso de Okou en este espacio de trabajo, no solo a la tarea actual.",
+      "myOkouSharedScopeNote": "Se aplica a este conector en tus chats de este espacio de trabajo. Tus compañeros tienen sus propios permisos.",
       "notNow": "Ahora no",
       "review": "Revisar permisos",
       "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
@@ -1337,6 +1340,40 @@
     "sidebar": {
       "description": "Más créditos y ejecuciones simultáneas",
       "getPlan": "Obtener {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Solo estaba consultando el precio",
+          "needs_approval": "Necesito la aprobación de otra persona",
+          "not_ready_yet": "Todavía no estoy listo para comprometerme",
+          "not_seeing_value": "Todavía no le veo el valor",
+          "other": "Otro motivo",
+          "payment_issue": "Tuve problemas con el pago",
+          "price_higher_than_expected": "El precio era más alto de lo esperado",
+          "results_not_good_enough": "No me convencieron los resultados"
+        },
+        "description": "Solo una pregunta. Tu respuesta nos ayuda a mejorar.",
+        "question": "¿Qué te impidió completar la compra?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Ahora mismo no necesito más",
+          "not_sure_worth_it": "Aún no sé si merece la pena",
+          "other": "Otro motivo",
+          "still_trying": "Quiero probarlo más primero",
+          "too_expensive": "Es demasiado caro"
+        },
+        "question": "¿Qué te impide mejorar tu plan hoy?",
+        "reward": "La primera respuesta que cumpla los requisitos en este espacio de trabajo recibe {{credits}} créditos de bonificación, válidos durante 30 días.",
+        "thanksWithCredits": "¡Gracias! Hemos añadido {{credits}} créditos para que puedas continuar."
+      },
+      "error": "No se pudo enviar tu respuesta. Inténtalo de nuevo.",
+      "notNow": "Ahora no",
+      "otherLabel": "Tu respuesta",
+      "otherPlaceholder": "Cuéntanos más (opcional)",
+      "submit": "Enviar",
+      "thanks": "Gracias por contárnoslo."
     },
     "toasts": {
       "autoRechargeUpdated": "Recarga automática actualizada",
@@ -1651,13 +1688,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Todo al día",
-        "emptyTitle": "No hay sugerencias nuevas",
         "feedback": "Acciones de sugerencia",
-        "loading": "Cargando sugerencias",
         "navigation": "Explorar sugerencias",
-        "next": "Siguiente sugerencia",
-        "previous": "Sugerencia anterior",
-        "retry": "Reintentar"
+        "show": "Mostrar sugerencia {{index}} de {{total}}"
       },
       "label": "Sugerencias",
       "lessLikeThis": "Less like this",
@@ -1899,7 +1932,9 @@
         "title": "Crear"
       },
       "explore": "Explorar",
+      "exploreWhatsNew": "Descubre las novedades",
       "research": {
+        "description": "Tráfico, anuncios, productos, temas",
         "items": {
           "ads": "Explorar creatividades publicitarias",
           "products": "Investigar productos",
@@ -1912,6 +1947,7 @@
         "title": "Investigar"
       },
       "search": {
+        "description": "Clientes, creadores, responsables",
         "items": {
           "affiliates": "Programas de afiliación",
           "creators": "Colaboraciones con creadores",
@@ -1942,6 +1978,7 @@
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",
+        "summary": "Se ejecuta con un horario o un activador",
         "triggers": {
           "description": "Empieza cuando ocurra algo.",
           "eventPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta por la fuente, los filtros y el destino del resultado. Prepara un borrador del flujo y confirma la configuración antes de activarlo.",
@@ -2177,6 +2214,8 @@
         "outputLimitTitle": "La respuesta alcanzó el límite de longitud",
         "personalAccount": "Suscripción personal {{account}}",
         "personalAccountDisconnected": "Suscripción personal desconectada",
+        "providerBadRequestDescription": "Vuelve a intentarlo o cambia a otro modelo para continuar.",
+        "providerBadRequestTitle": "El proveedor del modelo ha devuelto un error",
         "providerBalanceDescription": "Revisa el uso o el saldo de tu cuenta de suscripción y vuelve a intentarlo.",
         "providerBalanceTitle": "Tu cuenta de suscripción necesita más saldo",
         "providerConnectionDescription": "Abre Configuración > Modelos para volver a conectar o actualizar tu cuenta y, después, inténtalo de nuevo.",
@@ -2393,18 +2432,36 @@
       "untitled": "Sin título"
     },
     "remoteAccess": {
+      "all": "Todas",
+      "allowed": "Permitidas",
+      "autoSave": "Los cambios se guardan automáticamente para este chat",
+      "connections": "Conexiones",
       "default": "Predeterminado",
       "defaultEnabled": "Habilitado de forma predeterminada para chats",
-      "disabled": "Desactivado",
-      "enabled": "Activado",
+      "draft": "Se aplica al enviar el primer mensaje",
       "enabledCount_one": "{{count}} activo",
       "enabledCount_many": "{{count}} activos",
       "enabledCount_other": "{{count}} activos",
+      "enableInChat": "Activar en este chat",
+      "enableSsh": "Activar SSH {{name}} en este chat",
+      "filterHint": "Las conexiones modificadas se muestran hasta que cambies de filtro",
+      "fromChat": "Este chat",
       "loadFailed": "No se pudo cargar el acceso remoto.",
       "loading": "Cargando acceso remoto…",
+      "manage": "Gestionar conexiones",
+      "needsReload": "Recarga para confirmar los permisos",
+      "noConnections": "No hay conexiones SSH o VNC configuradas",
+      "noneAllowed": "No hay conexiones permitidas en este chat",
+      "notAllowed": "No permitida",
       "off": "Desactivado",
       "on": "Activado",
+      "reload": "Recargar",
       "requiresSsh": "Requiere SSH: {{name}}",
+      "saved": "Guardado para este chat",
+      "saveUnconfirmed": "No se pudo confirmar si el cambio se guardó. Recarga los permisos antes de modificarlos.",
+      "saving": "Guardando…",
+      "scope": "Elige las conexiones que Okou puede usar en este chat",
+      "showAll": "Ver todas las conexiones",
       "sshDisabled": "Activa SSH: {{name}}",
       "sshEnabled": "SSH activado: {{name}}",
       "title": "Acceso remoto",
@@ -3223,6 +3280,7 @@
     "affectedMembers_one": "{{count}} miembro",
     "affectedMembers_many": "",
     "affectedMembers_other": "{{count}} miembros",
+    "bindingUnavailable": "No disponible",
     "cancel": "Cancelar",
     "changed": "Este Cloudflare Access cambió mientras lo editabas. No se guardaron los cambios.",
     "clientIdPlaceholder": "Pega el Client ID del Service Token",
@@ -3235,7 +3293,7 @@
     "failed": "No se pudo guardar el cambio de Cloudflare Access.",
     "forbidden": "Solo los administradores de la organización pueden modificar Cloudflare Access compartido.",
     "impactChanged": "Los hosts afectados han cambiado. El cambio no se aplicó.",
-    "inUse": "Un host SSH utiliza este Cloudflare Access. Su propietario debe cambiar su vínculo o eliminarlo primero.",
+    "inUse": "Este Cloudflare Access sigue en uso. Primero desvincula o cambia la vinculación de los hosts y conectores personalizados que dependen de él.",
     "invalidInput": "Algunos ajustes de Cloudflare Access no son válidos. Revisa los campos e inténtalo de nuevo.",
     "loadFailed": "No se pudo cargar Cloudflare Access.",
     "loading": "Cargando Cloudflare Access…",
@@ -3471,6 +3529,8 @@
         "unshared": "No compartido con ningún agente"
       },
       "filterWith": "Filtro: {{category}}",
+      "myOkouDescription": "Conecta servicios externos para que tu Okou los use.",
+      "myOkouDescriptionWithCount": "Conecta {{value}} servicios para que tu Okou los use.",
       "noConnectorsAlt": "Sin conectores",
       "otherCategory": "Otro",
       "remoteAccess": "Acceso remoto",
@@ -5173,7 +5233,6 @@
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
-    "showMore": "Show more chats",
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
@@ -5541,6 +5600,7 @@
     "modelTemporarilyUnavailable": "Modelo temporalmente no disponible",
     "modelUnavailable": "El modelo actual no está disponible.",
     "overloaded": "{{model}} está sobrecargado. Cambia de modelo.",
+    "providerBadRequest": "El proveedor del modelo ha devuelto un error. Vuelve a intentarlo o cambia a otro modelo para continuar.",
     "providerBalance": "Tu cuenta de suscripción conectada no tiene saldo suficiente.",
     "transient": "Se ha producido un error.",
     "vm0Credits": "Créditos insuficientes. Añade créditos o conecta una suscripción personal de Codex o Claude para continuar."
@@ -5566,6 +5626,11 @@
       "creditBalance_many": "{{value}} créditos",
       "creditBalance_other": "{{value}} créditos",
       "exportData": "Exportar datos",
+      "help": {
+        "docs": "Documentación",
+        "keyboardShortcuts": "Atajos",
+        "label": "Ayuda"
+      },
       "lab": "Laboratorio",
       "settings": "Configuración",
       "signOut": "Cerrar sesión",
@@ -6279,6 +6344,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Ocultar cumplimiento",
       "link": "Detalles de seguridad",
       "status": {
         "aligned": "Alineado",
@@ -6429,6 +6495,33 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
+  "sshAuthorization": {
+    "allow": "Permitir en este chat",
+    "blocked": {
+      "chat_busy": "Espera a que termine el Run actual de este chat antes de aprobar.",
+      "host_changed": "La configuración del host ha cambiado. Solicita una nueva aprobación.",
+      "permissions_required": "Aprueba primero los permisos del conector correspondientes.",
+      "run_active": "Espera a que termine el Run que hizo la solicitud antes de aprobar.",
+      "run_unavailable": "El Run que hizo la solicitud no está disponible. Pide una nueva solicitud en este chat.",
+      "ssh_access_required": "Aprueba primero los hosts SSH necesarios."
+    },
+    "continue": "Continuar tarea",
+    "details": "Detalles del acceso",
+    "effect": "Permite comandos y transferencias de archivos como este usuario remoto hasta que se desactive el acceso.",
+    "failed": "No se pudo completar la acción. Reintenta para comprobar el acceso y continuar.",
+    "retry": "Reintentar",
+    "scope": "Este host · Solo este chat",
+    "status": {
+      "approved": "Acceso SSH permitido",
+      "denied": "Acceso SSH denegado",
+      "expired": "Solicitud SSH caducada",
+      "pending": "Acceso SSH",
+      "revoked": "Acceso SSH revocado",
+      "stale": "Solicitud SSH modificada"
+    },
+    "title": "Acceso SSH",
+    "unavailable": "Esta solicitud no está disponible. Solicita una nueva."
+  },
   "tailscale": {
     "changed": "Esta red Tailscale ha cambiado. No se guardaron los cambios; tu borrador se conserva.",
     "delete": "Eliminar Tailscale",
@@ -6542,17 +6635,20 @@
   "userNotifications": {
     "automationDisabled": {
       "backToWorkflows": "Volver a los flujos de trabajo",
+      "disabled": "Desactivada",
       "disabledAt": "Desactivada el {{time}}",
       "loadFailed": "No se pudo cargar esta automatización",
       "loadingAutomation": "Cargando automatización",
+      "notNow": "Ahora no",
       "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
-      "reason_one": "Se desactivó automáticamente tras {{count}} error de ejecución consecutivo.",
-      "reason_many": "Se desactivó automáticamente tras {{count}} errores de ejecución consecutivos.",
-      "reason_other": "Se desactivó automáticamente tras {{count}} errores de ejecución consecutivos.",
+      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
+      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
       "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
       "switchWorkspace": "Cambiar de espacio de trabajo",
       "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
       "systemSource": "Notificación del sistema",
+      "title": "Automatización desactivada",
       "unavailable": "No se encontró la automatización o no tienes acceso",
       "viewAutomation": "Ver automatización",
       "workspace": "Espacio de trabajo",
@@ -6768,6 +6864,34 @@
       "via": "Host SSH:"
     },
     "unavailable": "VNC no está disponible en este espacio de trabajo."
+  },
+  "vncAuthorization": {
+    "allow": "Permitir en este chat",
+    "blocked": {
+      "chat_busy": "Espera a que termine el Run actual de este chat antes de aprobar.",
+      "host_changed": "La configuración del host ha cambiado. Solicita una nueva aprobación.",
+      "permissions_required": "Aprueba primero los permisos del conector correspondientes.",
+      "run_active": "Espera a que termine el Run que hizo la solicitud antes de aprobar.",
+      "run_unavailable": "El Run que hizo la solicitud no está disponible. Pide una nueva solicitud en este chat.",
+      "ssh_access_required": "Aprueba primero los hosts SSH necesarios."
+    },
+    "continue": "Continuar tarea",
+    "dependencies": "Hosts SSH necesarios (aprobación independiente)",
+    "details": "Detalles del acceso",
+    "effect": "Permite ver y controlar este escritorio hasta que se desactive el acceso. Los hosts SSH requieren una aprobación independiente.",
+    "failed": "No se pudo completar la acción. Reintenta para comprobar el acceso y continuar.",
+    "retry": "Reintentar",
+    "scope": "Este host · Solo este chat",
+    "status": {
+      "approved": "Acceso VNC permitido",
+      "denied": "Acceso VNC denegado",
+      "expired": "Solicitud VNC caducada",
+      "pending": "Acceso VNC",
+      "revoked": "Acceso VNC revocado",
+      "stale": "Solicitud VNC modificada"
+    },
+    "title": "Acceso VNC",
+    "unavailable": "Esta solicitud no está disponible. Solicita una nueva."
   },
   "workflows": {
     "automations": {
@@ -7452,12 +7576,11 @@
       "codeInstructions": "Envía este código a Okou desde el correo que quieres añadir. Ponlo en el asunto o en la primera línea del mensaje.",
       "connected": "Correo conectado",
       "deleteAria": "Eliminar {{email}}",
-      "description": "Escribe a Okou y mantén cada conversación en su propio chat",
+      "description": "Habla con tu Okou por email",
       "emailAddress": "Correo electrónico",
       "healthNotice": "No uses esta integración para información de pacientes regulada por HIPAA.",
       "invalidLink": "Este enlace de conexión no es válido. Envía un nuevo correo a Okou.",
       "loadError": "No se pudo cargar tu conexión de correo",
-      "loginNotice": "Tu correo de acceso permanece conectado.",
       "manage": "Administrar",
       "manageDescription": "Envía el código desde el correo que quieres añadir.",
       "manageTitle": "Conexiones de correo",

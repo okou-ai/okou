@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
@@ -120,6 +119,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  OkouAvatar,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -163,6 +163,8 @@ import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { billingSurveyEnabled$ } from "../../signals/billing-survey.ts";
+import { CreditsExhaustedSurvey } from "./components/billing-survey.tsx";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
@@ -322,7 +324,7 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -3552,7 +3554,10 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           ) : (
             <ChatThreadEventsPane thread={thread} />
           )}
-          <ChatThreadBottomBar thread={thread} />
+          <ChatThreadBottomBar
+            thread={thread}
+            layout={showCapabilities ? "home" : "default"}
+          />
         </div>
       </div>
       <ChatThreadFeedbackSlot thread={thread} />
@@ -3602,7 +3607,14 @@ function SharedThreadCreatedLink({
   );
 }
 
-function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadBottomBar({
+  thread,
+  layout,
+}: {
+  readonly thread: ChatPanelSignals;
+  /** `home` while an empty thread shows the capability home above it. */
+  readonly layout: ComposerLayout;
+}) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
@@ -3614,7 +3626,9 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     thread.sharing.create$,
   );
   if (phase === "idle") {
-    return withChatScrollLayout(<ChatThreadComposer thread={thread} />);
+    return withChatScrollLayout(
+      <ChatThreadComposer thread={thread} layout={layout} />,
+    );
   }
 
   const creating = createLoadable.state === "loading";
@@ -3902,7 +3916,13 @@ function RecommendedFollowupList({
   );
 }
 
-function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadComposer({
+  thread,
+  layout,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly layout: ComposerLayout;
+}) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
@@ -3923,7 +3943,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} />
+          <ChatComposer signals={thread.composer} layout={layout} />
         </div>
       </div>
     </footer>
@@ -4562,7 +4582,15 @@ function PaidCreditCheckoutActions({
   );
 }
 
-function InsufficientCreditsCard() {
+function hasExhaustedCredits(error: string, credits: number | null): boolean {
+  return (
+    error.trim().toLowerCase() === "insufficient_credits" &&
+    credits !== null &&
+    credits <= 0
+  );
+}
+
+function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const { t } = useTranslation();
   const billingLoadable = useLoadable(billingStatusAsync$);
   const [checkoutLoadable, checkout] = useLoadableSet(startCheckout$);
@@ -4572,6 +4600,7 @@ function InsufficientCreditsCard() {
   const setSubPage = useSet(setBillingSubPage$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
+  const billingSurveyEnabled = useGet(billingSurveyEnabled$);
 
   const billingResolved = billingLoadable.state === "hasData";
   const credits = billingResolved ? billingLoadable.data.credits : null;
@@ -4631,47 +4660,60 @@ function InsufficientCreditsCard() {
     );
   };
 
+  // The upgrade question follows only the Pro upgrade action a billing manager
+  // can take, never the credit top-up or the ask-an-admin copy.
+  const showUpgradeSurvey =
+    hasExhaustedCredits(error, credits) &&
+    canShowBillingAction &&
+    shouldStartProCheckout &&
+    billingSurveyEnabled;
+
   return (
-    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-      <div className="min-w-0">
-        <p
-          className={cn(
-            "break-words text-[0.9375rem] font-medium",
-            hasAvailableCredits
-              ? "text-emerald-700 dark:text-emerald-300"
-              : "text-foreground",
-          )}
-        >
-          {headline}
-        </p>
-        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
-      </div>
-      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-        {!canShowBillingAction ? null : shouldStartProCheckout ? (
-          <Button
-            type="button"
-            onClick={handleUpgradeClick}
-            disabled={checkoutRedirecting}
-            variant="default"
-            size="sm"
-            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+    <>
+      <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-[0.9375rem] font-medium",
+              hasAvailableCredits
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-foreground",
+            )}
           >
-            {checkoutRedirecting
-              ? t(($) => {
-                  return $.chat.billing.redirecting;
-                })
-              : t(($) => {
-                  return $.chat.billing.upgradeToPro;
-                })}
-          </Button>
-        ) : (
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        )}
+            {headline}
+          </p>
+          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+            {helper}
+          </p>
+        </div>
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          {!canShowBillingAction ? null : shouldStartProCheckout ? (
+            <Button
+              type="button"
+              onClick={handleUpgradeClick}
+              disabled={checkoutRedirecting}
+              variant="default"
+              size="sm"
+              className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+            >
+              {checkoutRedirecting
+                ? t(($) => {
+                    return $.chat.billing.redirecting;
+                  })
+                : t(($) => {
+                    return $.chat.billing.upgradeToPro;
+                  })}
+            </Button>
+          ) : (
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          )}
+        </div>
       </div>
-    </div>
+      {showUpgradeSurvey ? <CreditsExhaustedSurvey /> : null}
+    </>
   );
 }
 
@@ -5135,7 +5177,7 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
   },
   provider_bad_request: () => {
     return i18n.t(($) => {
-      return $.chat.errors.genericTitle;
+      return $.chat.errors.recovery.providerBadRequestTitle;
     });
   },
   firewall_auth_failed: () => {
@@ -5278,7 +5320,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
   provider_bad_request: (t: TFunction<"common">) => {
     return t(($) => {
-      return $.runErrors.transient;
+      return $.chat.errors.recovery.providerBadRequestDescription;
     });
   },
   firewall_auth_failed: (t: TFunction<"common">) => {
@@ -5328,7 +5370,6 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
-    reason === "provider_bad_request" ||
     reason === "firewall_auth_failed" ||
     reason === "session_history_limit"
   ) {
@@ -5342,7 +5383,6 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
     reason !== "insufficient_credits" &&
     reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
-    reason !== "provider_bad_request" &&
     reason !== "firewall_auth_failed" &&
     reason !== "provider_image_too_large"
   );
@@ -5765,7 +5805,7 @@ function AssistantErrorState({
   const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
   const fallback = assistantErrorFallbackContent(error, failureReason, t);
   if (fallback === null) {
-    return <InsufficientCreditsCard />;
+    return <InsufficientCreditsCard error={error} />;
   }
   const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;
@@ -5787,13 +5827,9 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
-    <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt=""
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
-    </span>
+    // One per reply; only the replies on screen draw frames, so a long
+    // transcript stays cheap.
+    <OkouAvatar size={36} className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );

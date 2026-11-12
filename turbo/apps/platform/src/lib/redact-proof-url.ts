@@ -34,6 +34,14 @@ function redactAuthorizationUrl(value: string): string {
   if (!url) {
     return value;
   }
+  if (
+    [...url.searchParams.keys()].some((key) => {
+      return key.toLowerCase() === "x-amz-signature";
+    })
+  ) {
+    // Presigned object paths can contain filenames; every query value is private.
+    return `${url.origin}/[presigned-object]`;
+  }
   const pathname = url.pathname.toLowerCase().replace(/\/$/u, "");
   const keys = oauthCallbackPaths.some((path) => {
     return path === pathname;

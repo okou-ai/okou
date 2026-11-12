@@ -51,8 +51,7 @@ use crate::boot_config::{BootConfigInput, FirecrackerBootConfig};
 use crate::config::{FirecrackerConfig, FirecrackerDeviceRateLimits};
 use crate::control;
 use crate::exec_operation_result::{
-    captured_exec_output_bytes, exec_termination_from_vsock_termination, reject_stream_overflow,
-    validate_exec_capture_timeout,
+    captured_exec_result, exec_termination_from_vsock_termination, validate_exec_capture_timeout,
 };
 use crate::factory::InvariantConfig;
 use crate::firecracker_process::spawn_firecracker;
@@ -1536,7 +1535,7 @@ impl FirecrackerSandbox {
         let connection_sandbox_id = self.id.clone();
         let observe_connection = timing.observer.is_some();
         let connection_submitted = Instant::now();
-        #[cfg(feature = "test-support")]
+        #[cfg(any(test, feature = "test-support"))]
         let connection_scope = guest_control_client::test_support::ConnectionScope::current();
         // Cancelling startup must also retire its pending listener or handshake.
         let mut vsock_task = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -1562,7 +1561,7 @@ impl FirecrackerSandbox {
                     )
                 }
             };
-            #[cfg(feature = "test-support")]
+            #[cfg(any(test, feature = "test-support"))]
             let connection = async move {
                 match connection_scope {
                     Some(scope) => scope.scope(connection).await,
@@ -2124,19 +2123,16 @@ fn captured_output_bytes(output: ExecOwnedCapturedOutput) -> (Vec<u8>, bool) {
 fn exec_result_from_operation_result(
     result: guest_control_client::ExecOperationResult,
 ) -> io::Result<ExecResult> {
-    reject_stream_overflow(&result)?;
-
-    let (stdout, stdout_truncated) = captured_exec_output_bytes("stdout", result.stdout)?;
-    let (stderr, stderr_truncated) = captured_exec_output_bytes("stderr", result.stderr)?;
+    let result = captured_exec_result(result)?;
 
     Ok(ExecResult {
         termination: exec_termination_from_vsock_termination(result.termination),
         guest_duration_ms: Some(result.duration_ms),
-        stdout,
-        stderr,
+        stdout: result.stdout,
+        stderr: result.stderr,
         diagnostic: result.diagnostic,
-        stdout_truncated,
-        stderr_truncated,
+        stdout_truncated: result.stdout_truncated,
+        stderr_truncated: result.stderr_truncated,
     })
 }
 

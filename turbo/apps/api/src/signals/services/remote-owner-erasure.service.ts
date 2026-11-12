@@ -1,10 +1,13 @@
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
+import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
@@ -12,6 +15,26 @@ type RemoteErasureScope =
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
+
+function boundCustomConnectorErasureCondition(orgId: string) {
+  return and(
+    eq(orgCustomConnectors.orgId, orgId),
+    exists(
+      new QueryBuilder()
+        .select({ id: orgCustomConnectorCloudflareBindings.connectorId })
+        .from(orgCustomConnectorCloudflareBindings)
+        .where(
+          and(
+            eq(
+              orgCustomConnectorCloudflareBindings.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorCloudflareBindings.orgId, orgId),
+          ),
+        ),
+    ),
+  );
+}
 
 /** Commit dependency removal before deleting its parents; no remote work or replay. */
 export const eraseRemoteOwnerData$ = command(
@@ -21,6 +44,39 @@ export const eraseRemoteOwnerData$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    if (scope.kind === "organization") {
+      // Consume only disabled parent IDs. A concurrent new edge not visible in
+      // this snapshot remains protected by its restrictive configuration FK.
+      const disabled = db
+        .$with("disabled_erased_custom_connectors")
+        .as(
+          db
+            .update(orgCustomConnectors)
+            .set({ enabled: false })
+            .where(boundCustomConnectorErasureCondition(scope.orgId))
+            .returning({ id: orgCustomConnectors.id }),
+        );
+      await db
+        .with(disabled)
+        .delete(orgCustomConnectorCloudflareBindings)
+        .where(
+          and(
+            eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId),
+            exists(
+              db
+                .select({ id: disabled.id })
+                .from(disabled)
+                .where(
+                  eq(
+                    disabled.id,
+                    orgCustomConnectorCloudflareBindings.connectorId,
+                  ),
+                ),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+    }
     await db
       .delete(vncConnections)
       .where(

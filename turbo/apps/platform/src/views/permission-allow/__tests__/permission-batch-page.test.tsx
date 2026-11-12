@@ -112,7 +112,13 @@ function openPage({
   callback = false,
   malformed = false,
   chatAccounts = false,
-}: { callback?: boolean; malformed?: boolean; chatAccounts?: boolean } = {}) {
+  singleAgent = false,
+}: {
+  callback?: boolean;
+  malformed?: boolean;
+  chatAccounts?: boolean;
+  singleAgent?: boolean;
+} = {}) {
   const params = new URLSearchParams({
     items: malformed ? "not-json" : JSON.stringify(items),
     action: "allow",
@@ -128,6 +134,7 @@ function openPage({
     featureSwitches: {
       [FeatureSwitchKey.BatchConnectorPermissions]: true,
       [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
+      [FeatureSwitchKey.SingleAgent]: singleAgent,
     },
   });
 }
@@ -137,20 +144,35 @@ test.each([
     outcome: "success",
     message: "The chat has continued.",
     chatAccounts: false,
+    singleAgent: false,
   },
   {
     outcome: "failure",
     message: /^Permissions allowed, but could not continue\./u,
     chatAccounts: false,
+    singleAgent: false,
   },
   {
     outcome: "success",
     message: "The chat has continued.",
     chatAccounts: true,
+    singleAgent: false,
+  },
+  {
+    outcome: "success",
+    message: "The chat has continued.",
+    chatAccounts: false,
+    singleAgent: true,
+  },
+  {
+    outcome: "success",
+    message: "The chat has continued.",
+    chatAccounts: true,
+    singleAgent: true,
   },
 ] as const)(
-  "Grouped permissions remain allowed after continuation $outcome",
-  async ({ outcome, message, chatAccounts }) => {
+  "Grouped permissions remain allowed after continuation $outcome (My Okou=$singleAgent, chat accounts=$chatAccounts)",
+  async ({ outcome, message, chatAccounts, singleAgent }) => {
     const grants = installResources();
     const applied: string[] = [];
     const durations: string[] = [];
@@ -229,8 +251,16 @@ test.each([
             },
           });
     });
-    await openPage({ callback: true, chatAccounts });
+    await openPage({ callback: true, chatAccounts, singleAgent });
     await screen.findByText("Description for chat:write");
+    const scope = singleAgent
+      ? chatAccounts
+        ? "Applies to this connector across your chats in this workspace. Your teammates have their own permissions."
+        : "Applies to your use of Okou in this workspace, not only the current task."
+      : chatAccounts
+        ? "Applies to this connector across all your chats and agents."
+        : "Applies to this agent, not only the current task.";
+    expect(screen.getByText(scope)).toBeInTheDocument();
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
     expect(screen.getByLabelText("Permission duration")).toHaveTextContent(

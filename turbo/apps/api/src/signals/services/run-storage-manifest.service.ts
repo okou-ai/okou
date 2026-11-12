@@ -1,4 +1,3 @@
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -17,7 +16,6 @@ import {
   type SkillVolume,
 } from "./run-prompt-and-skills";
 import { now } from "../../lib/time";
-import { safeSync } from "../utils";
 import type { PreparedExecutionStorageMount } from "./execution-storage.service";
 import type {
   OfficialWorkflowObservation,
@@ -26,16 +24,10 @@ import type {
 import {
   type ApiDispatchTimingActionType,
   ApiDispatchTimingCollector,
-  type ApiDispatchTimingDimensions,
-  type ApiDispatchTimingDimensionsInput,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import type { SupportedFramework } from "@okouai/core/frameworks";
-import {
-  MEMORY_ARTIFACT_NAME,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import {
   isValidVersionPrefix,
   MIN_VERSION_PREFIX_LENGTH,
@@ -51,60 +43,24 @@ import type {
   StorageVersionIndexEntry,
 } from "./storage-index.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
-import type {
-  StorageManifestCacheBranch,
-  StorageManifestCacheEntryKind,
-  SystemStoragePresignedUrlCacheStatus,
-  WorkflowSkillStoragePresignedUrlCacheStatus,
-} from "./system-storage-presigned-url-cache.service";
-
-interface AdditionalVolume {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly system?: boolean;
-}
 
 interface PrepareAgentRunStorageManifestArgs {
-  readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
   readonly artifacts: readonly ContextArtifact[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
-  readonly framework: SupportedFramework | "pi";
   readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}
-
-interface ResolvedVolume {
-  readonly name: string;
-  readonly mountPath: string;
-  readonly vasStorageName: string;
-  readonly vasVersion: string;
-  readonly optional?: boolean;
-  readonly system?: boolean;
 }
 
 interface StorageManifestInputs {
   readonly artifacts: readonly ContextArtifact[];
-  readonly composeVolumes: readonly ResolvedVolume[];
 }
 
 interface BuildStorageManifestEntriesArgs {
-  readonly bucket: string;
   readonly storageIndex: StorageIndex;
-  readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
-  readonly composeVolumes: readonly ResolvedVolume[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
 }
 
 type UnindexedStorageManifestEntriesArgs = Omit<
@@ -118,14 +74,11 @@ interface PreparedRequestStorageResolution {
 }
 
 interface StorageManifestEntryPhaseTimings {
-  readonly compose: StorageManifestEntryPhaseTiming;
-  readonly additional: StorageManifestEntryPhaseTiming;
   readonly artifact: StorageManifestEntryPhaseTiming;
 }
 
 interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
-  readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }
@@ -143,25 +96,7 @@ export interface AgentRunStoragePlan {
 }
 
 interface ResolvedStorageManifestEntryPlans {
-  readonly composePlans: readonly ResolvedManifestStoragePlan[];
-  readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
   readonly artifactInputs: readonly ResolvedManifestArtifactInput[];
-}
-
-interface ResolvedManifestStorageInput {
-  readonly name: string;
-  readonly mountPath: string;
-  readonly vasStorageName: string;
-  readonly optional?: boolean;
-  readonly resolved: StorageResolution;
-}
-
-interface ResolvedManifestStoragePlan extends ResolvedManifestStorageInput {
-  readonly entryKind: Extract<
-    StorageManifestEntryKind,
-    "compose" | "additional"
-  >;
-  readonly source: StorageManifestSource;
 }
 
 interface StorageManifestPhaseTimingWindow {
@@ -174,43 +109,18 @@ class StorageManifestEntryPhaseTiming {
     startedAt: undefined,
     finishedAt: undefined,
   };
-  private readonly generateWindow: StorageManifestPhaseTimingWindow = {
-    startedAt: undefined,
-    finishedAt: undefined,
-  };
 
   constructor(
     private readonly timing: ApiDispatchTimingCollector | undefined,
     private readonly resolveActionType: ApiDispatchTimingActionType,
-    private readonly generateActionType: ApiDispatchTimingActionType,
-    private readonly resolveDimensions:
-      ApiDispatchTimingDimensionsInput | undefined,
-    private readonly generateDimensions:
-      ApiDispatchTimingDimensionsInput | undefined,
   ) {}
 
   async measureResolve<T>(operation: () => T | Promise<T>): Promise<T> {
     return await this.measure(this.resolveWindow, operation);
   }
 
-  async measureGenerate<T>(operation: () => Promise<T>): Promise<T> {
-    return await this.measure(this.generateWindow, operation);
-  }
-
   flushResolve(): void {
-    this.record(
-      this.resolveActionType,
-      this.resolveWindow,
-      this.resolveDimensions,
-    );
-  }
-
-  flushGenerate(): void {
-    this.record(
-      this.generateActionType,
-      this.generateWindow,
-      this.generateDimensions,
-    );
+    this.record(this.resolveActionType, this.resolveWindow);
   }
 
   private async measure<T>(
@@ -241,7 +151,6 @@ class StorageManifestEntryPhaseTiming {
   private record(
     actionType: ApiDispatchTimingActionType,
     window: StorageManifestPhaseTimingWindow,
-    dimensions: ApiDispatchTimingDimensionsInput | undefined,
   ): void {
     if (!this.timing) {
       return;
@@ -253,7 +162,6 @@ class StorageManifestEntryPhaseTiming {
       "nested",
       window.startedAt ?? finishedAt,
       finishedAt,
-      dimensions,
     );
   }
 }
@@ -478,315 +386,21 @@ function resolveStorageVersion(
     : resolvePinnedVersion(index, lookup, version);
 }
 
-function isMissingStorageError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.message.includes("not found in database") ||
-      error.message.includes("has no HEAD version"))
-  );
-}
-
-function volumeStorageName(volume: ResolvedVolume | AdditionalVolume): string {
-  return "vasStorageName" in volume ? volume.vasStorageName : volume.name;
-}
-
-function volumeVersion(
-  volume: ResolvedVolume | AdditionalVolume,
-): string | undefined {
-  return "vasVersion" in volume ? volume.vasVersion : volume.version;
-}
-
-function volumeStorageLookup(
-  orgId: string,
-  volume: ResolvedVolume | AdditionalVolume,
-): StorageLookup {
-  return {
-    orgId,
-    userId: VOLUME_ORG_USER_ID,
-    name: volumeStorageName(volume),
-  };
-}
-
-function resolveVolumeStorage(args: {
-  readonly index: StorageIndex;
-  readonly volume: ResolvedVolume | AdditionalVolume;
-  readonly primaryOrgId: string;
-  readonly allowSystemFallback: boolean;
-}): StorageResolution | null {
-  if (args.allowSystemFallback && args.volume.system) {
-    const systemResult = safeSync(() => {
-      return resolveStorageVersion(
-        args.index,
-        volumeStorageLookup(SYSTEM_ORG_ID, args.volume),
-        volumeVersion(args.volume),
-      );
-    });
-    if ("ok" in systemResult) {
-      return systemResult.ok;
-    }
-    if (!isMissingStorageError(systemResult.error)) {
-      throw systemResult.error;
-    }
-  }
-
-  return resolveStorageVersion(
-    args.index,
-    volumeStorageLookup(args.primaryOrgId, args.volume),
-    volumeVersion(args.volume),
-  );
-}
-
-function resolveComposeStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly agentOrgId: string;
-  readonly volume: ResolvedVolume;
-}): ResolvedManifestStorageInput | null {
-  const resolvedResult = safeSync(() => {
-    return resolveVolumeStorage({
-      index: args.index,
-      volume: args.volume,
-      primaryOrgId: args.agentOrgId,
-      allowSystemFallback: true,
-    });
-  });
-  if ("error" in resolvedResult) {
-    if (args.volume.optional && isMissingStorageError(resolvedResult.error)) {
-      return null;
-    }
-    throw resolvedResult.error;
-  }
-  if (!resolvedResult.ok) {
-    return null;
-  }
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.vasStorageName,
-    optional: args.volume.optional,
-    resolved: resolvedResult.ok,
-  };
-}
-
-function resolveAdditionalStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: StorageManifestSource;
-}): ResolvedManifestStorageInput | null {
-  const { source } = args;
-  if (source === "connector_skill" || source === "custom_connector_skill") {
-    return resolveConnectorSkillStorageInput({
-      index: args.index,
-      runtimeOrgId: args.runtimeOrgId,
-      volume: args.volume,
-      source,
-    });
-  }
-  const resolvedResult = safeSync(() => {
-    return resolveVolumeStorage({
-      index: args.index,
-      volume: args.volume,
-      primaryOrgId: args.runtimeOrgId,
-      allowSystemFallback: true,
-    });
-  });
-  if ("error" in resolvedResult) {
-    if (isMissingStorageError(resolvedResult.error)) {
-      return null;
-    }
-    throw resolvedResult.error;
-  }
-  if (!resolvedResult.ok) {
-    return null;
-  }
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved: resolvedResult.ok,
-  };
-}
-
-const CONNECTOR_SKILL_REGISTRATION_ERROR =
-  "Connector skill registration is unavailable";
-
-const CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR =
-  "Custom connector skill registration is unavailable";
-
-type ConnectorSkillStorageSource = Extract<
-  StorageManifestSource,
-  "connector_skill" | "custom_connector_skill"
->;
-
-function connectorSkillRegistrationError(
-  source: ConnectorSkillStorageSource,
-): Error {
-  return new Error(
-    source === "connector_skill"
-      ? CONNECTOR_SKILL_REGISTRATION_ERROR
-      : CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR,
-  );
-}
-
-function resolveConnectorSkillStorageInput(args: {
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: ConnectorSkillStorageSource;
-}): ResolvedManifestStorageInput {
-  const version = args.volume.version;
-  if (
-    (args.source === "connector_skill") !== (args.volume.system === true) ||
-    version === undefined ||
-    !/^[a-f0-9]{64}$/u.test(version)
-  ) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  const ownerOrgId =
-    args.source === "connector_skill" ? SYSTEM_ORG_ID : args.runtimeOrgId;
-  const lookup = volumeStorageLookup(ownerOrgId, args.volume);
-  const storage = args.index.get(
-    storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-  );
-  if (!storage) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-  const resolved = resolvePreloadedExactVersion(storage, lookup, version);
-  if (!resolved) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  const expectedKey = `${resolved.s3Prefix}/${version}`;
-  if (
-    resolved.s3Key !== expectedKey ||
-    (args.source === "connector_skill" &&
-      resolved.s3Prefix !== `${SYSTEM_ORG_ID}/volume/${args.volume.name}`)
-  ) {
-    throw connectorSkillRegistrationError(args.source);
-  }
-
-  return {
-    name: args.volume.name,
-    mountPath: args.volume.mountPath,
-    vasStorageName: args.volume.name,
-    resolved,
-  };
-}
-
 function resolveArtifactStorageInput(args: {
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly userId: string;
   readonly artifact: ContextArtifact;
-  readonly source: StorageManifestSource;
 }): ResolvedManifestArtifactInput {
   const resolved = resolveStorageVersion(
     args.index,
     artifactStorageLookup(args.runtimeOrgId, args.userId, args.artifact.name),
     args.artifact.version,
   );
-  return { artifact: args.artifact, resolved, source: args.source };
-}
-
-function readOnlyStorageEntryMetadata(args: {
-  readonly plan: ResolvedManifestStoragePlan;
-}): PreparedReadOnlyStorageEntry<StorageMountMetadata> {
-  const archiveSize = knownArchiveSize(args.plan.resolved);
-  return {
-    storedMount: {
-      orgId: args.plan.resolved.resolvedOrgId,
-      userId: args.plan.resolved.resolvedUserId,
-      name: args.plan.vasStorageName,
-      storageId: args.plan.resolved.storageId,
-      versionId: args.plan.resolved.versionId,
-      mountPath: args.plan.mountPath,
-      ...(archiveSize === undefined ? {} : { archiveSize }),
-    },
-    persistedMount: {
-      orgId: args.plan.resolved.resolvedOrgId,
-      userId: args.plan.resolved.resolvedUserId,
-      name: args.plan.vasStorageName,
-      storageId: args.plan.resolved.storageId,
-      version: args.plan.resolved.versionId,
-      mountPath: args.plan.mountPath,
-      ...(args.plan.optional === undefined
-        ? {}
-        : { optional: args.plan.optional }),
-    },
-  };
-}
-
-async function buildComposeStorageEntry(args: {
-  readonly index: StorageIndex;
-  readonly agentOrgId: string;
-  readonly volume: ResolvedVolume;
-  readonly phaseTiming: StorageManifestEntryPhaseTiming;
-  readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedManifestStoragePlan | null> {
-  const input = await args.phaseTiming.measureResolve(() => {
-    return resolveComposeStorageInput({
-      index: args.index,
-      agentOrgId: args.agentOrgId,
-      volume: args.volume,
-    });
-  });
-  if (input) {
-    args.stats?.recordResolvedEntry("compose", "compose_volume");
-  }
-  return input
-    ? { ...input, entryKind: "compose", source: "compose_volume" }
-    : null;
-}
-
-async function buildAdditionalStorageEntry(args: {
-  readonly index: StorageIndex;
-  readonly runtimeOrgId: string;
-  readonly volume: AdditionalVolume;
-  readonly source: StorageManifestSource;
-  readonly phaseTiming: StorageManifestEntryPhaseTiming;
-  readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedManifestStoragePlan | null> {
-  const input = await args.phaseTiming.measureResolve(() => {
-    return resolveAdditionalStorageInput({
-      index: args.index,
-      runtimeOrgId: args.runtimeOrgId,
-      volume: args.volume,
-      source: args.source,
-    });
-  });
-  if (input) {
-    args.stats?.recordResolvedEntry("additional", args.source);
-  }
-  return input
-    ? { ...input, entryKind: "additional", source: args.source }
-    : null;
-}
-
-function additionalVolumeSourceAt(
-  sources: readonly StorageManifestSource[] | undefined,
-  index: number,
-): StorageManifestSource {
-  return sources?.[index] ?? "unknown";
-}
-
-function normalizeAdditionalVolumeSources(args: {
-  readonly volumes: readonly AdditionalVolume[] | undefined;
-  readonly sources: readonly StorageManifestSource[] | undefined;
-}): readonly StorageManifestSource[] | undefined {
-  if (!args.sources) {
-    return undefined;
-  }
-  if (args.sources.length !== (args.volumes?.length ?? 0)) {
-    throw new Error(
-      "Additional volume source count must match additional volume count",
-    );
-  }
-  return args.sources;
+  return { artifact: args.artifact, resolved };
 }
 
 export async function resolveStorageManifestInputs(args: {
-  readonly framework: SupportedFramework | "pi";
   readonly artifacts: readonly ContextArtifact[];
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<StorageManifestInputs> {
@@ -797,64 +411,18 @@ export async function resolveStorageManifestInputs(args: {
     () => {
       return {
         artifacts: dedupArtifacts(args.artifacts),
-        composeVolumes: [],
       };
     },
   );
 }
 
 function storageManifestRequests(args: {
-  readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
-  readonly composeVolumes: readonly ResolvedVolume[];
-  readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-  readonly additionalVolumeSources:
-    readonly StorageManifestSource[] | undefined;
   readonly artifacts: readonly ContextArtifact[];
 }): readonly StorageRequest[] {
   const requests: StorageRequest[] = [];
 
-  for (const volume of args.composeVolumes) {
-    const version = volumeVersion(volume);
-    if (volume.system) {
-      requests.push({
-        lookup: volumeStorageLookup(SYSTEM_ORG_ID, volume),
-        version,
-      });
-    }
-    requests.push({
-      lookup: volumeStorageLookup(args.agentOrgId, volume),
-      version,
-    });
-  }
-  for (const [index, volume] of (args.additionalVolumes ?? []).entries()) {
-    const version = volumeVersion(volume);
-    const source = additionalVolumeSourceAt(
-      args.additionalVolumeSources,
-      index,
-    );
-    if (source === "connector_skill" || source === "custom_connector_skill") {
-      requests.push({
-        lookup: volumeStorageLookup(
-          source === "connector_skill" ? SYSTEM_ORG_ID : args.runtimeOrgId,
-          volume,
-        ),
-        version,
-      });
-      continue;
-    }
-    if (volume.system) {
-      requests.push({
-        lookup: volumeStorageLookup(SYSTEM_ORG_ID, volume),
-        version,
-      });
-    }
-    requests.push({
-      lookup: volumeStorageLookup(args.runtimeOrgId, volume),
-      version,
-    });
-  }
   for (const artifact of args.artifacts) {
     requests.push({
       lookup: artifactStorageLookup(
@@ -871,43 +439,13 @@ function storageManifestRequests(args: {
 
 function createStorageManifestEntryPhaseTimings(args: {
   readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
 }): StorageManifestEntryPhaseTimings {
   return {
-    compose: new StorageManifestEntryPhaseTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_compose_versions",
-      "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("compose");
-      },
-    ),
-    additional: new StorageManifestEntryPhaseTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_resolve_additional_versions",
-      "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("additional");
-      },
-    ),
     artifact: new StorageManifestEntryPhaseTiming(
       args.timing,
       "api_dispatch_prepare_storage_manifest_resolve_artifact_versions",
-      "api_dispatch_prepare_storage_manifest_generate_artifact_urls",
-      undefined,
-      () => {
-        return args.stats?.generateDimensions("artifact");
-      },
     ),
   };
-}
-
-function isResolvedManifestStoragePlan(
-  plan: ResolvedManifestStoragePlan | null,
-): plan is ResolvedManifestStoragePlan {
-  return plan !== null;
 }
 
 async function resolveStorageManifestEntryPlans(args: {
@@ -915,336 +453,77 @@ async function resolveStorageManifestEntryPlans(args: {
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
 }): Promise<ResolvedStorageManifestEntryPlans> {
   const input = args.input;
-  const [composePlans, additionalPlans, artifactInputs] = await Promise.all([
-    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
-      const spanStartedAt = spanTiming ? performance.now() : undefined;
-      return await (async () => {
-        return await Promise.all(
-          input.composeVolumes.map((volume) => {
-            return buildComposeStorageEntry({
-              index: input.storageIndex,
-              agentOrgId: input.agentOrgId,
-              volume,
-              phaseTiming: args.phaseTimings.compose,
-              stats: input.stats,
-            });
-          }),
-        );
-      })().finally(() => {
-        if (spanTiming && spanStartedAt !== undefined) {
-          spanTiming.recordDuration(
-            "api_dispatch_prepare_storage_manifest_build_compose_entries",
-            "nested",
-            performance.now() - spanStartedAt,
-            now(),
-          );
-        }
-      });
-    })(input.timing),
-    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
-      const spanStartedAt = spanTiming ? performance.now() : undefined;
-      return await (async () => {
-        return await Promise.all(
-          (input.additionalVolumes ?? []).map((volume, index) => {
-            return buildAdditionalStorageEntry({
+  const artifactInputs = await (async (
+    spanTiming: ApiDispatchTimingCollector | undefined,
+  ) => {
+    const spanStartedAt = spanTiming ? performance.now() : undefined;
+    return await (async () => {
+      return await Promise.all(
+        input.artifacts.map((artifact) => {
+          return args.phaseTimings.artifact.measureResolve(() => {
+            return resolveArtifactStorageInput({
               index: input.storageIndex,
               runtimeOrgId: input.runtimeOrgId,
-              volume,
-              source: additionalVolumeSourceAt(
-                input.additionalVolumeSources,
-                index,
-              ),
-              phaseTiming: args.phaseTimings.additional,
-              stats: input.stats,
+              userId: input.userId,
+              artifact,
             });
-          }),
+          });
+        }),
+      );
+    })().finally(() => {
+      if (spanTiming && spanStartedAt !== undefined) {
+        spanTiming.recordDuration(
+          "api_dispatch_prepare_storage_manifest_build_artifact_entries",
+          "nested",
+          performance.now() - spanStartedAt,
+          now(),
         );
-      })().finally(() => {
-        if (spanTiming && spanStartedAt !== undefined) {
-          spanTiming.recordDuration(
-            "api_dispatch_prepare_storage_manifest_build_additional_entries",
-            "nested",
-            performance.now() - spanStartedAt,
-            now(),
-          );
-        }
-      });
-    })(input.timing),
-    (async (spanTiming: ApiDispatchTimingCollector | undefined) => {
-      const spanStartedAt = spanTiming ? performance.now() : undefined;
-      return await (async () => {
-        return await Promise.all(
-          input.artifacts.map((artifact) => {
-            return args.phaseTimings.artifact.measureResolve(() => {
-              return resolveArtifactStorageInput({
-                index: input.storageIndex,
-                runtimeOrgId: input.runtimeOrgId,
-                userId: input.userId,
-                artifact,
-                source: "artifact",
-              });
-            });
-          }),
-        );
-      })().finally(() => {
-        if (spanTiming && spanStartedAt !== undefined) {
-          spanTiming.recordDuration(
-            "api_dispatch_prepare_storage_manifest_build_artifact_entries",
-            "nested",
-            performance.now() - spanStartedAt,
-            now(),
-          );
-        }
-      });
-    })(input.timing),
-  ]);
-
-  input.stats?.recordResolvedEntry(
-    "artifact",
-    "artifact",
-    artifactInputs.length,
-  );
+      }
+    });
+  })(input.timing);
 
   return {
-    composePlans: composePlans.filter(isResolvedManifestStoragePlan),
-    additionalPlans: additionalPlans.filter(isResolvedManifestStoragePlan),
     artifactInputs,
   };
 }
 
 export async function resolveStorageEntries(
   input: BuildStorageManifestEntriesArgs,
-  branch: StorageManifestCacheBranch,
 ): Promise<ResolvedStorageEntries> {
   const phaseTimings = createStorageManifestEntryPhaseTimings(input);
   const resolved = await resolveStorageManifestEntryPlans({
     input,
     phaseTimings,
   }).finally(() => {
-    phaseTimings.compose.flushResolve();
-    phaseTimings.additional.flushResolve();
     phaseTimings.artifact.flushResolve();
   });
-  return { input, branch, phaseTimings, resolved };
+  return { input, phaseTimings, resolved };
 }
 
-/** Assemble runner mounts from immutable version plans and already signed URLs. */
+/** Assemble writeback metadata from resolved artifact versions. */
 export function storageEntriesMetadata(
   plan: ResolvedStorageEntries,
 ): PreparedStorageEntries<StorageMountMetadata> {
-  const finalPlans = mergeStorageEntries({
-    composeEntries: plan.resolved.composePlans,
-    additionalEntries: plan.resolved.additionalPlans,
-    mountPath: (entry) => {
-      return entry.mountPath;
-    },
-  });
   return {
-    composeEntries: finalPlans
-      .filter((entry) => {
-        return entry.entryKind === "compose";
-      })
-      .map((entry) => {
-        return readOnlyStorageEntryMetadata({ plan: entry });
-      }),
-    additionalEntries: finalPlans
-      .filter((entry) => {
-        return entry.entryKind === "additional";
-      })
-      .map((entry) => {
-        return readOnlyStorageEntryMetadata({ plan: entry });
-      }),
     writebackEntries: plan.resolved.artifactInputs.map(
       writebackStorageEntryMetadata,
     ),
-    resolvedComposeEntryCount: plan.resolved.composePlans.length,
-    resolvedAdditionalEntryCount: plan.resolved.additionalPlans.length,
   };
-}
-
-export function assertUniquePersistedMountPaths(
-  mounts: readonly PersistedStorageMount[],
-): void {
-  const paths = new Set<string>();
-  for (const mount of mounts) {
-    if (paths.has(mount.mountPath)) {
-      throw new Error(`Duplicate Storage mount path "${mount.mountPath}"`);
-    }
-    paths.add(mount.mountPath);
-  }
-}
-
-export function persistedStorageMountRequests(
-  mounts: readonly PersistedStorageMount[],
-): readonly StorageRequest[] {
-  return mounts.map((mount) => {
-    return {
-      lookup: {
-        orgId: mount.orgId,
-        userId: mount.userId,
-        name: mount.name,
-      },
-      version: mount.version,
-    };
-  });
-}
-
-function resolvePersistedStorageMounts(args: {
-  readonly index: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-}): ResolvedStorageManifestEntryPlans {
-  const additionalPlans: ResolvedManifestStoragePlan[] = [];
-  const artifactInputs: ResolvedManifestArtifactInput[] = [];
-
-  for (const mount of args.mounts) {
-    if (mount.writeback && mount.orgId === SYSTEM_ORG_ID) {
-      throw new Error("System Storage cannot be mounted with writeback");
-    }
-    const lookup: StorageLookup = {
-      orgId: mount.orgId,
-      userId: mount.userId,
-      name: mount.name,
-    };
-    const storage = args.index.get(
-      storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
-    );
-    if (!storage) {
-      if (mount.optional) {
-        continue;
-      }
-      throw new Error(`Storage "${mount.name}" not found in database`);
-    }
-    if (storage.storageId !== mount.storageId) {
-      throw new Error(`Storage "${mount.name}" identity does not match`);
-    }
-
-    const resolvedResult = safeSync(() => {
-      return resolveStorageVersion(args.index, lookup, mount.version);
-    });
-    if ("error" in resolvedResult) {
-      if (mount.optional && isMissingStorageError(resolvedResult.error)) {
-        continue;
-      }
-      throw resolvedResult.error;
-    }
-    const resolved = resolvedResult.ok;
-
-    if (mount.writeback) {
-      artifactInputs.push({
-        artifact: {
-          name: mount.name,
-          version: mount.version,
-          mountPath: mount.mountPath,
-          ...(mount.missingRootPolicy === undefined
-            ? {}
-            : { missingRootPolicy: mount.missingRootPolicy }),
-        },
-        resolved,
-        source: "artifact",
-      });
-      continue;
-    }
-
-    additionalPlans.push({
-      name: mount.name,
-      vasStorageName: mount.name,
-      mountPath: mount.mountPath,
-      ...(mount.optional === undefined ? {} : { optional: mount.optional }),
-      resolved,
-      entryKind: "additional",
-      source: "unknown",
-    });
-  }
-
-  return { composePlans: [], additionalPlans, artifactInputs };
-}
-
-export function resolveValidatedPersistedStorageMounts(args: {
-  readonly bucket: string;
-  readonly storageIndex: StorageIndex;
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly branch: "captured";
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
-}): ResolvedStorageEntries {
-  const phaseTimings = createStorageManifestEntryPhaseTimings(args);
-  const result = safeSync(() => {
-    const input: BuildStorageManifestEntriesArgs = {
-      bucket: args.bucket,
-      storageIndex: args.storageIndex,
-      agentOrgId: "",
-      runtimeOrgId: "",
-      userId: "",
-      composeVolumes: [],
-      additionalVolumes: undefined,
-      additionalVolumeSources: undefined,
-      artifacts: [],
-      timing: args.timing,
-      stats: args.stats,
-    };
-    const resolved = resolvePersistedStorageMounts({
-      index: args.storageIndex,
-      mounts: args.mounts,
-    });
-    args.stats?.recordResolvedEntry(
-      "additional",
-      "unknown",
-      resolved.additionalPlans.length,
-    );
-    args.stats?.recordResolvedEntry(
-      "artifact",
-      "artifact",
-      resolved.artifactInputs.length,
-    );
-    return { input, branch: args.branch, phaseTimings, resolved };
-  });
-  phaseTimings.compose.flushResolve();
-  phaseTimings.additional.flushResolve();
-  phaseTimings.artifact.flushResolve();
-  if ("error" in result) {
-    throw result.error;
-  }
-  return result.ok;
 }
 
 export function prepareRequestStorageResolution(
   args: {
-    readonly agentOrgId: string;
     readonly runtimeOrgId: string;
     readonly userId: string;
-    readonly artifacts: readonly ContextArtifact[];
-    readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
-    readonly additionalVolumeSources:
-      readonly StorageManifestSource[] | undefined;
     readonly timing?: ApiDispatchTimingCollector;
-    readonly stats?: StorageManifestBuildStats;
   },
-  bucket: string,
-  composeVolumes: readonly ResolvedVolume[],
   artifacts: readonly ContextArtifact[],
 ): PreparedRequestStorageResolution {
-  const additionalVolumeSources = normalizeAdditionalVolumeSources({
-    volumes: args.additionalVolumes,
-    sources: args.additionalVolumeSources,
-  });
-  args.stats?.recordRequestedInputs({
-    composeCount: composeVolumes.length,
-    additionalCount: args.additionalVolumes?.length ?? 0,
-    artifactCount: args.artifacts.length,
-    dedupedArtifactCount: artifacts.length,
-  });
-
   const input: UnindexedStorageManifestEntriesArgs = {
-    bucket,
-    agentOrgId: args.agentOrgId,
     runtimeOrgId: args.runtimeOrgId,
     userId: args.userId,
-    composeVolumes,
-    additionalVolumes: args.additionalVolumes,
-    additionalVolumeSources,
     artifacts,
     timing: args.timing,
-    stats: args.stats,
   };
   return {
     input,
@@ -1252,33 +531,15 @@ export function prepareRequestStorageResolution(
   };
 }
 
-interface CapturedAgentRunStorageArgs {
-  readonly mounts: readonly PersistedStorageMount[];
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
+export interface AgentRunStorageInput {
+  readonly args: PrepareAgentRunStorageManifestArgs;
 }
 
-export type AgentRunStorageInput =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-    }
-  | { readonly kind: "captured"; readonly args: CapturedAgentRunStorageArgs };
-
-export type AgentRunStorageSelection =
-  | {
-      readonly kind: "requested";
-      readonly args: PrepareAgentRunStorageManifestArgs;
-      readonly bucket: string;
-      readonly request: PreparedRequestStorageResolution;
-      readonly requests: readonly StorageRequest[];
-    }
-  | {
-      readonly kind: "captured";
-      readonly args: CapturedAgentRunStorageArgs;
-      readonly bucket: string;
-      readonly requests: readonly StorageRequest[];
-    };
+export interface AgentRunStorageSelection {
+  readonly args: PrepareAgentRunStorageManifestArgs;
+  readonly request: PreparedRequestStorageResolution;
+  readonly requests: readonly StorageRequest[];
+}
 
 function frameworkSkillsMountPath(framework: SupportedFramework): string {
   return framework === "codex"
@@ -1295,33 +556,10 @@ function skillsRootForRun(
     : PI_SKILLS_ROOT;
 }
 
-type RunStorageExecution = Pick<
-  ResolvedRunExecution,
-  "orgId" | "additionalVolumes"
->;
-
-export interface AgentRunCreateAdditionalVolume {
-  readonly name: string;
-  readonly version?: string;
-  readonly mountPath: string;
-  readonly system?: boolean;
-}
-
-type StorageManifestSource =
-  | SkillVolume["source"]
-  | "compose_additional_volume"
-  | "compose_volume"
-  | "artifact"
-  | "unknown";
-
-export type AdditionalVolumeSources =
-  readonly StorageManifestSource[] | undefined;
-
 export interface ResolvedAgentExecution {
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
-  readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
   readonly nativeContinuation?: PreparedExecutionContext["nativeContinuation"];
 }
 
@@ -1342,9 +580,7 @@ interface RunArtifacts {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
 }
 
-interface PreparedAdditionalVolumes {
-  readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly sources: AdditionalVolumeSources;
+interface PreparedRunBundles {
   readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 }
@@ -1373,34 +609,12 @@ function artifactsForRun(args: {
   };
 }
 
-function preparedRunAdditionalVolumes(args: {
+function preparedRunBundles(args: {
   readonly skillVolumes: readonly SkillVolume[];
   readonly skillsRoot: string;
-  readonly body: {
-    readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  };
-  readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
-}): PreparedAdditionalVolumes {
-  const bodyAdditionalVolumes = args.body.additionalVolumes;
-  const rendered = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
-  const hasTemplateVolumes = args.skillVolumes.some((volume) => {
-    return volume.source === "request_additional_volume";
-  });
-  const additionalVolumes =
-    bodyAdditionalVolumes ??
-    (hasTemplateVolumes ? [] : (args.resolved.additionalVolumes ?? []));
-  // Select the winning mount before separating Storage and bundle delivery.
-  const candidates = [
-    ...rendered,
-    ...additionalVolumes.map((volume) => {
-      return {
-        ...volume,
-        source: bodyAdditionalVolumes
-          ? ("request_additional_volume" as const)
-          : ("unknown" as const),
-      };
-    }),
-  ];
+}): PreparedRunBundles {
+  const candidates = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
+  // Select the winning mount before separating Skill and template bundles.
   const winners = normalizeMountOverlay(candidates);
   const templateGuidanceBundles = winners.flatMap((volume, index) => {
     return "templateGuidanceBundle" in volume
@@ -1419,26 +633,7 @@ function preparedRunAdditionalVolumes(args: {
       ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
       : [];
   });
-  const bundledPaths = new Set([
-    ...seedSkillBundles.map((bundle) => {
-      return bundle.mountPath;
-    }),
-    ...templateGuidanceBundles.map(templateGuidanceMountPath),
-  ]);
-  const storage = candidates.flatMap((volume) => {
-    return "contentBundle" in volume ||
-      "templateGuidanceBundle" in volume ||
-      bundledPaths.has(volume.mountPath)
-      ? []
-      : [volume];
-  });
   return {
-    volumes: storage.map(({ source: _source, ...volume }) => {
-      return volume;
-    }),
-    sources: storage.map((volume) => {
-      return volume.source;
-    }),
     seedSkillBundles,
     templateGuidanceBundles,
   };
@@ -1449,35 +644,24 @@ export function prepareRunOutputMetadata(args: {
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-  readonly body: {
-    readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  };
-  readonly resolved: RunStorageExecution;
 }): {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly additionalVolumes:
-    readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
-  const additionalVolumes = preparedRunAdditionalVolumes({
+  const bundles = preparedRunBundles({
     skillVolumes: args.skillVolumes,
     skillsRoot,
-    body: args.body,
-    resolved: args.resolved,
   });
   const artifacts = artifactsForRun({
     framework: args.framework,
     piSandbox: args.piSandbox,
   }).artifacts;
   return {
-    additionalVolumes: additionalVolumes.volumes,
-    additionalVolumeSources: additionalVolumes.sources,
-    seedSkillBundles: additionalVolumes.seedSkillBundles,
-    templateGuidanceBundles: additionalVolumes.templateGuidanceBundles,
+    seedSkillBundles: bundles.seedSkillBundles,
+    templateGuidanceBundles: bundles.templateGuidanceBundles,
     artifacts,
     officialWorkflowRun: args.officialWorkflow && {
       ...args.officialWorkflow,
@@ -1502,19 +686,6 @@ interface AgentRunCreateContextArtifact {
   readonly missingRootPolicy?: ArtifactMissingRootPolicy;
 }
 
-type StorageManifestEntryKind = StorageManifestCacheEntryKind;
-
-type StorageManifestCountBucket =
-  (typeof STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS)[number];
-
-interface PresignCandidateInput {
-  readonly bucket: string;
-  readonly key: string;
-  readonly expiresIn: number;
-  readonly filename: string | undefined;
-  readonly usePublicEndpoint: boolean;
-}
-
 interface ContextArtifact {
   readonly name: string;
   readonly version?: string;
@@ -1536,13 +707,6 @@ interface StorageResolution {
 /** Internal resolved identity, before transport URLs exist. Never persisted. */
 type StorageMountMetadata = Omit<StoredStorageMountEntry, "archiveUrl">;
 
-interface PreparedReadOnlyStorageEntry<
-  TMount extends StorageMountMetadata = StoredStorageMountEntry,
-> {
-  readonly storedMount: TMount;
-  readonly persistedMount: PersistedStorageMount;
-}
-
 interface PreparedWritebackStorageEntry<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
@@ -1553,11 +717,7 @@ interface PreparedWritebackStorageEntry<
 interface PreparedStorageEntries<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
-  readonly composeEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
-  readonly additionalEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
   readonly writebackEntries: readonly PreparedWritebackStorageEntry<TMount>[];
-  readonly resolvedComposeEntryCount: number;
-  readonly resolvedAdditionalEntryCount: number;
 }
 
 export interface PreparedAgentRunStorage<
@@ -1570,38 +730,11 @@ export interface PreparedAgentRunStorage<
 interface ResolvedManifestArtifactInput {
   readonly artifact: ContextArtifact;
   readonly resolved: StorageResolution;
-  readonly source: StorageManifestSource;
 }
 
-const STORAGE_MANIFEST_COUNT_BUCKET_DIMENSIONS = [
-  "0",
-  "1",
-  "2_4",
-  "5_8",
-  "9_16",
-  "17_plus",
-] as const;
-
-const STORAGE_MANIFEST_SOURCES = [
-  "system_skill",
-  "connector_skill",
-  "custom_connector_skill",
-  "workflow_skill",
-  "request_additional_volume",
-  "compose_additional_volume",
-  "compose_volume",
-  "artifact",
-  "unknown",
-] as const satisfies readonly StorageManifestSource[];
-
-type StorageManifestSourceCounts = Record<StorageManifestSource, number>;
-
-type StorageManifestSourceCountsByKind = Record<
-  StorageManifestEntryKind,
-  StorageManifestSourceCounts
->;
-
-function storageManifestCountBucket(count: number): StorageManifestCountBucket {
+function storageManifestCountBucket(
+  count: number,
+): "0" | "1" | "2_4" | "5_8" | "9_16" | "17_plus" {
   if (count <= 0) {
     return "0";
   }
@@ -1618,417 +751,6 @@ function storageManifestCountBucket(count: number): StorageManifestCountBucket {
     return "9_16";
   }
   return "17_plus";
-}
-
-function emptyStorageManifestSourceCounts(): StorageManifestSourceCounts {
-  return {
-    system_skill: 0,
-    connector_skill: 0,
-    custom_connector_skill: 0,
-    workflow_skill: 0,
-    request_additional_volume: 0,
-    compose_additional_volume: 0,
-    compose_volume: 0,
-    artifact: 0,
-    unknown: 0,
-  };
-}
-
-function emptyStorageManifestSourceCountsByKind(): StorageManifestSourceCountsByKind {
-  return {
-    compose: emptyStorageManifestSourceCounts(),
-    additional: emptyStorageManifestSourceCounts(),
-    artifact: emptyStorageManifestSourceCounts(),
-  };
-}
-
-export class StorageManifestBuildStats {
-  private requestedComposeCount = 0;
-  private requestedAdditionalCount = 0;
-  private requestedArtifactCount = 0;
-  private dedupedArtifactCount = 0;
-  private resolvedComposeCount = 0;
-  private resolvedAdditionalCount = 0;
-  private resolvedArtifactCount = 0;
-  private finalStorageCount = 0;
-  private finalArtifactCount = 0;
-  private droppedComposeCount = 0;
-  private plannedComposePresignCount = 0;
-  private plannedAdditionalPresignCount = 0;
-  private plannedArtifactPresignCount = 0;
-  private systemResolvedStorageCount = 0;
-  private systemPresignCacheHitCount = 0;
-  private systemPresignCacheMissCount = 0;
-  private workflowSkillPresignCacheHitCount = 0;
-  private workflowSkillPresignCacheMissCount = 0;
-  private nonSystemPresignCount = 0;
-  private readonly resolvedSourceCounts = emptyStorageManifestSourceCounts();
-  private readonly plannedPresignSourceCounts =
-    emptyStorageManifestSourceCounts();
-  private readonly plannedPresignSourceCountsByKind =
-    emptyStorageManifestSourceCountsByKind();
-  private readonly nonSystemPresignSourceCounts =
-    emptyStorageManifestSourceCounts();
-  private readonly nonSystemPresignSourceCountsByKind =
-    emptyStorageManifestSourceCountsByKind();
-  private artifactEnsureAlreadyInitializedCount = 0;
-  private artifactEnsureMissingStorageCount = 0;
-  private artifactEnsureCreatedStorageCount = 0;
-  private artifactEnsureLostCreateRaceCount = 0;
-  private artifactEnsureMissingHeadVersionCount = 0;
-  private artifactEnsureInitializedEmptyVersionCount = 0;
-  private readonly presignCandidateCounts = new Map<string, number>();
-
-  recordRequestedInputs(args: {
-    readonly composeCount: number;
-    readonly additionalCount: number;
-    readonly artifactCount: number;
-    readonly dedupedArtifactCount: number;
-  }): void {
-    this.requestedComposeCount = args.composeCount;
-    this.requestedAdditionalCount = args.additionalCount;
-    this.requestedArtifactCount = args.artifactCount;
-    this.dedupedArtifactCount = args.dedupedArtifactCount;
-  }
-
-  recordResolvedEntry(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-    count = 1,
-  ): void {
-    switch (kind) {
-      case "compose": {
-        this.resolvedComposeCount += count;
-        break;
-      }
-      case "additional": {
-        this.resolvedAdditionalCount += count;
-        break;
-      }
-      case "artifact": {
-        this.resolvedArtifactCount += count;
-        break;
-      }
-    }
-    this.resolvedSourceCounts[source] += count;
-  }
-
-  recordPresignCandidate(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-    input: PresignCandidateInput,
-  ): void {
-    switch (kind) {
-      case "compose": {
-        this.plannedComposePresignCount += 1;
-        break;
-      }
-      case "additional": {
-        this.plannedAdditionalPresignCount += 1;
-        break;
-      }
-      case "artifact": {
-        this.plannedArtifactPresignCount += 1;
-        break;
-      }
-    }
-    this.plannedPresignSourceCounts[source] += 1;
-    this.plannedPresignSourceCountsByKind[kind][source] += 1;
-
-    const key = JSON.stringify([
-      input.bucket,
-      input.key,
-      input.expiresIn,
-      input.filename ?? "",
-      input.usePublicEndpoint ? "public" : "private",
-    ]);
-    this.presignCandidateCounts.set(
-      key,
-      (this.presignCandidateCounts.get(key) ?? 0) + 1,
-    );
-  }
-
-  recordSystemResolvedStorage(count = 1): void {
-    this.systemResolvedStorageCount += count;
-  }
-
-  recordSystemPresignCacheResult(
-    status: SystemStoragePresignedUrlCacheStatus,
-  ): void {
-    switch (status) {
-      case "hit": {
-        this.systemPresignCacheHitCount += 1;
-        return;
-      }
-      case "miss": {
-        this.systemPresignCacheMissCount += 1;
-        return;
-      }
-    }
-  }
-
-  recordWorkflowSkillPresignCacheResult(
-    status: WorkflowSkillStoragePresignedUrlCacheStatus,
-  ): void {
-    switch (status) {
-      case "hit": {
-        this.workflowSkillPresignCacheHitCount += 1;
-        return;
-      }
-      case "miss": {
-        this.workflowSkillPresignCacheMissCount += 1;
-        return;
-      }
-    }
-  }
-
-  recordNonSystemPresign(
-    kind: StorageManifestEntryKind,
-    source: StorageManifestSource,
-  ): void {
-    this.nonSystemPresignCount += 1;
-    this.nonSystemPresignSourceCounts[source] += 1;
-    this.nonSystemPresignSourceCountsByKind[kind][source] += 1;
-  }
-
-  recordArtifactEnsureAlreadyInitialized(): void {
-    this.artifactEnsureAlreadyInitializedCount += 1;
-  }
-
-  recordArtifactEnsureMissingStorage(): void {
-    this.artifactEnsureMissingStorageCount += 1;
-  }
-
-  recordArtifactEnsureCreatedStorage(): void {
-    this.artifactEnsureCreatedStorageCount += 1;
-  }
-
-  recordArtifactEnsureLostCreateRace(): void {
-    this.artifactEnsureLostCreateRaceCount += 1;
-  }
-
-  recordArtifactEnsureMissingHeadVersion(): void {
-    this.artifactEnsureMissingHeadVersionCount += 1;
-  }
-
-  recordArtifactEnsureInitializedEmptyVersion(): void {
-    this.artifactEnsureInitializedEmptyVersionCount += 1;
-  }
-
-  recordFinalStorage(args: {
-    readonly composeEntryCount: number;
-    readonly additionalEntryCount: number;
-    readonly finalReadOnlyEntryCount: number;
-    readonly finalWritebackEntryCount: number;
-    readonly resolvedComposeEntryCount?: number;
-    readonly resolvedAdditionalEntryCount?: number;
-  }): void {
-    this.finalStorageCount = args.finalReadOnlyEntryCount;
-    this.finalArtifactCount = args.finalWritebackEntryCount;
-    this.droppedComposeCount =
-      (args.resolvedComposeEntryCount ?? args.composeEntryCount) +
-      (args.resolvedAdditionalEntryCount ?? args.additionalEntryCount) -
-      args.finalReadOnlyEntryCount;
-  }
-
-  overallDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_requested_compose_count_bucket:
-        storageManifestCountBucket(this.requestedComposeCount),
-      storage_manifest_requested_additional_count_bucket:
-        storageManifestCountBucket(this.requestedAdditionalCount),
-      storage_manifest_requested_artifact_count_bucket:
-        storageManifestCountBucket(this.requestedArtifactCount),
-      storage_manifest_deduped_artifact_count_bucket:
-        storageManifestCountBucket(this.dedupedArtifactCount),
-      storage_manifest_resolved_compose_count_bucket:
-        storageManifestCountBucket(this.resolvedComposeCount),
-      storage_manifest_resolved_additional_count_bucket:
-        storageManifestCountBucket(this.resolvedAdditionalCount),
-      storage_manifest_resolved_artifact_count_bucket:
-        storageManifestCountBucket(this.resolvedArtifactCount),
-      storage_manifest_final_storage_count_bucket: storageManifestCountBucket(
-        this.finalStorageCount,
-      ),
-      storage_manifest_final_artifact_count_bucket: storageManifestCountBucket(
-        this.finalArtifactCount,
-      ),
-      storage_manifest_dropped_compose_count_bucket: storageManifestCountBucket(
-        this.droppedComposeCount,
-      ),
-      storage_manifest_planned_presign_count_bucket: storageManifestCountBucket(
-        this.plannedPresignCount(),
-      ),
-      storage_manifest_duplicate_presign_candidate_count_bucket:
-        storageManifestCountBucket(this.duplicatePresignCandidateCount()),
-      ...this.sourceDimensions({
-        resolved: this.resolvedSourceCounts,
-        plannedPresign: this.plannedPresignSourceCounts,
-        nonSystemPresign: this.nonSystemPresignSourceCounts,
-      }),
-      ...this.systemPresignCacheDimensions(),
-      ...this.workflowSkillPresignCacheDimensions(),
-      ...this.artifactEnsureDimensions(),
-    };
-  }
-
-  artifactEnsureDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_artifact_ensure_already_initialized_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureAlreadyInitializedCount),
-      storage_manifest_artifact_ensure_missing_storage_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureMissingStorageCount),
-      storage_manifest_artifact_ensure_created_storage_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureCreatedStorageCount),
-      storage_manifest_artifact_ensure_lost_create_race_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureLostCreateRaceCount),
-      storage_manifest_artifact_ensure_missing_head_version_count_bucket:
-        storageManifestCountBucket(this.artifactEnsureMissingHeadVersionCount),
-      storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-        storageManifestCountBucket(
-          this.artifactEnsureInitializedEmptyVersionCount,
-        ),
-    };
-  }
-
-  buildEntriesDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_resolved_compose_count_bucket:
-        storageManifestCountBucket(this.resolvedComposeCount),
-      storage_manifest_resolved_additional_count_bucket:
-        storageManifestCountBucket(this.resolvedAdditionalCount),
-      storage_manifest_resolved_artifact_count_bucket:
-        storageManifestCountBucket(this.resolvedArtifactCount),
-      storage_manifest_planned_presign_count_bucket: storageManifestCountBucket(
-        this.plannedPresignCount(),
-      ),
-      storage_manifest_duplicate_presign_candidate_count_bucket:
-        storageManifestCountBucket(this.duplicatePresignCandidateCount()),
-      ...this.sourceDimensions({
-        resolved: this.resolvedSourceCounts,
-        plannedPresign: this.plannedPresignSourceCounts,
-        nonSystemPresign: this.nonSystemPresignSourceCounts,
-      }),
-      ...this.systemPresignCacheDimensions(),
-      ...this.workflowSkillPresignCacheDimensions(),
-    };
-  }
-
-  generateDimensions(
-    kind: StorageManifestEntryKind,
-  ): ApiDispatchTimingDimensions {
-    switch (kind) {
-      case "compose": {
-        return {
-          storage_manifest_compose_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedComposePresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.compose,
-            nonSystemPresign: this.nonSystemPresignSourceCountsByKind.compose,
-          }),
-        };
-      }
-      case "additional": {
-        return {
-          storage_manifest_additional_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedAdditionalPresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.additional,
-            nonSystemPresign:
-              this.nonSystemPresignSourceCountsByKind.additional,
-          }),
-          ...this.workflowSkillPresignCacheDimensions(),
-        };
-      }
-      case "artifact": {
-        return {
-          storage_manifest_artifact_planned_presign_count_bucket:
-            storageManifestCountBucket(this.plannedArtifactPresignCount),
-          ...this.sourceDimensions({
-            plannedPresign: this.plannedPresignSourceCountsByKind.artifact,
-            nonSystemPresign: this.nonSystemPresignSourceCountsByKind.artifact,
-          }),
-        };
-      }
-    }
-  }
-
-  assembleDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_final_storage_count_bucket: storageManifestCountBucket(
-        this.finalStorageCount,
-      ),
-      storage_manifest_final_artifact_count_bucket: storageManifestCountBucket(
-        this.finalArtifactCount,
-      ),
-      storage_manifest_dropped_compose_count_bucket: storageManifestCountBucket(
-        this.droppedComposeCount,
-      ),
-    };
-  }
-
-  private plannedPresignCount(): number {
-    return (
-      this.plannedComposePresignCount +
-      this.plannedAdditionalPresignCount +
-      this.plannedArtifactPresignCount
-    );
-  }
-
-  private duplicatePresignCandidateCount(): number {
-    let count = 0;
-    for (const candidateCount of this.presignCandidateCounts.values()) {
-      count += Math.max(0, candidateCount - 1);
-    }
-    return count;
-  }
-
-  private sourceDimensions(args: {
-    readonly resolved?: StorageManifestSourceCounts;
-    readonly plannedPresign?: StorageManifestSourceCounts;
-    readonly nonSystemPresign?: StorageManifestSourceCounts;
-  }): ApiDispatchTimingDimensions {
-    const dimensions: Record<string, string> = {};
-    for (const source of STORAGE_MANIFEST_SOURCES) {
-      if (args.resolved) {
-        dimensions[`storage_manifest_source_${source}_resolved_count_bucket`] =
-          storageManifestCountBucket(args.resolved[source]);
-      }
-      if (args.plannedPresign) {
-        dimensions[
-          `storage_manifest_source_${source}_planned_presign_count_bucket`
-        ] = storageManifestCountBucket(args.plannedPresign[source]);
-      }
-      if (args.nonSystemPresign) {
-        dimensions[
-          `storage_manifest_source_${source}_non_system_presign_count_bucket`
-        ] = storageManifestCountBucket(args.nonSystemPresign[source]);
-      }
-    }
-    return dimensions;
-  }
-
-  private systemPresignCacheDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_system_resolved_storage_count_bucket:
-        storageManifestCountBucket(this.systemResolvedStorageCount),
-      storage_manifest_system_presign_cache_hit_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheHitCount),
-      storage_manifest_system_presign_cache_miss_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheMissCount),
-      storage_manifest_non_system_presign_count_bucket:
-        storageManifestCountBucket(this.nonSystemPresignCount),
-    };
-  }
-
-  private workflowSkillPresignCacheDimensions(): ApiDispatchTimingDimensions {
-    return {
-      storage_manifest_workflow_skill_presign_cache_hit_count_bucket:
-        storageManifestCountBucket(this.workflowSkillPresignCacheHitCount),
-      storage_manifest_workflow_skill_presign_cache_miss_count_bucket:
-        storageManifestCountBucket(this.workflowSkillPresignCacheMissCount),
-    };
-  }
 }
 
 function knownArchiveSize(resolved: StorageResolution): number | undefined {
@@ -2087,72 +809,35 @@ function writebackStorageEntryMetadata(
   };
 }
 
-function mergeStorageEntries<TEntry>(args: {
-  readonly composeEntries: readonly TEntry[];
-  readonly additionalEntries: readonly TEntry[];
-  readonly mountPath: (entry: TEntry) => string;
-}): readonly TEntry[] {
-  const additionalMountPaths = new Set(
-    args.additionalEntries.map((entry) => {
-      return args.mountPath(entry);
-    }),
-  );
-  return [
-    ...args.composeEntries.filter((entry) => {
-      return !additionalMountPaths.has(args.mountPath(entry));
-    }),
-    ...args.additionalEntries,
-  ];
-}
-
 export async function finalizePreparedStorage<
   TMount extends StorageMountMetadata,
 >(args: {
   readonly entries: PreparedStorageEntries<TMount>;
   readonly timing?: ApiDispatchTimingCollector;
-  readonly stats?: StorageManifestBuildStats;
 }): Promise<PreparedAgentRunStorage<TMount>> {
   return await measureApiDispatchTiming(
     args.timing,
     "api_dispatch_prepare_storage_manifest_assemble",
     "nested",
     () => {
-      const readOnlyEntries = mergeStorageEntries({
-        composeEntries: args.entries.composeEntries,
-        additionalEntries: args.entries.additionalEntries,
-        mountPath(entry) {
-          return entry.storedMount.mountPath;
-        },
-      });
-      args.stats?.recordFinalStorage({
-        composeEntryCount: args.entries.composeEntries.length,
-        additionalEntryCount: args.entries.additionalEntries.length,
-        finalReadOnlyEntryCount: readOnlyEntries.length,
-        finalWritebackEntryCount: args.entries.writebackEntries.length,
-        resolvedComposeEntryCount: args.entries.resolvedComposeEntryCount,
-        resolvedAdditionalEntryCount: args.entries.resolvedAdditionalEntryCount,
-      });
       return {
-        storageMounts: normalizeMountOverlay([
-          ...readOnlyEntries.map((entry) => {
+        storageMounts: normalizeMountOverlay(
+          args.entries.writebackEntries.map((entry) => {
             return entry.storedMount;
           }),
-          ...args.entries.writebackEntries.map((entry) => {
-            return entry.storedMount;
-          }),
-        ]),
-        persistedStorageMounts: normalizeMountOverlay([
-          ...readOnlyEntries.map((entry) => {
+        ),
+        persistedStorageMounts: normalizeMountOverlay(
+          args.entries.writebackEntries.map((entry) => {
             return entry.persistedMount;
           }),
-          ...args.entries.writebackEntries.map((entry) => {
-            return entry.persistedMount;
-          }),
-        ]),
+        ),
       };
     },
     () => {
-      return args.stats?.assembleDimensions();
+      return {
+        storage_manifest_final_artifact_count_bucket:
+          storageManifestCountBucket(args.entries.writebackEntries.length),
+      };
     },
   );
 }

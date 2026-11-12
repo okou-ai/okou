@@ -99,6 +99,7 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
+import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
@@ -159,6 +160,7 @@ const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
+  readonly networkIntent?: CustomConnectorNetworkIntent;
   readonly encryptedSecrets: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
@@ -4372,8 +4374,9 @@ export const admitPreparedFirewallAuthResponse$ = command(
     },
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
-    if (args.response.status !== 200) {
-      return args.response;
+    const response = args.response;
+    if (response.status !== 200) {
+      return response;
     }
     const db = set(writeDb$);
     const startedAt = performance.now();
@@ -4382,7 +4385,9 @@ export const admitPreparedFirewallAuthResponse$ = command(
       // The final owner/status check keeps its existing row-lock ordering. A
       // single statement needs no larger application transaction boundary.
       const [run] = await db
-        .select({ status: agentRuns.status })
+        .select({
+          status: agentRuns.status,
+        })
         .from(agentRuns)
         .where(
           and(
@@ -4395,7 +4400,10 @@ export const admitPreparedFirewallAuthResponse$ = command(
         .limit(1);
       signal.throwIfAborted();
       success = run !== undefined && firewallAuthRunIsActive(run.status);
-      return success ? args.response : forbiddenTerminalRun();
+      if (!run || !success) {
+        return forbiddenTerminalRun();
+      }
+      return response;
     })().finally(() => {
       recordFirewallAuthTimings(args.auth.runId, [
         {
@@ -5129,6 +5137,7 @@ const prepareCurrentCustomConnectorFirewallAuth$ = command(
       userId: args.auth.userId,
       customConnectorId: args.customConnectorId,
       sourceId: args.sourceId,
+      networkIntent: args.body.networkIntent,
     });
     if (authRefsResolution.kind === "unavailable") {
       return { ok: false, response: connectorNotConfigured() };

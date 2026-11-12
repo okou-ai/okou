@@ -65,6 +65,7 @@ import { ThumbnailPlaceholder, UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
 import { SidebarSubscriptionUsage } from "./sidebar-subscription-entry.tsx";
+import { AccountHelpMenu } from "./account-help-menu.tsx";
 import { SubscriptionLinkingMenuItem } from "./subscription-linking.tsx";
 import { subscriptionLinkingEnabled$ } from "../../signals/okou-page/subscription-linking.ts";
 import { refreshThirdPartySubscriptionsIfStale$ } from "../../signals/external/third-party-subscriptions.ts";
@@ -749,10 +750,13 @@ export function AccountDropdown({
   onAccountAction,
   hidePreferences = false,
   showSubscriptionEntry = false,
+  showKeyboardShortcuts = false,
 }: {
   onAccountAction?: (action: AccountAction) => void;
   hidePreferences?: boolean;
   showSubscriptionEntry?: boolean;
+  /** Only surfaces that mount the shortcut help dialog list it under Help. */
+  showKeyboardShortcuts?: boolean;
 }) {
   const profile = useAccountProfile();
   const linkingEnabled = useGet(subscriptionLinkingEnabled$);
@@ -862,6 +866,7 @@ export function AccountDropdown({
             onAddAccount={handleAddAccount}
           />
           <ExtraAccountActions />
+          <AccountHelpMenu showKeyboardShortcuts={showKeyboardShortcuts} />
           <DropdownMenuSeparator />
           <SignOutItem onAccountAction={handleAccountAction} />
         </DropdownMenuContent>

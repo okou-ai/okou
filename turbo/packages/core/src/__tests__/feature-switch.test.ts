@@ -17,7 +17,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
-    expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
 });
 
@@ -26,6 +25,8 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.SingleAgent,
     FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
+    FeatureSwitchKey.SshChatApproval,
+    FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewToolbar,
     FeatureSwitchKey.UserNotifications,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
@@ -116,40 +117,6 @@ describe("isFeatureEnabled", () => {
         getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
       ).toBe(false);
     }
-  });
-
-  it("enables Browser native input for staff and honors overrides", () => {
-    const external = { orgId: "org_nonexistent" };
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {})).toBe(
-      false,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, external),
-    ).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, staff)).toBe(
-      true,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {
-        ...staff,
-        overrides: { [FeatureSwitchKey.BrowserNativeInput]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {
-        ...external,
-        overrides: { [FeatureSwitchKey.BrowserNativeInput]: true },
-      }),
-    ).toBe(true);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.BrowserNativeInput],
-    ).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Create native web forms that apply user-provided values to exact managed Browser controls",
-      rolloutStage: "beta",
-    });
   });
 
   it("should return true for globally enabled switch", () => {
