@@ -160,6 +160,9 @@ impl DispatchIntake {
                 }
                 _ => return Disposition::Unknown,
             };
+        let mut context = Some(context);
+        let mut permit = Some(permit);
+        let mut to_submit = None;
         let receiver = {
             let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
             // A concurrent request may have installed its record during decoding.
@@ -174,21 +177,26 @@ impl DispatchIntake {
                     return Disposition::Rejected;
                 }
                 let (verdict, receiver) = watch::channel(Disposition::Pending);
-                let mut work = DispatchWork {
-                    context: Some(context),
+                to_submit = Some(DispatchWork {
+                    context: context.take(),
                     profile: envelope.profile,
                     deadline,
-                    permit: Some(permit),
+                    permit: permit.take(),
                     verdict: verdict.clone(),
-                };
+                });
                 records.insert(run_id, Record { digest, verdict });
-                if let Err(error) = self.sender.try_send(work) {
-                    work = error.into_inner();
-                    work.settle(Disposition::Rejected);
-                }
                 receiver
             }
         };
+        // A raced duplicate decoded before seeing the installed record. Release
+        // its unused context/slot before observing the original admission.
+        drop((context, permit));
+        // Queueing and failed-send payload destruction do not hold the custody lock.
+        if let Some(work) = to_submit
+            && let Err(error) = self.sender.try_send(work)
+        {
+            error.into_inner().settle(Disposition::Rejected);
+        }
         observe(receiver).await
     }
 }
