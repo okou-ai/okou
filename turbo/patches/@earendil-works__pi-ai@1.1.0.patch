@@ -38,10 +38,10 @@ index 6ee63ec3201e788c1843bb077ae263f91fc671ca..37f3a85837e9825ff405288424ebc871
                  throw new Error(`No API key for provider: ${model.provider}`);
              }
 -            const accountId = extractAccountId(apiKey);
-+            // Preserve existing JWT callers while VM0 adopts the explicit binding.
-+            // Remove after #31373 records the two-hour Runner/Sandbox drain and
-+            // confirms every supported caller supplies accountId.
-+            const accountId = options?.accountId?.trim() || extractAccountId(apiKey);
++            const accountId = options?.accountId?.trim();
++            if (!accountId) {
++                throw new Error("OpenAI Codex Responses requires an explicit accountId");
++            }
              const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
