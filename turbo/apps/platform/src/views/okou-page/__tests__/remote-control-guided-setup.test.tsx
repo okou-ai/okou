@@ -197,7 +197,10 @@ test.each([
     }
     await page("/connectors?scope=connected");
     click(screen.getByTestId("connectors-scope-remote-control"));
-    await screen.findByText("Loading…");
+    const loading = await screen.findByRole("status", {
+      name: "Remote connections",
+    });
+    expect(loading).toHaveTextContent("Loading…");
     expect(queryAction("button", "Add connection")).toBeNull();
     expect(screen.queryByText("No devices added yet")).toBeNull();
     release.resolve();
