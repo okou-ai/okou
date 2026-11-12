@@ -28,9 +28,7 @@ export function buildComposerAdditionalInfo(
       ? [
           "# Visualization",
           "The user wants a visualized result for this run.",
-          visualization.output
-            ? `- Preferred output format: ${visualization.output}`
-            : "",
+          `- Preferred output format: ${visualization.output ?? "report"}`,
           visualization.charts.length > 0
             ? `- Preferred chart types: ${visualization.charts.join(", ")}`
             : "",
