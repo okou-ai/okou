@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.38.0](https://github.com/okou-ai/okou/compare/ios-v0.37.0...ios-v0.38.0) (2026-11-12)
+
+
+### Features
+
+* **ios:** customize the keyboard return key ([#46861](https://github.com/okou-ai/okou/issues/46861)) ([8cce055](https://github.com/okou-ai/okou/commit/8cce0558e2ce00ecc65726657f6e7b588fbe1b5a))
+
+
+### Bug Fixes
+
+* **ios:** await lifecycle teardown before fixture cleanup ([#46885](https://github.com/okou-ai/okou/issues/46885)) ([922b708](https://github.com/okou-ai/okou/commit/922b7086785eddf0a56bde04d7a0a4b982f831ad))
+* **ios:** cancel photokit reads and clean up photo imports ([#46883](https://github.com/okou-ai/okou/issues/46883)) ([e0c42d1](https://github.com/okou-ai/okou/commit/e0c42d1f6440df8eba6433d04d9191790f2eaebc))
+
 ## [0.37.0](https://github.com/okou-ai/okou/compare/ios-v0.36.7...ios-v0.37.0) (2026-11-12)
 
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.25.0](https://github.com/okou-ai/okou/compare/cli-v10.24.0...cli-v10.25.0) (2026-11-12)
+
+
+### Features
+
+* **browser:** graduate shared browser and remove rollout switch ([#46833](https://github.com/okou-ai/okou/issues/46833)) ([e50e38e](https://github.com/okou-ai/okou/commit/e50e38e284b2e310198bf8f96cc0c44cd3752001))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.56.0
+    * @okouai/core bumped to 8.834.0
+    * @okouai/pi-agent-runtime bumped to 1.51.111
+
 ## [10.24.0](https://github.com/okou-ai/okou/compare/cli-v10.23.0...cli-v10.24.0) (2026-11-12)
 
 
