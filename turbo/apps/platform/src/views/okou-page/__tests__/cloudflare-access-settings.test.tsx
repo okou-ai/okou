@@ -403,6 +403,12 @@ test("Reviewed shared deletion rejects a changed host set and protects member id
 test.each([
   {
     status: 409,
+    code: "CLOUDFLARE_ACCESS_IN_USE",
+    message:
+      "This Cloudflare Access is still in use. Unbind or rebind its dependent hosts and custom connectors first.",
+  },
+  {
+    status: 409,
     code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
     message:
       "The network or its linked connections changed. Your draft is kept. Reopen the network and review the latest settings before changing who can use it.",
@@ -414,7 +420,7 @@ test.each([
       "We could not confirm the change. The saved settings have not been verified.",
   },
 ] as const)(
-  "A restriction with status $status preserves its draft and protects provider details",
+  "A restriction rejected with $code preserves its draft and protects provider details",
   async ({ status, code, message }) => {
     const submitted: unknown[] = [];
     context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
