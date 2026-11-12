@@ -2,8 +2,11 @@ package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -18,11 +21,20 @@ import okio.GzipSource
 import okio.buffer
 
 internal const val MAX_API_RESPONSE_BYTES = 1024L * 1024L
+internal val DEFAULT_CALL_TIMEOUT = 30.seconds
 
 internal class ResponseLimitExceeded : IOException("Response exceeds the supported size")
 
 internal class HttpRejection(val status: Int, val retryAfter: String?, val envelope: String?) :
     IOException("HTTP $status")
+
+internal fun IOException.httpRejection(): HttpRejection? =
+    when (this) {
+        is HttpRejection -> this
+        // OkHttp wraps an interceptor failure when the whole-call deadline expires.
+        is InterruptedIOException -> cause as? HttpRejection
+        else -> null
+    }
 
 internal fun validateTransportUrl(url: HttpUrl) {
     require(url.username.isEmpty() && url.password.isEmpty()) { "URL credentials are not allowed" }
@@ -33,14 +45,17 @@ internal fun validateTransportUrl(url: HttpUrl) {
     }
 }
 
-internal fun httpClient(): OkHttpClient.Builder =
-    OkHttpClient.Builder()
+internal fun httpClient(callTimeout: Duration = DEFAULT_CALL_TIMEOUT): OkHttpClient.Builder {
+    require(callTimeout.isFinite() && callTimeout.inWholeMilliseconds > 0) {
+        "The HTTP call timeout must be finite and at least one millisecond"
+    }
+    return OkHttpClient.Builder()
         .cookieJar(CookieJar.NO_COOKIES)
         .cache(null)
         .followRedirects(false)
         .followSslRedirects(false)
         .retryOnConnectionFailure(false)
-        .callTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(callTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
         .addNetworkInterceptor { chain ->
             val response = chain.proceed(chain.request())
             if (!response.isSuccessful) {
@@ -58,6 +73,7 @@ internal fun httpClient(): OkHttpClient.Builder =
             }
             response
         }
+}
 
 private fun Response.errorBody(): ResponseBody {
     val original = checkNotNull(body)

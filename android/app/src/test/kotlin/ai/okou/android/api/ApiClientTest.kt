@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.OrganizationRole
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -191,6 +192,39 @@ class ApiClientTest {
                 request.cancelAndJoin()
                 assertTrue(request.isCancelled)
                 assertEquals(0, server.requestCount)
+            }
+    }
+
+    @Test
+    fun callDeadlinePreservesReceivedHttpStatusAndRetainsRequiredUpdate() = runTest {
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest) =
+                    MockResponse()
+                        .setResponseCode(if (request.path == "/api/org") 426 else 503)
+                        .setBody("")
+                        // Headers are complete, but the peer never finishes its error body.
+                        .setHeader("Content-Length", "8")
+                        .setHeader("Retry-After", "0")
+            }
+        ApiClient(
+                server.url("/"),
+                WorkspaceTokenProvider { "workspace-token" },
+                version = "0.1.0",
+                callTimeout = 5.seconds,
+            )
+            .use { api ->
+                SignedTransferClient(callTimeout = 5.seconds).use { transfers ->
+                    val update = async { failure<ApiFailure.UpdateRequired> { api.organization() } }
+                    val transfer = async {
+                        failure<ApiFailure.Http> { transfers.download(server.url("/signed"), 32) }
+                    }
+                    assertNull(update.await().requirement.minimumSupportedVersion)
+                    assertEquals(RequiredUpdate(null), api.updateRequired.value)
+                    assertEquals(503, transfer.await().status)
+                    failure<ApiFailure.UpdateRequired> { api.preferences() }
+                    assertEquals(2, server.requestCount)
+                }
             }
     }
 

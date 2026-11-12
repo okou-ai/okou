@@ -15,6 +15,7 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -62,6 +63,7 @@ class ApiClient(
     private val tokens: WorkspaceTokenProvider,
     version: String = BuildConfig.VERSION_NAME,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
 ) : Closeable {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -84,7 +86,7 @@ class ApiClient(
             "Client version must be stable x.y.z"
         }
         http =
-            httpClient()
+            httpClient(callTimeout)
                 .addInterceptor { chain ->
                     val request = chain.request()
                     check(
@@ -150,33 +152,35 @@ class ApiClient(
                 currentCoroutineContext().ensureActive()
                 checkAccess()
                 response.body() ?: throw ApiFailure.IncompatibleResponse()
-            } catch (error: HttpRejection) {
-                currentCoroutineContext().ensureActive()
-                if (error.status == 426) {
-                    val envelope = errorEnvelope<AndroidUpgradeRequired>(error.envelope)
-                    val minimum =
-                        envelope?.minimumSupportedVersion?.takeIf {
-                            Regex("\\d+\\.\\d+\\.\\d+").matches(it)
-                        }
-                    required.compareAndSet(null, RequiredUpdate(minimum))
-                    throw ApiFailure.UpdateRequired(checkNotNull(required.value))
-                }
-                val envelope = errorEnvelope<ApiError>(error.envelope)
-                throw ApiFailure.Http(
-                    error.status,
-                    envelope?.error?.code,
-                    envelope?.error?.message,
-                    retryAfter(error.retryAfter),
-                )
             } catch (_: SerializationException) {
                 // Serializer diagnostics can contain response values or input snippets.
                 throw ApiFailure.IncompatibleResponse()
             } catch (error: IOException) {
                 currentCoroutineContext().ensureActive()
+                error.httpRejection()?.let { reject(it) }
                 if (error is ResponseLimitExceeded) throw ApiFailure.IncompatibleResponse(error)
                 throw ApiFailure.Network(error)
             }
         }
+
+    private fun reject(error: HttpRejection): Nothing {
+        if (error.status == 426) {
+            val envelope = errorEnvelope<AndroidUpgradeRequired>(error.envelope)
+            val minimum =
+                envelope?.minimumSupportedVersion?.takeIf {
+                    Regex("\\d+\\.\\d+\\.\\d+").matches(it)
+                }
+            required.compareAndSet(null, RequiredUpdate(minimum))
+            throw ApiFailure.UpdateRequired(checkNotNull(required.value))
+        }
+        val envelope = errorEnvelope<ApiError>(error.envelope)
+        throw ApiFailure.Http(
+            error.status,
+            envelope?.error?.code,
+            envelope?.error?.message,
+            retryAfter(error.retryAfter),
+        )
+    }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) http.closeTransport()

@@ -256,6 +256,11 @@ Zod's complete validation runtime. Decode failures expose a typed incompatible
 response error without serializer messages/input snippets that could disclose
 response data through exception reporting.
 
+Both clients accept a finite `callTimeout` for the owner's HTTP budget, with a
+30-second default. A deadline while consuming an incomplete error body preserves
+the already received HTTP status, including the blocking 426 state; the absent
+envelope metadata remains unknown. Coroutine cancellation still propagates.
+
 HTTP 426 retains a read-only `updateRequired` state and blocks further calls
 from that client; a malformed envelope keeps the minimum version unknown.
 The real authenticated root must observe this state and present its native

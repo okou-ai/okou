@@ -1,7 +1,9 @@
 package ai.okou.android.api
 
 import java.io.Closeable
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -12,9 +14,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Signed assets/storage have no access to API tokens, cookies or client identity. */
-class SignedTransferClient(private val dispatcher: CoroutineDispatcher = Dispatchers.IO) :
-    Closeable {
-    private val http = httpClient().build()
+class SignedTransferClient(
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
+) : Closeable {
+    private val http = httpClient(callTimeout).build()
     private val closed = AtomicBoolean(false)
 
     suspend fun download(url: HttpUrl, maximumBytes: Long): ByteArray =
@@ -48,9 +52,10 @@ class SignedTransferClient(private val dispatcher: CoroutineDispatcher = Dispatc
         currentCoroutineContext().ensureActive()
         return try {
             http.newCall(request).awaitBytes(maximumBytes)
-        } catch (error: HttpRejection) {
+        } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
-            throw ApiFailure.Http(error.status, null, null, null)
+            error.httpRejection()?.let { throw ApiFailure.Http(it.status, null, null, null) }
+            throw error
         }
     }
 
