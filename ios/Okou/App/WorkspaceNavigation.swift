@@ -56,14 +56,11 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
       navigation.loadViewIfNeeded()
-      // Hidden bars need this opt-in; UIKit still owns recognition and the interactive pop.
+      // Keep native return gestures available while the navigation bar is hidden.
       navigation.interactivePopGestureRecognizer?.delegate = nil
       navigation.interactiveContentPopGestureRecognizer?.delegate = nil
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
-      let forward = UISwipeGestureRecognizer(target: self, action: #selector(returnToChat))
-      forward.direction = .left
-      list.view.addGestureRecognizer(forward)
     }
 
     private func applySelection() {
@@ -77,12 +74,6 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       } else {
         navigation.pushViewController(chat, animated: true)
       }
-    }
-
-    @objc private func returnToChat() {
-      requestedSidebarOpen = false
-      sidebar.setOpen(false)
-      applySelection()
     }
 
     func navigationController(

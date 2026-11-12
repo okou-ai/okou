@@ -310,14 +310,13 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   group); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
-- **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
-  left swipe anywhere in the sidebar closes it, as does its back button; a swipe is never
-  the only way back. Content that scrolls
+- **Native return gestures open the sidebar.** A right swipe in a chat opens the sidebar.
+  The sidebar's back button and chat selection request native pushes to the chat;
+  a swipe is never the only way back. Content that scrolls
   sideways (a code block or a table) participates in UIKit's native gesture arbitration.
-  UIKit owns the interactive pop and its recognition policy; the list’s left
-  swipe requests a native push rather than driving a custom transition.
+  UIKit owns the interactive pop and its recognition policy.
   A page swipe never also taps the row under it. Chat rows keep their actions on the
-  right swipe — Mark as read/unread, Archive — so they never compete with closing.
+  right swipe — Mark as read/unread, Archive.
 - **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
   appearances and say what kind of change it is: `neutral` (brand dark grey) for moving a
   chat, `readState` (the unread dot's sky blue) for read state. Never amber or the warning
@@ -509,8 +508,8 @@ single floating line, and colour is a small accent for status only.
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
   as iOS groups related bar buttons. The menu is an icon on the default Chats and names any
-  other filter ("Unread"), so a filtered list never reads as missing chats. A left swipe and
-  VoiceOver's escape gesture return to the chat too. The switcher is the workspace's
+  other filter ("Unread"), so a filtered list never reads as missing chats.
+  VoiceOver's escape gesture also returns to the chat. The switcher is the workspace's
   logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
   `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
   name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's
