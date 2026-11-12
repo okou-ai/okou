@@ -289,6 +289,55 @@ final class ConversationActivitySummaryTests: XCTestCase {
     XCTAssertNil(workspace.conversation(for: ActivityScenario.thread))
   }
 
+  func testReleasingOwnerRetiresEscapedResourcesAndCancelsOriginalHTTP() async throws {
+    for pending in [false, true] {
+      let scenario = ActivityScenario()
+      let clock = ActivityClock()
+      let release = ActivityClock()
+      let started = XCTestExpectation(description: "The original summary HTTP started")
+      let cancelled = XCTestExpectation(description: "Owner release cancelled the original HTTP")
+      if pending {
+        scenario.state.hold.withLock {
+          $0 = {
+            started.fulfill()
+            do { try await release.sleep(.seconds(1)) } catch { cancelled.fulfill() }
+          }
+        }
+      }
+      var summary: ConversationActivitySummary? = scenario.summary(clock: clock)
+      weak var owner = summary
+      let store = try XCTUnwrap(summary?.stateStore)
+      let resource = try XCTUnwrap(summary?.value)
+      summary?.demand(ActivityScenario.run)
+      let original = try store.get(resource)
+      defer {
+        owner?.close()
+        original.cancel()
+      }
+      if pending {
+        await fulfillment(of: [started], timeout: 3)
+        try await waitForSleep(release, .seconds(1))
+      } else {
+        let result = try await original.value
+        XCTAssertEqual(result?.summary.status, .available)
+      }
+      summary = nil
+      guard owner == nil else {
+        XCTFail("A resource read must not retain its owner")
+        continue
+      }
+      // A retained Store cannot expose a completed phase or start I/O after its owner ends.
+      XCTAssertThrowsError(try store.get(resource))
+      if pending {
+        await fulfillment(of: [cancelled], timeout: 3)
+        guard case .failure = await original.result else {
+          return XCTFail("Owner release must cancel the original HTTP Task")
+        }
+      }
+      try await waitForNoSleep(clock)
+    }
+  }
+
   func testWorkspaceSelectionForegroundAndCloseOwnTheDemand() async throws {
     let scenario = ActivityScenario()
     let workspace = scenario.workspace()
@@ -438,6 +487,12 @@ private final class ActivityScenario: Sendable {
 
   @MainActor func workspace() -> WorkspaceStore {
     WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+  }
+
+  @MainActor func summary(clock: ActivityClock) -> ConversationActivitySummary {
+    ConversationActivitySummary(
+      sync: ChatSync(client: fixture.client), threadID: Self.thread, didRequireUpgrade: { _ in },
+      sleep: { try await clock.sleep($0) })
   }
 
   @MainActor func conversation(

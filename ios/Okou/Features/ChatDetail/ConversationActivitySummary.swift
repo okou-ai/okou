@@ -135,9 +135,9 @@ final class ConversationActivitySummary {
   }
 
   func close() {
+    stopWork()
     guard !closed else { return }
     closed = true
-    stopWork()
     do { try stateStore.set(retire) } catch {
       preconditionFailure("Cannot retire the local activity resource: \(error)")
     }
@@ -234,5 +234,9 @@ final class ConversationActivitySummary {
     current?.cancel()
     publication?.cancel()
     rotation?.cancel()
+    do {
+      try subscription?.cancel()
+      try stateStore.set(retire)
+    } catch { preconditionFailure("Cannot retire the activity summary: \(error)") }
   }
 }
