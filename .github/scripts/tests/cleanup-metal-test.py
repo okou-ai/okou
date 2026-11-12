@@ -322,7 +322,6 @@ class CleanupTests(unittest.TestCase):
             run_pages={
                 "queued": [
                     [{"total_count": 1, "workflow_runs": []}],
-                    [{"total_count": 0, "workflow_runs": []}],
                 ]
             }
         )
@@ -486,14 +485,13 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(config.exists())
         self.assertIn('"deferred_owner": 1', result.stdout)
 
-    def test_short_owner_scan_recovers_and_preserves_cleanup_outcomes(self):
+    def test_persistent_count_drift_preserves_cleanup_outcomes(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
         unrelated = {**self.owner(99), "status": "queued"}
         self.github(
             run_pages={
                 "queued": [
                     [{"total_count": 2, "workflow_runs": [unrelated]}],
-                    [{"total_count": 1, "workflow_runs": [unrelated]}],
                 ]
             }
         )
@@ -512,69 +510,151 @@ class CleanupTests(unittest.TestCase):
     def test_disappeared_run_is_rechecked_before_cleanup(self):
         unrelated = {**self.owner(99), "id": 20}
         complete = [{"total_count": 1, "workflow_runs": [unrelated]}]
-        empty = [{"total_count": 0, "workflow_runs": []}]
-        short = [{"total_count": 3, "workflow_runs": [self.owner(), unrelated]}]
-        for status in ("queued", "completed", None):
+        initial = [{"total_count": 2, "workflow_runs": [self.owner(), unrelated]}]
+        for status in ("queued", "completed", None, "unknown", "wrong_identity"):
             with self.subTest(status=status):
                 config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
                 refreshed = {**self.owner(), "status": status}
+                if status == "wrong_identity":
+                    refreshed.update(id=11, status="queued")
                 self.github(
-                    run_pages={
-                        "queued": [
-                            empty,
-                            empty,
-                            [{"total_count": 1, "workflow_runs": [refreshed]}]
-                            if status == "queued"
-                            else empty,
-                        ],
-                        "in_progress": [complete, short, complete],
-                    },
+                    run_pages={"in_progress": [initial, complete]},
                     run_details={"10": refreshed} if status else {},
                 )
                 result = self.controller()
-                self.assertEqual(result.returncode, int(status is None), result.stderr)
+                self.assertEqual(
+                    result.returncode,
+                    int(status not in {"queued", "completed"}),
+                    result.stderr,
+                )
                 self.assertEqual(config.exists(), status != "completed")
                 outcome = {
                     "queued": "deferred_owner",
                     "completed": "cleaned",
                     None: "unverified",
+                    "unknown": "unverified",
+                    "wrong_identity": "unverified",
                 }[status]
                 self.assertIn(f'"{outcome}": 1', result.stdout)
 
-    def test_short_owner_retry_must_prove_distinct_id_coverage(self):
-        first = {**self.owner(99), "status": "queued"}
-        second = {**first, "id": 20}
-        for reported in (2, 1000):
+    def test_duplicate_pages_with_count_drift_resolve_distinct_owners(self):
+        for number in (99, 42):
+            with self.subTest(number=number):
+                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+                owner = {**self.owner(number), "status": "queued"}
+                self.github(
+                    run_pages={
+                        "queued": [
+                            [
+                                {"total_count": 3, "workflow_runs": [owner]},
+                                {"total_count": 3, "workflow_runs": [owner]},
+                            ],
+                        ]
+                    },
+                )
+                result = self.controller()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(config.exists(), number == 42)
+                decision = next(
+                    json.loads(line)
+                    for line in result.stdout.splitlines()
+                    if line.startswith('{"pr":42,')
+                )
+                if number == 42:
+                    self.assertEqual(decision["outcome"], "deferred_owner")
+                    self.assertEqual(decision["runs"], [10])
+                else:
+                    self.assertEqual(decision["outcome"], "cleaned")
+
+    def test_repeatedly_missing_owner_is_retained_across_changing_sweeps(self):
+        configs = [
+            self.resource(f"var/lib/vm0-runner/stripe/pr-{number}/config")
+            for number in (42, 43)
+        ]
+        first = self.owner()
+        second = {**self.owner(43), "id": 20}
+        self.github(
+            run_pages={
+                "in_progress": [
+                    [{"total_count": 1, "workflow_runs": [first]}],
+                    [{"total_count": 1, "workflow_runs": [second]}],
+                ]
+            },
+            run_details={"10": {**first, "status": "queued"}},
+        )
+        result = self.controller()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(config.exists() for config in configs))
+        records = [
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.startswith('{"pr":')
+        ]
+        decisions = {record["pr"]: record for record in records}
+        self.assertEqual(decisions[42]["outcome"], "deferred_owner")
+        self.assertEqual(decisions[42]["runs"], [10])
+        self.assertEqual(decisions[43]["outcome"], "deferred_owner")
+        self.assertEqual(decisions[43]["runs"], [20])
+
+    def test_selected_owner_churn_is_bounded_and_retains_resources(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        runs = [{**self.owner(), "id": run_id} for run_id in (10, 20, 30, 40)]
+        self.github(
+            run_pages={
+                "in_progress": [
+                    [{"total_count": 1, "workflow_runs": [run]}] for run in runs
+                ]
+            },
+            run_details={
+                str(run["id"]): {**run, "status": "completed"} for run in runs
+            },
+        )
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
+        self.assertIn("selected owner discovery did not stabilize", result.stdout)
+
+    def test_search_cap_on_later_sweep_retains_resources(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        self.github(
+            run_pages={
+                "queued": [
+                    [{"total_count": 0, "workflow_runs": []}],
+                    [{"total_count": 1000, "workflow_runs": []}],
+                ]
+            }
+        )
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
+
+    def test_capped_owner_search_retains_unlisted_owner_resources(self):
+        newest = [
+            {**self.owner(number=100 + index), "id": 2000 - index}
+            for index in range(1000)
+        ]
+        for reported in (999, 1001):
             with self.subTest(reported=reported):
                 config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
                 self.github(
                     run_pages={
-                        "queued": [
-                            [{"total_count": 2, "workflow_runs": [first]}],
+                        "in_progress": [
                             [
-                                {"total_count": reported, "workflow_runs": [second]},
-                                {"total_count": reported, "workflow_runs": [second]},
-                            ],
+                                {
+                                    "total_count": reported,
+                                    "workflow_runs": newest[offset : offset + 100],
+                                }
+                                for offset in range(0, 1000, 100)
+                            ]
                         ]
-                    },
-                    run_details={"10": first},
+                    }
                 )
                 result = self.controller()
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertTrue(config.exists())
                 self.assertIn('"unverified": 1', result.stdout)
-
-    def test_capped_owner_search_retains_unlisted_owner_resources(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        newest = [
-            {**self.owner(number=100 + index), "id": 2000 - index}
-            for index in range(1000)
-        ]
-        self.github(runs=[*newest, self.owner()])
-        result = self.controller()
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertTrue(config.exists())
-        self.assertIn('"unverified": 1', result.stdout)
 
     def test_unrelated_run_churn_does_not_block_selected_namespace(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
