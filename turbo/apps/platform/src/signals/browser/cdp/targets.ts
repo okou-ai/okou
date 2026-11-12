@@ -83,54 +83,52 @@ function createWindowLookup(client: CdpClient) {
 
 function createWindowAssertion(
   native: OkouBrowserClient,
-  scopedWindowId: number | null,
+  windowId: number,
   revision$: State<number>,
   assertNative$: Command<void, [AbortSignal]>,
 ): TargetDirectory["assertWindow$"] {
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(assertNative$, signal);
     const revision = get(revision$);
-    if (scopedWindowId !== null) {
-      const interrupted = createDeferredPromise<never>(
-        { rejection: "owner" },
-        signal,
+    const interrupted = createDeferredPromise<never>(
+      { rejection: "owner" },
+      signal,
+    );
+    using _observer = {
+      [Symbol.dispose]() {
+        if (!interrupted.settled()) {
+          interrupted.reject(
+            new DOMException(
+              "Window verification observer ended.",
+              "AbortError",
+            ),
+          );
+        }
+      },
+    };
+    const [read] = await Promise.allSettled([
+      Promise.race([
+        native.call("getWindow", { windowId }),
+        interrupted.promise,
+      ]),
+    ]);
+    signal.throwIfAborted();
+    if (read.status === "rejected") {
+      throw nativeReadFault(read.reason);
+    }
+    const observation = read.value;
+    set(assertNative$, signal);
+    if (revision !== get(revision$)) {
+      throw new CdpFault(
+        "scope",
+        "Window membership changed during verification.",
       );
-      using _observer = {
-        [Symbol.dispose]() {
-          if (!interrupted.settled()) {
-            interrupted.reject(
-              new DOMException(
-                "Window verification observer ended.",
-                "AbortError",
-              ),
-            );
-          }
-        },
-      };
-      const [read] = await Promise.allSettled([
-        Promise.race([
-          native.call("getWindow", { windowId: scopedWindowId }),
-          interrupted.promise,
-        ]),
-      ]);
-      signal.throwIfAborted();
-      if (read.status === "rejected") {
-        throw nativeReadFault(read.reason);
-      }
-      const observation = read.value;
-      set(assertNative$, signal);
-      if (revision !== get(revision$)) {
-        throw new CdpFault(
-          "scope",
-          "Window membership changed during verification.",
-        );
-      }
-      if (observation.value?.id !== scopedWindowId) {
-        throw new CdpFault(
-          "scope",
-          "The assigned browser window is unavailable.",
-        );
-      }
+    }
+    if (observation.value?.id !== windowId) {
+      throw new CdpFault(
+        "scope",
+        "The assigned browser window is unavailable.",
+      );
     }
   });
 }
@@ -171,13 +169,9 @@ function createTargetResolution(
 /** Native invalidations revoke observations, never replace authoritative CDP IDs. */
 export function createTargetDirectory(
   client: CdpClient,
-  windowId: number | null | undefined,
+  windowId: number,
   native: OkouBrowserClient,
 ): TargetDirectory {
-  const scopedWindowId = windowId ?? null;
-  if (scopedWindowId !== null && !Number.isSafeInteger(scopedWindowId)) {
-    throw new CdpFault("configuration", "windowId must be an integer.");
-  }
   const resources = { native, client };
   const revision$ = state(0);
   const invalidate$ = command(({ set }) => {
@@ -194,7 +188,7 @@ export function createTargetDirectory(
   });
   const assertWindow$ = createWindowAssertion(
     native,
-    scopedWindowId,
+    windowId,
     revision$,
     assertNative$,
   );
@@ -202,9 +196,6 @@ export function createTargetDirectory(
   const contains$ = command(
     async ({ get, set }, targetId: string, signal: AbortSignal) => {
       set(assertNative$, signal);
-      if (scopedWindowId === null) {
-        return true;
-      }
       const revision = get(revision$);
       const result = await set(lookup$, targetId, signal);
       set(assertNative$, signal);
@@ -220,7 +211,7 @@ export function createTargetDirectory(
           "The browser returned invalid window membership.",
         );
       }
-      return result.windowId === scopedWindowId;
+      return result.windowId === windowId;
     },
   );
   const assertMember$ = command(

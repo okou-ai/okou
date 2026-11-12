@@ -28,7 +28,7 @@ export class CreatedTabFault extends CdpFault {
 
 interface CreationOptions {
   readonly native: OkouBrowserClient;
-  readonly windowId: number | null | undefined;
+  readonly windowId: number;
   readonly current$: Computed<boolean>;
 }
 interface CreationResources extends CreationOptions {
@@ -352,13 +352,13 @@ function createNativeCreation(
       signal: AbortSignal,
     ): Promise<string> => {
       const { native, client } = resources;
-      const windowId = resources.windowId ?? null;
+      const windowId = resources.windowId;
       const { check$ } = evidence;
       set(check$, attempt, undefined, signal);
       // Keep a real receipt even when cancellation arrived while native create ran.
       attempt.receipt = (
         await native.call("createTab", {
-          ...(windowId === null ? {} : { windowId }),
+          windowId,
           url: attempt.marker,
         })
       ).value;
@@ -368,7 +368,7 @@ function createNativeCreation(
       if (
         !Number.isSafeInteger(receipt.id) ||
         !Number.isSafeInteger(receipt.windowId) ||
-        (windowId !== null && receipt.windowId !== windowId)
+        receipt.windowId !== windowId
       ) {
         throw new CdpFault("tab", "The native new-tab receipt is invalid.");
       }

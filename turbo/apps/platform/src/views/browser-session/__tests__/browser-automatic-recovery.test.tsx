@@ -99,13 +99,6 @@ function mockViewer(endpointAliases: readonly string[] = []) {
       },
     });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ params, respond }) => {
-    return respond(200, {
-      browser: session(params.threadId),
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
-    });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     return respond(200, { browser: session(params.threadId) });
   });

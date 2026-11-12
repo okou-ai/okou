@@ -140,17 +140,12 @@ function cancelled(): DOMException {
   return new DOMException("The browser recovery was cancelled.", "AbortError");
 }
 
-/** Legacy unscoped connections have no physical binding proof beyond their endpoint. */
 export function sameRecoveryBinding(
   left: BrowserConnection,
   right: BrowserConnection,
 ): boolean {
   return (
-    left.instanceId === right.instanceId &&
-    left.windowId === right.windowId &&
-    (left.instanceId !== null && left.windowId !== null
-      ? true
-      : left.cdpUrl === right.cdpUrl)
+    left.instanceId === right.instanceId && left.windowId === right.windowId
   );
 }
 

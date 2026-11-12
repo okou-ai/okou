@@ -67,6 +67,10 @@ function liveBrowserSession(): BrowserSession {
     proxyCountryCode: null,
     timeoutMinutes: 240,
     screen: { width: 1440, height: 900, resizable: true },
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
     idleExpiresAt: "2026-09-01T12:10:00.000Z",
     suspendedAt: null,
     suspensionReason: null,
@@ -159,16 +163,6 @@ function mockBrowserApi(
         }
       : {}),
     ...(targets ? { targets } : {}),
-  });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    if (!currentSession) {
-      throw new Error("Expected an active browser for viewer connection");
-    }
-    return respond(200, {
-      browser: currentSession,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
-    });
   });
 
   return {

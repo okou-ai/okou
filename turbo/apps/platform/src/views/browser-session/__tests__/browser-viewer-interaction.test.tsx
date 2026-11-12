@@ -24,7 +24,7 @@ const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
 function mockViewer(
-  windowId?: number,
+  windowId = 0,
   unavailableTargets?: readonly string[],
   extensionAvailable = true,
   nativeBase64 = true,
@@ -43,14 +43,10 @@ function mockViewer(
     suspensionReason: null,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
-    ...(windowId === undefined
-      ? {}
-      : {
-          window: {
-            instanceId: "22222222-2222-4222-8222-222222222222",
-            primaryWindowId: windowId,
-          },
-        }),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: windowId,
+    },
   };
   const cdpUrl = "wss://browser.example/interactions";
   const browser = mockBrowserCdp(context, cdpUrl, {
@@ -73,9 +69,6 @@ function mockViewer(
     ],
   });
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
       viewer: {
@@ -91,12 +84,23 @@ function mockViewer(
   return browser;
 }
 
-async function setupViewer(windowId?: number, nativeBase64 = true) {
-  const browser = mockViewer(windowId, undefined, true, nativeBase64);
+async function openViewer() {
   await setupPage({ context, path: `/browsers/${threadId}` });
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+}
+
+async function setupViewer(windowId = 0, nativeBase64 = true) {
+  const browser = mockViewer(windowId, undefined, true, nativeBase64);
+  await openViewer();
+  return browser;
+}
+
+async function setupMultiTabViewer() {
+  const browser = mockViewer();
+  browser.move("other-page", 0);
+  await openViewer();
   return browser;
 }
 
@@ -447,7 +451,7 @@ test("A failed creation in an empty window cannot bind its draft to an arriving 
   expect(address).toHaveValue("https://other.example.com");
 });
 
-test.each([undefined, 0])(
+test.each([0, 1])(
   "New tabs stay blank through creation and can be closed in window %s",
   async (windowId) => {
     const browser = await setupViewer(windowId);
@@ -498,10 +502,10 @@ test.each([undefined, 0])(
       browser.targets.find((target) => {
         return target.targetId === "created-1";
       }),
-    ).toMatchObject({ url: "about:blank", windowId: 0 });
+    ).toMatchObject({ url: "about:blank", windowId });
     expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
     await userEvent.click(screen.getByLabelText("Close New tab"));
-    const successor = windowId === undefined ? "Other" : "Example";
+    const successor = windowId === 0 ? "Example" : "Other";
     await waitFor(() => {
       expect(
         screen.getByLabelText(successor, { selector: '[role="tab"]' }),
@@ -704,7 +708,7 @@ test("Selecting a blank tab covers the previous page before its first image", as
 });
 
 test("Selecting another tab clears a delayed creation's blank presentation", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const created = browser.holdNextNative("createTab");
   click(screen.getByLabelText("New tab", { selector: "button" }));
   await act(async () => {
@@ -878,7 +882,7 @@ test.each([false, true])(
 test.each(["first image", "input initialization"] as const)(
   "Selecting a tab waits for its %s before accepting another browser action",
   async (waitingFor) => {
-    const browser = await setupViewer();
+    const browser = await setupMultiTabViewer();
     const pending =
       waitingFor === "first image"
         ? browser.holdFrames("other-page-session")
@@ -1377,7 +1381,7 @@ test.each(["Runtime.removeBinding", "Target.detachFromTarget"])(
 );
 
 test("Revalidation does not wait for an unacknowledged release before another tab can be used", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
   fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
@@ -2012,7 +2016,7 @@ test("A failed editing-context read clears stale keyboard hints without disablin
 test.each(["success", "failure"])(
   "A retired tab's delayed %s cannot alter the successor editing context",
   async (outcome) => {
-    const browser = await setupViewer();
+    const browser = await setupMultiTabViewer();
     browser.setFocusedEditing({
       x: 40,
       y: 50,
@@ -2260,7 +2264,7 @@ test("Soft-keyboard deletion forwards after committed text without duplicating d
 });
 
 test("Queued soft-keyboard deletion and Enter cannot reach a replacement tab", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
   // A pending native preedit keeps the subsequent commit and deletion queued.
@@ -2547,7 +2551,7 @@ test("Retrying an image waits for both original input and capture cleanup", asyn
 });
 
 test("Closing a tab preserves address focus chosen while the close is pending", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const closed = browser.holdNext("Target.closeTarget");
   await userEvent.click(screen.getByLabelText("Close Other"));
   await closed.received;
@@ -2571,7 +2575,7 @@ test("Closing a tab preserves address focus chosen while the close is pending", 
 test.each(["latest-close", "address-choice"] as const)(
   "An older close failure preserves the %s focus while its selected trigger is disabled",
   async (choice) => {
-    const browser = await setupViewer();
+    const browser = await setupMultiTabViewer();
     browser.failNext("Target.closeTarget", "The first close was refused");
     const older = browser.holdNext("Target.closeTarget");
     await userEvent.click(screen.getByLabelText("Close Example"));
@@ -2618,7 +2622,7 @@ test.each(["latest-close", "address-choice"] as const)(
 );
 
 test("A removed keyboard-focus origin recovers once without reclaiming a later address draft", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   await userEvent.click(
     screen.getByLabelText("Example", { selector: '[role="tab"]' }),
   );
@@ -2653,7 +2657,7 @@ test("A removed keyboard-focus origin recovers once without reclaiming a later a
 });
 
 test("A close receipt returns focus before the successor has a live image", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const image = browser.holdFrames("other-page-session");
   const closed = browser.holdNext("Target.closeTarget");
   await userEvent.click(screen.getByLabelText("Close Example"));
@@ -2689,7 +2693,7 @@ test("A close receipt returns focus before the successor has a live image", asyn
 });
 
 test("Shared tab controls support keyboard selection and address Escape", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   await userEvent.click(
     screen.getByLabelText("Example", { selector: '[role="tab"]' }),
   );
@@ -2729,7 +2733,7 @@ test("A search-like address reports the failed action and retains the remote pag
 
 test("A hidden page pauses input and resumes the selected tab when visible", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   await userEvent.click(
     screen.getByLabelText("Other", { selector: '[role="tab"]' }),
   );
@@ -2801,7 +2805,7 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
 
 test("Rapid visibility changes retain the preview until original capture cleanup and a new image finish", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const stop = browser.holdNext("Page.stopScreencast");
   act(() => {
     visibility.changeTo("hidden");
@@ -3185,7 +3189,7 @@ test("A visibility pause during membership revalidation retains the initialized 
 
 test("A document navigated while hidden is observed before the retained viewer accepts new input", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   act(() => {
     visibility.changeTo("hidden");
   });
@@ -3233,7 +3237,7 @@ test("A document navigated while hidden is observed before the retained viewer a
 
 test("A resumed viewer can pause again while its replacement picture is still pending", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   act(() => {
     visibility.changeTo("hidden");
   });
@@ -3416,7 +3420,7 @@ test("A visibility pause discards an unfinished composition before fresh text is
 
 test("An old image cleanup cannot replace a newly selected tab", async () => {
   browserRecoveryClock(context.signal);
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const stop = browser.holdNext("Page.stopScreencast");
   act(() => {
     browser.frame("!");
@@ -3458,7 +3462,7 @@ test.each(["queued", "reading"])(
         throw result.reason;
       }
     });
-    const browser = await setupViewer();
+    const browser = await setupMultiTabViewer();
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
     const pending = browser.holdNext(
@@ -3511,7 +3515,7 @@ test.each(["queued", "reading"])(
 );
 
 test("A late modifier cleanup stays on its original tab while the successor keeps editing", async () => {
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const original = screen.getByLabelText("Remote browser input");
   await userEvent.click(original);
   fireEvent.keyDown(original, { key: "Shift", code: "ShiftLeft" });
@@ -3569,7 +3573,7 @@ test.each([
   async ({ phase, secondaryFailure }) => {
     const sentry = context.mocks.sentry();
     initSentry();
-    const browser = await setupViewer();
+    const browser = await setupMultiTabViewer();
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
     fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
@@ -3674,7 +3678,7 @@ test.each([
 async function revisitAfterUnsupportedIme(mixed: boolean) {
   const sentry = context.mocks.sentry();
   initSentry();
-  const browser = await setupViewer();
+  const browser = await setupMultiTabViewer();
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
   fireEvent.compositionStart(input);
@@ -4828,6 +4832,7 @@ test("A retired background membership failure cannot revoke the usable selected 
 
 test("A held initial inventory cannot resurrect a target destroyed before its reply", async () => {
   const browser = mockViewer();
+  browser.move("other-page", 0);
   const inventory = browser.holdNext("Target.getTargets");
   await setupPage({ context, path: `/browsers/${threadId}` });
   await inventory.received;
@@ -4857,7 +4862,7 @@ test("The overflow menu keeps hidden tabs reachable through shared controls", as
         : original.call(this);
     },
   );
-  await setupViewer();
+  await setupMultiTabViewer();
   await userEvent.click(screen.getByLabelText("All tabs"));
   const menu = await screen.findByRole("menu");
   const other = queryAllByRoleFast("menuitem", menu).find((item) => {
@@ -4885,7 +4890,7 @@ test("Widening restores a removed focused picker only to the committed selected 
         : original.call(this);
     },
   );
-  await setupViewer();
+  await setupMultiTabViewer();
   const picker = screen.getByLabelText("All tabs");
   await userEvent.click(picker);
   await screen.findByRole("menu");

@@ -64,7 +64,6 @@ function createModelAtoms() {
   const intentState$ = state(initialIntent());
   const inventoryInternal$ = state(initialInventory());
   const imageState$ = state<ImageRecovery | null>(null);
-  const scopedState$ = state(false);
   const loadingPreviewState$ = state(false);
   const faviconState$ = state<
     ReadonlyMap<string, { readonly url: string; readonly failed: boolean }>
@@ -78,7 +77,6 @@ function createModelAtoms() {
     intentState$,
     inventoryInternal$,
     imageState$,
-    scopedState$,
     loadingPreviewState$,
     faviconState$,
     spaceState$,
@@ -208,7 +206,7 @@ function createModelPresentation(
   values: ModelValues,
   creationReadySource$: Computed<boolean>,
 ) {
-  const { loadingPreviewState$, scopedState$ } = atoms;
+  const { loadingPreviewState$ } = atoms;
   const {
     snapshot$,
     empty$,
@@ -238,7 +236,6 @@ function createModelPresentation(
   const controls$ = computed((get) => {
     const snapshot = get(snapshot$);
     const image = get(imageRecovery$);
-    const scoped = get(scopedState$);
     const empty =
       get(empty$) &&
       snapshot.status === "unavailable" &&
@@ -250,8 +247,7 @@ function createModelPresentation(
       !!image && image.phase !== "presented" && snapshot.status !== "paused";
     return {
       streaming,
-      emptyUnscoped: empty && !scoped,
-      emptyScoped: empty && scoped,
+      empty,
       recovery,
       showRecovery: recovery || empty || imageVisible,
       showEmptyCreate: empty,
@@ -513,19 +509,10 @@ function createFaviconActions(atoms: ModelAtoms) {
 }
 
 function createConfigurationActions(atoms: ModelAtoms) {
-  const {
-    spaceState$,
-    scopedState$,
-    captureState$,
-    transportState$,
-    modeState$,
-  } = atoms;
+  const { spaceState$, captureState$, transportState$, modeState$ } = atoms;
   return {
     resizeTabs$: command(({ set }, space: TabSpace) => {
       set(spaceState$, space);
-    }),
-    configure$: command(({ set }, scoped: boolean) => {
-      set(scopedState$, scoped);
     }),
     setCapture$: command(({ set }, value: ViewerCaptureOptions) => {
       set(captureState$, value);

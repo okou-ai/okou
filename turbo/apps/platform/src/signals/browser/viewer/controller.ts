@@ -1451,7 +1451,7 @@ function createDisplayGraph(
     const client = get(clientState$);
     return client
       ? createDisplaySync(client, {
-          windowId: connection.windowId ?? null,
+          windowId: connection.windowId,
           capturePending$,
           refresh$: refreshCapture$,
           settled$: displaySettled$,
@@ -3385,11 +3385,7 @@ function createEventsGraph(
       return;
     }
     const windowId = context.connection.windowId;
-    if (
-      event.kind === "window-removed" &&
-      windowId !== null &&
-      event.windowId === windowId
-    ) {
+    if (event.kind === "window-removed" && event.windowId === windowId) {
       set(
         disconnected$,
         new CdpFault(
@@ -3409,7 +3405,7 @@ function createEventsGraph(
       );
       return;
     }
-    if (!changesMembership(event, windowId ?? undefined)) {
+    if (!changesMembership(event, windowId)) {
       return;
     }
     set(directory.invalidate$);
@@ -3572,15 +3568,11 @@ function createConnectionBootstrap(
   } = context;
   const startDiscovery$ = createInitialDiscovery(context, links$);
   return command(async ({ get, set }, signal: AbortSignal) => {
-    validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
+    validateConfiguration(connection.cdpUrl, connection.windowId);
     const transport = get(model.transport$);
     if (transport !== "shared" && transport !== "split") {
       throw new CdpFault("configuration", "The transport mode is invalid.");
     }
-    set(
-      model.configure$,
-      connection.windowId !== null && connection.windowId !== undefined,
-    );
     // Keep the wire independent of admission/DOM cancellation until releases are written.
     const lifetime = set(resetOwner$);
     const client = createCdpClient(
@@ -4086,15 +4078,12 @@ function createTabClosingGraph(
       };
       // Reserve the replacement before awaiting: other pending closes cannot
       // keep the assigned native window alive once their requests complete.
-      const preserveWindow =
-        context.connection.windowId !== null &&
-        context.connection.windowId !== undefined &&
-        snapshot.inventory.targets.every((target) => {
-          return (
-            get(closingTargets$).has(target.id) ||
-            !set(tabOpening.canKeepWindow$, target.id)
-          );
-        });
+      const preserveWindow = snapshot.inventory.targets.every((target) => {
+        return (
+          get(closingTargets$).has(target.id) ||
+          !set(tabOpening.canKeepWindow$, target.id)
+        );
+      });
       await set(directory.assertMember$, targetId, signal);
       if (preserveWindow) {
         await set(tabOpening.open$, signal);

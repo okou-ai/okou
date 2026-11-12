@@ -66,13 +66,6 @@ function viewer() {
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
-    });
-  });
   const browser = mockBrowserCdp(context, endpoint, {
     targets: [
       {

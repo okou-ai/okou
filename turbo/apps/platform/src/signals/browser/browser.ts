@@ -26,8 +26,8 @@ import type {
 
 export interface BrowserConnection {
   readonly cdpUrl: string;
-  readonly instanceId: string | null;
-  readonly windowId: number | null;
+  readonly instanceId: string;
+  readonly windowId: number;
   readonly extension: {
     readonly id: string;
     readonly runtimeId: string;
@@ -72,8 +72,7 @@ export interface BrowserPresentation {
 
 export interface BrowserControls {
   readonly streaming: boolean;
-  readonly emptyUnscoped: boolean;
-  readonly emptyScoped: boolean;
+  readonly empty: boolean;
   readonly recovery: boolean;
   readonly showRecovery: boolean;
   readonly showEmptyCreate: boolean;

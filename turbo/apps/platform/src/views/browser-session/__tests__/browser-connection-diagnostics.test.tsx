@@ -21,7 +21,6 @@ async function setupViewer(
   autoOpen: boolean,
   options: {
     readonly empty?: boolean;
-    readonly scoped?: boolean;
     readonly configure?: (browser: ReturnType<typeof mockBrowserCdp>) => void;
   } = {},
 ) {
@@ -46,18 +45,11 @@ async function setupViewer(
     suspensionReason: null,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
-    ...(options.scoped
-      ? {
-          window: {
-            instanceId: "22222222-2222-4222-8222-222222222222",
-            primaryWindowId: 0,
-          },
-        }
-      : {}),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
   };
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
@@ -161,7 +153,7 @@ test("Revalidating an opening viewer retains its native startup and keeps cancel
 });
 
 test("A handled background lookup stays quiet while the selected page remains usable", async () => {
-  const { browser, sentry } = await setupViewer(true, { scoped: true });
+  const { browser, sentry } = await setupViewer(true);
   await expectInputReady();
   const lookup = browser.holdNextMembership("created-1");
   act(() => {

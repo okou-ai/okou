@@ -98,6 +98,7 @@ function browserSession(
     proxyCountryCode: null,
     timeoutMinutes: 240,
     screen: { width: 1440, height: 900, resizable: true },
+    window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
     suspensionReason: null,
@@ -890,18 +891,14 @@ test.each(["cdp", "runtime"] as const)(
 );
 
 test.each([
-  { windowId: undefined, liveUrl: "https://viewer.example/live" },
   { windowId: 0, liveUrl: "https://viewer.example/live" },
-  { windowId: undefined, liveUrl: null },
   { windowId: 0, liveUrl: null },
 ])(
   "Revalidating window $windowId with provider URL $liveUrl revokes old input and resumes the native browser",
   async ({ windowId, liveUrl }) => {
     const session = browserSession({
       liveUrl,
-      ...(windowId === undefined
-        ? {}
-        : { window: { instanceId: INSTANCE_ID, primaryWindowId: windowId } }),
+      window: { instanceId: INSTANCE_ID, primaryWindowId: windowId },
     });
     const cdpUrl = "wss://cdp.browser-use.com/revalidated";
     const browser = mockBrowserCdp(context, cdpUrl);
@@ -2036,12 +2033,12 @@ test.each([200, 404, 409] as const)(
   },
 );
 
-test.each(["legacy", "instance", "window"] as const)(
+test.each(["instance", "window"] as const)(
   "A late %s heartbeat after transient recovery preserves the replacement window and continues renewal",
   async (previous) => {
     const failures = recordHeartbeatFailures();
     const { session, cdpUrl } = mockSharedViewer();
-    const initialSession = previous === "legacy" ? browserSession() : session;
+    const initialSession = session;
     let currentSession = initialSession;
     let replacing = false;
     const connectionStarted = context.mocks.deferred<void>();
@@ -2086,10 +2083,7 @@ test.each(["legacy", "instance", "window"] as const)(
           entered.resolve();
           await release.promise;
           return respond(200, {
-            browser: {
-              ...initialSession,
-              liveUrl: previous === "legacy" ? null : initialSession.liveUrl,
-            },
+            browser: initialSession,
           });
         }
         if (!next.settled()) {
@@ -2103,10 +2097,7 @@ test.each(["legacy", "instance", "window"] as const)(
     await expectStreamingViewer();
     await entered.promise;
     currentSession = browserSession({
-      liveUrl:
-        previous === "legacy"
-          ? "https://viewer.example/live?token=shared-replacement"
-          : initialSession.liveUrl,
+      liveUrl: initialSession.liveUrl,
       window: {
         instanceId:
           previous === "instance"

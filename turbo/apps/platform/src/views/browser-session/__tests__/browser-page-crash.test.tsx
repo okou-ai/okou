@@ -55,9 +55,6 @@ function mockViewer(crashed = false) {
     ],
   });
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
       viewer: {

@@ -84,12 +84,9 @@ class WindowStateFault extends CdpFault {
 
 function observeWindow(
   window: Protocol.Browser.GetWindowForTargetResponse,
-  windowId: number | null,
+  windowId: number,
 ): ObservedWindow {
-  if (
-    !Number.isSafeInteger(window.windowId) ||
-    (windowId !== null && window.windowId !== windowId)
-  ) {
+  if (!Number.isSafeInteger(window.windowId) || window.windowId !== windowId) {
     throw new CdpFault("scope", "The page is outside this viewer's window.");
   }
   const windowState: unknown = window.bounds.windowState;
@@ -135,7 +132,7 @@ async function readMetrics(client: CdpClient, sessionId: string) {
 interface PreparationHost {
   readonly client: CdpClient;
   readonly target: DisplayTarget;
-  readonly windowId: number | null;
+  readonly windowId: number;
   readonly current: () => boolean;
   readonly refreshNative$: Command<
     Promise<NativeCapture | null>,
@@ -486,7 +483,7 @@ export function createDisplayPreparation(
   ...[client, target, windowId, current, refreshNative$, ownsTarget$]: [
     client: CdpClient,
     target: DisplayTarget,
-    windowId: number | null,
+    windowId: number,
     current: () => boolean,
     refreshNative$: Command<Promise<NativeCapture | null>, [AbortSignal]>,
     ownsTarget$: Computed<boolean>,

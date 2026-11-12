@@ -1280,7 +1280,7 @@ function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
       ? t(($) => {
           return $.browserViewer.paused;
         })
-      : controls.emptyScoped || controls.emptyUnscoped
+      : controls.empty
         ? t(($) => {
             return $.browserViewer.noTabs;
           })

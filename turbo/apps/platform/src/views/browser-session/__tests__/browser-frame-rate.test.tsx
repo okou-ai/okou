@@ -70,9 +70,6 @@ async function viewer() {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: session, viewer: connection });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, connection);
-  });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });

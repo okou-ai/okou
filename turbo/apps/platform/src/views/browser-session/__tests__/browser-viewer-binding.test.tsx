@@ -44,23 +44,14 @@ function session(instanceId: string, windowId: number): BrowserSession {
 const oldSession = session("22222222-2222-4222-8222-222222222222", 101);
 const replacementSession = session("33333333-3333-4333-8333-333333333333", 202);
 
-function mockSessionReads(
+function mockSessionLease(
   current: () => BrowserSession = () => {
     return oldSession;
   },
 ) {
-  let requests = 0;
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    requests += 1;
-    // A GET that finished before replacement must never supply native authority.
-    return respond(200, { browser: oldSession });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: current() });
   });
-  return () => {
-    return requests;
-  };
 }
 
 function mockReplacement() {
@@ -100,8 +91,25 @@ async function expectReplacement(browser: ReturnType<typeof mockReplacement>) {
   });
 }
 
+test("A viewer without an assigned window cannot expose the shared browser", async () => {
+  const browser = { ...replacementSession, window: undefined };
+  const native = mockReplacement();
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, {
+      browser,
+      viewer: { browser, cdpUrl: endpoint, extension: TEST_BROWSER_EXTENSION },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+
+  await screen.findByText("Browser view unavailable");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  expect(native.connections()).toBe(0);
+});
+
 test("An instance replaced during acquisition uses the viewer response's native window", async () => {
-  mockSessionReads(() => {
+  mockSessionLease(() => {
     return replacementSession;
   });
   const browser = mockReplacement();
@@ -123,7 +131,7 @@ test("An instance replaced during acquisition uses the viewer response's native 
 });
 
 test("Explicit reconnect waits for a fresh binding before admitting a replacement window", async () => {
-  mockSessionReads(() => {
+  mockSessionLease(() => {
     return connection.browser;
   });
   const oldEndpoint = "wss://browser.example/retired";
@@ -174,7 +182,7 @@ test("Explicit reconnect waits for a fresh binding before admitting a replacemen
 test.each(["socket opening", "native attachment"] as const)(
   "Changing connection mode cancels pending %s before reusing the same descriptor",
   async (phase) => {
-    mockSessionReads();
+    mockSessionLease();
     const browser = mockBrowserCdp(context, endpoint, {
       autoOpen: phase !== "socket opening",
       targets: [
@@ -239,7 +247,7 @@ test.each(["socket opening", "native attachment"] as const)(
 
 test("A distinct confirmed replacement streams while old bridge cleanup is unacknowledged", async () => {
   const advanceRecovery = browserRecoveryClock(context.signal);
-  mockSessionReads(() => {
+  mockSessionLease(() => {
     return connection.browser;
   });
   const oldEndpoint = "wss://browser.example/retired";
@@ -283,7 +291,7 @@ test("A distinct confirmed replacement streams while old bridge cleanup is unack
 
 test("A replacement clears a delayed old creation's blank presentation", async () => {
   const advanceRecovery = browserRecoveryClock(context.signal);
-  mockSessionReads(() => {
+  mockSessionLease(() => {
     return connection.browser;
   });
   const oldEndpoint = "wss://browser.example/retired";

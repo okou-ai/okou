@@ -156,14 +156,6 @@ function fixture(
     onOpen?.(body.operationId);
     return respond(200, { browser: session, viewer });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(503, {
-      error: {
-        code: "SERVICE_UNAVAILABLE",
-        message: "The separate viewer lookup is temporarily unavailable",
-      },
-    });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });

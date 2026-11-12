@@ -667,7 +667,6 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
           }
           set(context.addressConnection$, lease.identity.connection);
           set(model.transition$, { type: "reset" });
-          set(model.configure$, lease.identity.connection.windowId !== null);
           set(
             native.bind$,
             nodes.surface.node,

@@ -645,14 +645,21 @@ function createBrowserSessionReadSignals(
   const browserConnection$ = computed(
     async (get): Promise<BrowserConnection | null> => {
       const connection = await get(viewerConnection$);
-      return connection && !isBrowserUnauthorized(connection)
-        ? {
-            cdpUrl: connection.cdpUrl,
-            instanceId: connection.browser.window?.instanceId ?? null,
-            windowId: connection.browser.window?.primaryWindowId ?? null,
-            extension: connection.extension,
-          }
-        : null;
+      if (!connection || isBrowserUnauthorized(connection)) {
+        return null;
+      }
+      const window = connection.browser.window;
+      if (!window) {
+        throw new Error(
+          "Shared Browser connection has no assigned chat window",
+        );
+      }
+      return {
+        cdpUrl: connection.cdpUrl,
+        instanceId: window.instanceId,
+        windowId: window.primaryWindowId,
+        extension: connection.extension,
+      };
     },
   );
   return {
