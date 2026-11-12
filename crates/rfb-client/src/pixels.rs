@@ -4,7 +4,8 @@ use crate::{
 };
 
 pub(crate) const MAX_DIMENSION: u16 = 8192;
-pub(crate) const MAX_PIXELS: usize = 8_388_608;
+// Native 6K, including 6016x3384 Apple displays and portrait orientation.
+pub(crate) const MAX_PIXELS: usize = 6144 * 3456;
 
 pub(crate) fn pixel_count(width: u16, height: u16) -> Result<usize, Error> {
     let pixels = usize::from(width) * usize::from(height);

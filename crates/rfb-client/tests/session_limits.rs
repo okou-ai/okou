@@ -12,7 +12,7 @@ use tokio::{
     time::{Instant, timeout},
 };
 
-const MEMORY_LIMIT: usize = 128 * 1024 * 1024;
+const MEMORY_LIMIT: usize = 256 * 1024 * 1024;
 
 fn noisy_pixels(width: u16, height: u16) -> Vec<u8> {
     let count = usize::from(width) * usize::from(height);
@@ -84,15 +84,15 @@ async fn capture_raw(
 
 #[tokio::test]
 async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
-    let (client, mut peer) = initialized(8192, 1024).await;
+    let (client, mut peer) = initialized(6144, 3456).await;
     let mut session = Session::new(client);
-    let row = [17, 34, 51, 0].repeat(8192);
-    let capture = capture_raw(&mut session, &mut peer, 8192, 1024, &row)
+    let row = [17, 34, 51, 0].repeat(6144);
+    let capture = capture_raw(&mut session, &mut peer, 6144, 3456, &row)
         .await
         .unwrap();
     assert_eq!(
         (capture.metadata().width, capture.metadata().height),
-        (8192, 1024)
+        (6144, 3456)
     );
     let mut reader = png::Decoder::new(Cursor::new(capture.png()))
         .read_info()
@@ -102,14 +102,14 @@ async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
         .frame_control
         .as_ref()
         .map_or(info.size(), |frame| (frame.width, frame.height));
-    assert_eq!(dimensions, (8192, 1024));
+    assert_eq!(dimensions, (6144, 3456));
     assert_eq!(
         reader.output_color_type(),
         (png::ColorType::Rgba, png::BitDepth::Eight)
     );
     let decoded_size = reader.output_buffer_size().unwrap();
-    assert_eq!(decoded_size, 8_388_608 * 4);
-    let expected_row = [17, 34, 51, 255].repeat(8192);
+    assert_eq!(decoded_size, 6144 * 3456 * 4);
+    let expected_row = [17, 34, 51, 255].repeat(6144);
     // Compare every decoded pixel while retaining only the decoder's row buffer.
     let mut decoded_bytes = 0;
     while let Some(row) = reader.next_row().unwrap() {
@@ -138,30 +138,57 @@ async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
 }
 
 #[tokio::test]
-async fn incompressible_capture_exceeding_png_limit_returns_error_and_releases_session() {
+async fn captures_noisy_6k_above_the_old_image_limit_and_releases_storage() {
     // Build the independent input before starting the operation deadline.
-    let pixels = noisy_pixels(8192, 1024);
-    let (client, mut peer) = initialized(8192, 1024).await;
+    let mut pixels = noisy_pixels(6144, 3456);
+    let (client, mut peer) = initialized(6144, 3456).await;
     let mut session = Session::new(client);
-    let result = capture_raw(&mut session, &mut peer, 8192, 1024, &pixels).await;
-    assert!(matches!(error(result), Error::ImageTooLarge));
-    assert!(session.is_closed());
-    assert_eq!(session.memory_usage().0, 0);
+    let capture = capture_raw(&mut session, &mut peer, 6144, 3456, &pixels)
+        .await
+        .unwrap();
+    assert_eq!(
+        (capture.metadata().width, capture.metadata().height),
+        (6144, 3456)
+    );
+    assert!(capture.png().len() > 16 * 1024 * 1024);
+    assert!(capture.png().len() <= 96 * 1024 * 1024);
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel[3] = 255;
+    }
+    let mut reader = png::Decoder::new(Cursor::new(capture.png()))
+        .read_info()
+        .unwrap();
+    let mut rows = pixels.as_chunks::<{ 6144 * 4 }>().0.iter();
+    while let Some(row) = reader.next_row().unwrap() {
+        assert_eq!(row.data(), rows.next().unwrap());
+    }
+    assert!(rows.next().is_none(), "PNG must contain every original row");
     assert!(session.memory_usage().1 <= MEMORY_LIMIT);
+    eprintln!(
+        "noisy 6K PNG: bytes={}, retained={}, peak={}",
+        capture.png().len(),
+        session.memory_usage().0,
+        session.memory_usage().1
+    );
+    drop(reader);
+    session.close();
     disconnected(&mut peer).await;
+    assert!(session.memory_usage().0 >= capture.png().len());
+    drop(capture);
+    assert_eq!(session.memory_usage().0, 0);
 }
 
 #[tokio::test]
 async fn retained_captures_exhaust_the_shared_budget_and_release_it_when_dropped() {
-    // Each capture fits the 16 MiB image bound individually. Retaining their
+    // Each smaller capture is below 16 MiB individually. Retaining their
     // actual noisy PNG buffers, rather than synthetic reservations, eventually
-    // prevents another real capture from fitting the shared 128 MiB budget.
+    // prevents another real capture from fitting the shared 256 MiB budget.
     let pixels = noisy_pixels(2048, 2048);
     let (client, mut peer) = initialized(2048, 2048).await;
     let mut session = Session::new(client);
     let mut captures = Vec::new();
     let mut exhausted = false;
-    for _ in 0..12 {
+    for _ in 0..20 {
         match capture_raw(&mut session, &mut peer, 2048, 2048, &pixels).await {
             Ok(capture) => {
                 assert!(capture.png().len() > 8 * 1024 * 1024);

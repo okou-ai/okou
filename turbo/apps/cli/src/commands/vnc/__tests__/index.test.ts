@@ -37,7 +37,9 @@ vi.mock("node:child_process", async (importOriginal) => {
       expect(args).toEqual(["--stream"]);
       const script = `
         const mode = process.env.VNC_TEST_MODE;
-        const data = Buffer.from(process.env.VNC_TEST_DATA, 'base64');
+        const data = mode === 'large-capture'
+          ? Buffer.alloc(17 * 1024 * 1024, 0xa5)
+          : Buffer.from(process.env.VNC_TEST_DATA, 'base64');
         const sessionId = 'b0000000-0000-4000-8000-000000000001';
         const connectionId = 'a0000000-0000-4000-8000-000000000001';
         const geometryId = 'c0000000-0000-4000-8000-000000000001';
@@ -97,10 +99,12 @@ vi.mock("node:child_process", async (importOriginal) => {
             case 'vnc.input': result = { outcome: 'sent' }; break;
             case 'vnc.capture': {
               const metadata = { kind: 'capture', mimeType: 'image/png', bytes: data.length,
-                width: 1, height: 1, geometry: { sessionId: geometryId, epoch: 7 },
+                width: mode === 'large-capture' ? 6144 : 1,
+                height: mode === 'large-capture' ? 3456 : 1,
+                geometry: { sessionId: geometryId, epoch: 7 },
                 updateSequence: 2, capturedAt: 1700000000000 };
               if (mode === 'byte-count') metadata.bytes += 1;
-              if (mode === 'too-big') metadata.bytes = 16 * 1024 * 1024 + 1;
+              if (mode === 'too-big') metadata.bytes = 96 * 1024 * 1024 + 1;
               if (mode === 'unsafe-epoch') metadata.geometry.epoch = 9007199254740992;
               if (mode !== 'missing-metadata') reply({ type: 'event', data: metadata });
               if (mode === 'duplicate-metadata') reply({ type: 'event', data: metadata });
@@ -754,6 +758,28 @@ describe("VNC sessions and input", () => {
 });
 
 describe("VNC screenshots", () => {
+  it("publishes complete large captures beyond the old image and frame limits", async () => {
+    // The CLI transports opaque image bytes. Codec/pixel correctness is covered
+    // by RFB protocol tests; this external helper supplies >512 binary frames.
+    helper.mode = "large-capture";
+    const path = join(directory, "large.png");
+    const expected = Buffer.alloc(17 * 1024 * 1024, 0xa5);
+    const result = await invoke("screenshot", sessionId, "--output", path);
+    expect(result).toMatchObject({
+      outcome: "captured",
+      bytes: expected.length,
+      width: 6144,
+      height: 3456,
+      geometry,
+      path,
+      sha256: createHash("sha256").update(expected).digest("hex"),
+    });
+    expect(await readFile(path)).toEqual(expected);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await readdir(directory)).toEqual(["large.png"]);
+    expect(process.exitCode).toBe(0);
+  });
+
   it.each([false, true])(
     "publishes verified bytes privately with overwrite=%s",
     async (overwrite) => {

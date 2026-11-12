@@ -5,7 +5,9 @@ use crate::{
     memory::{Budget, Buffer},
 };
 
-const MAX_PNG: usize = 16 * 1024 * 1024;
+// A 6K RGBA image is 81 MiB before filtering/compression overhead. Growth
+// from 64 to 96 MiB still fits beside the framebuffer and encoder state.
+const MAX_PNG: usize = 96 * 1024 * 1024;
 const INITIAL_PNG_CAPACITY: usize = 1024;
 // png's streaming writer retains three <=32KiB rows, an 8KiB IDAT
 // buffer and bounded flate2 compressor state. Reserve conservatively before construction.
