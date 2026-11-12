@@ -61,6 +61,7 @@ import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
+import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
@@ -125,6 +126,8 @@ from logging_utils import (
 _HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_BAD_GATEWAY = 502
 _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
+_MAX_NETWORK_CHALLENGE_HEADER_FIELDS = 2048
+_MAX_NETWORK_CHALLENGE_VALUE_BYTES = 8 * 1024
 # Request-header phase state.
 # Creator: requestheaders() and header-phase stream/auth helpers.
 # Consumer: request() and terminal cleanup.
@@ -2097,6 +2100,23 @@ async def _finish_response_after_terminal_work(
     )
 
 
+def _response_has_application_auth_challenge(response: http.Response) -> bool:
+    values = http_header_syntax.bounded_header_values(
+        response.headers.fields,
+        b"www-authenticate",
+        max_fields=_MAX_NETWORK_CHALLENGE_HEADER_FIELDS,
+        max_value_bytes=_MAX_NETWORK_CHALLENGE_VALUE_BYTES,
+        separator_bytes=2,
+    )
+    if values is None:
+        return False
+    for value in values:
+        challenge = value.split(maxsplit=1)
+        if challenge and challenge[0].lower() in {b"bearer", b"basic"}:
+            return True
+    return False
+
+
 def _finish_response_handling(
     flow: http.HTTPFlow,
     *,
@@ -2150,16 +2170,11 @@ def _finish_response_handling(
     # us the token is no longer valid, overriding whatever the DB believes.
     # request_force_refresh enforces a cooldown so a persistent non-token 401
     # can't amplify into a loop of provider refresh calls (#9860).
-    application_challenge = (
-        flow.response.headers.get("www-authenticate", "").split(maxsplit=1) if flow.response else []
-    )
     network_rejected = bool(
         flow.response
         and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
         and flow.response.status_code in (401, 403)
-        and (
-            not application_challenge or application_challenge[0].lower() not in {"bearer", "basic"}
-        )
+        and not _response_has_application_auth_challenge(flow.response)
     )
     if network_rejected:
         log_proxy_entry(
