@@ -13,7 +13,10 @@ struct GlobalMutableStateRule: NativeRule {
     // Production owners only; test fixtures and the lint tool retain their own scope.
     guard let path = file.path?.path else { return [] }
     // A checkout directory named Okou must not turn tests or tooling into App sources.
-    let source = "/" + (path.components(separatedBy: "/ios/").last ?? path)
+    var source = "/" + path
+    if let root = path.range(of: "/ios/", options: .backwards) {
+      source = "/" + path[root.upperBound...]
+    }
     guard
       [
         "/Okou/", "/Push/", "/Packages/ChatDomain/Sources/ChatDomain/",
