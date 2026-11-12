@@ -441,10 +441,51 @@ describe("POST /api/skill-import/skills", () => {
     expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
   });
 
+  it("repairs relative Windows paths and preserves the attachment text", async () => {
+    const { actor, session } = await openSession();
+    const response = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody({
+          files: [
+            {
+              path: String.raw`references\tone.md`,
+              content: "Keep it short. 世界",
+            },
+            { path: String.raw`.\scripts\\check.sh`, content: "echo ok\n" },
+          ],
+        }),
+      }),
+      [201],
+    );
+    expect(response.body).toStrictEqual({
+      outcome: "created",
+      workflowId: expect.any(String),
+      name: "release-notes",
+    });
+    const detail = await accept(
+      workflowDetailClient().get({
+        headers: clerkHeaders(actor),
+        params: { workflowId: response.body.workflowId },
+      }),
+      [200],
+    );
+    expect(detail.body.fileContents).toStrictEqual([
+      { path: "references/tone.md", content: "Keep it short. 世界" },
+      { path: "scripts/check.sh", content: "echo ok\n" },
+    ]);
+  });
+
   it("imports the instruction and valid files while reporting unusable attachments", async () => {
     const { actor, session } = await openSession();
     const invalidPaths = [
-      String.raw`references\tone.md`,
+      String.raw`C:\outside.md`,
+      "C:outside.md",
+      String.raw`\\server\share\outside.md`,
+      String.raw`\outside.md`,
+      String.raw`..\outside.md`,
+      String.raw`scripts\..\..\outside.md`,
+      String.raw`.\SKILL.md`,
       ".",
       "./",
       "references/",

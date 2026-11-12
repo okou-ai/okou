@@ -19,6 +19,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
+import { win32 } from "node:path";
 import { command, computed } from "ccstate";
 import { and, asc, count, eq, isNull, or } from "drizzle-orm";
 
@@ -262,6 +263,11 @@ function importableSkillFiles(input: SkillImportRequest["files"]) {
       skippedFiles.push({ path: file.path, reason: "binary_content" });
       continue;
     }
+    // Absolute and drive-relative paths cannot identify a file relative to the skill.
+    if (win32.parse(file.path).root) {
+      skippedFiles.push({ path: file.path, reason: "invalid_path" });
+      continue;
+    }
     const fileBytes = utf8Bytes(file.content);
     if (
       fileBytes > SKILL_IMPORT_LIMITS.maxFileBytes ||
@@ -273,7 +279,7 @@ function importableSkillFiles(input: SkillImportRequest["files"]) {
     }
     // The writer owns canonical paths, reserved names and file/directory conflicts.
     const attachment = {
-      path: file.path,
+      path: file.path.replaceAll("\\", "/"),
       content: Buffer.from(file.content, "utf8"),
     };
     const normalized = safeSync(() => {
