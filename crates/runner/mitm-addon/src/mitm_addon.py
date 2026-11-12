@@ -104,6 +104,7 @@ from auth import (
     mark_aws_sigv4_request_length_required,
     mark_aws_sigv4_request_too_large,
     prepare_firewall_metadata,
+    release_network_admission_from_flow,
     try_apply_stream_safe_firewall_auth_for_requestheaders,
 )
 from body_limits import STREAM_BUFFER_LIMIT
@@ -1939,8 +1940,7 @@ def _release_terminal_flow_state(
         terminal_usage.release_model_websocket_terminal_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
-    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
-    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
+    release_network_admission_from_flow(flow)
     aws_sigv4_flow.release_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)

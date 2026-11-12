@@ -197,6 +197,12 @@ def invalidate_network_admission(flow: http.HTTPFlow) -> None:
         invalidate_cached_firewall_headers(retained.cache_key, retained.cache_entry_identity)
 
 
+def release_network_admission_from_flow(flow: http.HTTPFlow) -> None:
+    """Release the physical flow's retained network credentials and binding marker."""
+    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
+    flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
+
+
 async def _resolve_network_admission(
     flow: http.HTTPFlow, context: _FirewallAuthContext
 ) -> dict[str, str]:
@@ -1705,8 +1711,7 @@ async def handle_firewall_request(
         _finalize_firewall_auth_success(flow, context, resolved_auth)
         return auth_result
     except BaseException:
-        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
-        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
+        release_network_admission_from_flow(flow)
         release_forward_request_admission_from_flow(flow)
         raise
 
@@ -1753,8 +1758,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         token_meta = await _resolve_firewall_auth(plan, context)
     except asyncio.CancelledError:
         restore_probe_state()
-        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
-        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
+        release_network_admission_from_flow(flow)
         raise
     except Exception as exc:
         _set_firewall_auth_resolution_failure(flow, context, exc)
