@@ -29,7 +29,7 @@ function formatSenderBlock(info: ConversationSender): string {
 }
 
 export function formatConversationContext(args: {
-  readonly integration: "Slack" | "Discord" | "WeChat";
+  readonly integration: "Slack" | "Discord" | "WeChat" | "Email";
   readonly contextType: "thread" | "channel";
   readonly messages: readonly ConversationMessage[];
 }): string {
@@ -40,8 +40,9 @@ export function formatConversationContext(args: {
     args.contextType === "thread"
       ? `# ${args.integration} Thread Context`
       : "# Recent Channel Messages";
+  const article = args.integration === "Email" ? "an" : "a";
   const preamble = [
-    `The messages below are from a ${args.integration} conversation. When responding:`,
+    `The messages below are from ${article} ${args.integration} conversation. When responding:`,
     "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.",
   ].join("\n");
   const messages = args.messages.map((message, index) => {
