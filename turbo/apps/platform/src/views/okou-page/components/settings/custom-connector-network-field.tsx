@@ -162,6 +162,7 @@ export function CustomConnectorNetworkField({
         >
           <SelectTrigger
             id="custom-connector-cloudflare"
+            variant="neutral"
             className="w-full"
             aria-describedby="custom-connector-cloudflare-description"
           >
