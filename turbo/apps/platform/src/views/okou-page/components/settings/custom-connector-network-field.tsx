@@ -141,8 +141,8 @@ export function CustomConnectorNetworkField({
     }),
   ];
   return (
-    <details className="group rounded-lg border border-border">
-      <summary className="flex cursor-default list-none items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-state-hover">
+    <details className="group">
+      <summary className="flex cursor-default list-none items-center gap-2 rounded-lg py-2.5 text-sm font-medium text-foreground hover:bg-state-hover">
         <ChevronRight
           size={16}
           className="shrink-0 transition-transform group-open:rotate-90"
@@ -153,7 +153,7 @@ export function CustomConnectorNetworkField({
           })}
         </span>
       </summary>
-      <div className="grid gap-2 border-t border-border px-3 py-4">
+      <div className="mt-2 grid gap-2">
         <label
           htmlFor="custom-connector-cloudflare"
           className="text-sm font-medium text-foreground"
