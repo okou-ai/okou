@@ -82,7 +82,7 @@ struct ChatFeedbackComposer: View {
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
-                  expanded: state.document.hasFeedback
+                  expanded: state.document.hasFeedback || isFocused
                 )
               }
               .id(block.id)
