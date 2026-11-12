@@ -28,6 +28,7 @@ final class ConversationProjectionTests: XCTestCase {
 
     await conversation.refresh()
 
+    XCTAssertNil(conversation.historySyncError)
     XCTAssertTrue(conversation.pending.isEmpty)
     XCTAssertEqual(conversation.messages.filter { $0.id == pending.id }.map(\.text), [pending.text])
     XCTAssertEqual(conversation.visibleMessages.last?.id, pending.id)
