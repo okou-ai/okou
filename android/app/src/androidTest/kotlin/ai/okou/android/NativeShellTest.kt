@@ -129,16 +129,26 @@ class NativeShellTest {
         onIsolatedDevice("member-preferences") {
             fun select(value: String) {
                 val target = By.pkg(app.packageName).text(value)
-                val option =
-                    device.findObject(target)
-                        ?: requireNotNull(
-                                device.wait(
-                                    Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                    WAIT,
-                                )
+                if (device.findObject(target) == null) {
+                    requireNotNull(
+                            device.wait(
+                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                WAIT,
                             )
-                            .scrollUntil(Direction.DOWN, Until.findObject(target))
-                requireNotNull(option) { "Native preference choice not reachable: $value" }.click()
+                        )
+                        .scrollUntil(
+                            Direction.DOWN,
+                            object : Condition<UiObject2, Boolean> {
+                                // Resolve virtual descendants from the current window after
+                                // scrolls.
+                                override fun apply(container: UiObject2) = device.hasObject(target)
+                            },
+                        )
+                }
+                requireNotNull(device.wait(Until.findObject(target), WAIT)) {
+                        "Native preference choice not reachable: $value"
+                    }
+                    .click()
             }
             launch()
             val draft = "Preserve my draft across language changes"
