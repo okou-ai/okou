@@ -55,7 +55,7 @@ function byteStream(body: Buffer): AsyncIterable<Uint8Array> {
 }
 
 /** A minimal ustar archive, so the test exercises the real tar reader. */
-export function tarGz(
+function tar(
   files: readonly { path: string; content: string | Buffer }[],
 ): Buffer {
   const blocks: Buffer[] = [];
@@ -84,7 +84,20 @@ export function tarGz(
     blocks.push(content, Buffer.alloc(padding));
   }
   blocks.push(Buffer.alloc(1024));
-  return gzipSync(Buffer.concat(blocks));
+  return Buffer.concat(blocks);
+}
+
+export function tarGz(
+  files: readonly { path: string; content: string | Buffer }[],
+): Buffer {
+  return gzipSync(tar(files));
+}
+
+/** Keep full random payloads without searching for compression in test input. */
+export function storedTarGz(
+  files: readonly { path: string; content: string | Buffer }[],
+): Buffer {
+  return gzipSync(tar(files), { level: 0 });
 }
 
 export function installS3Fixture(context: TestContext) {

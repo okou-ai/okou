@@ -489,6 +489,7 @@ test.each(["agent", "thread"] as const)(
 test.each(["indicator", "read cursor"] as const)(
   "Refresh the running indicator after the %s notification without warming chats",
   async (notification) => {
+    mockNow(0, context.signal);
     prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Remote running conversation"),
@@ -536,6 +537,8 @@ test.each(["indicator", "read cursor"] as const)(
       );
     });
 
+    // Keep the terminal notification outside the previous refresh's throttle window.
+    mockNow(1000, context.signal);
     running = false;
     changeIndicator();
     await waitFor(() => {

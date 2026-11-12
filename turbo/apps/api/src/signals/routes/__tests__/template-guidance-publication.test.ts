@@ -21,6 +21,7 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   installS3Fixture,
+  storedTarGz,
   tarGz,
   uploadTemplateFile,
   type Fixture,
@@ -553,7 +554,7 @@ test("delivers a valid template archive larger than the Skill bundle ceiling", a
   const published = await owner.run(async () => {
     return await publish(
       "user-template",
-      await uploadInputs(owner.actor, fixture, tarGz(files)),
+      await uploadInputs(owner.actor, fixture, storedTarGz(files)),
     );
   });
   if (published.status !== 200) {
