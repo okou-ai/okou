@@ -1313,6 +1313,40 @@
       "description": "より多くのクレジットと同時実行",
       "getPlan": "{{plan}} を取得"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "価格を確認したかっただけ",
+          "needs_approval": "他の人の承認が必要",
+          "not_ready_yet": "まだ決めきれていない",
+          "not_seeing_value": "まだ価値を感じられなかった",
+          "other": "その他",
+          "payment_issue": "支払いで問題があった",
+          "price_higher_than_expected": "思っていたより価格が高かった",
+          "results_not_good_enough": "結果に満足できなかった"
+        },
+        "description": "質問は 1 つだけです。今後の改善に役立てます。",
+        "question": "購入を完了しなかった理由は何ですか？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "今はこれ以上必要ない",
+          "not_sure_worth_it": "価値があるかまだわからない",
+          "other": "その他",
+          "still_trying": "もう少し試してみたい",
+          "too_expensive": "価格が高すぎる"
+        },
+        "question": "今日アップグレードしない理由は何ですか？",
+        "reward": "このワークスペースで最初の対象となる回答に、30日間有効な {{credits}} ボーナスクレジットを付与します。",
+        "thanksWithCredits": "ありがとうございます！{{credits}} クレジットを追加しました。このまま続けられます。"
+      },
+      "error": "回答を送信できませんでした。もう一度お試しください。",
+      "notNow": "今はしない",
+      "otherLabel": "回答",
+      "otherPlaceholder": "詳しく教えてください（任意）",
+      "submit": "送信",
+      "thanks": "ご回答ありがとうございます。"
+    },
     "toasts": {
       "autoRechargeUpdated": "オートリチャージが更新されました",
       "cancellationScheduledDate": "キャンセル予定。現在のプランは {{date}} まで有効です。",

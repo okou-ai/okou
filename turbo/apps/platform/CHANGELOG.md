@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1117.0](https://github.com/okou-ai/okou/compare/app-v0.1116.3...app-v0.1117.0) (2026-11-12)
+
+
+### Features
+
+* **app:** draw every okou avatar with the animated design-system avatar ([#46728](https://github.com/okou-ai/okou/issues/46728)) ([2b40ec0](https://github.com/okou-ai/okou/commit/2b40ec0063dc9b4f64a0cbe17c88978eff8c88e6))
+* **app:** rotate home suggestions in the greeting and move explore to the corner ([#46721](https://github.com/okou-ai/okou/issues/46721)) ([3f0798a](https://github.com/okou-ai/okou/commit/3f0798a1790d117931743aa056350e7d2b72ff5b))
+
+
+### Bug Fixes
+
+* **app:** show a project's emoji on the composer's folder as the sidebar does ([#46731](https://github.com/okou-ai/okou/issues/46731)) ([c979329](https://github.com/okou-ai/okou/commit/c979329ac0f930b6813be7341f30169313b403a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+    * @okouai/core bumped to 8.830.0
+    * @okouai/ui bumped to 1.21.0
+
 ## [0.1116.3](https://github.com/okou-ai/okou/compare/app-v0.1116.2...app-v0.1116.3) (2026-11-12)
 
 

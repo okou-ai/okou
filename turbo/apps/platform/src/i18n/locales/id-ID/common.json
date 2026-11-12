@@ -1313,6 +1313,40 @@
       "description": "Lebih banyak kredit & eksekusi bersamaan",
       "getPlan": "Dapatkan {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Hanya ingin melihat harga",
+          "needs_approval": "Perlu persetujuan orang lain",
+          "not_ready_yet": "Belum siap berlangganan",
+          "not_seeing_value": "Belum melihat manfaatnya",
+          "other": "Lainnya",
+          "payment_issue": "Ada masalah saat membayar",
+          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan",
+          "results_not_good_enough": "Tidak puas dengan hasilnya"
+        },
+        "description": "Hanya satu pertanyaan. Jawaban Anda membantu kami menjadi lebih baik.",
+        "question": "Apa yang membuat Anda tidak menyelesaikan pembelian?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Saat ini belum butuh lebih",
+          "not_sure_worth_it": "Belum yakin sepadan",
+          "other": "Lainnya",
+          "still_trying": "Ingin mencoba lebih lama dulu",
+          "too_expensive": "Terlalu mahal"
+        },
+        "question": "Apa yang membuat Anda belum upgrade hari ini?",
+        "reward": "Jawaban pertama yang memenuhi syarat di ruang kerja ini mendapat {{credits}} kredit bonus, berlaku selama 30 hari.",
+        "thanksWithCredits": "Terima kasih! {{credits}} kredit telah ditambahkan, Anda bisa melanjutkan."
+      },
+      "error": "Jawaban Anda gagal dikirim. Coba lagi.",
+      "notNow": "Nanti saja",
+      "otherLabel": "Jawaban Anda",
+      "otherPlaceholder": "Ceritakan lebih lanjut (opsional)",
+      "submit": "Kirim",
+      "thanks": "Terima kasih atas masukan Anda."
+    },
     "toasts": {
       "autoRechargeUpdated": "Isi ulang otomatis diperbarui",
       "cancellationScheduledDate": "Pembatalan dijadwalkan. Paket Anda saat ini tetap aktif hingga {{date}}.",

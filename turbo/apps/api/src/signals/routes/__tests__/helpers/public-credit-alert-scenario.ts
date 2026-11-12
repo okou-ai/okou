@@ -254,9 +254,11 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     async (input) => {
       const cart = checkoutSchema.parse(input);
       required(customers, cart.customer);
+      const { billingSurveyUserId, ...routingMetadata } = cart.metadata;
       if (
-        cart.metadata.orgId !== orgId ||
-        JSON.stringify(cart.metadata) !==
+        routingMetadata.orgId !== orgId ||
+        billingSurveyUserId !== admin.userId ||
+        JSON.stringify(routingMetadata) !==
           JSON.stringify(cart.subscription_data.metadata)
       ) {
         throw new Error("Checkout routing metadata lost its correlation");

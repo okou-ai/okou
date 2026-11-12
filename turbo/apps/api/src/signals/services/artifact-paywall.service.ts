@@ -3,7 +3,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { paidPlanRequired } from "../../lib/error";
 import { authContext$ } from "../auth/auth-context";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 const FREE_PLAN_KEY = "limited-free-1";
@@ -15,7 +15,7 @@ const FREE_PLAN_KEY = "limited-free-1";
  */
 export const artifactPaywallApplies$ = command(
   async (
-    { get, set },
+    { set },
     owner: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -25,8 +25,11 @@ export const artifactPaywallApplies$ = command(
       userId: owner.userId,
     });
     if (!rolledOut) {
-      const overrides = await get(
-        userFeatureSwitchOverrides(owner.orgId, owner.userId),
+      const { overrides } = await set(
+        loadUserFeatureSwitchContext$,
+        owner.orgId,
+        owner.userId,
+        signal,
       );
       signal.throwIfAborted();
       if (overrides[key] !== true) {
