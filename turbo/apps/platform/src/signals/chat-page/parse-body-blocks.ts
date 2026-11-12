@@ -63,7 +63,10 @@ import {
   type BrowserUserActionDescriptor,
 } from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
-import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
+import {
+  isOfficialTemplatePreviewUrl,
+  officialTemplatePreviewContentType,
+} from "./official-template-preview.ts";
 import {
   parseSubscriptionResetUrl,
   subscriptionResetResourceKey,
@@ -619,13 +622,9 @@ export function previewAttachmentFromUrl(
   title?: string,
 ): ChatAttachmentDescriptor {
   const filename = filenameFromUrl(url);
-  // Official screenshots can live beneath a hosted guide's origin. Preserve
-  // their image identity instead of treating the asset path as the HTML site.
-  if (
-    isOfficialTemplatePreviewUrl(url) &&
-    CHAT_KIND_BY_EXTENSION[fileExt(filename)] === "image"
-  ) {
-    return { filename, url, contentType: "image/*" };
+  const officialContentType = officialTemplatePreviewContentType(url);
+  if (officialContentType) {
+    return { filename, url, contentType: officialContentType };
   }
   const hosted = hostedSiteAttachment(url, title);
   if (hosted) {

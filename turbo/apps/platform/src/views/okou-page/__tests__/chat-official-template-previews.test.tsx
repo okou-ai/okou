@@ -98,6 +98,39 @@ test.each([
   },
 );
 
+test("The My Okou guide opens as HTML on an isolated App preview", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const row = chat.outputMessage(
+    `![My Okou quick start (English)](${MY_OKOU_GUIDE})`,
+    { seqId: 1 },
+  );
+  chat.install({
+    rows: () => {
+      return [
+        { ...row, runId: null, runEventId: null, runEventSequenceNumber: null },
+      ];
+    },
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, { runs: [] });
+  });
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "pr-46760-app-okou-app-preview.vm0.workers.dev",
+  });
+  const preview = await screen.findByTestId("attachment-preview-html");
+  click(preview);
+  await waitFor(() => {
+    const element = screen.getByTestId("artifact-dialog-site-frame");
+    const iframe =
+      element instanceof HTMLIFrameElement
+        ? element
+        : element.querySelector("iframe");
+    expect(iframe).toHaveAttribute("src", MY_OKOU_GUIDE);
+  });
+});
+
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
     return candidate.textContent === name;
