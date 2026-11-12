@@ -29,7 +29,7 @@ struct OkouStatusWidgetView: View {
       default: OkouInlineWidget(model: model)
       }
     } else {
-      OkouSignedOutWidget(isSystem: isSystem)
+      OkouSignedOutWidget(family: family)
     }
   }
 }
@@ -98,21 +98,36 @@ struct OkouAvatarShape: Shape {
 struct OkouGreeting: View {
   let model: OkouWidgetModel
   let size: CGFloat
+  /// Beside the actions in a header the greeting keeps to one line: at full size if it fits,
+  /// two points smaller if that fits, and only then on two lines — never broken a word short.
+  var prefersOneLine = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(model.greeting)
-        .font(.okouWidget(size, weight: .semibold, relativeTo: .headline))
-        .foregroundStyle(OkouColor.foreground)
-        .lineLimit(2)
-        .minimumScaleFactor(0.85)
-        .fixedSize(horizontal: false, vertical: true)
+      if prefersOneLine {
+        ViewThatFits(in: .horizontal) {
+          greeting(size).lineLimit(1)
+          greeting(size - 2).lineLimit(1)
+          greeting(size - 2).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
+      } else {
+        greeting(size)
+          .lineLimit(2)
+          .minimumScaleFactor(0.85)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       Text(model.quietNote)
         .font(.okouWidget(12))
         .foregroundStyle(OkouColor.mutedForeground)
         .lineLimit(1)
     }
     .layoutPriority(1)
+  }
+
+  private func greeting(_ points: CGFloat) -> some View {
+    Text(model.greeting)
+      .font(.okouWidget(points, weight: .semibold, relativeTo: .headline))
+      .foregroundStyle(OkouColor.foreground)
   }
 }
 
@@ -124,10 +139,12 @@ struct OkouQuietHeader: View {
   let greeting: CGFloat
 
   var body: some View {
-    HStack(alignment: .center, spacing: 10) {
+    // No stack spacing: a spacer would take a gap of its own and leave the greeting short.
+    HStack(alignment: .center, spacing: 0) {
       OkouMascot(mood: model.mood, size: avatar)
-      OkouGreeting(model: model, size: greeting)
-      Spacer(minLength: 0)
+        .padding(.trailing, 10)
+      OkouGreeting(model: model, size: greeting, prefersOneLine: true)
+      Spacer(minLength: 8)
       OkouWidgetActions()
     }
   }
@@ -560,21 +577,106 @@ struct OkouInlineWidget: View {
   }
 }
 
+/// Signed out: the quiet state's frame with nothing private in it. Small invites sign-in under
+/// the sleeping mascot; medium and large keep the header and show where chats will appear as
+/// placeholder rows of the list's own height, fading down, as Apple's placeholders do. Tapping
+/// anywhere opens the App, which asks for sign-in.
 struct OkouSignedOutWidget: View {
-  let isSystem: Bool
+  let family: WidgetFamily
 
   var body: some View {
-    if isSystem {
-      VStack(alignment: .leading, spacing: 4) {
-        OkouMascot(mood: .sleep, size: 56)
-        Spacer(minLength: 0)
-        Text("Open Okou to sign in")
-          .font(.okouWidget(15, weight: .semibold))
-          .foregroundStyle(OkouColor.foreground)
+    switch family {
+    case .systemSmall:
+      VStack(alignment: .leading, spacing: 0) {
+        OkouMascot(mood: .sleep, size: 60, yields: true)
+        Spacer(minLength: 6)
+        VStack(alignment: .leading, spacing: 4) {
+          title(17).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+          note(lines: 2)
+        }
+        .layoutPriority(1)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    } else {
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    case .systemMedium:
+      VStack(alignment: .leading, spacing: 0) {
+        header(avatar: 44)
+        OkouPlaceholderRows(count: 2).padding(.top, 6)
+        Spacer(minLength: 0)
+      }
+    case .systemLarge:
+      VStack(alignment: .leading, spacing: 0) {
+        header(avatar: 44)
+        OkouPlaceholderRows(count: 6).padding(.top, 16)
+        Spacer(minLength: 0)
+      }
+    default:
       Text("Open Okou to sign in").font(.okouWidget(13))
     }
+  }
+
+  private func header(avatar: CGFloat) -> some View {
+    HStack(alignment: .center, spacing: 0) {
+      OkouMascot(mood: .sleep, size: avatar).padding(.trailing, 10)
+      VStack(alignment: .leading, spacing: 4) {
+        title(17).lineLimit(1).minimumScaleFactor(0.85)
+        note(lines: 1).minimumScaleFactor(0.9)
+      }
+      .layoutPriority(1)
+      Spacer(minLength: 8)
+      Text("Open Okou")
+        .font(.okouWidget(13, weight: .semibold))
+        .foregroundStyle(OkouColor.background)
+        .padding(.horizontal, 13)
+        .frame(height: 30)
+        .background(OkouColor.foreground, in: Capsule())
+        .fixedSize()
+        .widgetAccentable()
+    }
+  }
+
+  private func title(_ size: CGFloat) -> some View {
+    Text("Sign in to Okou")
+      .font(.okouWidget(size, weight: .semibold, relativeTo: .headline))
+      .foregroundStyle(OkouColor.foreground)
+  }
+
+  private func note(lines: Int) -> some View {
+    Text("Your chats will show up here")
+      .font(.okouWidget(12))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .lineLimit(lines)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+/// Grey stand-ins for chat rows: the list's height, glyph column and hairlines, with bars of
+/// varied length that fade row by row.
+struct OkouPlaceholderRows: View {
+  let count: Int
+  private static let widths: [CGFloat] = [0.62, 0.46, 0.7, 0.38, 0.56, 0.5]
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(0..<count, id: \.self) { index in
+        HStack(spacing: 10) {
+          Circle().fill(OkouColor.border).frame(width: 16, height: 16).frame(width: 20)
+          GeometryReader { proxy in
+            Capsule()
+              .fill(OkouColor.border)
+              .frame(
+                width: proxy.size.width * Self.widths[index % Self.widths.count], height: 10
+              )
+              .frame(maxHeight: .infinity, alignment: .center)
+          }
+          Capsule().fill(OkouColor.border).frame(width: 26, height: 8)
+        }
+        .frame(height: OkouChatList.rowHeight)
+        .opacity(1 - Double(index) * 0.12)
+        if index < count - 1 {
+          Divider().overlay(OkouColor.border).padding(.leading, 30)
+        }
+      }
+    }
+    .accessibilityHidden(true)
   }
 }
