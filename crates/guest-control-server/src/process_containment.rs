@@ -1736,7 +1736,7 @@ fn signal_term(group_path: &Path, pids: &[libc::pid_t]) -> usize {
         if !current_members.contains(&pid) {
             continue;
         }
-        if let Err(error) = signal_pidfd(&pidfd, libc::SIGTERM)
+        if let Err(error) = signal_pidfd(&pidfd, rustix::process::Signal::TERM)
             && error.raw_os_error() != Some(libc::ESRCH)
         {
             errors += 1;
@@ -1757,23 +1757,8 @@ fn open_pidfd(pid: libc::pid_t) -> io::Result<Option<OwnedFd>> {
     }
 }
 
-fn signal_pidfd(pidfd: &OwnedFd, signal: libc::c_int) -> io::Result<()> {
-    // SAFETY: `pidfd` is valid, signal is a standard signal number, and a null
-    // siginfo pointer requests ordinary signal semantics.
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_pidfd_send_signal,
-            pidfd.as_raw_fd(),
-            signal,
-            std::ptr::null::<libc::siginfo_t>(),
-            0,
-        )
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+fn signal_pidfd(pidfd: &OwnedFd, signal: rustix::process::Signal) -> io::Result<()> {
+    rustix::process::pidfd_send_signal(pidfd, signal).map_err(io::Error::from)
 }
 
 fn wait_until_empty(group_path: &Path, timeout: Duration) -> Result<bool, ProcessContainmentError> {

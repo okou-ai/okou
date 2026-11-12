@@ -474,7 +474,8 @@ async fn assert_descendant_exited(identity: &DescendantIdentity) {
     };
     if remained_live {
         let pidfd = pidfd.expect("live descendant must have a pidfd");
-        signal_pidfd(&pidfd, libc::SIGKILL).expect("clean up leaked test descendant");
+        signal_pidfd(&pidfd, rustix::process::Signal::KILL)
+            .expect("clean up leaked test descendant");
         // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
         let exit = unsafe { tokio::io::unix::AsyncFd::register(pidfd) }.unwrap();
         let _ready = tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT, exit.readable())
