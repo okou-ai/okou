@@ -41,6 +41,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  chooseConnectorAuthentication,
   customConnector,
   getConnectorAction,
   getConnectorCard,
@@ -262,6 +263,29 @@ test.each([
 
 test("Create a custom connector without authentication", async () => {
   mockCustomConnectorStory(context);
+  const connector = customConnector({
+    displayName: "Public API",
+    prefixTemplates: ["https://public.acme.test/"],
+    authMode: "none",
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+  });
+  let created = false;
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: created ? [connector] : [] });
+  });
+  context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
+    expect(body).toMatchObject({
+      displayName: connector.displayName,
+      authMode: "none",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+    });
+    created = true;
+    return respond(201, connector);
+  });
 
   await setupCustomPage();
 
@@ -273,11 +297,37 @@ test("Create a custom connector without authentication", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
-  click(getConnectorAction("button", "Add authentication", dialog));
-
+  await fill(within(dialog).getByLabelText("Display name"), "Public API");
+  await fill(
+    within(dialog).getByLabelText(/Prefixes/u),
+    "https://public.acme.test/",
+  );
+  expect(within(dialog).getByLabelText("Authentication")).toHaveTextContent(
+    "Select authentication",
+  );
+  expect(getConnectorAction("button", "Create", dialog)).toBeDisabled();
+  click(within(dialog).getByLabelText("Authentication"));
+  const api = await screen.findByRole("option", {
+    name: "API authentication",
+  });
   expect(
-    getConnectorAction("menuitem", "No authentication"),
-  ).toBeInTheDocument();
+    screen.queryByRole("option", { name: "Automatic" }),
+  ).not.toBeInTheDocument();
+  click(api);
+  await fill(within(dialog).getByLabelText("Header name"), "X-API-Key");
+  await chooseConnectorAuthentication(dialog, "Custom OAuth app");
+  await fill(within(dialog).getByLabelText("Client ID"), "draft-client");
+  await chooseConnectorAuthentication(dialog, "API authentication");
+  expect(within(dialog).getByLabelText("Header name")).toHaveValue("X-API-Key");
+  await chooseConnectorAuthentication(dialog, "Custom OAuth app");
+  expect(within(dialog).getByLabelText("Client ID")).toHaveValue(
+    "draft-client",
+  );
+  await chooseConnectorAuthentication(dialog, "No authentication");
+  expect(getConnectorAction("button", "Create", dialog)).toBeEnabled();
+  click(getConnectorAction("button", "Create", dialog));
+  await screen.findByText(connector.displayName);
+  expect(dialog).not.toBeInTheDocument();
 });
 
 test("Add and optionally name a custom connector account", async () => {
@@ -884,12 +934,7 @@ test("Create and edit a custom definition without ordinary legacy status project
     within(create).getByLabelText(/Prefixes/u),
     "https://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "API authentication");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "API authentication");
   click(getConnectorAction("button", "Create", create));
   await waitFor(() => {
     expect(getConnectorCard("Canonical API")).toHaveTextContent("No accounts");
@@ -937,12 +982,7 @@ test("Manage a custom HTTP connector through creation and connection", async () 
     within(create).getByLabelText(/Prefixes/u),
     "https://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "API authentication");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "API authentication");
   await waitFor(() => {
     expect(getConnectorAction("button", "Create", create)).toBeEnabled();
   });
@@ -1127,12 +1167,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
     within(create).getByLabelText(/Prefixes/u),
     "https://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Custom OAuth app");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "Custom OAuth app");
   await fill(
     within(create).getByLabelText("Authorization URL"),
     "https://oauth.acme.test/authorize",
@@ -1156,7 +1191,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
   expect(
     within(create).getByLabelText("Token endpoint authentication"),
   ).toHaveTextContent("Client secret in request body");
-  click(within(create).getByText("Advanced settings"));
+  click(within(create).getByText("OAuth options"));
   expect(within(create).getByLabelText("PKCE")).toHaveTextContent("None");
   click(within(create).getByLabelText("PKCE"));
   click(await screen.findByRole("option", { name: "S256" }));
@@ -1455,12 +1490,7 @@ test("Manage a manual MCP connector through its lifecycle", async () => {
   fireEvent.change(within(create).getByLabelText(/MCP endpoint/u), {
     target: { value: "https://mcp.acme.test/server" },
   });
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "API authentication");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "API authentication");
   await waitFor(() => {
     expect(getConnectorAction("button", "Create", create)).toBeEnabled();
   });
@@ -1621,6 +1651,16 @@ test("Create and connect an MCP server through automatic authorization", async (
       "Let Okou discover whether this MCP server uses no authentication or OAuth.",
     ),
   ).toBeVisible();
+  click(within(create).getByLabelText("Connector type"));
+  click(await screen.findByRole("option", { name: "HTTP API" }));
+  expect(within(create).getByLabelText("Authentication")).toHaveTextContent(
+    "Select authentication",
+  );
+  click(within(create).getByLabelText("Connector type"));
+  click(await screen.findByRole("option", { name: "MCP · Streamable HTTP" }));
+  expect(within(create).getByLabelText("Authentication")).toHaveTextContent(
+    "Automatic",
+  );
   await fill(within(create).getByLabelText("Display name"), "Discovery MCP");
   fireEvent.change(within(create).getByLabelText(/MCP endpoint/u), {
     target: { value: "https://mcp.discovery.test/server" },
@@ -1975,12 +2015,7 @@ test("Create, edit, and connect an OAuth MCP connector", async () => {
   fireEvent.change(within(create).getByLabelText(/MCP endpoint/u), {
     target: { value: "https://mcp.acme.test/oauth" },
   });
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Custom OAuth app");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "Custom OAuth app");
   await fill(
     within(create).getByLabelText("Authorization URL"),
     "https://oauth.acme.test/authorize",

@@ -20,6 +20,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  chooseConnectorAuthentication,
   customConnector,
   mcpCustomConnector,
   getConnectorAction,
@@ -264,14 +265,7 @@ test.each(["http", "mcp"] as const)(
         within(dialog).getByLabelText(/Prefixes/u),
         "https://api.acme.test/v1/",
       );
-      click(getConnectorAction("button", "Add authentication", dialog));
-      click(
-        getConnectorAction(
-          "menuitem",
-          "No authentication",
-          await screen.findByRole("menu"),
-        ),
-      );
+      await chooseConnectorAuthentication(dialog, "No authentication");
     }
     await fill(
       within(dialog).getByLabelText("Display name"),
@@ -573,14 +567,7 @@ test("A configuration load failure and rejected save preserve the connector draf
     within(dialog).getByLabelText(/Prefixes/u),
     "https://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", dialog));
-  click(
-    getConnectorAction(
-      "menuitem",
-      "No authentication",
-      await screen.findByRole("menu"),
-    ),
-  );
+  await chooseConnectorAuthentication(dialog, "No authentication");
   response.resolve();
   await within(dialog).findByText("Could not load Cloudflare Access.");
   loaded = true;

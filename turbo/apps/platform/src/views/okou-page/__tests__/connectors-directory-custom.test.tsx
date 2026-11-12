@@ -6,6 +6,7 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { search as locationSearch } from "../../../signals/location.ts";
 import {
+  chooseConnectorAuthentication,
   customConnector,
   getConnectorAction,
   getConnectorCard,
@@ -248,12 +249,7 @@ test("Cancel and create a custom connector from the Custom scope", async () => {
     within(create).getByLabelText(/Prefixes/u),
     "https://created.test/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "API authentication");
-    }),
-  );
+  await chooseConnectorAuthentication(create, "API authentication");
   await waitFor(() => {
     expect(getConnectorAction("button", "Create", create)).toBeEnabled();
   });
