@@ -224,7 +224,10 @@ final class AppLifecycleTests: XCTestCase {
     }
     // The HTTP fixture itself must outlive its URLSession and every service-owned worker.
     addTeardownBlock { @MainActor [fixture] in
-      caches.add(lifecycle.workspace?.data.cache)
+      let current = lifecycle.notifications.data(
+        authentication: authentication, configuration: configuration,
+        session: fixture.history.http.session)
+      caches.add(current?.cache)
       await lifecycle.close().value
       do { try await authentication.signOut() } catch {
         XCTFail("Cannot sign out the lifecycle fixture: \(error)")
