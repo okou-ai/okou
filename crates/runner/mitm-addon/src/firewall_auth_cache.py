@@ -75,7 +75,6 @@ class _FirewallHeaderCacheEntry:
     payload: FirewallAuthPayload
     identity: FirewallAuthCacheEntryIdentity = field(default_factory=FirewallAuthCacheEntryIdentity)
     expires_at: object = None
-    network_deadline: float | None = None
 
 
 @dataclass
@@ -113,7 +112,6 @@ _owned_auth_keys: dict[_FirewallAuthScope, FirewallAuthCacheKey] = {}
 _active_registry_generations: dict[str, int] = {}
 MAX_CONCURRENT_FIREWALL_AUTH_FETCHES = 4
 MAX_ADMITTED_FIREWALL_AUTH_FETCHES = 16
-NETWORK_ADMISSION_LEASE_SECONDS = 30
 _admitted_firewall_auth_fetches = 0
 _firewall_auth_fetch_semaphore: asyncio.Semaphore | None = None
 
@@ -397,8 +395,6 @@ def _build_cache_hit(
 ) -> dict | None:
     """Check if a cached entry is still valid and return a cache-hit result."""
     expires_at = cached.expires_at
-    if cached.network_deadline is not None and time.monotonic() >= cached.network_deadline:
-        return None
     now = time.time()
     if expires_at is None:
         if firewall_billable:
@@ -421,9 +417,6 @@ async def _fetch_and_cache_firewall_headers(
     force_refresh: bool,
 ) -> dict:
     """Own one shared fetch through completion and update its cache state."""
-    network_deadline = (
-        time.monotonic() + NETWORK_ADMISSION_LEASE_SECONDS if request.network_admission else None
-    )
     try:
         async with _get_firewall_auth_fetch_semaphore():
             result = await fetch_firewall_headers(
@@ -437,7 +430,6 @@ async def _fetch_and_cache_firewall_headers(
         cache_entry = _FirewallHeaderCacheEntry(
             payload=result.payload,
             expires_at=result.expires_at,
-            network_deadline=network_deadline,
         )
 
         # A 401 can request a forced refresh while this non-forced fetch is
@@ -461,7 +453,7 @@ async def _fetch_and_cache_firewall_headers(
 async def get_network_admission(
     cache_key: FirewallAuthCacheKey, request: FirewallAuthRequest
 ) -> dict:
-    """Reuse bounded cache/single-flight ownership without sharing application state."""
+    """Use the shared credential-expiry and registry lifecycle in a separate cache scope."""
     if not request.network_admission or cache_key.purpose != "network":
         raise ValueError("network admission requires its own cache identity")
     return await get_firewall_headers(cache_key, request)

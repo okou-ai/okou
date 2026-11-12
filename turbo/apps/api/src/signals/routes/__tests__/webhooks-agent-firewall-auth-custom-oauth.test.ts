@@ -549,6 +549,7 @@ test("custom network admission is explicitly opted in and leaves installed Runne
     const admitted = await custom.request(custom.account.id, false, true);
     expect(admitted.status).toBe(200);
     expect(admitted.body).toMatchObject({
+      expiresAt: null,
       networkAdmission: { kind: "direct" },
     });
   });
@@ -619,8 +620,6 @@ test("run network admission uses current bindings and rotation independently of 
       configId: config.id,
       generation: 1,
     };
-    const admissionTime = now();
-    mockNow(admissionTime);
     const admitted = await custom.request(
       custom.account.id,
       false,
@@ -631,7 +630,7 @@ test("run network admission uses current bindings and rotation independently of 
       status: 200,
       body: {
         headers: {},
-        expiresAt: Math.floor(admissionTime / 1000) + 30,
+        expiresAt: null,
         networkAdmission: {
           ...intent,
           generation: 1,

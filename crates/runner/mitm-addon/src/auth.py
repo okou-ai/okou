@@ -191,7 +191,7 @@ class _NetworkAdmission:
 
 
 def invalidate_network_admission(flow: http.HTTPFlow) -> None:
-    """A rejected physical flow can invalidate only the network lease it consumed."""
+    """A rejected physical flow can invalidate only the network cache entry it consumed."""
     retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
     if isinstance(retained, _NetworkAdmission):
         invalidate_cached_firewall_headers(retained.cache_key, retained.cache_entry_identity)

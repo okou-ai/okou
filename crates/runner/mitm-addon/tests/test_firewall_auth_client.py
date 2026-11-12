@@ -575,8 +575,7 @@ class TestFetchFirewallHeaders:
     async def test_explicit_direct_network_admission_survives_the_http_protocol(self, mitm_ctx):
         endpoint = FakeAuthEndpoint()
         endpoint.queue_json_response(
-            firewall_auth_success_response({}, expires_at=time.time() + 30)
-            | {"networkAdmission": {"kind": "direct"}}
+            firewall_auth_success_response({}) | {"networkAdmission": {"kind": "direct"}}
         )
         request = replace(
             firewall_auth_request(),

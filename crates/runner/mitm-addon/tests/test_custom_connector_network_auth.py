@@ -20,7 +20,7 @@ _CONFIG_ID = "550e8400-e29b-41d4-a716-446655440002"
 
 
 def _network_response(secret: str, generation: int) -> dict[str, object]:
-    return firewall_auth_success_response({}, expires_at=time.time() + 3600) | {
+    return firewall_auth_success_response({}) | {
         "networkAdmission": {
             "kind": "cloudflare_access",
             "configId": _CONFIG_ID,
@@ -282,23 +282,36 @@ async def _complete(flow, status=200):
 
 
 @pytest.mark.parametrize("direct", [False, True])
-async def test_warm_network_lease_skips_api_across_allowed_urls_and_keeps_recipient_scope(
+async def test_static_network_and_application_caches_survive_elapsed_time_and_keep_recipient_scope(
     tmp_path, real_flow, mitm_ctx, direct
 ):
-    path = _write_registry(tmp_path, sandbox_info=_cached_sandbox(tmp_path, direct=direct))
+    path = _write_registry(
+        tmp_path, sandbox_info=_cached_sandbox(tmp_path, direct=direct, application_auth=True)
+    )
     endpoint = FakeAuthEndpoint()
     response = (
-        firewall_auth_success_response({}, expires_at=time.time() + 30)
-        | {"networkAdmission": {"kind": "direct"}}
+        firewall_auth_success_response({}) | {"networkAdmission": {"kind": "direct"}}
         if direct
         else _network_response("cached-pair", 1)
     )
     endpoint.queue_json_response(response)
-    with endpoint.run(), mitm_ctx(registry_path=str(path), api_url=endpoint.api_url):
-        for url in ["/api/items/one", "/api/items/two"]:
+    endpoint.queue_json_response(firewall_auth_success_response({"Authorization": "Bearer app"}))
+    clock = SimpleNamespace(wall=time.time(), monotonic=1000.0)
+    cache_clock = SimpleNamespace(time=lambda: clock.wall, monotonic=lambda: clock.monotonic)
+    with (
+        endpoint.run(),
+        mitm_ctx(registry_path=str(path), api_url=endpoint.api_url),
+        patch("firewall_auth_cache.time", cache_clock),
+    ):
+        for index, url in enumerate(["/api/items/one", "/api/items/two"]):
+            if index:
+                clock.wall += 3600
+                clock.monotonic += 3600
             flow = _cached_flow(real_flow, url)
             await _authenticate(flow)
             assert flow.response is None
+            assert flow.request.headers["Authorization"] == "Bearer app"
+            assert flow.metadata[metadata_keys.AUTH_CACHE_HIT] is (index > 0)
             assert flow.request.headers.get("CF-Access-Client-Secret") == (
                 None if direct else "cached-pair"
             )
@@ -307,7 +320,10 @@ async def test_warm_network_lease_skips_api_across_allowed_urls_and_keeps_recipi
         await _authenticate(outside)
         assert "CF-Access-Client-Secret" not in outside.request.headers
         await _complete(outside)
-    assert endpoint.request_count == 1
+    assert [bool(request.json_body().get("networkAdmission")) for request in endpoint.requests] == [
+        True,
+        False,
+    ]
 
 
 @pytest.mark.parametrize("transition", ["rotate", "bind", "clear"])
@@ -319,9 +335,7 @@ async def test_registry_network_changes_invalidate_only_network_cache(
         sandbox_info=_cached_sandbox(tmp_path, application_auth=True, direct=transition == "bind"),
     )
     endpoint = FakeAuthEndpoint()
-    direct = firewall_auth_success_response({}, expires_at=time.time() + 30) | {
-        "networkAdmission": {"kind": "direct"}
-    }
+    direct = firewall_auth_success_response({}) | {"networkAdmission": {"kind": "direct"}}
     endpoint.queue_json_response(
         direct if transition == "bind" else _network_response("original-pair", 1)
     )
@@ -360,17 +374,22 @@ async def test_registry_network_changes_invalidate_only_network_cache(
     ]
 
 
-async def test_monotonic_network_expiry_rechecks_without_notification_and_fails_closed(
+async def test_network_cache_honors_explicit_expiry_and_fails_closed_on_refresh_failure(
     tmp_path, real_flow, mitm_ctx
 ):
     path = _write_registry(tmp_path, sandbox_info=_cached_sandbox(tmp_path))
     endpoint = FakeAuthEndpoint()
-    endpoint.queue_json_response(_network_response("original-pair", 1))
-    endpoint.queue_json_response(_network_response("rotated-pair", 2))
+    started_at = time.time()
+    endpoint.queue_json_response(
+        _network_response("original-pair", 1) | {"expiresAt": started_at + 60}
+    )
+    endpoint.queue_json_response(
+        _network_response("rotated-pair", 2) | {"expiresAt": started_at + 120}
+    )
     endpoint.queue_json_response(
         {"error": {"code": "UNAVAILABLE", "message": "Unavailable"}}, status=503
     )
-    clock = SimpleNamespace(wall=time.time(), monotonic=1000.0)
+    clock = SimpleNamespace(wall=started_at, monotonic=1000.0)
     cache_clock = SimpleNamespace(time=lambda: clock.wall, monotonic=lambda: clock.monotonic)
     with (
         endpoint.run(),
@@ -379,8 +398,8 @@ async def test_monotonic_network_expiry_rechecks_without_notification_and_fails_
     ):
         for index, expected in enumerate(["original-pair", "rotated-pair", None]):
             if index:
-                # Wall time does not advance: the independent monotonic cap owns expiry.
-                clock.monotonic += 31
+                clock.wall += 61
+                clock.monotonic += 61
             flow = _cached_flow(real_flow)
             await _authenticate(flow)
             if expected is None:
@@ -392,22 +411,6 @@ async def test_monotonic_network_expiry_rechecks_without_notification_and_fails_
                 assert flow.request.headers["CF-Access-Client-Secret"] == expected
             await _complete(flow)
     assert endpoint.request_count == 3
-
-
-async def test_network_result_without_expiry_cannot_forward_credentials(
-    tmp_path, real_flow, mitm_ctx
-):
-    path = _write_registry(tmp_path, sandbox_info=_cached_sandbox(tmp_path))
-    endpoint = FakeAuthEndpoint()
-    endpoint.queue_json_response(_network_response("unleased-pair", 1) | {"expiresAt": None})
-    flow = _cached_flow(real_flow)
-    with endpoint.run(), mitm_ctx(registry_path=str(path), api_url=endpoint.api_url):
-        await _authenticate(flow)
-        assert flow.response is not None
-        assert flow.response.status_code >= 400
-        assert "CF-Access-Client-Secret" not in flow.request.headers
-        await _complete(flow)
-    assert endpoint.request_count == 1
 
 
 async def test_concurrent_network_miss_survives_cancelled_leader_and_coalesces(
@@ -440,24 +443,22 @@ async def test_concurrent_network_miss_survives_cancelled_leader_and_coalesces(
     assert endpoint.request_count == 1
 
 
-async def test_late_rejection_cannot_invalidate_a_replaced_network_lease(
+async def test_late_rejection_cannot_invalidate_a_replaced_network_cache_entry(
     tmp_path, real_flow, mitm_ctx
 ):
     path = _write_registry(tmp_path, sandbox_info=_cached_sandbox(tmp_path))
     endpoint = FakeAuthEndpoint()
     endpoint.queue_json_response(_network_response("old-pair", 1))
     endpoint.queue_json_response(_network_response("new-pair", 2))
-    clock = SimpleNamespace(wall=time.time(), monotonic=1000.0)
-    cache_clock = SimpleNamespace(time=lambda: clock.wall, monotonic=lambda: clock.monotonic)
-    with (
-        endpoint.run(),
-        mitm_ctx(registry_path=str(path), api_url=endpoint.api_url),
-        patch("firewall_auth_cache.time", cache_clock),
-    ):
+    with endpoint.run(), mitm_ctx(registry_path=str(path), api_url=endpoint.api_url):
         old = _cached_flow(real_flow)
         await _authenticate(old)
         assert old.response is None
-        clock.monotonic += 31
+        rejected = _cached_flow(real_flow)
+        await _authenticate(rejected)
+        assert rejected.response is None
+        assert rejected.request.headers["CF-Access-Client-Secret"] == "old-pair"
+        await _complete(rejected, 401)
         current = _cached_flow(real_flow)
         await _authenticate(current)
         assert current.response is None

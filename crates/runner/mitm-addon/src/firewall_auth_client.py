@@ -56,7 +56,6 @@ import json
 import math
 import socket
 import ssl
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -282,7 +281,7 @@ class FirewallAuthPayload:
     base: str | None = None
     query: dict[str, str] | None = None
     aws_sigv4: AwsSigV4Credentials | None = None
-    # Only uncached network-only requests may populate this field.
+    # Explicit network-only requests populate this field, cached separately from app credentials.
     network_admission: dict | None = field(default=None, repr=False)
 
 
@@ -972,10 +971,6 @@ def _parse_firewall_auth_success(
     elif "networkAdmission" in decoded_map:
         raise _malformed_firewall_auth_success("unsolicited network admission")
     expires_at = _parse_expires_at(decoded_map)
-    if request.network_admission and (
-        not is_supported_expiry(expires_at) or expires_at <= time.time()
-    ):
-        raise _malformed_firewall_auth_success("network admission requires a future expiry")
     resolved_secrets = _parse_required_string_list(decoded_map, "resolvedSecrets")
     refreshed_connectors = _parse_required_string_list(decoded_map, "refreshedConnectors")
     refreshed_secrets = _parse_required_string_list(decoded_map, "refreshedSecrets")
