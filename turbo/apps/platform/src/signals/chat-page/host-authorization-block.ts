@@ -20,9 +20,11 @@ export function parseHostAuthorizationUrl(
   value: string,
 ): HostAuthorizationDescriptor | null {
   const url = parseTrustedPlatformActionUrl(value);
-  const match = url?.pathname.match(
-    new RegExp(`^/${protocol}/authorize/([^/]+)$`, "u"),
-  );
+  const pattern =
+    protocol === "ssh"
+      ? /^\/ssh\/authorize\/([^/]+)$/u
+      : /^\/vnc\/authorize\/([^/]+)$/u;
+  const match = url?.pathname.match(pattern);
   const id = uuid().safeParse(match?.[1]);
   return id.success &&
     url?.search === "" &&
