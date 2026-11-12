@@ -92,25 +92,10 @@ const IDLE_LEASE_MS = BROWSER_IDLE_LEASE_MINUTES * 60_000;
 const INACTIVE_BROWSER_STATUSES = ["suspended", "error"] as const;
 const L = logger("Browser");
 
-const BROWSER_SESSION_SELECTION = {
-  id: browserSessions.id,
-  chatThreadId: browserSessions.chatThreadId,
-  runId: browserSessions.runId,
-  orgId: browserSessions.orgId,
-  userId: browserSessions.userId,
-  name: browserSessions.name,
-  browserProfileId: browserSessions.browserProfileId,
-  browserThreadProfileId: browserSessions.browserThreadProfileId,
-  status: browserSessions.status,
-  proxyCountryCode: browserSessions.proxyCountryCode,
-  timeoutMinutes: browserSessions.timeoutMinutes,
-  suspendedAt: browserSessions.suspendedAt,
-  suspensionReason: browserSessions.suspensionReason,
-  createdAt: browserSessions.createdAt,
-  updatedAt: browserSessions.updatedAt,
-} as const;
-
-type BrowserSessionRow = typeof browserSessions.$inferSelect;
+type BrowserSessionOwner = Pick<
+  typeof browserSessions.$inferSelect,
+  "orgId" | "userId" | "chatThreadId"
+>;
 type BrowserInstanceRow = typeof browserSessionInstances.$inferSelect;
 type InactiveBrowserStatus = (typeof INACTIVE_BROWSER_STATUSES)[number];
 
@@ -530,10 +515,7 @@ export const ensureSharedBrowserCapacity$ = command(
 type BrowserScreenshotStage = "prepare" | "capture" | "upload" | "save";
 
 interface BrowserScreenshotPublication {
-  readonly browser: Pick<
-    BrowserSessionRow,
-    "orgId" | "userId" | "chatThreadId"
-  >;
+  readonly browser: BrowserSessionOwner;
   readonly fileId: string;
   readonly shared?: {
     readonly providerSessionId: string;
@@ -787,7 +769,7 @@ const retainAbandonedBrowserScreenshot$ = command(
 export const captureAndStoreBrowserScreenshot$ = command(
   async (
     { get, set },
-    browser: Pick<BrowserSessionRow, "orgId" | "userId" | "chatThreadId">,
+    browser: BrowserSessionOwner,
     shared?: {
       readonly providerSessionId: string;
       readonly window: BrowserWindowContext;
@@ -913,16 +895,19 @@ export const captureAndStoreBrowserScreenshot$ = command(
 );
 
 const scheduleBrowserScreenshotCapture$ = command(
-  ({ set }, browser: BrowserSessionRow): void => {
+  ({ set }, browser: BrowserSessionOwner): void => {
     waitUntil(set(captureAndStoreBrowserScreenshot$, browser));
   },
 );
 
 const loadActiveInstance$ = command(
-  async ({ get }, chatThreadId: string): Promise<BrowserInstanceRow | null> => {
+  async (
+    { get },
+    chatThreadId: string,
+  ): Promise<Pick<BrowserInstanceRow, "providerSessionId"> | null> => {
     const db = get(db$);
     const [row] = await db
-      .select()
+      .select({ providerSessionId: browserSessionInstances.providerSessionId })
       .from(browserSessionInstances)
       .where(
         and(
@@ -1945,8 +1930,11 @@ const deferBrowserInstanceReconcile$ = command(
 );
 
 interface BrowserReconcileCandidate {
-  readonly browser: BrowserSessionRow;
-  readonly instance: BrowserInstanceRow;
+  readonly browser: BrowserSessionOwner;
+  readonly instance: Pick<
+    BrowserInstanceRow,
+    "providerSessionId" | "timeoutAt" | "idleExpiresAt"
+  >;
   readonly chatThreadId: string | null;
 }
 
@@ -2155,8 +2143,16 @@ export const reconcileBrowsers$ = command(
     const db = set(writeDb$);
     const rows = await db
       .select({
-        browser: BROWSER_SESSION_SELECTION,
-        instance: browserSessionInstances,
+        browser: {
+          orgId: browserSessions.orgId,
+          userId: browserSessions.userId,
+          chatThreadId: browserSessions.chatThreadId,
+        },
+        instance: {
+          providerSessionId: browserSessionInstances.providerSessionId,
+          timeoutAt: browserSessionInstances.timeoutAt,
+          idleExpiresAt: browserSessionInstances.idleExpiresAt,
+        },
         chatThreadId: chatThreads.id,
       })
       .from(browserSessionInstances)
