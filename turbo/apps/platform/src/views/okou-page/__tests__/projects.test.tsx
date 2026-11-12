@@ -2226,6 +2226,41 @@ test("Removing the Project chip returns the message to a chat outside any Projec
   expect(created.projectId).toBeNull();
 });
 
+test("The composer shows a Project name's emoji on its folder, as the sidebar does", async () => {
+  const coffee = "30000000-0000-4000-8000-000000000272";
+  const ordinary = continuityThread(230, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 230,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata([{ id: coffee, name: "☕ Coffee" }]);
+  await setupPage({
+    context,
+    path: `/projects/${coffee}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+
+  // The chip's folder wears the emoji and its label shows the rest.
+  const chip = await waitFor(() => {
+    return projectChip("☕ Coffee");
+  });
+  expect(within(chip).getByText("Coffee")).toBeInTheDocument();
+  expect(
+    within(chip).getByText("☕").closest('[aria-hidden="true"]'),
+  ).not.toBeNull();
+
+  // So do the + menu's Project rows.
+  const user = userEvent.setup({ delay: null });
+  await openComposerProjectMenu();
+  await user.click(await findMenuItem("Project"));
+  const submenu = await screen.findByRole("menu", { name: "Project" });
+  const row = within(submenu).getByText("Coffee").closest('[role="menuitem"]');
+  expect(row).toHaveTextContent("☕");
+  expect(row).toHaveAttribute("aria-disabled", "true");
+});
+
 test("A Project named from the composer's + menu opens with the message and accepts it once created", async () => {
   const confirmation = context.mocks.deferred<void>();
   const ordinary = continuityThread(119, 1, "Thread B");
