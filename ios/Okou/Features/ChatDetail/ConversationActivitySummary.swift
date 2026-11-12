@@ -11,6 +11,7 @@ struct ConversationActivitySummaryValue: Equatable, Sendable {
 /// A visible Run owns the original read Task; phrase selection is native presentation state.
 @MainActor @Observable
 final class ConversationActivitySummary {
+  private let lifecycleTasks: LifecycleTasks
   private struct Demand: Equatable, Sendable {
     let runID: String
     let id = UUID()
@@ -44,8 +45,10 @@ final class ConversationActivitySummary {
 
   init(
     sync: ChatSync, threadID: String, didRequireUpgrade: @escaping @MainActor (Error) -> Void,
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.didRequireUpgrade = didRequireUpgrade
     self.sync = sync
     self.threadID = threadID
@@ -78,6 +81,7 @@ final class ConversationActivitySummary {
         try signal.checkCancellation()
         return ConversationActivitySummaryValue(demandID: demand.id, summary: summary)
       }
+      lifecycleTasks.track(task)
       current = task
       signal.onCancel { task.cancel() }
       return task
@@ -118,6 +122,7 @@ final class ConversationActivitySummary {
           // Ending the demand cancels its refresh clock.
         }
       }
+      if let polling { lifecycleTasks.track(polling) }
     } catch { preconditionFailure("Cannot update the local activity demand: \(error)") }
   }
 
@@ -197,6 +202,7 @@ final class ConversationActivitySummary {
           if (error as? APIClientError)?.statusCode == 426 { didRequireUpgrade(error) }
         }
       }
+      if let publication { lifecycleTasks.track(publication) }
     } catch is CancellationError {
     } catch { preconditionFailure("Cannot observe the local activity resource: \(error)") }
   }
@@ -227,6 +233,7 @@ final class ConversationActivitySummary {
         // The original read keeps its failure; reconcileRead owns native failure cleanup.
       }
     }
+    if let rotation { lifecycleTasks.track(rotation) }
   }
 
   isolated deinit {

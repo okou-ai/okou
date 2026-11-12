@@ -6,6 +6,7 @@ import Observation
 /// Confirmed Project names, membership operations and native list disclosure for one workspace.
 @MainActor @Observable
 final class ChatProjectStore {
+  private let lifecycleTasks: LifecycleTasks
   /// Confirmed names reconcile mutations and the durable baseline, independently of read phase.
   @ObservationIgnored private let confirmedProjects = CCState.State<[ChatProject]>([])
   @ObservationIgnored private let replaceProjects: Command<Void, [ChatProject]>
@@ -52,8 +53,10 @@ final class ChatProjectStore {
     client: APIClient, resources: WorkspaceResources, sync: ChatSync,
     disclosure: ProjectDisclosureStorage? = nil,
     didFail: @escaping @MainActor (Error) -> Void,
-    didChangeMembership: @escaping @MainActor () async -> Void
+    didChangeMembership: @escaping @MainActor () async -> Void,
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let confirmedProjects = confirmedProjects
     confirmedValue = Computed { try $0(confirmedProjects) }
     replaceProjects = Command { context, value in
@@ -145,6 +148,7 @@ final class ChatProjectStore {
         didFail(error)
       }
     }
+    lifecycleTasks.track(task)
     disclosureTasks[id] = task
     return task
   }
@@ -198,6 +202,7 @@ final class ChatProjectStore {
           didFail(error)
         }
       }
+      if let publication { lifecycleTasks.track(publication) }
     } catch is CancellationError {
       publication = nil
     } catch { didFail(error) }
@@ -303,6 +308,7 @@ final class ChatProjectStore {
         didFail(error)
       }
     }
+    lifecycleTasks.track(task)
     tasks[key] = (taskID, task)
     await task.value
     return result
