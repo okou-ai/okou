@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,8 +18,12 @@ import {
   Package,
   Podcast,
   Repeat2,
+  Route,
   Search,
+  Shapes,
   SlidersHorizontal,
+  Telescope,
+  UserRoundSearch,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -44,12 +49,14 @@ import { WORKFLOW_RECOMMENDATIONS } from "../../signals/okou-page/composer-workf
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
-import { ComposerTaskTemplates } from "./composer-task-chips.tsx";
+import {
+  ComposerTaskTemplates,
+  useTaskTemplateBrowse,
+} from "./composer-task-chips.tsx";
 import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
-import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
 import {
@@ -399,17 +406,14 @@ function isCreateTask(
 }
 
 /**
- * While a tray is open the cards fold into this row, so the page keeps its map
- * of capabilities and another one is a click away without closing first.
- * Create reopens on the type the member last chose.
+ * While a tray is open the four capabilities stay one click away as tabs on
+ * the tray's top edge. The open one takes the tray's own tint and runs into it
+ * through two concave corners, so the capability reads as the tab its choices
+ * hang from -- capability, then type, then cover, each inside the last --
+ * instead of a second row of cards across the page. Create reopens on the type
+ * the member last chose.
  */
-function CapabilitySwitcher({
-  signals,
-  selected,
-}: {
-  readonly signals: ComposerSignals;
-  readonly selected: HomeTask;
-}) {
+function useCapabilityTabs(signals: ComposerSignals) {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -428,11 +432,10 @@ function CapabilitySwitcher({
   const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
   const task = useGet(signals.taskChips.task$);
   const workflowKind = useGet(signals.taskChips.home.workflowKind$);
-  const group = capabilityGroup(selected);
-  const items = [
+  return [
     {
       id: "search",
-      art: "people",
+      Icon: UserRoundSearch,
       label: copy.search.title,
       open: () => {
         openExplore("search");
@@ -440,7 +443,7 @@ function CapabilitySwitcher({
     },
     {
       id: "research",
-      art: "research",
+      Icon: Telescope,
       label: copy.research.title,
       open: () => {
         openExplore("research");
@@ -448,7 +451,7 @@ function CapabilitySwitcher({
     },
     {
       id: "create",
-      art: "presentation",
+      Icon: Shapes,
       label: copy.create.title,
       open: () => {
         openTask(isCreateTask(task) ? task : "presentation");
@@ -456,35 +459,45 @@ function CapabilitySwitcher({
     },
     {
       id: "workflow",
-      art: "advanced",
+      Icon: Route,
       label: tasks.workflow,
       open: () => {
         openWorkflow(workflowKind);
       },
     },
-  ] as const;
-  return (
-    <nav
-      aria-label={copy.capabilities}
-      className="grid min-w-0 grid-cols-2 gap-2 motion-safe:animate-composer-panel-in @2xl:grid-cols-4"
-    >
-      {items.map((item) => {
-        return (
-          <button
-            key={item.id}
-            type="button"
-            aria-current={group === item.id ? "true" : undefined}
-            className="flex h-14 min-w-0 items-center gap-2.5 rounded-surface-compact bg-muted pr-3.5 pl-2 text-left text-sm font-medium text-muted-foreground transition-[background-color,box-shadow] duration-150 ease-surface [&:hover]:bg-state-hover-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-[current=true]:bg-card aria-[current=true]:text-foreground aria-[current=true]:shadow-surface aria-[current=true]:ring-1 aria-[current=true]:ring-surface-border"
-            onClick={item.open}
-          >
-            <CapabilityIllustration art={item.art} thumb />
-            <span className="min-w-0 truncate">{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
+  ] as const satisfies readonly {
+    readonly id: CapabilityGroup;
+    readonly Icon: LucideIcon;
+    readonly label: string;
+    readonly open: () => void;
+  }[];
 }
+
+/**
+ * The open tab is the tray's tint with a 16px top radius; each concave corner
+ * is a 16px square of that tint with a quarter circle cut out of it, set just
+ * outside the tab's foot. The first tab starts at the tray's edge, so it has no
+ * left corner to fill -- the tray squares its own corner instead. The left
+ * padding of the first tab lines its icon up with the tray's content edge.
+ */
+const CAPABILITY_TAB = cn(
+  "relative flex h-10 shrink-0 cursor-default items-center gap-2 rounded-t-2xl px-4 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors sm:first:pl-5",
+  "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+  "data-active:bg-(--capability-tray) data-active:text-foreground",
+  "data-active:before:absolute data-active:before:right-full data-active:before:bottom-0 data-active:before:size-4 data-active:before:bg-[radial-gradient(circle_at_0_0,transparent_15.5px,var(--capability-tray)_16px)]",
+  "data-active:after:absolute data-active:after:bottom-0 data-active:after:left-full data-active:after:size-4 data-active:after:bg-[radial-gradient(circle_at_100%_0,transparent_15.5px,var(--capability-tray)_16px)]",
+  "first:before:hidden",
+);
+
+/**
+ * The tray's tint is the track: the types drop the control's own recessed
+ * track and keep its raised selection, so the open type is a white segment
+ * lifted off the tray, its left edge on the covers' left edge. The scroller
+ * needs 4px above and below for that segment's shadow, taken back with a
+ * negative margin so the row keeps the 32px of its neighbours.
+ */
+const CAPABILITY_TYPE_TABS =
+  "-my-1 h-10 min-w-0 overflow-x-auto bg-transparent px-0 py-1 [scrollbar-width:none]";
 
 /**
  * Create's types and Workflow's kinds switch in the tray's own header, so a
@@ -516,9 +529,8 @@ function CapabilityTabs({
   if (selected === "workflow") {
     return (
       <SegmentControl
-        variant="plain"
         size="sm"
-        className="-ml-1 min-w-0 overflow-x-auto"
+        className={CAPABILITY_TYPE_TABS}
         aria-label={tasks.workflow}
         value={workflowKind}
         onValueChange={(kind: HomeWorkflowKind) => {
@@ -537,9 +549,8 @@ function CapabilityTabs({
   }
   return (
     <SegmentControl
-      variant="plain"
       size="sm"
-      className="-ml-1 min-w-0 overflow-x-auto"
+      className={CAPABILITY_TYPE_TABS}
       aria-label={copy.create.title}
       value={selected}
       onValueChange={(task: ComposerTask) => {
@@ -558,11 +569,58 @@ function CapabilityTabs({
 }
 
 /**
+ * The type a header's "View all" browses: Create's types open the template
+ * picker on their catalog, Workflow's kinds open the workflow picker.
+ */
+function CapabilityViewAll({
+  signals,
+  selected,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: ComposerTask;
+}) {
+  const { t } = useTranslation();
+  const browseTemplates = useTaskTemplateBrowse(
+    signals,
+    selected === "workflow" ? "visualization" : selected,
+  );
+  const browseWorkflows = useSet(signals.taskChips.workflows.browse$);
+  const browse =
+    selected === "workflow"
+      ? () => {
+          browseWorkflows();
+        }
+      : browseTemplates;
+  if (!browse) {
+    return null;
+  }
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      size="sm"
+      className="gap-0.5 pr-2 pl-2.5"
+      onClick={browse}
+    >
+      {t(($) => {
+        return $.chat.taskChips.viewAll;
+      })}
+      <ChevronRight aria-hidden />
+    </Button>
+  );
+}
+
+/**
  * A capability's choices, in a tray that slides up from behind the composer
- * they feed. It takes the composer's own white, border and shadow, and its
- * foot runs under the composer's top edge, so the two read as one surface
- * opening upward rather than a box placed above it; a tinted tray would also
- * tint every template cover inside it.
+ * they feed. Its foot runs under the composer's top edge, so the two read as
+ * one surface opening upward. The tray is a very light tint of the ink rather
+ * than the composer's white, so it carries no border or shadow: the white
+ * composer, covers and selected type sit raised on it, and it needs no line to
+ * separate it from the page. The tint is one mix, so it holds in Dark, where
+ * the ink is light.
+ *
+ * Its capability tabs sit on its top edge, the open one in its tint; the tray
+ * is that tab's panel.
  */
 function CapabilityTray({
   signals,
@@ -575,31 +633,76 @@ function CapabilityTray({
   readonly closeButton: ReactNode;
   readonly className: string;
 }) {
+  const { t } = useTranslation();
+  const tabs = useCapabilityTabs(signals);
+  const group = capabilityGroup(selected);
   return (
-    <section
+    <TabsPrimitive.Root
+      value={group}
+      onValueChange={(value: CapabilityGroup) => {
+        tabs
+          .find((tab) => {
+            return tab.id === value;
+          })
+          ?.open();
+      }}
       className={cn(
-        "relative flex min-w-0 flex-col gap-4 rounded-t-3xl border border-b-0 border-gray-300 bg-card px-4 pt-4 pb-10 shadow-[var(--okou-card-shadow)] motion-safe:animate-capability-tray-in sm:px-5",
+        "flex min-w-0 flex-col motion-safe:animate-capability-tray-in",
+        "[--capability-tray:color-mix(in_oklab,var(--color-foreground)_3%,var(--color-card))]",
         className,
       )}
     >
-      {selected !== "search" && selected !== "research" && (
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <CapabilityTabs signals={signals} selected={selected} />
-          {closeButton}
-        </div>
-      )}
-      {selected === "search" || selected === "research" ? (
-        <HomeExploreSuggestions
-          signals={signals}
-          kind={selected}
-          headerAction={closeButton}
-        />
-      ) : selected === "workflow" ? (
-        <HomeWorkflowSuggestions signals={signals} headerAction={null} />
-      ) : (
-        <ComposerTaskTemplates signals={signals} selected={selected} />
-      )}
-    </section>
+      <TabsPrimitive.List
+        aria-label={t(($) => {
+          return $.chat.capabilityHome.capabilities;
+        })}
+        // The last tab's concave corner hangs 16px past it; the end padding
+        // keeps the scroller from clipping it.
+        className="flex min-w-0 items-end overflow-x-auto pr-4 [scrollbar-width:none]"
+      >
+        {tabs.map(({ id, Icon, label }) => {
+          return (
+            <TabsPrimitive.Tab key={id} value={id} className={CAPABILITY_TAB}>
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </TabsPrimitive.Tab>
+          );
+        })}
+      </TabsPrimitive.List>
+      <TabsPrimitive.Panel
+        value={group}
+        data-slot="capability-tray"
+        className={cn(
+          "relative flex min-w-0 flex-col gap-4 rounded-t-3xl bg-(--capability-tray) px-4 pt-4 pb-10 outline-none sm:px-5",
+          group === "search" && "rounded-tl-none",
+        )}
+      >
+        {selected !== "search" && selected !== "research" && (
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <CapabilityTabs signals={signals} selected={selected} />
+            <div className="flex shrink-0 items-center gap-1">
+              <CapabilityViewAll signals={signals} selected={selected} />
+              {closeButton}
+            </div>
+          </div>
+        )}
+        {selected === "search" || selected === "research" ? (
+          <HomeExploreSuggestions
+            signals={signals}
+            kind={selected}
+            headerAction={closeButton}
+          />
+        ) : selected === "workflow" ? (
+          <HomeWorkflowSuggestions signals={signals} />
+        ) : (
+          <ComposerTaskTemplates
+            signals={signals}
+            selected={selected}
+            headerless
+          />
+        )}
+      </TabsPrimitive.Panel>
+    </TabsPrimitive.Root>
   );
 }
 
@@ -620,8 +723,10 @@ function HomeActionCard({
       className={surfaceVariants({
         radius: "compact",
         interactive: true,
+        // The tray's tint already sets the card apart, so it keeps the
+        // surface's white and shadow and lets go of the line.
         className:
-          "h-auto min-h-16 min-w-0 justify-start gap-3 p-4 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @xl:min-h-28 @xl:flex-col @xl:items-start @xl:justify-between @xl:gap-5",
+          "h-auto min-h-16 min-w-0 justify-start gap-3 border-transparent p-4 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @xl:min-h-28 @xl:flex-col @xl:items-start @xl:justify-between @xl:gap-5",
       })}
       onClick={onClick}
     >
@@ -666,7 +771,7 @@ function HomeSuggestionCard({
       variant="quiet"
       aria-label={title}
       aria-description={description}
-      className="h-auto min-w-0 flex-col items-stretch justify-start gap-0 rounded-xl border border-surface-border bg-card p-2 text-left whitespace-normal text-foreground hover:border-foreground/25 hover:bg-card hover:text-foreground active:bg-card [&>span>svg]:size-full"
+      className="h-auto min-w-0 flex-col items-stretch justify-start gap-0 rounded-xl border border-transparent bg-card p-2 text-left whitespace-normal text-foreground shadow-surface hover:border-foreground/25 hover:bg-card hover:text-foreground active:bg-card [&>span>svg]:size-full"
       onClick={onClick}
     >
       {titlePosition === "top" && caption}
@@ -709,8 +814,12 @@ function HomeExploreSuggestions({
       aria-label={copy[kind].title}
       className="flex min-w-0 flex-col gap-4"
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-medium">{copy[kind].title}</h2>
+      {/* The tab above names the capability, so the header line says what
+          it finds instead of naming it twice. */}
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate pl-0.5 text-sm text-muted-foreground">
+          {copy[kind].description}
+        </p>
         {headerAction}
       </div>
       <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
@@ -842,10 +951,8 @@ function HomeAutomationSuggestions({
 
 function HomeWorkflowSuggestions({
   signals,
-  headerAction,
 }: {
   readonly signals: ComposerSignals;
-  readonly headerAction: ReactNode;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -864,25 +971,15 @@ function HomeWorkflowSuggestions({
   );
   const kind = useGet(signals.taskChips.home.workflowKind$);
   const prepareWorkflow = useSet(signals.taskChips.home.prepareWorkflow$);
-  const browse = useSet(signals.taskChips.workflows.browse$);
   const pageSignal = useGet(pageSignal$);
   const title =
     kind === "scheduled"
       ? copy.workflow.scheduled.setupTitle
       : copy.workflow[kind].title;
+  // The kind's tab and "View all" sit in the tray's header line, so the
+  // section keeps its name for assistive tech without a second visible title.
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-5">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <h2 className="text-lg font-medium">{title}</h2>
-        <div className="flex shrink-0 items-center gap-2">
-          <ComposerTemplatePickerButton
-            onClick={() => {
-              browse();
-            }}
-          />
-          {headerAction}
-        </div>
-      </div>
       {kind === "advanced" ? (
         <ComposerRail
           rail="home:advanced-workflows"
@@ -1004,22 +1101,17 @@ export function CapabilityHomeContent({
           </div>
         ) : (
           <>
-            <div
-              className={cn(
-                "flex min-w-0 shrink-0 flex-col gap-5",
-                heading === undefined ? "mt-auto" : "row-start-2",
-              )}
-            >
-              {heading !== undefined && (
-                <div className="flex min-h-14 items-center">{heading}</div>
-              )}
-              <CapabilitySwitcher signals={signals} selected={selected} />
-            </div>
+            {heading !== undefined && (
+              <div className="row-start-2 flex min-h-14 min-w-0 shrink-0 items-center">
+                {heading}
+              </div>
+            )}
             <CapabilityTray
               signals={signals}
               selected={selected}
               closeButton={closeButton}
-              className={heading === undefined ? "mt-6" : "row-start-4 mt-6"}
+              // Without a greeting the tray alone stands on the composer.
+              className={heading === undefined ? "mt-auto" : "row-start-4 mt-6"}
             />
           </>
         )}

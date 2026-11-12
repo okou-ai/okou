@@ -22,6 +22,10 @@ const RAIL = cn(
   "min-w-0 snap-x snap-mandatory overflow-x-auto scroll-smooth",
   "scroll-pl-14",
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+  // A scroller clips both axes, and on the capability tray a tile lifts off
+  // the row under the pointer. The padding gives the lift room inside the
+  // clip; the matching negative margin keeps the row where it was.
+  "in-data-[slot=capability-tray]:-mt-1 in-data-[slot=capability-tray]:pt-1",
 );
 /**
  * The rail owns each item's frame so that snapping and the entry stagger have
@@ -57,6 +61,21 @@ export const RAIL_TILE = cn(
 );
 /** The caption sits under the art and outside it, on every type's shelf. */
 export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
+/**
+ * The art box of a shelf tile, beside its own border and fill. On the
+ * capability tray's tint a hairline round every cover reads as a grid of
+ * frames, so there the box lets go of the line -- its width stays, so nothing
+ * moves -- and sits raised off the tray instead, the way a selected segment
+ * sits on its track. Under the pointer it lifts 2px and the shadow deepens:
+ * the one thing a tile's hover changes on the tray.
+ */
+export const RAIL_TILE_ART = cn(
+  "in-data-[slot=capability-tray]:border-transparent",
+  "in-data-[slot=capability-tray]:shadow-segment-selected",
+  "in-data-[slot=capability-tray]:transition-[translate,box-shadow] in-data-[slot=capability-tray]:duration-200 in-data-[slot=capability-tray]:ease-surface",
+  "in-data-[slot=capability-tray]:group-hover/tile:-translate-y-0.5 in-data-[slot=capability-tray]:group-hover/tile:shadow-md",
+  "in-data-[slot=capability-tray]:motion-reduce:transition-none",
+);
 interface RailGeometryStyle extends CSSProperties {
   readonly "--rail-item-width": string;
 }

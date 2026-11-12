@@ -27,6 +27,7 @@ import {
 import {
   ComposerRail,
   RAIL_TILE,
+  RAIL_TILE_ART,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import { ComposerRailPager } from "./rail-pager.tsx";
@@ -192,6 +193,7 @@ function ComposerTemplateCover({
       <span
         className={cn(
           "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
+          RAIL_TILE_ART,
           ratio,
         )}
       >
@@ -205,7 +207,9 @@ function ComposerTemplateCover({
             src={coverUrl}
             alt=""
             loading="lazy"
-            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
+            // The tray's tiles answer the pointer by lifting, so the zoom
+            // stays off there: one change per hover.
+            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04] in-data-[slot=capability-tray]:group-hover/tile:scale-100"
           />
         ) : (
           <Image size={24} aria-hidden />
@@ -221,14 +225,50 @@ function ComposerTemplateCover({
  * float in a column of their own: the catalog link stays on the title line,
  * and paging stays beside the covers it moves.
  */
+/**
+ * What a type's "View all" opens: the template picker on the catalog its shelf
+ * samples. The capability tray draws the control in its own tab row, so the
+ * shelf and the tray read the same answer from here. Chart has no catalog.
+ */
+export function useTaskTemplateBrowse(
+  signals: ComposerSignals,
+  task: Exclude<ComposerTask, "workflow">,
+): (() => void) | null {
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const setPickerCategory = useSet(signals.template.setDocumentCategory$);
+  if (task === "visualization") {
+    return null;
+  }
+  if (task === "presentation") {
+    return () => {
+      openTemplates({ kind: "insert", category: "slides" });
+    };
+  }
+  if (task === "document") {
+    // The tray's document shelf lists every purpose, so its catalog opens on
+    // All rather than on a filter the member never picked.
+    return () => {
+      setPickerCategory("all");
+      openTemplates({ kind: "insert", category: "document" });
+    };
+  }
+  const { category } = TASK_TEMPLATE_SHELF[task];
+  return () => {
+    openTemplates({ kind: "insert", category });
+  };
+}
+
 function ComposerTemplateShelf({
   signals,
   task,
   headerAction,
+  headerless = false,
 }: {
   readonly signals: ComposerSignals;
   readonly task: ComposerTemplateTask;
   readonly headerAction?: ReactNode;
+  /** The host draws the title and "View all" in its own header. */
+  readonly headerless?: boolean;
 }) {
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
@@ -236,7 +276,7 @@ function ComposerTemplateShelf({
   const custom = useCustomTemplateRecommendations(signals, "illustration");
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const browse = useTaskTemplateBrowse(signals, task);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   // Named one key at a time: the extractor only keeps keys it can see.
@@ -255,17 +295,15 @@ function ComposerTemplateShelf({
       role="group"
       aria-label={label}
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <div className="flex shrink-0 items-center gap-2">
-          <ComposerTemplatePickerButton
-            onClick={() => {
-              openTemplates({ kind: "insert", category });
-            }}
-          />
-          {headerAction}
+      {!headerless && (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-base font-medium">{label}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            {browse && <ComposerTemplatePickerButton onClick={browse} />}
+            {headerAction}
+          </div>
         </div>
-      </div>
+      )}
       <ComposerRail
         rail={`templates:${task}`}
         itemWidth={width}
@@ -487,10 +525,13 @@ function ComposerDocumentRecommendations({
   signals,
   headerAction,
   allTemplates = false,
+  headerless = false,
 }: {
   readonly signals: ComposerSignals;
   readonly headerAction?: ReactNode;
   readonly allTemplates?: boolean;
+  /** The host draws the title and "View all" in its own header. */
+  readonly headerless?: boolean;
 }) {
   const { t } = useTranslation();
   const categoryResult = useLastLoadable(signals.taskChips.documentCategory$);
@@ -516,18 +557,20 @@ function ComposerDocumentRecommendations({
       aria-label={label}
       aria-busy={category === undefined}
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <div className="flex shrink-0 items-center gap-2">
-          <ComposerTemplatePickerButton
-            onClick={() => {
-              setPickerCategory(category ?? "all");
-              openTemplates({ kind: "insert", category: "document" });
-            }}
-          />
-          {headerAction}
+      {!headerless && (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-base font-medium">{label}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <ComposerTemplatePickerButton
+              onClick={() => {
+                setPickerCategory(category ?? "all");
+                openTemplates({ kind: "insert", category: "document" });
+              }}
+            />
+            {headerAction}
+          </div>
         </div>
-      </div>
+      )}
       {/* The filter row travels like the cover rail under it: the overrun
           dissolves and a pager moves it, instead of a pill cut in half at the
           column edge. */}
@@ -588,16 +631,24 @@ export function ComposerTaskTemplates({
   signals,
   selected,
   headerAction,
+  headerless = false,
 }: {
   readonly signals: ComposerSignals;
   readonly selected: Exclude<ComposerTask, "workflow">;
   readonly headerAction?: ReactNode;
+  /**
+   * The host already names the type and carries its "View all", so the
+   * template shelves drop their own title line. Chart keeps its section
+   * labels: they name its two groups, not the type.
+   */
+  readonly headerless?: boolean;
 }) {
   if (selected === "presentation") {
     return (
       <ComposerPresentationRecommendations
         signals={signals}
         headerAction={headerAction}
+        headerless={headerless}
       />
     );
   }
@@ -607,6 +658,7 @@ export function ComposerTaskTemplates({
         signals={signals}
         headerAction={headerAction}
         allTemplates
+        headerless={headerless}
       />
     );
   }
@@ -623,6 +675,7 @@ export function ComposerTaskTemplates({
       signals={signals}
       task={selected}
       headerAction={headerAction}
+      headerless={headerless}
     />
   );
 }
