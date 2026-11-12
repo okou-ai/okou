@@ -3270,6 +3270,13 @@
       "when": 1794467456292,
       "tag": "1545_runner_ingress_service_active",
       "breakpoints": true
+    },
+    {
+      "idx": 1546,
+      "version": "7",
+      "when": 1794478699625,
+      "tag": "1546_vnc_chat_authorizations",
+      "breakpoints": true
     }
   ]
 }

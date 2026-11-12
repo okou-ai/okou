@@ -6414,7 +6414,8 @@
       "host_changed": "ホスト設定が変更されました。再申請してください。",
       "permissions_required": "先に関連するコネクタの権限を承認してください。",
       "run_active": "リクエスト元の Run が終了してから承認してください。",
-      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。",
+      "ssh_access_required": "先に必要な SSH ホストを承認してください。"
     },
     "continue": "タスクを続行",
     "details": "アクセスの詳細",
@@ -6766,6 +6767,34 @@
       "via": "SSHホスト:"
     },
     "unavailable": "このワークスペースでは VNC を利用できません。"
+  },
+  "vncAuthorization": {
+    "allow": "このチャットで許可",
+    "blocked": {
+      "chat_busy": "このチャットで実行中の Run が終了してから承認してください。",
+      "host_changed": "ホスト設定が変更されました。再申請してください。",
+      "permissions_required": "先に関連するコネクタの権限を承認してください。",
+      "run_active": "リクエスト元の Run が終了してから承認してください。",
+      "run_unavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。",
+      "ssh_access_required": "先に必要な SSH ホストを承認してください。"
+    },
+    "continue": "タスクを続行",
+    "dependencies": "必要な SSH ホスト（個別に承認）",
+    "details": "アクセスの詳細",
+    "effect": "アクセスを無効にするまで、このデスクトップの表示と操作を許可します。SSH ホストには個別の承認が必要です。",
+    "failed": "操作を完了できませんでした。再試行して権限を確認し、続行してください。",
+    "retry": "再試行",
+    "scope": "このホスト · このチャットのみ",
+    "status": {
+      "approved": "VNC アクセスを許可しました",
+      "denied": "VNC アクセスを拒否しました",
+      "expired": "VNC リクエストの有効期限切れ",
+      "pending": "VNC アクセス",
+      "revoked": "VNC アクセスを取り消しました",
+      "stale": "VNC リクエストが変更されました"
+    },
+    "title": "VNC アクセス",
+    "unavailable": "このリクエストは利用できません。再申請してください。"
   },
   "workflows": {
     "automations": {

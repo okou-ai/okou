@@ -55,6 +55,7 @@ import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
+import { vncAuthorizationRoutes } from "./routes/vnc-authorization";
 import { sshAuthorizationRoutes } from "./routes/ssh-authorization";
 import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authorization";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
@@ -356,6 +357,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,
   ...sshAuthorizationRoutes,
+  ...vncAuthorizationRoutes,
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,

@@ -76,7 +76,7 @@ export function managementWriteCommand<T extends ZodType>(
       await operation(body, validatedId),
       options,
       resource === "host"
-        ? "Inspect current configuration with okou vnc host list --scope configured --json."
+        ? "Inspect current configuration with okou vnc host list --scope configured --json. Request current-chat access with okou vnc request-access <connection-id> --reason <purpose>; approve its SSH dependencies first."
         : "Inspect current metadata with okou vnc credential list --json.",
     );
   };

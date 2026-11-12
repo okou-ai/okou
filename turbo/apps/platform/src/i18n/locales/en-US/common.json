@@ -6433,7 +6433,8 @@
       "host_changed": "The host configuration changed. Ask for a new request.",
       "permissions_required": "Approve the accompanying connector permissions first.",
       "run_active": "Wait for the requesting Run to finish before approving.",
-      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat.",
+      "ssh_access_required": "Approve the required SSH hosts first."
     },
     "continue": "Continue task",
     "details": "Access details",
@@ -6787,6 +6788,34 @@
       "via": "SSH host:"
     },
     "unavailable": "VNC is not available in this workspace."
+  },
+  "vncAuthorization": {
+    "allow": "Allow in this chat",
+    "blocked": {
+      "chat_busy": "Wait for the current Run in this chat to finish before approving.",
+      "host_changed": "The host configuration changed. Ask for a new request.",
+      "permissions_required": "Approve the accompanying connector permissions first.",
+      "run_active": "Wait for the requesting Run to finish before approving.",
+      "run_unavailable": "The requesting Run is unavailable. Ask for a new request in this chat.",
+      "ssh_access_required": "Approve the required SSH hosts first."
+    },
+    "continue": "Continue task",
+    "dependencies": "Required SSH hosts (approved separately)",
+    "details": "Access details",
+    "effect": "Allows viewing and controlling this desktop until access is disabled. SSH hosts require separate approval.",
+    "failed": "Could not complete the action. Retry to check access and continue.",
+    "retry": "Retry",
+    "scope": "This host · This chat only",
+    "status": {
+      "approved": "VNC access allowed",
+      "denied": "VNC access denied",
+      "expired": "VNC request expired",
+      "pending": "VNC access",
+      "revoked": "VNC access revoked",
+      "stale": "VNC request changed"
+    },
+    "title": "VNC access",
+    "unavailable": "This request is unavailable. Ask for a new request."
   },
   "workflows": {
     "automations": {
