@@ -238,3 +238,44 @@ test.each([
     expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
   },
 );
+
+test("a server-denied download keeps the preview available and opens the plans", async () => {
+  const id = "00000000-0000-4000-8000-000000000951";
+  const filename = "report.pdf";
+  const url = artifactReferencePath(id, filename);
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        id: "paywalled-report",
+        role: "assistant",
+        content: `[Report](${url})`,
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "paywalled-report-event",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+    ],
+    artifacts: [
+      artifactFile(filename, { id, url, contentType: "application/pdf" }),
+    ],
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: "https://storage.example.test/preview/report.pdf",
+      downloadUrl: `https://api.okou.ai/api/artifact-references/${id.replaceAll("-", "")}/download`,
+      downloadAllowed: false,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename,
+      contentType: "application/pdf",
+      target: { kind: "file", id },
+    });
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Report"));
+  const preview = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", preview));
+  click(await findNamedMenuItem("Download"));
+  await screen.findByRole("dialog", { name: "Choose a plan" });
+  expect(browser.downloads).toStrictEqual([]);
+});

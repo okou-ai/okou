@@ -219,6 +219,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: false,
   },
+  [FeatureSwitchKey.FreePlanArtifactPaywall]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Free plan artifact paywall",
+    description:
+      "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.BillingSurvey]: {
     maintainer: "ming@okou.ai",
     displayName: "Billing one-question surveys",

@@ -55,6 +55,8 @@ import { captureArtifactAction } from "../../lib/posthog.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
+import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
+import { ProBadge } from "./components/model-provider-picker.tsx";
 import {
   artifactGoogleDriveCatalogItem$,
   inactiveArtifactGoogleDriveCatalogItem$,
@@ -918,6 +920,7 @@ export function ArtifactDownloadMenu({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
+  const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
   const drive = useArtifactDriveMenu({
@@ -993,6 +996,11 @@ export function ArtifactDownloadMenu({
           {t(($) => {
             return $.artifacts.actions.download;
           })}
+          {paywallLocked && (
+            <span className="ml-auto">
+              <ProBadge />
+            </span>
+          )}
         </DropdownMenuItem>
         {drive.items}
         {children}

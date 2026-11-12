@@ -89,6 +89,10 @@ export const hostedSitePresentationSchema = object({
   showBanner: boolean(),
   title: string(),
   siteUrl: url(),
+  // A new host-worker can reach an old API during deployment or rollback.
+  // Make this required after APIs that omit it are neither serving nor retained
+  // as production rollback targets; remove reader tolerance with #46746.
+  downloadAllowed: boolean().optional(),
 });
 
 export const hostedSiteAccessDecisionSchema = discriminatedUnion("decision", [
