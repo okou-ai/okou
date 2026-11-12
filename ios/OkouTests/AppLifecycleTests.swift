@@ -1,5 +1,6 @@
 import ChatData
 import ChatDataTestSupport
+import CryptoKit
 import Foundation
 import Synchronization
 import XCTest
@@ -205,10 +206,48 @@ final class AppLifecycleTests: XCTestCase {
     let suite = "lifecycle-" + UUID().uuidString
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-    return AppLifecycle(
+    let lifecycle = AppLifecycle(
       authentication: authentication, configuration: configuration,
       session: fixture.history.http.session,
       notifications: NotificationService(system: NotificationSystemFixture(), defaults: defaults))
+    let scopes = try authentication.workspaces.map {
+      ChatCacheScope(
+        apiBaseURL: configuration.apiURL, userID: try XCTUnwrap(authentication.userID),
+        workspaceID: $0.id)
+    }
+    addTeardownBlock { @MainActor in
+      lifecycle.close()
+      try await authentication.signOut()
+      await lifecycle.notifications.update(workspace: nil)
+      await lifecycle.notifications.refreshNotificationState(userID: nil)
+      _ = lifecycle.notifications.data(
+        authentication: authentication, configuration: configuration,
+        session: fixture.history.http.session)
+      try Self.removeFixtureFiles(scopes)
+    }
+    return lifecycle
+  }
+
+  /// Teardown only: remove this fixture's reserved-origin namespaces, never sibling data.
+  private static func removeFixtureFiles(_ scopes: [ChatCacheScope]) throws {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
+      0]
+    let cacheRoots = Set([support] + [PushConfiguration.directory()].compactMap { $0 })
+    for scope in scopes {
+      let identity = [scope.apiBaseURL.absoluteString, scope.userID, scope.workspaceID]
+        .joined(separator: "\u{0}")
+      let name = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+      var paths = [support.appending(path: "ChatDrafts/" + name)]
+      for suffix in [".sqlite", ".sqlite-wal", ".sqlite-shm"] {
+        paths.append(support.appending(path: "ProjectDisclosure/" + name + suffix))
+        paths += cacheRoots.map { $0.appending(path: "ChatCache/" + name + suffix) }
+      }
+      for path in paths {
+        do { try FileManager.default.removeItem(at: path) } catch let error as CocoaError
+          where error.code == .fileNoSuchFile
+        {}
+      }
+    }
   }
 }
 
