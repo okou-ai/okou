@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
                     app.authentication,
                     WorkspaceSessionFactory(app::createWorkspaceSession),
                     BuildConfig.API_ORIGIN,
+                    app.chatCache,
                 )
             }
         }

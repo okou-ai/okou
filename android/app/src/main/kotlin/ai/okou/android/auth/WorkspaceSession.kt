@@ -2,27 +2,38 @@ package ai.okou.android.auth
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.MAX_CHAT_CACHE_BYTES
 import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class WorkspaceIdentity(
     val apiOrigin: String,
     val userId: String,
     val sessionId: String,
     val workspaceId: String,
+    val authorizationScope: String = "",
 )
 
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
-interface WorkspaceSession : Closeable {
+interface WorkspaceSession : Closeable, ChatListService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -41,6 +52,40 @@ class CanonicalWorkspaceSession(
     private val timezone: String = TimeZone.getDefault().id,
 ) : WorkspaceSession {
     private val api = ApiClient(identity.apiOrigin.toHttpUrl(), tokens)
+    private val transfers = SignedTransferClient()
+    private val archiveJson = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = true
+    }
+
+    override suspend fun chatSnapshot() = api.chatSnapshot()
+
+    override suspend fun chatEvents(since: Long?) = api.chatEvents(since)
+
+    override suspend fun indicators() = api.indicators()
+
+    override suspend fun agents() = api.agents()
+
+    override suspend fun projects() = api.projects()
+
+    override suspend fun featureSwitches() = api.featureSwitches()
+
+    override suspend fun chatArchive(url: String): ChatArchive =
+        withContext(Dispatchers.IO) {
+            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
+            try {
+                val bytes = transfers.download(address, MAX_CHAT_CACHE_BYTES)
+                archiveJson.decodeFromString<ChatArchive>(
+                    bytes.decodeToString(throwOnInvalidSequence = true)
+                )
+            } catch (_: ApiFailure.Http) {
+                throw ChatSnapshotUnavailable()
+            } catch (_: SerializationException) {
+                throw ApiFailure.IncompatibleResponse()
+            } catch (_: IllegalArgumentException) {
+                throw ApiFailure.IncompatibleResponse()
+            }
+        }
 
     override suspend fun bootstrap(): WorkspaceBootstrap {
         val organization = api.organization()
@@ -74,7 +119,10 @@ class CanonicalWorkspaceSession(
             check(it.initialized()) { "Workspace preferences are incomplete" }
         }
 
-    override fun close() = api.close()
+    override fun close() {
+        api.close()
+        transfers.close()
+    }
 }
 
 private fun UserPreferences.initialized(): Boolean =

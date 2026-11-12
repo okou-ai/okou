@@ -174,5 +174,6 @@ dependencies {
     androidTestImplementation(libs.test.runner)
     androidTestImplementation(libs.test.uiautomator)
     androidTestImplementation(libs.test.storage)
+    androidTestImplementation(libs.mockwebserver)
     androidTestUtil(libs.test.services)
 }

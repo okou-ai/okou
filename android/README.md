@@ -6,7 +6,8 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. After authoritative
 membership and workspace bootstrap, the application provides **Home and Settings** destinations,
-an editable local draft preview, and device-local Light/Dark/Follow system
+the native chat list when the server-effective `androidChatList` rollout is enabled
+(otherwise the editable local draft preview), and device-local Light/Dark/Follow system
 appearance. Compact windows use bottom navigation; wider windows use a rail.
 Home remains usable while Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from
@@ -25,6 +26,16 @@ by default; see [native authentication](AUTHENTICATION.md)
 for public staging overrides, provider setup and verification boundaries. Chat
 Send, push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
+
+Confirmed chat navigation uses a private versioned cache under
+`noBackupFilesDir/chat-list`, excluded from backups. Content and cursor are committed
+together, scoped to API origin/user/workspace and the current authorization snapshot.
+Last-confirmed Agent/Project references keep the scoped list usable after a
+process restart while their network reads are unavailable. Each scope is limited
+to 8 MiB; the four most recently used scopes are retained.
+Cache/storage failure is visible, and successfully loaded network content remains
+usable. A saved list and the last status refresh do not establish current network
+freshness. Signed URLs, credentials and transient indicators are not persisted.
 
 ## Prerequisites and Setup
 
@@ -84,6 +95,11 @@ Android SDK; no emulator is needed:
 cd android
 ./gradlew :app:testDebugUnitTest --no-daemon
 ```
+
+The chat suites exercise real disk reopening, the generated canonical HTTP/codec
+boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
+holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+runs the list/Settings/recreation journey on the existing API 35 managed device.
 
 The plain Kotlin state-holder tests do not themselves use Android APIs. An
 independent Kotlin/JVM test entry could compile those same sources without an

@@ -50,6 +50,7 @@ fun OkouApp(
     account: @Composable () -> Unit = {},
     workspacePreferences: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
+    homeContent: @Composable () -> Unit = { HomeScreen(home) },
 ) {
     val navigation = rememberNavController()
     val entry by navigation.currentBackStackEntryAsState()
@@ -139,7 +140,7 @@ fun OkouApp(
                     }
                 }
                 NavHost(navigation, Destination.Home.route, Modifier.weight(1f).fillMaxSize()) {
-                    composable(Destination.Home.route) { HomeScreen(home) }
+                    composable(Destination.Home.route) { homeContent() }
                     composable(Destination.Settings.route) {
                         SettingsScreen(
                             appearance,

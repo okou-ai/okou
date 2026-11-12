@@ -7,6 +7,7 @@ import ai.okou.android.auth.ClerkAuthentication
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.auth.initialLocale
+import ai.okou.android.chat.ChatCacheStore
 import android.app.Application
 import androidx.core.app.LocaleManagerCompat
 import androidx.datastore.core.DataStore
@@ -15,6 +16,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 
 open class OkouApplication : Application() {
+    val chatCache by lazy { ChatCacheStore(noBackupFilesDir.resolve("chat-list")) }
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)

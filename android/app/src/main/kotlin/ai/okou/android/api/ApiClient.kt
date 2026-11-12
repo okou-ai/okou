@@ -1,12 +1,18 @@
 package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
 import ai.okou.android.api.generated.CanonicalApi
+import ai.okou.android.api.generated.ChatEvents
+import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.FeatureSwitches
+import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.Projects
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import java.io.Closeable
@@ -131,6 +137,18 @@ class ApiClient(
     }
 
     suspend fun organization(): Organization = execute { api.organization(it) }
+
+    suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
+
+    suspend fun chatEvents(since: Long?): ChatEvents = execute { api.chatEvents(it, since) }
+
+    suspend fun indicators(): Indicators = execute { api.indicators(it) }
+
+    suspend fun agents(): Agents = execute { api.agents(it) }
+
+    suspend fun projects(): Projects = execute { api.projects(it) }
+
+    suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
 
     suspend fun preferences(): UserPreferences = execute { api.preferences(it) }
 

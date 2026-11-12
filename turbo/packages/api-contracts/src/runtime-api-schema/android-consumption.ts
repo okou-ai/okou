@@ -35,7 +35,8 @@ export async function checkAndroidConsumption(
   for (const sourceSet of await readdir(appSources, { withFileTypes: true })) {
     if (
       !sourceSet.isDirectory() ||
-      ["test", "androidTest"].includes(sourceSet.name)
+      // Gradle registers sharedTest/kotlin only with test and androidTest.
+      ["test", "androidTest", "sharedTest"].includes(sourceSet.name)
     )
       continue;
     const directory = join(appSources, sourceSet.name);

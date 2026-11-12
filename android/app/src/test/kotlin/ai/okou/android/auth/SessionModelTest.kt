@@ -1,11 +1,14 @@
 package ai.okou.android.auth
 
 import ai.okou.android.TestAuthentication
+import ai.okou.android.TestChatService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatListService
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
@@ -25,12 +28,16 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SessionModelTest {
+    @get:Rule val temporary = TemporaryFolder()
+
     private class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
-        WorkspaceSession {
+        WorkspaceSession, ChatListService by TestChatService() {
         var closed = false
         var load: suspend () -> WorkspaceBootstrap = { testBootstrap(identity.workspaceId) }
         var update: suspend () -> Unit = {}
@@ -70,6 +77,10 @@ class SessionModelTest {
                                     }
                                 },
                                 "https://api.okou.ai/",
+                                ChatCacheStore(
+                                    temporary.newFolder(),
+                                    StandardTestDispatcher(testScheduler),
+                                ),
                             )
                         }
                     },
