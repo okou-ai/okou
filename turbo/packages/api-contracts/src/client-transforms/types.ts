@@ -1,5 +1,5 @@
 export interface ClientResponseTransform {
-  readonly client: "desktop" | "ios";
+  readonly client: "desktop" | "ios" | "android";
   /** Contract method and path, e.g. "POST" and "/api/computer-use/hosts/register". */
   readonly method: string;
   readonly path: string;

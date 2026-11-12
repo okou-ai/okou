@@ -97,6 +97,9 @@ jobs:
       app_deploy_version: ${{ steps.app-release.outputs.version }}
       ios_release_created: ${{ steps.release.outputs['ios--release_created'] }}
       ios_version: ${{ steps.release.outputs['ios--version'] }}
+      android_release_created: ${{ steps.release.outputs['android--release_created'] }}
+      android_version: ${{ steps.release.outputs['android--version'] }}
+      android_tag: ${{ steps.release.outputs['android--tag_name'] }}
       desktop_release_created: ${{ steps.release.outputs['desktop--release_created'] }}
       host_worker_release_created: ${{ steps.release.outputs['turbo/apps/host-worker--release_created'] }}
       runner_rs_release_created: ${{ steps.release.outputs['crates/runner--release_created'] }}
@@ -160,6 +163,7 @@ jobs:
           RELEASE_SHAS: >-
             [
               ${{ toJSON(steps.release.outputs['ios--sha']) }},
+              ${{ toJSON(steps.release.outputs['android--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/ably-subscriber--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/api-contracts--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-agent--sha']) }},
@@ -257,6 +261,7 @@ jobs:
           RELEASE_TAGS: >-
             [
               ${{ toJSON(steps.release.outputs['ios--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['android--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/ably-subscriber--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/api-contracts--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-agent--tag_name']) }},
@@ -503,6 +508,52 @@ jobs:
                 text:
                   type: mrkdwn
                   text: "*Browser Extension* ❌ Publish failed\n📦 Version: `${{ needs.release-please.outputs.browser_extension_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.browser_extension_tag }}|View Release>\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+
+  publish-android:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.android_release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      ANDROID_VERSION: ${{ needs.release-please.outputs.android_version }}
+      ANDROID_TAG: ${{ needs.release-please.outputs.android_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.release_target }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Install Android SDK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Build and temporarily sign Android APK
+        run: bash .github/scripts/artifacts/build-okou-android-apk.sh "$ANDROID_VERSION" "$RUNNER_TEMP/android-release"
+      - name: Publish APK on the Android Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$ANDROID_TAG" = "android-v$ANDROID_VERSION" ] || {
+            echo 'Unexpected Android release tag' >&2
+            exit 1
+          }
+          gh release view "$ANDROID_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > "$RUNNER_TEMP/android-release-notes.md"
+          if ! grep -Fq '<!-- android-temporary-signing -->' "$RUNNER_TEMP/android-release-notes.md"; then
+            cat >> "$RUNNER_TEMP/android-release-notes.md" <<'NOTICE'
+
+          <!-- android-temporary-signing -->
+          Android APKs currently use a disposable temporary signing key. Installing a later APK may require uninstalling the existing app, which removes its local data. Stable production signing follows in a separate PR.
+          NOTICE
+            gh release edit "$ANDROID_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/android-release-notes.md"
+          fi
+          gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
 
   publish-ios-testflight:
     name: publish-ios-testflight
@@ -2085,6 +2136,7 @@ jobs:
         promote-app-worker-production,
         promote-desktop-release,
         publish-ios-testflight,
+        publish-android,
         promote-runner-production,
       ]
     if: >-
@@ -2095,6 +2147,8 @@ jobs:
        needs.promote-app-worker-production.result == 'success') &&
       (needs.release-please.outputs.ios_release_created != 'true' ||
        needs.publish-ios-testflight.result == 'success') &&
+      (needs.release-please.outputs.android_release_created != 'true' ||
+       needs.publish-android.result == 'success') &&
       (needs.release-please.outputs.desktop_release_created != 'true' ||
        needs.promote-desktop-release.result == 'success') &&
       (needs.release-please.outputs.runner_rs_release_created != 'true' ||
