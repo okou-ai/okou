@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import chalk from "chalk";
-import { Command, InvalidArgumentError, Option } from "commander";
+import { Command, Option } from "commander";
 import {
   BROWSER_IDLE_LEASE_MINUTES,
   browserCreateRequestSchema,
@@ -77,7 +77,6 @@ type BrowserInputFieldOption = zInfer<typeof browserInputFieldOptionSchema>;
 
 interface NewOptions {
   readonly name: string;
-  readonly country?: string;
   readonly agentSession?: string;
   readonly json?: boolean;
 }
@@ -97,14 +96,6 @@ interface InputRequestOptions extends OutputOptions {
   readonly reason?: string;
   readonly callbackPrompt?: string;
   readonly field: readonly string[];
-}
-
-function parseCountry(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (!/^[a-z]{2}$/u.test(normalized)) {
-    throw new InvalidArgumentError("country must be a two-letter country code");
-  }
-  return normalized;
 }
 
 function collectInputField(
@@ -351,23 +342,13 @@ function browserJson(
   return safeBrowser;
 }
 
-function connectAgentBrowser(
-  cdpUrl: string,
-  sessionName: string,
-  sharedWindow: boolean,
-): void {
+function connectAgentBrowser(cdpUrl: string, sessionName: string): void {
   // The shared proxy already exposes existing owned pages; connecting must not
   // pin by creating another tab.
   const result = spawnSync(
     "agent-browser",
-    [
-      "--session",
-      sessionName,
-      ...(sharedWindow ? ["--no-pin-tab"] : []),
-      "connect",
-      cdpUrl,
-    ],
-    { stdio: "ignore", ...(sharedWindow ? { timeout: 30_000 } : {}) },
+    ["--session", sessionName, "--no-pin-tab", "connect", cdpUrl],
+    { stdio: "ignore", timeout: 30_000 },
   );
   if (result.error) {
     throw new Error("Could not start agent-browser");
@@ -402,25 +383,25 @@ async function connectResponse(
   loginGuidance: string | undefined,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-  if (response.browser.window) {
-    if (!response.extension)
-      throw new Error(
-        "Shared Browser connection has no installed extension metadata",
-      );
-    const proxy = await launchWindowProxy({
-      cdpUrl: response.cdpUrl,
-      runtimeId: response.extension.runtimeId,
-      windowId: response.browser.window.primaryWindowId,
-    });
-    try {
-      connectAgentBrowser(proxy.endpoint, sessionName, true);
-      proxy.detach();
-    } catch (error) {
-      await proxy.stop();
-      throw error;
-    }
-  } else {
-    connectAgentBrowser(response.cdpUrl, sessionName, false);
+  if (!response.browser.window) {
+    throw new Error("Shared Browser connection has no assigned chat window");
+  }
+  if (!response.extension) {
+    throw new Error(
+      "Shared Browser connection has no installed extension metadata",
+    );
+  }
+  const proxy = await launchWindowProxy({
+    cdpUrl: response.cdpUrl,
+    runtimeId: response.extension.runtimeId,
+    windowId: response.browser.window.primaryWindowId,
+  });
+  try {
+    connectAgentBrowser(proxy.endpoint, sessionName);
+    proxy.detach();
+  } catch (error) {
+    await proxy.stop();
+    throw error;
   }
   if (options.json) {
     console.log(
@@ -484,14 +465,6 @@ const newCommand = new Command()
   .addOption(new Option("--name <name>", "Browser name").default("browser"))
   .addOption(
     new Option(
-      "--country <code>",
-      "Legacy option; shared Browser sessions use proxyless egress",
-    )
-      .hideHelp()
-      .argParser(parseCountry),
-  )
-  .addOption(
-    new Option(
       "--agent-session <name>",
       "Named agent-browser session",
     ).argParser(parseAgentSession),
@@ -501,7 +474,6 @@ const newCommand = new Command()
     withErrorHandler(async (options: NewOptions) => {
       const request = browserCreateRequestSchema.parse({
         name: options.name,
-        proxyCountryCode: options.country ?? null,
       });
       const loginGuidance = await getConnectedEmailLoginGuidance(
         options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
