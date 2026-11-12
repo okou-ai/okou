@@ -1339,6 +1339,40 @@
       "description": "Mais créditos e execuções simultâneas",
       "getPlan": "Obter {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Só estava conferindo o preço",
+          "needs_approval": "Preciso da aprovação de outra pessoa",
+          "not_ready_yet": "Ainda não estou pronto para assinar",
+          "not_seeing_value": "Ainda não vi o valor",
+          "other": "Outro motivo",
+          "payment_issue": "Tive problemas com o pagamento",
+          "price_higher_than_expected": "O preço foi maior do que eu esperava",
+          "results_not_good_enough": "Não fiquei satisfeito com os resultados"
+        },
+        "description": "É só uma pergunta. Sua resposta nos ajuda a melhorar.",
+        "question": "O que impediu você de concluir a compra?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "No momento não preciso de mais",
+          "not_sure_worth_it": "Ainda não sei se vale a pena",
+          "other": "Outro motivo",
+          "still_trying": "Quero testar mais antes",
+          "too_expensive": "É caro demais"
+        },
+        "question": "O que impede você de fazer o upgrade hoje?",
+        "reward": "A primeira resposta elegível neste espaço de trabalho recebe {{credits}} créditos de bônus, válidos por 30 dias.",
+        "thanksWithCredits": "Obrigado! Adicionamos {{credits}} créditos para você continuar."
+      },
+      "error": "Não foi possível enviar sua resposta. Tente novamente.",
+      "notNow": "Agora não",
+      "otherLabel": "Sua resposta",
+      "otherPlaceholder": "Conte mais (opcional)",
+      "submit": "Enviar",
+      "thanks": "Obrigado por nos contar."
+    },
     "toasts": {
       "autoRechargeUpdated": "Recarga automática atualizada",
       "cancellationScheduledDate": "Cancelamento agendado. Seu plano atual permanece ativo até {{date}}.",
@@ -7508,7 +7542,7 @@
       "codeInstructions": "Envie este código ao Okou pelo e-mail que deseja adicionar. Use-o como assunto ou na primeira linha da mensagem.",
       "connected": "E-mail conectado",
       "deleteAria": "Excluir {{email}}",
-      "description": "Envie um e-mail ao Okou e mantenha cada conversa em seu próprio chat",
+      "description": "Converse com seu Okou por e-mail",
       "emailAddress": "Endereço de e-mail",
       "healthNotice": "Não use esta integração para informações de pacientes reguladas pela HIPAA.",
       "invalidLink": "Este link de conexão é inválido. Envie um novo e-mail ao Okou.",

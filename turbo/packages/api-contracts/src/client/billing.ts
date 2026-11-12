@@ -14,6 +14,7 @@ import type {
   billingRedeemContract as OriginalBillingRedeemContract,
   billingRestoreContract as OriginalBillingRestoreContract,
   billingStatusContract as OriginalBillingStatusContract,
+  billingSurveyContract as OriginalBillingSurveyContract,
   billingUsagePackCatalogContract as OriginalBillingUsagePackCatalogContract,
   billingUsagePackCheckoutContract as OriginalBillingUsagePackCheckoutContract,
   billingUsagePackCreditsContract as OriginalBillingUsagePackCreditsContract,
@@ -319,6 +320,44 @@ export const billingStatusContract: ClientDescriptor<
       200: true,
       401: true,
       403: true,
+      500: true,
+    },
+  },
+};
+
+export const billingSurveyContract: ClientDescriptor<
+  typeof OriginalBillingSurveyContract
+> = {
+  status: {
+    method: "GET",
+    path: "/api/billing/survey",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      500: true,
+    },
+  },
+  submit: {
+    method: "POST",
+    path: "/api/billing/survey",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      500: true,
+    },
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/billing/survey/dismiss",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
       500: true,
     },
   },

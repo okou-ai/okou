@@ -1339,6 +1339,40 @@
       "description": "Plus de crédits et d'exécutions simultanées",
       "getPlan": "Obtenir {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Je voulais seulement voir le prix",
+          "needs_approval": "J'ai besoin de l'accord de quelqu'un d'autre",
+          "not_ready_yet": "Je ne suis pas encore prêt à m'engager",
+          "not_seeing_value": "Je n'en ai pas encore vu l'intérêt",
+          "other": "Autre chose",
+          "payment_issue": "J'ai eu un problème de paiement",
+          "price_higher_than_expected": "Le prix était plus élevé que prévu",
+          "results_not_good_enough": "Je n'étais pas satisfait des résultats"
+        },
+        "description": "Une seule question. Votre réponse nous aide à nous améliorer.",
+        "question": "Qu'est-ce qui vous a empêché de finaliser votre achat ?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Je n'en ai pas besoin pour l'instant",
+          "not_sure_worth_it": "Je ne suis pas encore sûr que ça vaille le coup",
+          "other": "Autre chose",
+          "still_trying": "Je veux d'abord l'essayer davantage",
+          "too_expensive": "C'est trop cher"
+        },
+        "question": "Qu'est-ce qui vous empêche de passer à l'offre supérieure aujourd'hui ?",
+        "reward": "La première réponse éligible dans cet espace de travail reçoit {{credits}} crédits bonus, valables 30 jours.",
+        "thanksWithCredits": "Merci ! {{credits}} crédits ont été ajoutés, vous pouvez continuer."
+      },
+      "error": "Impossible d'envoyer votre réponse. Réessayez.",
+      "notNow": "Pas maintenant",
+      "otherLabel": "Votre réponse",
+      "otherPlaceholder": "Dites-nous en plus (facultatif)",
+      "submit": "Envoyer",
+      "thanks": "Merci pour votre retour."
+    },
     "toasts": {
       "autoRechargeUpdated": "Recharge automatique mise à jour",
       "cancellationScheduledDate": "Annulation programmée. Votre forfait actuel reste actif jusqu'au {{date}}.",
@@ -7508,7 +7542,7 @@
       "codeInstructions": "Envoyez ce code à Okou depuis l’adresse à ajouter. Placez-le dans l’objet ou sur la première ligne du message.",
       "connected": "E-mail connecté",
       "deleteAria": "Supprimer {{email}}",
-      "description": "Écrivez à Okou et gardez chaque conversation dans son propre fil",
+      "description": "Discutez avec votre Okou par e-mail",
       "emailAddress": "Adresse e-mail",
       "healthNotice": "N’utilisez pas cette intégration pour des informations de patients soumises à HIPAA.",
       "invalidLink": "Ce lien de connexion est invalide. Envoyez un nouvel e-mail à Okou.",

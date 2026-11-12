@@ -1339,6 +1339,40 @@
       "description": "Più crediti e esecuzioni simultanee",
       "getPlan": "Ottieni {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Volevo solo vedere il prezzo",
+          "needs_approval": "Mi serve l'approvazione di qualcun altro",
+          "not_ready_yet": "Non sono ancora pronto a impegnarmi",
+          "not_seeing_value": "Non ne ho ancora visto il valore",
+          "other": "Altro",
+          "payment_issue": "Ho avuto problemi con il pagamento",
+          "price_higher_than_expected": "Il prezzo era più alto del previsto",
+          "results_not_good_enough": "Non ero soddisfatto dei risultati"
+        },
+        "description": "Solo una domanda. La tua risposta ci aiuta a migliorare.",
+        "question": "Cosa ti ha impedito di completare l'acquisto?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Al momento non mi serve altro",
+          "not_sure_worth_it": "Non sono ancora sicuro che ne valga la pena",
+          "other": "Altro",
+          "still_trying": "Voglio provarlo ancora un po'",
+          "too_expensive": "È troppo costoso"
+        },
+        "question": "Cosa ti impedisce di passare a un piano superiore oggi?",
+        "reward": "La prima risposta idonea in questo spazio di lavoro riceve {{credits}} crediti bonus, validi per 30 giorni.",
+        "thanksWithCredits": "Grazie! Abbiamo aggiunto {{credits}} crediti, così puoi continuare."
+      },
+      "error": "Impossibile inviare la risposta. Riprova.",
+      "notNow": "Non ora",
+      "otherLabel": "La tua risposta",
+      "otherPlaceholder": "Raccontaci di più (facoltativo)",
+      "submit": "Invia",
+      "thanks": "Grazie per avercelo detto."
+    },
     "toasts": {
       "autoRechargeUpdated": "Ricarica automatica aggiornata",
       "cancellationScheduledDate": "Cancellazione prevista. Il tuo piano attuale rimane attivo fino al {{date}}.",
@@ -7508,7 +7542,7 @@
       "codeInstructions": "Invia questo codice a Okou dall’indirizzo che vuoi aggiungere. Usalo come oggetto o nella prima riga del messaggio.",
       "connected": "Email collegata",
       "deleteAria": "Elimina {{email}}",
-      "description": "Scrivi a Okou e mantieni ogni conversazione nel proprio thread",
+      "description": "Parla con il tuo Okou via email",
       "emailAddress": "Indirizzo e-mail",
       "healthNotice": "Non usare questa integrazione per informazioni sui pazienti soggette a HIPAA.",
       "invalidLink": "Questo link di collegamento non è valido. Invia una nuova email a Okou.",

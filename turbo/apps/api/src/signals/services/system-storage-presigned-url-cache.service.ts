@@ -41,9 +41,6 @@ export type StorageManifestPresignedUrlCacheScope = Exclude<
   | "content_bundle"
 >;
 
-export type StorageManifestCacheEntryKind =
-  "compose" | "additional" | "artifact";
-
 export const SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS =
   PRESIGNED_URL_TTL_SECONDS;
 const SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY = "system-storage-url-v1";
@@ -71,11 +68,6 @@ export const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS =
 const deletedCacheRowSchema = object({ cacheKey: string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
-
-export type SystemStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
-export type WorkflowSkillStoragePresignedUrlCacheStatus =
-  StoragePresignedUrlCacheStatus;
 
 export interface SystemStoragePresignedUrlRequest {
   readonly bucket: string;

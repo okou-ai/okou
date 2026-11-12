@@ -65,7 +65,14 @@ final class ConversationStore {
     didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
-  private(set) var history: ChatHistory? { didSet { reconcileActivitySummary() } }
+  @ObservationIgnored private let projection = ConversationProjection()
+  private(set) var history: ChatHistory? {
+    get { projection.history }
+    set {
+      projection.confirmHistory(newValue)
+      reconcileActivitySummary()
+    }
+  }
 
   /// Text of the running run's messages as it streams, before the durable events arrive.
   struct StreamedOutput: Equatable {
@@ -75,7 +82,7 @@ final class ConversationStore {
     let createdAt: Date
   }
 
-  private(set) var streamedOutputs: [StreamedOutput] = []
+  var streamedOutputs: [StreamedOutput] { projection.streamed }
   /// Subscribes to a run's live output; set by the workspace, which owns the realtime client.
   @ObservationIgnored var runOutput:
     (
@@ -87,10 +94,14 @@ final class ConversationStore {
   @ObservationIgnored private var streamBuffer: [String: StreamedOutput] = [:]
   @ObservationIgnored private var streamOrder: [String] = []
   @ObservationIgnored private var streamFlush: Task<Void, Never>?
-  private(set) var pending: [PendingMessage] = [] {
-    didSet { persistPending() }
+  private(set) var pending: [PendingMessage] {
+    get { projection.pending }
+    set {
+      projection.replacePending(newValue)
+      persistPending()
+    }
   }
-  private(set) var messages: [ChatMessage] = []
+  var messages: [ChatMessage] { projection.messages }
   private(set) var visibleItems: [ConversationItem] = []
   var visibleMessages: [ChatMessage] { visibleItems.compactMap(\.message) }
   private(set) var hasEarlierMessages = false
@@ -182,8 +193,7 @@ final class ConversationStore {
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
   @ObservationIgnored private var preservesRenderWindow = false
-  private var items: [ConversationItem] = []
-  private var expandedWorkSections: Set<String> = []
+  private var items: [ConversationItem] { projection.items }
   private var closed = false
   private var suppressAutomaticRead = false
   private var manualUnreadThrough: Date?
@@ -238,9 +248,10 @@ final class ConversationStore {
     self.didFail = didFail
     self.didSettle = didSettle
     do {
-      pending =
+      var restored =
         try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
-      for index in pending.indices { pending[index].needsRetry = true }
+      for index in restored.indices { restored[index].needsRetry = true }
+      projection.replacePending(restored)
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
       if pending.contains(where: {
         $0.document != nil
@@ -249,7 +260,7 @@ final class ConversationStore {
       }) {
         composer.clear()
       }
-      rebuildMessages()
+      reconcileProjection()
     } catch { show(error) }
   }
 
@@ -275,7 +286,7 @@ final class ConversationStore {
     else { return }
     history = cached.withCancellationRecoveryPending(history?.executionState == .recovering)
     pending.removeAll { cached.persistedEventIDs.contains($0.id) }
-    rebuildMessages()
+    reconcileProjection()
   }
 
   func refresh(waitForCurrent: Bool = false) async {
@@ -312,7 +323,7 @@ final class ConversationStore {
           guard !closed, refreshGeneration == generation else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
-          rebuildMessages()
+          reconcileProjection()
           let recovering = try await reads.recovery.value
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
@@ -419,7 +430,7 @@ final class ConversationStore {
     }
     message.computerAccess = initialComputerAccess
     pending.append(message)
-    rebuildMessages()
+    reconcileProjection()
     composer.clear()
     composer.requestSync()
     await submit(message)
@@ -548,7 +559,7 @@ final class ConversationStore {
         id: UUID().uuidString.lowercased(), text: "continue", createdAt: Date(), attachments: [],
         modelSelection: modelSelection?.selection, reasoningEffort: modelSelection?.requestedEffort)
       pending.append(message)
-      rebuildMessages()
+      reconcileProjection()
       await submit(message)
     }
     failureRecoveryTask = task
@@ -736,10 +747,7 @@ final class ConversationStore {
   }
 
   private func publishStream() {
-    let next = streamOrder.compactMap { streamBuffer[$0] }.filter {
-      !$0.text.isEmpty && !isPersisted($0.eventID)
-    }
-    if next != streamedOutputs { streamedOutputs = next }
+    projection.publishStream(streamOrder.compactMap { streamBuffer[$0] })
   }
 
   func close() {
@@ -752,6 +760,7 @@ final class ConversationStore {
     modelSelection?.close()
     cancelRefresh()
     readResources.close()
+    projection.close()
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
@@ -859,67 +868,23 @@ final class ConversationStore {
   func releaseRenderWindow() { preservesRenderWindow = false }
 
   func toggleWorkHistory(_ sectionID: String) {
-    guard !closed, let section = history?.workSections.first(where: { $0.id == sectionID }),
-      section.isCollapsible
-    else { return }
-    if !expandedWorkSections.insert(sectionID).inserted {
-      expandedWorkSections.remove(sectionID)
-    }
-    rebuildMessages()
+    guard !closed else { return }
+    projection.toggleWorkHistory(sectionID)
+    reconcileProjection()
   }
 
-  private func rebuildMessages() {
-    let persisted = history?.persistedEventIDs ?? []
+  /// Hand a derived projection to the native window after confirmed business changes.
+  private func reconcileProjection() {
     let pendingIDs = Set(pending.map(\.id))
     deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
-    let next =
-      (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
-    if messages != next { messages = next }
     requestFailureAccounts()
-    let sections = history?.workSections ?? []
-    expandedWorkSections.formIntersection(sections.map(\.id))
-    let headers = Dictionary(
-      uniqueKeysWithValues: sections.map { ($0.hiddenMessageIDs.first ?? $0.anchorMessageID, $0) })
-    let hiddenSections = Dictionary(
-      uniqueKeysWithValues: sections.flatMap { section in
-        section.hiddenMessageIDs.map { ($0, section) }
-      })
-    var nextItems: [ConversationItem] = []
-    let usageAnchors = history?.runUsageAnchors ?? [:]
-    for message in next {
-      if let section = headers[message.id] {
-        nextItems.append(.work(section, expanded: expandedWorkSections.contains(section.id)))
-      }
-      if let section = hiddenSections[message.id] {
-        if section.isCollapsible && !expandedWorkSections.contains(section.id) { continue }
-        nextItems.append(.message(message, isWorkHistory: true))
-      } else {
-        nextItems.append(.message(message))
-      }
-      if let runID = message.runID, usageAnchors[runID] == message.id,
-        history?.usageEventIDs[runID] != nil
-      {
-        nextItems.append(.usage(runID: runID))
-      }
-    }
-    guard items != nextItems else {
+    let nextItems = items
+    let position = renderWindow.rebased(readingPosition, to: nextItems)
+    guard renderWindow.update(nextItems, preservingBoundary: preservesRenderWindow) else {
       reconcileRunUsage()
       return
     }
-    if let position = readingPosition, !nextItems.contains(where: { $0.id == position.messageID }) {
-      let surviving = Set(nextItems.map(\.id))
-      if let index = items.firstIndex(where: { $0.id == position.messageID }),
-        let replacement = items.dropFirst(index + 1).first(where: { surviving.contains($0.id) })
-          ?? items.prefix(index).last(where: { surviving.contains($0.id) })
-      {
-        readingPosition = ConversationReadingPosition(
-          messageID: replacement.id, offset: position.offset)
-      } else {
-        readingPosition = nil
-      }
-    }
-    items = nextItems
-    renderWindow.update(nextItems, preservingBoundary: preservesRenderWindow)
+    readingPosition = position
     if let readingPosition { renderWindow.include(readingPosition.messageID) }
     publishWindow()
   }

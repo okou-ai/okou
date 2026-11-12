@@ -5,7 +5,6 @@ import { storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
-import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -21,7 +20,6 @@ import {
   prepareRunOutputMetadata,
   resolveStorageEntries,
   resolveStorageManifestInputs,
-  StorageManifestBuildStats,
   storageEntriesMetadata,
   storageIndexKey,
   storageIndexWithPrefixVersions,
@@ -111,9 +109,6 @@ function createStorageInputSignal(
     ) {
       throw new Error("Run storage requires an admitted model selection");
     }
-    const resolved = {
-      orgId: agent.orgId,
-    };
     const piSandbox = resolvePreparedPiModelConfig({
       input: {
         catalog,
@@ -134,15 +129,10 @@ function createStorageInputSignal(
     get(db$);
     return {
       args: {
-        agentOrgId: resolved.orgId,
         runtimeOrgId: bootstrap.orgId,
         userId: bootstrap.userId,
         artifacts: metadata.artifacts,
-        additionalVolumes: metadata.additionalVolumes,
-        additionalVolumeSources: metadata.additionalVolumeSources,
-        framework: piSandbox === undefined ? framework : "pi",
         timing: get(threadContext.dispatchTiming$),
-        stats: new StorageManifestBuildStats(),
       },
     };
   });
@@ -157,25 +147,16 @@ function createStorageBaseIndexSignal(
   const storageSelection$ = computed(
     async (get): Promise<AgentRunStorageSelection> => {
       const input = await get(storageInput$);
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const { artifacts, composeVolumes } = await resolveStorageManifestInputs({
-        framework: input.args.framework,
+      const { artifacts } = await resolveStorageManifestInputs({
         artifacts: input.args.artifacts,
         timing: input.args.timing,
       });
       const request = prepareRequestStorageResolution(
         {
-          agentOrgId: input.args.agentOrgId,
           runtimeOrgId: input.args.runtimeOrgId,
           userId: input.args.userId,
-          artifacts: input.args.artifacts,
-          additionalVolumes: input.args.additionalVolumes,
-          additionalVolumeSources: input.args.additionalVolumeSources,
           timing: input.args.timing,
-          stats: input.args.stats,
         },
-        bucket,
-        composeVolumes,
         artifacts,
       );
       return {
@@ -395,7 +376,6 @@ function createStorageMetadataSignal(
     const metadata = await finalizePreparedStorage({
       entries,
       timing: plan.requested.input.timing,
-      stats: plan.requested.input.stats,
     });
     return { metadata, requested: plan.requested };
   });

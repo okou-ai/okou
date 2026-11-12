@@ -186,6 +186,7 @@ describe("POST /api/billing/credit-checkout", () => {
         },
         metadata: {
           purpose: "credit_purchase",
+          billingSurveyUserId: fixture.userId,
           orgId: fixture.orgId,
           purchaseCreatedAt: expect.any(String),
           creditsAmountMode: "amount_subtotal",
@@ -1088,6 +1089,7 @@ describe("POST /api/billing/credit-checkout", () => {
         },
         metadata: {
           purpose: "credit_purchase",
+          billingSurveyUserId: fixture.userId,
           orgId: fixture.orgId,
           purchaseCreatedAt: expect.any(String),
           creditsAmountMode: "amount_subtotal",

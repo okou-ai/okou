@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
-import { array, boolean, object, string, record } from "zod";
+import { array, object, string, record } from "zod";
 import {
   integrationsEmailContract,
   integrationsEmailUploadContract,
@@ -807,8 +807,9 @@ function incoming(options: {
 }
 
 async function entitledActor(email?: string) {
+  const orgId = createUniqueStaffOrgIdFixture();
   const actor = bdd.user({
-    orgId: createUniqueStaffOrgIdFixture(),
+    orgId,
     ...(email ? { email } : {}),
   });
   bdd.acceptAgentStorageWrites();
@@ -818,7 +819,7 @@ async function entitledActor(email?: string) {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   verifiedDirectory(actor);
-  return { actor, group };
+  return { actor: { ...actor, orgId }, group };
 }
 
 async function createdThreads(actor: ApiTestUser) {
@@ -936,6 +937,7 @@ function mockEmailMessageLookup(
     readonly messageId: string;
     readonly body: string;
     readonly receivedAt: number;
+    readonly from?: string;
     readonly conversationId?: string;
     readonly isDraft?: boolean;
   }[] = [],
@@ -955,6 +957,11 @@ function mockEmailMessageLookup(
           headers: [
             { name: "Message-ID", value: entry.messageId },
             { name: "Subject", value: "API message subject" },
+            {
+              name: "From",
+              value: entry.from ?? "Reviewer <reviewer@example.com>",
+            },
+            { name: "Date", value: new Date(entry.receivedAt).toUTCString() },
           ],
           body: { data: Buffer.from(entry.body).toString("base64url") },
         },
@@ -1002,6 +1009,13 @@ function mockEmailMessageLookup(
         internetMessageId: entry.messageId,
         receivedDateTime: new Date(entry.receivedAt).toISOString(),
         isDraft: entry.isDraft ?? false,
+        internetMessageHeaders: [
+          {
+            name: "From",
+            value: entry.from ?? "Reviewer <reviewer@example.com>",
+          },
+          { name: "Date", value: new Date(entry.receivedAt).toUTCString() },
+        ],
         subject: "API message subject",
         body: { contentType: "text", content: entry.body },
       };
@@ -1063,27 +1077,20 @@ function sentEmails() {
   });
 }
 
-function mailboxHistory(prompt: string | null) {
+function emailThreadMessages(prompt: string | null | undefined) {
   const block = prompt
-    ?.split("# Mailbox Message Context (untrusted data)")[1]
+    ?.split("# Email Thread Context")[1]
     ?.split("# This Chat Thread")[0];
   if (!block) {
-    throw new Error("Expected source mailbox context");
+    throw new Error("Expected Email thread context");
   }
-  return object({
-    history: object({
-      status: string(),
-      truncated: boolean().optional(),
-      messages: array(
-        object({
-          providerMessageId: string(),
-          body: string().optional(),
-          bodyAlreadyIncluded: boolean(),
-          bodyTruncated: boolean(),
-        }),
-      ).optional(),
-    }),
-  }).parse(JSON.parse(block.slice(block.indexOf("{")))).history;
+  return block
+    .split(/\n\n---(?:\n\n|$)/)
+    .slice(1)
+    .map((message) => {
+      return message.trim();
+    })
+    .filter(Boolean);
 }
 
 describe("Email integration", () => {
@@ -1126,6 +1133,7 @@ describe("Email integration", () => {
       });
       const sourceBody = `Provider-only message body ${randomUUID()}`;
       const historyBody = `Prior reviewer discussion ${randomUUID()}`;
+      const historyReceivedAt = now() - 1000;
       const source = mockEmailMessageLookup(
         provider,
         message.messageId,
@@ -1136,7 +1144,7 @@ describe("Email integration", () => {
             id: randomUUID(),
             messageId: `<${randomUUID()}@original.example>`,
             body: historyBody,
-            receivedAt: now() - 1000,
+            receivedAt: historyReceivedAt,
           },
         ],
       );
@@ -1150,18 +1158,30 @@ describe("Email integration", () => {
       const claim = await runs.claimRunnerJob(runId);
       expect(claim.prompt).toContain("Original message content");
       expect(claim.prompt).not.toContain(sourceBody);
-      expect(claim.prompt).not.toContain("# Mailbox Message Context");
+      expect(claim.prompt).not.toContain("# Email Thread Context");
       expect(claim.appendSystemPrompt).toContain(sourceBody);
       expect(claim.appendSystemPrompt).toContain(historyBody);
-      expect(mailboxHistory(claim.appendSystemPrompt)).toMatchObject({
-        status: "found",
-        truncated: false,
-        messages: [{ body: historyBody }],
-      });
+      expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: found");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: false");
+      expect(claim.appendSystemPrompt).toContain(
+        "# Email Thread Context\n\n" +
+          "The messages below are from an Email conversation. When responding:\n" +
+          "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.",
+      );
+      expect(emailThreadMessages(claim.appendSystemPrompt)).toStrictEqual([
+        expect.stringContaining(historyBody),
+      ]);
+      expect(emailThreadMessages(claim.appendSystemPrompt)[0]).toContain(
+        "- RELATIVE_INDEX: -1\n- SENDER: {id: Reviewer <reviewer@example.com>}",
+      );
+      expect(emailThreadMessages(claim.appendSystemPrompt)[0]).toContain(
+        `- DATE: ${JSON.stringify(new Date(historyReceivedAt).toUTCString())}`,
+      );
       expect(claim.appendSystemPrompt).toContain(source.providerMessageId);
       expect(claim.appendSystemPrompt).toContain(source.providerConversationId);
       expect(claim.appendSystemPrompt).toMatch(
-        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*# Restricted Explicit Content/,
+        /# Integration Note[\s\S]*# Email Message Context[\s\S]*# Email Thread Context[\s\S]*# This Chat Thread[\s\S]*# Restricted Explicit Content/,
       );
 
       expect(claim.appendSystemPrompt).toContain(
@@ -1219,8 +1239,11 @@ describe("Email integration", () => {
       );
       expect(next.input?.prompt).toContain(followUpBody);
       expect(next.input?.prompt).toContain(followUpHistory);
+      expect(emailThreadMessages(next.input?.prompt)).toStrictEqual([
+        expect.stringContaining(followUpHistory),
+      ]);
       expect(next.input?.prompt).toMatch(
-        /# Integration Note[\s\S]*# Mailbox Message Context[\s\S]*# This Chat Thread[\s\S]*A follow-up while the Run is active/,
+        /# Integration Note[\s\S]*# Email Message Context[\s\S]*# Email Thread Context[\s\S]*# This Chat Thread[\s\S]*A follow-up while the Run is active/,
       );
       if (provider === "gmail") {
         if (!next.input) {
@@ -1245,7 +1268,7 @@ describe("Email integration", () => {
           "A follow-up after mailbox reads were revoked",
         );
         expect(revoked.input?.prompt).toContain(
-          '"status":"permission-required"',
+          "- LOOKUP_STATUS: permission-required",
         );
       }
     },
@@ -1268,12 +1291,14 @@ describe("Email integration", () => {
         messageId: `<${randomUUID()}@original.example>`,
         body: "The first application was submitted in March.",
         receivedAt: now() - 3000,
+        from: "Application team <applications@example.com>",
       };
       const newer = {
         id: randomUUID(),
         messageId: `<${randomUUID()}@original.example>`,
         body: "The October submission was a rebrand.",
         receivedAt: now() - 1000,
+        from: "Marketplace reviewer <reviewer@example.com>",
       };
       mockEmailMessageLookup(provider, message.messageId, receivedBody, true, [
         newer,
@@ -1314,15 +1339,30 @@ describe("Email integration", () => {
       ]);
       await message.send();
       const claim = await claimPendingEmail(group);
-      expect(mailboxHistory(claim.appendSystemPrompt)).toMatchObject({
-        status: "found",
-        truncated: false,
-        messages: [
-          { body: older.body, bodyAlreadyIncluded: false },
-          { bodyAlreadyIncluded: true },
-          { body: newer.body, bodyAlreadyIncluded: false },
-        ],
-      });
+      const history = emailThreadMessages(claim.appendSystemPrompt);
+      expect(history).toHaveLength(3);
+      expect(history[0]).toContain("- RELATIVE_INDEX: -3");
+      expect(history[0]).toContain(
+        "- SENDER: {id: Application team <applications@example.com>}",
+      );
+      expect(history[0]).toContain(
+        `- PROVIDER_MESSAGE_ID: ${JSON.stringify(older.id)}`,
+      );
+      expect(history[0]).toContain(older.body);
+      expect(history[0]).toContain("- BODY_ALREADY_INCLUDED: false");
+      expect(history[1]).toContain("- RELATIVE_INDEX: -2");
+      expect(history[1]).toContain("- BODY_ALREADY_INCLUDED: true");
+      expect(history[2]).toContain("- RELATIVE_INDEX: -1");
+      expect(history[2]).toContain(
+        "- SENDER: {id: Marketplace reviewer <reviewer@example.com>}",
+      );
+      expect(history[2]).toContain(
+        `- PROVIDER_MESSAGE_ID: ${JSON.stringify(newer.id)}`,
+      );
+      expect(history[2]).toContain(newer.body);
+      expect(history[2]).toContain("- BODY_ALREADY_INCLUDED: false");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 3");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: false");
       expect(claim.appendSystemPrompt).not.toContain("Already forwarded");
       expect(claim.appendSystemPrompt).not.toContain("second provider copy");
       expect(claim.appendSystemPrompt).not.toContain(
@@ -1360,16 +1400,22 @@ describe("Email integration", () => {
       );
       await message.send();
       const claim = await claimPendingEmail(group);
-      const loaded = mailboxHistory(claim.appendSystemPrompt);
-      expect(loaded.status).toBe("found");
-      expect(loaded.truncated).toBeTruthy();
-      expect(loaded.messages).toHaveLength(20);
-      expect(loaded.messages?.[0]?.providerMessageId).toBe(history[5]?.id);
-      expect(loaded.messages?.at(-1)?.body).toHaveLength(8000);
-      expect(loaded.messages?.at(-1)?.bodyTruncated).toBeTruthy();
+      const loaded = emailThreadMessages(claim.appendSystemPrompt);
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: true");
+      expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 20");
+      expect(loaded).toHaveLength(20);
+      expect(loaded[0]).toContain("- RELATIVE_INDEX: -20");
+      expect(loaded[0]).toContain(
+        `- PROVIDER_MESSAGE_ID: ${JSON.stringify(history[5]?.id)}`,
+      );
+      expect(loaded.at(-1)).toContain("- RELATIVE_INDEX: -1");
+      expect(loaded.at(-1)).toContain("- BODY_TRUNCATED: true");
+      const bodies = loaded.join("\n").match(/\d+: \d+/g) ?? [];
+      expect(bodies.at(-1)).toHaveLength(8000);
       expect(
-        loaded.messages?.reduce((total, entry) => {
-          return total + (entry.body?.length ?? 0);
+        bodies.reduce((total, body) => {
+          return total + body.length;
         }, 0),
       ).toBeLessThanOrEqual(40_000);
     },
@@ -1410,9 +1456,9 @@ describe("Email integration", () => {
     await message.send();
     const claim = await claimPendingEmail(group);
     expect(claim.appendSystemPrompt).toContain("Exact message retained");
-    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
-      status: "permission-required",
-    });
+    expect(claim.appendSystemPrompt).toContain(
+      "- HISTORY_STATUS: permission-required",
+    );
   });
 
   it.each([
@@ -1445,9 +1491,9 @@ describe("Email integration", () => {
       expect(claim.appendSystemPrompt).toContain(
         "Current message survives history failure",
       );
-      expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
-        status: expected,
-      });
+      expect(claim.appendSystemPrompt).toContain(
+        `- HISTORY_STATUS: ${expected}`,
+      );
     },
   );
 
@@ -1482,11 +1528,9 @@ describe("Email integration", () => {
     );
     await message.send();
     const claim = await claimPendingEmail(group);
-    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
-      status: "found",
-      truncated: true,
-      messages: [],
-    });
+    expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
+    expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: true");
+    expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 0");
   });
 
   it("retains the exact message when thread history exceeds the lookup deadline", async () => {
@@ -1524,9 +1568,9 @@ describe("Email integration", () => {
     expect(claim.appendSystemPrompt).toContain(
       "Current message survives a slow history provider",
     );
-    expect(mailboxHistory(claim.appendSystemPrompt)).toStrictEqual({
-      status: "lookup-timed-out",
-    });
+    expect(claim.appendSystemPrompt).toContain(
+      "- HISTORY_STATUS: lookup-timed-out",
+    );
   }, 15_000);
 
   it.each(["gmail", "outlook-mail"] as const)(
@@ -1549,7 +1593,7 @@ describe("Email integration", () => {
       }
       const claim = await runs.claimRunnerJob(runId);
       expect(claim.prompt).toContain("Only the received forward is available");
-      expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
+      expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: not-found");
     },
   );
 
@@ -1568,7 +1612,7 @@ describe("Email integration", () => {
     const claim = await claimPendingEmail(group);
     expect(claim.prompt).toContain("The received email remains usable");
     expect(claim.appendSystemPrompt).toContain(
-      '"status":"permission-required"',
+      "- LOOKUP_STATUS: permission-required",
     );
   });
 
@@ -1633,7 +1677,7 @@ describe("Email integration", () => {
     const claim = await claimPendingEmail(group);
     expect(claim.prompt).toContain("Continue from this received message");
     expect(claim.appendSystemPrompt).toContain(
-      '"status":"provider-unavailable"',
+      "- LOOKUP_STATUS: provider-unavailable",
     );
   });
 
@@ -1665,7 +1709,7 @@ describe("Email integration", () => {
       "Continue despite the interrupted mailbox response",
     );
     expect(claim.appendSystemPrompt).toContain(
-      '"status":"provider-unavailable"',
+      "- LOOKUP_STATUS: provider-unavailable",
     );
   });
 
@@ -1708,7 +1752,7 @@ describe("Email integration", () => {
     );
     await message.send();
     const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain('"status":"not-found"');
+    expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: not-found");
     expect(claim.prompt).not.toContain("Unrelated private body");
     expect(claim.appendSystemPrompt).not.toContain("Unrelated private body");
   });
@@ -2796,6 +2840,30 @@ describe("Email workspace binding", () => {
     await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
   });
 
+  it("keeps an OAuth mailbox logged out while its connector stays connected", async () => {
+    const sender = `${randomUUID()}@example.com`;
+    const { actor, token } = await claimEmailFileRun(sender);
+    const mailbox = await connectEmailMailbox(actor, "gmail", sender);
+    verifiedDirectory(actor);
+    await accept(
+      emailSessionClient().logout({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    await incoming({ sender }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
+      actor,
+      "gmail",
+      [200],
+    );
+    expect(accounts.body.connections).toContainEqual(
+      expect.objectContaining({ id: mailbox.id, externalEmail: sender }),
+    );
+  });
+
   it("does not use an account's binding for a Web run or a browser session", async () => {
     const { actor } = await entitledActor();
     await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
@@ -3049,6 +3117,103 @@ describe("Email multi-account connections", () => {
         attachments: expect.any(Array),
       }),
     );
+  });
+
+  it.each(["gmail", "outlook-mail"] as const)(
+    "routes first-contact email from an existing %s account using its workspace switch",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      const sender = `${randomUUID()}@example.com`;
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: false,
+      });
+      await connectEmailMailbox(actor, provider, sender);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: true,
+      });
+      verifiedDirectory(actor);
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [],
+        totalCount: 0,
+      });
+      const message = incoming({ sender, text: "Use my connected workspace" });
+      mockEmailMessageLookup(
+        provider,
+        message.messageId,
+        "Use my connected workspace",
+      );
+      await message.send();
+      await message.send();
+      const snapshot = await createdThreads(actor);
+      expect(snapshot.chatThreads).toHaveLength(1);
+      await runs.heartbeatRunner(group);
+      const polled = await runs.pollRunner(group);
+      expect(polled.body.job?.runId).toBeTruthy();
+      const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+      expect(claim.prompt).toContain("Use my connected workspace");
+      expect(claim.appendSystemPrompt).toContain(
+        `Verified sender: ${JSON.stringify(sender)}`,
+      );
+      expect(claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+        snapshot.chatThreads[0]!.id,
+      );
+    },
+  );
+
+  it("does not route an existing mailbox when its workspace switch is disabled", async () => {
+    const { actor } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: false,
+    });
+    await connectEmailMailbox(actor, "gmail", sender);
+    verifiedDirectory(actor);
+    await incoming({ sender }).send();
+    expect((await createdThreads(actor)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("does not route an existing mailbox for a banned account", async () => {
+    const { actor } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: false,
+    });
+    await connectEmailMailbox(actor, "gmail", sender);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: true,
+    });
+    verifiedDirectory(actor);
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: actor.userId,
+      banned: true,
+    });
+    await incoming({ sender }).send();
+    verifiedDirectory(actor);
+    expect((await createdThreads(actor)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("does not choose a workspace when an unbound mailbox belongs to multiple workspaces", async () => {
+    const { actor: first } = await entitledActor();
+    const { actor: second } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    for (const actor of [first, second]) {
+      verifiedDirectory(actor);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: false,
+      });
+      await connectEmailMailbox(actor, "gmail", sender);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: true,
+      });
+    }
+    verifiedDirectory(first);
+    await incoming({ sender }).send();
+    expect((await createdThreads(first)).chatThreads).toStrictEqual([]);
+    verifiedDirectory(second);
+    expect((await createdThreads(second)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
   });
 
   it.each([

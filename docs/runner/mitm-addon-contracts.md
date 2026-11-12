@@ -334,7 +334,7 @@ Runner and its embedded addon ship together. `okou_control_socket_dir` selects
 the current managed launch directory; `okou_usage_state_id` is also the control
 generation and rotates on restart. Readiness requires a correlated `proxy.status`
 reply followed by EOF, then the existing TCP listener probe and one completed
-`catalog.warm` request, within the original 10-second startup deadline. A socket
+`catalog.warm` request, within the original 20-second startup deadline. A socket
 inode alone is not readiness. Only observational startup probes retry, with at
 most one second per control attempt; an uncertain warmup is not replayed.
 
@@ -382,9 +382,16 @@ tree. Each side connects/binds through its own live directory descriptor's
 Each Unix stream carries one request and at most one terminal reply: a four-byte
 big-endian unsigned length followed by UTF-8 JSON. Frames are 1–65,536 bytes;
 there are at most 16 admitted connections, a backlog of 16, and a five-second
-whole-connection deadline. Partial frames, oversize lengths, disconnected or
-slow peers cannot retain admission indefinitely. Overload closes without reading
-or inventing a request ID. Malformed or pipelined peers can observe a reset.
+whole-connection deadline for ordinary requests. Only a fully validated,
+current-generation `catalog.warm` with an available registry owner reschedules
+connection completion to eleven seconds from dispatch: ten seconds for owner
+work plus one second for its correlated reply. Its initial framing still has
+the five-second limit. The Rust 20-second readiness/preparation deadline bounds
+the entire exchange. An expired catalog waiter returns `deadline` without
+cancelling owner work or releasing its admission slot. Partial frames, oversize
+lengths, disconnected or slow peers cannot retain admission indefinitely.
+Overload closes without reading or inventing a request ID. Malformed or pipelined
+peers can observe a reset.
 
 Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
 match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields

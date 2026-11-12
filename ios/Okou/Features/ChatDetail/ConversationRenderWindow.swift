@@ -4,14 +4,18 @@ import Foundation
 /// A progressively expanded suffix of presentation groups, independent of event replay.
 struct ConversationRenderWindow {
   private static let groupCount = 10
-  private var ids: [String] = []
+  // The last input applied to native coordinates, not a second reactive projection.
+  private var appliedItems: [ConversationItem] = []
+  private var ids: [String] { appliedItems.map(\.id) }
   private var groupStarts: [Int] = []
   private var followsLatest = true
   private(set) var range = 0..<0
 
   var hasEarlierMessages: Bool { range.lowerBound > 0 }
 
-  mutating func update(_ items: [ConversationItem], preservingBoundary: Bool) {
+  @discardableResult
+  mutating func update(_ items: [ConversationItem], preservingBoundary: Bool) -> Bool {
+    guard appliedItems != items else { return false }
     let newIDs = items.map(\.id)
     let oldBoundary = range.lowerBound
     var boundary: Int?
@@ -20,7 +24,7 @@ struct ConversationRenderWindow {
       // A revoked boundary advances to the next surviving row in the previously visible suffix.
       boundary = ids.dropFirst(oldBoundary).lazy.compactMap { indexes[$0] }.first
     }
-    ids = newIDs
+    appliedItems = items
     groupStarts = items.indices.filter { index in
       index == 0 || items[index].beginsWorkSection || items[index].role != items[index - 1].role
     }
@@ -31,6 +35,21 @@ struct ConversationRenderWindow {
       start = latestStart
     }
     range = start..<items.count
+    return true
+  }
+
+  /// Rebase a revoked native anchor using the previously applied row order.
+  func rebased(
+    _ position: ConversationReadingPosition?, to items: [ConversationItem]
+  ) -> ConversationReadingPosition? {
+    guard let position else { return nil }
+    let surviving = Set(items.map(\.id))
+    guard !surviving.contains(position.messageID) else { return position }
+    guard let index = ids.firstIndex(of: position.messageID),
+      let replacement = ids.dropFirst(index + 1).first(where: { surviving.contains($0) })
+        ?? ids.prefix(index).last(where: { surviving.contains($0) })
+    else { return nil }
+    return ConversationReadingPosition(messageID: replacement, offset: position.offset)
   }
 
   mutating func pauseFollowing() { followsLatest = false }

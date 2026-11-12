@@ -167,6 +167,10 @@ export function EmailConnectDialog() {
     user.state === "hasData"
       ? user.data?.primaryEmailAddress?.emailAddress.toLowerCase()
       : undefined;
+  const address =
+    status.state === "hasData" && status.data.configured
+      ? status.data.address
+      : null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -180,10 +184,21 @@ export function EmailConnectDialog() {
               return $.works.email.manageTitle;
             })}
           </DialogTitle>
-          <DialogDescription>
-            {t(($) => {
-              return $.works.email.manageDescription;
-            })}
+          <DialogDescription className="flex flex-wrap items-center gap-x-1.5">
+            <span>
+              {t(($) => {
+                return $.works.email.description;
+              })}
+              {address ? " ·" : null}
+            </span>
+            {address ? (
+              <a
+                href={`mailto:${address}`}
+                className="break-all underline underline-offset-4 hover:text-foreground"
+              >
+                {address}
+              </a>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
         {status.state === "hasData" &&
@@ -241,14 +256,21 @@ function EmailAddAddressCode({ address }: { readonly address: string }) {
   return (
     <div className="space-y-3">
       {code ? (
-        <EmailConnectionCodePanel
-          address={address}
-          code={code}
-          pending={operation.state === "loading"}
-          onRegenerate={() => {
-            detach(generate(signal), Reason.DomCallback);
-          }}
-        />
+        <>
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.works.email.manageDescription;
+            })}
+          </p>
+          <EmailConnectionCodePanel
+            address={address}
+            code={code}
+            pending={operation.state === "loading"}
+            onRegenerate={() => {
+              detach(generate(signal), Reason.DomCallback);
+            }}
+          />
+        </>
       ) : (
         <div className="flex justify-end">
           <Button
