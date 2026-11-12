@@ -2,3 +2,4 @@ annotation_only_subscript_targets.py:1: use metadata_keys.SANDBOX_RUN_ID for flo
 annotation_only_subscript_targets.py:4: use metadata_keys.FIREWALL_NAME for flow.metadata access
 annotation_only_subscript_targets.py:20: use metadata_keys.FIREWALL_NAME for flow.metadata access
 annotation_only_subscript_targets.py:28: use metadata_keys.FIREWALL_NAME for flow.metadata access
+annotation_only_subscript_targets.py:31: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access

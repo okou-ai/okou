@@ -406,14 +406,12 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             if key_name is not None:
                 self._add_violation(_violation(self.path, keyword, key_name))
 
-    def _visit_subscript_contents(self, node: ast.Subscript) -> None:
-        """Analyze keys and operands without dispatching a subscription operation."""
+    def _record_metadata_subscript_key_violations(self, node: ast.Subscript) -> None:
+        """Check keys before either operand can change the metadata aliases."""
         self._record_metadata_merge_key_violations(node.value)
         self._record_metadata_merge_key_violations(node.slice)
         if self._is_metadata_alias_value(node.value):
             self._add_violations(_metadata_key_expression_violations(self.path, node.slice))
-        self.visit(node.value)
-        self.visit(node.slice)
 
     def _metadata_default_argument_names(self, args: ast.arguments) -> set[str]:
         metadata_defaults: set[str] = set()
@@ -502,7 +500,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self.visit(node.value)
             return
         if isinstance(node, ast.Subscript):
-            self._visit_subscript_contents(node)
+            self._record_metadata_subscript_key_violations(node)
+            self.visit(node.value)
+            self.visit(node.slice)
 
     def _nested_function_base_aliases(self) -> set[str]:
         if self._class_nested_scope_alias_scopes:
@@ -958,7 +958,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
-        self._visit_subscript_contents(node)
+        self._record_metadata_subscript_key_violations(node)
+        self.visit(node.value)
+        self.visit(node.slice)
 
     def visit_Call(self, node: ast.Call) -> None:
         node_is_metadata_merge = self._is_metadata_merge_value(node)
