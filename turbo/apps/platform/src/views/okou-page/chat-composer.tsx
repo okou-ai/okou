@@ -6424,7 +6424,7 @@ function ComposerTemporaryModelNoticeSlot({
   );
 }
 
-/** The one tray below the card, and the notice that currently owns it. */
+/** The one tray above the card, and the notice that currently owns it. */
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
   const imageMode = useGet(signals.create.mode$) === "image";
@@ -7069,9 +7069,9 @@ export function ChatComposer({
         ref={setImageAnnotationLifecycleRef}
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
+        <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} layout={layout} />
-        <ComposerNoticeSlot signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

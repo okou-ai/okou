@@ -12,10 +12,7 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import {
-  CapabilityHomeCompliance,
-  CapabilityHomeComplianceSpace,
-} from "./chat-home-compliance.tsx";
+import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -3546,16 +3543,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     initialEventsReady &&
     hasEvents === false &&
     sharingPhase === "idle";
-  // The capability home carries a compliance line under its composer. A
-  // conversation keeps that line's room empty, so opening a chat from the home,
-  // or sending an empty chat's first message, leaves the composer's bottom edge
-  // where it was.
-  let belowComposer: ReactNode = null;
-  if (showCapabilities) {
-    belowComposer = <CapabilityHomeCompliance />;
-  } else if (capabilitiesEnabled) {
-    belowComposer = <CapabilityHomeComplianceSpace />;
-  }
 
   return (
     <>
@@ -3569,7 +3556,7 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           <ChatThreadBottomBar
             thread={thread}
             layout={showCapabilities ? "home" : "default"}
-            below={belowComposer}
+            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
           />
         </div>
       </div>
