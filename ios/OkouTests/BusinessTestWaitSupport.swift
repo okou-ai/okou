@@ -12,21 +12,29 @@ extension XCTestCase {
   ) async throws {
     // A committed result does not need another actor turn or an observation deadline.
     if predicate() { return }
+    let started = ContinuousClock.now
+    var observed: Duration?
     let ready = expectation(
       description: "The production business result became available at \(file):\(line)")
     let observation = Task {
       for await result in Observations({ predicate() }) {
         if result {
+          observed = started.duration(to: .now)
           ready.fulfill()
           return
         }
       }
     }
     let result = await XCTWaiter.fulfillment(of: [ready], timeout: timeout)
+    let resumed = started.duration(to: .now)
     observation.cancel()
     await observation.value
+    let joined = started.duration(to: .now)
     _ = try XCTUnwrap(
-      result == .completed && predicate() ? true : nil, message(), file: file, line: line)
+      result == .completed && predicate() ? true : nil,
+      message() + "; business waiter=\(result); observed=\(String(describing: observed)); "
+        + "resumed=\(resumed); joined=\(joined)",
+      file: file, line: line)
   }
 
   func waitForFileRemoval(
