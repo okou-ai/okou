@@ -2928,6 +2928,7 @@
         },
         "libraryHint": "No chart is selected until you choose it.",
         "libraryResult": "Exibindo {{visible}} / {{total}} tipos de gráfico · Preferências, não requisitos",
+        "messageCharts": "Gráficos",
         "methodHint": "Choose at least one · Combine as needed",
         "methods": {
           "data-charts": "Data charts",

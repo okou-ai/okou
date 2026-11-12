@@ -31,6 +31,7 @@ import {
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { AgentReferenceSignals } from "./agent-reference-signals.ts";
 import type { ArtifactSignals } from "./artifact-card-signals.ts";
+import type { VisualizationPreferences } from "../okou-page/composer-visualization.ts";
 
 type UserMessagePartOfType<T extends UserMessagePart["type"]> = Extract<
   UserMessagePart,
@@ -141,6 +142,7 @@ export type UserMessageRenderPart =
 export interface UserMessageRenderDocument {
   readonly document: UserMessageDocument;
   readonly parts: readonly UserMessageRenderPart[];
+  readonly visualizationPreferences?: VisualizationPreferences;
 }
 
 export type EnrichedChatEvent = ChatEvent & {

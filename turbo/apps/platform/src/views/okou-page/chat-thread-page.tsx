@@ -13,6 +13,7 @@ import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
+import { UserMessageVisualizationPreferences } from "./user-message-visualization-preferences.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -7219,7 +7220,7 @@ function UserMessageView({
       );
     },
   );
-  if (bodyParts.length === 0) {
+  if (bodyParts.length === 0 && !document.visualizationPreferences) {
     return null;
   }
   const renderedParts: ReactNode[] = [];
@@ -7268,6 +7269,13 @@ function UserMessageView({
   return (
     <div data-structured-user-message="" className="whitespace-pre-wrap">
       {renderedParts}
+      {document.visualizationPreferences ? (
+        <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
+          <UserMessageVisualizationPreferences
+            preferences={document.visualizationPreferences}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -7306,12 +7314,14 @@ function UserMessageContent({
       return attachment.id ? [attachment.id] : [];
     }),
   );
-  const hasBody = document.parts.some((renderPart) => {
-    return (
-      !isUserMessageHiddenPart(renderPart.part) &&
-      !isElevatedUserMessagePart(renderPart, elevatedFileIds)
-    );
-  });
+  const hasBody =
+    document.visualizationPreferences !== undefined ||
+    document.parts.some((renderPart) => {
+      return (
+        !isUserMessageHiddenPart(renderPart.part) &&
+        !isElevatedUserMessagePart(renderPart, elevatedFileIds)
+      );
+    });
 
   return (
     <>

@@ -2869,6 +2869,7 @@
         },
         "libraryHint": "在你选择之前，不会使用任何图表。",
         "libraryResult": "显示 {{visible}}/{{total}} 种图表类型 · 只是偏好，不是硬性要求",
+        "messageCharts": "图表",
         "methodHint": "至少选一项 · 可自由组合",
         "methods": {
           "data-charts": "数据图表",

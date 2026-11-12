@@ -2869,6 +2869,7 @@
         },
         "libraryHint": "No chart is selected until you choose it.",
         "libraryResult": "Menampilkan {{visible}} / {{total}} jenis bagan · Preferensi, bukan keharusan",
+        "messageCharts": "Grafik",
         "methodHint": "Choose at least one · Combine as needed",
         "methods": {
           "data-charts": "Data charts",
