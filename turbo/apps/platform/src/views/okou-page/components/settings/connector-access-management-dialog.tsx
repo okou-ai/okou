@@ -170,7 +170,7 @@ function AgentAccessRow({
   return (
     <div className="flex items-center gap-2 px-1 py-4">
       {singleAgent ? (
-        <OkouAvatar size={32} motion="static" label={name} />
+        <OkouAvatar size={32} label={name} />
       ) : (
         <AvatarFromUrl
           avatarUrl={row.agent.avatarUrl}

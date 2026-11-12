@@ -5811,8 +5811,9 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
-    // One per reply, so it holds still; the greeting is where Okou moves.
-    <OkouAvatar size={36} motion="static" className="size-7 @[900px]:size-9" />
+    // One per reply; only the replies on screen draw frames, so a long
+    // transcript stays cheap.
+    <OkouAvatar size={36} className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );

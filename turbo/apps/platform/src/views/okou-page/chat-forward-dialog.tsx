@@ -67,7 +67,7 @@ function ForwardTargetContent({
   return (
     <span className="flex min-w-0 items-center gap-2">
       {singleAgent ? (
-        <OkouAvatar size={32} motion="static" />
+        <OkouAvatar size={32} />
       ) : (
         <AgentAvatarImg
           name={avatarAgentId}

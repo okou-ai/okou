@@ -226,6 +226,27 @@ test("Give the organization default agent its own texture", async () => {
   );
 });
 
+test("Draw the organization default agent with the animated Okou avatar once it is on", async () => {
+  // Outside My Okou the default agent is drawn from its stored avatar, the flat
+  // default artwork. With the switch on, that artwork gives way to the shared
+  // animated avatar wherever an agent avatar is drawn.
+  mountedAgent(DEFAULT_AGENT_AVATAR_URL);
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    featureSwitches: { [FeatureSwitchKey.OkouAnimatedAvatar]: true },
+  });
+  await waitFor(() => {
+    expect(avatarFrame()).toBeInTheDocument();
+  });
+
+  expect(avatarFrame().querySelector("[data-okou-avatar]")).toHaveAttribute(
+    "data-okou-avatar",
+    "animated",
+  );
+});
+
 test("Greet with Okou's own animated avatar under My Okou", async () => {
   // My Okou draws Okou on the home greeting whatever the default agent's own
   // avatar is, through the shared avatar: textured, framed, and moving.

@@ -39,6 +39,33 @@ function captureFrames(): { advance: (now: number) => void } {
   };
 }
 
+/** Lets a test scroll avatars in and out of view. */
+function captureVisibility(): { show: (visible: boolean) => void } {
+  const callbacks: IntersectionObserverCallback[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  return {
+    show: (visible) => {
+      act(() => {
+        for (const callback of callbacks) {
+          callback(
+            [{ isIntersecting: visible } as IntersectionObserverEntry],
+            {} as IntersectionObserver,
+          );
+        }
+      });
+    },
+  };
+}
+
 /** The pose the rig drew: the head group's transform for this frame. */
 function headPose(container: HTMLElement): string | null {
   return (
@@ -77,7 +104,9 @@ describe("OkouAvatar", () => {
   it("plays its mood over time when animated", () => {
     mockReducedMotion(false);
     const frames = captureFrames();
+    const visibility = captureVisibility();
     const { container } = render(<OkouAvatar size={56} mood="idle" />);
+    visibility.show(true);
 
     expect(container.querySelector("svg[data-okou-avatar]")).toHaveAttribute(
       "data-okou-avatar",
@@ -87,6 +116,29 @@ describe("OkouAvatar", () => {
     const first = headPose(container);
     frames.advance(3000);
     expect(headPose(container)).not.toBe(first);
+  });
+
+  it("stops drawing while scrolled out of view and resumes where it left off", () => {
+    mockReducedMotion(false);
+    const frames = captureFrames();
+    const visibility = captureVisibility();
+    const { container } = render(<OkouAvatar size={56} mood="idle" />);
+    visibility.show(true);
+    frames.advance(1000);
+    frames.advance(2000);
+    const beforeLeaving = headPose(container);
+
+    visibility.show(false);
+    frames.advance(5000);
+    expect(headPose(container)).toBe(beforeLeaving);
+
+    // Time spent off screen is not skipped over: the next frames continue the
+    // motion from the pose it left on.
+    visibility.show(true);
+    frames.advance(9000);
+    expect(headPose(container)).toBe(beforeLeaving);
+    frames.advance(10_000);
+    expect(headPose(container)).not.toBe(beforeLeaving);
   });
 
   it("holds the same still frame for reduced-motion users", () => {

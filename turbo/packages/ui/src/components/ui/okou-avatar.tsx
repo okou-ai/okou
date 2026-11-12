@@ -41,10 +41,22 @@ const TEXTURE_URL = avatarTextureUrl(defaultAgentAvatarTextures()[0]!);
 type Tick = (now: number) => void;
 const ticks = new Set<Tick>();
 let frameRequest: number | null = null;
+let lastDrawn = -Infinity;
+
+/**
+ * The moods are slow sways and blinks, so 30 frames a second reads as smooth
+ * and halves the drawing cost when every avatar on a page is moving.
+ */
+const FRAME_INTERVAL_MS = 1000 / 30;
 
 function runTicks(now: number): void {
-  for (const tick of ticks) {
-    tick(now);
+  // A small tolerance keeps a 60Hz display on every other frame; a clock that
+  // starts over (a new document) draws at once.
+  if (now - lastDrawn >= FRAME_INTERVAL_MS - 2 || now < lastDrawn) {
+    lastDrawn = now;
+    for (const tick of ticks) {
+      tick(now);
+    }
   }
   frameRequest = ticks.size > 0 ? requestAnimationFrame(runTicks) : null;
 }
@@ -58,6 +70,57 @@ function subscribeTick(tick: Tick): () => void {
       cancelAnimationFrame(frameRequest);
       frameRequest = null;
     }
+  };
+}
+
+/**
+ * Plays `draw` on the shared clock while `element` is on screen. An avatar
+ * scrolled out of view stops drawing and resumes where it left off, so a
+ * long transcript costs only the avatars a reader can see.
+ */
+function playWhileVisible(
+  element: Element,
+  draw: (elapsedSeconds: number) => void,
+  dispose: () => void,
+): () => void {
+  let elapsed = 0;
+  let previous: number | null = null;
+  let stop: (() => void) | null = null;
+  const play = () => {
+    stop ??= subscribeTick((now) => {
+      elapsed += previous === null ? 0 : (now - previous) / 1000;
+      previous = now;
+      draw(elapsed);
+    });
+  };
+  const pause = () => {
+    stop?.();
+    stop = null;
+    previous = null;
+  };
+  const observer =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver((entries) => {
+          if (
+            entries.some((entry) => {
+              return entry.isIntersecting;
+            })
+          ) {
+            play();
+          } else {
+            pause();
+          }
+        })
+      : null;
+  if (observer) {
+    observer.observe(element);
+  } else {
+    play();
+  }
+  return () => {
+    observer?.disconnect();
+    pause();
+    dispose();
   };
 }
 
@@ -93,8 +156,12 @@ interface OkouAvatarProps extends Omit<
   SVGProps<SVGSVGElement>,
   "children" | "width" | "height" | "viewBox" | "role"
 > {
-  /** Rendered size in px. Also sets the facial line weight. */
-  size: number;
+  /**
+   * Rendered size in px, which also sets the facial line weight. Omit it when
+   * the caller sizes the avatar with classes; the avatar then reads its
+   * rendered size once, when it mounts.
+   */
+  size?: number;
   /** One of the rig's moods. Defaults to `idle`. */
   mood?: OkouAvatarMood;
   /**
@@ -123,7 +190,6 @@ function OkouAvatar({
     prefersReducedMotionOnServer,
   );
   const animated = motion === "animated" && !reducedMotion;
-  const pxPerUnit = (size / FRAME) * (ARTWORK.size / OKOU_AVATAR_VIEW);
 
   // The rig is an imperative SVG drawing, so it mounts into its own group and
   // is rebuilt whenever what it draws changes.
@@ -138,6 +204,10 @@ function OkouAvatar({
       rig.svg.setAttribute("width", String(ARTWORK.size));
       rig.svg.setAttribute("height", String(ARTWORK.size));
       group.append(rig.svg);
+      const renderedSize =
+        size ?? (group.ownerSVGElement?.getBoundingClientRect().width || FRAME);
+      const pxPerUnit =
+        (renderedSize / FRAME) * (ARTWORK.size / OKOU_AVATAR_VIEW);
       const hero = okouAvatarHeroTime(mood);
       rig.render({ mood, time: hero, pxPerUnit });
       if (!animated) {
@@ -145,17 +215,17 @@ function OkouAvatar({
           rig.svg.remove();
         };
       }
-      let start: number | null = null;
-      const unsubscribe = subscribeTick((now) => {
-        start ??= now;
-        rig.render({ mood, time: hero + (now - start) / 1000, pxPerUnit });
-      });
-      return () => {
-        unsubscribe();
-        rig.svg.remove();
-      };
+      return playWhileVisible(
+        group.ownerSVGElement ?? group,
+        (elapsed) => {
+          rig.render({ mood, time: hero + elapsed, pxPerUnit });
+        },
+        () => {
+          rig.svg.remove();
+        },
+      );
     },
-    [mood, animated, pxPerUnit],
+    [mood, animated, size],
   );
 
   return (

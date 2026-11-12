@@ -3,7 +3,10 @@ import { useTranslation } from "react-i18next";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { avatarTextureUrl } from "@okouai/core/agent-avatar-texture";
-import { cn } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { OkouAvatar, cn } from "@okouai/ui";
+import { useGet } from "ccstate-react";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { OnboardingSourceOutcomeContent } from "./onboarding-source-outcome-content.tsx";
@@ -147,11 +150,7 @@ function OutcomeFigure({
               creative && "pt-3 pb-2.5",
             )}
           >
-            <img
-              src={DEFAULT_AGENT_AVATAR_URL}
-              alt=""
-              className="size-[22px] shrink-0 rounded-[7px] bg-[#f9e840] object-cover"
-            />
+            <OnboardingOkouAvatar />
             <strong className="min-w-0 text-[13px] leading-5 font-medium">
               {copy.industries[industry].title}
             </strong>
@@ -197,5 +196,20 @@ export function OnboardingSourceOutcome({
     </details>
   ) : (
     <div className="mt-8">{figure}</div>
+  );
+}
+
+/** Okou at the head of the outcome card: the animated avatar once it is on. */
+function OnboardingOkouAvatar() {
+  const animatedAvatar =
+    useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+  return animatedAvatar ? (
+    <OkouAvatar size={22} />
+  ) : (
+    <img
+      src={DEFAULT_AGENT_AVATAR_URL}
+      alt=""
+      className="size-[22px] shrink-0 rounded-[7px] bg-[#f9e840] object-cover"
+    />
   );
 }
