@@ -6,7 +6,6 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
-  ChevronDown,
   ChevronRight,
   Ellipsis,
   Folder,
@@ -278,7 +277,6 @@ function ProjectFoldToggle({
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -319,9 +317,13 @@ function ProjectFoldToggle({
                   className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
                   folderClassName="opacity-70 group-hover/project-fold:opacity-100"
                 />
-                <Chevron
+                {/* The arrow turns with the fold, alongside the chats. */}
+                <ChevronRight
                   size={16}
-                  className="hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block"
+                  className={cn(
+                    "hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block motion-safe:transition-[rotate] motion-safe:duration-[240ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)]",
+                    expanded && "rotate-90",
+                  )}
                 />
               </span>
             </button>

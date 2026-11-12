@@ -13,10 +13,12 @@ import {
 } from "../agent-chat.ts";
 import {
   listedThreadIds,
+  projectRowKey,
   threadRowKey,
   type ChatThreadListRow,
   type ThreadChatThreadListRow,
 } from "./chat-thread-list-rows.ts";
+import { projectFold$ } from "../projects/project-expansion.ts";
 import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
@@ -34,10 +36,36 @@ export type SidebarChatThreadRow =
       readonly signals: SidebarChatThreadItemSignals;
     });
 
+/** A rendered row, at its place in the list. */
+export interface SidebarChatThreadWindowRow {
+  readonly row: SidebarChatThreadRow;
+  /** Where the row rests; a departing chat rests on its Project's row. */
+  readonly index: number;
+  /** Where a Project fold moves the row from; `index` while none does. */
+  readonly from: number;
+  /**
+   * An unfolding chat comes out of its Project's row and a folding one goes
+   * back into it, no longer listed.
+   */
+  readonly presence: "entering" | "departing" | null;
+}
+
 export interface SidebarChatThreadWindow {
-  readonly startIndex: number;
-  readonly rows: readonly SidebarChatThreadRow[];
+  readonly rows: readonly SidebarChatThreadWindowRow[];
   readonly showAllChatsRow: boolean;
+  /** The Project fold the rows are moving through; null at rest. */
+  readonly foldId: number | null;
+}
+
+/** Rows that render in list order without a Project fold to move through. */
+export function restingWindowRows(
+  rows: readonly SidebarChatThreadRow[],
+  startIndex = 0,
+): readonly SidebarChatThreadWindowRow[] {
+  return rows.map((row, offset) => {
+    const index = startIndex + offset;
+    return { row, index, from: index, presence: null };
+  });
 }
 
 export interface SidebarChatThreadListSignals {
@@ -248,6 +276,113 @@ function attachItemSignals(
   });
 }
 
+/** Chats a fold takes out of the list, in their order before it. */
+function departingThreadIds(
+  rows: readonly ChatThreadListRow[],
+  rowsBeforeFold: readonly ChatThreadListRow[] | null,
+): readonly string[] {
+  if (!rowsBeforeFold) {
+    return [];
+  }
+  const listed = new Set(listedThreadIds(rows));
+  return listedThreadIds(rowsBeforeFold).filter((threadId) => {
+    return !listed.has(threadId);
+  });
+}
+
+/**
+ * The window while a Project folds. Every row moves from its place before the
+ * fold to its place after it; a Project's chats unfold out of its row and fold
+ * back into it. A row renders when that path crosses the window, so rows
+ * arriving from beyond it travel in rather than appear. Null when the
+ * Project is not listed, as under a filter that leaves it out.
+ */
+function projectFoldWindowRows({
+  rows,
+  rowsBeforeFold,
+  departingItems,
+  projectKey,
+  startIndex,
+  endIndex,
+}: {
+  rows: readonly SidebarChatThreadRow[];
+  rowsBeforeFold: readonly ChatThreadListRow[];
+  departingItems: ReadonlyMap<string, SidebarChatThreadItemSignals>;
+  projectKey: string;
+  startIndex: number;
+  endIndex: number;
+}): readonly SidebarChatThreadWindowRow[] | null {
+  const projectIndex = rows.findIndex((row) => {
+    return row.key === projectKey;
+  });
+  if (projectIndex === -1) {
+    return null;
+  }
+  const previousIndexes = new Map(
+    rowsBeforeFold.map((row, index) => {
+      return [row.key, index];
+    }),
+  );
+  const crossesWindow = (index: number, from: number) => {
+    return (
+      Math.max(index, from) >= startIndex && Math.min(index, from) < endIndex
+    );
+  };
+  // No row moves farther than the number of rows the fold adds or removes.
+  const reach = Math.abs(rows.length - rowsBeforeFold.length);
+  const windowRows: SidebarChatThreadWindowRow[] = [];
+  for (
+    let index = Math.max(0, startIndex - reach);
+    index < Math.min(rows.length, endIndex + reach);
+    index += 1
+  ) {
+    const row = rows[index]!;
+    const previousIndex = previousIndexes.get(row.key);
+    const from = previousIndex ?? projectIndex;
+    if (crossesWindow(index, from)) {
+      windowRows.push({
+        row,
+        index,
+        from,
+        presence: previousIndex === undefined ? "entering" : null,
+      });
+    }
+  }
+  const listedKeys = new Set(
+    rows.map((row) => {
+      return row.key;
+    }),
+  );
+  const departing = rowsBeforeFold.flatMap(
+    (row, from): SidebarChatThreadWindowRow[] => {
+      if (listedKeys.has(row.key) || !crossesWindow(projectIndex, from)) {
+        return [];
+      }
+      if (row.kind !== "thread") {
+        return [{ row, index: projectIndex, from, presence: "departing" }];
+      }
+      const signals = departingItems.get(row.threadId);
+      return signals
+        ? [
+            {
+              row: { ...row, signals },
+              index: projectIndex,
+              from,
+              presence: "departing",
+            },
+          ]
+        : [];
+    },
+  );
+  // Departing rows keep their place in the DOM, below their Project's row,
+  // so React moves no node and every transition starts where its row stood.
+  const below = windowRows.findIndex((entry) => {
+    return entry.index > projectIndex;
+  });
+  windowRows.splice(below === -1 ? windowRows.length : below, 0, ...departing);
+  return windowRows;
+}
+
 // The sidebar's unread list is short and renders every row, so it skips the
 // virtual window and keeps its own loading state.
 export const unreadSidebarChatThreadRows$ = computed(async (get) => {
@@ -263,19 +398,33 @@ export const unreadSidebarChatThreadRows$ = computed(async (get) => {
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
-  showAllChatsRow: boolean,
+  listShowsAllChatsRow: boolean,
   rowHeight: number,
 ): SidebarChatThreadListSignals {
-  const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
-    return attachItemSignals(
-      get(list.rows$),
-      get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-        listedThreadIds(get(list.rows$)),
+  // One reconcile serves the listed chats and the ones a fold is taking out
+  // of the list, which keep their signals until they have left.
+  const items$ = computed((get) => {
+    const rows = get(list.rows$);
+    const listed = listedThreadIds(rows);
+    const departing = departingThreadIds(rows, get(list.rowsBeforeFold$));
+    const items = get(sidebarChatThreadItemSignalsRegistry$).reconcile([
+      ...listed,
+      ...departing,
+    ]);
+    return {
+      rows: attachItemSignals(rows, items),
+      departing: new Map(
+        items.slice(listed.length).map((signals) => {
+          return [signals.threadId, signals];
+        }),
       ),
-    );
+    };
+  });
+  const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
+    return get(items$).rows;
   });
   const rowCount$ = computed((get) => {
-    return get(list.count$) + (showAllChatsRow ? 1 : 0);
+    return get(list.count$) + (listShowsAllChatsRow ? 1 : 0);
   });
   const window$ = computed((get): SidebarChatThreadWindow => {
     const rows = get(rows$);
@@ -302,14 +451,33 @@ function createSidebarChatThreadViewportSignals(
             startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
           ),
         );
+    const showAllChatsRow =
+      listShowsAllChatsRow &&
+      startIndex <= rows.length &&
+      resolvedEndIndex > rows.length;
+    const fold = get(projectFold$);
+    const rowsBeforeFold = get(list.rowsBeforeFold$);
+    if (fold && rowsBeforeFold) {
+      const foldRows = projectFoldWindowRows({
+        rows,
+        rowsBeforeFold,
+        departingItems: get(items$).departing,
+        projectKey: projectRowKey(fold.projectId),
+        startIndex,
+        endIndex: Math.min(resolvedEndIndex, rows.length),
+      });
+      if (foldRows) {
+        return { rows: foldRows, showAllChatsRow, foldId: fold.id };
+      }
+    }
 
     return {
-      startIndex,
-      rows: rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
-      showAllChatsRow:
-        showAllChatsRow &&
-        startIndex <= rows.length &&
-        resolvedEndIndex > rows.length,
+      rows: restingWindowRows(
+        rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
+        startIndex,
+      ),
+      showAllChatsRow,
+      foldId: null,
     };
   });
 
