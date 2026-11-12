@@ -36,6 +36,10 @@ class PaletteColorsTest {
                         contrast(colors.onSurface, colors.surface) >= 4.5f,
                     )
                     assertTrue(
+                        "$palette/$dark dialog actions",
+                        contrast(colors.onSurface, colors.surfaceContainerHigh) >= 4.5f,
+                    )
+                    assertTrue(
                         "$palette/$dark selection",
                         contrast(colors.onSurface, resolved.selection) >= 4.5f,
                     )

@@ -85,6 +85,9 @@ Use Web semantic color roles through generated Android resources. Shared brand
 assets and licensed Geist fonts retain their source artwork and licenses;
 Android controls own dp/sp, touch targets, scaling, back navigation and focus.
 Do not copy iOS point sizes, Apple materials or Swift UI APIs as Android rules.
+The shared primary role can be a pale fill. Use a readable foreground role for
+text-only actions and state indicators instead of assuming that fill contrasts
+with its surrounding surface; verify contrast against the actual surface.
 
 Use string resources for product copy and preserve user text verbatim. Keep
 IME composition, selection, undo and cursor state with the editing owner.

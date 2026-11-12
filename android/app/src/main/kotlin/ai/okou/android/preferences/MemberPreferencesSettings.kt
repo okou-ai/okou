@@ -19,11 +19,13 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +51,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun MemberPreferencesSettings(model: MemberPreferencesModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
+    val foreground = MaterialTheme.colorScheme.onSurface
+    val textButtonColors = ButtonDefaults.textButtonColors(contentColor = foreground)
+    val radioButtonColors = RadioButtonDefaults.colors(selectedColor = foreground)
     var choosingPalette by remember { mutableStateOf(false) }
     var choosingLanguage by remember { mutableStateOf(false) }
     HorizontalDivider()
@@ -92,7 +97,7 @@ fun MemberPreferencesSettings(model: MemberPreferencesModel) {
         }
     if (message != null) {
         Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
-            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = foreground)
             Text(
                 stringResource(message),
                 color =
@@ -100,10 +105,12 @@ fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                     else MaterialTheme.colorScheme.error,
             )
             if (!state.busy)
-                TextButton(onClick = model::retry) { Text(stringResource(R.string.retry)) }
+                TextButton(onClick = model::retry, colors = textButtonColors) {
+                    Text(stringResource(R.string.retry))
+                }
         }
     }
-    TextButton(onClick = model::refresh, enabled = !state.busy) {
+    TextButton(onClick = model::refresh, enabled = !state.busy, colors = textButtonColors) {
         Text(stringResource(R.string.preference_refresh))
     }
     if (choosingPalette) {
@@ -135,13 +142,18 @@ fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                         ) {
                             PaletteSwatch(palette)
                             Text(stringResource(paletteLabel(palette)), Modifier.weight(1f))
-                            RadioButton(selected = state.colorTheme == palette, onClick = null)
+                            RadioButton(
+                                selected = state.colorTheme == palette,
+                                onClick = null,
+                                enabled = !state.busy,
+                                colors = radioButtonColors,
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { choosingPalette = false }) {
+                TextButton(onClick = { choosingPalette = false }, colors = textButtonColors) {
                     Text(stringResource(R.string.back))
                 }
             },
@@ -174,13 +186,18 @@ fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(stringResource(languageLabel(locale)), Modifier.weight(1f))
-                            RadioButton(selected = state.locale == locale, onClick = null)
+                            RadioButton(
+                                selected = state.locale == locale,
+                                onClick = null,
+                                enabled = !state.busy,
+                                colors = radioButtonColors,
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { choosingLanguage = false }) {
+                TextButton(onClick = { choosingLanguage = false }, colors = textButtonColors) {
                     Text(stringResource(R.string.back))
                 }
             },
