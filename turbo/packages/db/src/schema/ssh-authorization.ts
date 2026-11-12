@@ -11,7 +11,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { SshAuthorizationPermissions } from "../jsonb-contracts/ssh-authorization";
+import type { HostAuthorizationPermissions } from "../jsonb-contracts/host-authorization";
 import { chatThreads } from "./chat-thread";
 import { sshConnections } from "./ssh-connection";
 
@@ -43,7 +43,7 @@ export const sshAuthorizations = pgTable(
     reason: varchar("reason", { length: 500 }).notNull(),
     callbackPrompt: varchar("callback_prompt", { length: 200 }).notNull(),
     requiredPermissions: jsonb("required_permissions")
-      .$type<SshAuthorizationPermissions>()
+      .$type<HostAuthorizationPermissions>()
       .notNull()
       .default([]),
     status: varchar("status", { length: 16 })

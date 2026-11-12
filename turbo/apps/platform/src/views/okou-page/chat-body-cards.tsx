@@ -67,7 +67,7 @@ import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
 import { ComputerUseAuthorizationCard } from "./computer-use-authorization-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
-import { SshAuthorizationCard } from "./ssh-authorization-card.tsx";
+import { HostAuthorizationCard } from "./host-authorization-card.tsx";
 import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { WalletActionCard } from "./wallet-action-card.tsx";
@@ -355,8 +355,9 @@ export function MarkdownCardView({
     case "browser-authorization": {
       return <BrowserAuthorizationCard signals={card.signals} />;
     }
+    case "vnc-authorization":
     case "ssh-authorization": {
-      return <SshAuthorizationCard signals={card.signals} />;
+      return <HostAuthorizationCard signals={card.signals} />;
     }
     case "desktop-shell-authorization": {
       return <DesktopShellAuthorizationCard signals={card.signals} />;

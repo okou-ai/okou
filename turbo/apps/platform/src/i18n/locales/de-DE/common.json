@@ -6435,7 +6435,8 @@
       "host_changed": "Die Host-Konfiguration hat sich geändert. Fordere eine neue Anfrage an.",
       "permissions_required": "Genehmige zuerst die zugehörigen Connector-Berechtigungen.",
       "run_active": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
-      "run_unavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
+      "run_unavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage.",
+      "ssh_access_required": "Genehmigen Sie zuerst die erforderlichen SSH-Hosts."
     },
     "continue": "Aufgabe fortsetzen",
     "details": "Zugriffsdetails",
@@ -6789,6 +6790,34 @@
       "via": "SSH-Host:"
     },
     "unavailable": "VNC ist in diesem Workspace nicht verfügbar."
+  },
+  "vncAuthorization": {
+    "allow": "In diesem Chat erlauben",
+    "blocked": {
+      "chat_busy": "Warte vor der Genehmigung, bis der aktuelle Run in diesem Chat beendet ist.",
+      "host_changed": "Die Host-Konfiguration hat sich geändert. Fordere eine neue Anfrage an.",
+      "permissions_required": "Genehmige zuerst die zugehörigen Connector-Berechtigungen.",
+      "run_active": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
+      "run_unavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage.",
+      "ssh_access_required": "Genehmigen Sie zuerst die erforderlichen SSH-Hosts."
+    },
+    "continue": "Aufgabe fortsetzen",
+    "dependencies": "Erforderliche SSH-Hosts (separat genehmigen)",
+    "details": "Zugriffsdetails",
+    "effect": "Erlaubt das Anzeigen und Steuern dieses Desktops, bis der Zugriff deaktiviert wird. SSH-Hosts müssen separat genehmigt werden.",
+    "failed": "Die Aktion konnte nicht abgeschlossen werden. Versuche es erneut, um den Zugriff zu prüfen und fortzufahren.",
+    "retry": "Erneut versuchen",
+    "scope": "Dieser Host · Nur dieser Chat",
+    "status": {
+      "approved": "VNC-Zugriff erlaubt",
+      "denied": "VNC-Zugriff abgelehnt",
+      "expired": "VNC-Anfrage abgelaufen",
+      "pending": "VNC-Zugriff",
+      "revoked": "VNC-Zugriff widerrufen",
+      "stale": "VNC-Anfrage geändert"
+    },
+    "title": "VNC-Zugriff",
+    "unavailable": "Diese Anfrage ist nicht verfügbar. Fordere eine neue Anfrage an."
   },
   "workflows": {
     "automations": {

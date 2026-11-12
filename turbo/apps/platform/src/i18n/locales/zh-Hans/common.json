@@ -6414,7 +6414,8 @@
       "host_changed": "主机配置已变更，请重新申请。",
       "permissions_required": "请先批准配套的连接器权限。",
       "run_active": "发起申请的运行尚未结束，结束后即可批准。",
-      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。"
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。",
+      "ssh_access_required": "请先批准所需的 SSH 主机。"
     },
     "continue": "继续任务",
     "details": "访问详情",
@@ -6766,6 +6767,34 @@
       "via": "SSH 主机："
     },
     "unavailable": "当前工作区不支持 VNC。"
+  },
+  "vncAuthorization": {
+    "allow": "允许当前聊天访问",
+    "blocked": {
+      "chat_busy": "当前聊天正在运行，结束后即可批准。",
+      "host_changed": "主机配置已变更，请重新申请。",
+      "permissions_required": "请先批准配套的连接器权限。",
+      "run_active": "发起申请的运行尚未结束，结束后即可批准。",
+      "run_unavailable": "发起申请的运行已不可用，请在聊天中重新申请。",
+      "ssh_access_required": "请先批准所需的 SSH 主机。"
+    },
+    "continue": "继续任务",
+    "dependencies": "依赖的 SSH 主机（需单独批准）",
+    "details": "访问详情",
+    "effect": "允许查看和控制此桌面，直到访问权限被关闭。依赖的 SSH 主机需单独批准。",
+    "failed": "操作未完成，请重试以检查权限并继续。",
+    "retry": "重试",
+    "scope": "仅此主机 · 仅当前聊天",
+    "status": {
+      "approved": "已允许 VNC 访问",
+      "denied": "已拒绝 VNC 访问",
+      "expired": "VNC 申请已过期",
+      "pending": "VNC 访问",
+      "revoked": "已撤销 VNC 访问",
+      "stale": "VNC 申请已变更"
+    },
+    "title": "VNC 访问",
+    "unavailable": "此申请不可用，请重新申请。"
   },
   "workflows": {
     "automations": {

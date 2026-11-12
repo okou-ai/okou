@@ -3277,6 +3277,13 @@
       "when": 1794474443782,
       "tag": "1546_staff_workflow_attachment_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 1547,
+      "version": "7",
+      "when": 1794481335704,
+      "tag": "1547_vnc_chat_authorizations",
+      "breakpoints": true
     }
   ]
 }

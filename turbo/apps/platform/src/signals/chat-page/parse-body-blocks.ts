@@ -40,9 +40,9 @@ import {
   type BrowserAuthorizationDescriptor,
 } from "./browser-authorization-block.ts";
 import {
-  parseSshAuthorizationUrl,
-  type SshAuthorizationDescriptor,
-} from "./ssh-authorization-block.ts";
+  parseHostAuthorizationUrl,
+  type HostAuthorizationDescriptor,
+} from "./host-authorization-block.ts";
 import {
   parseDesktopShellAuthorizationUrl,
   type DesktopShellAuthorizationDescriptor,
@@ -143,9 +143,9 @@ export type ParsedBodyBlock =
       descriptor: ComputerUseAuthorizationDescriptor;
     }
   | {
-      type: "ssh-authorization";
+      type: "ssh-authorization" | "vnc-authorization";
       resourceKey: string;
-      descriptor: SshAuthorizationDescriptor;
+      descriptor: HostAuthorizationDescriptor;
     }
   | {
       type: "desktop-shell-authorization";
@@ -809,7 +809,15 @@ function createComputerAuthorizationBlock(
     };
   }
 
-  const sshAuthorization = parseSshAuthorizationUrl(url);
+  const vncAuthorization = parseHostAuthorizationUrl("vnc", url);
+  if (vncAuthorization) {
+    return {
+      type: "vnc-authorization",
+      resourceKey: vncAuthorization.id,
+      descriptor: vncAuthorization,
+    };
+  }
+  const sshAuthorization = parseHostAuthorizationUrl("ssh", url);
   if (sshAuthorization) {
     return {
       type: "ssh-authorization",
@@ -1606,6 +1614,7 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "computer-use-authorization": {
       return block.descriptor.originalUrl;
     }
+    case "vnc-authorization":
     case "ssh-authorization":
     case "desktop-shell-authorization": {
       return block.descriptor.originalUrl;

@@ -211,7 +211,7 @@ import { getChatThreadTitleParts } from "./chat-thread-title.ts";
 import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authorization-block.ts";
-import { createSshAuthorizationCardSignalsRegistry } from "./ssh-authorization-block.ts";
+import { createHostAuthorizationCardSignalsRegistry } from "./host-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
@@ -1565,8 +1565,11 @@ interface EventTreeRegistries {
   readonly browserAuthorizationCardSignals: ReturnType<
     typeof createBrowserAuthorizationCardSignalsRegistry
   >;
+  readonly vncAuthorizationCardSignals: ReturnType<
+    typeof createHostAuthorizationCardSignalsRegistry
+  >;
   readonly sshAuthorizationCardSignals: ReturnType<
-    typeof createSshAuthorizationCardSignalsRegistry
+    typeof createHostAuthorizationCardSignalsRegistry
   >;
   readonly desktopShellAuthorizationCardSignals: ReturnType<
     typeof createDesktopShellAuthorizationCardSignalsRegistry
@@ -1612,7 +1615,10 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
 
 type HostAuthorizationDescriptorBlock = Extract<
   CardDescriptorBlock,
-  { type: "ssh-authorization" | "desktop-shell-authorization" }
+  {
+    type:
+      "ssh-authorization" | "vnc-authorization" | "desktop-shell-authorization";
+  }
 >;
 
 function createHostAuthorizationCardRefRegistrar(cards: EventTreeRegistries) {
@@ -1622,6 +1628,15 @@ function createHostAuthorizationCardRefRegistrar(cards: EventTreeRegistries) {
       descriptor: HostAuthorizationDescriptorBlock,
     ): MarkdownCardRef => {
       switch (descriptor.type) {
+        case "vnc-authorization": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.vncAuthorizationCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
         case "ssh-authorization": {
           return {
             kind: descriptor.type,
@@ -1734,6 +1749,7 @@ function createCardRefRegistrar(
           };
         }
         case "ssh-authorization":
+        case "vnc-authorization":
         case "desktop-shell-authorization": {
           return set(registerHostAuthorizationCardRef$, descriptor);
         }
@@ -1998,6 +2014,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
       set(registries.sshAuthorizationCardSignals.subscribe$, signal);
+      set(registries.vncAuthorizationCardSignals.subscribe$, signal);
       set(registries.computerUseAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);
       set(registries.browserAuthorizationCardSignals.subscribe$, signal);
@@ -2057,8 +2074,10 @@ function createPagedEventResources({
     createComputerUseAuthorizationCardSignalsRegistry(threadId);
   const browserAuthorizationCardSignals =
     createBrowserAuthorizationCardSignalsRegistry(chatActionContext);
+  const vncAuthorizationCardSignals =
+    createHostAuthorizationCardSignalsRegistry("vnc", threadId);
   const sshAuthorizationCardSignals =
-    createSshAuthorizationCardSignalsRegistry(threadId);
+    createHostAuthorizationCardSignalsRegistry("ssh", threadId);
   const desktopShellAuthorizationCardSignals =
     createDesktopShellAuthorizationCardSignalsRegistry(threadId);
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
@@ -2081,6 +2100,7 @@ function createPagedEventResources({
       browserAuthorizationCardSignals,
       desktopShellAuthorizationCardSignals,
       sshAuthorizationCardSignals,
+      vncAuthorizationCardSignals,
       planUpgradeCardSignals,
       mailDraftCardSignals,
       browserSessionSignals,

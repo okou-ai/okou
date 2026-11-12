@@ -6414,7 +6414,8 @@
       "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
       "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
       "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
-      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini.",
+      "ssh_access_required": "Setujui host SSH yang diperlukan terlebih dahulu."
     },
     "continue": "Lanjutkan tugas",
     "details": "Detail akses",
@@ -6766,6 +6767,34 @@
       "via": "Host SSH:"
     },
     "unavailable": "VNC tidak tersedia di ruang kerja ini."
+  },
+  "vncAuthorization": {
+    "allow": "Izinkan di chat ini",
+    "blocked": {
+      "chat_busy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
+      "host_changed": "Konfigurasi host berubah. Minta persetujuan baru.",
+      "permissions_required": "Setujui izin konektor terkait terlebih dahulu.",
+      "run_active": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
+      "run_unavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini.",
+      "ssh_access_required": "Setujui host SSH yang diperlukan terlebih dahulu."
+    },
+    "continue": "Lanjutkan tugas",
+    "dependencies": "Host SSH yang diperlukan (disetujui terpisah)",
+    "details": "Detail akses",
+    "effect": "Mengizinkan melihat dan mengendalikan desktop ini hingga akses dinonaktifkan. Host SSH memerlukan persetujuan terpisah.",
+    "failed": "Tindakan tidak dapat diselesaikan. Coba lagi untuk memeriksa akses dan melanjutkan.",
+    "retry": "Coba lagi",
+    "scope": "Host ini · Hanya chat ini",
+    "status": {
+      "approved": "Akses VNC diizinkan",
+      "denied": "Akses VNC ditolak",
+      "expired": "Permintaan VNC kedaluwarsa",
+      "pending": "Akses VNC",
+      "revoked": "Akses VNC dicabut",
+      "stale": "Permintaan VNC berubah"
+    },
+    "title": "Akses VNC",
+    "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
   },
   "workflows": {
     "automations": {

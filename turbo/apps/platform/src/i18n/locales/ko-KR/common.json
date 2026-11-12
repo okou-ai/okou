@@ -6414,7 +6414,8 @@
       "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
       "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
       "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
-      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요."
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요.",
+      "ssh_access_required": "먼저 필요한 SSH 호스트를 승인하세요."
     },
     "continue": "작업 계속",
     "details": "접근 권한 상세",
@@ -6766,6 +6767,34 @@
       "via": "SSH 호스트:"
     },
     "unavailable": "이 워크스페이스에서는 VNC를 사용할 수 없습니다."
+  },
+  "vncAuthorization": {
+    "allow": "이 채팅에서 허용",
+    "blocked": {
+      "chat_busy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
+      "host_changed": "호스트 설정이 변경되었습니다. 새로 요청하세요.",
+      "permissions_required": "먼저 관련 커넥터 권한을 승인하세요.",
+      "run_active": "요청을 보낸 Run이 끝난 후 승인하세요.",
+      "run_unavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요.",
+      "ssh_access_required": "먼저 필요한 SSH 호스트를 승인하세요."
+    },
+    "continue": "작업 계속",
+    "dependencies": "필요한 SSH 호스트(별도 승인)",
+    "details": "접근 권한 상세",
+    "effect": "접근이 비활성화될 때까지 이 데스크톱의 화면 보기와 제어를 허용합니다. SSH 호스트는 별도 승인이 필요합니다.",
+    "failed": "작업을 완료하지 못했습니다. 다시 시도하여 권한을 확인하고 계속하세요.",
+    "retry": "다시 시도",
+    "scope": "이 호스트 · 이 채팅만",
+    "status": {
+      "approved": "VNC 액세스 허용됨",
+      "denied": "VNC 액세스 거부됨",
+      "expired": "VNC 요청 만료됨",
+      "pending": "VNC 액세스",
+      "revoked": "VNC 액세스 취소됨",
+      "stale": "VNC 요청 변경됨"
+    },
+    "title": "VNC 액세스",
+    "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
   },
   "workflows": {
     "automations": {

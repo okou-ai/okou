@@ -1975,6 +1975,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "vnc-authorization",
+    contracts: ["vncAuthorizationContract"],
+    bindings: [],
+  },
+  {
     module: "vnc-connections",
     contracts: ["vncConnectionsContract"],
     bindings: [
