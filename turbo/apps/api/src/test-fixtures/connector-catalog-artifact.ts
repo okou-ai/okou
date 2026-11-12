@@ -1195,6 +1195,10 @@ const connectors = [
             rules: ["GET /v1/users/{userId}/messages/{messageId}"],
           },
           {
+            name: "threads.read",
+            rules: ["GET /v1/users/{userId}/threads/{threadId}"],
+          },
+          {
             name: "messages.write",
             rules: ["POST /v1/users/{userId}/messages/send"],
           },
