@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
-use tokio::sync::oneshot;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tracing::info;
 
@@ -18,7 +18,7 @@ use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_discovery::{
     AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
     DiscoveredJobResult, SandboxAdmittedJob, prepare_admitted_job, prepare_discovered_job,
-    recover_unconsumed_finalizing_claim,
+    prepare_job_profile, recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
 use super::pending_candidate::PendingRetry;
@@ -40,6 +40,7 @@ pub(super) struct ClaimTasks {
     tasks: FuturesUnordered<JoinHandle<ClaimTaskResult>>,
     in_flight: HashSet<RunId>,
     preparing: Option<oneshot::Receiver<()>>,
+    slots: Arc<Semaphore>,
 }
 
 impl ClaimTasks {
@@ -49,15 +50,81 @@ impl ClaimTasks {
             tasks: FuturesUnordered::new(),
             in_flight: HashSet::new(),
             preparing: None,
+            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_CLAIMS)),
         }
     }
 
     pub(super) fn has_capacity(&self) -> bool {
-        self.preparing.is_none() && self.tasks.len() < MAX_IN_FLIGHT_CLAIMS
+        self.preparing.is_none() && self.slots.available_permits() > 0
     }
 
     pub(super) fn is_preparing(&self) -> bool {
         self.preparing.is_some()
+    }
+
+    pub(super) fn slots(&self) -> Arc<Semaphore> {
+        self.slots.clone()
+    }
+
+    pub(super) fn submit_supplied(
+        &mut self,
+        mut work: crate::ingress::dispatch::DispatchWork,
+        profiles: &BTreeMap<String, RuntimeProfile>,
+        factories: &BTreeMap<String, (SharedFactory, bool)>,
+    ) {
+        use crate::ingress::dispatch::Disposition;
+        use crate::pre_claim_admission::{SuppliedAdmission, admit_supplied};
+        let Some(supplied) = work.context.take() else {
+            return;
+        };
+        let run_id = supplied.run_id;
+        if self.in_flight.contains(&run_id) {
+            return;
+        }
+        let candidate = JobCandidate::new(run_id, work.profile.clone())
+            .with_reuse_key(supplied.reuse_key.clone());
+        let Some(profile) = prepare_job_profile(&work.profile, profiles, factories) else {
+            work.settle(Disposition::Rejected);
+            return;
+        };
+        self.in_flight.insert(run_id);
+        let context = self.context.clone();
+        let (admission_ready, ready) = oneshot::channel();
+        self.preparing = Some(ready);
+        self.tasks.push(tokio::spawn(async move {
+            let admission = admit_supplied(
+                supplied,
+                PreClaimRequest {
+                    candidate,
+                    profile_name: &profile.profile_name,
+                    job_vcpu: profile.vcpu,
+                    job_memory: profile.memory_mb,
+                    home_disk_mb: profile.home_disk_mb,
+                    device_rate_limits: &context.spawn_ctx.device_rate_limits,
+                },
+                work.deadline,
+                &context.resources(),
+                admission_ready,
+            )
+            .await;
+            let outcome = match admission {
+                SuppliedAdmission::Admitted(admission) => {
+                    work.settle(Disposition::Accepted);
+                    prepare_claimed(*admission, profile, context).await
+                }
+                SuppliedAdmission::Rejected => {
+                    work.settle(Disposition::Rejected);
+                    ClaimTaskOutcome::Deferred
+                }
+                SuppliedAdmission::Unknown => ClaimTaskOutcome::Deferred,
+            };
+            ClaimTaskResult {
+                run_id,
+                outcome,
+                retry: PendingRetry::supplied(),
+                _permit: work.permit.take(),
+            }
+        }));
     }
 
     pub(super) async fn progress(&mut self) -> Option<Result<ClaimTaskResult, JoinError>> {
@@ -103,6 +170,9 @@ impl ClaimTasks {
         let Some(job) = prepare_discovered_job(job, profiles, factories) else {
             return;
         };
+        let Ok(permit) = self.slots.clone().try_acquire_owned() else {
+            return;
+        };
         self.in_flight.insert(run_id);
         let context = Arc::clone(&self.context);
         let (admission_ready, ready) = oneshot::channel();
@@ -135,6 +205,7 @@ impl ClaimTasks {
                 run_id,
                 outcome,
                 retry,
+                _permit: Some(permit),
             }
         }));
     }
@@ -203,6 +274,7 @@ pub(super) struct ClaimTaskResult {
     run_id: RunId,
     outcome: ClaimTaskOutcome,
     retry: PendingRetry,
+    _permit: Option<OwnedSemaphorePermit>,
 }
 
 enum ClaimTaskOutcome {

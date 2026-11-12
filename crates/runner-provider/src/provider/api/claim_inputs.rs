@@ -150,8 +150,23 @@ fn instruction_reference<'de, D: serde::Deserializer<'de>>(
 pub(super) fn decode_claim(body: &[u8]) -> Result<ExecutionContext, String> {
     // Keep scalar decode paths intact: flattening the context into a publication
     // DTO would erase nested serde_path_to_error locations.
-    let mut context: ExecutionContext = super::decode_api_json_bytes(body)?;
+    let context: ExecutionContext = super::decode_api_json_bytes(body)?;
     let inputs: ClaimInputs = super::decode_api_json_bytes(body)?;
+    normalize(context, inputs)
+}
+
+/// Normalize the same complete publication without a Claim transport or timing.
+/// Decode errors intentionally contain no supplied values or secret field paths.
+pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, String> {
+    let context = serde_json::from_slice(body).map_err(|_| "Invalid execution context")?;
+    let inputs = serde_json::from_slice(body).map_err(|_| "Invalid content bundles")?;
+    normalize(context, inputs)
+}
+
+fn normalize(
+    mut context: ExecutionContext,
+    inputs: ClaimInputs,
+) -> Result<ExecutionContext, String> {
     let mut paths: HashSet<String> = context
         .storage_manifest
         .iter()

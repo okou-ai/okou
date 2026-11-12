@@ -79,6 +79,21 @@ enum LocalAdmissionResource {
     Finalizing(FinalizingAdmission),
 }
 
+/// Ordinary capacity acquisition cannot produce speculative/finalizing custody.
+enum AcquiredResource {
+    Fresh(BudgetLease),
+    Reusable(ReservedIdleActivation),
+}
+
+impl From<AcquiredResource> for LocalAdmissionResource {
+    fn from(resource: AcquiredResource) -> Self {
+        match resource {
+            AcquiredResource::Fresh(lease) => Self::Fresh(lease),
+            AcquiredResource::Reusable(reservation) => Self::Reusable(reservation),
+        }
+    }
+}
+
 /// One owned resource transferred with a successful claim to Runner activation.
 pub enum AdmittedResource {
     Fresh(BudgetLease),
@@ -157,6 +172,75 @@ pub enum PreClaimOutcome {
     Claimed(Box<AdmittedClaim>),
     Pending(Box<JobCandidate>),
     Deferred,
+}
+
+pub(crate) enum SuppliedAdmission {
+    Admitted(Box<AdmittedClaim>),
+    Rejected,
+    Unknown,
+}
+
+/// Ordinary local admission for complete work. No discovery preference wait,
+/// speculative Claim overlap, or remote input acquisition participates here.
+pub(crate) async fn admit_supplied(
+    context: runner_types::types::ExecutionContext,
+    request: PreClaimRequest<'_>,
+    deadline: tokio::time::Instant,
+    ctx: &PreClaimResources<'_>,
+    admission_ready: oneshot::Sender<()>,
+) -> SuppliedAdmission {
+    if *ctx.mode_rx.borrow() != RunnerMode::Running || tokio::time::Instant::now() >= deadline {
+        return SuppliedAdmission::Rejected;
+    }
+    let run_id = context.run_id;
+    let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+        &request.candidate,
+        request.profile_name,
+        request.job_vcpu,
+        request.job_memory,
+        request.device_rate_limits,
+        AdmissionReusePolicy::Compatible { allow_blank: true },
+        ctx,
+    )
+    .await
+    else {
+        return SuppliedAdmission::Rejected;
+    };
+    let cancellation = match ctx.cancel_tokens.register(run_id).await {
+        Ok(registration) => registration,
+        Err(_) => {
+            rollback_untracked_resource(resource.into(), ctx).await;
+            return SuppliedAdmission::Unknown;
+        }
+    };
+    let claimed = match ctx.provider.bind_supplied(context).await {
+        Ok(claimed) if claimed.context().run_id == run_id => claimed,
+        _ => {
+            cancellation.unregister().await;
+            rollback_untracked_resource(resource.into(), ctx).await;
+            return SuppliedAdmission::Rejected;
+        }
+    };
+    if *ctx.mode_rx.borrow() != RunnerMode::Running || tokio::time::Instant::now() >= deadline {
+        cancellation.unregister().await;
+        rollback_untracked_resource(resource.into(), ctx).await;
+        return SuppliedAdmission::Rejected;
+    }
+    let resource = match resource {
+        AcquiredResource::Fresh(lease) => AdmittedResource::Fresh(lease),
+        AcquiredResource::Reusable(reservation) => AdmittedResource::Reusable(reservation),
+    };
+    let _ = admission_ready.send(());
+    SuppliedAdmission::Admitted(Box::new(AdmittedClaim {
+        claimed,
+        resource,
+        cancellation,
+        // The shared local startup timer begins at custody transfer. Supplied
+        // jobs carry no ApiClaimTiming and emit no HTTP Claim durations.
+        claim_returned_at: Instant::now(),
+        blank_pool_selection,
+        required_home_source_run_id: None,
+    }))
 }
 
 struct PreparedCandidate {
@@ -319,7 +403,7 @@ async fn claim_with_local_admission(
                 return None;
             };
             blank_pool_selection = selection;
-            resource
+            resource.into()
         }
     };
     // Register cancellation before claiming so provider-side cancel channels
@@ -707,7 +791,7 @@ async fn prepare_ranked_preference_candidate(
             return PreferencePreparation::Ready(PreparedCandidate {
                 required_home_source_run_id: Some(predecessor),
                 candidate,
-                resource: Some(resource),
+                resource: Some(resource.into()),
                 home_readiness_wait: None,
                 blank_pool_selection,
             });
@@ -775,7 +859,7 @@ async fn prepare_ranked_preference_candidate(
                     wait_deadline: deadline,
                 }),
                 candidate,
-                resource: Some(resource),
+                resource: Some(resource.into()),
                 blank_pool_selection,
             });
         }
@@ -832,7 +916,7 @@ async fn prepare_ranked_preference_candidate(
             return PreferencePreparation::Ready(PreparedCandidate {
                 required_home_source_run_id: Some(source_run_id),
                 candidate,
-                resource: Some(resource),
+                resource: Some(resource.into()),
                 home_readiness_wait: None,
                 blank_pool_selection,
             });
@@ -1029,7 +1113,7 @@ async fn acquire_local_admission_resource(
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
     reuse_policy: AdmissionReusePolicy,
     ctx: &PreClaimResources<'_>,
-) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
+) -> Option<(AcquiredResource, Option<BlankPoolSelection>)> {
     let (reuse_key, allow_compatible_blank) = match reuse_policy {
         AdmissionReusePolicy::Compatible { allow_blank } => (candidate.reuse_key(), allow_blank),
         // Exact VMs cannot displace a selected Home source; a blank can host it.
@@ -1066,12 +1150,12 @@ async fn acquire_local_admission_resource(
     }
     match selection {
         IdlePressureSelection::Reusable(reservation) => Some((
-            LocalAdmissionResource::Reusable(reservation),
+            AcquiredResource::Reusable(reservation),
             blank_pool_selection,
         )),
         IdlePressureSelection::Fresh(lease) => {
             // Claimed activation rechecks the pool, so claim need not wait for it.
-            Some((LocalAdmissionResource::Fresh(lease), blank_pool_selection))
+            Some((AcquiredResource::Fresh(lease), blank_pool_selection))
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
             drop(retiring_leases);

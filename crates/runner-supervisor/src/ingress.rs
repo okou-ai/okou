@@ -1,16 +1,18 @@
 //! Host ingress with startup-only public reachability validation.
 //! Caddy's runtime availability never acquires or cancels Run ownership.
-//! Only readonly health is implemented here; dispatch and sandbox paths remain
-//! reserved. Caddy terminates TLS and preserves the identity-bearing URI.
+//! Health and complete-input dispatch share service authentication. Sandbox
+//! paths stay reserved. Caddy terminates TLS and preserves the original URI.
+
+pub(crate) mod dispatch;
 
 use std::convert::Infallible;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -33,18 +35,20 @@ pub struct IngressConfig {
     pub token: String,
 }
 
-struct Health {
+struct IngressHandler {
     identity: RunnerProcessIdentity,
     hostname: String,
     token: String,
+    dispatch: OnceLock<dispatch::DispatchIntake>,
 }
 
-impl Health {
+impl IngressHandler {
     fn new(identity: RunnerProcessIdentity, hostname: String, token: &str) -> Self {
         Self {
             identity,
             hostname,
             token: token.to_owned(),
+            dispatch: OnceLock::new(),
         }
     }
 
@@ -95,11 +99,26 @@ impl Health {
         Ok(())
     }
 
-    fn handle(&self, request: Request<Incoming>) -> Response<Full<Bytes>> {
+    async fn handle(&self, mut request: Request<Incoming>) -> Response<Full<Bytes>> {
         let path = format!("/runners/{}/control/health", self.identity.runner_id());
+        let dispatch_run = request
+            .uri()
+            .path()
+            .strip_prefix(&format!(
+                "/runners/{}/control/runs/",
+                self.identity.runner_id()
+            ))
+            .and_then(|path| path.strip_suffix("/dispatch"))
+            .and_then(|run| {
+                run.parse::<runner_types::ids::RunId>()
+                    .ok()
+                    .filter(|id| id.to_string() == run)
+            });
         // Hyper keeps the raw URI: no decoding/rewriting may turn a reserved
         // sandbox path, traversal or encoded separator into a control request.
-        if request.uri().path() != path || request.uri().query().is_some() {
+        if (request.uri().path() != path && dispatch_run.is_none())
+            || request.uri().query().is_some()
+        {
             return response(StatusCode::NOT_FOUND, "");
         }
         let host = request.headers().get("host").and_then(|v| v.to_str().ok());
@@ -122,6 +141,62 @@ impl Health {
         {
             return response(StatusCode::UNAUTHORIZED, "");
         }
+        if let Some(run_id) = dispatch_run {
+            if request.method() != Method::POST {
+                return response(StatusCode::METHOD_NOT_ALLOWED, "");
+            }
+            if request.headers().contains_key("upgrade")
+                || request.headers().contains_key("content-encoding")
+                || request
+                    .headers()
+                    .get("content-type")
+                    .is_none_or(|v| v != "application/json")
+            {
+                return response(StatusCode::BAD_REQUEST, "");
+            }
+            if request
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|length| length > dispatch::MAX_BODY as u64)
+            {
+                return response(StatusCode::PAYLOAD_TOO_LARGE, "");
+            }
+            let Some(intake) = self.dispatch.get() else {
+                return self.dispatch_response(run_id, dispatch::Disposition::Unknown);
+            };
+            let Some(permit) = intake.reserve().await else {
+                let mut result = self.dispatch_response(run_id, dispatch::Disposition::Busy);
+                *result.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+                result
+                    .headers_mut()
+                    .insert("retry-after", hyper::header::HeaderValue::from_static("1"));
+                return result;
+            };
+            let read = async {
+                let mut bytes = Vec::new();
+                while let Some(frame) = request.body_mut().frame().await {
+                    let frame = frame.map_err(|_| StatusCode::BAD_REQUEST)?;
+                    if let Ok(data) = frame.into_data() {
+                        if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
+                            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+                        }
+                        bytes.extend_from_slice(&data);
+                    } else {
+                        return Err(StatusCode::BAD_REQUEST);
+                    }
+                }
+                Ok(bytes)
+            };
+            let bytes = match tokio::time::timeout(Duration::from_secs(5), read).await {
+                Ok(Ok(bytes)) => bytes,
+                Ok(Err(status)) => return response(status, ""),
+                Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
+            };
+            let verdict = intake.submit(self.identity, run_id, &bytes, permit).await;
+            return self.dispatch_response(run_id, verdict);
+        }
         if request.method() != Method::GET {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
@@ -135,6 +210,30 @@ impl Health {
             return response(StatusCode::BAD_REQUEST, "");
         }
         response(StatusCode::OK, "ok")
+    }
+
+    fn dispatch_response(
+        &self,
+        run_id: runner_types::ids::RunId,
+        disposition: dispatch::Disposition,
+    ) -> Response<Full<Bytes>> {
+        let body = serde_json::json!({
+            "runnerId": self.identity.runner_id(),
+            "heartbeatGeneration": self.identity.heartbeat_generation(),
+            "runId": run_id,
+            "disposition": disposition,
+        })
+        .to_string();
+        let mut result = response(StatusCode::OK, &body);
+        result.headers_mut().insert(
+            "content-type",
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        result.headers_mut().insert(
+            "cache-control",
+            hyper::header::HeaderValue::from_static("no-store"),
+        );
+        result
     }
 }
 
@@ -154,7 +253,7 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
 
 /// Owned by startup and then the running reactor, independently of Caddy.
 pub struct IngressRuntime {
-    health: Arc<Health>,
+    handler: Arc<IngressHandler>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -172,14 +271,14 @@ impl IngressRuntime {
                 "Runner ingress requires a canonical public hostname and service credential",
             ));
         }
-        let health = Arc::new(Health::new(identity, hostname, token));
+        let handler = Arc::new(IngressHandler::new(identity, hostname, token));
         let socket = tokio::task::spawn_blocking(move || {
             RunnerIngressSocket::bind(&directory, identity.runner_id())
         })
         .await
         .map_err(io::Error::other)??;
         let mut runtime = Self {
-            health: health.clone(),
+            handler: handler.clone(),
             cancel: CancellationToken::new(),
             task: None,
         };
@@ -197,13 +296,13 @@ impl IngressRuntime {
                             Err(error) => { tracing::warn!(%error, "Runner ingress accept failed"); break; }
                         };
                         if connections.len() >= MAX_CONNECTIONS { continue; }
-                        let health = health.clone();
+                        let handler = handler.clone();
                         connections.spawn(async move {
                             let service = service_fn(move |request| {
-                                let result = health.handle(request);
-                                async move { Ok::<_, Infallible>(result) }
+                                let handler = handler.clone();
+                                async move { Ok::<_, Infallible>(handler.handle(request).await) }
                             });
-                            // Bounded readonly HTTP now; the same HTTP transport
+                            // Bounded HTTP requests; the same transport
                             // supports upgrades when a real application owns one.
                             let _ = http1::Builder::new()
                                 .timer(TokioTimer::new())
@@ -225,7 +324,14 @@ impl IngressRuntime {
 
     /// Called once before the first Running publication, never as a watchdog.
     pub async fn check_public_health(&self) -> io::Result<()> {
-        self.health.check_public().await
+        self.handler.check_public().await
+    }
+
+    pub(crate) fn enable_dispatch(&self, intake: dispatch::DispatchIntake) {
+        assert!(
+            self.handler.dispatch.set(intake).is_ok(),
+            "dispatch intake configured once"
+        );
     }
 
     #[cfg(test)]
@@ -233,7 +339,7 @@ impl IngressRuntime {
         &self,
         client: &reqwest::Client,
     ) -> io::Result<()> {
-        self.health.check(client, &self.health.url()).await
+        self.handler.check(client, &self.handler.url()).await
     }
 
     pub async fn shutdown(mut self) {

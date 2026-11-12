@@ -8,6 +8,48 @@ before changing host tuning or promotion behavior.
 For control-plane URL and authentication options, use `runner config --help`
 and `runner start --help`.
 
+## Direct Run Intake
+
+Official Runner ingress uses Caddy on HTTPS 443 and the process-owned
+`/var/lib/vm0-runner/ingress/<runnerId>.sock`. Both health and dispatch require
+the existing official service Bearer credential and canonical host. Control
+and reserved sandbox routes share the socket, with disjoint namespaces.
+
+Send complete execution inputs to
+`POST /runners/<runnerId>/control/runs/<runId>/dispatch` as `application/json`.
+The envelope contains `runnerId`, `heartbeatGeneration`, `profile`, `notAfter`
+(Unix milliseconds), and `executionContext`. The latter is the existing complete
+API execution publication, including `runId` and `contentBundles`; it is
+normalized by the same input validator used by the current API provider.
+Initial receipt must be before `notAfter` and at most 60 seconds ahead of the
+receiver's clock. The body limit is 4 MiB, with five seconds to read it.
+This is an explicit intake limit, not a bound inferred from the existing
+publication schema. The sender must check the final encoded size and fail an
+oversized admitted Run through its ordinary terminal lifecycle.
+
+Responses contain the exact `runnerId`, `heartbeatGeneration`, `runId`, and
+`disposition`. HTTP 200 carries `accepted`, `rejected`, `pending`, `unknown`, or
+`conflict`. Acceptance transfers custody to the retained execution lifecycle;
+later activation/execution failure uses ordinary Run completion. Rejection
+releases local reservations and cannot later become acceptance for that input.
+Pending/unknown/conflict never prove an earlier attempt was rejected.
+
+Four preparation transactions are shared with existing acquisition. These slots
+release at executor handoff rather than Run completion. Intake waits up to three
+seconds for a slot, then returns HTTP 429, `Retry-After: 1`, and `busy`. This
+attempt acquired no custody; the response says nothing about earlier attempts.
+Allow bounded same-process retries for a preferred Runner. A possibly accepted
+earlier attempt must remain pinned to that owner even if a retry gets 429.
+
+Retry an existing request with identical bytes, including its original deadline.
+Each process retains at most 65,536 compact Run verdicts without eviction.
+After saturation it rejects all unseen Runs; replace it through normal drain
+and restart to restore new intake. Existing replay remains available after its
+deadline. Different input for a known Run returns conflict. A new process or
+generation cannot settle the previous process's custody: neither generation
+mismatch, connection loss, nor a missing route authorizes blind reassignment.
+Caller disconnect and Caddy restart do not cancel accepted execution.
+
 ## Configure Host I/O Capacity
 
 Host-local overrides live in `/etc/vm0-runner/host.env`. The file is parsed by

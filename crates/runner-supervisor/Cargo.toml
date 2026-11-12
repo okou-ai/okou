@@ -27,7 +27,7 @@ runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
-serde_json = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std", "raw_value"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
 subtle.workspace = true
 uuid = { workspace = true, features = ["serde", "std", "v4"] }

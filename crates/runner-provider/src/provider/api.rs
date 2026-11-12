@@ -3,6 +3,8 @@
 mod claim_inputs;
 mod response_decode;
 
+pub use claim_inputs::decode_execution_publication;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1049,6 +1051,23 @@ impl JobProvider for ApiProvider {
                 None
             }
         }
+    }
+
+    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
+        let run_id = context.run_id;
+        let source = supports_thread_active_input(context.reuse_key.as_deref()).then(|| {
+            ActiveInputSource::api(
+                self.api.clone(),
+                run_id,
+                context.sandbox_token.clone(),
+                self.active_input_notifications.subscribe(run_id),
+            )
+        });
+        if let Some(handle) = self.cancel_tokens.handle(run_id).await {
+            self.cancellation_reconciliation
+                .observe(run_id, handle, context.sandbox_token.clone());
+        }
+        Ok(ClaimedJob::supplied(context, source))
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {

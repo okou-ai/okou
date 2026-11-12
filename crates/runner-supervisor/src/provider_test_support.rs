@@ -767,6 +767,10 @@ impl JobProvider for MockJobProvider {
         }
     }
 
+    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
+        Ok(ClaimedJob::supplied(context, None))
+    }
+
     async fn try_discover_ready(&self) -> Option<JobCandidate> {
         self.ready_discovery
             .lock()
