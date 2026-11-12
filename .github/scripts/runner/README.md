@@ -86,6 +86,13 @@ proven live-owner deferrals and reopened PR skips exit 0.
 
 The host executor reobserves runner and Stripe units/directories under the locks,
 verifies stopped execution before removing files, and verifies final state.
+It submits all selected stops before polling with one shared 330s stop budget
+(Runner units allow 300s). Inactive/failed state, no main PID, no queued/running
+job and an unpopulated cgroup are all required before deletion. A stop deadline
+retains that namespace's files and reports failure; stopped siblings can still
+be cleaned. The host operation has a 480s hard limit, inside the controller's
+510s response and 720s batch limits. Heartbeats continue during the wait, and
+cancellation still interrupts the worker before releasing its namespace locks.
 Absent resources are counted separately from actual cleanup. Persistent and
 transient files, directory-only and Stripe-only leftovers participate in discovery;
 inactive manager records with no execution, queued job or files do not repeatedly
