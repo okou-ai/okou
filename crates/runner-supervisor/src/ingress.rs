@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_CONNECTIONS: usize = 32;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_HEALTH_RESPONSE_BYTES: usize = 4096;
+const MAX_HEALTH_RESPONSE_BYTES: usize = 2;
 
 /// Required only for official, non-local Runner startup.
 pub struct IngressConfig {
@@ -105,12 +105,8 @@ impl Health {
             }
             body.extend_from_slice(&chunk);
         }
-        let identity: RunnerProcessIdentity =
-            serde_json::from_slice(&body).map_err(io::Error::other)?;
-        if identity != self.identity {
-            return Err(io::Error::other(
-                "public Runner health reached a different Runner process",
-            ));
+        if body != b"ok" {
+            return Err(io::Error::other("public Runner health did not return ok"));
         }
         Ok(())
     }
@@ -156,14 +152,8 @@ impl Health {
         {
             return response(StatusCode::BAD_REQUEST, "");
         }
-        response(
-            StatusCode::OK,
-            &serde_json::json!({
-                "runnerId": self.identity.runner_id(),
-                "heartbeatGeneration": self.identity.heartbeat_generation(),
-            })
-            .to_string(),
-        )
+        // The credential already binds this Runner ID and process generation.
+        response(StatusCode::OK, "ok")
     }
 }
 
@@ -176,7 +166,7 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
     );
     result.headers_mut().insert(
         "content-type",
-        hyper::header::HeaderValue::from_static("application/json"),
+        hyper::header::HeaderValue::from_static("text/plain; charset=utf-8"),
     );
     result
 }

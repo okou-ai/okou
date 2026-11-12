@@ -73,9 +73,7 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
     let valid = health_request(identity(1), &token);
     let (status, body) = request(&first_path, &valid).await;
     assert_eq!(status, 200);
-    let health: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(health["runnerId"], identity(1).runner_id().to_string());
-    assert_eq!(health["heartbeatGeneration"], 7);
+    assert_eq!(body, "ok");
     assert!(!body.contains(TOKEN));
     assert_eq!(
         request(&second_path, &health_request(identity(2), &token))
@@ -199,7 +197,7 @@ async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
 }
 
 #[tokio::test]
-async fn public_health_requires_successful_bounded_current_process_response() {
+async fn public_health_requires_successful_bounded_ok_response() {
     use httpmock::{Method::GET, MockServer};
 
     let server = MockServer::start_async().await;
@@ -211,19 +209,11 @@ async fn public_health_requires_successful_bounded_current_process_response() {
         .unwrap();
     let health = Health::new(identity(1), HOST.into(), TOKEN).unwrap();
     let path = format!("/runners/{}/control/health", identity(1).runner_id());
-    let current = serde_json::to_string(&identity(1)).unwrap();
     for (status, body, accepted) in [
-        (200, current.clone(), true),
+        (200, "ok".into(), true),
         (401, String::new(), false),
-        (302, current, false),
-        (200, serde_json::to_string(&identity(2)).unwrap(), false),
-        (
-            200,
-            serde_json::to_string(&RunnerProcessIdentity::new(identity(1).runner_id(), 8).unwrap())
-                .unwrap(),
-            false,
-        ),
-        (200, "invalid JSON".into(), false),
+        (302, "ok".into(), false),
+        (200, "no".into(), false),
         (200, " ".repeat(MAX_HEALTH_RESPONSE_BYTES + 1), false),
     ] {
         let mock = server

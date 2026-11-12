@@ -36,10 +36,11 @@ need a separately designed browser origin; path isolation does not supply it.
 An official non-local Runner binds its listener and requests its own
 `https://<hostname>/runners/<runnerId>/control/health` before publishing the first
 Running heartbeat or entering `running`. The ten-second HTTPS request uses normal
-CA validation, no redirects, its scoped health credential, a bounded response,
-and the exact current Runner ID/generation. Missing hostname, listener failure or
-unreachable ingress fails startup and rolls back its resources. Provision public
-Caddy, DNS, firewall and certificates before starting this Runner artifact.
+CA validation, no redirects, its Runner-ID/generation-bound health credential,
+and a `200 OK` response containing only the plain text `ok`. Missing hostname,
+listener failure or unreachable ingress fails startup and rolls back its
+resources. Provision public Caddy, DNS, firewall and certificates before starting
+this Runner artifact.
 
 This check runs only at startup. Running Runners and accepted Runs continue
 through Caddy restart; there is no hard systemd lifetime dependency or ongoing
