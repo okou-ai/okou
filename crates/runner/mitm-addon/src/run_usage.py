@@ -51,6 +51,12 @@ class _Run:
     retired_at: float | None = None
     retained: bool = True
 
+    def discard_retained_state(self) -> None:
+        """Invalidate flow custody and release details while the caller holds _lock."""
+        self.retained = False
+        self.responses.clear()
+        self.pending.clear()
+
 
 @dataclass(slots=True)
 class _Flow:
@@ -76,9 +82,7 @@ def initialize(generation: str | None) -> None:
     global _generation, _response_count, _history_discarded, _last_registry
     with _lock:
         for run in _runs.values():
-            run.retained = False
-            run.responses.clear()
-            run.pending.clear()
+            run.discard_retained_state()
         _runs.clear()
         _generation = generation
         _response_count = 0
@@ -90,9 +94,7 @@ def _discard(run_id: str) -> None:
     global _response_count, _history_discarded
     run = _runs.pop(run_id)
     _response_count -= len(run.responses)
-    run.retained = False
-    run.responses.clear()
-    run.pending.clear()
+    run.discard_retained_state()
     _history_discarded = True
 
 
