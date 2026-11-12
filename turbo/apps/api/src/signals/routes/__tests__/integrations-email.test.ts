@@ -800,8 +800,9 @@ function incoming(options: {
 }
 
 async function entitledActor(email?: string) {
+  const orgId = createUniqueStaffOrgIdFixture();
   const actor = bdd.user({
-    orgId: createUniqueStaffOrgIdFixture(),
+    orgId,
     ...(email ? { email } : {}),
   });
   bdd.acceptAgentStorageWrites();
@@ -811,7 +812,7 @@ async function entitledActor(email?: string) {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   verifiedDirectory(actor);
-  return { actor, group };
+  return { actor: { ...actor, orgId }, group };
 }
 
 async function createdThreads(actor: ApiTestUser) {
@@ -2832,6 +2833,103 @@ describe("Email multi-account connections", () => {
         attachments: expect.any(Array),
       }),
     );
+  });
+
+  it.each(["gmail", "outlook-mail"] as const)(
+    "routes first-contact email from an existing %s account using its workspace switch",
+    async (provider) => {
+      const { actor, group } = await entitledActor();
+      const sender = `${randomUUID()}@example.com`;
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: false,
+      });
+      await connectEmailMailbox(actor, provider, sender);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: true,
+      });
+      verifiedDirectory(actor);
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [],
+        totalCount: 0,
+      });
+      const message = incoming({ sender, text: "Use my connected workspace" });
+      mockEmailMessageLookup(
+        provider,
+        message.messageId,
+        "Use my connected workspace",
+      );
+      await message.send();
+      await message.send();
+      const snapshot = await createdThreads(actor);
+      expect(snapshot.chatThreads).toHaveLength(1);
+      await runs.heartbeatRunner(group);
+      const polled = await runs.pollRunner(group);
+      expect(polled.body.job?.runId).toBeTruthy();
+      const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+      expect(claim.prompt).toContain("Use my connected workspace");
+      expect(claim.appendSystemPrompt).toContain(
+        `Verified sender: ${JSON.stringify(sender)}`,
+      );
+      expect(claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+        snapshot.chatThreads[0]!.id,
+      );
+    },
+  );
+
+  it("does not route an existing mailbox when its workspace switch is disabled", async () => {
+    const { actor } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: false,
+    });
+    await connectEmailMailbox(actor, "gmail", sender);
+    verifiedDirectory(actor);
+    await incoming({ sender }).send();
+    expect((await createdThreads(actor)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("does not route an existing mailbox for a banned account", async () => {
+    const { actor } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: false,
+    });
+    await connectEmailMailbox(actor, "gmail", sender);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.EmailIntegration]: true,
+    });
+    verifiedDirectory(actor);
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      id: actor.userId,
+      banned: true,
+    });
+    await incoming({ sender }).send();
+    verifiedDirectory(actor);
+    expect((await createdThreads(actor)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("does not choose a workspace when an unbound mailbox belongs to multiple workspaces", async () => {
+    const { actor: first } = await entitledActor();
+    const { actor: second } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    for (const actor of [first, second]) {
+      verifiedDirectory(actor);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: false,
+      });
+      await connectEmailMailbox(actor, "gmail", sender);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.EmailIntegration]: true,
+      });
+    }
+    verifiedDirectory(first);
+    await incoming({ sender }).send();
+    expect((await createdThreads(first)).chatThreads).toStrictEqual([]);
+    verifiedDirectory(second);
+    expect((await createdThreads(second)).chatThreads).toStrictEqual([]);
+    expect(sentEmails()).toStrictEqual([]);
   });
 
   it.each([

@@ -5,7 +5,7 @@ import {
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
 import { command } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { array, object, string, uuid, record, type infer as zInfer } from "zod";
@@ -16,6 +16,7 @@ import {
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   emailChannelMessages,
   emailChatThreadRoutes,
@@ -576,6 +577,73 @@ const restoreSignInEmail$ = command(
   },
 );
 
+const resolveConnectedMailSender$ = command(
+  async ({ get, set }, sender: string, signal: AbortSignal) => {
+    // Resolve the workspace from a verified OAuth mailbox even when it differs
+    // from the sign-in address and has no Email binding yet.
+    const db = set(writeDb$);
+    const owners = await db
+      .selectDistinct({ userId: connectors.userId, orgId: connectors.orgId })
+      .from(connectors)
+      .where(
+        and(
+          eq(sql`lower(${connectors.externalEmail})`, sender),
+          inArray(connectors.connectorSlug, ["gmail", "outlook-mail"]),
+          or(
+            eq(connectors.authMethod, "oauth"),
+            eq(connectors.automaticAuthType, "oauth"),
+          ),
+          eq(connectors.needsReconnect, false),
+          isNotNull(connectors.externalId),
+        ),
+      )
+      .limit(2);
+    signal.throwIfAborted();
+    if (owners.length > 1) {
+      // An explicit Email binding must disambiguate shared mailbox ownership.
+      return { kind: "ignored" } as const;
+    }
+    const owner = owners[0];
+    if (!owner) {
+      return null;
+    }
+    const user = await findClerkUser(get(clerk$), owner.userId, signal);
+    signal.throwIfAborted();
+    if (!user || user.banned) {
+      return { kind: "ignored" } as const;
+    }
+    const role = await set(
+      getMemberRoleAndUpdateCache$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (role.kind !== "member") {
+      return { kind: "ignored" } as const;
+    }
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)) {
+      return { kind: "ignored" } as const;
+    }
+    const mailboxLink = await set(
+      linkEmailIdentity$,
+      { email: sender, ...owner },
+      signal,
+    );
+    signal.throwIfAborted();
+    return mailboxLink
+      ? ({ kind: "connected", link: mailboxLink } as const)
+      : ({ kind: "ignored" } as const);
+  },
+);
+
 const resolveEmailSender$ = command(
   async ({ get, set }, sender: string, signal: AbortSignal) => {
     const db = set(writeDb$);
@@ -605,6 +673,11 @@ const resolveEmailSender$ = command(
       return emailIntegrationEnabled(features, sender)
         ? ({ kind: "connected", link } as const)
         : ({ kind: "ignored" } as const);
+    }
+    const mailSender = await set(resolveConnectedMailSender$, sender, signal);
+    signal.throwIfAborted();
+    if (mailSender) {
+      return mailSender;
     }
     const users = await get(clerk$).users.getUserList(
       { emailAddress: [sender], limit: 2 },
