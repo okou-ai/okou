@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.4](https://github.com/okou-ai/okou/compare/desktop-v0.56.3...desktop-v0.56.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **desktop:** restore recovered host status and identify timeout phases ([#46828](https://github.com/okou-ai/okou/issues/46828)) ([17b5b03](https://github.com/okou-ai/okou/commit/17b5b037ffd031b51d24daf15819fdad017e15a0))
+
 ## [0.56.3](https://github.com/okou-ai/okou/compare/desktop-v0.56.2...desktop-v0.56.3) (2026-11-11)
 
 

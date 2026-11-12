@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.2.67](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.66...guest-home-mount-v0.2.67) (2026-11-12)
+
 ## [0.2.66](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.65...guest-home-mount-v0.2.66) (2026-11-11)
 
 ## [0.2.65](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.64...guest-home-mount-v0.2.65) (2026-11-11)
