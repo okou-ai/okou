@@ -755,7 +755,7 @@ final class ConversationStore {
     streamStop?()
     streamStop = nil
     streamFlush?.cancel()
-    activitySummary.stop()
+    activitySummary.close()
     runUsage.close()
     modelSelection?.close()
     cancelRefresh()

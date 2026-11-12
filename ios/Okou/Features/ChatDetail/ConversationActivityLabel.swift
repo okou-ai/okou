@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
@@ -5,11 +6,36 @@ import SwiftUI
 struct ConversationActivityLabel: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
+
+  var body: some View {
+    StoreProvider(summary.stateStore) {
+      ConversationActivityContent(summary: summary, state: state)
+        .id(ObjectIdentifier(summary))
+    }
+  }
+}
+
+private struct ConversationActivityContent: View {
+  let summary: ConversationActivitySummary
+  let state: ChatExecutionState
+  @LoadableValue private var summaryValue: Loadable<ConversationActivitySummaryValue?>
+
+  init(summary: ConversationActivitySummary, state: ChatExecutionState) {
+    self.summary = summary
+    self.state = state
+    _summaryValue = LoadableValue(task: summary.value, keepLast: true)
+  }
+
   @ScaledMetric(relativeTo: .subheadline) private var lineHeight = 24
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
+  private var executionText: String {
+    guard state == .running, case .hasData(let batch) = summaryValue else { return state.label }
+    return summary.text(in: batch) ?? state.label
+  }
+
   var body: some View {
-    let text = state == .running ? summary.text ?? state.label : state.label
+    let text = executionText
     HStack(spacing: OkouSpace.sm) {
       OkouRunningIndicator().frame(width: 16)
       Text(verbatim: text)
