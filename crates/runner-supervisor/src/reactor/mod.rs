@@ -400,6 +400,10 @@ enum StartLoopEvent {
     RunningJobsDrainEntered,
     DestroyTasksDrainEntered,
     DestroyTasksDrainCompleted,
+    FinalizingHandoffRequested {
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+    },
     FinalizingCapacityWaitEntered {
         run_id: RunId,
     },
@@ -578,6 +582,17 @@ impl StartLoopTestObserver {
             .any(|event| matches!(event, StartLoopEvent::DestroyTasksDrainCompleted))
     }
 
+    fn notify_finalizing_handoff_requested(
+        &self,
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+    ) {
+        self.record(StartLoopEvent::FinalizingHandoffRequested {
+            predecessor_run_id,
+            successor_run_id,
+        });
+    }
+
     fn notify_finalizing_capacity_wait_entered(&self, run_id: RunId) {
         self.record(StartLoopEvent::FinalizingCapacityWaitEntered { run_id });
     }
@@ -688,6 +703,30 @@ impl StartLoopTestObserver {
         self.wait_for(timeout, "destroy-task drain completion", |event| {
             matches!(event, StartLoopEvent::DestroyTasksDrainCompleted).then_some(())
         })
+        .await;
+    }
+
+    async fn wait_finalizing_handoff_requested(
+        &self,
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+        timeout: Duration,
+    ) {
+        self.wait_for(
+            timeout,
+            "finalizing handoff registration",
+            |event| match event {
+                StartLoopEvent::FinalizingHandoffRequested {
+                    predecessor_run_id: observed_predecessor,
+                    successor_run_id: observed_successor,
+                } if *observed_predecessor == predecessor_run_id
+                    && *observed_successor == successor_run_id =>
+                {
+                    Some(())
+                }
+                _ => None,
+            },
+        )
         .await;
     }
 

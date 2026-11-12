@@ -367,6 +367,7 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
                 on_capacity_wait: Some(Arc::new(move |_| {
                     entered_for_task.notify_one();
                 })),
+                ..Default::default()
             },
         )
         .await
@@ -470,6 +471,7 @@ async fn assert_fallback_budget_wakeup_reuses_published(exact: bool, native_hist
                 on_capacity_wait: Some(Arc::new(move |_| {
                     entered_for_task.notify_one();
                 })),
+                ..Default::default()
             },
         )
         .await
