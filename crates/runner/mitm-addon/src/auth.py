@@ -73,7 +73,7 @@ from firewall_auth_client import (
 )
 from firewall_auth_failure import project_firewall_auth_failure
 from logging_utils import log_proxy_entry
-from request_authority import custom_http_auth_is_allowed
+from request_authority import custom_http_auth_is_allowed, get_trusted_authority
 from url_syntax import has_unsafe_runtime_url_syntax
 
 
@@ -203,7 +203,9 @@ async def _resolve_network_admission(
     intent = context.allow.api_entry.get("networkIntent")
     if intent is None:
         return {}
-    identity = (flow.request.method, flow.request.url, context.allow.api_entry["id"])
+    # Transparent requests retain the original IP; admission matches the
+    # validated authority used by the custom connector's firewall.
+    identity = (flow.request.method, get_trusted_authority(flow).url, context.allow.api_entry["id"])
     retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
     if isinstance(retained, _NetworkAdmission):
         if retained.identity != identity:
