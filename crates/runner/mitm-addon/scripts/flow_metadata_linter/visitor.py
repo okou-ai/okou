@@ -205,7 +205,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
       to resolve ``global`` declarations and class-body bindings. Scoped and branch
       visitors push independent sets, then explicitly join or discard their exits.
     * ``_exception_alias_scopes`` contains collectors for modeled exceptional exits
-      from active constructs. ``may_raise`` is stored separately from the alias set
+      from active constructs, or ``None`` boundaries whose exceptions are discarded
+      rather than propagated to an enclosing collector. ``may_raise`` is stored
+      separately from the alias set
       so an exceptional path with no aliases is not confused with no exceptional
       path. Nested ``try`` and handler states merge into the nearest collector, and
       a failing class body projects away class-bound names before propagating.
@@ -261,7 +263,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self.violations: list[str] = []
         self._violation_messages: set[str] = set()
         self._metadata_alias_scopes: list[set[str]] = [set()]
-        self._exception_alias_scopes: list[_ExceptionAliasState] = []
+        self._exception_alias_scopes: list[_ExceptionAliasState | None] = []
         self._class_nested_scope_alias_scopes: list[set[str]] = []
         self._metadata_key_checked_node_ids: set[int] = set()
         self._named_expr_target_scope_indexes: list[int] = []
@@ -293,8 +295,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     def visit(self, node: ast.AST) -> bool | None:
         self._record_metadata_merge_key_violations(node)
         result = super().visit(node)
-        if _is_modeled_implicit_exception_operation(node) and not isinstance(
-            node, (ast.Compare, ast.FormattedValue)
+        if (
+            self._exception_alias_scopes
+            and self._exception_alias_scopes[-1] is not None
+            and _is_modeled_implicit_exception_operation(node)
+            and not isinstance(node, (ast.Compare, ast.FormattedValue))
         ):
             self._record_implicit_exception_aliases()
         if isinstance(node, ast.stmt):
@@ -440,9 +445,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     def _record_exception_aliases(self, aliases: set[str] | None = None) -> None:
         if not self._exception_alias_scopes:
             return
-        self._exception_alias_scopes[-1].record(
-            self._metadata_aliases if aliases is None else aliases
-        )
+        collector = self._exception_alias_scopes[-1]
+        if collector is not None:
+            collector.record(self._metadata_aliases if aliases is None else aliases)
 
     def _record_exception_state(self, state: _ExceptionAliasState) -> None:
         if state.may_raise:
@@ -456,6 +461,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         return projected_aliases
 
     def _record_implicit_exception_aliases(self, aliases: set[str] | None = None) -> None:
+        if not self._exception_alias_scopes or self._exception_alias_scopes[-1] is None:
+            return
         self._record_exception_aliases(
             self._project_implicit_exception_aliases(
                 self._metadata_aliases if aliases is None else aliases
@@ -489,7 +496,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         shadowed = set() if shadowed_names is None else shadowed_names
         outer_aliases = set(self._metadata_aliases)
         self._metadata_aliases.difference_update(shadowed)
-        self._exception_alias_scopes.append(_ExceptionAliasState())
+        self._exception_alias_scopes.append(None)
         self._record_metadata_merge_key_violations(node)
         self.visit(node)
         self._exception_alias_scopes.pop()
@@ -685,7 +692,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             body_base_aliases = self._nested_function_base_aliases()
             body_base_aliases.difference_update(body_global_names)
             body_base_aliases.update(self._metadata_alias_scopes[0] & body_global_names)
-            self._exception_alias_scopes.append(_ExceptionAliasState())
+            self._exception_alias_scopes.append(None)
             self._visit_scoped_body(node.body, shadowed_names, metadata_defaults, body_base_aliases)
             self._exception_alias_scopes.pop()
         if node.decorator_list:
@@ -706,7 +713,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 self._visit_default_value(default)
         if not _contains_registered_key([node.body]):
             return
-        self._exception_alias_scopes.append(_ExceptionAliasState())
+        self._exception_alias_scopes.append(None)
         self._visit_scoped_expression(
             node.body,
             (_argument_names(node.args) | _expression_bound_names(node.body)) - metadata_defaults,
@@ -1563,7 +1570,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._named_expr_target_scope_indexes.append(named_expr_target_scope_index)
         self._implicit_exception_alias_scope_projections.append((outer_scope_index, local_names))
         if deferred:
-            self._exception_alias_scopes.append(_ExceptionAliasState())
+            self._exception_alias_scopes.append(None)
         creation_snapshot = self._alias_scope_snapshot() if deferred else None
         self._visit_comprehension_iterations(generators, body_expressions)
         if deferred:
