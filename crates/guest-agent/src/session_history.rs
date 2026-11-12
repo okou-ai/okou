@@ -377,10 +377,10 @@ fn resolve_codex_session_history_impl(
     };
     let mut found = None;
     let mut budget = CodexSessionLookupBudget::new();
-    scan_codex_session_dirs(
+    scan_codex_session_entries(
         &root,
         root.path(),
-        CodexSessionDateLevel::Year,
+        Some(CodexSessionDateLevel::Year),
         id_norm,
         &mut found,
         &mut budget,
@@ -394,10 +394,10 @@ fn codex_session_not_found_error(sessions_dir: &Path) -> AgentError {
     }
 }
 
-fn scan_codex_session_dirs(
+fn scan_codex_session_entries(
     dir: &CodexSessionDir,
     root_path: &Path,
-    level: CodexSessionDateLevel,
+    date_level: Option<CodexSessionDateLevel>,
     id_norm: &str,
     found: &mut Option<ResolvedCodexSession>,
     budget: &mut CodexSessionLookupBudget,
@@ -423,60 +423,33 @@ fn scan_codex_session_dirs(
             Err(err) if should_skip_unusable_codex_entry(&err) => continue,
             Err(err) => return Err(read_history_error(&path, err)),
         };
-        if file_type.is_dir() && level.matches(&name) {
-            let child = match dir.open_child_dir(&name) {
-                Ok(child) => child,
-                Err(err) if should_skip_unusable_codex_entry(&err) => continue,
-                Err(err) => return Err(read_history_error(&path, err)),
-            };
-            match level.next() {
-                Some(next_level) => {
-                    scan_codex_session_dirs(&child, root_path, next_level, id_norm, found, budget)?;
+        // No date level remains only inside an already validated day directory.
+        match date_level {
+            Some(level) if file_type.is_dir() && level.matches(&name) => {
+                let child = match dir.open_child_dir(&name) {
+                    Ok(child) => child,
+                    Err(err) if should_skip_unusable_codex_entry(&err) => continue,
+                    Err(err) => return Err(read_history_error(&path, err)),
+                };
+                scan_codex_session_entries(
+                    &child,
+                    root_path,
+                    level.next(),
+                    id_norm,
+                    found,
+                    budget,
+                )?;
+            }
+            None if file_type.is_file() && codex_session_filename_matches(&name, id_norm) => {
+                let Some(session) = dir.resolve_leaf_file(&name, path)? else {
+                    continue;
+                };
+                if found.is_some() {
+                    return Err(duplicate_codex_session_error(root_path));
                 }
-                None => scan_codex_session_leaf_files(&child, root_path, id_norm, found, budget)?,
+                *found = Some(session);
             }
-        }
-    }
-
-    Ok(())
-}
-
-fn scan_codex_session_leaf_files(
-    dir: &CodexSessionDir,
-    root_path: &Path,
-    id_norm: &str,
-    found: &mut Option<ResolvedCodexSession>,
-    budget: &mut CodexSessionLookupBudget,
-) -> Result<(), AgentError> {
-    let entries = match dir.read_dir() {
-        Ok(entries) => entries,
-        Err(err) if should_skip_unusable_codex_entry(&err) => return Ok(()),
-        Err(err) => return Err(read_history_error(dir.path(), err)),
-    };
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(err) if should_skip_unusable_codex_entry(&err) => continue,
-            Err(err) => return Err(read_history_error(dir.path(), err)),
-        };
-        budget.inspect_entry()?;
-
-        let name = entry.file_name();
-        let path = dir.child_path(&name);
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
-            Err(err) if should_skip_unusable_codex_entry(&err) => continue,
-            Err(err) => return Err(read_history_error(&path, err)),
-        };
-        if file_type.is_file() && codex_session_filename_matches(&name, id_norm) {
-            let Some(session) = dir.resolve_leaf_file(&name, path)? else {
-                continue;
-            };
-            if found.is_some() {
-                return Err(duplicate_codex_session_error(root_path));
-            }
-            *found = Some(session);
+            _ => {}
         }
     }
 

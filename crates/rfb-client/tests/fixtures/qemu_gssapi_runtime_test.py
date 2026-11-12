@@ -516,8 +516,9 @@ class RuntimeInputs(unittest.TestCase):
 
     def test_inventory_cli_real_default_node_limit_and_first_excess(self):
         # Actual production-default boundary, not a fake provider/native run.
+        parent = os.fspath(self.runtime)
         for index in range(qemu_gssapi.IMMUTABLE_NODE_LIMIT - 1):
-            (self.runtime / ('n%05d' % index)).mkdir()
+            os.mkdir(parent + ('/n%05d' % index))
         command = [sys.executable, '-I', '-S', '-B', str(qemu_gssapi.__file__),
                    '--runtime-dir', str(self.runtime), '--inventory-only']
         output = self.root / 'public-measurement.json'

@@ -372,3 +372,66 @@ async fn run_helper(case: &VerifyCase) -> Result<Output, std::io::Error> {
     )
     .await
 }
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn codex_history_lookup_shares_budget_across_date_and_file_entries() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let sessions_dir = dir.path().join("sessions");
+    let day_dir = sessions_dir.join("2026/06/18");
+    std::fs::create_dir_all(&day_dir)?;
+
+    let thread_id = "0193abcd-ef01-7234-89ab-cdef01234567";
+    let filename = format!("rollout-2026-06-18T00-00-00-{thread_id}.jsonl");
+    let history = br#"{"type":"system"}"#;
+    std::fs::write(day_dir.join(&filename), history)?;
+    std::fs::write(sessions_dir.join(&filename), b"wrong-depth history")?;
+    // Three date directories, both history files and these ignored entries fill the budget.
+    for index in 0..16_379 {
+        std::fs::write(day_dir.join(format!("ignored-{index}.txt")), b"")?;
+    }
+
+    let identity = SessionHistoryIdentity::new(
+        SessionHistoryFramework::Codex,
+        session_id_hash(thread_id),
+        SessionHistoryRefKind::Blob,
+        sha256_hex(history),
+        history.len() as u64,
+        SessionHistorySourceRef::Codex {
+            sessions_dir: sessions_dir.to_string_lossy().into_owned(),
+            thread_id: thread_id.to_string(),
+        },
+    )?;
+    let case = VerifyCase {
+        name: "codex-history-at-scan-budget",
+        metadata_path: write_metadata(dir.path(), "codex-identity.json", &identity)?,
+        expectation_args: expectation_args(&identity, session_id_hash(thread_id)),
+        expected_exit_code: SESSION_HISTORY_IDENTITY_VERIFY_EXIT_SUCCESS,
+    };
+    let output = run_helper(&case).await?;
+    assert_eq!(
+        output.status.code(),
+        Some(case.expected_exit_code),
+        "{}: stdout={}, stderr={}",
+        case.name,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    std::fs::create_dir(day_dir.join("ignored-directory"))?;
+    let case = VerifyCase {
+        name: "codex-history-over-scan-budget",
+        expected_exit_code: SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ,
+        ..case
+    };
+    let output = run_helper(&case).await?;
+    assert_eq!(
+        output.status.code(),
+        Some(case.expected_exit_code),
+        "{}: stdout={}, stderr={}",
+        case.name,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
