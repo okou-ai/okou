@@ -6,8 +6,9 @@ import {
   isCanonicalRunnerHostname,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { runnerState } from "@okouai/db/runtime/runner-state";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import { and, arrayContains, eq, gt } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { env } from "../../lib/env";
@@ -30,10 +31,7 @@ import {
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
 
-export function createDirectRunDispatch(
-  input$: Computed<Promise<AdmittedRunLaunch>>,
-) {
-  const preparation$ = createDirectRunPreparation(input$);
+function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
   const fleet$ = computed(async (get) => {
     const input = await get(input$);
     if (input.profile !== DEFAULT_RUNNER_PROFILE) {
@@ -114,7 +112,61 @@ export function createDirectRunDispatch(
     }
     return { candidates, preference };
   });
-  return { preparation$, fleet$ };
+  return fleet$;
+}
+
+type DirectRunFleet =
+  ReturnType<typeof createDirectRunFleet> extends Computed<Promise<infer Fleet>>
+    ? Fleet
+    : never;
+type UnacceptedRunResult =
+  typeof failUnacceptedRun$ extends Command<Promise<infer Result>, infer _Args>
+    ? Result
+    : never;
+
+export interface DirectRunDispatchResult {
+  readonly kind: "accepted" | "uncertain" | "stopped" | "failed";
+  readonly terminal: UnacceptedRunResult;
+  readonly failure: unknown;
+}
+
+/** This graph consumes only its owning admission's durable write result. */
+export function createDirectRunDispatcher(
+  input$: Computed<Promise<AdmittedRunLaunch>>,
+) {
+  const preparation$ = createDirectRunPreparation(input$);
+  const fleet$ = createDirectRunFleet(input$);
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<DirectRunDispatchResult> => {
+      const input = await get(input$);
+      signal.throwIfAborted();
+      const prepared = await settleIncludingAbort(async () => {
+        const [executionContext, fleet] = await joinAll([
+          (async () => {
+            const preparation = await get(preparation$);
+            signal.throwIfAborted();
+            return await set(prepareDirectRun$, preparation, signal);
+          })(),
+          get(fleet$),
+        ]);
+        signal.throwIfAborted();
+        return { input, executionContext, fleet };
+      });
+      signal.throwIfAborted();
+      if (!prepared.ok) {
+        const terminal = await set(
+          failUnacceptedRun$,
+          failureInput(input, null, "Run execution preparation failed"),
+          signal,
+        );
+        return { kind: "failed", terminal, failure: prepared.error };
+      }
+      return await set(dispatchPreparedRun$, prepared.value, signal);
+    },
+  );
 }
 
 interface DeliveryWindow {
@@ -210,12 +262,13 @@ const offerToProcess$ = command(
   },
 );
 
-export const dispatchDirectRun$ = command(
+const dispatchPreparedRun$ = command(
   async (
     { get, set },
     args: {
       readonly input: AdmittedRunLaunch;
-      readonly graph: ReturnType<typeof createDirectRunDispatch>;
+      readonly executionContext: ExecutionContext;
+      readonly fleet: DirectRunFleet;
     },
     signal: AbortSignal,
   ) => {
@@ -225,15 +278,7 @@ export const dispatchDirectRun$ = command(
     let uncertain = false;
     let reason = "Run execution preparation failed";
     const outcome = await settleIncludingAbort(async () => {
-      const [executionContext, fleet] = await joinAll([
-        (async () => {
-          const prepared = await get(args.graph.preparation$);
-          signal.throwIfAborted();
-          return await set(prepareDirectRun$, prepared, signal);
-        })(),
-        get(args.graph.fleet$),
-      ]);
-      signal.throwIfAborted();
+      const { executionContext, fleet } = args;
       // A queued input's latency marker can originate in an earlier invocation.
       const notAfter = Math.min(
         now() + 30_000,

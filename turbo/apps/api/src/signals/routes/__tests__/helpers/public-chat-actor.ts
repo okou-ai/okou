@@ -7,6 +7,7 @@ import { createChatEventsFixture } from "./chat-events-fixture";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
+import type { createRunsApi } from "./api-bdd-runs";
 
 /** Own a normal Stripe/personal-model chat actor from its first API write. */
 export async function publicChatActor(
@@ -19,6 +20,9 @@ export async function publicChatActor(
     readonly clockTime?: number | (() => number);
     readonly beforeWorkspaceCleanup?: (actor: ApiTestUser) => Promise<void>;
     readonly optionalEnvironmentNames?: readonly string[];
+    readonly runner?: Parameters<
+      ReturnType<typeof createRunsApi>["registerDirectRunner"]
+    >[1];
   } = {},
 ) {
   const fixture = createChatEventsFixture(context);
@@ -97,7 +101,7 @@ export async function publicChatActor(
   fixture.api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   fixture.chatCallbacks.disableVapid();
-  const runnerGroup = await fixture.api.configureRunnerGroup();
+  const runnerGroup = await fixture.api.configureRunnerGroup(options.runner);
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,

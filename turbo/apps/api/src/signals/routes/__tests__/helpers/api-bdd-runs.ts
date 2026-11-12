@@ -541,13 +541,22 @@ export function createRunsApi(context: TestContext) {
       };
       readonly hostname?: string;
       readonly maxConcurrent?: number;
+      readonly heartbeat?: Partial<
+        Omit<
+          RunnerHeartbeatBody,
+          "runnerId" | "group" | "snapshotGeneration" | "runnerHostname"
+        >
+      >;
       readonly reply?: (
         envelope: DispatchEnvelope,
         bytes: string,
       ) => Response | Promise<Response>;
     } = {},
   ) {
-    const identity = options.runnerIdentity ?? defaultRunnerIdentity;
+    const identity = options.runnerIdentity ?? {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 1,
+    };
     const hostname = options.hostname ?? `runner-${identity.runnerId}.okou.app`;
     server.use(
       http.post(
@@ -588,14 +597,17 @@ export function createRunsApi(context: TestContext) {
     await accept(
       runApp(context)(runnersHeartbeatContract).heartbeat({
         headers: runnerHeaders(true),
-        body: runnerHeartbeatBody({
-          group,
-          runnerId: identity.runnerId,
-          runnerHostname: hostname,
-          snapshotGeneration: identity.heartbeatGeneration,
-          maxConcurrent: options.maxConcurrent,
-          ingressServiceActive: true,
-        }),
+        body: {
+          ...runnerHeartbeatBody({
+            group,
+            runnerId: identity.runnerId,
+            runnerHostname: hostname,
+            snapshotGeneration: identity.heartbeatGeneration,
+            maxConcurrent: options.maxConcurrent,
+            ingressServiceActive: true,
+          }),
+          ...options.heartbeat,
+        },
       }),
       [200],
     );

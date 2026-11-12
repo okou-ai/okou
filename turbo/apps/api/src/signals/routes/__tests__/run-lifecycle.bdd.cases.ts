@@ -1,4 +1,5 @@
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -11927,7 +11928,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("RUN-03: user-runner protocol and runner authentication", () => {
-      it("preserves preview authorization with the current masked Claim secret", async () => {
+      it("captures the authorized preview secret when dispatching", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -12000,9 +12001,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const claim = await api.executionInput(runId);
           if (request.authorized) {
             expect(claim.platformEnvironment).toMatchObject({
-              VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
+              VERCEL_AUTOMATION_BYPASS_SECRET: previewBypass,
             });
-            expect(claim.secretValues).toContain(claimBypass);
+            expect(claim.secretValues).toContain(previewBypass);
           } else {
             expect(claim.platformEnvironment).not.toHaveProperty(
               "VERCEL_AUTOMATION_BYPASS_SECRET",
@@ -12046,25 +12047,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
 
+        const originalSend = context.mocks.s3.send.getMockImplementation()!;
+        context.mocks.s3.send.mockImplementation((command: unknown) => {
+          if (command instanceof HeadObjectCommand) {
+            return Promise.reject(
+              new Error("session history metadata unavailable"),
+            );
+          }
+          return originalSend(command);
+        });
         const resumed = await api.createThreadRun(actor, {
           agentId,
           threadId: source.threadId,
           prompt: "continue without history object metadata",
         });
-        context.mocks.s3.send.mockRejectedValueOnce(
-          new Error("session history metadata unavailable"),
-        );
-        const failedClaim = await api.requestClaimRunnerJob(
-          true,
-          resumed.runId,
-          [200],
-        );
-        if (failedClaim.status !== 200) {
-          throw new Error(
-            "Expected the native continuation to remain claimable",
-          );
-        }
-        expect(failedClaim.body.nativeContinuation).toMatchObject({
+        const execution = await api.executionInput(resumed.runId);
+        expect(execution.nativeContinuation).toMatchObject({
           sessionId: `bdd-failed-claim-${source.runId}`,
           generationRunId: source.runId,
         });
@@ -12072,112 +12070,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, resumed.runId, [200]);
       });
 
-      it("dispatches, scopes, and claims runs through CLI PATs", async () => {
+      it("scopes CLI PAT realtime access to allowed Runner groups", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const apiKey = await api.createCliToken(actor);
         const bearer = `Bearer ${apiKey.token}`;
-        const firstPrompt = "user runner job one";
-
-        const first = await api.createThreadRun(actor, {
-          agentId,
-          prompt: firstPrompt,
-        });
-        const polled = await api.requestPollRunnerAs(
-          bearer,
-          {
-            group: runnerGroup,
-            supportedProfiles: ["vm0/default"],
-            telemetry: { pollReason: "deferred" },
-          },
-          [200],
-        );
-        if (polled.status !== 200) {
-          throw new Error("Expected the user runner poll to succeed");
-        }
-        expect(polled.body.job?.runId).toBe(first.runId);
-
-        const claimed = await api.requestClaimRunnerJobAs(
-          bearer,
-          first.runId,
-          [200],
-          {
-            telemetry: {
-              discoverySource: "poll",
-              jobDiscoveredToClaimRequestMs: 1234,
-              localAdmissionToClaimRequestMs: 56,
-              pollDueToJobDiscoveredMs: 789,
-              pollHttpRequestMs: 321,
-              pollReason: "deferred",
-            },
-          },
-        );
-        if (claimed.status !== 200) {
-          throw new Error("Expected the user runner claim to succeed");
-        }
-        expect(claimed.body.prompt).toBe("user runner job one");
-        expect(claimed.body.sandboxToken).not.toBe("");
-        const claimedRun = await api.readRun(actor, first.runId);
-        expect(claimedRun.status).toBe("running");
-
-        const secondPrompt = "user runner job two";
-        const second = await api.createThreadRun(actor, {
-          agentId,
-          prompt: secondPrompt,
-        });
-
-        const outsider = createBddApi(context).user();
-        const outsiderKey = await api.createCliToken(outsider);
-        const outsiderBearer = `Bearer ${outsiderKey.token}`;
-        const outsiderPoll = await api.requestPollRunnerAs(
-          outsiderBearer,
-          { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-          [200],
-        );
-        if (outsiderPoll.status !== 200) {
-          throw new Error("Expected the outsider poll to succeed");
-        }
-        expect(outsiderPoll.body.job ?? null).toBeNull();
-        const crossClaim = await api.requestClaimRunnerJobAs(
-          outsiderBearer,
-          second.runId,
-          [403],
-        );
-        expectApiError(crossClaim.body);
-        expect(crossClaim.body.error.message).toBe(
-          "Job does not belong to user",
-        );
-
-        const directClaimed = await api.requestClaimRunnerJobAs(
-          bearer,
-          second.runId,
-          [200],
-          {
-            telemetry: {
-              discoverySource: "ably",
-              jobDiscoveredToClaimRequestMs: 111,
-              localAdmissionToClaimRequestMs: 22,
-              directCandidateNotificationToEnqueueMs: 12,
-              directCandidateInboxWaitMs: 34,
-              providerDiscoveryToMainLoopMs: 45,
-              mainLoopToLocalAdmissionMs: 67,
-              runnerPreference: {
-                kind: "preference",
-                runnerIdentity: {
-                  runnerId: randomUUID(),
-                  heartbeatGeneration: 1,
-                },
-                tier: "homeCache",
-                expiresAt: "2999-01-01T00:00:00.000Z",
-              },
-              runnerPreferenceClaimState: "active",
-            },
-          },
-        );
-        if (directClaimed.status !== 200) {
-          throw new Error("Expected the direct Ably runner claim to succeed");
-        }
-        expect(directClaimed.body.prompt).toBe(secondPrompt);
 
         const tokenRequest = {
           keyName: "bdd-key",
@@ -12193,22 +12090,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         expect(realtime.body).toStrictEqual(tokenRequest);
-        const deniedRealtime = await api.requestRunnerRealtimeTokenAs(
+        const denied = await api.requestRunnerRealtimeTokenAs(
           bearer,
           { group: "wrong-org/default" },
           [403],
         );
-        expectApiError(deniedRealtime.body);
-        expect(deniedRealtime.body.error.message).toBe(
+        expectApiError(denied.body);
+        expect(denied.body.error.message).toBe(
           "Only vm0/* runner groups are supported",
         );
-
-        await api.requestCancelRun(actor, first.runId, [200]);
-        await api.requestCancelRun(actor, second.runId, [200]);
-        await finishCancelledRun(first.runId, claimed.body.sandboxToken);
-        await finishCancelledRun(second.runId, directClaimed.body.sandboxToken);
-        const settled = await api.readRunQueue(actor);
-        expect(settled.body.concurrency.active).toBe(0);
       });
 
       it("rejects runner calls with malformed or wrong runner credentials", async () => {
@@ -12248,6 +12138,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "first cancellable chat run",
         });
         await api.requestCancelRun(actor, first.runId, [200]);
+        await finishCancelledRun(
+          first.runId,
+          (await api.executionInput(first.runId)).sandboxToken,
+        );
         // Cancellation delivers its chat callback from the route's `waitUntil`
         // work, so drain that work instead of polling for the appended event.
         await flushWaitUntilForTest();
@@ -12269,6 +12163,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "second cancellable chat run",
         });
         await api.requestCancelRun(actor, second.runId, [200]);
+        await finishCancelledRun(
+          second.runId,
+          (await api.executionInput(second.runId)).sandboxToken,
+        );
         await flushWaitUntilForTest();
 
         const secondCancelled = await api.readRun(actor, second.runId);
@@ -13107,8 +13005,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
-          runnerHostname: null,
-          runnerVersion: "0.234.18",
+          runnerHostname: expect.stringMatching(/^runner-.*\.okou\.app$/),
+          runnerVersion: null,
           runnerId: expect.any(String),
           runnerHeartbeatGeneration: 1,
         });
@@ -13246,22 +13144,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "complete without native session outputs",
           });
-          const pat = await api.createCliToken(actor);
-          const response = await owned.claimPatRun(
-            `Bearer ${pat.token}`,
-            run.runId,
-            [200],
-            {
-              runnerIdentity: {
-                runnerId: randomUUID(),
-                heartbeatGeneration: 13,
-              },
-            },
-          );
-          if (response.status !== 200) {
-            throw new Error("Expected a public PAT claim");
-          }
-          const claim = response.body;
+          const claim = await owned.claimRunnerRun(run.runId);
+          const selected = (await api.requestRunRunner(actor, run.runId, [200]))
+            .body;
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
@@ -13288,13 +13173,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(failed.status).toBe("failed");
           expect(failed.error).toBe("Run completion outputs were not provided");
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
-          expect(runner.body).toStrictEqual({
-            sandboxStartupPath: null,
-            runnerHostname: null,
-            runnerVersion: null,
-            runnerId: null,
-            runnerHeartbeatGeneration: null,
-          });
+          expect(runner.body).toStrictEqual(selected);
         });
       });
 
@@ -13308,22 +13187,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "cancel before the completion report",
           });
-          const pat = await api.createCliToken(actor);
-          const response = await owned.claimPatRun(
-            `Bearer ${pat.token}`,
-            run.runId,
-            [200],
-            {
-              runnerIdentity: {
-                runnerId: randomUUID(),
-                heartbeatGeneration: 13,
-              },
-            },
-          );
-          if (response.status !== 200) {
-            throw new Error("Expected a public PAT claim");
-          }
-          const claim = response.body;
+          const claim = await owned.claimRunnerRun(run.runId);
+          const selected = (await api.requestRunRunner(actor, run.runId, [200]))
+            .body;
           await api.requestCancelRun(actor, run.runId, [200]);
 
           const late = await webhooks.requestAgentComplete(
@@ -13344,13 +13210,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const cancelled = await api.readRun(actor, run.runId);
           expect(cancelled.status).toBe("cancelled");
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
-          expect(runner.body).toStrictEqual({
-            sandboxStartupPath: null,
-            runnerHostname: null,
-            runnerVersion: null,
-            runnerId: null,
-            runnerHeartbeatGeneration: null,
-          });
+          expect(runner.body).toStrictEqual(selected);
 
           await webhooks.requestAgentComplete(
             {

@@ -600,7 +600,10 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201, 400],
     );
 
-    await cancelChatRun(actor, anchor.runId);
+    const input = await api.executionInput(anchor.runId);
+    await cancelChatRun(actor, anchor.runId, {
+      authorization: `Bearer ${input.sandboxToken}`,
+    });
     const messages = await waitForThreadMessages(
       actor,
       anchor.threadId,

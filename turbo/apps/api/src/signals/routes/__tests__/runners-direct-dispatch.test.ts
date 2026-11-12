@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatEventsRoutes } from "../chat-events";
@@ -8,6 +8,8 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 const context = testContext();
 
@@ -32,7 +34,7 @@ async function launchFixture() {
   return { api, actor, group, agentId: agent.agentId };
 }
 
-test("delivers complete input after binding its process and leaves no new Claim job", async () => {
+test("delivers complete input after binding its process", async () => {
   await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
@@ -74,8 +76,6 @@ test("delivers complete input after binding its process and leaves no new Claim 
     runnerId: identity.runnerId,
     runnerHeartbeatGeneration: identity.heartbeatGeneration,
   });
-  expect((await f.api.pollRunner(f.group)).body.job).toBeNull();
-  await f.api.requestClaimRunnerJob(true, run.runId, [404]);
 });
 
 test("fails a Run with no serving process and releases its concurrency slot", async () => {
@@ -90,7 +90,6 @@ test("fails a Run with no serving process and releases its concurrency slot", as
     error: "No eligible serving Runner is available",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  expect((await f.api.pollRunner(f.group)).body.job).toBeNull();
 });
 
 test("retries identical bytes on the same process after a lost response and a later 429", async () => {
@@ -182,6 +181,194 @@ test("switches candidates only after a definite refusal", async () => {
   ).toMatchObject({ runnerId: visited[1] });
 });
 
+test("tries every capacity-ranked candidate with the same prepared execution input", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const offers: {
+    readonly runnerId: string;
+    readonly executionContext: unknown;
+  }[] = [];
+  const candidates = [
+    { totalVcpu: 4, totalMemoryMb: 32_768, maxConcurrent: 8 },
+    { totalVcpu: 16, totalMemoryMb: 4096, maxConcurrent: 8 },
+    { totalVcpu: 16, totalMemoryMb: 32_768, maxConcurrent: 3 },
+  ];
+  const identities = [];
+  for (const [index, heartbeat] of candidates.entries()) {
+    identities.push(
+      await f.api.registerDirectRunner(f.group, {
+        heartbeat,
+        reply: (envelope) => {
+          offers.push(envelope);
+          return HttpResponse.json({
+            runnerId: envelope.runnerId,
+            heartbeatGeneration: envelope.heartbeatGeneration,
+            runId: envelope.executionContext.runId,
+            disposition: index === 1 ? "accepted" : "rejected",
+          });
+        },
+      }),
+    );
+  }
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Visit all capacity-ranked processes",
+  });
+  expect(run.status).toBe("running");
+  expect(
+    offers.map((offer) => {
+      return offer.runnerId;
+    }),
+  ).toStrictEqual([
+    identities[2]?.runnerId,
+    identities[0]?.runnerId,
+    identities[1]?.runnerId,
+  ]);
+  expect(offers[1]?.executionContext).toStrictEqual(
+    offers[0]?.executionContext,
+  );
+  expect(offers[2]?.executionContext).toStrictEqual(
+    offers[0]?.executionContext,
+  );
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identities[1]?.runnerId,
+  });
+});
+
+test.each([
+  {
+    kind: "unlimited",
+    maxConcurrent: 0,
+    runningCount: 100,
+    allocatedVcpu: 0,
+    allocatedMemoryMb: 0,
+  },
+  {
+    kind: "reclaimable",
+    maxConcurrent: 2,
+    runningCount: 2,
+    allocatedVcpu: 8,
+    allocatedMemoryMb: 16_384,
+  },
+])("dispatches to advertised $kind capacity", async (heartbeat) => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const { kind, ...resources } = heartbeat;
+  const identity = await f.api.registerDirectRunner(f.group, {
+    heartbeat: resources,
+  });
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: `Use ${kind} capacity`,
+  });
+  expect(run.status).toBe("running");
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identity.runnerId,
+    runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+});
+
+test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const clock = now();
+  mockNow(clock);
+  onTestFinished(clearMockNow);
+  await f.api.registerDirectRunner(f.group);
+  mockNow(clock + 180_001);
+  await f.api.registerDirectRunner(f.group, {
+    hostname: "untrusted.example.test",
+    maxConcurrent: 100,
+  });
+  await f.api.registerDirectRunner(f.group, {
+    heartbeat: { ingressServiceActive: false },
+  });
+  await f.api.registerDirectRunner(f.group, {
+    heartbeat: { mode: "draining" },
+  });
+  await f.api.registerDirectRunner(f.group, {
+    heartbeat: { admittableProfiles: [] },
+  });
+  const identity = await f.api.registerDirectRunner(f.group, {
+    heartbeat: { snapshotSequence: 2 },
+  });
+  // A replay cannot remove this process's current serving observation.
+  await f.api.requestHeartbeatRunner(true, [200], {
+    group: f.group,
+    runnerId: identity.runnerId,
+    snapshotGeneration: identity.heartbeatGeneration,
+    snapshotSequence: 1,
+    mode: "starting",
+  });
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Use a current serving process",
+  });
+  expect(run.status).toBe("running");
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identity.runnerId,
+    runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+});
+
+test("launches the following queued input after a definite refusal releases its Thread", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const chat = createChatFilesBddApi(context);
+  const clientEventId = randomUUID();
+  let queued = false;
+  await f.api.registerDirectRunner(f.group, {
+    reply: async (envelope) => {
+      const first = !queued;
+      queued = true;
+      if (first) {
+        const reuseKey = envelope.executionContext.reuseKey;
+        if (!reuseKey?.startsWith("thread:")) {
+          throw new Error("Expected a Thread-scoped Run");
+        }
+        await chat.requestSendEvent(
+          f.actor,
+          {
+            agentId: f.agentId,
+            threadId: reuseKey.slice("thread:".length),
+            clientEventId,
+            prompt: "Continue after refused delivery",
+          },
+          [201],
+        );
+      }
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId: envelope.executionContext.runId,
+        disposition: first ? "rejected" : "accepted",
+      });
+    },
+  });
+  const first = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Refuse this input",
+  });
+  expect(first.status).toBe("failed");
+  const events = await chat.listThreadEvents(f.actor, first.threadId);
+  const promoted = events.events.find((event) => {
+    return event.revokesEventId === clientEventId;
+  });
+  if (!promoted?.runId) {
+    throw new Error("Expected the following input to launch");
+  }
+  await expect(f.api.readRun(f.actor, promoted.runId)).resolves.toMatchObject({
+    status: "running",
+  });
+  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+});
+
 test("preserves a concurrent cancellation after the process proves it did not accept", async () => {
   await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
@@ -255,6 +442,7 @@ test("waits through short preferred-process 429s before using a roomier candidat
   );
   const bytes: string[] = [];
   await f.api.registerDirectRunner(f.group, {
+    runnerIdentity: identity,
     maxConcurrent: 1,
     reply: (envelope, body) => {
       bytes.push(body);

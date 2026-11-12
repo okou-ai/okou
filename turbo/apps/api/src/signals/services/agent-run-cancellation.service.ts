@@ -5,7 +5,7 @@ import {
   type CancelRunArgs,
   type DeletedOwner,
 } from "./agent-run-terminal-transition.service";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
+import { scheduleReleasedSlotPicks$ } from "./pick-chat-run.service";
 
 /** Schedule only the committed releases, before cancellation's other effects. */
 export const cancelRun$ = command(

@@ -4,26 +4,14 @@ import {
   chatEvents,
   chatEventRunlessInputPredicate,
 } from "@okouai/db/schema/chat-event";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command } from "ccstate";
-import {
-  and,
-  count,
-  eq,
-  isNotNull,
-  isNull,
-  lte,
-  notExists,
-  or,
-} from "drizzle-orm";
+import { and, eq, isNotNull, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import { createRunSlotPickScheduler } from "./run-slot-pick-scheduler";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import {
   chatInputEnqueueCommits$,
@@ -32,8 +20,7 @@ import {
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import {
   pickChatThread$,
-  type OrgPickCursor,
-  type PickIteration,
+  pickOrgQueuedChatThreads$,
 } from "./pick-chat-run.service";
 import {
   listQueuedChatThreadOrgIds$,
@@ -197,89 +184,13 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { result } = await set(
-      pickChatThread$,
-      { ...input, scheduleReleasedSlots$: scheduleDirectReleasedSlots$ },
-      signal,
-    );
+    const { result } = await set(pickChatThread$, input, signal);
     return result;
   },
 );
 
 /** Keyset page size for passes over queued threads and organizations. */
 const PICK_PAGE_SIZE = 100;
-
-/**
- * A finite organization pass handles at most the queued-thread count captured
- * at entry. Each invocation owns its keyset cursor and skips active/leased work;
- * each candidate is visited once, even when it has no input, loses its claim,
- * or rejects its head. A `none` pick is not a signal that the organization is
- * empty; the pass stops early only when a pick found the organization full.
- * Remaining input and new work are handled by the next enqueue, slot release,
- * or cron pass. Unexpected errors propagate to the caller's error boundary.
- */
-export const pickOrgQueuedChatThreads$ = command(
-  async (
-    { set },
-    input: { readonly orgId: string },
-    signal: AbortSignal,
-  ): Promise<number> => {
-    const database = set(writeDb$);
-    const [snapshot] = await database
-      .select({ count: count() })
-      .from(queuedChatThreads)
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, input.orgId),
-          or(
-            isNull(queuedChatThreads.claimExpiresAt),
-            lte(queuedChatThreads.claimExpiresAt, nowDate()),
-          ),
-          notExists(
-            database
-              .select({ runId: activeAgentRuns.runId })
-              .from(activeAgentRuns)
-              .where(
-                eq(
-                  activeAgentRuns.chatThreadId,
-                  queuedChatThreads.chatThreadId,
-                ),
-              ),
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    if (!snapshot) {
-      throw new Error("Queued chat thread count returned no row");
-    }
-    let cursor: OrgPickCursor | null = null;
-    let launched = 0;
-    for (let visited = 0; visited < snapshot.count; visited++) {
-      const { result: picked, cursor: nextCursor }: PickIteration = await set(
-        pickChatThread$,
-        {
-          orgId: input.orgId,
-          after: cursor,
-          scheduleReleasedSlots$: scheduleDirectReleasedSlots$,
-        },
-        signal,
-      );
-      cursor = nextCursor;
-      signal.throwIfAborted();
-      if (picked.kind === "org-full") {
-        return launched;
-      }
-      if (picked.kind === "launched") {
-        launched += 1;
-      }
-    }
-    return launched;
-  },
-);
-
-const scheduleDirectReleasedSlots$ = createRunSlotPickScheduler(
-  pickOrgQueuedChatThreads$,
-);
 
 /**
  * Cron pass: org-pick every organization that has a queued row, without a

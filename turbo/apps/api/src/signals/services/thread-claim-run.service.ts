@@ -97,13 +97,9 @@ import {
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
 import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
-import {
-  createDirectRunDispatch,
-  dispatchDirectRun$,
-} from "./direct-run-dispatch.service";
+import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import type { RunSlotPickScheduler } from "./run-slot-pick-scheduler";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
   prepareRunnerReusePreference$,
@@ -277,14 +273,7 @@ import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-cap
 
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import {
-  command,
-  type Command,
-  computed,
-  type Computed,
-  type State,
-  state,
-} from "ccstate";
+import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
   count,
@@ -1261,16 +1250,36 @@ export interface ThreadClaimRunObjects {
   readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
-  readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
+  readonly admittedLaunch$: Computed<Promise<AdmittedRunLaunch>>;
+  readonly admitRun$: Command<
+    Promise<PendingClaimRun | null>,
+    [signal: AbortSignal]
+  >;
+  readonly publishPendingRun$: Command<
+    Promise<void>,
+    [pending: PendingClaimRun, signal: AbortSignal]
+  >;
+  readonly finishPendingRun$: Command<
+    Promise<void>,
+    [
+      pending: PendingClaimRun,
+      dispatched: DirectRunDispatchResult,
+      signal: AbortSignal,
+    ]
+  >;
 }
 
 /** The admission input with the instant its reads are taken. */
-export function createThreadRunLauncher(
+export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   bootstrap: AgentRunContextSignals,
   requestFacts: ChatThreadRequestFacts | undefined,
-  scheduleReleasedSlots$: RunSlotPickScheduler,
 ): ThreadClaimRunObjects {
+  const claimCatalog$ = bootstrap.modelCatalog$;
+  const pickStartedAt$ = computed(() => {
+    return now();
+  });
+  const internalCommittedRunId$ = state<string | null>(null);
   const internalAdmittedLaunch$ = state<AdmittedRunLaunch | null>(null);
   const admittedLaunch$ = computed((get) => {
     const admitted = get(internalAdmittedLaunch$);
@@ -1279,32 +1288,6 @@ export function createThreadRunLauncher(
     }
     return Promise.resolve(admitted);
   });
-  const directDispatch = createDirectRunDispatch(admittedLaunch$);
-  return createThreadClaimRunObjects(claim, bootstrap, requestFacts, {
-    admittedLaunch$: internalAdmittedLaunch$,
-    graph: directDispatch,
-    scheduleReleasedSlots$,
-  });
-}
-
-function createThreadClaimRunObjects(
-  claim: ThreadClaim,
-  bootstrap: AgentRunContextSignals,
-  requestFacts: ChatThreadRequestFacts | undefined,
-  dispatch: {
-    readonly admittedLaunch$: State<AdmittedRunLaunch | null>;
-    readonly graph: ReturnType<typeof createDirectRunDispatch>;
-    readonly scheduleReleasedSlots$: RunSlotPickScheduler;
-  },
-): ThreadClaimRunObjects {
-  const claimCatalog$ = bootstrap.modelCatalog$;
-  const pickStartedAt$ = computed(() => {
-    return now();
-  });
-  const internalCommittedRunId$ = state<string | null>(null);
-  const internalAdmittedLaunch$ = dispatch.admittedLaunch$;
-  const directDispatch = dispatch.graph;
-  const scheduleReleasedSlotPicks$ = dispatch.scheduleReleasedSlots$;
   const publishChatQueueHeadConsumed$ = command(
     async (
       _context,
@@ -4197,8 +4180,8 @@ function createThreadClaimRunObjects(
     },
   );
 
-  const activatePendingRun$ = command(
-    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+  const publishPendingRun$ = command(
+    async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
       signal.throwIfAborted();
       // Immediate and queued picks have committed their active-run slot here.
       // Pending shell approvals must re-read chat_busy before the runner starts.
@@ -4218,14 +4201,19 @@ function createThreadClaimRunObjects(
         },
         pending.activation.apiStartTime,
       );
-      const dispatched = await set(
-        dispatchDirectRun$,
-        { input: pending.activation.run, graph: directDispatch },
-        signal,
-      );
+    },
+  );
+
+  const finishPendingRun$ = command(
+    async (
+      { set },
+      pending: PendingClaimRun,
+      dispatched: DirectRunDispatchResult,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
       if (dispatched.terminal !== null) {
         const terminal = dispatched.terminal;
-        set(scheduleReleasedSlotPicks$, terminal.releasedSlots, signal);
         if (terminal.status !== "failed" && terminal.status !== "cancelled") {
           throw new Error("Unaccepted Run has an invalid terminal status");
         }
@@ -4297,8 +4285,11 @@ function createThreadClaimRunObjects(
     get(pickStartedAt$);
     return (await get(pickedEvent$)) !== null;
   });
-  const startRun$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
+  const admitRun$ = command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<PendingClaimRun | null> => {
       const event = await get(pickedEvent$);
       signal.throwIfAborted();
       if (!event) {
@@ -4367,20 +4358,17 @@ function createThreadClaimRunObjects(
         );
         throw settled.error;
       }
-      const pending = settled.value;
-      if (!pending) {
-        return null;
-      }
-      // Activation stays outside the creation-failure boundary.
-      await set(activatePendingRun$, pending, signal);
-      return pending.runId;
+      return settled.value;
     },
   );
   return {
     threadHasActiveRun$,
     hasFirstPickableChatEvent$,
     orgHasCapacity$,
-    startRun$,
+    admittedLaunch$,
+    admitRun$,
+    publishPendingRun$,
+    finishPendingRun$,
   };
 }
 

@@ -23,14 +23,15 @@ import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
-import type { RunSlotPickScheduler } from "./run-slot-pick-scheduler";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
+import { createDirectRunDispatcher } from "./direct-run-dispatch.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
   type PublishedChatThreadLease,
 } from "./queued-chat-thread.service";
 import {
-  createThreadRunLauncher,
+  createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
 
@@ -42,7 +43,6 @@ export interface OrgPickCursor {
 
 /** Actual lease-write receipt, including this invocation's plain prefetch. */
 interface LeasedThreadClaim extends ThreadClaim {
-  readonly scheduleReleasedSlots$: RunSlotPickScheduler;
   readonly queuedAt: Date;
   readonly userId: string;
   readonly agentId: string;
@@ -84,7 +84,7 @@ function createCapturedClaimObjects(
   claim: LeasedThreadClaim,
   context: AgentRunContextSignals,
 ) {
-  const preparation = createThreadRunLauncher(
+  const preparation = createThreadClaimRunObjects(
     {
       orgId: claim.orgId,
       chatThreadId: claim.chatThreadId,
@@ -92,20 +92,20 @@ function createCapturedClaimObjects(
     },
     context,
     claim.requestFacts,
-    claim.scheduleReleasedSlots$,
   );
+  const dispatchRun$ = createDirectRunDispatcher(preparation.admittedLaunch$);
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
+    dispatchRun$,
     context,
     orgHasCapacityAfterRelease$,
   };
 }
 
 interface PickInput {
-  readonly scheduleReleasedSlots$: RunSlotPickScheduler;
   readonly orgId: string;
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
@@ -120,16 +120,12 @@ export interface PickIteration {
 }
 
 function captureThreadClaim(
-  receipt: Omit<
-    LeasedThreadClaim,
-    "context" | "requestFacts" | "scheduleReleasedSlots$"
-  >,
+  receipt: Omit<LeasedThreadClaim, "context" | "requestFacts">,
   input: PickInput,
 ): LeasedThreadClaim {
   const { context, requestFacts } = input;
   return Object.freeze({
     ...receipt,
-    scheduleReleasedSlots$: input.scheduleReleasedSlots$,
     ...(context === undefined ? {} : { context }),
     ...(requestFacts?.orgId === receipt.orgId &&
     requestFacts.thread.id === receipt.chatThreadId &&
@@ -359,7 +355,6 @@ function createPickObjects() {
           {
             orgId: claim.orgId,
             chatThreadId: claim.chatThreadId,
-            scheduleReleasedSlots$: claim.scheduleReleasedSlots$,
           },
           signal,
         ),
@@ -449,12 +444,24 @@ function createPickObjects() {
       // Load the run context only when this claim has work and capacity.
       set(preloadAgentRunContext$, claimed.context, signal);
       signal.throwIfAborted();
-      const runId = await set(claimed.startRun$, signal);
-      if (runId === null) {
+      const pending = await set(claimed.admitRun$, signal);
+      if (pending === null) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
-      return { kind: "launched", runId };
+      // Activation is outside the admission-failure boundary. Slot scheduling
+      // precedes terminal callbacks so they cannot delay the next queued input.
+      await set(claimed.publishPendingRun$, pending, signal);
+      const dispatched = await set(claimed.dispatchRun$, signal);
+      if (dispatched.terminal !== null) {
+        set(
+          scheduleReleasedSlotPicks$,
+          dispatched.terminal.releasedSlots,
+          signal,
+        );
+      }
+      await set(claimed.finishPendingRun$, pending, dispatched, signal);
+      return { kind: "launched", runId: pending.runId };
     },
   );
 
@@ -477,3 +484,78 @@ function createPickObjects() {
 
 /** Stable entry; successful write receipts own per-Store memoized child graphs. */
 export const pickChatThread$ = createPickObjects().pick$;
+
+/**
+ * A finite organization pass visits at most the queued-thread count captured
+ * at entry. Active or leased threads are skipped; only full org capacity stops
+ * the pass early. Enqueue, slot release and cron own subsequent passes.
+ */
+export const pickOrgQueuedChatThreads$ = command(
+  async (
+    { set },
+    input: { readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const database = set(writeDb$);
+    const [snapshot] = await database
+      .select({ count: count() })
+      .from(queuedChatThreads)
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, input.orgId),
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, nowDate()),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!snapshot) {
+      throw new Error("Queued chat thread count returned no row");
+    }
+    let cursor: OrgPickCursor | null = null;
+    let launched = 0;
+    for (let visited = 0; visited < snapshot.count; visited++) {
+      const { result: picked, cursor: nextCursor }: PickIteration = await set(
+        pickChatThread$,
+        { orgId: input.orgId, after: cursor },
+        signal,
+      );
+      cursor = nextCursor;
+      signal.throwIfAborted();
+      if (picked.kind === "org-full") {
+        return launched;
+      }
+      if (picked.kind === "launched") {
+        launched += 1;
+      }
+    }
+    return launched;
+  },
+);
+
+/** Schedule each released organization before other terminal side effects. */
+export const scheduleReleasedSlotPicks$ = command(
+  ({ set }, slots: readonly ReleasedRunSlot[], signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const orgIds = new Set(
+      slots.map((slot) => {
+        return slot.orgId;
+      }),
+    );
+    for (const orgId of orgIds) {
+      waitUntil(set(pickOrgQueuedChatThreads$, { orgId }, signal));
+    }
+  },
+);

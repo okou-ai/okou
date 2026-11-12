@@ -2867,6 +2867,12 @@ describe("POST /api/webhooks/teams/bot", () => {
 
       // Freeing a slot picks the waiting thread and launches its message.
       await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      const input = await runsApi.executionInput(firstRunId);
+      await webhooksApi.requestAgentComplete(
+        { runId: firstRunId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
       await flushWaitUntilForTest();
       const queuedRunId = await runIdForPrompt(actor, "queued run three");
 

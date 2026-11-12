@@ -235,7 +235,6 @@
     "src/signals/services/agent-run-completion-sql.ts",
     "src/signals/services/agent-run-failure-log.service.ts",
     "src/signals/services/agent-run-lifecycle.service.ts",
-    "src/signals/services/agent-run-slot-scheduling.service.ts",
     "src/signals/services/agent-run-terminal-transition.service.ts",
     "src/signals/services/agent-webhook-complete.service.ts",
     "src/signals/services/automation-callback-payload.ts",
@@ -279,7 +278,6 @@
     "src/signals/services/workflow-automation-run-callback.service.ts",
     "src/signals/services/workflow-claim.service.ts",
     "src/signals/services/unstarted-run-cleanup.ts",
-    "src/signals/services/run-slot-pick-scheduler.ts",
     "src/signals/services/agent-run-cancellation.service.ts"
   ],
   "references": [
