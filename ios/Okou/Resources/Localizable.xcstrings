@@ -118,16 +118,6 @@
         }
       }
     },
-    "Continue task": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续任务"
-          }
-        }
-      }
-    },
     "View on Web": {
       "localizations": {
         "zh-Hans": {
@@ -144,26 +134,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂时无法确认结果，请检查状态。"
-          }
-        }
-      }
-    },
-    "Access is allowed. The task still needs to continue.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "访问已允许，任务尚未继续。"
-          }
-        }
-      }
-    },
-    "Continuation request submitted": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续请求已提交"
           }
         }
       }

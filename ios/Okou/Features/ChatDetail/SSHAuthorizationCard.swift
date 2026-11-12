@@ -132,15 +132,11 @@ struct SSHAuthorizationCardContent: View {
   }
 
   private func message(_ status: ChatSSHAuthorization.Status?) -> String? {
-    if status == .approved && request?.continuationPending == true {
-      return String(localized: "Access is allowed. The task still needs to continue.")
-    }
     if error != nil {
       return String(localized: "Unable to confirm the result. Check the request status.")
     }
     if let blocker = request?.approvalBlockedReason { return sshApprovalBlocker(blocker) }
     switch status {
-    case .approved: return String(localized: "Continuation request submitted")
     case .expired, .stale: return String(localized: "Ask for a new request in this chat.")
     default: return nil
     }
@@ -148,15 +144,13 @@ struct SSHAuthorizationCardContent: View {
 
   @ViewBuilder private func controls(_ status: ChatSSHAuthorization.Status?) -> some View {
     if let request {
-      if status == .pending || (status == .approved && request.continuationPending) {
+      if status == .pending {
         Button {
           Task { await decide(.approve) }
         } label: {
           HStack(spacing: OkouSpace.sm) {
             if working { ProgressView().controlSize(.small).tint(OkouColor.primaryForeground) }
-            Text(
-              status == .approved
-                ? String(localized: "Continue task") : String(localized: "Allow in this chat"))
+            Text("Allow in this chat")
           }
         }
         .buttonStyle(ChatCardButtonStyle(emphasis: .primary))
