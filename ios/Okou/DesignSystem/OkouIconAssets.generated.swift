@@ -5,6 +5,7 @@ enum OkouIconAssets {
     "archive",
     "archive-restore",
     "arrow-down",
+    "arrow-right",
     "arrow-up",
     "arrow-up-right",
     "audio-lines",

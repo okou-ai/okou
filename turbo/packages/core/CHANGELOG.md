@@ -1,5 +1,30 @@
 # Changelog
 
+## [8.829.1](https://github.com/okou-ai/okou/compare/core-v8.829.0...core-v8.829.1) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.1
+
+## [8.829.0](https://github.com/okou-ai/okou/compare/core-v8.828.1...core-v8.829.0) (2026-11-11)
+
+
+### Features
+
+* **app:** add help submenu to the account menu ([#46575](https://github.com/okou-ai/okou/issues/46575)) ([1363c14](https://github.com/okou-ai/okou/commit/1363c145ffbf8507f72e13f628c7d1fe2f4bc567))
+* **app:** graduate the account help menu to general availability ([#46594](https://github.com/okou-ai/okou/issues/46594)) ([3f65aed](https://github.com/okou-ai/okou/commit/3f65aed5ceb7682d657950e002bb2e6bec27f46e))
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+
 ## [8.828.1](https://github.com/okou-ai/okou/compare/core-v8.828.0...core-v8.828.1) (2026-11-11)
 
 

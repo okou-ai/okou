@@ -12,7 +12,10 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
+import {
+  CapabilityHomeCompliance,
+  CapabilityHomeComplianceSpace,
+} from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -325,7 +328,7 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -3545,6 +3548,16 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     initialEventsReady &&
     hasEvents === false &&
     sharingPhase === "idle";
+  // The capability home carries a compliance line under its composer. A
+  // conversation keeps that line's room empty, so opening a chat from the home,
+  // or sending an empty chat's first message, leaves the composer's bottom edge
+  // where it was.
+  let belowComposer: ReactNode = null;
+  if (showCapabilities) {
+    belowComposer = <CapabilityHomeCompliance />;
+  } else if (capabilitiesEnabled) {
+    belowComposer = <CapabilityHomeComplianceSpace />;
+  }
 
   return (
     <>
@@ -3557,7 +3570,8 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           )}
           <ChatThreadBottomBar
             thread={thread}
-            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
+            layout={showCapabilities ? "home" : "default"}
+            below={belowComposer}
           />
         </div>
       </div>
@@ -3610,9 +3624,12 @@ function SharedThreadCreatedLink({
 
 function ChatThreadBottomBar({
   thread,
+  layout,
   below = null,
 }: {
   readonly thread: ChatPanelSignals;
+  /** `home` while an empty thread shows the capability home above it. */
+  readonly layout: ComposerLayout;
   /** Shown under the composer, such as compliance on an empty thread's home. */
   readonly below?: ReactNode;
 }) {
@@ -3628,7 +3645,7 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} below={below} />,
+      <ChatThreadComposer thread={thread} layout={layout} below={below} />,
     );
   }
 
@@ -3919,9 +3936,11 @@ function RecommendedFollowupList({
 
 function ChatThreadComposer({
   thread,
+  layout,
   below,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly layout: ComposerLayout;
   readonly below: ReactNode;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
@@ -3944,7 +3963,7 @@ function ChatThreadComposer({
         )}
       >
         <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} />
+          <ChatComposer signals={thread.composer} layout={layout} />
           {below}
         </div>
       </div>
@@ -5179,7 +5198,7 @@ const STRUCTURED_FAILURE_TITLES = Object.freeze({
   },
   provider_bad_request: () => {
     return i18n.t(($) => {
-      return $.chat.errors.genericTitle;
+      return $.chat.errors.recovery.providerBadRequestTitle;
     });
   },
   firewall_auth_failed: () => {
@@ -5322,7 +5341,7 @@ const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
   provider_server_error: FAILURE_DESCRIPTIONS.capacity,
   provider_bad_request: (t: TFunction<"common">) => {
     return t(($) => {
-      return $.runErrors.transient;
+      return $.chat.errors.recovery.providerBadRequestDescription;
     });
   },
   firewall_auth_failed: (t: TFunction<"common">) => {
@@ -5372,7 +5391,6 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     reason === "context_window_exceeded" ||
     reason === "input_too_large" ||
     reason === "provider_image_too_large" ||
-    reason === "provider_bad_request" ||
     reason === "firewall_auth_failed" ||
     reason === "session_history_limit"
   ) {
@@ -5386,7 +5404,6 @@ function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
     reason !== "insufficient_credits" &&
     reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
-    reason !== "provider_bad_request" &&
     reason !== "firewall_auth_failed" &&
     reason !== "provider_image_too_large"
   );

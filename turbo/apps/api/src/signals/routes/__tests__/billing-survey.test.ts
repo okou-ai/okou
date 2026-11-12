@@ -4,7 +4,11 @@ import {
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
 import StripeSDK from "stripe";
-import { mockStripeClient } from "../../external/stripe-client";
+import { object, record, string } from "zod";
+import {
+  mockStripeClient,
+  type StripeCheckoutSession,
+} from "../../external/stripe-client";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -59,7 +63,10 @@ async function bonusCredits(): Promise<number> {
   return balance.body.bonusCredits;
 }
 
-async function createCheckout(actor: ApiTestUser): Promise<void> {
+async function createCheckout(
+  actor: ApiTestUser,
+  ageMs = 31 * 60_000,
+): Promise<StripeCheckoutSession> {
   signIn(actor);
   context.mocks.stripe.customers.create.mockResolvedValue({
     id: `cus_survey_${actor.orgId}`,
@@ -68,13 +75,21 @@ async function createCheckout(actor: ApiTestUser): Promise<void> {
     id: "cs_survey_test",
     url: "https://checkout.stripe.com/c/pay/cs_survey_test",
   });
-  context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+  const session: StripeCheckoutSession = {
     id: "cs_survey_test",
+    mode: "subscription",
+    subscription: null,
     status: "open",
     payment_status: "unpaid",
+    created: Math.floor((nowDate().getTime() - ageMs) / 1000),
     customer: `cus_survey_${actor.orgId}`,
-    metadata: { orgId: actor.orgId },
-  });
+    metadata: {
+      orgId: actor.orgId ?? "",
+      tier: "pro",
+      billingSurveyUserId: actor.userId,
+    },
+  };
+  mockCheckoutSessions([session]);
   const checkout = await accept(
     setupApp({ context, routes: billingCheckoutRoutes })(
       billingCheckoutContract,
@@ -88,7 +103,33 @@ async function createCheckout(actor: ApiTestUser): Promise<void> {
     }),
     [200],
   );
-  expect(checkout.body).toMatchObject({ checkoutSessionId: "cs_survey_test" });
+  expect(checkout.body).toMatchObject({
+    url: "https://checkout.stripe.com/c/pay/cs_survey_test",
+  });
+  expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      metadata: expect.objectContaining({ billingSurveyUserId: actor.userId }),
+    }),
+  );
+  return session;
+}
+
+function mockCheckoutSessions(
+  sessions: readonly StripeCheckoutSession[],
+): void {
+  context.mocks.stripe.checkout.sessions.list.mockResolvedValue({
+    data: sessions,
+    has_more: false,
+  });
+  context.mocks.stripe.checkout.sessions.retrieve.mockImplementation((id) => {
+    const session = sessions.find((value) => {
+      return value.id === id;
+    });
+    if (!session) {
+      throw new Error("Unknown test Checkout");
+    }
+    return Promise.resolve(session);
+  });
 }
 
 describe("/api/billing/survey", () => {
@@ -253,38 +294,135 @@ describe("/api/billing/survey", () => {
     expect(status.body.answered).toStrictEqual(["checkout_abandoned"]);
   });
 
+  it("discovers an unpaid Checkout on a new visit without a browser marker", async () => {
+    const actor = createBddApi(context).user();
+    await enableSurvey(actor);
+    await createCheckout(actor);
+    const result = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(result.body.abandonedCheckout).toStrictEqual({
+      checkoutSessionId: "cs_survey_test",
+      checkoutKind: "plan",
+    });
+  });
+
+  it.each(["credits", "usage_pack"] as const)(
+    "derives %s purchases from Stripe metadata",
+    async (kind) => {
+      const actor = createBddApi(context).user();
+      await enableSurvey(actor);
+      const session = await createCheckout(actor);
+      const metadata: Record<string, string> =
+        kind === "credits"
+          ? { purpose: "credit_purchase" }
+          : { usagePackSubscriptionId: "pack_survey" };
+      mockCheckoutSessions([
+        {
+          ...session,
+          mode: kind === "credits" ? "payment" : "subscription",
+          metadata: { ...session.metadata, ...metadata },
+        },
+      ]);
+      const status = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(status.body.abandonedCheckout).toStrictEqual({
+        checkoutSessionId: session.id,
+        checkoutKind: kind,
+      });
+    },
+  );
+
+  it("rechecks Stripe before accepting feedback after payment finishes", async () => {
+    const actor = createBddApi(context).user();
+    await enableSurvey(actor);
+    const session = await createCheckout(actor);
+    const before = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(before.body.abandonedCheckout?.checkoutSessionId).toBe(session.id);
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      ...session,
+      status: "complete",
+      payment_status: "paid",
+    });
+    const submitted = await accept(
+      surveyClient().submit({
+        headers: authHeaders(),
+        body: {
+          survey: "checkout_abandoned",
+          answer: "payment_issue",
+          checkoutSessionId: session.id,
+        },
+      }),
+      [200],
+    );
+    expect(submitted.body).toStrictEqual({ recorded: false, rewardCredits: 0 });
+    const after = await accept(
+      surveyClient().status({ headers: authHeaders() }),
+      [200],
+    );
+    expect(after.body.answered).toStrictEqual([]);
+  });
+
+  it.each([
+    { ageMs: 29 * 60_000, returned: false, eligible: false },
+    { ageMs: 30 * 60_000, returned: false, eligible: true },
+    { ageMs: 60_000, returned: true, eligible: true },
+    { ageMs: 7 * 24 * 60 * 60_000, returned: true, eligible: false },
+  ])(
+    "applies the Checkout time window ($ageMs ms, returned=$returned)",
+    async ({ ageMs, returned, eligible }) => {
+      mockNow(new Date("2026-11-12T08:00:00.000Z"));
+      const actor = createBddApi(context).user();
+      await enableSurvey(actor);
+      await createCheckout(actor, ageMs);
+      const status = await accept(
+        surveyClient().status({
+          headers: authHeaders(),
+          query: returned ? { checkoutReturn: "canceled" } : {},
+        }),
+        [200],
+      );
+      expect(status.body.abandonedCheckout).toStrictEqual(
+        eligible
+          ? { checkoutSessionId: "cs_survey_test", checkoutKind: "plan" }
+          : null,
+      );
+    },
+  );
+
   it.each([
     { status: "complete", payment_status: "paid" },
     { status: "complete", payment_status: "unpaid" },
     { status: "open", payment_status: "paid" },
   ])(
-    "does not survey a completed or paid Checkout ($status, $payment_status)",
-    async (session) => {
+    "suppresses earlier unpaid purchases after a newer completed Checkout ($payment_status)",
+    async (state) => {
       const actor = createBddApi(context).user();
       await enableSurvey(actor);
-      await createCheckout(actor);
-      context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
-        ...session,
-        id: "cs_survey_test",
-        customer: `cus_survey_${actor.orgId}`,
-        metadata: { orgId: actor.orgId },
-      });
+      const session = await createCheckout(actor);
+      const completed = { ...session, ...state };
+      mockCheckoutSessions([
+        completed,
+        { ...session, id: "cs_older", created: (session.created ?? 0) - 60 },
+      ]);
       const status = await accept(
-        surveyClient().status({
-          headers: authHeaders(),
-          query: { checkoutSessionId: "cs_survey_test" },
-        }),
+        surveyClient().status({ headers: authHeaders() }),
         [200],
       );
-      expect(status.body.checkoutUnpaid).toBeFalsy();
+      expect(status.body.abandonedCheckout).toBeNull();
       const submitted = await accept(
         surveyClient().submit({
           headers: authHeaders(),
           body: {
             survey: "checkout_abandoned",
             answer: "payment_issue",
-            checkoutKind: "plan",
-            checkoutSessionId: "cs_survey_test",
+            checkoutSessionId: session.id,
           },
         }),
         [200],
@@ -301,26 +439,143 @@ describe("/api/billing/survey", () => {
     },
   );
 
-  it("does not survey a Checkout owned by a different organization", async () => {
+  it.each(["organization", "member", "legacy"] as const)(
+    "keeps a %s Checkout out of another member's feedback",
+    async (owner) => {
+      const actor = createBddApi(context).user();
+      await enableSurvey(actor);
+      const session = await createCheckout(actor);
+      const metadata = {
+        orgId: owner === "organization" ? "org_other" : (actor.orgId ?? ""),
+        tier: "pro",
+        ...(owner === "legacy"
+          ? {}
+          : {
+              billingSurveyUserId:
+                owner === "member" ? "user_other" : actor.userId,
+            }),
+      };
+      mockCheckoutSessions([
+        {
+          ...session,
+          metadata,
+          customer: owner === "organization" ? "cus_other" : session.customer,
+        },
+      ]);
+      const status = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(status.body.abandonedCheckout).toBeNull();
+      const submitted = await accept(
+        surveyClient().submit({
+          headers: authHeaders(),
+          body: {
+            survey: "checkout_abandoned",
+            answer: "payment_issue",
+            checkoutSessionId: session.id,
+          },
+        }),
+        [200],
+      );
+      expect(submitted.body.recorded).toBeFalsy();
+      await accept(
+        surveyClient().dismiss({
+          headers: authHeaders(),
+          body: { checkoutSessionId: session.id },
+        }),
+        [200],
+      );
+      expect(
+        context.mocks.stripe.checkout.sessions.update,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it("finds the member's Checkout on a later Stripe result page", async () => {
     const actor = createBddApi(context).user();
     await enableSurvey(actor);
-    await createCheckout(actor);
-    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+    const session = await createCheckout(actor);
+    const otherMember = {
+      ...session,
       id: "cs_other",
-      status: "open",
-      payment_status: "unpaid",
-      customer: "cus_other",
-      metadata: { orgId: "org_other" },
+      metadata: { ...session.metadata, billingSurveyUserId: "user_other" },
+    };
+    context.mocks.stripe.checkout.sessions.list.mockResolvedValueOnce({
+      data: [otherMember],
+      has_more: true,
     });
     const status = await accept(
-      surveyClient().status({
-        headers: authHeaders(),
-        query: { checkoutSessionId: "cs_other" },
-      }),
+      surveyClient().status({ headers: authHeaders() }),
       [200],
     );
-    expect(status.body.checkoutUnpaid).toBeFalsy();
+    expect(status.body.abandonedCheckout?.checkoutSessionId).toBe(session.id);
+    expect(
+      context.mocks.stripe.checkout.sessions.list,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({ starting_after: "cs_other" }),
+    );
   });
+
+  it.each(["open", "expired"])(
+    "remembers Not now for an %s Session across visits, without consuming the member's answer",
+    async (state) => {
+      const actor = createBddApi(context).user();
+      await enableSurvey(actor);
+      const checkout = await createCheckout(actor);
+      let session = { ...checkout, status: state };
+      mockCheckoutSessions([session]);
+      context.mocks.stripe.checkout.sessions.update.mockImplementation(
+        (id, args) => {
+          expect(id).toBe(session.id);
+          const update = object({ metadata: record(string(), string()) }).parse(
+            args,
+          );
+          session = {
+            ...session,
+            metadata: { ...session.metadata, ...update.metadata },
+          };
+          mockCheckoutSessions([
+            session,
+            {
+              ...checkout,
+              id: "cs_older",
+              created: (checkout.created ?? 0) - 60,
+            },
+          ]);
+          return Promise.resolve(session);
+        },
+      );
+      const before = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(before.body.abandonedCheckout?.checkoutSessionId).toBe(
+        checkout.id,
+      );
+      await accept(
+        surveyClient().dismiss({
+          headers: authHeaders(),
+          body: { checkoutSessionId: checkout.id },
+        }),
+        [200],
+      );
+      const nextVisit = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(nextVisit.body.abandonedCheckout).toBeNull();
+      expect(nextVisit.body.answered).toStrictEqual([]);
+      mockCheckoutSessions([{ ...checkout, id: "cs_next_purchase" }, session]);
+      const nextPurchase = await accept(
+        surveyClient().status({ headers: authHeaders() }),
+        [200],
+      );
+      expect(nextPurchase.body.abandonedCheckout?.checkoutSessionId).toBe(
+        "cs_next_purchase",
+      );
+    },
+  );
 
   it("does not reward a free member while starter credits are still available", async () => {
     const bdd = createBddApi(context);

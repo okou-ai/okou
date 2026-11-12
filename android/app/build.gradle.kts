@@ -13,6 +13,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["useTestStorageService"] = "true"
     }
     buildTypes { debug { applicationIdSuffix = ".debug" } }
     buildFeatures { compose = true }
@@ -22,7 +24,18 @@ android {
     }
     sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/brand/res"))
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/brand/assets"))
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        animationsDisabled = true
+        managedDevices {
+            localDevices.create("pixel2Api35") {
+                device = "Pixel 2"
+                apiLevel = 35
+                systemImageSource = "aosp"
+                require64Bit = true
+            }
+        }
+    }
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
@@ -38,6 +51,7 @@ tasks.named("preBuild") { dependsOn(generateBrandFonts) }
 val generateLicenseAssets by
     tasks.registering(Sync::class) {
         from("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") }
+        from("../../ios/Okou/DesignSystem/Lucide-LICENSE.txt")
         into(layout.buildDirectory.dir("generated/brand/assets/licenses"))
     }
 
@@ -50,6 +64,8 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.navigation.compose)
+    implementation(libs.datastore.preferences)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
@@ -57,4 +73,10 @@ dependencies {
     testImplementation(libs.compose.ui.test)
     testImplementation(libs.lifecycle.runtime.testing)
     debugImplementation(libs.compose.ui.test.manifest)
+    androidTestImplementation(libs.test.core.ktx)
+    androidTestImplementation(libs.test.ext.junit)
+    androidTestImplementation(libs.test.runner)
+    androidTestImplementation(libs.test.uiautomator)
+    androidTestImplementation(libs.test.storage)
+    androidTestUtil(libs.test.services)
 }

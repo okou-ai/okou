@@ -12,11 +12,6 @@ import { number, object } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
-import {
-  getStripeClient,
-  isStripeResourceMissingError,
-} from "../external/stripe-client";
-import { settle } from "../utils";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 
 /** About one task's worth of credits, granted once per organization. */
@@ -194,45 +189,5 @@ export const answeredBillingSurveys$ = command(
     return rows.map((row) => {
       return row.survey;
     });
-  },
-);
-
-/** Completed sessions, including asynchronous payments, are never abandonment. */
-export const checkoutUnpaid$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly sessionId: string },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const [org] = await get(db$)
-      .select({ customerId: orgMetadata.stripeCustomerId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!org?.customerId) {
-      return false;
-    }
-    const result = await settle(
-      getStripeClient().checkout.sessions.retrieve(args.sessionId),
-    );
-    signal.throwIfAborted();
-    if (!result.ok) {
-      if (isStripeResourceMissingError(result.error)) {
-        return false;
-      }
-      throw result.error;
-    }
-    const session = result.value;
-    const customerId =
-      typeof session.customer === "string"
-        ? session.customer
-        : session.customer?.id;
-    return (
-      customerId === org.customerId &&
-      session.metadata?.orgId === args.orgId &&
-      (session.status === "open" || session.status === "expired") &&
-      session.payment_status === "unpaid"
-    );
   },
 );

@@ -1,5 +1,5 @@
 {
-  "id": "2fc31884-f4a5-4422-a09d-2a8e2ff95c50",
+  "id": "c4c134e7-d95c-4cfe-b8a3-b90405c04096",
   "prevId": "224dc28b-b0d7-4651-ab43-417de73e3642",
   "version": "7",
   "dialect": "postgresql",
@@ -4693,134 +4693,6 @@
         "billing_run_attribution_lifecycle_check": {
           "name": "billing_run_attribution_lifecycle_check",
           "value": "(\n          (\"billing_run_attribution\".\"run_lifecycle_context\" IN ('unknown', 'legacy_unavailable')\n            AND \"billing_run_attribution\".\"run_terminal_status\" IS NULL AND \"billing_run_attribution\".\"run_completed_at\" IS NULL)\n          OR (\"billing_run_attribution\".\"run_lifecycle_context\" = 'captured' AND (\n            (\"billing_run_attribution\".\"run_terminal_status\" IS NULL AND \"billing_run_attribution\".\"run_completed_at\" IS NULL)\n            OR (\"billing_run_attribution\".\"run_terminal_status\" IS NOT NULL\n              AND \"billing_run_attribution\".\"run_terminal_status\" IN ('completed', 'failed', 'cancelled', 'timeout'))\n          ))\n        )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.billing_survey_responses": {
-      "name": "billing_survey_responses",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "survey": {
-          "name": "survey",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "answer": {
-          "name": "answer",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "detail": {
-          "name": "detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "checkout_kind": {
-          "name": "checkout_kind",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reward_credits": {
-          "name": "reward_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_billing_survey_responses_member": {
-          "name": "uq_billing_survey_responses_member",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "survey",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_billing_survey_responses_survey_created": {
-          "name": "idx_billing_survey_responses_survey_created",
-          "columns": [
-            {
-              "expression": "survey",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_billing_survey_responses_survey": {
-          "name": "chk_billing_survey_responses_survey",
-          "value": "\"billing_survey_responses\".\"survey\" IN ('credits_exhausted', 'checkout_abandoned')"
-        },
-        "chk_billing_survey_responses_reward": {
-          "name": "chk_billing_survey_responses_reward",
-          "value": "\"billing_survey_responses\".\"reward_credits\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -10482,6 +10354,15 @@
           "columns": [
             "id",
             "org_id"
+          ]
+        },
+        "uq_cloudflare_access_configs_org_scope": {
+          "name": "uq_cloudflare_access_configs_org_scope",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id",
+            "scope"
           ]
         }
       },

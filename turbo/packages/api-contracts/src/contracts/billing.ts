@@ -125,8 +125,6 @@ const billingStatusResponseSchema = object({
 
 const checkoutResponseSchema = object({
   url: string(),
-  // Older API deployments only return the URL; they cannot be surveyed safely.
-  checkoutSessionId: string().optional(),
 });
 
 const subscriptionPurchasePreviewBaseSchema = object({
@@ -162,7 +160,6 @@ const billingPurchaseConfirmResponseSchema = discriminatedUnion("status", [
   object({
     status: literal("checkout_required"),
     checkoutUrl: url(),
-    checkoutSessionId: string().optional(),
   }),
 ]);
 
@@ -626,7 +623,10 @@ const billingSurveyStatusResponseSchema = object({
   answered: array(billingSurveyKindSchema),
   /** Bonus credits a member receives for answering `credits_exhausted`. */
   creditsExhaustedReward: number().int().nonnegative(),
-  checkoutUnpaid: boolean(),
+  abandonedCheckout: object({
+    checkoutSessionId: string().min(1).max(255),
+    checkoutKind: zEnum(BILLING_SURVEY_CHECKOUT_KINDS),
+  }).nullable(),
 });
 
 const billingSurveySubmitResponseSchema = object({
@@ -1387,7 +1387,7 @@ export const billingSurveyContract = c.router({
     method: "GET",
     path: "/api/billing/survey",
     headers: authHeadersSchema,
-    query: object({ checkoutSessionId: string().min(1).max(255).optional() }),
+    query: object({ checkoutReturn: literal("canceled").optional() }),
     responses: {
       200: billingSurveyStatusResponseSchema,
       400: apiErrorSchema,
@@ -1395,7 +1395,7 @@ export const billingSurveyContract = c.router({
       404: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "List the billing surveys the current member has answered",
+    summary: "Find the current member's billing surveys and abandoned Checkout",
   },
   submit: {
     method: "POST",
@@ -1410,6 +1410,20 @@ export const billingSurveyContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Record a one-question billing survey answer",
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/billing/survey/dismiss",
+    headers: authHeadersSchema,
+    body: object({ checkoutSessionId: string().min(1).max(255) }),
+    responses: {
+      200: object({ dismissed: boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Dismiss the abandoned-checkout question for this Checkout",
   },
 });
 

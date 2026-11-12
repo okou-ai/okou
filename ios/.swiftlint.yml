@@ -20,6 +20,8 @@ only_rules:
   - okou_resource_cancellation
   - okou_subscription_teardown
   - okou_import_boundaries
+  - okou_storage_boundaries
+  - okou_task_lifecycle
 
 included:
   - Okou

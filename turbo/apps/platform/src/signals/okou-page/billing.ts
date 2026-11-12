@@ -34,11 +34,7 @@ import { currentLocale, i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
-import {
-  clearPendingBillingCheckout$,
-  markBillingCheckoutPending$,
-  markBillingCheckoutReturned$,
-} from "../billing-checkout-pending.ts";
+import { setBillingCheckoutCanceled$ } from "../billing-checkout-return.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
@@ -636,13 +632,13 @@ export const handleBillingRedirect$ = command(
       signal.throwIfAborted();
     }
     if (billing === "canceled" || credits === "canceled") {
-      set(markBillingCheckoutReturned$);
+      await set(setBillingCheckoutCanceled$, true, signal);
     } else if (
       billing === "pro" ||
       billing === "team" ||
       credits === "purchased"
     ) {
-      set(clearPendingBillingCheckout$);
+      await set(setBillingCheckoutCanceled$, false, signal);
     }
 
     searchParams.delete("billing");
@@ -786,12 +782,7 @@ export const startCheckout$ = command(
       throw new Error("Plan checkout returned an unexpected confirmation");
     }
     set(capturePaidOnboardingRedirectToStripe$, "paywall");
-    await set(
-      markBillingCheckoutPending$,
-      "plan",
-      result.body.checkoutSessionId,
-      signal,
-    );
+    await set(setBillingCheckoutCanceled$, false, signal);
     signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
@@ -855,12 +846,7 @@ export const startUsagePackCheckout$ = command(
         "Usage pack checkout returned an unexpected confirmation",
       );
     }
-    await set(
-      markBillingCheckoutPending$,
-      "usage_pack",
-      result.body.checkoutSessionId,
-      signal,
-    );
+    await set(setBillingCheckoutCanceled$, false, signal);
     signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
@@ -901,12 +887,7 @@ export const confirmSubscriptionPurchase$ = command(
           );
     signal.throwIfAborted();
     if ("url" in response.body) {
-      await set(
-        markBillingCheckoutPending$,
-        state.purchaseType,
-        response.body.checkoutSessionId,
-        signal,
-      );
+      await set(setBillingCheckoutCanceled$, false, signal);
       signal.throwIfAborted();
       if (state.newTab) {
         window.open(response.body.url, "_blank");
@@ -947,12 +928,7 @@ export const confirmSubscriptionPurchase$ = command(
       return;
     }
     if (response.body.status === "checkout_required") {
-      await set(
-        markBillingCheckoutPending$,
-        state.purchaseType,
-        response.body.checkoutSessionId,
-        signal,
-      );
+      await set(setBillingCheckoutCanceled$, false, signal);
       signal.throwIfAborted();
       if (state.newTab) {
         window.open(response.body.checkoutUrl, "_blank");
@@ -1228,12 +1204,7 @@ export const startCreditCheckout$ = command(
       return;
     }
     // Hosted Checkout remains the fallback when saved billing is unavailable.
-    await set(
-      markBillingCheckoutPending$,
-      "credits",
-      result.body.checkoutSessionId,
-      signal,
-    );
+    await set(setBillingCheckoutCanceled$, false, signal);
     signal.throwIfAborted();
     if (newTab) {
       window.open(result.body.url, "_blank");
@@ -1265,12 +1236,7 @@ export const confirmCreditPurchase$ = command(
       return;
     }
     if (result.body.status === "checkout_required") {
-      await set(
-        markBillingCheckoutPending$,
-        "credits",
-        result.body.checkoutSessionId,
-        signal,
-      );
+      await set(setBillingCheckoutCanceled$, false, signal);
       signal.throwIfAborted();
       window.location.href = result.body.checkoutUrl;
       return;

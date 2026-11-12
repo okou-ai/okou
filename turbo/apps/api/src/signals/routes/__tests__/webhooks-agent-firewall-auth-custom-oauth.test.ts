@@ -165,7 +165,11 @@ async function setupCustomOAuthFirewall(
     ownedAccountIds.add(account.id);
     return account;
   }
-  function request(connectionId: string, forceRefresh: boolean) {
+  function request(
+    connectionId: string,
+    forceRefresh: boolean,
+    networkAdmission = false,
+  ) {
     const internalName = `custom_connector_${connector.id.replaceAll("-", "")}`;
     const secretKey = `CUSTOM_${connector.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
     return fw.requestFirewallAuth(
@@ -181,6 +185,7 @@ async function setupCustomOAuthFirewall(
           routingVariables: {},
         },
         forceRefresh,
+        ...(networkAdmission ? { networkAdmission: true as const } : {}),
       },
       [200, 502],
     );
@@ -188,6 +193,28 @@ async function setupCustomOAuthFirewall(
   const account = await connect({ intent: "add", displayName: "First" });
   return { actor, account, connector, connectors, provider, connect, request };
 }
+
+test("custom network admission is explicitly opted in and leaves installed Runner responses unchanged", async () => {
+  const fixture = createPublicFirewallFixture(context, {
+    orgRole: "org:admin",
+  });
+  await fixture.run(async () => {
+    const custom = await setupCustomOAuthFirewall(
+      "configured",
+      undefined,
+      {},
+      fixture,
+    );
+    const legacy = await custom.request(custom.account.id, false);
+    expect(legacy.status).toBe(200);
+    expect(legacy.body).not.toHaveProperty("networkAdmission");
+    const admitted = await custom.request(custom.account.id, false, true);
+    expect(admitted.status).toBe(200);
+    expect(admitted.body).toMatchObject({
+      networkAdmission: { kind: "direct" },
+    });
+  });
+});
 
 describe("Custom Automatic DCR credential retirement", () => {
   it.each(["invalid_client", "expired registration"] as const)(

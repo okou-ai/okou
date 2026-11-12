@@ -104,6 +104,7 @@ import flow_metadata_keys as metadata_keys
 import http_local_responses
 import matching
 import request_classification
+import stream_capture
 from logging_utils import log_proxy_entry, project_url_for_proxy_log
 
 _HTTP_STATUS_UNAUTHORIZED = 401
@@ -672,9 +673,7 @@ def _replace_response_content(
 ) -> bytes | None:
     if flow.response is None:
         return None
-    flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)
+    stream_capture.clear_response_capture_state(flow)
     # Mapping membership and deletion decode values that we only need to discard.
     flow.response.headers.fields = tuple(
         field

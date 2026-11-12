@@ -105,7 +105,7 @@ with open(sys.argv[1], 'wb') as f:
         'signingCertificate': sys.argv[4],
         'provisioningProfiles': {'ai.okou.ios': sys.argv[2], 'ai.okou.ios.notifications': sys.argv[3]},
         'manageAppVersionAndBuildNumber': False,
-        'testFlightInternalTestingOnly': True,
+        'testFlightInternalTestingOnly': False,
         'uploadSymbols': True,
     }, f)
 PYEXPORT

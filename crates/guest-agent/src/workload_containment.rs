@@ -13,7 +13,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
@@ -190,7 +190,7 @@ impl WorkloadContainment {
         unsafe {
             command
                 .as_std_mut()
-                .pre_exec(move || write_self_to_cgroup(placement.as_raw_fd()));
+                .pre_exec(move || process_control_ipc::write_self_to_cgroup(placement.as_fd()));
         }
         Ok(())
     }
@@ -450,24 +450,6 @@ fn set_close_on_exec(fd: RawFd, current_flags: libc::c_int) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
-}
-
-fn write_self_to_cgroup(fd: RawFd) -> io::Result<()> {
-    loop {
-        // SAFETY: `fd` is open for writing and the one-byte buffer is valid.
-        let written = unsafe { libc::write(fd, b"0".as_ptr().cast(), 1) };
-        if written == 1 {
-            return Ok(());
-        }
-        if written < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error);
-        }
-        return Err(io::Error::from_raw_os_error(libc::EIO));
-    }
 }
 
 #[cfg(test)]

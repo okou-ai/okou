@@ -54,7 +54,6 @@
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::fmt;
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -2756,24 +2755,25 @@ async fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path:
         Err(_) => return,
     };
 
-    match cached_archive_exists(archive_path).await {
-        Ok(false) => {}
-        Ok(true) | Err(_) => return,
+    let lock_path = lock_path.to_path_buf();
+    let archive_path = archive_path.to_path_buf();
+    // Accepted physical cleanup owns the flock even if population is aborted.
+    // Recheck the archive and pathname inside that owner before unlinking.
+    let result = tokio::task::spawn_blocking(move || {
+        match std::fs::metadata(&archive_path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(_) | Err(_) => return,
+        }
+        if !matches!(lock::lock_matches_path(&lock, &lock_path), Ok(true)) {
+            return;
+        }
+        let _ = std::fs::remove_file(&lock_path);
+    })
+    .await;
+
+    if let Err(error) = result {
+        std::panic::resume_unwind(error.into_panic());
     }
-
-    let Ok(lock_meta) = lock.metadata() else {
-        return;
-    };
-
-    match fs::symlink_metadata(lock_path).await {
-        Ok(path_meta)
-            if path_meta.dev() == lock_meta.dev() && path_meta.ino() == lock_meta.ino() => {}
-        Ok(_) => return,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return,
-        Err(_) => return,
-    }
-
-    let _ = fs::remove_file(lock_path).await;
 }
 
 async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {

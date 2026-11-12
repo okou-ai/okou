@@ -457,7 +457,6 @@ async function checkoutUsagePackLifecycle(
   );
   expect(response.body).toStrictEqual({
     url: `https://checkout.stripe.test/${checkoutSessionId}`,
-    checkoutSessionId,
   });
   const usagePackSubscriptionId = checkoutSubscriptionId(
     context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
@@ -479,7 +478,7 @@ async function checkoutUsagePackLifecycle(
   expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
     expect.objectContaining({
       customer: customerId,
-      metadata,
+      metadata: { ...metadata, billingSurveyUserId: userId },
       subscription_data: { metadata },
       line_items: [
         {

@@ -199,6 +199,90 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     XCTAssertTrue(store.accounts.isEmpty)
   }
 
+  func testCloseDrainsReplacedAuthorizationStartsAndCancelsBothLateSessions() async throws {
+    let first = ModelResponseGate()
+    let second = ModelResponseGate()
+    let firstStarted = expectation(description: "First authorization start")
+    let secondStarted = expectation(description: "Replacement authorization start")
+    let starts = Mutex(0)
+    let cancellations = Mutex<Set<String>>([])
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/sessions") {
+        let attempt = starts.withLock {
+          $0 += 1
+          return $0
+        }
+        if attempt == 1 {
+          firstStarted.fulfill()
+          await first.wait()
+        } else {
+          secondStarted.fulfill()
+          await second.wait()
+        }
+        return authSession(code: true, token: "late-session-\(attempt)")
+      }
+      if request.url!.path.hasSuffix("/cancel") {
+        let token = try XCTUnwrap(authBody(request)["sessionToken"])
+        cancellations.withLock { _ = $0.insert(token) }
+        return ChatHTTPResponse(body: "{\"status\":\"cancelled\"}")
+      }
+      throw URLError(.unsupportedURL)
+    }
+    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    defer {
+      first.open()
+      second.open()
+      store.close()
+    }
+    store.start(type: .codex)
+    await fulfillment(of: [firstStarted], timeout: 3)
+    store.start(type: .claude)
+    await fulfillment(of: [secondStarted], timeout: 3)
+    let completion = store.authorization.close()
+    store.close()
+    first.open()
+    second.open()
+    await completion.value
+    XCTAssertEqual(cancellations.withLock { $0 }, ["late-session-1", "late-session-2"])
+    XCTAssertEqual(store.phase, .idle)
+    XCTAssertNil(store.browserURL)
+    XCTAssertNil(store.authType)
+  }
+
+  func testCloseCompletionIncludesPendingRemoteSessionCancellation() async throws {
+    let scheduled = expectation(description: "Authorization session is pending")
+    let clock = SubscriptionAuthorizationClock(didSchedule: { scheduled.fulfill() })
+    let cancelling = expectation(description: "Remote cancellation is in flight")
+    let response = ModelResponseGate()
+    let cancelled = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/sessions") { return authSession(code: false) }
+      if request.url!.path.hasSuffix("/cancel") {
+        cancelling.fulfill()
+        await response.wait()
+        cancelled.withLock { $0 = true }
+        return ChatHTTPResponse(body: "{\"status\":\"cancelled\"}")
+      }
+      throw URLError(.unsupportedURL)
+    }
+    let store = PersonalSubscriptionStore(
+      client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
+    defer {
+      response.open()
+      store.close()
+    }
+    store.start(type: .claude)
+    await fulfillment(of: [scheduled], timeout: 3)
+    let completion = store.authorization.close()
+    store.close()
+    await fulfillment(of: [cancelling], timeout: 3)
+    response.open()
+    await completion.value
+    XCTAssertTrue(cancelled.withLock { $0 })
+    XCTAssertEqual(store.phase, .idle)
+    XCTAssertNil(store.authType)
+  }
+
   func testFailedClaudeCodeCanRetryAndCancelClearsAllTransientState() async throws {
     let cancelled = expectation(description: "Cancel pending Claude session")
     let fixture = ChatHTTPFixture { request in

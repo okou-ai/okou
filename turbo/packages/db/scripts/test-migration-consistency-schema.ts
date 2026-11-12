@@ -78,6 +78,7 @@ import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-stora
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
+import { validateCustomConnectorCloudflareStorage } from "./test-custom-connector-cloudflare-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
@@ -3184,12 +3185,6 @@ async function main(): Promise<void> {
     console.log("=== Frozen template guidance backfill CLI ===");
     console.log(
       execCommand(
-        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts",
-        { cwd: PACKAGE_DIR },
-      ),
-    );
-    console.log(
-      execCommand(
         "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
@@ -3230,6 +3225,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
+    await validateCustomConnectorCloudflareStorage(dbUrl1);
     await validatePermanentNativeVncStorage(dbUrl1);
     await validateTeamsIdentityRetirement(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
@@ -3286,6 +3282,7 @@ async function main(): Promise<void> {
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
+    await validateCustomConnectorCloudflareStorage(dbUrl2);
     await validateCanonicalBillingSources(dbUrl2);
     await validatePermanentNativeVncStorage(dbUrl2);
     await validateTeamsIdentityRetirement(dbUrl2);

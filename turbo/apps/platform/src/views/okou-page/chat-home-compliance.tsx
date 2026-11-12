@@ -32,21 +32,25 @@ export function ChatHomeCompliance() {
 }
 
 /**
+ * The band under a bottom-anchored composer: a 6px step and one `xs` row. The
+ * capability home fills it with compliance, and a conversation keeps it empty,
+ * so moving from one to the other never moves the composer's bottom edge.
+ *
+ * Desktop only, like the footer row on the plain chat home.
+ */
+const COMPOSER_FOOTNOTE_BAND = "hidden min-w-0 justify-center pt-1.5 sm:flex";
+
+/**
  * Compliance under the composer on the capability home, as one quiet line of
  * framework names. Hovering or pressing it opens each framework's status and
  * the link to the public security page, so the claims stay one step away
  * without spreading five separate fragments around the page.
- *
- * Desktop only, like the footer row on the plain chat home.
  */
 export function CapabilityHomeCompliance() {
   const title = useComplianceTitle();
 
   return (
-    <section
-      aria-label={title}
-      className="hidden min-w-0 justify-center pt-1.5 sm:flex"
-    >
+    <section aria-label={title} className={COMPOSER_FOOTNOTE_BAND}>
       <Popover>
         <PopoverTrigger
           openOnHover
@@ -71,5 +75,17 @@ export function CapabilityHomeCompliance() {
         </PopoverContent>
       </Popover>
     </section>
+  );
+}
+
+/**
+ * The compliance line's room without the line, for a conversation's composer.
+ * The row is 28px because the line's trigger is a `size="xs"` button.
+ */
+export function CapabilityHomeComplianceSpace() {
+  return (
+    <div aria-hidden className={COMPOSER_FOOTNOTE_BAND}>
+      <div className="h-7" />
+    </div>
   );
 }

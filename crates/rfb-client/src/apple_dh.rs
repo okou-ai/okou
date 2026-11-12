@@ -25,9 +25,12 @@ use crate::{
 };
 
 const APPLE_DH: u8 = 30;
-// A 2048-bit minimum and 4096-bit maximum bound both weak groups and peer CPU
-// work. The independently exercised macOS 26.6.2 server uses 512 bytes.
-const MIN_KEY_BYTES: usize = 256;
+// macOS 15 and earlier offer the 1024-bit RFC 2409 group 2 (128 bytes); the
+// independently exercised macOS 26.6.2 server uses 512 bytes. Type 30 only
+// protects the credential exchange, and product admission already requires a
+// verified outer channel that terminates on the Mac, so the lower bound admits
+// those servers. The 4096-bit maximum bounds peer CPU work.
+const MIN_KEY_BYTES: usize = 128;
 const MAX_KEY_BYTES: usize = 512;
 const PRIVATE_BYTES: usize = 32;
 const FIELD_BYTES: usize = 64;

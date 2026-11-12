@@ -220,10 +220,11 @@ const creditCheckoutAuthed$ = command(
       }
     }
 
-    const checkout = await set(
+    const url = await set(
       createCreditCheckoutSession$,
       {
         orgId: auth.orgId,
+        userId: auth.userId,
         credits,
         successUrl,
         cancelUrl,
@@ -246,7 +247,7 @@ const creditCheckoutAuthed$ = command(
       signal.throwIfAborted();
     }
 
-    return { status: 200 as const, body: checkout };
+    return { status: 200 as const, body: { url } };
   },
 );
 
@@ -279,6 +280,7 @@ const creditPurchaseConfirmAuthed$ = command(
     const result = await set(
       confirmExistingBillingCreditPurchase$,
       auth.orgId,
+      auth.userId,
       bodyResult.data.previewToken,
       signal,
     );

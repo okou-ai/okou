@@ -1311,7 +1311,15 @@ export function createThreadClaimRunObjects(
             "top_level",
             committedAt - requestReceivedAt,
             committedAt,
-            { capture_scope: "request_observed_commit" },
+            {
+              capture_scope: "request_observed_commit",
+              ...(requestFacts?.input.enqueueObservationId
+                ? {
+                    enqueue_observation_id:
+                      requestFacts.input.enqueueObservationId,
+                  }
+                : {}),
+            },
           );
         }
         timing.recordDuration(
@@ -2969,8 +2977,6 @@ export function createThreadClaimRunObjects(
       officialWorkflow: officialWorkflowRun,
       framework,
       piSandbox,
-      body,
-      resolved,
     });
     return {
       body,
@@ -5387,7 +5393,6 @@ function createRunBody(args: {
   return {
     prompt: args.prompt.userPrompt,
     agentId: args.agent.id,
-    additionalVolumes: args.body.additionalVolumes,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
     permissionPolicies: args.permissionPolicies ?? undefined,

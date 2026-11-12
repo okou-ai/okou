@@ -128,7 +128,6 @@ import {
   parseBillingPreviewToken,
 } from "./billing-purchase-preview-token.service";
 import {
-  checkoutRequiredResponse,
   activeUsagePackPlanPriceId,
   activeUsagePackPriceId,
   isUsagePackPlanPriceId,
@@ -197,6 +196,7 @@ export type UsagePackCheckoutAllocation =
 
 export interface CreateUsagePackCheckoutSessionArgs {
   readonly orgId: string;
+  readonly userId: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly planPriceId: string;
   readonly allocations: readonly UsagePackCheckoutAllocation[];
@@ -211,11 +211,7 @@ interface StartUsagePackPurchaseArgs extends CreateUsagePackCheckoutSessionArgs 
 
 type StartUsagePackPurchaseResult =
   | { readonly status: "conflict" }
-  | {
-      readonly status: "checkout";
-      readonly url: string;
-      readonly checkoutSessionId: string;
-    }
+  | { readonly status: "checkout"; readonly url: string }
   | {
       readonly status: "preview";
       readonly preview: UsagePackPurchasePreviewResponse;
@@ -681,11 +677,7 @@ const preparePendingUsagePackCheckout$ = command(
 
 type PreparedUsagePackPurchaseSnapshot =
   | { readonly kind: "conflict" }
-  | {
-      readonly kind: "redirect";
-      readonly url: string;
-      readonly checkoutSessionId: string;
-    }
+  | { readonly kind: "redirect"; readonly url: string }
   | { readonly kind: "snapshot"; readonly usagePackSubscriptionId: string };
 
 /**
@@ -705,7 +697,7 @@ const prepareUsagePackPurchaseSnapshot$ = command(
       customerId,
       signal,
     );
-    const result = pendingSnapshotResult(
+    return pendingSnapshotResult(
       await set(
         writeUsagePackPendingSnapshots$,
         { kind: "prepare-purchase", purchase: args, customerId, prepared },
@@ -713,15 +705,6 @@ const prepareUsagePackPurchaseSnapshot$ = command(
       ),
       "prepare-purchase",
     );
-    if (result.kind === "redirect") {
-      if (!prepared.retained) {
-        throw new Error(
-          "Redirected usage pack Checkout has no retained session",
-        );
-      }
-      return { ...result, checkoutSessionId: prepared.retained.session.id };
-    }
-    return result;
   },
 );
 
@@ -865,10 +848,7 @@ const createUsagePackCheckoutForSnapshot$ = command(
       readonly usagePackSubscriptionId: string;
       readonly fromClaim?: boolean;
     },
-  ): Promise<{
-    readonly url: string;
-    readonly checkoutSessionId: string;
-  } | null> => {
+  ): Promise<string | null> => {
     const stripe = getStripeClient();
     const metadata = usagePackSubscriptionMetadata({
       orgId: args.purchase.orgId,
@@ -887,7 +867,7 @@ const createUsagePackCheckoutForSnapshot$ = command(
         allow_promotion_codes: true,
         success_url: args.purchase.successUrl,
         cancel_url: args.purchase.cancelUrl,
-        metadata,
+        metadata: { ...metadata, billingSurveyUserId: args.purchase.userId },
         subscription_data: { metadata },
       },
       {
@@ -912,14 +892,14 @@ const createUsagePackCheckoutForSnapshot$ = command(
       ? await set(correlateClaimedUsagePackCheckout$, correlationArgs)
       : await set(correlateUsagePackCheckout$, correlationArgs);
     if (correlation === "correlated") {
-      return { url: session.url, checkoutSessionId: session.id };
+      return session.url;
     }
     // The Session never became payable through a retained snapshot.
     await stripe.checkout.sessions.expire(session.id);
     if (correlation === "superseded") {
       // A later purchase retired this snapshot after it was selected: the same
       // outcome as this request completing first and then being superseded.
-      return { url: session.url, checkoutSessionId: session.id };
+      return session.url;
     }
     return null;
   },
@@ -936,15 +916,13 @@ const createUsagePackCheckout$ = command(
     // Provider I/O runs after the snapshot selection commits; the Session is
     // published by the conditional correlation, and a lost correlation is a
     // deterministic conflict.
-    const checkout = await set(createUsagePackCheckoutForSnapshot$, {
+    const url = await set(createUsagePackCheckoutForSnapshot$, {
       purchase: args,
       customerId,
       usagePackSubscriptionId,
     });
     signal.throwIfAborted();
-    return checkout === null
-      ? { status: "conflict" }
-      : { status: "checkout", ...checkout };
+    return url === null ? { status: "conflict" } : { status: "checkout", url };
   },
 );
 
@@ -971,11 +949,7 @@ const createUsagePackCheckoutSession$ = command(
       return { status: "conflict" };
     }
     if (prepared.kind === "redirect") {
-      return {
-        status: "checkout",
-        url: prepared.url,
-        checkoutSessionId: prepared.checkoutSessionId,
-      };
+      return { status: "checkout", url: prepared.url };
     }
     return await set(
       createUsagePackCheckout$,
@@ -1215,11 +1189,7 @@ export const startUsagePackPurchase$ = command(
       return { status: "conflict" };
     }
     if (prepared.kind === "redirect") {
-      return {
-        status: "checkout",
-        url: prepared.url,
-        checkoutSessionId: prepared.checkoutSessionId,
-      };
+      return { status: "checkout", url: prepared.url };
     }
     if (route.kind === "checkout") {
       return await set(
@@ -1442,7 +1412,6 @@ async function existingUsagePackPurchaseResult(
         status: "confirmed",
         response: {
           status: "checkout_required",
-          checkoutSessionId: session.id,
           checkoutUrl: preview.successUrl.replace(
             "{CHECKOUT_SESSION_ID}",
             session.id,
@@ -1457,7 +1426,6 @@ async function existingUsagePackPurchaseResult(
         response: {
           status: "checkout_required",
           checkoutUrl: session.url,
-          checkoutSessionId: session.id,
         },
         paidInvoice: null,
       };
@@ -1606,11 +1574,12 @@ async function admitClaimedUsagePackPurchase(
 const confirmUsagePackPurchaseSnapshot$ = command(
   async (
     { set },
-    orgId: string,
+    identity: { readonly orgId: string; readonly userId: string },
     preview: UsagePackPurchasePreviewToken,
     snapshot: UsagePackPurchaseSnapshot,
     providerSignal: AbortSignal,
   ): Promise<ConfirmUsagePackPurchaseResult> => {
+    const { orgId, userId } = identity;
     const existingResult = await existingUsagePackPurchaseResult(
       preview,
       snapshot,
@@ -1660,6 +1629,7 @@ const confirmUsagePackPurchaseSnapshot$ = command(
         set(createUsagePackCheckoutForSnapshot$, {
           purchase: {
             orgId,
+            userId,
             tier: preview.tier,
             planPriceId: preview.planPriceId,
             allocations: snapshot.allocations,
@@ -1679,13 +1649,13 @@ const confirmUsagePackPurchaseSnapshot$ = command(
         );
         throw checkout.error;
       }
-      const session = checkout.value;
+      const checkoutUrl = checkout.value;
       providerSignal.throwIfAborted();
-      return session === null
+      return checkoutUrl === null
         ? { status: "invalid_preview" }
         : {
             status: "confirmed",
-            response: checkoutRequiredResponse(session),
+            response: { status: "checkout_required", checkoutUrl },
             paidInvoice: null,
           };
     }
@@ -1758,6 +1728,7 @@ export const confirmUsagePackPurchase$ = command(
   async (
     { set },
     orgId: string,
+    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmUsagePackPurchaseResult> => {
@@ -1821,7 +1792,7 @@ export const confirmUsagePackPurchase$ = command(
     }
     return await set(
       confirmUsagePackPurchaseSnapshot$,
-      orgId,
+      { orgId, userId },
       preview,
       snapshot,
       signal,

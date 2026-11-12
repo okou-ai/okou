@@ -156,18 +156,12 @@ struct AssistantFailureCard: View {
     .accessibilityIdentifier("assistant-failure-\(state.failure.id)")
     .sheet(isPresented: $showsModels) {
       if let selection = conversation.modelSelection {
-        ChatModelPickerView(selection: selection)
-          .safeAreaInset(edge: .bottom) {
-            Link(
-              "Open model settings",
-              destination: conversation.webURL.appending(queryItems: [
-                URLQueryItem(name: "settings", value: "model")
-              ])
-            ).padding()
-          }
-          .presentationDetents([.medium, .large])
-          .presentationDragIndicator(.visible)
-          .okouSheetBackground()
+        ChatModelPickerView(
+          selection: selection,
+          settingsURL: conversation.webURL.appending(queryItems: [
+            URLQueryItem(name: "settings", value: "model")
+          ])
+        )
       }
     }
   }

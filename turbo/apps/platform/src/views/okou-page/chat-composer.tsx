@@ -314,10 +314,13 @@ const COMPOSER_CONTROL_FOCUS_CLASS =
 // Props
 // ---------------------------------------------------------------------------
 
+/** `home` keeps the start page's two-line field wherever the composer sits. */
+export type ComposerLayout = "default" | "home";
+
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
-  readonly layout?: "default" | "thread";
+  readonly layout?: ComposerLayout;
 }
 
 interface ComposerComputerUseHost {
@@ -5854,7 +5857,7 @@ interface ComposerLayoutHeightClassNames {
 function composerLayoutHeightClassNames(
   { singleLineOnMobile, forwardComposer }: ComposerSignals["editor"],
   hasTemplateAttachment: boolean,
-  layout: "default" | "thread",
+  layout: ComposerLayout,
 ): ComposerLayoutHeightClassNames {
   // The start page defaults to the compact shell at every width. Most first
   // messages are a line or two, and a field several lines deep reads as a
@@ -5862,10 +5865,12 @@ function composerLayoutHeightClassNames(
   // composer, so every pixel of empty field is also taken from the room the
   // slash and mention menus open into. The input still grows with the draft.
   // The forward dialog shares these signals and is not that page, so it keeps
-  // the dialog's shell. The capability homepage opts into the thread's
-  // responsive shell because its composer also sits at the bottom.
-  const responsive = singleLineOnMobile || layout === "thread";
-  const startPage = !responsive && !forwardComposer;
+  // the dialog's shell. The capability home keeps the compact shell for the
+  // same reason, including when it fronts an empty chat, whose thread signals
+  // would otherwise take the conversation's responsive shell.
+  const home = layout === "home";
+  const responsive = !home && singleLineOnMobile;
+  const startPage = home || (!responsive && !forwardComposer);
   if (hasTemplateAttachment) {
     return responsive
       ? {
@@ -6966,7 +6971,7 @@ function ComposerCard({
   layout,
 }: {
   signals: ComposerSignals;
-  layout: "default" | "thread";
+  layout: ComposerLayout;
 }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);

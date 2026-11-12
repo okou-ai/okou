@@ -107,16 +107,6 @@ const unifiedRunRequestSchema = object({
   agentId: string().optional(),
   vars: record(string(), string()).optional(),
   secrets: record(string(), string()).optional(),
-  volumeVersions: record(string(), string()).optional(),
-
-  // Additional volumes passed directly at run time (bypass compose)
-  additionalVolumes: array(
-    object({
-      name: string(),
-      version: string().optional(),
-      mountPath: string(),
-    }),
-  ).optional(),
 
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the
   // real agent runtime.

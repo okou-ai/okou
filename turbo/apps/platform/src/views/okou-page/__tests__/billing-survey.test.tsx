@@ -14,9 +14,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import { now } from "../../../lib/time.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   findButton,
@@ -29,7 +27,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
-const pendingCheckoutStorage = localStorageSignals("billing-checkout-pending");
 
 function buttonIn(container: HTMLElement, name: string): HTMLElement {
   const match = queryAllByRoleFast("button", container).find((button) => {
@@ -87,7 +84,19 @@ function freeBillingStatus(): BillingStatusResponse {
   };
 }
 
-function installSurveyApi(answered: readonly BillingSurveyKind[] = []) {
+function installSurveyApi(
+  answered: readonly BillingSurveyKind[] = [],
+  options: {
+    readonly checkoutKind?: "plan" | "credits";
+    readonly returnedOnly?: boolean;
+  } = {},
+) {
+  let abandonedCheckout = options.checkoutKind
+    ? {
+        checkoutSessionId: "cs_survey_test",
+        checkoutKind: options.checkoutKind,
+      }
+    : null;
   const submitted: BillingSurveyRequest[] = [];
   context.mocks.data.org({
     id: "org_billing_survey",
@@ -97,7 +106,7 @@ function installSurveyApi(answered: readonly BillingSurveyKind[] = []) {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, freeBillingStatus());
   });
-  context.mocks.api(billingSurveyContract.status, ({ respond }) => {
+  context.mocks.api(billingSurveyContract.status, ({ query, respond }) => {
     return respond(200, {
       answered: [
         ...answered,
@@ -106,39 +115,28 @@ function installSurveyApi(answered: readonly BillingSurveyKind[] = []) {
         }),
       ],
       creditsExhaustedReward: 200,
-      checkoutUnpaid: true,
+      abandonedCheckout:
+        options.returnedOnly && query.checkoutReturn !== "canceled"
+          ? null
+          : abandonedCheckout,
     });
   });
   context.mocks.api(billingSurveyContract.submit, ({ body, respond }) => {
     submitted.push(body);
+    if (body.survey === "checkout_abandoned") {
+      abandonedCheckout = null;
+    }
     return respond(200, {
       recorded: true,
       rewardCredits: body.survey === "credits_exhausted" ? 200 : 0,
     });
   });
+  context.mocks.api(billingSurveyContract.dismiss, ({ body, respond }) => {
+    expect(body.checkoutSessionId).toBe(abandonedCheckout?.checkoutSessionId);
+    abandonedCheckout = null;
+    return respond(200, { dismissed: true });
+  });
   return submitted;
-}
-
-/**
- * A Checkout the browser started on an earlier visit. The browser keeps this
- * record itself, so the test restores it the way a returning tab finds it.
- */
-function rememberCheckout(args: {
-  readonly startedAgoMs: number;
-  readonly kind: "plan" | "credits";
-}): void {
-  context.store.set(
-    pendingCheckoutStorage.set$,
-    JSON.stringify({
-      version: 1,
-      sessionId: "cs_survey_test",
-      orgId: "org_default",
-      userId: "test-user-123",
-      kind: args.kind,
-      startedAt: now() - args.startedAgoMs,
-      returnedAt: null,
-    }),
-  );
 }
 
 test("Ask a free workspace admin why they are not upgrading and thank them with credits", async () => {
@@ -213,8 +211,10 @@ test("Leave the out-of-credits card unchanged once the member has answered", asy
 
 test("Ask why a purchase was not completed when Stripe sends the member back", async () => {
   const user = userEvent.setup({ delay: null });
-  const submitted = installSurveyApi();
-  rememberCheckout({ startedAgoMs: 60_000, kind: "plan" });
+  const submitted = installSurveyApi([], {
+    checkoutKind: "plan",
+    returnedOnly: true,
+  });
   installRunChat({ chatEvents: [] });
 
   await setupPage({
@@ -251,10 +251,9 @@ test("Ask why a purchase was not completed when Stripe sends the member back", a
   expect(window.location.search).not.toContain("billing=");
 });
 
-test("Ask on the next visit after a Checkout tab was closed without paying", async () => {
+test("Ask on a new device using the unpaid Checkout returned by the server", async () => {
   const user = userEvent.setup({ delay: null });
-  const submitted = installSurveyApi();
-  rememberCheckout({ startedAgoMs: 2 * 60 * 60 * 1000, kind: "credits" });
+  const submitted = installSurveyApi([], { checkoutKind: "credits" });
   installRunChat({ chatEvents: [] });
 
   await setupPage({
@@ -272,12 +271,10 @@ test("Ask on the next visit after a Checkout tab was closed without paying", asy
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(submitted).toStrictEqual([]);
-  expect(context.store.get(pendingCheckoutStorage.get$)).toBeNull();
 });
 
 test("Wait while a recent Checkout may still be open in another tab", async () => {
   installSurveyApi();
-  rememberCheckout({ startedAgoMs: 60_000, kind: "plan" });
   installRunChat({ chatEvents: outOfCreditsChat() });
 
   await setupPage({
@@ -334,7 +331,7 @@ test("Ask another admin for feedback without promising an already claimed organi
     return respond(200, {
       answered: [],
       creditsExhaustedReward: 0,
-      checkoutUnpaid: false,
+      abandonedCheckout: null,
     });
   });
   installRunChat({ chatEvents: outOfCreditsChat() });
@@ -359,10 +356,9 @@ test("Keep a completed Checkout out of the abandonment survey even without a suc
     return respond(200, {
       answered: [],
       creditsExhaustedReward: 200,
-      checkoutUnpaid: false,
+      abandonedCheckout: null,
     });
   });
-  rememberCheckout({ startedAgoMs: 2 * 60 * 60 * 1000, kind: "plan" });
   installRunChat({ chatEvents: outOfCreditsChat() });
   await setupPage({
     context,

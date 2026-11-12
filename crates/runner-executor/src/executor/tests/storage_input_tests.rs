@@ -590,13 +590,18 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     let bytes = archive(&[(SOURCE_FILENAME, content.as_bytes())]);
     assert!(bytes.len() > 15 * 1024 * 1024);
     let hash = hex::encode(Sha256::digest(&bytes));
+    let archive_size = bytes.len() as u64;
     let server = httpmock::MockServer::start();
+    let response = httpmock::HttpMockResponse::builder()
+        .status(200)
+        .body(bytes)
+        .build();
     let download = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .path("/instructions.tar.gz");
-        then.status(200).body(&bytes);
+        then.respond_with(move |_| response.clone());
     });
-    let current = instruction_context(&hash, bytes.len() as u64, "codex", "large-instructions");
+    let current = instruction_context(&hash, archive_size, "codex", "large-instructions");
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let (mut outcome, _) = execute_job(
@@ -641,7 +646,7 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     instruction_check(&overrides, guest.path(), "codex");
     let mut next_context = instruction_context(
         &hash,
-        bytes.len() as u64,
+        archive_size,
         "codex",
         "large-instructions-next-signature",
     );
@@ -673,6 +678,8 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
         "reused instructions must match the complete original content"
     );
     config.background_fill.shutdown().await;
+    // Release the shared archive after every consumer and content assertion.
+    download.delete_async().await;
 }
 
 #[tokio::test]
@@ -864,18 +871,23 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
         .collect::<Vec<_>>();
     let bytes = archive(&files);
     assert!(bytes.len() > 15 * 1024 * 1024);
+    let archive_size = bytes.len() as u64;
+    let hash = hex::encode(Sha256::digest(&bytes));
     let server = httpmock::MockServer::start();
+    let response = httpmock::HttpMockResponse::builder()
+        .status(200)
+        .body(bytes)
+        .build();
     let download = server.mock(|when, then| {
         when.method(httpmock::Method::GET).path("/complete.tar.gz");
-        then.status(200).body(&bytes);
+        then.respond_with(move |_| response.clone());
     });
     let overrides = Arc::new(MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mount = "/home/user/.codex/skills/example";
-    let hash = hex::encode(Sha256::digest(&bytes));
     let (mut outcome, _) = execute_job(
         &factory,
-        context(&hash, bytes.len() as u64, mount, "large"),
+        context(&hash, archive_size, mount, "large"),
         NewSandboxDispatch {
             id: SandboxId::new_v4(),
             reuse_result: SandboxReuseResult::NoReuseKey,
@@ -903,6 +915,8 @@ async fn large_workflow_archive_downloads_through_ordinary_guest_passthrough() {
         );
     }
     config.background_fill.shutdown().await;
+    // Release the shared archive after every consumer and content assertion.
+    download.delete_async().await;
 }
 
 #[tokio::test]

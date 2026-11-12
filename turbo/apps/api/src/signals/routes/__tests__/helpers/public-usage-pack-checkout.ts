@@ -155,7 +155,6 @@ export async function purchaseUsagePacks(
   );
   expect(checkout.body).toStrictEqual({
     url: `https://checkout.stripe.test/${sessionId}`,
-    checkoutSessionId: sessionId,
   });
   if (!checkoutMetadata) {
     throw new Error("Stripe checkout did not receive allocation metadata");

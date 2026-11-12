@@ -22,6 +22,8 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
 | `okou_subscription_teardown` | Pair known CCState subscriptions and block-based notification tokens with cleanup of the original handle or retained collection.                                                        | Native lifecycle ownership                                        |
 | `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
+| `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
+| `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -105,6 +107,36 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `UIView`/`UIViewController` destruction is a valid control lifetime; a retained
   business owner's `deinit` alone is not an explicit close path. Selector-based
   notification registration retains its system-managed semantics.
+- Class/actor owners with a named teardown entry (`close`, `stop`, `cancel`,
+  `dismiss`, `deactivate`, `invalidate`, `detach`, `suspend`, `clear`, or `finish`)
+  pair newly constructed, nonempty Tasks with cancellation or completion of the
+  original handle. A business `deinit` alone is insufficient. The check follows
+  Task-typed properties (or direct Task initializers), arrays/dictionaries of Tasks, immutable
+  snapshots, all-element loops, and same-owner helpers. Dropping the property,
+  clearing a collection, cancelling a different handle, a filtered loop, or an
+  uncalled cleanup closure does not release the work.
+  Single-handle and directly indexed dictionary replacements first cancel or
+  await the old Task, prove that the handle is absent, or transfer it to another
+  explicit completion owner. A UI
+  busy flag alone is not proof; use the actual handle for operation exclusion.
+  A loop must establish safe replacement on each iteration or complete the
+  newly created work before continuing; cancellation only before the loop is
+  insufficient.
+  Dictionary checks distinguish the replaced key from other keys, including
+  immutable local aliases and same-owner helper arguments. Removing an entry or
+  clearing the dictionary does not cancel its original Task. A fresh UUID
+  constructed locally (including its UUID string) can identify an independent
+  insertion; reusing that key still cannot discard newly acquired work. A UUID
+  constructed before a loop is not a fresh key on every iteration.
+  An awaited `value` or `result` establishes completion. A derived Task that
+  awaits the original preserves its completion dependency; cancelling that
+  derived Task does not cancel the original. A synchronous teardown may return
+  a Task that drains its captured original handles, transferring completion to
+  its caller. Such drains use immutable local values or explicit capture-list
+  snapshots; reading a mutable property or local later is not an original-handle
+  capture. This allows accepted writes and late remote cleanup to finish
+  without inventing cancellation or rollback. Resource evaluation Tasks retain
+  the separate `okou_resource_cancellation` contract.
 - Ably, ClerkKit and ClerkKitUI imports belong to the exact realtime,
   authentication, sign-in presentation, authentication-theme and notification
   extension definition sites recorded in `ImportBoundariesRule.swift`. The
@@ -116,6 +148,20 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   graph, identity and realtime modules while retaining system transport,
   storage, crypto and synchronization frameworks. Package test targets retain
   their test-framework and public package imports.
+- Raw `UserDefaults` references, type aliases and injected production types
+  belong to the notification-metadata and one-way preference-migration definition
+  sites in `StorageBoundariesRule.swift`. Project disclosure uses its typed SQLite
+  storage; it does not retain a direct-defaults exception. Callers use their semantic operations.
+  `@AppStorage` remains valid for the registered appearance and sidebar keys at
+  their exact view definition sites; the same file cannot introduce a new
+  business key or a custom `store:`. Direct wrapper construction and aliases do
+  not create another preference owner.
+  Native tests and ChatData test support may construct an explicit nonempty
+  `UserDefaults(suiteName:)`, including qualified and contextual initializers.
+  They may inject its typed value, but cannot acquire `.standard`, an unnamed
+  domain, a constructor/metatype reference, or a type alias hiding that access.
+  Fixtures still own unique suite names and immediate domain cleanup as required
+  by [iOS testing](ios-testing.md#external-fixtures-and-isolation).
 
 ## Static Analysis Limits
 
@@ -125,7 +171,21 @@ and known callback contracts. Cross-file type aliases, arbitrary wrappers,
 indirect helper effects, and custom callback execution semantics need review.
 Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
-dispatch target, collection-held Task, or cross-file teardown contract.
+dispatch target, or cross-file teardown contract.
+Task lifecycle checks require an explicit class/actor lifetime boundary (or a
+business destructor) and directly visible Task construction and storage types.
+Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,
+arbitrary collection mutation, actor reentrancy, owners without a recognized
+teardown entry (including process/SDK lifetimes), and view-owned Task handles
+still require review.
+Key matching uses visible immutable bindings and direct member/literal syntax,
+not runtime equality. Use an immutable snapshot for a mutable or computed key
+when establishing same-key cancellation or absence. Key matching does not prove
+that an object's key property remains unchanged across suspension or that
+arbitrary UUID factories create independent keys.
+The rule does not require a borrower to cancel a shared Task or prove that every
+caller invokes teardown and awaits a returned cleanup Task. A syntactically
+recognized completion dependency is not proof of upstream cancellation.
 Subscription checks recognize local handle transfers, direct Store spellings,
 `store`/`stateStore` members, known notification centers, and local immutable
 center aliases. Cross-file factories, custom callback lifetimes, dynamic
@@ -137,6 +197,11 @@ conditional imports, at known source paths. They do not resolve transitive
 dependencies, inferred SDK values, type aliases or every future UI/SDK module.
 ChatData's known forbidden module edges complement its package manifest;
 unknown dependencies and SDK operations still require architectural review.
+Storage checks restrict explicit native defaults dependencies and registered
+property-wrapper declarations. They do not resolve arbitrary cross-file
+factories, inferred helper parameters, runtime suite-name values, or prove that
+a test suite is unique and eventually cleared. They do not inspect SQLite,
+Keychain, files, or third-party persistence internals.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.

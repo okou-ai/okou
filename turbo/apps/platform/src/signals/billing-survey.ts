@@ -14,14 +14,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
-import { now } from "../lib/time.ts";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedIdentity$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
-import {
-  clearPendingBillingCheckout$,
-  pendingBillingCheckout$,
-} from "./billing-checkout-pending.ts";
+import { billingCheckoutCanceled$ } from "./billing-checkout-return.ts";
 import { reloadBillingStatus$ } from "./okou-page/billing.ts";
 
 export type CreditsExhaustedSurveyAnswer =
@@ -30,14 +26,6 @@ export type CheckoutAbandonedSurveyAnswer =
   (typeof CHECKOUT_ABANDONED_SURVEY_ANSWERS)[number];
 export { CHECKOUT_ABANDONED_SURVEY_ANSWERS, CREDITS_EXHAUSTED_SURVEY_ANSWERS };
 
-/**
- * A member who leaves Checkout open in another tab is still deciding. Only a
- * checkout this old, or one Stripe returned from through its cancel URL, is
- * treated as abandoned.
- */
-const CHECKOUT_ABANDON_GRACE_MS = 30 * 60 * 1000;
-/** Stripe expires a Checkout session after a day; older ones are not asked about. */
-const CHECKOUT_SURVEY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DETAIL_MAX_LENGTH = 500;
 
 export const billingSurveyEnabled$ = computed((get) => {
@@ -51,8 +39,15 @@ const billingSurveyStatus$ = computed(async (get) => {
   if (!get(billingSurveyEnabled$)) {
     return null;
   }
+  const checkoutCanceled = await get(billingCheckoutCanceled$);
+  await get(authenticatedIdentity$);
   const client = get(apiClient$)(billingSurveyContract);
-  const result = await accept(client.status(), [200]);
+  const result = await accept(
+    client.status({
+      query: checkoutCanceled ? { checkoutReturn: "canceled" } : {},
+    }),
+    [200],
+  );
   return result.body;
 });
 
@@ -168,46 +163,29 @@ export const submitCreditsExhaustedSurvey$ = command(
 // Abandoned checkout
 // ---------------------------------------------------------------------------
 
-/**
- * The checkout this member left without paying, once it counts as abandoned
- * and the survey has not been answered yet.
- */
+/** The server discovers the current member's unpaid Checkout. */
 export const abandonedCheckoutSurvey$ = computed(async (get) => {
-  const pending = get(pendingBillingCheckout$);
-  if (!pending) {
-    return null;
-  }
-  const identity = await get(authenticatedIdentity$);
-  if (pending.orgId !== identity.orgId || pending.userId !== identity.userId) {
-    return null;
-  }
-  const age = now() - pending.startedAt;
-  const abandoned =
-    age < CHECKOUT_SURVEY_MAX_AGE_MS &&
-    (pending.returnedAt !== null || age >= CHECKOUT_ABANDON_GRACE_MS);
-  if (!abandoned) {
-    return null;
-  }
   const status = await get(billingSurveyStatus$);
-  if (surveyAnswered(status, "checkout_abandoned")) {
-    return null;
-  }
-  const client = get(apiClient$)(billingSurveyContract);
-  const checkout = await accept(
-    client.status({ query: { checkoutSessionId: pending.sessionId } }),
-    [200],
-  );
-  if (!checkout.body.checkoutUnpaid) {
-    return null;
-  }
-  return { checkoutKind: pending.kind, checkoutSessionId: pending.sessionId };
+  return status?.abandonedCheckout ?? null;
 });
 
-/** "Not now" closes the question until the next abandoned checkout. */
-export const dismissCheckoutAbandonedSurvey$ = command(({ set }) => {
-  set(clearPendingBillingCheckout$);
-  set(internalCheckoutAbandonedDraft$, EMPTY_DRAFT);
-});
+/** Persist a per-Checkout dismissal so another browser does not ask it again. */
+export const dismissCheckoutAbandonedSurvey$ = command(
+  async ({ get, set }, checkoutSessionId: string, signal: AbortSignal) => {
+    const client = get(apiClient$)(billingSurveyContract);
+    await accept(
+      client.dismiss({ body: { checkoutSessionId }, fetchOptions: { signal } }),
+      [200],
+    );
+    signal.throwIfAborted();
+    set(statusReload$, (value) => {
+      return value + 1;
+    });
+    await get(billingSurveyStatus$);
+    signal.throwIfAborted();
+    set(internalCheckoutAbandonedDraft$, EMPTY_DRAFT);
+  },
+);
 
 export const submitCheckoutAbandonedSurvey$ = command(
   async (
@@ -231,7 +209,6 @@ export const submitCheckoutAbandonedSurvey$ = command(
       },
       signal,
     );
-    set(clearPendingBillingCheckout$);
     set(internalCheckoutAbandonedDraft$, EMPTY_DRAFT);
     toast.success(
       i18n.t(($) => {

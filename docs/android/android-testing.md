@@ -60,6 +60,30 @@ just to preserve tests for an obsolete API.
 
 ## Native Acceptance
 
+Use a small instrumented suite for boundaries that need the Android framework,
+such as native Activity ownership, window/IME insets, system Back and platform
+configuration/system bars. Drive real application consumers through platform
+interaction APIs; do not replace their owners or input services to claim native
+coverage. Keep cheap state/error matrices on the JVM instead of replaying every
+case on a device. A supported emulator cohort establishes functional behavior for
+that configuration; OEM input methods and physical-device latency need their own
+evidence.
+
+Prefer build-managed device provisioning/execution/teardown over a second custom
+emulator lifecycle. Isolate test-device state, snapshot and restore every changed
+setting/store, close Activity owners and release adopted test permissions on
+success and failure. Wait for observable UI/window/configuration conditions with
+bounded framework APIs; arbitrary stabilization sleeps are not synchronization.
+
+Capture failure diagnostics before device/Activity cleanup and preserve the
+original error if capture or restoration also fails. Use Test Storage for
+additional files retrieved by the managed runner; an `adb pull` after emulator
+teardown cannot recover them. Retain native reports/logcat and useful revision,
+device/API and failure-image context without turning diagnostics into golden
+tests. Selected device-test failures, cancellations and unexpected skips must
+reach the existing CI gate. Setup, commands and output paths live in the
+[Android README](../../android/README.md#instrumented-android-tests).
+
 For appearance or OS interaction, record source revision, device/emulator,
 Android version/API, density/font scale, theme, locale and actual evidence.
 Exercise relevant IME composition/selection, system back, focus, insets,

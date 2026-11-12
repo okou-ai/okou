@@ -336,7 +336,6 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       });
       expect(response.body).toStrictEqual({
         url: "https://checkout.stripe.com/session/usage-pack",
-        checkoutSessionId,
       });
       if (!createdUsagePackSubscriptionId) {
         throw new Error(
@@ -367,7 +366,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
           allow_promotion_codes: true,
           success_url: `${APP_ORIGIN}/billing?billing=success`,
           cancel_url: `${APP_ORIGIN}/billing?billing=canceled`,
-          metadata,
+          metadata: { ...metadata, billingSurveyUserId: fixture.userId },
           subscription_data: { metadata },
         },
         { idempotencyKey: `usage-pack-checkout:${createdSnapshotId}` },
@@ -672,7 +671,6 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       }
       expect(response.body).toStrictEqual({
         url: "https://checkout.stripe.com/session/usage-pack-recovered",
-        checkoutSessionId,
       });
       expect(
         context.mocks.clerk.organizations.getOrganizationMembershipList,
@@ -1169,7 +1167,6 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       });
       expect(replacement.body).toStrictEqual({
         url: expect.stringMatching(/^https:\/\/checkout\.stripe\.test\//),
-        checkoutSessionId: expect.stringMatching(/^cs_concurrent_/),
       });
       expect(
         [...sessionStates.values()].filter((status) => {
@@ -2075,7 +2072,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       ).create({ body, headers }),
       [200],
     );
-    expect(reused.body).toStrictEqual({ url: checkoutUrl, checkoutSessionId });
+    expect(reused.body).toStrictEqual({ url: checkoutUrl });
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
       1,
     );
@@ -2216,13 +2213,9 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(firstConfirmation.body).toStrictEqual({
       status: "checkout_required",
       checkoutUrl,
-      checkoutSessionId,
     });
     expect(secondConfirmation.body).toStrictEqual(firstConfirmation.body);
-    expect(repeatedPurchase.body).toStrictEqual({
-      url: checkoutUrl,
-      checkoutSessionId,
-    });
+    expect(repeatedPurchase.body).toStrictEqual({ url: checkoutUrl });
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
       1,
     );
@@ -2302,10 +2295,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       client.create({ body: replacementBody, headers }),
       [200],
     );
-    expect(retried.body).toStrictEqual({
-      url: checkoutUrl,
-      checkoutSessionId: replacementSessionId,
-    });
+    expect(retried.body).toStrictEqual({ url: checkoutUrl });
     const replacement =
       context.mocks.stripe.checkout.sessions.create.mock.calls[1];
     expect(replacement).toBeDefined();

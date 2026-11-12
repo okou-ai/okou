@@ -264,7 +264,7 @@ final class NativeAuthFlow {
 
   @discardableResult
   private func run(_ action: @escaping @MainActor () async throws -> Void) -> Task<Void, Never>? {
-    guard !isWorking else { return nil }
+    guard operation == nil else { return nil }
     error = nil
     isWorking = true
     generation += 1

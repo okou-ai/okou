@@ -7,13 +7,14 @@ import Observation
 final class PermissionBatchStore {
   let action: ChatPermissionBatchAction
   var duration: ChatPermissionAction.Duration
+  // The reviewed list and uncertain-write reconciliation survive read cache eviction.
   private(set) var snapshot: ChatPermissionBatchSnapshot?
   private(set) var isActive = false
-  private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var isContinuing = false
   private(set) var hasContinued = false
   private(set) var requiresReadback = false
+  // Read errors remain in the original Task; this is an explicit-operation failure.
   private(set) var error: String?
   private let commands: ChatCommands
   private let sync: ChatSync
@@ -22,17 +23,18 @@ final class PermissionBatchStore {
   private let clientEventID = UUID().uuidString.lowercased()
   private let sortEventID = UUID().uuidString.lowercased()
   private var operation: Task<Void, Never>?
-  private var read: Task<Void, Never>?
-  private var requested = false
+  private let resources: PermissionCardResources
   private var generation = UUID()
   private var closed = false
 
   init(
-    action: ChatPermissionBatchAction, commands: ChatCommands, sync: ChatSync,
+    action: ChatPermissionBatchAction, resources: PermissionCardResources, commands: ChatCommands,
+    sync: ChatSync,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.action = action
+    self.resources = resources
     duration = action.duration
     self.commands = commands
     self.sync = sync
@@ -40,10 +42,15 @@ final class PermissionBatchStore {
     self.didContinue = didContinue
   }
 
+  var read: PermissionCardRead<ChatPermissionBatchSnapshot> { resources.read(action) }
   var allAllowed: Bool { snapshot?.allAllowed == true && !requiresReadback }
   var needsContinuation: Bool { allAllowed && action.callbackPrompt != nil && !hasContinued }
-  var canConfirm: Bool {
-    !closed && !isLoading && !isSaving && !requiresReadback && snapshot?.complete == true
+  var canConfirm: Bool { canConfirm(reviewing: snapshot) }
+
+  func canConfirm(reviewing snapshot: ChatPermissionBatchSnapshot?) -> Bool {
+    let allAllowed = snapshot?.allAllowed == true && !requiresReadback
+    let needsContinuation = allAllowed && action.callbackPrompt != nil && !hasContinued
+    return !closed && isActive && !isSaving && !requiresReadback && snapshot?.complete == true
       && (!allAllowed || needsContinuation)
   }
 
@@ -52,63 +59,54 @@ final class PermissionBatchStore {
     isActive = true
   }
 
-  func loadIfNeeded() async {
-    guard !closed, isActive, !requested, !Task.isCancelled else { return }
-    requested = true
-    await refresh()
-  }
+  func loadIfNeeded() async { await load(refresh: false) }
+  func refresh() async { await load(refresh: true) }
 
-  func refresh() async {
-    guard !closed, operation == nil, !Task.isCancelled else { return }
-    if let read {
-      await read.value
-      return
-    }
-    isLoading = true
+  private func load(refresh: Bool) async {
+    guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
     let generation = generation
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if self.generation == generation {
-          isLoading = false
-          read = nil
-        }
-      }
-      do {
-        let current = try await commands.batchPermissions.load(action)
-        try Task.checkCancellation()
-        guard !closed, self.generation == generation else { return }
-        snapshot = current
-        requiresReadback = false
-        error = nil
-      } catch is CancellationError {
-      } catch {
-        guard !closed, self.generation == generation else { return }
-        requiresReadback = true
-        self.error = ChatRequestFailure.message(for: error)
-        didFail(error)
-      }
+    do {
+      let current = try await read.load(refresh: refresh)
+      try Task.checkCancellation()
+      guard !closed, isActive, operation == nil, self.generation == generation else { return }
+      snapshot = current
+      requiresReadback = false
+      if refresh { error = nil }
+    } catch is CancellationError {
+    } catch {
+      guard !closed, isActive, operation == nil, self.generation == generation else { return }
+      requiresReadback = true
     }
-    read = task
-    await task.value
   }
 
-  func confirm() async {
-    guard canConfirm, let reviewed = snapshot, operation == nil, !Task.isCancelled else { return }
+  func confirm(reviewing reviewed: ChatPermissionBatchSnapshot? = nil) async {
+    guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), operation == nil,
+      !Task.isCancelled
+    else { return }
     isSaving = true
-    isContinuing = reviewed.allAllowed && action.callbackPrompt != nil && !hasContinued
     error = nil
+    generation = UUID()
     let generation = generation
-    let task = Task { [weak self] in
+    let read = read
+    let task = Task { [weak self, read] in
       guard let self else { return }
       defer {
         if self.generation == generation {
           isSaving = false
           isContinuing = false
           operation = nil
+          read.invalidate()
         }
       }
       do {
+        // Cache identity is shared, but write and continuation identities remain with this owner.
+        let cached = try await read.load()
+        try Task.checkCancellation()
+        guard !closed, self.generation == generation else { return }
+        guard cached.complete, cached.connectorScoped == reviewed.connectorScoped else {
+          throw ChatError.invalidContract("Permission scope changed. Review the request again.")
+        }
+        isContinuing = reviewed.allAllowed && action.callbackPrompt != nil && !hasContinued
         let verified: ChatPermissionBatchSnapshot
         if reviewed.allAllowed {
           // "Continue chat" never silently re-grants a permission revoked after review.
@@ -174,14 +172,10 @@ final class PermissionBatchStore {
 
   func deactivate() {
     isActive = false
-    requested = false
     if isSaving { requiresReadback = true }
     generation = UUID()
-    read?.cancel()
-    read = nil
     operation?.cancel()
     operation = nil
-    isLoading = false
     isSaving = false
     isContinuing = false
   }

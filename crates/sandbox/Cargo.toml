@@ -1,6 +1,6 @@
 [package]
 name = "sandbox"
-version = "0.28.21"
+version = "0.28.22"
 edition.workspace = true
 
 [dependencies]

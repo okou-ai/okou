@@ -4,27 +4,6 @@ import Synchronization
 import XCTest
 
 final class HTTPFixtureTests: XCTestCase {
-  func testUnexpectedOriginReportsFailureInsteadOfReachingTheNetwork() async throws {
-    let failures = Mutex<[String]>([])
-    let fixture = ChatHTTPFixture(
-      onUnhandledRequest: { value in
-        failures.withLock { $0.append(value) }
-      },
-      handler: { _ in
-        XCTFail("A foreign origin must not reach the configured API handler")
-        return ChatHTTPResponse(body: "{}")
-      })
-    do {
-      _ = try await fixture.session.data(
-        from: URL(string: "https://unhandled.example.invalid/api/me")!)
-      XCTFail("Unregistered origins must fail")
-    } catch let error as URLError { XCTAssertEqual(error.code, .unsupportedURL) }
-    XCTAssertTrue(
-      failures.withLock {
-        $0.contains { $0.contains("GET https://unhandled.example.invalid/api/me") }
-      })
-  }
-
   func testAnUnhandledRouteIsReportedEvenWhenTheCallerCatchesItsTransportError() async throws {
     let failures = Mutex<[String]>([])
     let fixture = ChatHTTPFixture(

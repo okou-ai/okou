@@ -39,6 +39,8 @@ const listConfigs$ = command(async ({ get, set }, signal: AbortSignal) => {
   const configs = await set(
     listCloudflareAccessConfigs$,
     get(organizationAuthContext$),
+    get(queryOf(cloudflareAccessContract.list)).includeCustomConnectors ===
+      "true",
   );
   signal.throwIfAborted();
   return configs;
@@ -204,12 +206,22 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { configId } = get(
     pathParamsOf(cloudflareAccessContract.impactPreview),
   );
-  const { operation } = get(queryOf(cloudflareAccessContract.impactPreview));
+  const { operation, includeCustomConnectors } = get(
+    queryOf(cloudflareAccessContract.impactPreview),
+  );
   const owner = get(organizationAuthContext$);
   const result =
     operation === "convert"
-      ? await set(previewCloudflareAccessConversion$, { owner, configId })
-      : await set(previewCloudflareAccessDeletion$, { owner, configId });
+      ? await set(previewCloudflareAccessConversion$, {
+          owner,
+          configId,
+          includeCustomConnectors: includeCustomConnectors === "true",
+        })
+      : await set(previewCloudflareAccessDeletion$, {
+          owner,
+          configId,
+          includeCustomConnectors: includeCustomConnectors === "true",
+        });
   signal.throwIfAborted();
   if (!result.ok) {
     return cloudflareAccessErrorResponse(
@@ -236,6 +248,9 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
         return { userId, displayName: names.get(userId) ?? null };
       }),
       impactSnapshot: value.impactSnapshot,
+      ...(value.customConnectors === undefined
+        ? {}
+        : { customConnectors: value.customConnectors }),
     },
   };
 });

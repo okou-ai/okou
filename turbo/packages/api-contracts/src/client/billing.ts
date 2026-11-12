@@ -350,6 +350,17 @@ export const billingSurveyContract: ClientDescriptor<
       500: true,
     },
   },
+  dismiss: {
+    method: "POST",
+    path: "/api/billing/survey/dismiss",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      500: true,
+    },
+  },
 };
 
 export const billingUsagePackCatalogContract: ClientDescriptor<

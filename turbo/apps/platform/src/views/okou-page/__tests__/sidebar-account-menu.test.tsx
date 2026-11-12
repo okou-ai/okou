@@ -1,6 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -206,7 +205,6 @@ test("Help opens shortcuts and links to the docs", async () => {
         email: "alex.rivera@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.HelpMenu]: true },
   });
 
   const menu = await openAccountMenu();

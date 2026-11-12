@@ -10,6 +10,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.61.0](https://github.com/okou-ai/okou/compare/api-v2.60.0...api-v2.61.0) (2026-11-11)
+
+
+### Features
+
+* **api:** add correlated chat enqueue phase timings ([#46625](https://github.com/okou-ai/okou/issues/46625)) ([896077c](https://github.com/okou-ai/okou/commit/896077c837a2fda2c157533946a2ab300a500593))
+
+
+### Refactoring
+
+* **api:** remove unused run volume override inputs ([#46627](https://github.com/okou-ai/okou/issues/46627)) ([d6e2b91](https://github.com/okou-ai/okou/commit/d6e2b918d7b052620e365fd90651c5a6ae46e188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.1
+    * @okouai/core bumped to 8.829.1
+    * @okouai/db bumped to 2.29.0
+    * @okouai/pi-agent-runtime bumped to 1.51.103
+
+## [2.60.0](https://github.com/okou-ai/okou/compare/api-v2.59.2...api-v2.60.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+    * @okouai/connectors bumped to 3.22.0
+    * @okouai/core bumped to 8.829.0
+    * @okouai/db bumped to 2.28.0
+    * @okouai/pi-agent-runtime bumped to 1.51.102
+
 ## [2.59.2](https://github.com/okou-ai/okou/compare/api-v2.59.1...api-v2.59.2) (2026-11-11)
 
 

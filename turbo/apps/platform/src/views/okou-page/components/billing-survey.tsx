@@ -226,12 +226,15 @@ export function CheckoutAbandonedSurveyDialog() {
   const survey = useLastResolved(abandonedCheckoutSurvey$);
   const draft = useGet(checkoutAbandonedDraft$);
   const updateDraft = useSet(updateCheckoutAbandonedDraft$);
-  const dismiss = useSet(dismissCheckoutAbandonedSurvey$);
+  const [dismissLoadable, dismiss] = useLoadableSet(
+    dismissCheckoutAbandonedSurvey$,
+  );
   const [submitLoadable, submit] = useLoadableSet(
     submitCheckoutAbandonedSurvey$,
   );
   const pageSignal = useGet(pageSignal$);
-  const submitting = submitLoadable.state === "loading";
+  const submitting =
+    submitLoadable.state === "loading" || dismissLoadable.state === "loading";
 
   if (!survey) {
     return null;
@@ -251,7 +254,10 @@ export function CheckoutAbandonedSurveyDialog() {
       open
       onOpenChange={(nextOpen) => {
         if (!nextOpen && !submitting) {
-          dismiss();
+          detach(
+            dismiss(survey.checkoutSessionId, pageSignal),
+            Reason.DomCallback,
+          );
         }
       }}
     >
@@ -287,7 +293,8 @@ export function CheckoutAbandonedSurveyDialog() {
               updateDraft({ detail });
             }}
           />
-          {submitLoadable.state === "hasError" ? (
+          {submitLoadable.state === "hasError" ||
+          dismissLoadable.state === "hasError" ? (
             <p role="alert" className="text-sm text-destructive">
               {t(($) => {
                 return $.billing.survey.error;
@@ -300,7 +307,10 @@ export function CheckoutAbandonedSurveyDialog() {
               variant="ghost"
               disabled={submitting}
               onClick={() => {
-                dismiss();
+                detach(
+                  dismiss(survey.checkoutSessionId, pageSignal),
+                  Reason.DomCallback,
+                );
               }}
             >
               {t(($) => {

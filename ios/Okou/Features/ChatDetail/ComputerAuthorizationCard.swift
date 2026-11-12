@@ -42,7 +42,7 @@ private struct ComputerAuthorizationCardValue: View {
       hasContinued: store.hasContinued,
       selectedHostID: Binding(
         get: { value.data.flatMap(store.selectedHost(in:)) },
-        set: { store.chosenHostID = $0 }),
+        set: { store.selectHost($0) }),
       decide: { decision in Task { await store.decide(decision) } },
       retry: { Task { await store.refresh() } })
   }

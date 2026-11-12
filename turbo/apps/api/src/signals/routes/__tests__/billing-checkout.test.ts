@@ -177,6 +177,7 @@ describe("POST /api/billing/checkout", () => {
       cancel_url: `${APP_ORIGIN}/billing?billing=canceled`,
       metadata: {
         orgId: fixture.orgId,
+        billingSurveyUserId: fixture.userId,
         tier: "pro",
         priceId: okouPricePro,
         purchaseCreatedAt: expect.any(String),
@@ -1341,6 +1342,7 @@ describe("POST /api/billing/checkout", () => {
       expect.objectContaining({
         metadata: {
           orgId: fixture.orgId,
+          billingSurveyUserId: fixture.userId,
           tier: "pro",
           priceId: TEST_PRICE_PRO,
           purchaseCreatedAt: expect.any(String),
@@ -1507,7 +1509,7 @@ describe("POST /api/billing/checkout", () => {
     };
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: expectedMetadata,
+        metadata: { ...expectedMetadata, billingSurveyUserId: fixture.userId },
         subscription_data: expect.objectContaining({
           metadata: expectedMetadata,
         }),

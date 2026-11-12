@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-types-v0.13.6...runner-types-v0.14.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
 ## [0.13.6](https://github.com/okou-ai/okou/compare/runner-types-v0.13.5...runner-types-v0.13.6) (2026-11-11)
 
 ## [0.13.5](https://github.com/okou-ai/okou/compare/runner-types-v0.13.4...runner-types-v0.13.5) (2026-11-11)

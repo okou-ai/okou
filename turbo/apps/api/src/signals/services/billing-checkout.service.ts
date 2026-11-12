@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import type {
   ConcurrencySubscriptionChangePreviewResponse,
-  CheckoutResponse,
   BillingPurchaseConfirmResponse,
   CreditPurchaseConfirmResponse,
   CreditPurchasePreviewResponse,
@@ -64,16 +63,9 @@ import {
   type BillingPurchasePaymentMethod,
 } from "./billing-payment-method.service";
 
-export function checkoutRequiredResponse(checkout: CheckoutResponse) {
-  return {
-    status: "checkout_required" as const,
-    checkoutUrl: checkout.url,
-    checkoutSessionId: checkout.checkoutSessionId,
-  };
-}
-
 interface CreateCheckoutSessionArgs {
   readonly orgId: string;
+  readonly userId: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
   readonly trialDays?: 7;
@@ -89,11 +81,7 @@ interface StartPlanPurchaseArgs extends CreateCheckoutSessionArgs {
 }
 
 type StartPlanPurchaseResult =
-  | {
-      readonly status: "checkout";
-      readonly url: string;
-      readonly checkoutSessionId: string;
-    }
+  | { readonly status: "checkout"; readonly url: string }
   | {
       readonly status: "preview";
       readonly preview: PlanPurchasePreviewResponse;
@@ -132,6 +120,7 @@ type CheckoutCompletionResult =
 
 interface CreateCreditCheckoutSessionArgs {
   readonly orgId: string;
+  readonly userId: string;
   readonly credits: number;
   readonly successUrl: string;
   readonly cancelUrl: string;
@@ -699,6 +688,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
   async (
     { set },
     orgId: string,
+    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmExistingBillingCreditPurchaseResult> => {
@@ -731,10 +721,11 @@ export const confirmExistingBillingCreditPurchase$ = command(
       if (!preview.successUrl || !preview.cancelUrl) {
         return { status: "billing_unavailable" };
       }
-      const checkout = await set(
+      const checkoutUrl = await set(
         createCreditCheckoutSession$,
         {
           orgId,
+          userId,
           credits: preview.credits,
           successUrl: preview.successUrl,
           cancelUrl: preview.cancelUrl,
@@ -745,7 +736,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       );
       return {
         status: "confirmed",
-        response: checkoutRequiredResponse(checkout),
+        response: { status: "checkout_required", checkoutUrl },
       };
     }
     if (
@@ -991,7 +982,7 @@ export const startPlanPurchase$ = command(
     if (!args.supportsInAppPreview) {
       return {
         status: "checkout",
-        ...(await set(createCheckoutSession$, args, signal)),
+        url: await set(createCheckoutSession$, args, signal),
       };
     }
 
@@ -1014,7 +1005,7 @@ export const startPlanPurchase$ = command(
     if (route.kind === "checkout") {
       return {
         status: "checkout",
-        ...(await set(createCheckoutSession$, args, signal)),
+        url: await set(createCheckoutSession$, args, signal),
       };
     }
 
@@ -1353,6 +1344,7 @@ type ClaimedPlanPurchaseAdmission =
 async function admitClaimedPlanPurchase(
   stripe: StripeClient,
   orgId: string,
+  userId: string,
   preview: PlanPurchasePreviewToken,
   signal: AbortSignal,
 ): Promise<ClaimedPlanPurchaseAdmission> {
@@ -1387,11 +1379,12 @@ async function admitClaimedPlanPurchase(
   if (route.kind === "checkout") {
     // Hosted Checkout is not payable until the customer completes it; its
     // webhook publishes the result, so the claim is released afterwards.
-    const checkout = await createPlanCheckoutSession(
+    const url = await createPlanCheckoutSession(
       stripe,
       preview.customerId,
       {
         orgId,
+        userId,
         tier: preview.tier,
         priceId: preview.priceId,
         trialDays: preview.trialDays,
@@ -1406,7 +1399,7 @@ async function admitClaimedPlanPurchase(
       kind: "release",
       result: {
         status: "confirmed",
-        response: checkoutRequiredResponse(checkout),
+        response: { status: "checkout_required", checkoutUrl: url },
         paidInvoice: null,
       },
     };
@@ -1424,6 +1417,7 @@ async function admitClaimedPlanPurchase(
 interface ClaimedPlanPurchaseArgs {
   readonly stripe: StripeClient;
   readonly orgId: string;
+  readonly userId: string;
   readonly preview: PlanPurchasePreviewToken;
   readonly previousStatus: string | null;
 }
@@ -1437,6 +1431,7 @@ const prepareClaimedPlanPurchaseAdmission$ = command(
     const admission = await admitClaimedPlanPurchase(
       args.stripe,
       args.orgId,
+      args.userId,
       args.preview,
       signal,
     );
@@ -1491,6 +1486,7 @@ export const confirmPlanPurchase$ = command(
   async (
     { get, set },
     orgId: string,
+    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmPlanPurchaseResult> => {
@@ -1579,7 +1575,7 @@ export const confirmPlanPurchase$ = command(
     // (or paid-invoice reconciliation) binds the organization to it.
     const admission = await set(
       admitClaimedPlanPurchase$,
-      { stripe, orgId, preview, previousStatus },
+      { stripe, orgId, userId, preview, previousStatus },
       signal,
     );
     signal.throwIfAborted();
@@ -1610,7 +1606,7 @@ async function createPlanCheckoutSession(
   customerId: string,
   args: CreateCheckoutSessionArgs,
   signal: AbortSignal,
-): Promise<Required<CheckoutResponse>> {
+): Promise<string> {
   const metadata = checkoutSessionMetadata({
     orgId: args.orgId,
     tier: args.tier,
@@ -1624,7 +1620,7 @@ async function createPlanCheckoutSession(
     allow_promotion_codes: true,
     success_url: args.successUrl,
     cancel_url: args.cancelUrl,
-    metadata,
+    metadata: { ...metadata, billingSurveyUserId: args.userId },
     subscription_data: {
       metadata,
       ...(args.trialDays === undefined
@@ -1641,7 +1637,7 @@ async function createPlanCheckoutSession(
   if (!session.url) {
     throw new Error("Stripe checkout session did not return a URL");
   }
-  return { url: session.url, checkoutSessionId: session.id };
+  return session.url;
 }
 
 const createCheckoutSession$ = command(
@@ -1649,7 +1645,7 @@ const createCheckoutSession$ = command(
     { set },
     args: CreateCheckoutSessionArgs,
     signal: AbortSignal,
-  ): Promise<Required<CheckoutResponse>> => {
+  ): Promise<string> => {
     signal.throwIfAborted();
 
     const customerId = await set(
@@ -1773,7 +1769,7 @@ export const createCreditCheckoutSession$ = command(
     { set },
     args: CreateCreditCheckoutSessionArgs,
     signal: AbortSignal,
-  ): Promise<Required<CheckoutResponse>> => {
+  ): Promise<string> => {
     const customerId = await set(
       getOrCreateStripeCustomer$,
       { orgId: args.orgId },
@@ -1829,7 +1825,7 @@ export const createCreditCheckoutSession$ = command(
           ...metadata,
         },
       },
-      metadata,
+      metadata: { ...metadata, billingSurveyUserId: args.userId },
     };
     const session = args.checkoutIdempotencyKey
       ? await stripe.checkout.sessions.create(params, {
@@ -1841,7 +1837,7 @@ export const createCreditCheckoutSession$ = command(
     if (!session.url) {
       throw new Error("Stripe checkout session did not return a URL");
     }
-    return { url: session.url, checkoutSessionId: session.id };
+    return session.url;
   },
 );
 

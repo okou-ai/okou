@@ -21,6 +21,7 @@ describe("SQLSTATE classification", () => {
   it.each([
     ["55P03", isLockNotAvailable],
     ["23503", isForeignKeyViolation],
+    ["23001", isForeignKeyViolation],
     ["23505", isUniqueViolation],
   ])("matches %s only for its own predicate", (code, predicate) => {
     expect(predicate(driverError(code))).toBeTruthy();
@@ -32,6 +33,23 @@ describe("SQLSTATE classification", () => {
       ),
     ).toStrictEqual([predicate]);
   });
+});
+
+describe("Named dependency constraints", () => {
+  it.each(["23503", "23001"])(
+    "matches the exact dependency constraint for %s",
+    (code) => {
+      const error = new Error("statement failed", {
+        cause: { code, constraint: "fk_custom_connector_cloudflare_config" },
+      });
+      expect(
+        isForeignKeyViolation(error, "fk_custom_connector_cloudflare_config"),
+      ).toBeTruthy();
+      expect(
+        isForeignKeyViolation(error, "a_different_constraint"),
+      ).toBeFalsy();
+    },
+  );
 });
 
 describe("safeSqlStateCode", () => {

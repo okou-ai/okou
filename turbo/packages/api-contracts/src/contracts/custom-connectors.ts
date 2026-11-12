@@ -37,6 +37,7 @@ import { initContract, authHeadersSchema } from "./base";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
 import { connectorAccountMutationIntentSchema } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
+import { customConnectorCloudflareBindingSchema } from "../validators/custom-connector-network";
 
 export {
   CUSTOM_CONNECTOR_INJECTION_TEMPLATE_MAX_CHARS,
@@ -148,7 +149,16 @@ export function isHttpCustomConnectorResponse(
   return connector.kind === "http";
 }
 
+// Reader preparation only. No definition writer may silently drop this intent.
+const preparedNetworkBindingWriteSchema = customConnectorCloudflareBindingSchema
+  .nullable()
+  .optional()
+  .refine((value) => {
+    return value === undefined;
+  }, "Cloudflare Access binding changes are not available yet");
+
 const customConnectorDefinitionWriteBaseSchema = object({
+  networkBinding: preparedNetworkBindingWriteSchema,
   displayName: string().min(1).max(128),
   fields: array(customConnectorFieldSchema),
   headerInjections: array(customConnectorHeaderInjectionSchema),
@@ -381,6 +391,7 @@ export type SetCustomConnectorValuesBody = zInfer<
 >;
 
 export const customConnectorProposalSchema = object({
+  networkBinding: preparedNetworkBindingWriteSchema,
   operation: zEnum(["create", "update"]),
   connectorId: uuid().optional(),
   displayName: string().min(1).max(128),

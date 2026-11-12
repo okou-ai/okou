@@ -1,6 +1,6 @@
 {
   "name": "@okouai/core",
-  "version": "8.828.1",
+  "version": "8.829.1",
   "private": true,
   "type": "module",
   "exports": {
