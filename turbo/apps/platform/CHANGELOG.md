@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1116.2](https://github.com/okou-ai/okou/compare/app-v0.1116.1...app-v0.1116.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **app:** keep composer steady when model notices appear ([#46707](https://github.com/okou-ai/okou/issues/46707)) ([f36fefd](https://github.com/okou-ai/okou/commit/f36fefdbc4778a40f433ba549424156cb3ae2016))
+* **platform:** restore the my okou greeting texture and lead the home corner with its icons ([#46714](https://github.com/okou-ai/okou/issues/46714)) ([ca7efe7](https://github.com/okou-ai/okou/commit/ca7efe78fef4fd196f1662a904276b1e08397488))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.2
+    * @okouai/core bumped to 8.829.2
+
 ## [0.1116.1](https://github.com/okou-ai/okou/compare/app-v0.1116.0...app-v0.1116.1) (2026-11-11)
 
 
