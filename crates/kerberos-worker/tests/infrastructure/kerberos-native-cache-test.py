@@ -106,13 +106,16 @@ if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
   echo ready > "$CACHE_TEST_READY"
   read -r release < "$CACHE_TEST_RELEASE"
 fi
-mkdir -p include/krb5 include/gssapi util/profile lib
-echo header > include/krb5/krb5.h
-echo errors > include/com_err.h
-for header in gssapi gssapi_krb5 gssapi_ext; do echo "$header" > "include/gssapi/$header.h"; done
-echo profile > util/profile/profile.h
-echo errors > util/profile/prof_err.h
-for lib in gssapi_krb5 krb5 k5crypto com_err krb5support; do echo "$lib${CPATH:-}${C_INCLUDE_PATH:-}" > "lib/lib$lib.a"; done
+# Fixture components share identical products; each dependency build starts fresh.
+if [[ $4 == util/et ]]; then
+  mkdir -p include/krb5 include/gssapi util/profile lib
+  echo header > include/krb5/krb5.h
+  echo errors > include/com_err.h
+  for header in gssapi gssapi_krb5 gssapi_ext; do echo "$header" > "include/gssapi/$header.h"; done
+  echo profile > util/profile/profile.h
+  echo errors > util/profile/prof_err.h
+  for lib in gssapi_krb5 krb5 k5crypto com_err krb5support; do echo "$lib${CPATH:-}${C_INCLUDE_PATH:-}" > "lib/lib$lib.a"; done
+fi
 if [[ ${CACHE_TEST_FAIL:-} == true ]]; then exit 23; fi
 """)
         self.command("flock", """#!/bin/bash

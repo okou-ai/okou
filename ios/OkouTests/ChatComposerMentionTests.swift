@@ -95,19 +95,30 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
     // Keep native insertion separate from business observation in timeout diagnostics.
     let trace = NativePasteTrace()
+    let pasteDelegate = try XCTUnwrap(
+      input.pasteDelegate as? ChatComposerTextInput.Coordinator)
+    let tracedDelegate = NativePasteDelegate(delegate: pasteDelegate, trace: trace)
+    input.pasteDelegate = tracedDelegate
+    // pasteDelegate is weak; retain the forwarding delegate through async paste.
+    defer { input.pasteDelegate = tracedDelegate.delegate }
     let observer = NotificationCenter.default.addObserver(
       forName: UITextView.textDidChangeNotification, object: input, queue: .main
     ) { _ in
       MainActor.assumeIsolated {
         if trace.nativeChange == nil, input.text == expectedNativeText {
           trace.nativeChange = trace.started.duration(to: .now)
+          trace.canonicalAtNativeChange = workspace.newComposer.document == expected
         }
       }
     }
     defer { NotificationCenter.default.removeObserver(observer) }
     input.paste(nil)
+    trace.record("paste returned")
+    trace.record("business wait started")
     try await waitForBusinessResult(
-      message: "Paste native change=\(String(describing: trace.nativeChange)); "
+      message: "Paste stages=\(trace.stages); "
+        + "native change=\(String(describing: trace.nativeChange)); "
+        + "canonical at native change=\(String(describing: trace.canonicalAtNativeChange)); "
         + "elapsed=\(trace.started.duration(to: .now)); "
         + "document=\(workspace.newComposer.document); "
         + "text=\(String(describing: input.text)); "
@@ -381,6 +392,75 @@ final class ChatComposerMentionTests: XCTestCase {
 private final class NativePasteTrace {
   let started = ContinuousClock.now
   var nativeChange: Duration?
+  var canonicalAtNativeChange: Bool?
+  private(set) var stages: [(String, Duration)] = []
+
+  func record(_ stage: String) {
+    stages.append((stage, started.duration(to: .now)))
+  }
+}
+
+/// Observe the production transform without replacing its provider or UIKit insertion.
+@MainActor
+private final class NativePasteDelegate: NSObject, UITextPasteDelegate {
+  let delegate: ChatComposerTextInput.Coordinator
+  let trace: NativePasteTrace
+
+  init(delegate: ChatComposerTextInput.Coordinator, trace: NativePasteTrace) {
+    self.delegate = delegate
+    self.trace = trace
+  }
+
+  func textPasteConfigurationSupporting(
+    _ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting,
+    transform item: UITextPasteItem
+  ) {
+    trace.record("transform started")
+    delegate.textPasteConfigurationSupporting(
+      textPasteConfigurationSupporting, transform: NativePasteItem(item: item, trace: trace))
+  }
+}
+
+@MainActor
+private final class NativePasteItem: NSObject, UITextPasteItem {
+  let item: UITextPasteItem
+  let trace: NativePasteTrace
+
+  init(item: UITextPasteItem, trace: NativePasteTrace) {
+    self.item = item
+    self.trace = trace
+  }
+
+  var itemProvider: NSItemProvider { item.itemProvider }
+  var localObject: Any? { item.localObject }
+  var defaultAttributes: [NSAttributedString.Key: Any] { item.defaultAttributes }
+
+  func setResult(string: String) {
+    complete("string") { item.setResult(string: string) }
+  }
+
+  func setResult(attributedString: NSAttributedString) {
+    complete("attributed string") { item.setResult(attributedString: attributedString) }
+  }
+
+  func setResult(attachment: NSTextAttachment) {
+    complete("attachment") { item.setResult(attachment: attachment) }
+  }
+
+  func setDefaultResult() {
+    complete("default") { item.setDefaultResult() }
+  }
+
+  func setNoResult() {
+    complete("no result") { item.setNoResult() }
+  }
+
+  private func complete(_ result: String, _ action: () -> Void) {
+    // Preparation includes provider loading and the production MainActor hop.
+    trace.record("\(result) submitted")
+    action()
+    trace.record("\(result) returned")
+  }
 }
 
 struct MentionSend: Decodable {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.246.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.7...runner-rs-v0.246.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
+
+### Refactoring
+
+* **python:** centralize run usage flow admission ([#46789](https://github.com/okou-ai/okou/issues/46789)) ([9b7f608](https://github.com/okou-ai/okou/commit/9b7f608d8b66bd46a6898365f0b98523c0ec1e9d))
+
+
+### Performance Improvements
+
+* **python:** honor aws bounds before proof query parsing ([#46802](https://github.com/okou-ai/okou/issues/46802)) ([6265910](https://github.com/okou-ai/okou/commit/626591055c19fd55123f3660cfedbff62bffb0d5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.245.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.6...runner-rs-v0.245.7) (2026-11-12)
 
 

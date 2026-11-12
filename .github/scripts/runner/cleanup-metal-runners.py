@@ -336,7 +336,7 @@ class Session:
         if self.write_error is not None or self.process.poll() is not None:
             raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
         self.send({"operation": "cleanup", "numbers": numbers})
-        result = self.read(150)["results"]
+        result = self.read(510)["results"]
         if set(result) != {str(number) for number in numbers}:
             raise RuntimeError(f"worker omitted namespace results on {self.host}")
         return {int(number): outcome for number, outcome in result.items()}
@@ -650,7 +650,8 @@ def main():
     decisions = {}
     for offset in range(0, len(numbers), BATCH_SIZE):
         batch = numbers[offset : offset + BATCH_SIZE]
-        signal.alarm(360)
+        # Includes all-host readiness/authorization and the 480s host operation.
+        signal.alarm(720)
         try:
             decisions.update(reconcile_batch(github, hosts, user, batch))
         finally:

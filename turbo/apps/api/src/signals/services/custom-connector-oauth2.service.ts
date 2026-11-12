@@ -1,3 +1,4 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -8,7 +9,7 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, count, eq, exists, gte, inArray, sql } from "drizzle-orm";
 import {
   array,
   boolean,
@@ -30,7 +31,16 @@ import {
   mcpOAuthScopeTokenSchema,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
+import {
+  prepareCustomConnectorNetworkFetch$,
+  customConnectorNetworkSnapshotSchema,
+  type CustomConnectorNetworkSnapshot,
+} from "./custom-connector-network-authority.service";
+import { customConnectorNetworkPublicationCondition } from "./custom-connector-network-publication";
+import type {
+  FetchLike,
+  OAuthClientMetadata,
+} from "@modelcontextprotocol/client";
 import {
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
@@ -156,6 +166,7 @@ const customConnectorCustomOAuthStateContextSchema = object({
   connectorId: uuid(),
   storageVersion: number().int().positive(),
   providerContext: customConnectorCustomOAuthProviderContextSchema.optional(),
+  networkSnapshot: customConnectorNetworkSnapshotSchema.optional(),
 }).strict();
 
 export type CustomConnectorCustomOAuthStateContext = zInfer<
@@ -163,6 +174,7 @@ export type CustomConnectorCustomOAuthStateContext = zInfer<
 >;
 
 const customConnectorAutomaticOAuthStateContextCoreSchema = object({
+  networkSnapshot: customConnectorNetworkSnapshotSchema.optional(),
   connectorId: uuid(),
   storageVersion: number().int().positive(),
   issuer: oauthHttpsUrlSchema,
@@ -374,6 +386,7 @@ function tokenRequestAuthentication(args: {
 
 async function requestToken(
   args: {
+    readonly fetchFn?: FetchLike;
     readonly config: CustomConnectorOAuthConfigRow;
     readonly clientSecret: string;
     readonly form: URLSearchParams;
@@ -383,7 +396,7 @@ async function requestToken(
   const authorization = tokenRequestAuthentication(args);
   const result = await settle(
     accept(
-      mcpOAuthSafeFetch(args.config.tokenUrl, {
+      (args.fetchFn ?? mcpOAuthSafeFetch)(args.config.tokenUrl, {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -467,6 +480,7 @@ function throwCustomConnectorFeishuOAuthError(error: unknown): never {
 
 export async function exchangeCustomConnectorOAuth2Code(
   args: {
+    readonly fetchFn?: FetchLike;
     readonly config: CustomConnectorOAuthConfigRow;
     readonly clientSecret: string;
     readonly code: string;
@@ -512,6 +526,7 @@ export async function exchangeCustomConnectorOAuth2Code(
         clientId: args.config.clientId,
         accessToken: token.accessToken,
         idToken: token.idToken,
+        fetchFn: args.fetchFn,
       },
       signal,
     ),
@@ -520,6 +535,7 @@ export async function exchangeCustomConnectorOAuth2Code(
 
 async function refreshCustomConnectorOAuth2Token(
   args: {
+    readonly fetchFn?: FetchLike;
     readonly config: CustomConnectorOAuthConfigRow;
     readonly clientSecret: string;
     readonly refreshToken: string;
@@ -558,6 +574,7 @@ async function refreshCustomConnectorOAuth2Token(
         clientId: args.config.clientId,
         accessToken: token.accessToken,
         idToken: token.idToken,
+        fetchFn: args.fetchFn,
       },
       signal,
     ),
@@ -676,7 +693,7 @@ function prepareCustomOAuthStart(
     readonly oauthConfig: CustomConnectorOAuthConfigRow;
   },
   args: StartCustomConnectorOAuth2Args,
-): PreparedOAuthStart {
+): Extract<PreparedOAuthStart, { readonly authMode: "oauth" }> {
   const state = generateConnectorOAuthState();
   const codeVerifier =
     connector.oauthConfig.pkceMethod === "S256" ? createPkceVerifier() : null;
@@ -814,6 +831,10 @@ const prepareAutomaticOAuthStart$ = command(
       readonly args: StartCustomConnectorOAuth2Args;
       readonly featureContext: FeatureSwitchContext;
       readonly client: AutomaticOAuthClientPresentation;
+      readonly network: {
+        readonly fetch: FetchLike;
+        readonly snapshot: CustomConnectorNetworkSnapshot | undefined;
+      };
     },
     signal: AbortSignal,
   ) => {
@@ -847,6 +868,9 @@ const prepareAutomaticOAuthStart$ = command(
           cimdClientId: client.cimdClientId,
           dcrClientMetadata: client.dcrClientMetadata,
           hasOAuthAccount: preflight.hasOAuthAccount,
+          definitionUpdatedAt: connector.updatedAt,
+          fetchFn: context.network.fetch,
+          networkSnapshot: context.network.snapshot,
           featureContext,
         },
         signal,
@@ -860,14 +884,18 @@ const prepareAutomaticOAuthStart$ = command(
       }
       const code = customConnectorAutomaticOAuthErrorCode(error);
       const response =
-        error.kind === "temporary"
+        error.kind === "temporary" ||
+        error.kind === "network" ||
+        error.kind === "unknown"
           ? {
               status: 502 as const,
               body: {
                 error: {
                   code,
                   message:
-                    "The MCP OAuth provider is temporarily unavailable. Try again later.",
+                    error.kind === "temporary"
+                      ? "The MCP OAuth provider is temporarily unavailable. Try again later."
+                      : error.message,
                 },
               },
             }
@@ -927,6 +955,8 @@ const persistCustomConnectorOAuthStart$ = command(
       userId: args.userId,
       connectorId: connector.id,
       storageVersion: connector.storageVersion,
+      definitionUpdatedAt: connector.updatedAt,
+      networkSnapshot: prepared.context.networkSnapshot,
       authMode: prepared.authMode,
       allowSiblings,
       account: args.account,
@@ -1011,6 +1041,7 @@ interface AutomaticNoAuthPersistenceContext {
   readonly connector: AutomaticNoAuthConnector;
   readonly args: StartCustomConnectorOAuth2Args;
   readonly preserveOAuth: boolean;
+  readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
 }
 
 function automaticNoAuthCredentialContractRef(
@@ -1122,6 +1153,10 @@ const commitAutomaticNoAuthConnection$ = command(
       const statement = automaticNoAuthPublicationSql(
         noAuthWriteArgs(args, connector, resolution),
         context.preserveOAuth,
+        {
+          definitionUpdatedAt: connector.updatedAt,
+          networkSnapshot: context.networkSnapshot,
+        },
       );
       signal.throwIfAborted();
       const [row] = parseRawRows(
@@ -1254,9 +1289,21 @@ export const startCustomConnectorOAuth2$ = command(
         "Automatic OAuth client identity is unavailable",
       );
     }
+    const network = await set(
+      prepareCustomConnectorNetworkFetch$,
+      { connector, userId: args.userId },
+      signal,
+    );
     let prepared: PreparedOAuthStart;
     if (customOAuth) {
-      prepared = prepareCustomOAuthStart(connector, args);
+      const base = prepareCustomOAuthStart(connector, args);
+      prepared = {
+        ...base,
+        context: {
+          ...base.context,
+          ...(network.snapshot ? { networkSnapshot: network.snapshot } : {}),
+        },
+      };
     } else if (automaticOAuth && args.automaticOAuthClient) {
       const featureContext = await get(
         userFeatureSwitchContext(args.orgId, args.userId),
@@ -1269,6 +1316,7 @@ export const startCustomConnectorOAuth2$ = command(
           args,
           featureContext,
           client: args.automaticOAuthClient,
+          network,
         },
         signal,
       );
@@ -1282,6 +1330,7 @@ export const startCustomConnectorOAuth2$ = command(
             connector,
             args,
             preserveOAuth: automatic.result.discoveryUnavailable,
+            networkSnapshot: network.snapshot,
           },
           signal,
         );
@@ -1331,14 +1380,18 @@ function automaticOAuthReauthorizationFailure(error: unknown) {
     throw error;
   }
   const code = customConnectorAutomaticOAuthErrorCode(error);
-  return error.kind === "temporary"
+  return error.kind === "temporary" ||
+    error.kind === "network" ||
+    error.kind === "unknown"
     ? {
         status: 502 as const,
         body: {
           error: {
             code,
             message:
-              "The MCP OAuth provider is temporarily unavailable. Try again later.",
+              error.kind === "temporary"
+                ? "The MCP OAuth provider is temporarily unavailable. Try again later."
+                : error.message,
           },
         },
       }
@@ -1401,6 +1454,26 @@ function automaticOAuthReauthorizationStartValues(
   };
 }
 
+function automaticReauthorizationClient() {
+  const clientMetadata = configuredOkouMcpOAuthClientMetadata();
+  const [redirectUri] = clientMetadata.redirect_uris;
+  if (!redirectUri) {
+    throw new Error("Okou MCP OAuth callback is unavailable");
+  }
+  return { clientMetadata, redirectUri };
+}
+
+function automaticOAuthConnectionUsable(
+  connection: StoredConnection | null,
+): connection is StoredConnection {
+  return (
+    connection !== null &&
+    !connection.needsReconnect &&
+    Boolean(connection.encryptedAccessToken) &&
+    connectionAccessTokenIsCurrent(connection)
+  );
+}
+
 export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
   async (
     { get, set },
@@ -1432,11 +1505,11 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     };
     const connection = await (async (): Promise<StoredConnection | null> => {
       const plan = customConnectorOAuthConnectionReadPlan(connectionIdentity);
-      const query = db
+      const rows = await db
         .select(plan.columns)
         .from(connectors)
-        .where(plan.condition);
-      const rows = await query.limit(1);
+        .where(plan.condition)
+        .limit(1);
       const connection = rows[0];
       if (!connection) {
         return null;
@@ -1456,12 +1529,7 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
       return storedConnectionFromRows(connection, tokenRows);
     })();
     signal.throwIfAborted();
-    if (
-      !connection ||
-      connection.needsReconnect ||
-      !connection.encryptedAccessToken ||
-      !connectionAccessTokenIsCurrent(connection)
-    ) {
+    if (!automaticOAuthConnectionUsable(connection)) {
       return automaticOAuthReauthorizationUnavailable("account");
     }
     const binding = await (async () => {
@@ -1484,12 +1552,13 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     if (!scopes) {
       return badRequestMessage("MCP OAuth scope request is too large");
     }
-    const clientMetadata = configuredOkouMcpOAuthClientMetadata();
-    const [redirectUri] = clientMetadata.redirect_uris;
-    if (!redirectUri) {
-      throw new Error("Okou MCP OAuth callback is unavailable");
-    }
+    const { clientMetadata, redirectUri } = automaticReauthorizationClient();
     const state = generateConnectorOAuthState();
+    const network = await set(
+      prepareCustomConnectorNetworkFetch$,
+      { connector, userId: args.userId },
+      signal,
+    );
     const preparedResult = await settle(
       set(
         prepareCustomConnectorAutomaticOAuthReauthorization$,
@@ -1500,6 +1569,8 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
           redirectUri,
           cimdClientId: clientMetadata.client_id,
           requestedScope: scopes.join(" "),
+          fetchFn: network.fetch,
+          networkSnapshot: network.snapshot,
           state,
           featureContext,
         },
@@ -1664,6 +1735,8 @@ const replaceConnectionTokens$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly storedIdentity: StoredConnection;
+      readonly definitionUpdatedAt: Date;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly token: CustomConnectorOAuthTokenResult;
       readonly fallbackRefreshToken?: string;
       readonly fallbackEncryptedIdToken?: string;
@@ -1703,6 +1776,18 @@ const replaceConnectionTokens$ = command(
             eq(connectors.id, args.connectionId),
             eq(connectors.orgId, args.orgId),
             eq(connectors.userId, args.userId),
+            exists(
+              new QueryBuilder()
+                .select({ id: orgCustomConnectors.id })
+                .from(orgCustomConnectors)
+                .where(
+                  and(
+                    eq(orgCustomConnectors.id, connectors.customConnectorId),
+                    eq(orgCustomConnectors.orgId, args.orgId),
+                    customConnectorNetworkPublicationCondition(args),
+                  ),
+                ),
+            ),
             storedRefreshTokenCondition(
               args.connectionId,
               args.storedIdentity.encryptedRefreshToken,
@@ -1826,6 +1911,8 @@ interface StoreCustomConnectorOAuth2ConnectionArgs {
   readonly userId: string;
   readonly connectorId: string;
   readonly storageVersion: number;
+  readonly definitionUpdatedAt: Date;
+  readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   readonly token: CustomConnectorOAuthTokenResult;
   readonly featureContext: FeatureSwitchContext;
   readonly account: ConnectorAccountMutationIntent;
@@ -1965,6 +2052,8 @@ export const storeCustomConnectorOAuth2Connection$ = command(
     }
     const query = customOAuthConnectionPublicationSql({
       ...contractRef,
+      definitionUpdatedAt: args.definitionUpdatedAt,
+      networkSnapshot: args.networkSnapshot,
       providerAdapter: contract.providerAdapter,
       account: metadata === null ? null : { metadata, accountRevision },
       // The statement replaces this descriptor's ID with its actual winning account.
@@ -2135,6 +2224,8 @@ const storeRefreshedConnectionTokens$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly connection: StoredConnection;
+      readonly definitionUpdatedAt: Date;
+      readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
       readonly token: CustomConnectorOAuthTokenResult;
       readonly fallbackRefreshToken: string;
       readonly featureContext: FeatureSwitchContext;
@@ -2150,6 +2241,8 @@ const storeRefreshedConnectionTokens$ = command(
         orgId: args.orgId,
         userId: args.userId,
         storedIdentity: args.connection,
+        definitionUpdatedAt: args.definitionUpdatedAt,
+        networkSnapshot: args.networkSnapshot,
         token: args.token,
         fallbackRefreshToken: args.fallbackRefreshToken,
         fallbackEncryptedIdToken: args.connection.encryptedIdToken ?? undefined,
@@ -2327,12 +2420,18 @@ const resolveCustomConnectorOAuth2AccessToken$ = command(
     if (!credentials) {
       return { kind: "unavailable" };
     }
+    const network = await set(
+      prepareCustomConnectorNetworkFetch$,
+      { connector: args.connector, userId: args.userId },
+      signal,
+    );
     const refreshResult = await set(
       requestCustomOAuthTokenRefresh$,
       {
         config: oauthConfig,
         clientSecret: credentials.clientSecret,
         refreshToken,
+        fetchFn: network.fetch,
       },
       signal,
     );
@@ -2356,6 +2455,8 @@ const resolveCustomConnectorOAuth2AccessToken$ = command(
         orgId: args.orgId,
         userId: args.userId,
         connection,
+        definitionUpdatedAt: args.connector.updatedAt,
+        networkSnapshot: network.snapshot,
         token: refreshResult.value,
         fallbackRefreshToken: refreshToken,
         featureContext: args.featureContext,
@@ -2416,10 +2517,7 @@ const handleAutomaticOAuthRefreshFailure$ = command(
       })();
       return { kind: "reconnect-required" };
     }
-    if (
-      args.error instanceof McpAutomaticOAuthError &&
-      args.error.kind === "temporary"
-    ) {
+    if (args.error instanceof McpAutomaticOAuthError) {
       throw new CustomConnectorOAuth2TokenRefreshError(args.error);
     }
     throw args.error;
@@ -2498,6 +2596,11 @@ const refreshAutomaticOAuthAccessToken$ = command(
     if (!okouRedirectUri) {
       throw new Error("Okou MCP OAuth callback is unavailable");
     }
+    const network = await set(
+      prepareCustomConnectorNetworkFetch$,
+      { connector, userId: args.userId },
+      signal,
+    );
     const refreshResult = await settle(
       set(
         refreshCustomConnectorAutomaticOAuthToken$,
@@ -2506,6 +2609,8 @@ const refreshAutomaticOAuthAccessToken$ = command(
           endpoint: connector.endpoint,
           redirectUri: okouRedirectUri,
           cimdClientId: okouClientMetadata.client_id,
+          fetchFn: network.fetch,
+          networkSnapshot: network.snapshot,
           refreshToken,
           featureContext: args.featureContext,
         },
@@ -2527,6 +2632,8 @@ const refreshAutomaticOAuthAccessToken$ = command(
         orgId: args.orgId,
         userId: args.userId,
         connection,
+        definitionUpdatedAt: args.connector.updatedAt,
+        networkSnapshot: network.snapshot,
         token: refreshResult.value,
         fallbackRefreshToken: refreshToken,
         featureContext: args.featureContext,

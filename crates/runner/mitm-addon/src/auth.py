@@ -12,7 +12,7 @@ import hashlib
 import json
 import urllib.parse
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Literal
 
@@ -62,6 +62,8 @@ from firewall_auth_cache import (
     FirewallAuthFetchSaturatedError,
     InvalidBillableAuthExpiryError,
     get_firewall_headers,
+    get_network_admission,
+    invalidate_cached_firewall_headers,
 )
 from firewall_auth_client import (
     ConnectorNotConfiguredError,
@@ -181,6 +183,69 @@ class _FirewallAuthPlan:
 
 
 @dataclass(frozen=True)
+class _NetworkAdmission:
+    identity: tuple[str, str, str]
+    result: dict = field(repr=False)
+    cache_key: FirewallAuthCacheKey
+    cache_entry_identity: FirewallAuthCacheEntryIdentity
+
+
+def invalidate_network_admission(flow: http.HTTPFlow) -> None:
+    """A rejected physical flow can invalidate only the network cache entry it consumed."""
+    retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
+    if isinstance(retained, _NetworkAdmission):
+        invalidate_cached_firewall_headers(retained.cache_key, retained.cache_entry_identity)
+
+
+async def _resolve_network_admission(
+    flow: http.HTTPFlow, context: _FirewallAuthContext
+) -> dict[str, str]:
+    intent = context.allow.api_entry.get("networkIntent")
+    if intent is None:
+        return {}
+    identity = (flow.request.method, flow.request.url, context.allow.api_entry["id"])
+    retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
+    if isinstance(retained, _NetworkAdmission):
+        if retained.identity != identity:
+            raise ValueError("request changed after network admission")
+        result = retained.result
+    else:
+        request = replace(
+            context.auth_request,
+            encrypted_secrets="",
+            auth_headers={},
+            auth_base=None,
+            auth_query=None,
+            auth_aws_sigv4=None,
+            secret_connector_map=None,
+            secret_connector_metadata_map=None,
+            vars_map=None,
+            firewall_billable=False,
+            network_admission=True,
+            network_intent=None,
+            prepared_normal_body=None,
+            network_request={"method": identity[0], "url": identity[1], "intent": intent},
+        )
+        network_identity = json.dumps(
+            {"applicationIdentity": context.auth_cache_key.auth_identity, "networkIntent": intent},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        cache_key = replace(
+            context.auth_cache_key,
+            purpose="network",
+            auth_identity=hashlib.sha256(network_identity).hexdigest(),
+        )
+        cached = await get_network_admission(cache_key, request)
+        result = cached["network_admission"]
+        flow.metadata[metadata_keys.CUSTOM_NETWORK_ADMISSION] = _NetworkAdmission(
+            identity, result, cache_key, cached["cache_entry_identity"]
+        )
+    flow.metadata[metadata_keys.CUSTOM_NETWORK_BOUND] = result["kind"] == "cloudflare_access"
+    return result["headers"] if result["kind"] == "cloudflare_access" else {}
+
+
+@dataclass(frozen=True)
 class _ResolvedFirewallAuth:
     """Validated auth-service result consumed by either hook phase."""
 
@@ -247,7 +312,9 @@ def _build_firewall_auth_context(
     source_id = api_entry.get("sourceId")
     connector_routing_variables = sandbox_info.get("connectorRoutingVariables", {})
     matched_firewall: dict | None = None
-    if needs_resolution and isinstance(custom_connector_id, str):
+    if (needs_resolution or api_entry.get("networkIntent") is not None) and isinstance(
+        custom_connector_id, str
+    ):
         routing_variables = connector_routing_variables.get(f"custom:{custom_connector_id}")
         if not isinstance(routing_variables, dict):
             raise TypeError("custom connector routing variables are missing from proxy registry")
@@ -281,6 +348,7 @@ def _build_firewall_auth_context(
         vars_map=sandbox_info.get("vars"),
         firewall_billable=bool(flow.metadata[metadata_keys.FIREWALL_BILLABLE]),
         matched_firewall=matched_firewall,
+        network_intent=api_entry.get("networkIntent"),
     )
     resolved_identity = _cached_firewall_auth_identity(
         sandbox_info=sandbox_info,
@@ -319,11 +387,17 @@ def _build_firewall_auth_identity(
     auth_request: FirewallAuthRequest,
 ) -> _ResolvedFirewallAuthIdentity:
     normal_body = auth_request.to_bytes(force_refresh=False)
+    # Network revisions invalidate only their own cache, not valid application credentials.
+    identity_body = (
+        replace(auth_request, network_intent=None, prepared_normal_body=None).to_bytes()
+        if auth_request.network_intent is not None
+        else normal_body
+    )
     sandbox_token_sha256 = hashlib.sha256(auth_request.sandbox_token.encode("utf-8")).hexdigest()
     material = {
         "firewallName": firewall_name,
         "firewallBase": firewall_base,
-        "authBodySha256": hashlib.sha256(normal_body).hexdigest(),
+        "authBodySha256": hashlib.sha256(identity_body).hexdigest(),
         "sandboxTokenSha256": sandbox_token_sha256,
     }
     canonical_json = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -487,8 +561,11 @@ def _build_firewall_auth_plan(
     auth_config = allow.api_entry.get("auth", {})
     uses_auth_base = firewall_auth_config.auth_base_from_config(auth_config) is not None
     uses_aws_sigv4 = firewall_auth_config.uses_aws_sigv4(auth_config)
-    injects_credentials = firewall_auth_config.auth_config_injects_credentials(auth_config)
-    needs_resolution = injects_credentials or is_billable_firewall(allow.name, sandbox_info)
+    application_credentials = firewall_auth_config.auth_config_injects_credentials(auth_config)
+    intent = allow.api_entry.get("networkIntent")
+    network_credentials = isinstance(intent, dict) and intent.get("kind") == "cloudflare_access"
+    injects_credentials = application_credentials or network_credentials
+    needs_resolution = application_credentials or is_billable_firewall(allow.name, sandbox_info)
 
     failure = None
     if injects_credentials and _request_method_forbids_managed_credentials(flow.request.method):
@@ -1588,6 +1665,7 @@ async def handle_firewall_request(
                 )
 
         try:
+            network_headers = await _resolve_network_admission(flow, context)
             token_meta = await _resolve_firewall_auth(plan, context)
             resolved_auth = _validate_resolved_firewall_auth(plan, token_meta)
         except Exception as exc:
@@ -1602,7 +1680,9 @@ async def handle_firewall_request(
             resolved_auth=resolved_auth,
         )
 
-        if plan.injects_credentials and not revalidate_current_firewall_authorization():
+        if (
+            plan.injects_credentials or context.auth_request.network_intent is not None
+        ) and not revalidate_current_firewall_authorization():
             return _finish_firewall_auth_result(
                 flow,
                 FirewallAuthHandlingResult.LOCAL_RESPONSE,
@@ -1619,9 +1699,14 @@ async def handle_firewall_request(
         if auth_result is FirewallAuthHandlingResult.LOCAL_RESPONSE:
             return _finish_firewall_auth_result(flow, auth_result)
 
+        if network_headers:
+            _apply_header_query_injection(flow, headers=network_headers, resolved_query=None)
+
         _finalize_firewall_auth_success(flow, context, resolved_auth)
         return auth_result
     except BaseException:
+        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
+        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
         release_forward_request_admission_from_flow(flow)
         raise
 
@@ -1644,8 +1729,13 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     request_snapshot = request_probe_snapshot.RequestProbeSnapshot.capture(flow.request)
 
     def restore_probe_state() -> None:
+        network = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
+        network_bound = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
         flow.metadata.clear()
         flow.metadata.update(metadata_snapshot)
+        if network is not None:
+            flow.metadata[metadata_keys.CUSTOM_NETWORK_ADMISSION] = network
+            flow.metadata[metadata_keys.CUSTOM_NETWORK_BOUND] = network_bound
         request_snapshot.restore(flow.request)
 
     plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
@@ -1659,9 +1749,12 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
     )
 
     try:
+        network_headers = await _resolve_network_admission(flow, context)
         token_meta = await _resolve_firewall_auth(plan, context)
     except asyncio.CancelledError:
         restore_probe_state()
+        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_ADMISSION, None)
+        flow.metadata.pop(metadata_keys.CUSTOM_NETWORK_BOUND, None)
         raise
     except Exception as exc:
         _set_firewall_auth_resolution_failure(flow, context, exc)
@@ -1673,14 +1766,16 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
-    if plan.injects_credentials and not revalidate_current_firewall_authorization():
+    if (
+        plan.injects_credentials or context.auth_request.network_intent is not None
+    ) and not revalidate_current_firewall_authorization():
         restore_probe_state()
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     try:
         _apply_header_query_injection(
             flow,
-            headers=resolved_auth.headers,
+            headers={**resolved_auth.headers, **network_headers},
             resolved_query=resolved_auth.query,
         )
         if resolved_auth.aws_sigv4 is not None:

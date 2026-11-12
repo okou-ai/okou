@@ -31,14 +31,25 @@ describe("builtin Automatic firewall credential destinations", () => {
     [
       "refreshes labels for the same verified principal",
       "builtin-refresh-user",
-      200,
+      { status: 200, rejectionStatus: undefined },
     ],
     [
       "updates a different verified principal without requiring reconnect",
       "builtin-other-user",
-      200,
+      { status: 200, rejectionStatus: undefined },
     ],
-  ] as const)("%s", async (_title, refreshedSubject, expectedStatus) => {
+    [
+      "preserves a valid account after a plain token rejection",
+      "builtin-refresh-user",
+      { status: 502, rejectionStatus: 401 },
+    ],
+    [
+      "preserves a valid account after an incompatible token response",
+      "builtin-refresh-user",
+      { status: 502, rejectionStatus: 200 },
+    ],
+  ] as const)("%s", async (_title, refreshedSubject, expected) => {
+    const { status: expectedStatus, rejectionStatus } = expected;
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -46,6 +57,15 @@ describe("builtin Automatic firewall credential destinations", () => {
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
+      ...(rejectionStatus === undefined
+        ? {}
+        : {
+            refreshResponse: () => {
+              return new HttpResponse("Not an OAuth token response", {
+                status: rejectionStatus,
+              });
+            },
+          }),
       identity: {
         subject: "builtin-refresh-user",
         userInfoUsername: "builtin-before-refresh",
@@ -166,9 +186,18 @@ describe("builtin Automatic firewall credential destinations", () => {
       [200, 502],
     );
     expect(refreshed.status).toBe(expectedStatus);
-    expect(refreshed.body).toMatchObject({
-      headers: { Authorization: "Bearer automatic-refreshed-access-token" },
-    });
+    if (expectedStatus === 200) {
+      expect(refreshed.body).toMatchObject({
+        headers: { Authorization: "Bearer automatic-refreshed-access-token" },
+      });
+    } else {
+      expect(refreshed.body).toMatchObject({
+        error: {
+          code: "TOKEN_REFRESH_FAILED",
+          failureReason: "upstream_provider",
+        },
+      });
+    }
     const account = await accept(
       accounts.connection({
         headers,
@@ -179,7 +208,10 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     expect(account.body).toMatchObject({
       externalId: refreshedSubject,
-      externalUsername: "builtin-after-refresh",
+      externalUsername:
+        expectedStatus === 200
+          ? "builtin-after-refresh"
+          : "builtin-before-refresh",
       externalEmail: "builtin-preserved@example.test",
       connectionStatus: "connected",
       reconnectReason: null,

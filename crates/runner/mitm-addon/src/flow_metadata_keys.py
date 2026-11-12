@@ -261,6 +261,10 @@ AUTH_RESOLVED_SECRETS: Final = "auth_resolved_secrets"
 AUTH_REFRESHED_CONNECTORS: Final = "auth_refreshed_connectors"
 AUTH_REFRESHED_SECRETS: Final = "auth_refreshed_secrets"
 AUTH_CACHE_HIT: Final = "auth_cache_hit"
+# Opaque, credential-bearing result owned by auth for this physical HTTPFlow;
+# never serialized by diagnostics or reused across flows. Terminal cleanup drops it.
+CUSTOM_NETWORK_ADMISSION: Final = "custom_network_admission"
+CUSTOM_NETWORK_BOUND: Final = "custom_network_bound"
 AUTH_URL_REWRITE: Final = "auth_url_rewrite"
 AUTH_BASE_FORWARD_ADMISSION: Final = "auth_base_forward_admission"
 AWS_SIGV4_BODY_ADMISSION: Final = "aws_sigv4_body_admission"

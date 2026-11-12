@@ -51,6 +51,14 @@ def auth_config_injects_credentials(auth_config: object) -> bool:
     return auth_base_from_config(auth_config) is not None
 
 
+def api_injects_ordinary_upstream_credentials(api_entry: dict) -> bool:
+    """Include network-only credentials in ordinary upstream admission."""
+    intent = api_entry.get("networkIntent")
+    return (
+        isinstance(intent, dict) and intent.get("kind") == "cloudflare_access"
+    ) or auth_config_injects_ordinary_upstream_credentials(api_entry.get("auth"))
+
+
 def _is_string_record(value: object) -> bool:
     return isinstance(value, dict) and all(
         isinstance(key, str) and isinstance(record_value, str)

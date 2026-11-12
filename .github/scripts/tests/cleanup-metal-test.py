@@ -67,7 +67,10 @@ if len(args)==1 and args[0].startswith('sudo flock '):
  sys.exit(255 if os.environ.get('RELEASE_ERROR') else status)
 os.environ['FIXTURE_HOST']=str(root/host)
 if args[2]=='-c':
- command=[sys.executable,'-c',shlex.split(args[3])[0],*args[4:],'--root',str(root/host)]
+ source=shlex.split(args[3])[0]
+ if os.environ.get('STOP_CLOCK_STEP'):
+  source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
+ command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
  if os.environ.get('PARTIAL_RELEASE'):
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
@@ -88,10 +91,27 @@ if args[2]=='-c':
 os.execv(sys.executable,[sys.executable,*args[2:],'--root',str(root/host)])
 """
 
+CLOCK = r"""import os,sys,threading,time
+from pathlib import Path
+clock=Path(os.environ['FIXTURE_HOST'])/'clock';clock.write_text('0')
+real_monotonic=time.monotonic;real_sleep=time.sleep;owner=threading.current_thread()
+def controlled():
+ # Keep subprocess transport and heartbeat clocks real while advancing the CLI.
+ return threading.current_thread() is owner and sys._getframe(2).f_globals.get('__name__')=='__main__'
+def monotonic():
+ return real_monotonic()+float(clock.read_text()) if controlled() else real_monotonic()
+def sleep(seconds):
+ if controlled():
+  clock.write_text(str(float(clock.read_text())+max(seconds,float(os.environ['STOP_CLOCK_STEP']))))
+ else:real_sleep(seconds)
+time.monotonic=monotonic;time.sleep=sleep
+"""
+
 SYSTEMCTL = r"""#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
 root=Path(os.environ['FIXTURE_HOST']);statefile=root/'states.json';states=json.loads(statefile.read_text()) if statefile.exists() else {};args=sys.argv[1:];op=args[0]
+jobsfile=root/'stop-jobs.json';jobs=json.loads(jobsfile.read_text()) if jobsfile.exists() else {}
 with (root/'systemctl.log').open('a') as log:log.write(json.dumps(args)+'\n')
 roots=['etc/systemd/system','run/systemd/system','run/systemd/transient']
 files={p.name:'/'+str(p.relative_to(root)) for d in roots for p in (root/d).glob('*.service')}
@@ -109,6 +129,12 @@ elif op=='show':
   fixture=Path(os.environ['FIXTURE'])
   with (fixture/'drain-ready').open('w') as ready:ready.write('observing\n')
   with (fixture/'drain-advance').open() as advance:advance.readline()
+ for name in names:
+  if name in jobs and jobs[name] is not None and float((root/'clock').read_text())>=jobs[name]:
+   states[name].update(ActiveState='inactive',MainPID='0',Job='')
+   (root/'run/systemd/transient'/name).unlink(missing_ok=True)
+   del jobs[name]
+ statefile.write_text(json.dumps(states));jobsfile.write_text(json.dumps(jobs))
  missing=False
  for name in names:
   state={'Id':name,'LoadState':'loaded' if name in files else 'not-found','ActiveState':'inactive','MainPID':'0','ControlGroup':'','FragmentPath':files.get(name,''),'Job':''};state.update(states.get(name,{}))
@@ -121,10 +147,16 @@ elif op in ('stop','reset-failed'):
   with (Path(os.environ['FIXTURE'])/'ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
   signal.pause()
  (root/'stopped').touch()
- for name in names:states.setdefault(name,{}).update(ActiveState='inactive',MainPID='0',Job='')
+ delaysfile=root/'stop-delays.json';delays=json.loads(delaysfile.read_text()) if delaysfile.exists() else {}
+ for name in names:
+  if op=='stop' and name in delays:
+   states.setdefault(name,{}).update(ActiveState='deactivating',Job='91')
+   jobs[name]=None if delays[name] is None else float((root/'clock').read_text())+delays[name]
+  else:states.setdefault(name,{}).update(ActiveState='inactive',MainPID='0',Job='')
  if op=='stop':
-  for name in names:(root/'run/systemd/transient'/name).unlink(missing_ok=True)
- statefile.write_text(json.dumps(states))
+  for name in names:
+   if name not in jobs:(root/'run/systemd/transient'/name).unlink(missing_ok=True)
+ statefile.write_text(json.dumps(states));jobsfile.write_text(json.dumps(jobs))
 elif op=='disable':
  for d in roots:
   for directory in (root/d).glob('*.wants'):
@@ -149,6 +181,7 @@ class CleanupTests(unittest.TestCase):
             path.chmod(0o755)
         for host in ("metal-a", "metal-b"):
             (self.root / host).mkdir()
+        (self.root / "clock.py").write_text(CLOCK)
         self.github()
         self.env = {
             **os.environ,
@@ -382,6 +415,76 @@ class CleanupTests(unittest.TestCase):
         result, payload = self.worker("inventory")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(payload, {})
+
+    def test_short_and_long_stop_jobs_complete_before_files_are_removed(self):
+        delays = {}
+        files = []
+        for pr, delay in ((41, 1), (42, 96)):
+            name = f"vm0-runner-pr-{pr}-1.service"
+            files.append(self.resource(f"run/systemd/transient/{name}"))
+            files.append(self.resource(f"var/lib/vm0-runner/runners/pr-{pr}/config"))
+            self.state(name, ActiveState="active", MainPID="77")
+            delays[name] = delay
+        (self.root / "metal-a/stop-delays.json").write_text(json.dumps(delays))
+
+        # Advance only the worker's standard clock; the real controller, worker,
+        # files/locks and systemctl boundary run unchanged. No wall-clock wait.
+        result = self.controller(STOP_CLOCK_STEP="1")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue(all(not file.exists() for file in files))
+        decisions = {
+            record["pr"]: record
+            for line in result.stdout.splitlines()
+            if line.startswith('{"pr":')
+            if (record := json.loads(line)).get("pr")
+        }
+        for pr in (41, 42):
+            self.assertEqual(decisions[pr]["outcome"], "cleaned")
+            self.assertEqual(decisions[pr]["hosts"]["metal-a"]["outcome"], "cleaned")
+        self.assertEqual(
+            json.loads((self.root / "metal-a/stop-jobs.json").read_text()), {}
+        )
+
+    def test_stuck_stop_jobs_share_deadline_retain_resources_and_exit_one(self):
+        delays = {}
+        retained = []
+        for pr in (41, 42, 43):
+            name = f"vm0-runner-pr-{pr}-1.service"
+            unit = self.resource(f"run/systemd/transient/{name}")
+            config = self.resource(f"var/lib/vm0-runner/runners/pr-{pr}/config")
+            self.state(name, ActiveState="active", MainPID="77")
+            delays[name] = 1 if pr == 43 else None
+            if pr != 43:
+                retained.extend((unit, config))
+                retained.append(
+                    self.resource(f"var/lib/vm0-runner/groups/vm0/test-pr-{pr}/config")
+                )
+        (self.root / "metal-a/stop-delays.json").write_text(json.dumps(delays))
+
+        result = self.controller(STOP_CLOCK_STEP="60")
+        self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+        self.assertTrue(all(file.exists() for file in retained))
+        decisions = {
+            record["pr"]: record
+            for line in result.stdout.splitlines()
+            if line.startswith('{"pr":')
+            if (record := json.loads(line)).get("pr")
+        }
+        for pr in (41, 42):
+            self.assertEqual(
+                decisions[pr]["outcome"], "failed", result.stderr + result.stdout
+            )
+            failed = decisions[pr]["hosts"]["metal-a"]
+            self.assertEqual(failed["error"], "service execution remains after stop")
+            state = failed["remaining"]["units"][0]["state"]
+            self.assertEqual(state["ActiveState"], "deactivating")
+            self.assertTrue(state["busy"])
+            self.assertEqual(state["Job"], "91")
+        self.assertEqual(decisions[43]["outcome"], "cleaned")
+        self.assertFalse(config.exists())
+        self.assertFalse(unit.exists())
+        # Two stuck namespaces consume one 330s budget, plus one clock step.
+        self.assertLessEqual(float((self.root / "metal-a/clock").read_text()), 390)
 
     def test_cleanup_retains_files_until_cgroup_execution_drains(self):
         name = "vm0-runner-pr-42-api.service"

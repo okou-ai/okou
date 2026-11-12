@@ -24,6 +24,7 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   ComposerRail,
   RAIL_TILE,
+  RAIL_TILE_ART,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import { WorkflowCover } from "./workflow-cover.tsx";
@@ -93,7 +94,12 @@ export function WorkflowTile({
         onSelect(item);
       }}
     >
-      <span className="block aspect-video overflow-hidden rounded-xl border border-border bg-muted">
+      <span
+        className={cn(
+          "block aspect-video overflow-hidden rounded-xl border border-border bg-muted",
+          RAIL_TILE_ART,
+        )}
+      >
         <WorkflowCover item={item} />
       </span>
       <span className={RAIL_TILE_CAPTION}>{copy.title}</span>

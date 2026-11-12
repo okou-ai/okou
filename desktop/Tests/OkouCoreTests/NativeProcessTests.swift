@@ -209,7 +209,11 @@ final class NativeProcessTests: XCTestCase {
 
     let failed = await listApps(executor)
     XCTAssertEqual(failed["status"].string, "failed")
+    XCTAssertEqual(failed["error"]["code"].string, "accessibility_unavailable")
+    XCTAssertTrue(failed["error"]["message"].string?.contains("protocol failure: invalid JSON") == true)
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
     let event = try XCTUnwrap(collector.events().first)
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "invalid_json")
     let attachments = try collector.attachments(for: event)
     let expected = try Data(contentsOf: directory.appendingPathComponent("malformed-response.bin"))
     let received = try XCTUnwrap(attachments["native-helper-response.bin"])

@@ -37,7 +37,7 @@ from tests.managed_openrouter_helpers import PATHS, sandbox
 from tests.packaged_dependency_helpers import runtime_lock_versions
 from tests.pending_helpers import result_data
 from tests.registry_builtin_helpers import write_catalog_cache
-from tests.request_handler_helpers import _write_registry
+from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.usage_helpers import UsageWebhookServer
 
 
@@ -569,3 +569,69 @@ def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, dialect, uplo
         [entry] = [json.loads(line) for line in log_path.read_text().splitlines()]
         assert entry["status"] == 402
         assert entry["firewall_error"] == "insufficient_credits"
+
+
+@pytest.mark.parametrize("upload", [False, True], ids=["incomplete-upload", "large-upload"])
+def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, upload):
+    api = FakeAuthEndpoint()
+    api.queue_json_response(
+        {"error": {"code": "FORBIDDEN", "message": "Custom connector network authority changed"}},
+        status=403,
+    )
+    with (
+        api.run(),
+        launch(
+            tmp_path, "generation-1", api_url=api.api_url, mode="reverse:https://example.com"
+        ) as (directory, port),
+    ):
+        custom_id, config_id = str(uuid4()), str(uuid4())
+        info = _single_firewall_sandbox(
+            directory,
+            run_id=str(uuid4()),
+            firewall_name="custom_network",
+            custom_connector_id=custom_id,
+            include_encrypted_secrets=False,
+            api_entry={
+                "id": "custom_network:0",
+                "base": "https://example.com/api/",
+                "auth": {},
+                "hostPolicy": {"kind": "publicDestination"},
+                "networkIntent": {
+                    "kind": "cloudflare_access",
+                    "configId": config_id,
+                    "generation": 1,
+                },
+            },
+            network_policy={"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"},
+        )
+        info["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
+        path = _write_registry(directory, client_ip="127.0.0.1", sandbox_info=info)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert (
+            result_data(exchange(directory, registry_apply_request(digest)))["state"] == "applied"
+        )
+        tls = ssl.create_default_context(
+            cafile=str(directory / "certificates" / "mitmproxy-ca-cert.pem")
+        )
+        with (
+            socket.create_connection(("127.0.0.1", port), timeout=5) as raw,
+            tls.wrap_socket(raw, server_hostname="example.com") as peer,
+        ):
+            peer.sendall(
+                b"POST /api/items HTTP/1.1\r\nHost: example.com\r\nContent-Length: 8000000\r\n\r\n"
+            )
+            peer.sendall(b"x" * (8_000_000 if upload else 1000))
+            response = http.client.HTTPResponse(peer)
+            response.begin()
+            body = response.read()
+            assert response.status == 403, body
+            assert json.loads(body)["error"] == "FORBIDDEN"
+        assert api.request_count == 1
+        sent = api.requests[0].json_body()
+        assert sent["networkRequest"] == {
+            "method": "POST",
+            "url": "https://example.com/api/items",
+            "intent": {"kind": "cloudflare_access", "configId": config_id, "generation": 1},
+        }
+        assert "encryptedSecrets" not in sent
+        assert sent["authHeaders"] == {}

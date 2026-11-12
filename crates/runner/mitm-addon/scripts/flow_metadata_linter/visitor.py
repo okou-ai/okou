@@ -407,6 +407,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 self._add_violation(_violation(self.path, keyword, key_name))
 
     def _record_metadata_subscript_key_violations(self, node: ast.Subscript) -> None:
+        """Check keys before either operand can change the metadata aliases."""
+        self._record_metadata_merge_key_violations(node.value)
+        self._record_metadata_merge_key_violations(node.slice)
         if self._is_metadata_alias_value(node.value):
             self._add_violations(_metadata_key_expression_violations(self.path, node.slice))
 
@@ -497,8 +500,6 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self.visit(node.value)
             return
         if isinstance(node, ast.Subscript):
-            self._record_metadata_merge_key_violations(node.value)
-            self._record_metadata_merge_key_violations(node.slice)
             self._record_metadata_subscript_key_violations(node)
             self.visit(node.value)
             self.visit(node.slice)
@@ -957,8 +958,6 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
-        self._record_metadata_merge_key_violations(node.value)
-        self._record_metadata_merge_key_violations(node.slice)
         self._record_metadata_subscript_key_violations(node)
         self.visit(node.value)
         self.visit(node.slice)

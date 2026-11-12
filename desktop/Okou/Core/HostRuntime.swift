@@ -92,6 +92,16 @@ public actor HostRuntime {
   private var commandRetryTask: Task<Void, Never>?
   private var pendingRefresh = false
   private var commandRecoveryAttempt = 0
+  private enum RecoverySource: Equatable {
+    case registration, heartbeat, state, commands, notifications
+  }
+  private struct Recovery {
+    let source: RecoverySource
+    let message: String
+    let attempt: Int
+    let retryAt: Date?
+  }
+  private var recoveries: [Recovery] = []
   private var stopTask: Task<Void, Never>?
   private var registrationTask: (generation: Int, task: Task<Void, Error>)?
   private var state = RuntimeState()
@@ -162,6 +172,7 @@ public actor HostRuntime {
     let current = generation
     running = true
     acceptingCommands = true
+    recoveries.removeAll()
     state.status = "connecting"
     state.lastError = nil
     state.updateRequired = false
@@ -182,7 +193,7 @@ public actor HostRuntime {
         guard running, current == generation else { return }
         if await rejectAuthentication(error) { return }
         attempt += 1
-        await recover(error, attempt: attempt)
+        await recover(error, attempt: attempt, source: .registration)
         try? await Task.sleep(for: .seconds(delay(attempt)))
       }
     }
@@ -244,6 +255,7 @@ public actor HostRuntime {
     state.lastError = nil
     state.recoveryAttempt = 0
     state.retryAt = nil
+    recoveries.removeAll()
     await publish()
     guard running, acceptingCommands, generation == current else { return }
     if connection.usesPresence {
@@ -291,6 +303,7 @@ public actor HostRuntime {
     drainTask = nil
     pendingRefresh = false
     commandRecoveryAttempt = 0
+    recoveries.removeAll()
     running = false
     generation += 1
     heartbeatTask?.cancel()
@@ -319,11 +332,30 @@ public actor HostRuntime {
     await publish()
   }
   private func delay(_ attempt: Int) -> Double { min(60, 2 * pow(2, Double(min(attempt - 1, 5)))) }
-  private func recover(_ error: Error, attempt: Int) async {
-    state.status = "recovering"
-    state.lastError = error.localizedDescription
-    state.recoveryAttempt = attempt
-    state.retryAt = Date().addingTimeInterval(delay(attempt))
+  private func setRecovery(
+    _ source: RecoverySource, message: String, attempt: Int = 0, retryAt: Date? = nil
+  ) {
+    recoveries.removeAll { $0.source == source }
+    recoveries.append(Recovery(source: source, message: message, attempt: attempt, retryAt: retryAt))
+    refreshRecoveryState()
+  }
+  private func clearRecovery(_ source: RecoverySource) {
+    recoveries.removeAll { $0.source == source }
+    refreshRecoveryState()
+  }
+  private func refreshRecoveryState() {
+    guard running, acceptingCommands else { return }
+    let recovery = recoveries.last
+    state.status = recovery != nil || (connection?.usesPresence == true && !notificationReady)
+      ? "recovering" : "online"
+    state.lastError = recovery?.message
+    state.recoveryAttempt = recovery?.attempt ?? 0
+    state.retryAt = recovery?.retryAt
+  }
+  private func recover(_ error: Error, attempt: Int, source: RecoverySource) async {
+    setRecovery(
+      source, message: error.localizedDescription, attempt: attempt,
+      retryAt: Date().addingTimeInterval(delay(attempt)))
     state.errors.insert(
       "\(ISO8601DateFormatter().string(from: Date())) \(error.localizedDescription)", at: 0)
     state.errors = Array(state.errors.prefix(50))
@@ -357,11 +389,7 @@ public actor HostRuntime {
         guard running, generation == current else { return }
         lastAdvertisedState = advertised
         state.lastHeartbeat = Date()
-        state.status = !acceptingCommands ? "stopping"
-          : connection.usesPresence && !notificationReady ? "recovering" : "online"
-        state.lastError = nil
-        state.retryAt = nil
-        state.recoveryAttempt = 0
+        clearRecovery(.state)
         if result.hasPendingCommands { requestCommandRefresh(generation: current, connection: connection) }
         await publish()
         attempt = 0
@@ -375,7 +403,7 @@ public actor HostRuntime {
         let operation = await trace.snapshot()
         guard running, generation == current else { return }
         stateDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
-        await recover(error, attempt: attempt)
+        await recover(error, attempt: attempt, source: .state)
         do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
       }
     }
@@ -402,10 +430,7 @@ public actor HostRuntime {
         heartbeatDiagnostics.finish(
           outcome: .recovered, requests: operation.requests, operation: operation)
         state.lastHeartbeat = Date()
-        if acceptingCommands { state.status = "online" }
-        state.lastError = nil
-        state.retryAt = nil
-        state.recoveryAttempt = 0
+        clearRecovery(.heartbeat)
         attempt = 0
         wait = 15
         if heartbeat.hasPendingCommands {
@@ -420,7 +445,7 @@ public actor HostRuntime {
         wait = delay(attempt)
         heartbeatDiagnostics.failed(
           error: error, requests: operation.requests, retryDelay: wait, operation: operation)
-        await recover(error, attempt: attempt)
+        await recover(error, attempt: attempt, source: .heartbeat)
       }
     }
   }
@@ -522,6 +547,7 @@ public actor HostRuntime {
         switch event {
         case .ready:
           notificationReady = true
+          recoveries.removeAll { $0.source == .notifications }
           if connection.usesPresence { requestStateRefresh(generation: current, connection: connection) }
           requestCommandRefresh(generation: current, connection: connection)
           scheduleNotificationReport("ready", connection: connection)
@@ -530,8 +556,7 @@ public actor HostRuntime {
         case .unavailable(let message, let code):
           notificationReady = false
           if connection.usesPresence {
-            state.status = "recovering"
-            state.lastError = message
+            setRecovery(.notifications, message: message)
           }
           state.errors.insert(message, at: 0)
           state.errors = Array(state.errors.prefix(50))
@@ -544,8 +569,7 @@ public actor HostRuntime {
       guard running, acceptingCommands, generation == current else { return }
       notificationReady = false
       if connection.usesPresence {
-        state.status = "recovering"
-        state.lastError = error.localizedDescription
+        setRecovery(.notifications, message: error.localizedDescription)
       }
       state.errors.insert(error.localizedDescription, at: 0)
       state.errors = Array(state.errors.prefix(50))
@@ -581,6 +605,12 @@ public actor HostRuntime {
     guard drainTask == nil, commandRetryTask == nil else { return }
     drainTask = Task { await self.drainCommands(generation: current, connection: connection) }
   }
+  private func commandRequestRecovered(generation current: Int) async {
+    guard generation == current else { return }
+    guard recoveries.contains(where: { $0.source == .commands }) else { return }
+    clearRecovery(.commands)
+    await publish()
+  }
   private func drainCommands(generation current: Int, connection: Connection) async {
     defer { if generation == current { drainTask = nil } }
     while running && acceptingCommands && generation == current {
@@ -597,7 +627,9 @@ public actor HostRuntime {
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Command claim failed (HTTP \(response.status))")
         }
-        switch try response.decode(ComputerUseCommandClaim.self) {
+        let claim = try response.decode(ComputerUseCommandClaim.self)
+        await commandRequestRecovered(generation: current)
+        switch claim {
         case .command(let command):
           // A late successful claim still owns a completion report,
           // even when logout/stop retired its local execution grant.
@@ -642,7 +674,7 @@ public actor HostRuntime {
         }
         if await rejectAuthentication(error) { return }
         commandRecoveryAttempt += 1
-        await recover(error, attempt: commandRecoveryAttempt)
+        await recover(error, attempt: commandRecoveryAttempt, source: .commands)
         pendingRefresh = true
         let wait = delay(commandRecoveryAttempt)
         commandRetryTask = Task {

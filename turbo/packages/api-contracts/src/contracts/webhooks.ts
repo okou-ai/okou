@@ -15,6 +15,11 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
+import {
+  customConnectorNetworkAdmissionSchema,
+  customConnectorNetworkIntentSchema,
+  customConnectorNetworkRequestSchema,
+} from "../validators/custom-connector-network";
 import { oomEvidenceSchema } from "./oom-evidence";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import {
@@ -386,9 +391,7 @@ const firewallAwsSigv4AuthSchema = object({
 }).strict();
 
 const firewallAuthResponseSchema = object({
-  networkAdmission: object({ kind: literal("direct") })
-    .strict()
-    .optional(),
+  networkAdmission: customConnectorNetworkAdmissionSchema.optional(),
   headers: record(string(), string()),
   base: string().optional(),
   query: record(string(), string()).optional(),
@@ -433,7 +436,7 @@ export const webhookFirewallAuthContract = c.router({
     body: object({
       // Encrypted runtime secret namespace. After decryption, keys are the
       // `NAME` in `${{ secrets.NAME }}`.
-      encryptedSecrets: string().min(1),
+      encryptedSecrets: string().min(1).optional(),
       authHeaders: record(string(), string()),
       authBase: string().optional(),
       authQuery: record(string(), string()).optional(),
@@ -452,8 +455,10 @@ export const webhookFirewallAuthContract = c.router({
       // auth cache lifetime by the current credit authorization lease.
       firewallBillable: boolean().optional(),
       forceRefresh: boolean().optional(),
-      // Opt-in preparation: this release only admits unbound custom connectors.
       networkAdmission: literal(true).optional(),
+      networkRequest: customConnectorNetworkRequestSchema.optional(),
+      // Capability carried by app-auth requests, never a network result cache.
+      networkIntent: customConnectorNetworkIntentSchema.optional(),
     }),
     responses: {
       200: firewallAuthResponseSchema,
