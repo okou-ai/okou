@@ -7,6 +7,39 @@ import XCTest
 
 @MainActor
 final class ChatComposerReturnKeyTests: XCTestCase {
+  func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    preferences.setReturnKey(.send)
+    let fixture = ConversationHistoryFixture(count: 1)
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    XCTAssertEqual(conversation.history?.canStop, true)
+    let host = UIHostingController(
+      rootView: ChatDetailView(conversation: conversation)
+        .environment(\.composerPreferences, preferences))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    input.insertText("Keep the existing work running")
+
+    // Both key events arrive before the scheduled submission can clear the editor.
+    input.insertText("\n")
+    input.insertText("\n")
+    try await waitForBusinessResult {
+      !conversation.isSending && conversation.pending.contains { $0.needsRetry }
+    }
+    let writes = try fixture.requests.sentMessages.withLock {
+      try $0.map { try JSONDecoder().decode([String: JSONValue].self, from: $0) }
+    }
+    XCTAssertEqual(writes.map { $0["prompt"]?.string }, ["Keep the existing work running"])
+    XCTAssertEqual(conversation.history?.canStop, true)
+    XCTAssertNil(conversation.stopIssue)
+  }
+
   func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

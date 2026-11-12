@@ -377,9 +377,14 @@ struct ChatComposerView: View {
 
   private func performPrimaryAction() {
     guard canPerformPrimaryAction else { return }
-    if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
-    // The send operation captures native text for motion before ending editing.
-    Task { await submit() }
+    let requiresContent = !showsStop
+    Task {
+      // A queued Send must not become Stop after another send clears the draft.
+      guard !requiresContent || hasContent else { return }
+      if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
+      // The send operation captures native text for motion before ending editing.
+      await submit()
+    }
   }
 
   /// "Clear draft" in Add to chat, only while there is something to clear.
