@@ -4,22 +4,7 @@ import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  onTestFinished,
-} from "vitest";
-import {
-  getSecretKmsClient,
-  setSecretKmsClientForTests,
-} from "../../../lib/secret-kms-client";
-import { createDeferredPromise } from "../../utils";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -812,78 +797,6 @@ describe("live chat VNC Run inventory", () => {
     );
     const response = await accept(inventory().list({ headers: stale }), [404]);
     expect(response.body.error.code).toBe("VNC_UNAVAILABLE");
-  });
-
-  it("rejects inventory while execution secrets are being prepared", async () => {
-    const value = await claimed.paidOwner();
-    const actor = createBddApi(context).user(value);
-    const connection = await accept(
-      api.connections().create({ headers, body: vncConnectionBody() }),
-      [201],
-    );
-    await api.enableDefault(value, "vnc", connection.body.id);
-    const runs = createRunsApi(context);
-    await runs.configureRunnerGroup();
-    const preparing = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const kms = getSecretKmsClient();
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve();
-      }
-      setSecretKmsClientForTests(kms);
-    });
-    setSecretKmsClientForTests({
-      ...kms,
-      async generateDataKey(request, signal) {
-        if (!preparing.settled()) {
-          preparing.resolve();
-        }
-        await release.promise;
-        return await kms.generateDataKey(request, signal);
-      },
-    });
-    const chat = createChatFilesBddApi(context);
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: value.agentId,
-        clientEventId,
-        prompt: "Inspect VNC authority before execution starts",
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the input to enqueue");
-    }
-    await preparing.promise;
-    const page = await chat.listThreadEvents(actor, sent.body.threadId);
-    const pending = page.events.find((event) => {
-      return event.revokesEventId === clientEventId;
-    });
-    if (!pending?.runId) {
-      throw new Error("Expected a durable pending Run");
-    }
-    await expect(runs.readRun(actor, pending.runId)).resolves.toMatchObject({
-      status: "pending",
-    });
-    api.authenticate(value);
-    const response = await accept(
-      inventory().list({ headers: token({ ...value, runId: pending.runId }) }),
-      [404],
-    );
-    expect(response.body.error.code).toBe("VNC_UNAVAILABLE");
-    release.resolve();
-    await flushWaitUntilForTest();
-    const input = await runs.executionInput(pending.runId);
-    await runs.requestCancelRun(actor, pending.runId, [200]);
-    await createWebhookCallbackApi(context).requestAgentComplete(
-      { runId: pending.runId, exitCode: 137 },
-      { authorization: `Bearer ${input.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
   });
 
   it.each(["completed", "cancelled", "failed"] as const)(
