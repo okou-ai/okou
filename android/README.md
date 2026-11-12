@@ -322,6 +322,19 @@ register Android's installed-reader inventory, including error responses.
 Add only contracts a native consumer actually needs. Unsupported schema shapes
 fail generation; do not replace them with untyped JSON or parallel handwritten DTOs.
 
+The selected emitter supports string-keyed records, root array/map aliases and
+typed object unions with disjoint string tags or unique required wire keys.
+Union selection rejects unknown or ambiguous variants and preserves the original
+wire object without inserting a discriminator wrapper. Nullable/optional fields,
+combined string-enum vocabularies, explicit nulls and empty tuples retain their
+wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
+unrepresented values still fail generation. This is a typed reader boundary,
+not a second implementation of Zod's complete validation/transform runtime.
+
+Retrofit query support is limited to canonical scalar fields; omitted optional
+values stay absent from the URL. Query defaults/compositions, path parameters and
+non-200 success binding support require a future actual consumer before expansion.
+
 Regenerate from the repository root with the Turbo workspace dependencies installed:
 
 ```bash
@@ -337,6 +350,26 @@ To verify it against the current canonical contracts, from `turbo/`:
 ```bash
 pnpm -F @okouai/api-contracts check:kotlin
 pnpm -F @okouai/api-contracts lint-android-api-consumption
+```
+
+Generation/checking also owns test-only chat read fixtures under
+`app/src/test/kotlin/ai/okou/android/api/fixtures` and
+`app/src/test/resources/api-bindings`. They are derived from the real canonical
+snapshot, lifecycle, indicator, agent, project and persisted-archive schemas.
+`ChatReadBindingsTest` compiles/decodes those generated types with the existing
+kotlinx.serialization and Retrofit/MockWebServer setup, including branch rejection,
+nullable/empty values and optional query construction. The archive fixture uses
+the validator's input representation for documented historical/default values;
+semantic normalization remains the consuming domain's responsibility.
+
+These are compile/read proofs, not installed application endpoints or a native
+chat-list feature. They do not enter the production API-consumption inventory.
+`check:kotlin` and the focused generator tests detect fixture drift; the consumption
+lint retains its production-only generated-client check. Run the reader proof from
+`android/`, with the SDK configured as above:
+
+```bash
+./gradlew :app:testDebugUnitTest --tests ai.okou.android.api.ChatReadBindingsTest --no-daemon
 ```
 
 Drift comparison ignores comments, whitespace and optional trailing commas;
