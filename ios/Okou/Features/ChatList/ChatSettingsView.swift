@@ -36,6 +36,8 @@ struct ChatSettingsView: View {
   @Environment(\.openURL) private var openURL
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
+  @AppStorage(ComposerReturnKeyPreference.storageKey) private var returnKey =
+    ComposerReturnKeyPreference.newline.rawValue
   @State private var signingOut = false
   @State private var confirmsSignOut = false
 
@@ -93,6 +95,15 @@ struct ChatSettingsView: View {
               settingsLabel("Language", icon: "languages")
             }
           }
+          Picker(selection: $returnKey) {
+            ForEach(ComposerReturnKeyPreference.allCases) { option in
+              Text(option.title).tag(option.rawValue)
+            }
+          } label: {
+            settingsLabel("Return key", icon: "pencil")
+          }
+          .okouValuePicker()
+          .accessibilityIdentifier("return-key-preference")
         } header: {
           Text("Preferences").okouSectionHeader()
         } footer: {
@@ -101,7 +112,10 @@ struct ChatSettingsView: View {
               "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer."
             )
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-
+            if returnKey == ComposerReturnKeyPreference.send.rawValue {
+              Text("When set to Send, touch and hold the message field to insert a new line.")
+                .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+            }
           }
           .okouSectionNote()
         }

@@ -1,0 +1,112 @@
+import ChatDomain
+import SwiftUI
+import XCTest
+
+@testable import Okou
+
+@MainActor
+final class ChatComposerReturnKeyTests: XCTestCase {
+  func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {
+    let suite = "return-key-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(conversation: conversation, source: source)
+        .defaultAppStorage(defaults))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    input.insertText("First")
+    input.insertText("\n")
+    input.insertText("Second")
+    XCTAssertEqual(conversation.draft, "First\nSecond")
+    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
+
+    defaults.set(
+      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    try await eventually { input.returnKeyType == .send }
+    input.insertText("\n")
+    try await waitForBusinessResult {
+      conversation.draft.isEmpty && !fixture.state.value.withLock { $0.messages.isEmpty }
+    }
+    let sent = try fixture.state.value.withLock {
+      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
+    }
+    XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, ["First\nSecond"])
+  }
+
+  func testSendModeKeepsIMEConfirmationWithNativeEditingBeforeAnExplicitSend() async throws {
+    let suite = "return-key-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(
+      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(conversation: conversation, source: source)
+        .defaultAppStorage(defaults))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    input.setMarkedText("确认发布", selectedRange: NSRange(location: 4, length: 0))
+    input.unmarkText()
+    input.insertText("\n")
+    XCTAssertTrue(conversation.draft.contains("确认发布"))
+    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
+    try await eventually { !input.isSettlingComposition }
+    input.insertText("\n")
+    try await waitForBusinessResult {
+      conversation.draft.isEmpty && !fixture.state.value.withLock { $0.messages.isEmpty }
+    }
+    let sent = try fixture.state.value.withLock {
+      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
+    }
+    XCTAssertTrue(
+      sent.first?.userMessage.parts.compactMap(\.text).joined().contains("确认发布") == true)
+  }
+
+  func testSendModeSelectsAChatReferenceAndMenuNewlinePreservesItsPartsAndUndo() async throws {
+    let suite = "return-key-\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(
+      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    let fixture = MentionNavigationFixture()
+    let workspace = try await fixture.workspace()
+    defer { workspace.close() }
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(workspace: workspace).defaultAppStorage(defaults))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    input.insertText("Before @pl")
+    try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
+    input.insertText("\n")
+    try await waitForBusinessResult {
+      workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
+    }
+    input.insertText("🌷 old after")
+    let before = workspace.newComposer.document
+    input.selectedRange = (input.text as NSString).range(of: "old")
+    try await eventually { input.undoManager?.groupingLevel == 0 }
+    input.insertNewline()
+    XCTAssertEqual(workspace.newChatDraft, "Before  🌷 \n after")
+    XCTAssertEqual(
+      workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" },
+      before.parts.filter { $0["type"]?.string != "text" })
+    XCTAssertTrue(input.isFirstResponder)
+    try await eventually { input.undoManager?.groupingLevel == 0 }
+    input.undoManager?.undo()
+    try await waitForBusinessResult { workspace.newComposer.document == before }
+  }
+}

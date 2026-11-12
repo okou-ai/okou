@@ -22,6 +22,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var placeholder = String(localized: "Message Okou")
   var identifier = "message-input"
   var expanded = false
+  var returnKeyPreference = ComposerReturnKeyPreference.newline
+  var submitFromKeyboard: (@MainActor () -> Void)? = nil
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -99,6 +101,8 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.accessibilityLabel = placeholder
     view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
+    view.configureReturnKey(returnKeyPreference)
+    view.submitFromKeyboard = submitFromKeyboard
     view.acceptsImages = acceptsImages && isEnabled
     view.pasteImages = pasteImages
     view.pasteConfiguration = UIPasteConfiguration(
@@ -140,6 +144,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.pasteImages = { _ in }
     view.isCurrent = { false }
     view.inputReady = nil
+    view.submitFromKeyboard = nil
     view.mentionEditor = nil
     view.workflowSuggestions?.unregister(view)
     view.workflowSuggestions = nil
@@ -151,6 +156,17 @@ struct ChatComposerTextInput: UIViewRepresentable {
   final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
     var input: ChatComposerTextInput
     init(_ input: ChatComposerTextInput) { self.input = input }
+
+    func textView(
+      _ textView: UITextView, editMenuForTextIn range: NSRange,
+      suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+      guard let view = textView as? ComposerTextView, view.canInsertNewline else { return nil }
+      let newline = UIAction(title: String(localized: "New line")) { [weak view] _ in
+        view?.insertNewline()
+      }
+      return UIMenu(children: suggestedActions + [newline])
+    }
 
     func textViewDidChange(_ textView: UITextView) {
       // A reset retires this editor before SwiftUI dismantles its native view.
@@ -253,6 +269,8 @@ final class ComposerTextView: UITextView {
   var isApplyingDocument = false
   var isCurrent: @MainActor () -> Bool = { true }
   var inputReady: (@MainActor () -> Void)?
+  var returnKeyPreference = ComposerReturnKeyPreference.newline
+  var submitFromKeyboard: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
   private(set) var isSettlingComposition = false
   private var wantsFocus = false
@@ -354,6 +372,14 @@ final class ComposerTextView: UITextView {
     if text == "\n", markedTextRange == nil, !isSettlingComposition,
       mentionEditor?.handleMentionKey("\r", in: self) == true
     {
+      return
+    }
+    if text == "\n", returnKeyPreference == .send,
+      markedTextRange == nil, !isSettlingComposition
+    {
+      guard isCurrent(), isEditable else { return }
+      if workflowSuggestions?.handleKey("\r", in: self) == true { return }
+      submitFromKeyboard?()
       return
     }
     let wasComposing = markedTextRange != nil

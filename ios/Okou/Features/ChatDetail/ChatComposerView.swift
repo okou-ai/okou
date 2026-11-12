@@ -29,6 +29,8 @@ struct ChatComposerView: View {
   var project: ChatProject? = nil
   var removeProject: (() -> Void)? = nil
 
+  @AppStorage(ComposerReturnKeyPreference.storageKey) private var storedReturnKey =
+    ComposerReturnKeyPreference.newline.rawValue
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -51,6 +53,14 @@ struct ChatComposerView: View {
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var hasContent: Bool {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
+  }
+  private var returnKeyPreference: ComposerReturnKeyPreference {
+    ComposerReturnKeyPreference(rawValue: storedReturnKey) ?? .newline
+  }
+  private var canPerformPrimaryAction: Bool {
+    (hasContent || showsStop) && attachments.isReady && !isBusy && !needsUpgrade
+      && !voiceActive && draftState?.canSend != false
+      && (showsStop || modelSelection?.canSend != false)
   }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
@@ -156,7 +166,8 @@ struct ChatComposerView: View {
           if let state = draftState {
             ChatFeedbackComposer(
               state: state, inputID: inputID, isFocused: $isFocused,
-              acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder
+              acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+              returnKeyPreference: returnKeyPreference, submitFromKeyboard: sendFromKeyboard
             )
             .id(inputID)
             .transition(.identity)
@@ -167,7 +178,8 @@ struct ChatComposerView: View {
               acceptsImages: !isBusy && !needsUpgrade,
               isCurrent: { attachments.inputID == inputID },
               pasteImages: attachments.importPastedImages,
-              placeholder: resolvedPlaceholder
+              placeholder: resolvedPlaceholder,
+              returnKeyPreference: returnKeyPreference, submitFromKeyboard: sendFromKeyboard
             )
             .id(inputID)
             .transition(.identity)
@@ -215,11 +227,7 @@ struct ChatComposerView: View {
               .accessibilityHidden(!showsVoiceInput)
           }
           if !replacesSendWithMic {
-            Button {
-              if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
-              // The send operation captures native text for motion before ending editing.
-              Task { await submit() }
-            } label: {
+            Button(action: performPrimaryAction) {
               Group {
                 if showsProgress {
                   ProgressView()
@@ -240,12 +248,7 @@ struct ChatComposerView: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
             .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
-            .disabled(
-              (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
-                || voiceActive
-                || draftState?.canSend == false
-                || (!showsStop && modelSelection?.canSend == false)
-            )
+            .disabled(!canPerformPrimaryAction)
             .accessibilityLabel(showsStop ? "Stop" : "Send message")
             .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
             .frame(width: actionSize, height: actionSize)
@@ -365,6 +368,19 @@ struct ChatComposerView: View {
       case .failure(let error): attachments.report(error)
       }
     }
+  }
+
+  private func sendFromKeyboard() {
+    // An empty Send key must never become the active run's Stop action.
+    guard hasContent, !showsStop else { return }
+    performPrimaryAction()
+  }
+
+  private func performPrimaryAction() {
+    guard canPerformPrimaryAction else { return }
+    if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
+    // The send operation captures native text for motion before ending editing.
+    Task { await submit() }
   }
 
   /// "Clear draft" in Add to chat, only while there is something to clear.
