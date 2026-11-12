@@ -1,4 +1,5 @@
 import { runnerDispatchResponseSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
+import { settleIncludingAbort } from "../utils";
 import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 
 type DispatchObservation =
@@ -30,7 +31,7 @@ async function boundedBody(response: Response): Promise<unknown> {
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  try {
+  const reading = await settleIncludingAbort(async () => {
     for (;;) {
       const next = await reader.read();
       if (next.done) {
@@ -39,12 +40,18 @@ async function boundedBody(response: Response): Promise<unknown> {
       size += next.value.byteLength;
       if (size > 4096) {
         await reader.cancel();
-        return null;
+        return false;
       }
       chunks.push(next.value);
     }
-  } finally {
-    reader.releaseLock();
+    return true;
+  });
+  reader.releaseLock();
+  if (!reading.ok) {
+    throw reading.error;
+  }
+  if (!reading.value) {
+    return null;
   }
   const bytes = new Uint8Array(size);
   let offset = 0;
@@ -69,9 +76,8 @@ export async function postRunnerDispatch(
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
   const { target, runId, body, serviceToken, timeoutMs } = args;
-  let response: Response;
-  try {
-    response = await fetch(
+  const fetched = await settleIncludingAbort(
+    fetch(
       `https://${target.hostname}/runners/${target.runnerId}/control/runs/${runId}/dispatch`,
       {
         method: "POST",
@@ -87,11 +93,13 @@ export async function postRunnerDispatch(
           AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
         ]),
       },
-    );
-  } catch (error) {
-    signal.throwIfAborted();
-    return definitelyNotConnected(error) ? "not-delivered" : "unknown";
+    ),
+  );
+  signal.throwIfAborted();
+  if (!fetched.ok) {
+    return definitelyNotConnected(fetched.error) ? "not-delivered" : "unknown";
   }
+  const response = fetched.value;
   if ([400, 401, 403, 404, 405, 408, 413, 415].includes(response.status)) {
     await response.body?.cancel();
     return "not-delivered";
@@ -100,28 +108,25 @@ export async function postRunnerDispatch(
     await response.body?.cancel();
     return "unknown";
   }
-  try {
-    const parsed = runnerDispatchResponseSchema.safeParse(
-      await boundedBody(response),
-    );
-    signal.throwIfAborted();
-    if (
-      !parsed.success ||
-      parsed.data.runnerId !== target.runnerId ||
-      parsed.data.heartbeatGeneration !== target.heartbeatGeneration ||
-      parsed.data.runId !== runId
-    ) {
-      return "unknown";
-    }
-    if (response.status === 429) {
-      return parsed.data.disposition === "busy" ? "busy" : "unknown";
-    }
-    return parsed.data.disposition === "accepted" ||
-      parsed.data.disposition === "rejected"
-      ? parsed.data.disposition
-      : "unknown";
-  } catch {
-    signal.throwIfAborted();
+  const received = await settleIncludingAbort(boundedBody(response));
+  signal.throwIfAborted();
+  if (!received.ok) {
     return "unknown";
   }
+  const parsed = runnerDispatchResponseSchema.safeParse(received.value);
+  if (
+    !parsed.success ||
+    parsed.data.runnerId !== target.runnerId ||
+    parsed.data.heartbeatGeneration !== target.heartbeatGeneration ||
+    parsed.data.runId !== runId
+  ) {
+    return "unknown";
+  }
+  if (response.status === 429) {
+    return parsed.data.disposition === "busy" ? "busy" : "unknown";
+  }
+  return parsed.data.disposition === "accepted" ||
+    parsed.data.disposition === "rejected"
+    ? parsed.data.disposition
+    : "unknown";
 }
