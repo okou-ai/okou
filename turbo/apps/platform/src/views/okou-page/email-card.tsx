@@ -1,6 +1,6 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, surfaceVariants } from "@okouai/ui";
+import { Badge, Button, cn, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
   PopoverContent,
@@ -56,17 +56,18 @@ export function EmailCard() {
                 return $.works.email.title;
               })}
             </div>
-            <div className="truncate text-sm text-muted-foreground">
-              {t(($) => {
-                return $.works.email.description;
-              })}
-            </div>
-            <div className="h-5 truncate text-sm text-muted-foreground">
+            <div className="flex h-5 min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+              <span className={cn("truncate", address && "hidden sm:inline")}>
+                {t(($) => {
+                  return $.works.email.description;
+                })}
+                {address ? " ·" : null}
+              </span>
               {address ? (
                 <a
                   href={`mailto:${address}`}
                   title={address}
-                  className="underline underline-offset-4 hover:text-foreground"
+                  className="max-w-full shrink-0 truncate underline underline-offset-4 hover:text-foreground"
                 >
                   {address}
                 </a>

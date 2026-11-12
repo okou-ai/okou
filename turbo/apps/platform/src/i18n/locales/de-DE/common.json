@@ -7430,7 +7430,7 @@
       "codeInstructions": "Sende diesen Code von der E-Mail-Adresse, die du hinzufügen möchtest, an Okou. Verwende ihn als Betreff oder erste Zeile deiner Nachricht.",
       "connected": "E-Mail verbunden",
       "deleteAria": "{{email}} löschen",
-      "description": "Sende Okou eine E-Mail und führe jede Unterhaltung in einem eigenen Chat",
+      "description": "Schreib Okou eine E-Mail",
       "emailAddress": "E-Mail-Adresse",
       "healthNotice": "Verwende diese Integration nicht für Patientendaten, die unter HIPAA fallen.",
       "invalidLink": "Dieser Verbindungslink ist ungültig. Sende Okou eine neue E-Mail.",

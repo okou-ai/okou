@@ -7407,7 +7407,7 @@
       "codeInstructions": "Kirim kode ini ke Okou dari alamat email yang ingin ditambahkan. Gunakan sebagai subjek atau baris pertama pesan.",
       "connected": "Email terhubung",
       "deleteAria": "Hapus {{email}}",
-      "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "description": "Kirim email ke Okou",
       "emailAddress": "Alamat email",
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
