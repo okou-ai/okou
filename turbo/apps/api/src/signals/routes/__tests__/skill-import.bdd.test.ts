@@ -250,7 +250,8 @@ describe("POST /api/skill-import/skills", () => {
         body: skillBody({
           name: "Release Notes",
           files: [
-            { path: "./references//tone.md", content: "Earlier alias." },
+            { path: "./references//tone.md", content: "Keep it short. 世界" },
+            { path: "references//tone.md", content: "Earlier alias." },
             { path: "references/tone.md", content: "Keep it short. 世界" },
           ],
         }),
@@ -495,7 +496,9 @@ describe("POST /api/skill-import/skills", () => {
       "SKILL.md",
       "./SKILL.md",
       "SKILL.md/child.txt",
+      "a".repeat(256),
       "a".repeat(257),
+      `${"文".repeat(85)}.md`,
     ];
 
     const response = await accept(
@@ -513,6 +516,7 @@ describe("POST /api/skill-import/skills", () => {
               content: "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes + 1),
             },
             { path: "scripts/check.sh", content: "echo ok\n" },
+            { path: `${"文".repeat(84)}.md`, content: "A 255-byte filename" },
           ],
         }),
       }),
@@ -537,8 +541,60 @@ describe("POST /api/skill-import/skills", () => {
     expect(detail.body.fileContents).toStrictEqual([
       { path: "references/tone.md", content: "Keep it short." },
       { path: "scripts/check.sh", content: "echo ok\n" },
+      { path: `${"文".repeat(84)}.md`, content: "A 255-byte filename" },
     ]);
   });
+
+  it.each([
+    ["file count", SKILL_IMPORT_LIMITS.maxFilesPerSkill + 1, "text"],
+    [
+      "combined bytes",
+      SKILL_IMPORT_LIMITS.maxTotalFileBytes / SKILL_IMPORT_LIMITS.maxFileBytes +
+        1,
+      "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes),
+    ],
+  ])(
+    "deduplicates identical path aliases before enforcing the %s limit",
+    async (_name, count, content) => {
+      const { actor, session } = await openSession();
+      const response = await accept(
+        uploadClient().upload({
+          headers: tokenHeaders(session.token),
+          body: skillBody({
+            files: [
+              ...Array.from({ length: count }, (_, index) => {
+                return {
+                  path:
+                    index % 2 === 0
+                      ? "./references/tone.md"
+                      : "references/tone.md",
+                  content,
+                };
+              }),
+              { path: "scripts/check.sh", content },
+            ],
+          }),
+        }),
+        [201],
+      );
+      expect(response.body).toStrictEqual({
+        outcome: "created",
+        workflowId: expect.any(String),
+        name: "release-notes",
+      });
+      const detail = await accept(
+        workflowDetailClient().get({
+          headers: clerkHeaders(actor),
+          params: { workflowId: response.body.workflowId },
+        }),
+        [200],
+      );
+      expect(detail.body.fileContents).toStrictEqual([
+        { path: "references/tone.md", content },
+        { path: "scripts/check.sh", content },
+      ]);
+    },
+  );
 
   it("imports the instruction when every attachment is invalid", async () => {
     const { actor, session } = await openSession();

@@ -13,6 +13,8 @@ import {
 } from "@okouai/api-contracts/contracts/skill-import";
 import {
   normalizeWorkflowAttachmentFiles,
+  workflowAttachmentHash,
+  workflowAttachmentPath,
   type WorkflowAttachmentFile,
 } from "@okouai/core/workflow-attachment-bundle";
 import { agents } from "@okouai/db/schema/agent";
@@ -256,6 +258,10 @@ function firstBinaryField(body: SkillImportRequest): string | null {
 
 function importableSkillFiles(input: SkillImportRequest["files"]) {
   const files: WorkflowAttachmentFile[] = [];
+  const duplicates = new Map<
+    string,
+    { readonly index: number; readonly path: string }
+  >();
   const skippedFiles: SkillImportSkippedFile[] = [];
   let totalBytes = 0;
   for (const file of input ?? []) {
@@ -269,11 +275,7 @@ function importableSkillFiles(input: SkillImportRequest["files"]) {
       continue;
     }
     const fileBytes = utf8Bytes(file.content);
-    if (
-      fileBytes > SKILL_IMPORT_LIMITS.maxFileBytes ||
-      totalBytes + fileBytes > SKILL_IMPORT_LIMITS.maxTotalFileBytes ||
-      files.length >= SKILL_IMPORT_LIMITS.maxFilesPerSkill
-    ) {
+    if (fileBytes > SKILL_IMPORT_LIMITS.maxFileBytes) {
       skippedFiles.push({ path: file.path, reason: "size_limit" });
       continue;
     }
@@ -289,6 +291,27 @@ function importableSkillFiles(input: SkillImportRequest["files"]) {
       skippedFiles.push({ path: file.path, reason: "invalid_path" });
       continue;
     }
+    const identity = `${workflowAttachmentPath(attachment.path)}\0${workflowAttachmentHash(attachment.content)}`;
+    const duplicate = duplicates.get(identity);
+    if (duplicate) {
+      // Retain the greatest raw alias so the writer's duplicate-path winner is unchanged.
+      if (attachment.path > duplicate.path) {
+        files[duplicate.index] = attachment;
+        duplicates.set(identity, {
+          index: duplicate.index,
+          path: attachment.path,
+        });
+      }
+      continue;
+    }
+    if (
+      totalBytes + fileBytes > SKILL_IMPORT_LIMITS.maxTotalFileBytes ||
+      files.length >= SKILL_IMPORT_LIMITS.maxFilesPerSkill
+    ) {
+      skippedFiles.push({ path: file.path, reason: "size_limit" });
+      continue;
+    }
+    duplicates.set(identity, { index: files.length, path: attachment.path });
     files.push(attachment);
     totalBytes += fileBytes;
   }

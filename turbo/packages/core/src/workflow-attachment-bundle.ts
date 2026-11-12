@@ -32,7 +32,10 @@ export function workflowAttachmentPath(path: string): string {
     normalized === ".." ||
     normalized.startsWith("../") ||
     normalized.endsWith("/") ||
-    normalized.length > 256
+    normalized.length > 256 ||
+    normalized.split("/").some((part) => {
+      return Buffer.byteLength(part, "utf8") > 255;
+    })
   ) {
     throw new Error("Unsafe Workflow attachment path");
   }
