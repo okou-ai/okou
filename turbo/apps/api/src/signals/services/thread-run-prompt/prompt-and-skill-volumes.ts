@@ -107,6 +107,8 @@ function createIntegrationPrompts(
     automation: createAutomationThreadPrompt(
       pickedEvent$,
       threadContext.automationContext$,
+      threadContext.automationTarget$,
+      singleAgent$,
     ),
   };
 }

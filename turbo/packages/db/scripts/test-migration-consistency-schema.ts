@@ -53,6 +53,7 @@ import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-sn
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
+import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
@@ -1521,7 +1522,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "58aacbf9b312b8369002b5504da92f2f",
+    bodyHash: "f2e5f682ff62b79b2310e58ce21e4d39",
   },
   {
     schemaName: "public",
@@ -3241,6 +3242,7 @@ async function main(): Promise<void> {
     // Transition regression uses retained SQL before fresh-schema generation.
     await validateOfficialWorkflowStorageRetirement(dbUrl1);
     await validateWorkflowPublicationContraction(dbUrl1);
+    await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
