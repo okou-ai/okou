@@ -7467,7 +7467,6 @@
       "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
       "invalidLink": "This connection link is invalid. Send a new email to Okou.",
       "loadError": "Unable to load your email connection",
-      "loginNotice": "Your login email stays connected.",
       "manage": "Manage",
       "manageDescription": "Send the code from the email you want to add.",
       "manageTitle": "Email connections",

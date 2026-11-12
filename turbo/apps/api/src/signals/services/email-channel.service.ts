@@ -54,8 +54,6 @@ import {
   linkEmailIdentity$,
   consumeEmailConnectionCode$,
   emailConnectionCodeFromText,
-  connectSignInEmail$,
-  signInEmailAddress,
 } from "./email-connection.service";
 import {
   confirmEmailSignup$,
@@ -541,42 +539,6 @@ export const processEmailChannelMessage$ = command(
   },
 );
 
-const restoreSignInEmail$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly link: typeof emailUserLinks.$inferSelect;
-      readonly sender: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { link, sender } = args;
-    const user = await findClerkUser(get(clerk$), link.userId, signal);
-    signal.throwIfAborted();
-    if (!user || user.banned || signInEmailAddress(user) !== sender) {
-      return null;
-    }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      link.orgId,
-      link.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    const role = await set(
-      getMemberRoleAndUpdateCache$,
-      link.orgId,
-      link.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!emailIntegrationEnabled(features, sender) || role.kind !== "member") {
-      return null;
-    }
-    return await set(connectSignInEmail$, { user, orgId: link.orgId }, signal);
-  },
-);
-
 const resolveConnectedMailSender$ = command(
   async ({ get, set }, sender: string, signal: AbortSignal) => {
     // Resolve the workspace from a verified OAuth mailbox even when it differs
@@ -655,13 +617,7 @@ const resolveEmailSender$ = command(
     signal.throwIfAborted();
     if (link) {
       if (link.disconnectedAt) {
-        link =
-          (await set(restoreSignInEmail$, { link, sender }, signal)) ??
-          undefined;
-        signal.throwIfAborted();
-        if (!link) {
-          return { kind: "ignored" } as const;
-        }
+        return { kind: "ignored" } as const;
       }
       const features = await set(
         loadUserFeatureSwitchContext$,
