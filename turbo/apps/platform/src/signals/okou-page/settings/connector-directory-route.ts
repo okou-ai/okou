@@ -57,6 +57,7 @@ export const setConnectorsScope$ = command(
     params.delete("keywords");
     params.delete("category");
     params.delete("connection");
+    params.delete("editCustomConnector");
     set(updateSearchParams$, params);
   },
 );
@@ -72,6 +73,7 @@ export const openConnectorDirectoryScope$ = command(
   ({ get, set }, scope: DirectoryScope) => {
     const params = new URLSearchParams(get(searchParams$));
     params.delete("connection");
+    params.delete("editCustomConnector");
     params.delete(CONNECTORS_SCOPE_PARAM);
     params.delete("type");
     params.delete("category");
@@ -93,6 +95,7 @@ export const showCreatedDirectoryConnector$ = command(
     params.delete("category");
     params.delete("keywords");
     params.delete("connection");
+    params.delete("editCustomConnector");
     set(createdConnectorId$, connectorId);
     set(updateSearchParams$, params);
   },

@@ -628,6 +628,7 @@ export const confirmCloudflareAccessDeletion$ = command(
       set(closeCloudflareAccessDeletion$);
     } else {
       set(deletionError$, outcome.value.body.error.code);
+      set(invalidateCloudflareAccess$);
     }
   },
 );

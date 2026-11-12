@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { cloudflareAccessContract } from "@okouai/api-contracts/client/cloudflare-access";
+import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type {
   ScopedCloudflareAccessConfig,
   CloudflareAccessImpactPreview,
@@ -25,7 +26,9 @@ const draft$ = state<ScopeDraft | null>(null);
 const pending$ = state<ScopeChange | null>(null);
 const acknowledged$ = state<string | null>(null);
 const approved$ = state(false);
-const error$ = state<"conflict" | "unavailable" | "uncertain" | null>(null);
+const error$ = state<
+  "conflict" | "unavailable" | "uncertain" | "in-use" | null
+>(null);
 const saved$ = state<{ id: string; sessionKey: string } | null>(null);
 export const remoteNetworkScopeDraft$ = computed((get) => {
   const draft = get(draft$);
@@ -229,7 +232,15 @@ export const applyRemoteNetworkScope$ = command(
       return null;
     }
     if (result.status !== 200) {
-      set(error$, result.status === 409 ? "conflict" : "unavailable");
+      set(
+        error$,
+        provider === "cloudflare" &&
+          result.body.error.code === CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE
+          ? "in-use"
+          : result.status === 409
+            ? "conflict"
+            : "unavailable",
+      );
       return null;
     }
     set(saved$, { id: config.id, sessionKey: pending.sessionKey });

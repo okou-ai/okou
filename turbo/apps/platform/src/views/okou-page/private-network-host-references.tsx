@@ -8,25 +8,30 @@ import { privateNetworkHostCount } from "../../lib/private-network-references.ts
 export function PrivateNetworkHostReferences({
   config,
 }: {
-  readonly config: Pick<CloudflareAccessConfig, "sshHosts" | "vncHosts">;
+  readonly config: Pick<
+    CloudflareAccessConfig,
+    "sshHosts" | "vncHosts" | "customConnectors"
+  >;
 }) {
   const { t } = useTranslation();
   const locale = useGet(locale$);
   const count = privateNetworkHostCount(config);
   return (
     <div className="grid gap-1 text-sm text-muted-foreground">
-      <p>
-        {count
-          ? t(
-              ($) => {
-                return $.cloudflareAccess.usedBy;
-              },
-              { count },
-            )
-          : t(($) => {
-              return $.cloudflareAccess.unused;
-            })}
-      </p>
+      {(count > 0 || !config.customConnectors?.length) && (
+        <p>
+          {count
+            ? t(
+                ($) => {
+                  return $.cloudflareAccess.usedBy;
+                },
+                { count },
+              )
+            : t(($) => {
+                return $.cloudflareAccess.unused;
+              })}
+        </p>
+      )}
       {count > 0 && (
         <ul className="list-inside list-disc">
           {sortRemoteHosts(config.sshHosts, locale).map((host) => {

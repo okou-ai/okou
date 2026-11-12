@@ -12,6 +12,7 @@ import {
   PopoverTrigger,
 } from "@okouai/ui";
 import { Info } from "lucide-react";
+import { CloudflareConnectorReferences } from "./cloudflare-connector-references.tsx";
 export function RemoteNetworkSummary({
   config,
   kind,
@@ -91,7 +92,7 @@ export function RemoteNetworkConnections({
           })}
         </h3>
       )}
-      {hosts.length === 0 && (
+      {hosts.length === 0 && !config.customConnectors?.length && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.cloudflareAccess.unused;
@@ -114,6 +115,7 @@ export function RemoteNetworkConnections({
           })}
         </ul>
       )}
+      <CloudflareConnectorReferences config={config} />
     </section>
   );
 }
@@ -121,10 +123,12 @@ export function RemoteNetworkConnections({
 export function RemoteNetworkDeleteAction({
   label,
   disabled,
+  disabledReason,
   onClick,
 }: {
   readonly label: string;
   readonly disabled: boolean;
+  readonly disabledReason?: string;
   readonly onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -157,9 +161,10 @@ export function RemoteNetworkDeleteAction({
             aria-label={label}
             className="w-80 max-w-[calc(100vw-2rem)] text-sm leading-6"
           >
-            {t(($) => {
-              return $.vnc.native.inUse;
-            })}
+            {disabledReason ??
+              t(($) => {
+                return $.vnc.native.inUse;
+              })}
           </PopoverContent>
         </Popover>
       )}

@@ -74,6 +74,8 @@ export function RemoteNetworkScopeField({
     : provider === "tailscale"
       ? tsScope
       : cfScope;
+  const hasConnectorDependencies =
+    provider === "cloudflare" && !!config?.customConnectors?.length;
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-sm font-medium">
@@ -115,7 +117,11 @@ export function RemoteNetworkScopeField({
             >
               <Radio
                 value={value}
-                disabled={disabled || (value === "organization" && !isAdmin)}
+                disabled={
+                  disabled ||
+                  (value === "organization" && !isAdmin) ||
+                  (value === "personal" && hasConnectorDependencies)
+                }
                 className="mt-0.5 shrink-0 data-checked:border-foreground data-checked:bg-foreground"
               />
               <span className="grid gap-1 text-sm">
@@ -141,6 +147,13 @@ export function RemoteNetworkScopeField({
           );
         })}
       </RadioGroup>
+      {hasConnectorDependencies && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.cloudflareAccess.inUse;
+          })}
+        </p>
+      )}
       {!isAdmin && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
@@ -219,11 +232,13 @@ function ScopeChangeError({
   return error ? (
     <p role="alert" className="text-sm text-muted-foreground">
       {t(($) => {
-        return error === "uncertain"
-          ? $.remoteNetworkScope.scopeUncertain
-          : error === "conflict"
-            ? $.remoteNetworkScope.scopeConflict
-            : $.remoteNetworkScope.scopeUnavailable;
+        return error === "in-use"
+          ? $.cloudflareAccess.inUse
+          : error === "uncertain"
+            ? $.remoteNetworkScope.scopeUncertain
+            : error === "conflict"
+              ? $.remoteNetworkScope.scopeConflict
+              : $.remoteNetworkScope.scopeUnavailable;
       })}
     </p>
   ) : null;

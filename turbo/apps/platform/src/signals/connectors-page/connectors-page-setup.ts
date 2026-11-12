@@ -17,6 +17,7 @@ import { closeVncDialog$, invalidateVnc$ } from "../vnc.ts";
 import { setupRemoteNetworkEditor$ } from "../remote-network-page-setup.ts";
 import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { searchParams$ } from "../route.ts";
+import { openLinkedCustomConnector$ } from "../okou-page/settings/custom-connectors.ts";
 
 export const setupConnectorsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -38,6 +39,7 @@ export const setupConnectorsPage$ = command(
       signal.throwIfAborted();
     }
     const networkInitialization = set(setupRemoteNetworkEditor$, signal);
+    const customInitialization = set(openLinkedCustomConnector$, signal);
     set(updatePage$, createElement(ConnectorsPage), "sidebar");
     set(
       updateDocumentTitle$,
@@ -45,7 +47,7 @@ export const setupConnectorsPage$ = command(
         return $.connectors.catalog.title;
       }),
     );
-    await networkInitialization;
+    await Promise.all([networkInitialization, customInitialization]);
     signal.throwIfAborted();
     await set(hideAppSkeleton$, signal);
   },
