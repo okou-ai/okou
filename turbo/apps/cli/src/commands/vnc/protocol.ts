@@ -12,10 +12,11 @@ import {
 import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 export const VNC_LIMITS = {
-  imageBytes: 16 * 1024 * 1024,
+  imageBytes: 96 * 1024 * 1024,
   frameBytes: 65537,
   controlBytes: 24576,
-  frames: 512,
+  // Includes metadata, End and terminal, even with 32 KiB data fragments.
+  frames: 4096,
   timeoutMs: 65000,
 } as const;
 

@@ -177,7 +177,7 @@ VNC requires a supporting Runner and the host to be enabled for this chat (an SS
       .option("--json", "Print image metadata, geometry, path and SHA-256")
       .addHelpText(
         "after",
-        "\nPNG is at most 16 MiB and excludes the cursor. Existing targets are refused unless --overwrite is explicit. Partial data remains private and is never published. A complete frame does not establish that the application has settled.",
+        "\nNative desktop capture supports 6K (6144x3456), including Apple 6K and 5K, with at most 21,233,664 pixels and 8192 per dimension. PNG is at most 96 MiB and excludes the cursor. Existing targets are refused unless --overwrite is explicit. Partial data remains private and is never published. A complete frame does not establish that the application has settled.",
       )
       .action(
         withErrorHandler(
