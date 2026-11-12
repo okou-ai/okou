@@ -2595,7 +2595,7 @@ describe("POST /api/webhooks/teams/bot", () => {
   });
 
   it("handles connected Teams bot commands", async () => {
-    const { fixture, actor, outboundRequests } =
+    const { fixture, actor, runnerGroup, outboundRequests } =
       await setupConnectedTeamsBotActor();
     outboundRequests.splice(0, outboundRequests.length);
     for (const [command, expected] of [
@@ -2629,7 +2629,9 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(runResponse.status).toBe(200);
     await readTeamsBotResponseAndFlush(runResponse);
     const runId = await runIdForPrompt(actor, "run after connection commands");
-    await expect(runsApi.readRun(actor, runId)).resolves.toMatchObject({
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(runId);
+    expect(claim).toMatchObject({
       appendSystemPrompt: expect.stringContaining("Your name is Okou."),
       prompt: "run after connection commands",
     });
