@@ -281,9 +281,7 @@ class _ForwardRequestAbortHandle:
                 self._async_cancel = None
                 self._socket = None
             terminal_state = self._terminal_state
-        self._cancel_async(async_cancel)
-        if sock is not None:
-            _abort_socket(sock)
+        self._abort_resources(async_cancel, sock)
         return terminal_state
 
     @property
@@ -307,15 +305,18 @@ class _ForwardRequestAbortHandle:
             sock = self._socket
             self._async_cancel = None
             self._socket = None
-        self._cancel_async(async_cancel)
-        if sock is not None:
-            _abort_socket(sock)
+        self._abort_resources(async_cancel, sock)
         return True
 
-    def _cancel_async(self, cancel: Callable[[], object] | None) -> None:
+    def _abort_resources(
+        self, cancel: Callable[[], object] | None, sock: socket.socket | None
+    ) -> None:
+        """Abort detached resources outside the lock, cancelling before socket close."""
         if cancel is not None:
             with suppress(RuntimeError):
                 self._loop.call_soon_threadsafe(cancel)
+        if sock is not None:
+            _abort_socket(sock)
 
     @staticmethod
     def _raise_terminal(terminal_state: _ForwardRequestTerminalState) -> None:
