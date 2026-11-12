@@ -17,15 +17,15 @@ export function ComposerNoticeTray({
     <div className="relative z-0">
       {/* The surface extends one content-height behind the composer. The
           composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. It spans the composer's
+          visible in the half that protrudes above. It spans the composer's
           width and repeats the card's own rounded-3xl, so the only corners it
-          ever shows — the bottom two — continue the card's outline instead of
+          ever shows — the top two — continue the card's outline instead of
           turning inside it. */}
       <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
+        className="pointer-events-none absolute inset-x-0 top-0 -bottom-full rounded-3xl bg-gray-50"
         aria-hidden="true"
       />
-      {/* Both ends sit 20px in, matching the text column of the card above:
+      {/* Both ends sit 20px in, matching the text column of the card below:
           the ghost action already carries 12px of its own padding. */}
       <div
         className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs composer-wide:flex-nowrap"
