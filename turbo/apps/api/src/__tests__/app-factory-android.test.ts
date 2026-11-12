@@ -31,7 +31,7 @@ describe("Android installed-client compatibility at the API boundary", () => {
       );
       expect(response.status).toBe(426);
       expect(response.headers.get("cache-control")).toBe("no-store");
-      expect(await response.json()).toStrictEqual({
+      await expect(response.json()).resolves.toStrictEqual({
         error: {
           code: "ANDROID_UPDATE_REQUIRED",
           message: "Update Okou for Android to continue.",
@@ -55,8 +55,12 @@ describe("Android installed-client compatibility at the API boundary", () => {
     async (type, version) => {
       androidClientCompatibility.minimumSupportedVersion = "0.2.0";
       const headers = new Headers();
-      if (type) headers.set(CLIENT_TYPE_HEADER, type);
-      if (version) headers.set(CLIENT_VERSION_HEADER, version);
+      if (type) {
+        headers.set(CLIENT_TYPE_HEADER, type);
+      }
+      if (version) {
+        headers.set(CLIENT_VERSION_HEADER, version);
+      }
       const response = await createApp({
         signal: context.signal,
         routes: healthRoutes,

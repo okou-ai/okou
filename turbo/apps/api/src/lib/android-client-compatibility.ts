@@ -17,7 +17,9 @@ export function androidMinimumSupportedVersion(): string | null {
 
 export function isSupportedAndroidClientVersion(version: string): boolean {
   const floor = androidMinimumSupportedVersion();
-  if (floor === null) return true;
+  if (floor === null) {
+    return true;
+  }
   const comparison = compareAppVersions(version, floor);
   return comparison === null || comparison >= 0;
 }
