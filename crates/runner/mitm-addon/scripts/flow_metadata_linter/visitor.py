@@ -850,6 +850,10 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._metadata_aliases.add(node.target.id)
         return True
 
+    def visit_Name(self, node: ast.Name) -> None:
+        # Parent visitors own bindings and aliases; the only child is a context marker.
+        pass
+
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         if isinstance(node.target, ast.Name):
             is_metadata_alias = self._is_metadata_alias_value(node.value)
@@ -871,7 +875,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     def _visit_sequence_expression(self, node: ast.List | ast.Tuple) -> None:
         for element in node.elts:
             self._record_metadata_merge_key_violations(element)
-        self.generic_visit(node)
+        for element in node.elts:
+            self.visit(element)
 
     def visit_List(self, node: ast.List) -> None:
         self._visit_sequence_expression(node)
@@ -904,7 +909,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         if not self._is_metadata_merge_value(node):
             self._record_metadata_merge_key_violations(node.left)
             self._record_metadata_merge_key_violations(node.right)
-        self.generic_visit(node)
+        self.visit(node.left)
+        self.visit(node.right)
 
     def visit_BoolOp(self, node: ast.BoolOp) -> None:
         exit_snapshots: list[list[set[str]]] = []
@@ -945,7 +951,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> None:
         self._record_metadata_merge_key_violations(node.operand)
-        self.generic_visit(node)
+        self.visit(node.operand)
 
     def visit_Await(self, node: ast.Await) -> None:
         self._record_metadata_merge_key_violations(node.value)
@@ -953,11 +959,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         self._record_metadata_merge_key_violations(node.value)
-        self.generic_visit(node)
+        self.visit(node.value)
 
     def visit_Starred(self, node: ast.Starred) -> None:
         self._record_metadata_merge_key_violations(node.value)
-        self.generic_visit(node)
+        self.visit(node.value)
 
     def visit_FormattedValue(self, node: ast.FormattedValue) -> None:
         self._record_metadata_merge_key_violations(node.value)
@@ -979,7 +985,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._record_metadata_merge_key_violations(node.value)
         self._record_metadata_merge_key_violations(node.slice)
         self._record_metadata_subscript_key_violations(node)
-        self.generic_visit(node)
+        self.visit(node.value)
+        self.visit(node.slice)
 
     def visit_Call(self, node: ast.Call) -> None:
         node_is_metadata_merge = self._is_metadata_merge_value(node)
