@@ -405,6 +405,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly discovery?: "challenge" | "well-known-oidc";
   readonly resourceMetadataStatus?: number;
   readonly challengeScope?: string | null;
+  readonly challengeHeader?: string;
   readonly metadataScopes?: readonly string[];
   readonly authorizationServerScopes?: readonly string[];
   readonly grantTypesSupported?: readonly string[] | null;
@@ -709,9 +710,11 @@ export function mockAutomaticMcpOAuthProvider(
       return new HttpResponse(null, {
         status: 401,
         headers: {
-          "www-authenticate": `Bearer${resourceMetadataParameter}${
-            challengeScope === null ? "" : ` scope="${challengeScope}"`
-          }`,
+          "www-authenticate":
+            options.challengeHeader ??
+            `Bearer${resourceMetadataParameter}${
+              challengeScope === null ? "" : ` scope="${challengeScope}"`
+            }`,
         },
       });
     }),

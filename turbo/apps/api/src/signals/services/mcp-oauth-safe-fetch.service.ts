@@ -58,13 +58,40 @@ export class McpOAuthNetworkRejectedError extends Error {
   }
 }
 
+function* authenticationChallenges(value: string): Generator<string> {
+  let start = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+    } else if (quoted && char === "\\") {
+      escaped = true;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (!quoted && char === ",") {
+      yield value.slice(start, index);
+      start = index + 1;
+    }
+  }
+  if (!quoted) {
+    yield value.slice(start);
+  }
+}
+
 async function hasApplicationChallenge(response: Response): Promise<boolean> {
-  if (
-    /^(?:Bearer|Basic)(?:\s|$)/iu.test(
-      response.headers.get("www-authenticate")?.trim() ?? "",
-    )
-  ) {
-    return true;
+  for (const challenge of authenticationChallenges(
+    response.headers.get("www-authenticate") ?? "",
+  )) {
+    const [scheme, parameters] = challenge.trim().split(/[ \t]+/u, 2);
+    if (
+      (scheme?.toLowerCase() === "bearer" ||
+        scheme?.toLowerCase() === "basic") &&
+      !parameters?.startsWith("=")
+    ) {
+      return true;
+    }
   }
   if (!response.headers.get("content-type")?.includes("application/json")) {
     return false;

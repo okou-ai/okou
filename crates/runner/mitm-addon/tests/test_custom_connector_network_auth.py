@@ -40,6 +40,13 @@ def _network_response(secret: str, generation: int) -> dict:
         (True, 401, "Basic", True),
         (True, 401, 'Basic realm="application"', True),
         (True, 401, "Bearerish", False),
+        pytest.param(True, 401, 'Digest realm="gateway", Bearer', True, id="combined-bearer"),
+        pytest.param(True, 401, 'Bearer, Basic realm="gateway"', True, id="bare-combined"),
+        pytest.param(True, 401, 'Digest realm="quoted, Bearer"', False, id="quoted-bearer"),
+        pytest.param(
+            True, 401, r'Digest realm="escaped \", Bearer, inside"', False, id="escaped-quote"
+        ),
+        pytest.param(True, 401, 'Digest realm="gateway", bearer = "value"', False, id="auth-param"),
     ],
 )
 async def test_each_physical_request_admits_network_even_with_cached_or_no_app_auth(

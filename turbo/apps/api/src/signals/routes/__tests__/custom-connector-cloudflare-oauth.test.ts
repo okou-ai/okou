@@ -246,14 +246,21 @@ test.each([
 );
 
 test.each([
-  ["none", false],
-  ["cimd", false],
-  ["dcr", false],
-  ["cimd", true],
-  ["dcr", true],
+  { registration: "none", challenge: "parameters", networkBound: true },
+  { registration: "cimd", challenge: "parameters", networkBound: true },
+  { registration: "dcr", challenge: "parameters", networkBound: true },
+  { registration: "cimd", challenge: "bare", networkBound: true },
+  { registration: "dcr", challenge: "bare", networkBound: true },
+  { registration: "cimd", challenge: "combined", networkBound: false },
+  { registration: "cimd", challenge: "combined", networkBound: true },
+  { registration: "dcr", challenge: "combined", networkBound: false },
+  { registration: "dcr", challenge: "combined", networkBound: true },
+  { registration: "cimd", challenge: "quoted", networkBound: true },
+  { registration: "cimd", challenge: "quoted-escape", networkBound: true },
+  { registration: "cimd", challenge: "auth-param", networkBound: true },
 ] as const)(
-  "initializes MCP %s with Access and keeps public OAuth credentials separate (bare challenge: %s)",
-  async (registration, bareChallenge) => {
+  "initializes MCP $registration with separate OAuth credentials (challenge: $challenge, Access: $networkBound)",
+  async ({ registration, challenge, networkBound }) => {
     const owner = createPublicConnectorActor(context);
     owner.ownsFeatureSwitches();
     await owner.run(async () => {
@@ -287,11 +294,24 @@ test.each([
           [201],
         )
       ).body;
+      const challengeHeader = {
+        parameters: undefined,
+        bare: undefined,
+        combined: 'Digest realm="gateway", Bearer',
+        quoted: 'Digest realm="quoted, Bearer"',
+        "quoted-escape": 'Digest realm="escaped \\\", Bearer, inside"',
+        "auth-param": 'Digest realm="gateway", bearer = "value"',
+      }[challenge];
+      const networkRejected =
+        challenge === "quoted" ||
+        challenge === "quoted-escape" ||
+        challenge === "auth-param";
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
-        ...(bareChallenge
+        ...(challenge !== "parameters"
           ? { discovery: "well-known-oidc" as const, challengeScope: null }
           : {}),
+        ...(challengeHeader ? { challengeHeader } : {}),
         ...(registration === "none" ? { authentication: "none" as const } : {}),
       });
       const connector = await connectors.createCustomConnector(actor, {
@@ -303,14 +323,28 @@ test.each([
         fields: [],
         headerInjections: [],
         queryInjections: [],
-        networkBinding: { type: "cloudflare_access", configId: config.id },
+        ...(networkBound
+          ? {
+              networkBinding: {
+                type: "cloudflare_access" as const,
+                configId: config.id,
+              },
+            }
+          : {}),
       });
       const tested = await settleIncludingAbort(async () => {
         const start = await connectors.requestStartCustomConnectorOAuth2(
           actor,
           connector.id,
-          [200],
+          [networkRejected ? 400 : 200],
         );
+        if (networkRejected) {
+          expect(start.status).toBe(400);
+          await expect(
+            connectors.listCustomConnectorAccounts(actor, connector.id),
+          ).resolves.toStrictEqual([]);
+          return;
+        }
         if (start.status !== 200) {
           throw new Error("Expected successful MCP setup");
         }
@@ -318,7 +352,8 @@ test.each([
         expect(
           provider.endpointHeaders.every((requestHeaders) => {
             return (
-              requestHeaders.get("CF-Access-Client-Secret") === "network-secret"
+              requestHeaders.get("CF-Access-Client-Secret") ===
+              (networkBound ? "network-secret" : null)
             );
           }),
         ).toBeTruthy();

@@ -13,7 +13,7 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 
 import asyncio
 import tempfile
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterator
 from pathlib import Path
 from typing import Literal, NoReturn
 
@@ -2100,6 +2100,24 @@ async def _finish_response_after_terminal_work(
     )
 
 
+def _authentication_challenges(value: bytes) -> Iterator[bytes]:
+    start = 0
+    quoted = False
+    escaped = False
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+        elif quoted and char == b"\\"[0]:
+            escaped = True
+        elif char == b'"'[0]:
+            quoted = not quoted
+        elif not quoted and char == b","[0]:
+            yield value[start:index]
+            start = index + 1
+    if not quoted:
+        yield value[start:]
+
+
 def _response_has_application_auth_challenge(response: http.Response) -> bool:
     values = http_header_syntax.bounded_header_values(
         response.headers.fields,
@@ -2111,9 +2129,14 @@ def _response_has_application_auth_challenge(response: http.Response) -> bool:
     if values is None:
         return False
     for value in values:
-        challenge = value.split(maxsplit=1)
-        if challenge and challenge[0].lower() in {b"bearer", b"basic"}:
-            return True
+        for item in _authentication_challenges(value):
+            challenge = item.split(maxsplit=1)
+            if (
+                challenge
+                and challenge[0].lower() in {b"bearer", b"basic"}
+                and (len(challenge) == 1 or not challenge[1].startswith(b"="))
+            ):
+                return True
     return False
 
 
