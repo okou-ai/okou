@@ -4,8 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use uuid::Uuid;
 
-const HOST: &str = "runner-ingress.example.org";
-const TOKEN: &str = "synthetic-official-runner-credential";
+use super::test_support::{HOST, TOKEN};
 
 fn identity(id: u128) -> RunnerProcessIdentity {
     RunnerProcessIdentity::new(Uuid::from_u128(id), 7).unwrap()
@@ -17,21 +16,6 @@ fn namespace() -> (tempfile::TempDir, PathBuf) {
     std::fs::create_dir(&path).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o710)).unwrap();
     (root, path)
-}
-
-// Health uses the existing Runner identity and has a readonly purpose distinct
-// from any future dispatch credential.
-fn credential(identity: RunnerProcessIdentity) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(TOKEN.as_bytes()).unwrap();
-    mac.update(
-        format!(
-            "okou-runner-ingress-health\n{}\n{}\n{HOST}\n",
-            identity.runner_id(),
-            identity.heartbeat_generation()
-        )
-        .as_bytes(),
-    );
-    hex::encode(mac.finalize().into_bytes())
 }
 
 async fn request(path: &std::path::Path, request: &str) -> (u16, String) {
@@ -59,7 +43,7 @@ fn health_request(id: RunnerProcessIdentity, credential: &str) -> String {
 }
 
 #[tokio::test]
-async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
+async fn unix_health_uses_official_service_auth_and_routes_are_disjoint() {
     let (_root, directory) = namespace();
     let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
         .await
@@ -69,20 +53,22 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
         .unwrap();
     let first_path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let second_path = directory.join(format!("{}.sock", identity(2).runner_id()));
-    let token = credential(identity(1));
-    let valid = health_request(identity(1), &token);
+    let token = TOKEN;
+    let valid = health_request(identity(1), token);
     let (status, body) = request(&first_path, &valid).await;
     assert_eq!(status, 200);
     assert_eq!(body, "ok");
-    assert!(!body.contains(TOKEN));
     assert_eq!(
-        request(&second_path, &health_request(identity(2), &token))
+        request(&second_path, &health_request(identity(2), token))
             .await
             .0,
-        401
+        200
     );
     for (bad, expected) in [
-        (valid.replace(&token, TOKEN), 401),
+        (
+            valid.replace(token, &format!("vm0_official_{}", "f".repeat(64))),
+            401,
+        ),
         (
             valid.replace(&format!("Authorization: Bearer {token}\r\n"), ""),
             401,
@@ -123,7 +109,7 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
         assert!(body.is_empty());
     }
     assert_eq!(
-        request(&first_path, &health_request(identity(2), &token))
+        request(&first_path, &health_request(identity(2), token))
             .await
             .0,
         404
@@ -134,12 +120,11 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
 }
 
 #[tokio::test]
-async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_credentials() {
+async fn shutdown_joins_connections_and_service_auth_survives_runner_restart() {
     let (_root, directory) = namespace();
     let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
         .await
         .unwrap();
-    let old_credential = credential(identity(1));
     let path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let mut slow = UnixStream::connect(&path).await.unwrap();
     slow.write_all(b"GET ").await.unwrap();
@@ -155,15 +140,7 @@ async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_creden
         .await
         .unwrap();
     assert_eq!(
-        request(&path, &health_request(identity(1), &old_credential))
-            .await
-            .0,
-        401
-    );
-    assert_eq!(
-        request(&path, &health_request(restarted, &credential(restarted)))
-            .await
-            .0,
+        request(&path, &health_request(restarted, TOKEN)).await.0,
         200
     );
     second.shutdown().await;
@@ -207,7 +184,7 @@ async fn public_health_requires_successful_bounded_ok_response() {
         .timeout(HEALTH_TIMEOUT)
         .build()
         .unwrap();
-    let health = Health::new(identity(1), HOST.into(), TOKEN).unwrap();
+    let health = Health::new(identity(1), HOST.into(), TOKEN);
     let path = format!("/runners/{}/control/health", identity(1).runner_id());
     for (status, body, accepted) in [
         (200, "ok".into(), true),
@@ -218,10 +195,9 @@ async fn public_health_requires_successful_bounded_ok_response() {
     ] {
         let mock = server
             .mock_async(|when, then| {
-                when.method(GET).path(&path).header(
-                    "authorization",
-                    format!("Bearer {}", credential(identity(1))),
-                );
+                when.method(GET)
+                    .path(&path)
+                    .header("authorization", format!("Bearer {TOKEN}"));
                 then.status(status).body(body);
             })
             .await;

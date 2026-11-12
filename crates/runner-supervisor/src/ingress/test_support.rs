@@ -6,7 +6,8 @@ use tokio::net::{TcpListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
 
 pub(crate) const HOST: &str = "runner-ingress.example.org";
-pub(crate) const TOKEN: &str = "synthetic-official-runner-credential";
+pub(crate) const TOKEN: &str =
+    "vm0_official_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 pub(crate) struct PublicIngress {
     pub client: reqwest::Client,

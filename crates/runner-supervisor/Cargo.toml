@@ -10,7 +10,6 @@ test-support = []
 [dependencies]
 api-contracts.workspace = true
 bytes.workspace = true
-hmac = { workspace = true }
 http-body-util = { version = "0.1", default-features = false }
 hyper = { workspace = true, features = ["server", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
@@ -30,6 +29,7 @@ sandbox.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
+subtle.workspace = true
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 futures-util = { workspace = true, features = ["async-await", "std"] }
 thiserror = { workspace = true, features = ["std"] }

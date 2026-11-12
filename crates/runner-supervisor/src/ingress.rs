@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use hmac::{Hmac, KeyInit, Mac};
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -19,7 +18,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use runner_host::runner_ingress_socket::RunnerIngressSocket;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use sha2::Sha256;
+use subtle::ConstantTimeEq;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
@@ -37,30 +36,16 @@ pub struct IngressConfig {
 struct Health {
     identity: RunnerProcessIdentity,
     hostname: String,
-    authorization: Hmac<Sha256>,
+    token: String,
 }
 
 impl Health {
-    fn new(
-        identity: RunnerProcessIdentity,
-        hostname: String,
-        token: &str,
-    ) -> Result<Self, hmac::digest::InvalidLength> {
-        let mut authorization = Hmac::<Sha256>::new_from_slice(token.as_bytes())?;
-        authorization.update(
-            format!(
-                "okou-runner-ingress-health\n{}\n{}\n{}\n",
-                identity.runner_id(),
-                identity.heartbeat_generation(),
-                hostname
-            )
-            .as_bytes(),
-        );
-        Ok(Self {
+    fn new(identity: RunnerProcessIdentity, hostname: String, token: &str) -> Self {
+        Self {
             identity,
             hostname,
-            authorization,
-        })
+            token: token.to_owned(),
+        }
     }
 
     async fn check_public(&self) -> io::Result<()> {
@@ -83,10 +68,9 @@ impl Health {
     }
 
     async fn check(&self, client: &reqwest::Client, url: &str) -> io::Result<()> {
-        let credential = hex::encode(self.authorization.clone().finalize().into_bytes());
         let mut response = client
             .get(url)
-            .bearer_auth(credential)
+            .bearer_auth(&self.token)
             .send()
             .await
             .map_err(io::Error::other)?;
@@ -130,12 +114,10 @@ impl Health {
             .headers()
             .get("authorization")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .filter(|v| v.len() == 64)
-            .and_then(|v| hex::decode(v).ok());
+            .and_then(|v| v.strip_prefix("Bearer "));
         if request.headers().get_all("authorization").iter().count() != 1
             || !credential.is_some_and(|credential| {
-                self.authorization.clone().verify_slice(&credential).is_ok()
+                bool::from(credential.as_bytes().ct_eq(self.token.as_bytes()))
             })
         {
             return response(StatusCode::UNAUTHORIZED, "");
@@ -152,7 +134,6 @@ impl Health {
         {
             return response(StatusCode::BAD_REQUEST, "");
         }
-        // The credential already binds this Runner ID and process generation.
         response(StatusCode::OK, "ok")
     }
 }
@@ -191,7 +172,7 @@ impl IngressRuntime {
                 "Runner ingress requires a canonical public hostname and service credential",
             ));
         }
-        let health = Arc::new(Health::new(identity, hostname, token).map_err(io::Error::other)?);
+        let health = Arc::new(Health::new(identity, hostname, token));
         let socket = tokio::task::spawn_blocking(move || {
             RunnerIngressSocket::bind(&directory, identity.runner_id())
         })

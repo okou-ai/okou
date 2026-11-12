@@ -36,7 +36,7 @@ need a separately designed browser origin; path isolation does not supply it.
 An official non-local Runner binds its listener and requests its own
 `https://<hostname>/runners/<runnerId>/control/health` before publishing the first
 Running heartbeat or entering `running`. The ten-second HTTPS request uses normal
-CA validation, no redirects, its Runner-ID/generation-bound health credential,
+CA validation, no redirects, the existing official Runner service credential,
 and a `200 OK` response containing only the plain text `ok`. Missing hostname,
 listener failure or unreachable ingress fails startup and rolls back its
 resources. Provision public Caddy, DNS, firewall and certificates before starting
@@ -59,15 +59,18 @@ Later PRs replace job acquisition with API-owned full direct delivery, failing
 the Run when no Runner is available. Service loss never revokes existing Run
 ownership or accepted-work cleanup.
 
+Runner control uses the existing official Runner service credential in
+`Authorization: Bearer <token>`, compared in constant time. Health and future
+Run dispatch share this service identity; there are no per-interface credentials
+or health-specific HMACs. API owns user permission checks and Run assignment;
+Runner owns local admission and execution deduplication. Browser/Guest sandbox
+access requires separate user/Run/service authorization and never receives this
+service credential. The API's general signing/KMS keys remain API-owned.
+
 Only authenticated `GET /runners/<runnerId>/control/health` is implemented now.
-The health-only bearer is the lowercase hex HMAC-SHA256 under the existing
-official Runner service credential over these UTF-8 lines, including the final
-newline: `okou-runner-ingress-health`, canonical Runner UUID, decimal heartbeat
-generation, canonical hostname. Compare in constant time; it
-cannot authorize future dispatch or browser/sandbox operations. Do not log it.
-The API's general signing/KMS keys are never copied to Runner. Reserved routes
-and WebSocket application operations remain rejected until their own handlers
-are implemented; native fixture backends establish proxy transport support only.
+Reserved routes and WebSocket application operations remain rejected until
+their own handlers are implemented; native fixture backends establish proxy
+transport support only.
 
 `playbooks/provision-runner.yml` is the shared host-dependency entry point used
 by Runner build/release/preview provisioning. Its cache covers the complete
