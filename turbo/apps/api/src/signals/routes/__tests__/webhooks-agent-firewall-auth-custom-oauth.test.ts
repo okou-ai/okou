@@ -417,6 +417,7 @@ describe.each([
         oauthError: undefined,
       },
       { status: 400, challenge: undefined, oauthError: "invalid_grant" },
+      { status: 404, challenge: undefined, oauthError: "invalid_grant" },
       { status: 401, challenge: "Basic", oauthError: "invalid_client" },
       { status: 503, challenge: undefined, oauthError: undefined },
     ])(

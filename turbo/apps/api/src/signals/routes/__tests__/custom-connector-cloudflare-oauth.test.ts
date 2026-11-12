@@ -246,21 +246,105 @@ test.each([
 );
 
 test.each([
-  { registration: "none", challenge: "parameters", networkBound: true },
-  { registration: "cimd", challenge: "parameters", networkBound: true },
-  { registration: "dcr", challenge: "parameters", networkBound: true },
-  { registration: "cimd", challenge: "bare", networkBound: true },
-  { registration: "dcr", challenge: "bare", networkBound: true },
-  { registration: "cimd", challenge: "combined", networkBound: false },
-  { registration: "cimd", challenge: "combined", networkBound: true },
-  { registration: "dcr", challenge: "combined", networkBound: false },
-  { registration: "dcr", challenge: "combined", networkBound: true },
-  { registration: "cimd", challenge: "quoted", networkBound: true },
-  { registration: "cimd", challenge: "quoted-escape", networkBound: true },
-  { registration: "cimd", challenge: "auth-param", networkBound: true },
+  {
+    registration: "none",
+    challenge: "parameters",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "parameters",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "dcr",
+    challenge: "parameters",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "bare",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "dcr",
+    challenge: "bare",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "combined",
+    networkBound: false,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "combined",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "dcr",
+    challenge: "combined",
+    networkBound: false,
+    protectedIssuer: false,
+  },
+  {
+    registration: "dcr",
+    challenge: "combined",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "quoted",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "quoted-escape",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "auth-param",
+    networkBound: true,
+    protectedIssuer: false,
+  },
+  {
+    registration: "cimd",
+    challenge: "bare",
+    networkBound: true,
+    protectedIssuer: true,
+  },
+  {
+    registration: "dcr",
+    challenge: "bare",
+    networkBound: true,
+    protectedIssuer: true,
+  },
+  {
+    registration: "cimd",
+    challenge: "bare",
+    networkBound: false,
+    protectedIssuer: true,
+  },
+  {
+    registration: "dcr",
+    challenge: "bare",
+    networkBound: false,
+    protectedIssuer: true,
+  },
 ] as const)(
-  "initializes MCP $registration with separate OAuth credentials (challenge: $challenge, Access: $networkBound)",
-  async ({ registration, challenge, networkBound }) => {
+  "initializes MCP $registration with separate OAuth credentials (challenge: $challenge, Access: $networkBound, protected issuer: $protectedIssuer)",
+  async ({ registration, challenge, networkBound, protectedIssuer }) => {
     const owner = createPublicConnectorActor(context);
     owner.ownsFeatureSwitches();
     await owner.run(async () => {
@@ -302,8 +386,16 @@ test.each([
         "quoted-escape": 'Digest realm="escaped \\\", Bearer, inside"',
         "auth-param": 'Digest realm="gateway", bearer = "value"',
       }[challenge];
+      const protectedOrigin = `https://${randomUUID()}.example.test`;
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
+        ...(protectedIssuer
+          ? {
+              endpoint: `${protectedOrigin}/`,
+              issuer: protectedOrigin,
+              tokenEndpoint: `${protectedOrigin}/token`,
+            }
+          : {}),
         ...(challenge !== "parameters"
           ? { discovery: "well-known-oidc" as const, challengeScope: null }
           : {}),
@@ -369,9 +461,9 @@ test.each([
             registration === "dcr" ? 1 : 0,
           );
           expect(provider.tokenHeaders).toHaveLength(1);
-          expect(
-            provider.tokenHeaders[0]?.has("CF-Access-Client-Secret"),
-          ).toBeFalsy();
+          expect(provider.tokenHeaders[0]?.has("CF-Access-Client-Secret")).toBe(
+            networkBound && protectedIssuer,
+          );
         }
         await expect(
           connectors.listCustomConnectorAccounts(actor, connector.id),

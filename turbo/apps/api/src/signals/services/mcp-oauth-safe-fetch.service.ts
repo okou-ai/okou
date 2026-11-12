@@ -378,10 +378,16 @@ export function createMcpOAuthSafeFetch(
         }
       }
       const response = await boundedRequest(url, requestData, signal);
+      // Read-only metadata lookup may legitimately try another well-known URL
+      // after 404. This response never reaches a token-error parser; token and
+      // registration POST failures remain guarded regardless of status/body.
+      const readOnlyNotFound =
+        requestData.method !== "POST" && response.status === 404;
       if (
         admitNetwork &&
         requestData.headers.has("CF-Access-Client-Id") &&
-        !response.ok
+        !response.ok &&
+        !readOnlyNotFound
       ) {
         // A challenge or OAuth JSON describes an error, not which reverse-proxied
         // layer produced it. Do not let a token parser turn it into app revocation.
