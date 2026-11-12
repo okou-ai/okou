@@ -7441,7 +7441,7 @@
       "codeInstructions": "從要新增的信箱將此驗證碼寄給 Okou，放在郵件主旨或內文第一行皆可。",
       "connected": "信箱已連線",
       "deleteAria": "刪除 {{email}}",
-      "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "description": "透過郵件與 Okou 對話",
       "emailAddress": "電子郵件地址",
       "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
       "invalidLink": "連線連結無效，請重新寄信給 Okou。",

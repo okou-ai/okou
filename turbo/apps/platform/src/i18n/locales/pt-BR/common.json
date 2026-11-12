@@ -7542,7 +7542,7 @@
       "codeInstructions": "Envie este código ao Okou pelo e-mail que deseja adicionar. Use-o como assunto ou na primeira linha da mensagem.",
       "connected": "E-mail conectado",
       "deleteAria": "Excluir {{email}}",
-      "description": "Envie um e-mail ao Okou e mantenha cada conversa em seu próprio chat",
+      "description": "Converse com seu Okou por e-mail",
       "emailAddress": "Endereço de e-mail",
       "healthNotice": "Não use esta integração para informações de pacientes reguladas pela HIPAA.",
       "invalidLink": "Este link de conexão é inválido. Envie um novo e-mail ao Okou.",

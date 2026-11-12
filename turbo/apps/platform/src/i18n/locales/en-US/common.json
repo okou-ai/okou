@@ -7462,7 +7462,7 @@
       "codeInstructions": "Send this code to Okou from the email address you want to add. Use it as the subject or the first line of your message.",
       "connected": "Email connected",
       "deleteAria": "Delete {{email}}",
-      "description": "Email your Okou and keep each conversation in its own thread",
+      "description": "Chat with your Okou by email",
       "emailAddress": "Email address",
       "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
       "invalidLink": "This connection link is invalid. Send a new email to Okou.",

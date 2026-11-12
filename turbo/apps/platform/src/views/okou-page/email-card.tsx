@@ -1,6 +1,6 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, surfaceVariants } from "@okouai/ui";
+import { Badge, Button, cn, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
   PopoverContent,
@@ -35,6 +35,10 @@ export function EmailCard() {
   const setTrigger = useSet(emailConnectionTriggerRef$);
   const emails = status.state === "hasData" ? status.data.emails : [];
   const email = emails[0];
+  const address =
+    status.state === "hasData" && status.data.configured
+      ? status.data.address
+      : null;
   return (
     <>
       <div
@@ -52,10 +56,21 @@ export function EmailCard() {
                 return $.works.email.title;
               })}
             </div>
-            <div className="truncate text-sm text-muted-foreground">
-              {t(($) => {
-                return $.works.email.description;
-              })}
+            <div className="flex h-5 min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+              <span className={cn("truncate", address && "hidden sm:inline")}>
+                {t(($) => {
+                  return $.works.email.description;
+                })}
+                {address ? " ·" : null}
+              </span>
+              {address ? (
+                <a
+                  href={`mailto:${address}`}
+                  className="max-w-full shrink-0 truncate underline underline-offset-4 hover:text-foreground"
+                >
+                  {address}
+                </a>
+              ) : null}
             </div>
           </div>
           {email ? (
