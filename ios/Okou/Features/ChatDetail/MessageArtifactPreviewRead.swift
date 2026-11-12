@@ -30,7 +30,7 @@ final class MessageArtifactPreviewRead: Identifiable {
   let loadsMetadata: Bool
   let renewedHTMLSignature: Bool
   let store: CCState.Store
-  private let reads: MessageArtifactResources
+  let reads: MessageArtifactResources
   private let service: ChatArtifacts
   private let markdown: MessageMarkdownCache
   private let uploadedFile: ChatAttachmentFile?

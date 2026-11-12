@@ -41,7 +41,7 @@ private struct ArtifactMetadataPreview: View {
     self.viewer = viewer
     self.preview = preview
     self.markdown = markdown
-    _catalog = LoadableValue(task: viewer.reads.catalog, keepLast: true)
+    _catalog = LoadableValue(task: preview.reads.catalog, keepLast: true)
   }
 
   var body: some View {
@@ -73,7 +73,7 @@ private struct ArtifactPreviewContent: View {
   }
 
   private var artifact: ChatArtifact {
-    viewer.reads.metadata(value.data?.artifact ?? preview.artifact)
+    preview.reads.metadata(value.data?.artifact ?? preview.artifact)
   }
 
   var body: some View {
