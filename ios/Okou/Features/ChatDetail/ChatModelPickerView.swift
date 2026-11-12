@@ -12,7 +12,7 @@ struct ChatModelPickerButton: View {
   var body: some View {
     StoreProvider(selection.models.stateStore) {
       ChatModelPickerButtonContent(selection: selection, action: action)
-        .id(ObjectIdentifier(selection.models))
+        .id(ObjectIdentifier(selection))
     }
   }
 }
@@ -22,6 +22,7 @@ private struct ChatModelPickerButtonContent: View {
   let action: () -> Void
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
   @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
+  @LoadableValue private var metadata: Loadable<ChatModelSelection?>
 
   init(selection: ChatModelSelectionStore, action: @escaping () -> Void) {
     self.selection = selection
@@ -29,6 +30,7 @@ private struct ChatModelPickerButtonContent: View {
     _resolvedConfiguration = ResolvedValue(
       task: selection.models.configurationValue, keepLast: true)
     _modelStatus = LoadableStatus(task: selection.models.configurationValue)
+    _metadata = LoadableValue(task: selection.metadataValue)
   }
 
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
@@ -39,9 +41,16 @@ private struct ChatModelPickerButtonContent: View {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
   }
   private var models: ChatModelStore { selection.models }
-  private var isLoading: Bool { modelStatus == .loading || selection.isBusy }
+  private var metadataError: String? {
+    if case .hasError(let error) = metadata { return ChatRequestFailure.message(for: error) }
+    return nil
+  }
+  private var isLoading: Bool {
+    if case .loading = metadata { return true }
+    return modelStatus == .loading || selection.isBusy
+  }
   private var hasError: Bool {
-    modelError != nil || selection.error != nil
+    modelError != nil || metadataError != nil || selection.error != nil
       || (configuration != nil && !selection.canSend && !isLoading)
   }
   private var accessibilityValue: String {
@@ -101,7 +110,7 @@ struct ChatModelPickerView: View {
   var body: some View {
     StoreProvider(selection.models.stateStore) {
       ChatModelPickerContent(selection: selection, settingsURL: settingsURL)
-        .id(ObjectIdentifier(selection.models))
+        .id(ObjectIdentifier(selection))
     }
   }
 }
@@ -116,14 +125,14 @@ private struct ChatModelPickerContent: View {
   @Bindable var selection: ChatModelSelectionStore
   let settingsURL: URL?
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
-  @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
+  @LoadableValue private var metadata: Loadable<ChatModelSelection?>
 
   init(selection: ChatModelSelectionStore, settingsURL: URL?) {
     self.selection = selection
     self.settingsURL = settingsURL
     _resolvedConfiguration = ResolvedValue(
       task: selection.models.configurationValue, keepLast: true)
-    _modelStatus = LoadableStatus(task: selection.models.configurationValue)
+    _metadata = LoadableValue(task: selection.metadataValue)
   }
 
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
@@ -132,6 +141,10 @@ private struct ChatModelPickerContent: View {
   }
   private var modelError: String? {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
+  }
+  private var metadataError: String? {
+    if case .hasError(let error) = metadata { return ChatRequestFailure.message(for: error) }
+    return nil
   }
   @Environment(\.dismiss) private var dismiss
   private var models: ChatModelStore { selection.models }
@@ -162,7 +175,7 @@ private struct ChatModelPickerContent: View {
     NavigationStack(path: $path) {
       List {
         if let configuration {
-          if selection.uncertain || modelError != nil {
+          if selection.uncertain || metadataError != nil || modelError != nil {
             Section {
               refreshButton
             }
@@ -175,7 +188,7 @@ private struct ChatModelPickerContent: View {
           if let settingsURL {
             Section { Link("Open model settings", destination: settingsURL) }
           }
-        } else if let error = selection.error ?? modelError {
+        } else if let error = selection.error ?? metadataError ?? modelError {
           Section {
             Text(error).foregroundStyle(OkouColor.destructive)
             refreshButton
@@ -185,7 +198,9 @@ private struct ChatModelPickerContent: View {
       .okouGroupedBackground()
       .listSectionSpacing(OkouSpace.lg)
       .overlay {
-        if configuration == nil && modelError == nil && selection.error == nil {
+        if configuration == nil && modelError == nil && metadataError == nil
+          && selection.error == nil
+        {
           ChatSettingsLoadingView(title: "Loading models…")
         }
       }
@@ -200,9 +215,7 @@ private struct ChatModelPickerContent: View {
       .navigationDestination(for: Page.self) { _ in
         if let configuration { modelList(configuration) }
       }
-      .task {
-        if modelStatus != .loading && !selection.isLoading { await selection.open() }
-      }
+      .task { await selection.open() }
     }
     .sheet(isPresented: $showsAuth, onDismiss: subscriptions.cancelAuth) {
       SubscriptionAuthorizationView(store: subscriptions)
@@ -297,7 +310,7 @@ private struct ChatModelPickerContent: View {
   /// above it.
   private var doneBar: some View {
     VStack(spacing: OkouSpace.md) {
-      if let error = selection.error ?? modelError {
+      if let error = selection.error ?? metadataError ?? modelError {
         Text(error)
           .font(.okou(.footnote))
           .foregroundStyle(OkouColor.destructive)

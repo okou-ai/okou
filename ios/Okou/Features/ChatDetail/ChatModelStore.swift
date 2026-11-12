@@ -145,18 +145,35 @@ final class ChatModelSelectionStore {
   let connectors: ComposerConnectorStore
   private var stored: ChatModelSelection?
   private(set) var isSaving = false
-  private(set) var isLoading = false
   private(set) var hasLoaded: Bool
+  // Mutation outcomes only; metadata read failures remain on the original graph Task.
   private(set) var error: String?
   private(set) var uncertain = false
   private(set) var needsThreadReadback = false
   var isSending = false
   private var refreshAfterSave = false
-  private var revision = 0
   private var closed = false
+  private let lifecycleTasks: LifecycleTasks
+  @ObservationIgnored private let metadataDemand = CCState.State<UUID?>(nil)
+  @ObservationIgnored private let lifetime = CCState.State(true)
+  @ObservationIgnored private let reloadMetadata: Command<Void, Void>
+  @ObservationIgnored private let clearMetadata: Command<Void, Void>
+  // The original request also excludes writes until metadata confirmation finishes.
+  private var metadataTask: Task<ChatModelSelection?, Error>?
+  private var metadataID: UUID?
 
-  init(models: ChatModelStore, thread: ChatThread? = nil) {
+  init(
+    models: ChatModelStore, thread: ChatThread? = nil, lifecycleTasks: LifecycleTasks? = nil
+  ) {
     self.models = models
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
+    let metadataDemand = metadataDemand
+    let lifetime = lifetime
+    reloadMetadata = Command { context in
+      guard try context.get(lifetime) else { throw CancellationError() }
+      try context.set(metadataDemand, UUID())
+    }
+    clearMetadata = Command { context in try context.set(metadataDemand, nil) }
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: models.webURL, thread: thread, readRetrySleep: models.readRetrySleep,
@@ -165,6 +182,59 @@ final class ChatModelSelectionStore {
     stored = thread.map(ChatModelSelection.init)
     hasLoaded = thread == nil
   }
+
+  /// The sheet, composer and background callers observe one conversation-scoped read.
+  /// No demand means no metadata I/O, including for an unsent new chat.
+  @ObservationIgnored lazy var metadataValue = Computed<Task<ChatModelSelection?, Error>> {
+    [weak self] get, options in
+    guard let self, !closed, try get(lifetime) else { throw CancellationError() }
+    let demand = try get(metadataDemand)
+    let signal = options.signal
+    let task = Task<ChatModelSelection?, Error> {
+      @MainActor [weak self, service = models.service, sleep = models.readRetrySleep, threadID] in
+      try Task.checkCancellation()
+      try signal.checkCancellation()
+      guard let self, !closed else { throw CancellationError() }
+      guard let demand, let threadID else { return nil }
+      defer {
+        if metadataID == demand {
+          metadataTask = nil
+          metadataID = nil
+        }
+      }
+      do {
+        let value = try await ChatReadRecovery.read("saved model selection", sleep: sleep) {
+          try await service.selection(threadID: threadID)
+        }
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        guard !closed else { throw CancellationError() }
+        // This confirmed snapshot is also consumed by send admission and draft capture.
+        stored = value
+        hasLoaded = true
+        uncertain = false
+        needsThreadReadback = false
+        error = nil
+        return value
+      } catch {
+        if !closed, !Task.isCancelled, !signal.isCancelled {
+          uncertain = true
+          models.report(error)
+        }
+        throw error
+      }
+    }
+    lifecycleTasks.track(task)
+    if let demand {
+      metadataTask?.cancel()
+      metadataTask = task
+      metadataID = demand
+    }
+    signal.onCancel { task.cancel() }
+    return task
+  }
+
+  var isRefreshing: Bool { metadataTask != nil }
   var selection: ChatModelSelection {
     let selection = stored ?? models.configuration?.defaultSelection ?? ChatModelSelection()
     return models.configuration?.resolved(selection) ?? selection
@@ -176,8 +246,8 @@ final class ChatModelSelectionStore {
     ])
   }
   var isMutating: Bool { isSaving || isSending }
-  var isBusy: Bool { isMutating || isLoading }
-  var canSend: Bool { !isLoading && canSendConfirmedSelection }
+  var isBusy: Bool { isMutating || isRefreshing }
+  var canSend: Bool { !isRefreshing && canSendConfirmedSelection }
   /// Background reads do not invalidate the selection already confirmed for recovery.
   var canSendConfirmedSelection: Bool {
     guard connectors.canSend else { return false }
@@ -214,8 +284,7 @@ final class ChatModelSelectionStore {
     }
     // An ambiguous local write still needs its explicit metadata readback.
     guard !uncertain else { return }
-    revision += 1
-    isLoading = false
+    retireMetadata()
     let next = ChatModelSelection(thread: thread)
     // A thread read started before a local write can finish after its readback.
     // Retain the acknowledged choice until this conflicting projection is resolved.
@@ -229,38 +298,35 @@ final class ChatModelSelectionStore {
   }
 
   func open() async {
+    guard !closed, !Task.isCancelled else { return }
     if models.configuration == nil {
       await models.load()
     }
-    if models.configuration != nil { await refresh() }
+    guard !closed, !Task.isCancelled else { return }
+    if models.configuration != nil {
+      if let metadataTask {
+        _ = await metadataTask.result
+      } else {
+        await refresh()
+      }
+    }
     // Usage never delays the model list; the separate task is cancelled with the sheet.
   }
   func refresh() async {
-    guard !closed, !Task.isCancelled, let threadID else { return }
+    guard !closed, !Task.isCancelled, threadID != nil else { return }
     if isSaving {
       refreshAfterSave = true
       return
     }
-    revision += 1
-    let request = revision
-    isLoading = true
-    defer { if request == revision { isLoading = false } }
+    cancelMetadata()
     do {
-      let value = try await ChatReadRecovery.read(
-        "saved model selection", sleep: models.readRetrySleep
-      ) {
-        try await models.service.selection(threadID: threadID)
-      }
-      guard !closed, !Task.isCancelled, revision == request else { return }
-      stored = value
-      hasLoaded = true
-      uncertain = false
-      needsThreadReadback = false
-      error = nil
+      try models.stateStore.set(reloadMetadata)
+      let task = try models.stateStore.get(metadataValue)
+      // A cancelled presentation waiter must not cancel the resident conversation's read.
+      _ = await task.result
     } catch is CancellationError {
     } catch {
-      guard !closed, revision == request else { return }
-      self.error = ChatRequestFailure.message(for: error)
+      guard !closed, !Task.isCancelled else { return }
       uncertain = true
       models.report(error)
     }
@@ -290,7 +356,7 @@ final class ChatModelSelectionStore {
     guard !closed, !isBusy, !uncertain, models.configuration != nil,
       models.configuration?.row(for: next)?.isConfigurable == true
     else { return false }
-    revision += 1
+    retireMetadata()
     isSaving = true
     defer { isSaving = false }
     guard let threadID else {
@@ -330,7 +396,6 @@ final class ChatModelSelectionStore {
     isSaving = false
     if refreshAfterSave {
       refreshAfterSave = false
-      isLoading = true
       await refresh()
     }
   }
@@ -361,9 +426,23 @@ final class ChatModelSelectionStore {
   func close() {
     connectors.close()
     closed = true
-    revision += 1
+    cancelMetadata()
+    do { try models.stateStore.set(lifetime, false) } catch { models.report(error) }
     stored = nil
   }
+
+  private func cancelMetadata() {
+    metadataTask?.cancel()
+    metadataTask = nil
+    metadataID = nil
+  }
+
+  private func retireMetadata() {
+    cancelMetadata()
+    do { try models.stateStore.set(clearMetadata) } catch { models.report(error) }
+  }
+
+  isolated deinit { metadataTask?.cancel() }
 }
 
 /// The model sheet's edits to a drafted choice; nothing is saved until
