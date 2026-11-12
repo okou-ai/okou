@@ -1061,6 +1061,8 @@
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
       "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
       "loading": "권한을 불러오는 중",
+      "myOkouScopeNote": "현재 작업뿐 아니라 이 워크스페이스에서 내 Okou 사용에 적용됩니다.",
+      "myOkouSharedScopeNote": "이 워크스페이스의 내 모든 채팅에서 이 커넥터에 적용됩니다. 팀원의 권한은 각자 독립적입니다.",
       "notNow": "나중에",
       "review": "권한 검토",
       "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
@@ -3462,6 +3464,8 @@
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },
       "filterWith": "필터: {{category}}",
+      "myOkouDescription": "내 Okou가 사용할 외부 서비스를 연결하세요.",
+      "myOkouDescriptionWithCount": "내 Okou가 사용할 {{value}}개 서비스를 연결하세요.",
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",

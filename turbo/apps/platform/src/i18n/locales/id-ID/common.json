@@ -1061,6 +1061,8 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
+      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
+      "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
@@ -3462,6 +3464,8 @@
         "unshared": "Tidak dibagikan ke agen mana pun"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
+      "myOkouDescriptionWithCount": "Hubungkan {{value}} layanan untuk digunakan Okou Anda.",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",

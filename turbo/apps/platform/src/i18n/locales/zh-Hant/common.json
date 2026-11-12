@@ -1061,6 +1061,8 @@
       "invalid": "此權限連結無效或無法使用。",
       "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
       "loading": "正在載入權限",
+      "myOkouScopeNote": "適用於你在本工作區使用 Okou，不限於目前任務。",
+      "myOkouSharedScopeNote": "適用於你在本工作區所有聊天中使用此連接器。同事的授權各自獨立。",
       "notNow": "暫不允許",
       "review": "檢視並授權",
       "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
@@ -3462,6 +3464,8 @@
         "unshared": "未共享給任何智能體"
       },
       "filterWith": "篩選：{{category}}",
+      "myOkouDescription": "連結第三方服務，供你的 Okou 使用。",
+      "myOkouDescriptionWithCount": "連結 {{value}} 項服務，供你的 Okou 使用。",
       "noConnectorsAlt": "暫無連接器",
       "otherCategory": "其他",
       "remoteAccess": "遠端訪問",

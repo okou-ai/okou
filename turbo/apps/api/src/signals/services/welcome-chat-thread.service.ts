@@ -1,3 +1,5 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
@@ -17,6 +19,7 @@ import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { createChatThread$ } from "./chat-thread.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 interface WelcomeThreadAction {
   readonly userId: string;
@@ -94,9 +97,19 @@ export const createWelcomeChatThread$ = command(
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));
     signal.throwIfAborted();
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
     const content = welcomeThreadContent({
       locale: preferences.locale ?? "en-US",
       appUrl: env("APP_URL"),
+      singleAgent: isFeatureEnabled(
+        FeatureSwitchKey.SingleAgent,
+        featureContext,
+      ),
     });
 
     const result = await set(

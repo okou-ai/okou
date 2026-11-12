@@ -1085,6 +1085,8 @@
       "invalid": "Ce lien d’autorisation est invalide ou indisponible.",
       "loadFailed": "Impossible de vérifier toutes les autorisations demandées. Aucune autorisation ne peut être modifiée.",
       "loading": "Chargement des autorisations",
+      "myOkouScopeNote": "S'applique à votre utilisation d'Okou dans cet espace de travail, pas seulement à la tâche en cours.",
+      "myOkouSharedScopeNote": "S'applique à ce connecteur dans vos chats de cet espace de travail. Vos collègues ont leurs propres autorisations.",
       "notNow": "Pas maintenant",
       "review": "Examiner les autorisations",
       "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
@@ -3527,6 +3529,8 @@
         "unshared": "Partagé avec aucun agent"
       },
       "filterWith": "Filtre : {{category}}",
+      "myOkouDescription": "Connectez des services tiers pour votre Okou.",
+      "myOkouDescriptionWithCount": "Connectez {{value}} services pour votre Okou.",
       "noConnectorsAlt": "Aucun connecteur",
       "otherCategory": "Autre",
       "remoteAccess": "Accès à distance",
