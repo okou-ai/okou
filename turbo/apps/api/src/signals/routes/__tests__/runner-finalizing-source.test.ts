@@ -194,13 +194,7 @@ describe("independent finalizing resource source", () => {
           runnerPreference: preference,
         }),
       );
-      const claim = await f.owned.claimRunnerRun(next.runId, {
-        runnerIdentity: preference.runnerIdentity,
-        telemetry: {
-          runnerPreference: preference,
-          runnerPreferenceClaimState: "active",
-        },
-      });
+      const claim = await f.owned.claimRunnerRun(next.runId);
       expect(claim.cliAgentType).toBe("codex");
       await f.owned.run(async () => {
         await createWebhookCallbackApi(context).requestAgentComplete(
@@ -288,9 +282,7 @@ describe("independent finalizing resource source", () => {
     const f = await terminalPredecessor(context, "failed");
     mockNow(f.clock + 100);
     const newer = await continuation(f);
-    const claimed = await f.owned.claimRunnerRun(newer.runId, {
-      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-    });
+    const claimed = await f.owned.claimRunnerRun(newer.runId);
     await f.owned.run(async () => {
       await createWebhookCallbackApi(context).requestAgentComplete(
         { runId: newer.runId, exitCode: 1 },

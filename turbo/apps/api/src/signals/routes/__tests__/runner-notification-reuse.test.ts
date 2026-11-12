@@ -308,10 +308,7 @@ describe("Runner notification reuse after durable launch", () => {
             throw new Error("Expected the committed job before notification");
           }
           claimedRunId = response.body.job.runId;
-          await f.owned.claimRunnerRun(claimedRunId, {
-            runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-            telemetry: { runnerPreference: response.body.job.runnerPreference },
-          });
+          await f.owned.claimRunnerRun(claimedRunId);
         });
       }
     });

@@ -219,9 +219,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
             snapshotGeneration: runnerIdentity.heartbeatGeneration,
           });
         });
-        const claim = await owned.claimRunnerRun(sent.runId, {
-          runnerIdentity,
-        });
+        const claim = await owned.claimRunnerRun(sent.runId);
         return { ...sent, runnerIdentity, claim, provider };
       });
     }

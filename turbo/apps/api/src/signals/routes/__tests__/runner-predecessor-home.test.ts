@@ -47,9 +47,7 @@ describe("predecessor Home publication preference", () => {
         runnerPreference: preference,
       }),
     );
-    const claimed = await f.owned.claimRunnerRun(next.runId, {
-      runnerIdentity: preference.runnerIdentity,
-    });
+    const claimed = await f.owned.claimRunnerRun(next.runId);
     await f.owned.run(() => {
       return f.api.requestClaimRunnerJob(true, next.runId, [404], {
         runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },

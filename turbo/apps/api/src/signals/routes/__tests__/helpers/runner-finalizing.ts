@@ -27,9 +27,7 @@ export async function terminalPredecessor(
   const runnerId = randomUUID();
   const fixture = { api, owned, actor, agentId, group, run, runnerId, clock };
   await heartbeat(fixture);
-  const claimed = await owned.claimRunnerRun(run.runId, {
-    runnerIdentity: { runnerId, heartbeatGeneration: 7 },
-  });
+  const claimed = await owned.claimRunnerRun(run.runId);
   await owned.run(async () => {
     const webhooks = createWebhookCallbackApi(context);
     const headers = { authorization: `Bearer ${claimed.sandboxToken}` };

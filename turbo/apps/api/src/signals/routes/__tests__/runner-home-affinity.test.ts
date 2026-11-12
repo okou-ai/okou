@@ -118,10 +118,7 @@ describe("canonical API home affinity", () => {
     });
     const otherPoll = await poll(f, otherRunnerId);
     expect(otherPoll?.runnerPreference).toMatchObject({ tier: "homeCache" });
-    const claim = await f.claim(f.run.runId, {
-      runnerIdentity: { runnerId: otherRunnerId, heartbeatGeneration: 7 },
-      telemetry: { runnerPreference: job?.runnerPreference },
-    });
+    const claim = await f.claim(f.run.runId);
     expect(claim).toMatchObject({
       runId: f.run.runId,
       prompt: "Keep captured execution intact",
@@ -384,9 +381,7 @@ describe("canonical API home affinity", () => {
   it("ends exact-generation protection before the shared generic deadline", async () => {
     const f = await setup();
     await heartbeat(f);
-    const claimed = await f.claim(f.run.runId, {
-      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-    });
+    const claimed = await f.claim(f.run.runId);
     await f.own(() => {
       return completePublicClaudeRun(
         context,

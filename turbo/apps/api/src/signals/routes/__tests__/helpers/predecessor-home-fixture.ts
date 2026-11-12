@@ -52,15 +52,7 @@ export async function predecessorHomeFixture(
   await predecessorHomeHeartbeat(fixture, fixture.predecessorRunnerId, {
     mode: "running",
   });
-  const claim = await owned.claimRunnerRun(predecessorRun.runId, {
-    runnerIdentity: {
-      runnerId: fixture.predecessorRunnerId,
-      heartbeatGeneration: 7,
-    },
-    ...(args.claimHostname === null
-      ? {}
-      : { runnerHostname: args.claimHostname ?? PREDECESSOR_HOSTNAME }),
-  });
+  const claim = await owned.claimRunnerRun(predecessorRun.runId);
   await owned.run(async () => {
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const webhooks = createWebhookCallbackApi(context);
