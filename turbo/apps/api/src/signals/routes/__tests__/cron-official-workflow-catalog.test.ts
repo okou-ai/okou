@@ -7,6 +7,8 @@ import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-a
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -83,23 +85,54 @@ test("requires authentication to publish the Official Workflow catalog", async (
   expect(unauthorized.status).toBe(401);
 });
 
-test.each([
-  { kind: "suggestions", failUpload: false },
-  { kind: "suggestions", failUpload: true },
-  { kind: "learning", failUpload: false },
-])(
-  "publishes idempotently and runs $kind on schedule (upload failure: $failUpload)",
-  async ({ kind, failUpload }) => {
-    const learning = kind === "learning";
-    const definitionName = learning
+const scenarios = [
+  { kind: "suggestions", failUpload: false, suggestionsEnabled: true },
+  { kind: "suggestions", failUpload: true, suggestionsEnabled: true },
+  { kind: "learning", failUpload: false, suggestionsEnabled: true },
+  { kind: "morning-brief", failUpload: false, suggestionsEnabled: true },
+  { kind: "morning-brief", failUpload: false, suggestionsEnabled: false },
+].map((scenario) => {
+  const learning = scenario.kind === "learning";
+  const morningBrief = scenario.kind === "morning-brief";
+  return {
+    ...scenario,
+    learning,
+    morningBrief,
+    needsTimezone: learning || morningBrief,
+    curatesSuggestions: !learning && scenario.suggestionsEnabled,
+    curatesMorningBrief: morningBrief && scenario.suggestionsEnabled,
+    definitionName: learning
       ? "proactive-learning"
-      : "agent-suggestions";
-    const heading = learning
+      : morningBrief
+        ? scenario.suggestionsEnabled
+          ? "internal-test-morning-brief"
+          : "morning-brief"
+        : "agent-suggestions",
+    heading: learning
       ? "# Proactive Learning"
-      : "# Proactive Suggestions";
-    const preferenceContract = learning
+      : morningBrief
+        ? "# Morning Brief"
+        : "# Proactive Suggestions",
+    preferenceContract: learning
       ? proactiveLearningContract
-      : proactiveSuggestionsContract;
+      : morningBrief
+        ? morningBriefPreferenceContract
+        : proactiveSuggestionsContract,
+  };
+});
+
+test.each(scenarios)(
+  "publishes idempotently and runs $kind on schedule (upload failure: $failUpload, suggestions: $suggestionsEnabled)",
+  async ({
+    failUpload,
+    learning,
+    curatesMorningBrief,
+    needsTimezone,
+    curatesSuggestions,
+    definitionName,
+    heading,
+    preferenceContract,
+  }) => {
     mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
     const app = await setupApp({
       context,
@@ -109,6 +142,7 @@ test.each([
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
         ...proactiveLearningRoutes,
+        ...morningBriefPreferenceRoutes,
         ...workflowAutomationsRoutes,
         ...workflowsRoutes,
       ],
@@ -169,12 +203,12 @@ test.each([
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.AgentSuggestion]: !learning,
+          [FeatureSwitchKey.AgentSuggestion]: true,
           [FeatureSwitchKey.ProactiveLearning]: learning,
         },
       );
     });
-    if (learning) {
+    if (needsTimezone) {
       await owned.run(() => {
         return fixture.bdd.completeOnboarding(actor, {
           timezone: "Asia/Shanghai",
@@ -187,14 +221,23 @@ test.each([
       actor.orgRole,
     );
     const headers = { authorization: "Bearer clerk-session" };
+    if (curatesMorningBrief) {
+      await owned.run(() => {
+        return accept(
+          app(proactiveSuggestionsContract).update({
+            headers,
+            body: { enabled: true },
+          }),
+          [200],
+        );
+      });
+    }
     const enabled = await owned.run(() => {
-      return accept(
-        app(preferenceContract).update({
-          headers,
-          body: { enabled: true },
-        }),
-        [200],
-      );
+      const request = app(preferenceContract).update({
+        headers,
+        body: { enabled: true },
+      });
+      return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
     const workflows = await owned.run(() => {
@@ -291,12 +334,16 @@ test.each([
       owned.runnerGroup,
       runId,
     );
-    if (!learning) {
+    if (curatesSuggestions) {
       expect(claim.appendSystemPrompt).toContain(
         "# Suggestions feedback context",
       );
       expect(claim.appendSystemPrompt).toContain(
         '"complete":true,"feedback":[]',
+      );
+    } else {
+      expect(claim.appendSystemPrompt).not.toContain(
+        "# Suggestions feedback context",
       );
     }
     const bundle = claim.contentBundles.skills.find((skill) => {
@@ -308,7 +355,11 @@ test.each([
     const files = readClaimedContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
-    expectPublishingReference(files, detail.body.fileContents, learning);
+    expectPublishingReference(
+      files,
+      detail.body.fileContents,
+      !curatesSuggestions,
+    );
     await owned.run(() => {
       return fixture.failChatRun(
         runId,
@@ -317,5 +368,52 @@ test.each([
       );
     });
     await owned.run(flushWaitUntilForTest);
+    async function finishConcurrentSuggestions() {
+      const suggestions = workflows.body.find((item) => {
+        return item.official?.definitionName === "agent-suggestions";
+      });
+      if (!suggestions) {
+        throw new Error("Expected the Suggestions installation");
+      }
+      const schedules = await owned.run(() => {
+        return accept(
+          app(workflowAutomationsContract).list({
+            headers,
+            params: { workflowId: suggestions.id },
+          }),
+          [200],
+        );
+      });
+      const threadId = schedules.body[0]?.chatThreadId;
+      if (threadId) {
+        const events = await owned.run(() => {
+          return createChatFilesBddApi(context).listThreadEventRows(
+            actor,
+            threadId,
+          );
+        });
+        const runId = events.find((event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        })?.runId;
+        if (!runId) {
+          throw new Error("Expected the concurrent Suggestions Run");
+        }
+        const { sandboxHeaders } = await owned.claimChatRun(
+          owned.runnerGroup,
+          runId,
+        );
+        await owned.run(() => {
+          return fixture.failChatRun(
+            runId,
+            sandboxHeaders,
+            "Concurrent Suggestions inspected",
+          );
+        });
+        await owned.run(flushWaitUntilForTest);
+      }
+    }
+    if (curatesMorningBrief) {
+      await finishConcurrentSuggestions();
+    }
   },
 );
