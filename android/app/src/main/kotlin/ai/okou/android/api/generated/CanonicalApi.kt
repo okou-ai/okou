@@ -20,4 +20,10 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Body body: InitializePreferencesRequest,
     ): Response<UserPreferences>
+
+    @POST("/api/user-preferences")
+    suspend fun `updatePreferences`(
+        @Header("Authorization") token: String,
+        @Body body: UpdatePreferencesRequest,
+    ): Response<UserPreferences>
 }

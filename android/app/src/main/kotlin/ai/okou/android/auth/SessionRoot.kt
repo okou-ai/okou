@@ -4,6 +4,7 @@ import ai.okou.android.AppearanceMode
 import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
+import ai.okou.android.preferences.MemberPreferencesSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,6 +64,7 @@ fun SessionRoot(
                     selectAppearance,
                     retryAppearance,
                     account = { WorkspaceActions(state, chooseWorkspace, signOut) },
+                    workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -201,7 +203,7 @@ private fun WorkspaceActions(
     var choosing by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.auth_workspace), style = MaterialTheme.typography.titleLarge)
-        Text(checkNotNull(state.ready).data.organization.name)
+        Text(checkNotNull(state.ready).organization.name)
         if (state.memberships.size > 1) {
             OutlinedButton(onClick = { choosing = true }) {
                 Text(stringResource(R.string.auth_switch_workspace))
