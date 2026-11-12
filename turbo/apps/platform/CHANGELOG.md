@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1122.0](https://github.com/okou-ai/okou/compare/app-v0.1121.0...app-v0.1122.0) (2026-11-12)
+
+
+### Features
+
+* **browser:** graduate shared browser and remove rollout switch ([#46833](https://github.com/okou-ai/okou/issues/46833)) ([e50e38e](https://github.com/okou-ai/okou/commit/e50e38e284b2e310198bf8f96cc0c44cd3752001))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.56.0
+    * @okouai/core bumped to 8.834.0
+    * @okouai/ui bumped to 1.21.5
+
 ## [0.1121.0](https://github.com/okou-ai/okou/compare/app-v0.1120.0...app-v0.1121.0) (2026-11-12)
 
 

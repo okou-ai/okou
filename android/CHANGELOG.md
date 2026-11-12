@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/android-v0.3.0...android-v0.4.0) (2026-11-12)
+
+
+### Features
+
+* **android:** sync workspace color and language preferences ([#46863](https://github.com/okou-ai/okou/issues/46863)) ([bfb5317](https://github.com/okou-ai/okou/commit/bfb531737a1fc8df43516ebb4077c5222989c410))
+
 ## [0.3.0](https://github.com/okou-ai/okou/compare/android-v0.2.1...android-v0.3.0) (2026-11-12)
 
 
