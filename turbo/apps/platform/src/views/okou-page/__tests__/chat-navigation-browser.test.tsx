@@ -342,7 +342,8 @@ test("A live Browser card resumes a window reclaimed after its summary was read"
     ).toBeEnabled();
   });
   const input = within(sidebar).getByLabelText("Remote browser input");
-  await userEvent.click(input);
+  input.focus({ preventScroll: true });
+  expect(input).toHaveFocus();
   fireEvent.input(input, {
     target: { value: "resumed from the live card" },
     inputType: "insertText",
