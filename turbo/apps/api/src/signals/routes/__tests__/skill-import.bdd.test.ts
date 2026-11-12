@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  PutObjectCommand,
+  UploadPartCommand,
+} from "@aws-sdk/client-s3";
 
 import {
   SKILL_IMPORT_LIMITS,
@@ -244,6 +250,7 @@ describe("POST /api/skill-import/skills", () => {
         body: skillBody({
           name: "Release Notes",
           files: [
+            { path: "./references//tone.md", content: "Earlier alias." },
             { path: "references/tone.md", content: "Keep it short. 世界" },
           ],
         }),
@@ -434,38 +441,251 @@ describe("POST /api/skill-import/skills", () => {
     expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
   });
 
-  it("rejects a file that carries binary content", async () => {
-    const { session } = await openSession();
+  it("imports the instruction and valid files while reporting unusable attachments", async () => {
+    const { actor, session } = await openSession();
+    const invalidPaths = [
+      String.raw`references\tone.md`,
+      ".",
+      "./",
+      "references/",
+      "references",
+      "/outside.md",
+      "../outside.md",
+      "SKILL.md",
+      "./SKILL.md",
+      "SKILL.md/child.txt",
+      "a".repeat(257),
+    ];
 
     const response = await accept(
       uploadClient().upload({
         headers: tokenHeaders(session.token),
         body: skillBody({
-          files: [{ path: "data.txt", content: "text\u0000more" }],
+          files: [
+            { path: "references/tone.md", content: "Keep it short." },
+            ...invalidPaths.map((path) => {
+              return { path, content: "Unusable attachment" };
+            }),
+            { path: "data.txt", content: "text\u0000more" },
+            {
+              path: "large.txt",
+              content: "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes + 1),
+            },
+            { path: "scripts/check.sh", content: "echo ok\n" },
+          ],
         }),
       }),
-      [400],
+      [201],
     );
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
+    expect(response.body.skippedFiles).toStrictEqual([
+      ...invalidPaths.map((path) => {
+        return { path, reason: "invalid_path" };
+      }),
+      { path: "data.txt", reason: "binary_content" },
+      { path: "large.txt", reason: "size_limit" },
+    ]);
+    const detail = await accept(
+      workflowDetailClient().get({
+        headers: clerkHeaders(actor),
+        params: { workflowId: response.body.workflowId },
+      }),
+      [200],
+    );
+    expect(detail.body.instruction).toBe(skillBody().instruction);
+    expect(detail.body.fileContents).toStrictEqual([
+      { path: "references/tone.md", content: "Keep it short." },
+      { path: "scripts/check.sh", content: "echo ok\n" },
+    ]);
   });
 
-  it("rejects an upload that carries the reserved SKILL.md path", async () => {
-    const { session } = await openSession();
+  it("imports the instruction when every attachment is invalid", async () => {
+    const { actor, session } = await openSession();
+    const response = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody({ files: [{ path: ".", content: "not a file" }] }),
+      }),
+      [201],
+    );
+    expect(response.body.skippedFiles).toStrictEqual([
+      { path: ".", reason: "invalid_path" },
+    ]);
+    const detail = await accept(
+      workflowDetailClient().get({
+        headers: clerkHeaders(actor),
+        params: { workflowId: response.body.workflowId },
+      }),
+      [200],
+    );
+    expect(detail.body.instruction).toBe(skillBody().instruction);
+    expect(detail.body.fileContents).toStrictEqual([]);
+  });
 
+  it.each([
+    ["file count", SKILL_IMPORT_LIMITS.maxFilesPerSkill, "text"],
+    [
+      "combined bytes",
+      SKILL_IMPORT_LIMITS.maxTotalFileBytes / SKILL_IMPORT_LIMITS.maxFileBytes,
+      "a".repeat(SKILL_IMPORT_LIMITS.maxFileBytes),
+    ],
+  ])(
+    "keeps accepted files when the %s limit is reached",
+    async (_name, limit, content) => {
+      const { actor, session } = await openSession();
+      const response = await accept(
+        uploadClient().upload({
+          headers: tokenHeaders(session.token),
+          body: skillBody({
+            files: Array.from({ length: limit + 1 }, (_, index) => {
+              return { path: `file-${String(index)}.txt`, content };
+            }),
+          }),
+        }),
+        [201],
+      );
+      expect(response.body.skippedFiles).toStrictEqual([
+        { path: `file-${String(limit)}.txt`, reason: "size_limit" },
+      ]);
+      const detail = await accept(
+        workflowDetailClient().get({
+          headers: clerkHeaders(actor),
+          params: { workflowId: response.body.workflowId },
+        }),
+        [200],
+      );
+      expect(detail.body.fileContents).toHaveLength(limit);
+    },
+  );
+
+  it.each([
+    ["start", CreateMultipartUploadCommand],
+    ["part", UploadPartCommand],
+    ["completion", CompleteMultipartUploadCommand],
+  ])(
+    "imports only the instruction when attachment upload fails at %s",
+    async (_name, failedCommand) => {
+      const { actor, session } = await openSession();
+      const provider = context.mocks.s3.send.getMockImplementation();
+      if (!provider) {
+        throw new Error("Expected the S3 provider fixture");
+      }
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof failedCommand) {
+          throw new Error("Attachment upload unavailable");
+        }
+        return provider(command);
+      });
+      const response = await accept(
+        uploadClient().upload({
+          headers: tokenHeaders(session.token),
+          body: skillBody({
+            files: [{ path: "references/tone.md", content: "Keep it short." }],
+          }),
+        }),
+        [201],
+      );
+      expect(response.body.skippedFiles).toStrictEqual([
+        { path: "references/tone.md", reason: "upload_failed" },
+      ]);
+      const detail = await accept(
+        workflowDetailClient().get({
+          headers: clerkHeaders(actor),
+          params: { workflowId: response.body.workflowId },
+        }),
+        [200],
+      );
+      expect(detail.body.instruction).toBe(skillBody().instruction);
+      expect(detail.body.fileContents).toStrictEqual([]);
+      const imported = await accept(
+        sessionsClient().listSkills({
+          headers: clerkHeaders(actor),
+          params: { sessionId: session.sessionId },
+        }),
+        [200],
+      );
+      expect(
+        imported.body.map((skill) => {
+          return skill.id;
+        }),
+      ).toStrictEqual([response.body.workflowId]);
+    },
+  );
+
+  it("imports only the instruction when the content bundle with attachments cannot be uploaded", async () => {
+    const { actor, session } = await openSession();
+    const provider = context.mocks.s3.send.getMockImplementation();
+    if (!provider) {
+      throw new Error("Expected the S3 provider fixture");
+    }
+    let failBundle = true;
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof PutObjectCommand && failBundle) {
+        failBundle = false;
+        throw new Error("Attachment bundle upload unavailable");
+      }
+      return provider(command);
+    });
     const response = await accept(
       uploadClient().upload({
         headers: tokenHeaders(session.token),
         body: skillBody({
-          files: [{ path: "SKILL.md", content: "---\nname: x\n---\n" }],
+          files: [{ path: "references/tone.md", content: "Keep it short." }],
         }),
       }),
-      [400],
+      [201],
     );
+    expect(response.body.skippedFiles).toStrictEqual([
+      { path: "references/tone.md", reason: "upload_failed" },
+    ]);
+    const detail = await accept(
+      workflowDetailClient().get({
+        headers: clerkHeaders(actor),
+        params: { workflowId: response.body.workflowId },
+      }),
+      [200],
+    );
+    expect(detail.body.instruction).toBe(skillBody().instruction);
+    expect(detail.body.fileContents).toStrictEqual([]);
+  });
 
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("BAD_REQUEST");
+  it.each([
+    ["instruction upload failure", new Error("Storage unavailable")],
+    ["cancellation", new DOMException("Request aborted", "AbortError")],
+  ])("does not report success after %s", async (_name, error) => {
+    const { actor, session } = await openSession();
+    const provider = context.mocks.s3.send.getMockImplementation();
+    if (!provider) {
+      throw new Error("Expected the S3 provider fixture");
+    }
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof PutObjectCommand) {
+        throw error;
+      }
+      return provider(command);
+    });
+    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
+    const response = await request("/api/skill-import/skills", {
+      method: "POST",
+      headers: {
+        ...tokenHeaders(session.token),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(
+        skillBody({
+          files: [{ path: "references/tone.md", content: "Keep it short." }],
+        }),
+      ),
+    });
+    expect(response.status).toBe(500);
+    const imported = await accept(
+      sessionsClient().listSkills({
+        headers: clerkHeaders(actor),
+        params: { sessionId: session.sessionId },
+      }),
+      [200],
+    );
+    expect(imported.body).toStrictEqual([]);
   });
 
   it("rejects an expired session token", async () => {

@@ -1,5 +1,6 @@
 import {
   array,
+  enum as zEnum,
   iso,
   literal,
   number,
@@ -12,11 +13,7 @@ import {
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import {
-  RESERVED_SKILL_FILE,
-  workflowNameSchema,
-  workflowSummarySchema,
-} from "./workflows";
+import { workflowNameSchema, workflowSummarySchema } from "./workflows";
 
 import { workflowImportSourceSchema } from "./workflow-import-source";
 
@@ -96,31 +93,11 @@ export type SkillImportSessionResponse = zInfer<
 export const skillImportNameSchema = string().min(1).max(128);
 
 /**
- * One supplementary file. `SKILL.md` is reserved: it is synthesized server-side
- * from (name, description, instruction) and is never uploaded.
+ * Raw supplementary files are checked individually by the import route, so an
+ * unusable attachment does not prevent the instruction from being imported.
  */
 export const skillImportFileSchema = object({
-  path: string()
-    .min(1)
-    .max(256)
-    .refine(
-      (path) => {
-        return !path.startsWith("/");
-      },
-      { message: "Path must be relative" },
-    )
-    .refine(
-      (path) => {
-        return !path.includes("..");
-      },
-      { message: "Path must not contain .." },
-    )
-    .refine(
-      (path) => {
-        return path !== RESERVED_SKILL_FILE;
-      },
-      { message: `${RESERVED_SKILL_FILE} is reserved and is generated` },
-    ),
+  path: string(),
   content: string(),
 });
 
@@ -137,11 +114,26 @@ export const skillImportRequestSchema = object({
 }).strict();
 export type SkillImportRequest = zInfer<typeof skillImportRequestSchema>;
 
+const skillImportSkippedFileSchema = object({
+  path: string(),
+  reason: zEnum([
+    "invalid_path",
+    "binary_content",
+    "size_limit",
+    "upload_failed",
+  ]),
+});
+export type SkillImportSkippedFile = zInfer<
+  typeof skillImportSkippedFileSchema
+>;
+
 export const skillImportCreatedResponseSchema = object({
   outcome: literal("created"),
   workflowId: uuid(),
   /** Normalized slug the skill was stored under. */
   name: workflowNameSchema,
+  /** The instruction was imported, but these supplementary files were omitted. */
+  skippedFiles: array(skillImportSkippedFileSchema).optional(),
 });
 
 export const skillImportSkippedResponseSchema = object({

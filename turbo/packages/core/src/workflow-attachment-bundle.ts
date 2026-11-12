@@ -31,6 +31,7 @@ export function workflowAttachmentPath(path: string): string {
     normalized === "." ||
     normalized === ".." ||
     normalized.startsWith("../") ||
+    normalized.endsWith("/") ||
     normalized.length > 256
   ) {
     throw new Error("Unsafe Workflow attachment path");
@@ -56,7 +57,7 @@ export function normalizeWorkflowAttachmentFiles(
     return left < right ? -1 : left > right ? 1 : 0;
   })) {
     const path = workflowAttachmentPath(file.path);
-    if (path === "SKILL.md")
+    if (path === "SKILL.md" || path.startsWith("SKILL.md/"))
       throw new Error("Reserved Workflow attachment path");
     seen.set(path, { path, content: file.content });
     size += file.content.length;
