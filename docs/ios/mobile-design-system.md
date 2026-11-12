@@ -425,7 +425,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   `OkouFloatingPanelStyle`: the same card, card radius, plus the floating shadow.
   Not `.regularMaterial` — a grey material block did not match the rest of the UI.
 - **Edges under bars**: the top scroll edge defaults to native `.soft` and the bottom
-  edge is hidden everywhere (`OkouAppearance`, and `okouGroupedBackground()` for sheets).
+  edge is hidden everywhere (`OkouContentStyle`, applied by `OkouAppearance` and by each
+  workspace page host, and `okouGroupedBackground()` for sheets).
   Content passes plainly under the composer, the sidebar footer and other floating
   controls, which carry their own glass. Where a custom bar's text sits over scrolling text
   at the top, the edge must hide it:
@@ -502,8 +503,11 @@ single floating line, and colour is a small accent for status only.
   The navigation bar stays hidden: each page retains its custom header, footer,
   typography, colors and controls. UIKit owns push/pop animations, interactive
   return and Reduce Motion adaptation. Retain both page hosts across navigation
-  so drafts and scroll state survive. Forward the SwiftUI environment to both
-  hosts, including appearance, scene phase and scoped link/system-entry actions.
+  so drafts and scroll state survive. Give each host the app's appearance
+  (`OkouContentStyle`), scene phase and scoped link/system-entry actions as named
+  values, never the whole environment (`\.self`): that also carries SwiftUI's private
+  state across hosts, and the chat header's scroll edge then joined the sidebar's
+  collector, leaving the transcript with no top blur.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
