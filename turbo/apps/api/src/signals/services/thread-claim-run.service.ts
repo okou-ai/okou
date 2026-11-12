@@ -5125,10 +5125,7 @@ function createRunBody(args: {
   readonly body: Omit<AgentRunCreateBody, "prompt">;
   readonly agent: AgentRunRecord;
   readonly triggerSource: TriggerSource | undefined;
-  readonly prompt: Pick<
-    PromptAndSkillVolumes,
-    "userPrompt" | "appendedSystemPrompt"
-  >;
+  readonly prompt: Pick<PromptAndSkillVolumes, "userPrompt">;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   return {
@@ -5137,7 +5134,6 @@ function createRunBody(args: {
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
     triggerSource,
-    appendSystemPrompt: args.prompt.appendedSystemPrompt,
   };
 }
 
@@ -5193,7 +5189,7 @@ interface ProductRunArgs {
 
 function buildProductRunArgs(
   args: ProductRunArgsInput,
-  prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
+  prompt: Pick<PromptAndSkillVolumes, "userPrompt">,
 ): ProductRunArgs {
   const command = args.command;
   return {

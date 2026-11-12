@@ -102,10 +102,10 @@ describe("CHAT-02: default assistant identity", () => {
       agentId: defaultAgentId,
       prompt: "start an Okou run",
     });
+    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     const anchorRun = await api.readRun(actor, anchor.runId);
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     await expectRunAppContext({
       actor,
       runId: anchor.runId,
@@ -161,9 +161,9 @@ describe("CHAT-02: default assistant identity", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the queued Okou message to auto-send");
     }
+    const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
-    const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
     await expectRunAppContext({
       actor,
       runId: promoted.runId,
@@ -181,11 +181,11 @@ describe("CHAT-02: default assistant identity", () => {
       agentId: customAgent.agentId,
       prompt: "keep my custom name",
     });
+    const customClaim = await claimChatRun(runnerGroup, customRun.runId);
     const customPrompt = (await api.readRun(actor, customRun.runId))
       .appendSystemPrompt;
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
-    const customClaim = await claimChatRun(runnerGroup, customRun.runId);
     await expectRunAppContext({
       actor,
       runId: customRun.runId,
@@ -409,6 +409,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         prompt: "open the remote browser",
         computerUseHostId: hostId,
       });
+      const grantedClaim = await owned.claimChatRun(runnerGroup, granted.runId);
       const grantedRun = await owned.run(() => {
         return api.readRun(actor, granted.runId);
       });
@@ -417,7 +418,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         "Computer Use is enabled for this run on BDD Desktop.",
       );
       expect(grantedRun.appendSystemPrompt).not.toContain(hostId);
-      const grantedClaim = await owned.claimChatRun(runnerGroup, granted.runId);
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);
       });
@@ -480,16 +480,16 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         prompt: "use the computer after it went offline",
         computerUseHostId: hostId,
       });
+      clearMockNow();
+      const staleClaim = await owned.claimChatRun(
+        runnerGroup,
+        staleGranted.runId,
+      );
       const staleRun = await owned.run(() => {
         return api.readRun(actor, staleGranted.runId);
       });
       expect(staleRun.appendSystemPrompt).toContain(
         "Computer Use is enabled for this run on BDD Desktop.",
-      );
-      clearMockNow();
-      const staleClaim = await owned.claimChatRun(
-        runnerGroup,
-        staleGranted.runId,
       );
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);

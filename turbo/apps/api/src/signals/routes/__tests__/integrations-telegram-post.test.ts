@@ -1228,6 +1228,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         context: foreground,
         signal: foreground.signal,
         run: owned.run,
+        claim: owned.claim,
         finish: owned.finish,
       };
     });
@@ -1652,8 +1653,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const firstThreadId = await threadIdForRun(fixture, firstRun.id);
     expect(firstRun.prompt).toBe(firstPrompt);
+    const firstClaim = await claimTelegramRun(
+      firstRun.id,
+      runnerGroup,
+      fixture,
+    );
     expectExactSystemPromptFragment(
-      firstRun.appendSystemPrompt,
+      firstClaim.appendSystemPrompt,
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
@@ -1664,11 +1670,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "Message ID: 2201",
         `Message thread ID: ${messageThreadId}`,
       ].join("\n"),
-    );
-    const firstClaim = await claimTelegramRun(
-      firstRun.id,
-      runnerGroup,
-      fixture,
     );
     const cliAgentSessionId = await completeCanonicalChatRun({
       runId: firstRun.id,
@@ -1744,8 +1745,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       throw new Error("Expected the Telegram forum follow-up run");
     }
     expect(followUpRun.prompt).toBe(followUpAgentPrompt);
+    const followUpClaim = await claimTelegramRun(
+      followUpRun.id,
+      runnerGroup,
+      fixture,
+    );
     const followUpThreadContext = renderedThreadContextAfter(
-      followUpRun.appendSystemPrompt,
+      followUpClaim.appendSystemPrompt,
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
@@ -1763,11 +1769,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     // The reply to the bot's answer (root 700) continues the first thread.
     await expect(threadIdForRun(fixture, followUpRun.id)).resolves.toBe(
       firstThreadId,
-    );
-    const followUpClaim = await claimTelegramRun(
-      followUpRun.id,
-      runnerGroup,
-      fixture,
     );
     expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
     await completeCanonicalChatRun({
@@ -2207,6 +2208,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("preserves a mention-only Telegram request with the preceding group task", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await prepareTelegramGroup();
     await closeTelegramDm(
       fixture.run(async () => {
@@ -2258,6 +2260,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           fixture.context,
         );
         expect(run?.prompt).toBe(`@${botUsername}`);
+        if (!run) {
+          throw new Error("Expected the mention-only Telegram run");
+        }
+        await createRunsApi(fixture.context).heartbeatRunner(runnerGroup);
+        const claim = await fixture.claim(run.id);
         await expect(
           readTelegramSourcePart(fixture, `@${botUsername}`, fixture.context),
         ).resolves.toStrictEqual({
@@ -2265,12 +2272,12 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           kind: "telegram",
           href: "https://t.me/c/99002/101",
         });
-        expect(run?.appendSystemPrompt).toContain("Chat type: supergroup");
-        expect(run?.appendSystemPrompt).toContain(
+        expect(claim.appendSystemPrompt).toContain("Chat type: supergroup");
+        expect(claim.appendSystemPrompt).toContain(
           "https://example.com/broken-article",
         );
         expectExactSystemPromptFragment(
-          run?.appendSystemPrompt,
+          claim.appendSystemPrompt,
           [
             "# Current Integration",
             "You are currently running inside: Telegram",
@@ -2282,9 +2289,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           ].join("\n"),
         );
         // A top-level group message has no reply chain or forum topic.
-        expect(run?.appendSystemPrompt).not.toContain("Root message ID:");
-        expect(run?.appendSystemPrompt).not.toContain("Message thread ID:");
-        expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
+        expect(claim.appendSystemPrompt).not.toContain("Root message ID:");
+        expect(claim.appendSystemPrompt).not.toContain("Message thread ID:");
+        expect(claim.appendSystemPrompt).toContain("Telegram username: @alice");
         expect(run?.startedAt).toBeNull();
         expect(["queued", "pending"]).toContain(run?.status);
       }),
@@ -2295,7 +2302,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("creates an agent run for a linked official-bot private message", async () => {
     // The log detail resolves the run framework from the Axiom run-context
     // dataset; mock that external query like the Runner-backed cases do.
-    runsApi.acceptTelemetryIngest();
+    const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
@@ -2324,6 +2331,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     const run = await runForPrompt(fixture, "run through official bot");
     expect(run?.prompt).toBe("run through official bot");
+    if (!run) {
+      throw new Error("Expected the official-bot Telegram run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
     await expect(
       readTelegramSourcePart(fixture, "run through official bot"),
     ).resolves.toStrictEqual({
@@ -2331,11 +2342,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       kind: "telegram",
       href: `https://t.me/${OFFICIAL_BOT_USERNAME}`,
     });
-    expect(run?.appendSystemPrompt).toContain(
+    expect(claim.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
     );
     expectExactSystemPromptFragment(
-      run?.appendSystemPrompt,
+      claim.appendSystemPrompt,
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
@@ -2348,15 +2359,12 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       ].join("\n"),
     );
     // The admitted sender identity reaches the agent's user info.
-    expect(run?.appendSystemPrompt).toContain("Telegram display name: Bob");
-    expect(run?.appendSystemPrompt).toContain("Telegram username: @bob");
-    expect(run?.appendSystemPrompt).toContain(
+    expect(claim.appendSystemPrompt).toContain("Telegram display name: Bob");
+    expect(claim.appendSystemPrompt).toContain("Telegram username: @bob");
+    expect(claim.appendSystemPrompt).toContain(
       `Telegram user ID: ${fixture.telegramUserId}`,
     );
-    expect(run?.appendSystemPrompt).toContain("Telegram language: en");
-    if (!run) {
-      throw new Error("Expected the official-bot Telegram run");
-    }
+    expect(claim.appendSystemPrompt).toContain("Telegram language: en");
     const log = await runReadsApi.requestReadLogById(
       actorForFixture(fixture),
       run.id,
@@ -2366,6 +2374,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("routes an official-bot group mention with the member subscription", async () => {
+    const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
@@ -2396,7 +2405,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       `@${OFFICIAL_BOT_USERNAME} help from a group`,
     );
     expect(run?.prompt).toBe(`@${OFFICIAL_BOT_USERNAME} help from a group`);
-    expect(run?.appendSystemPrompt).toContain(
+    if (!run) {
+      throw new Error("Expected the official-bot group run");
+    }
+    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    expect(claim.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
     );
   });

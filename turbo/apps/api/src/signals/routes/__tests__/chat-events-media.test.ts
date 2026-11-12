@@ -12,6 +12,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
+  claimChatRun,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
@@ -28,13 +29,14 @@ async function expectImageGuidance(
 
 describe("CHAT-02: run image model through public prompts", () => {
   it("keeps a run's image guidance stable and applies member changes to subsequent turns", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "image model comes from the global default",
     });
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
     await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
-    await cancelChatRun(actor, first.runId);
+    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
 
     await chat.updateUserModelPreference(
       actor,
@@ -46,6 +48,7 @@ describe("CHAT-02: run image model through public prompts", () => {
       threadId: first.threadId,
       prompt: "existing thread follows the member image model",
     });
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
     await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
     await chat.updateUserModelPreference(
       actor,
@@ -60,19 +63,20 @@ describe("CHAT-02: run image model through public prompts", () => {
     expect(prompt).toContain(
       "Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.\n\n# Restricted Explicit Content",
     );
-    await cancelChatRun(actor, second.runId);
+    await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
 
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "next run sees the new image model",
     });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
     await expectImageGuidance(actor, third.runId, "nano-banana-2");
-    await cancelChatRun(actor, third.runId);
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
   }, 90_000);
 
   it("uses the member image model when an organization slot releases", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     await chat.updateUserModelPreference(
       actor,
       "claude-fable-5-1",
@@ -90,11 +94,12 @@ describe("CHAT-02: run image model through public prompts", () => {
     await cancelChatRun(actor, blocker.runId);
     await flushWaitUntilForTest();
     const picked = await waiting.launchedRun();
+    const pickedClaim = await claimChatRun(runnerGroup, picked.runId);
     expect(
       (await api.readRun(actor, picked.runId)).appendSystemPrompt,
     ).toContain(
       "Built-in image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
     );
-    await cancelChatRun(actor, picked.runId);
+    await cancelChatRun(actor, picked.runId, pickedClaim.sandboxHeaders);
   }, 90_000);
 });

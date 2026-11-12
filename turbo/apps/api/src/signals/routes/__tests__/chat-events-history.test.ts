@@ -134,6 +134,7 @@ describe("CHAT-02: incomplete-round context", () => {
       threadId: first.threadId,
       prompt: "retry after two failures",
     });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
     expect(appended).toContain("# Incomplete Rounds Context");
@@ -144,7 +145,6 @@ describe("CHAT-02: incomplete-round context", () => {
     );
     expect(appended).toContain("...[truncated]");
     expect(thirdRun.prompt).toBe("retry after two failures");
-    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
     expect(thirdClaim.claim.nativeContinuation).toStrictEqual({
       sessionId: null,
       generationRunId: null,
@@ -296,12 +296,13 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       readThreadTitleFromEvents(actor, first.threadId),
     ).resolves.toBe("Migration Plan");
     expect(titleRequests).toBe(1);
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
     const secondRun = await api.readRun(actor, second.runId);
     const appended = secondRun.appendSystemPrompt ?? "";
     expect(secondRun.prompt).toBe("follow-up question");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
 
-    await cancelChatRun(actor, second.runId);
+    await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
 
     await chat.renameThread(actor, first.threadId, "Manual Migration Title");
     const third = await sendChatRun(actor, {

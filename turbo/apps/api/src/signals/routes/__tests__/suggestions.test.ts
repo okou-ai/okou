@@ -24,7 +24,10 @@ import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
 import { cronCleanupSuggestionsContract } from "@okouai/api-contracts/contracts/cron";
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
 import { mockNow } from "../../../lib/time";
@@ -165,18 +168,20 @@ const feedbackContextSchema = object({
 async function feedbackContext(
   fixture: Awaited<ReturnType<typeof primaryRun>>,
 ) {
-  const runs = createRunsApi(context);
+  const { api: runs, cancelChatRun } = createChatEventsFixture(context);
   await runs.heartbeatRunner(fixture.runnerGroup);
   const next = await runs.createThreadRun(fixture.actor, {
     agentId: fixture.agentId,
     model: "claude-fable-5-1",
     prompt: "Maintain suggestions using current feedback",
   });
-  const run = await runs.readRun(fixture.actor, next.runId);
+  const run = await runs.claimRunnerJob(next.runId);
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
-  await runs.requestCancelRun(fixture.actor, next.runId, [200]);
+  await cancelChatRun(fixture.actor, next.runId, {
+    authorization: `Bearer ${run.sandboxToken}`,
+  });
   return parsed;
 }
 

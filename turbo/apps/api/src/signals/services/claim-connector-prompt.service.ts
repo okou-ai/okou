@@ -1,6 +1,6 @@
 import { command, type Computed } from "ccstate";
 import {
-  renderRunPrompts,
+  renderRunSystemPrompt,
   type SystemPromptVariables,
 } from "./run-prompt-and-skills";
 import { buildEmailPrompt } from "./email-prompt";
@@ -64,10 +64,6 @@ export const prepareClaimSystemPrompt$ = command(
         ),
       };
     }
-    return renderRunPrompts({
-      systemPromptVariables: variables,
-      userPromptVariables: {},
-      skillVolumes: [],
-    }).systemPrompt;
+    return renderRunSystemPrompt(variables);
   },
 );

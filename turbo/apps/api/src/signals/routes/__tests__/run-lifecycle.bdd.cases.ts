@@ -1193,13 +1193,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises private artifact sharing and downloads", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
           agentId,
           prompt: "share the report with my organization",
         });
-        const run = await api.readRun(actor, created.runId);
-        const prompt = run.appendSystemPrompt ?? "";
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(created.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
         expect(prompt.split("\n")).toContain(
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
         );
@@ -1236,12 +1237,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("advertises Lark messaging only while the organization rollout is enabled", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
         const disabled = await api.createThreadRun(actor, {
           agentId,
           prompt: "send a message",
         });
-        const disabledRun = await api.readRun(actor, disabled.runId);
+        await api.heartbeatRunner(runnerGroup);
+        const disabledRun = await api.claimRunnerJob(disabled.runId);
         expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
         expect(disabledRun.appendSystemPrompt).toContain(
           "okou feishu message send --help",
@@ -1255,7 +1257,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "send a message",
         });
-        const enabledRun = await api.readRun(actor, enabled.runId);
+        const enabledRun = await api.claimRunnerJob(enabled.runId);
         expect(enabledRun.appendSystemPrompt).toContain(
           "Lark messages: when the task explicitly asks to send or post to Lark",
         );
@@ -11219,13 +11221,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("appends the restricted explicit content policy last", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "summarize the safety policy",
         });
-        const stored = await api.readRun(actor, run.runId);
+        await api.heartbeatRunner(runnerGroup);
+        const stored = await api.claimRunnerJob(run.runId);
         const appendSystemPrompt = stored.appendSystemPrompt ?? "";
 
         expect(appendSystemPrompt).toContain("# Restricted Explicit Content");
@@ -11581,8 +11584,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "inspect my SSH hosts",
         });
-        const prompt =
-          (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+        await api.heartbeatRunner(runnerGroup);
+        const claim = await api.claimRunnerJob(run.runId);
+        const prompt = claim.appendSystemPrompt ?? "";
         expect(prompt).toContain("okou ssh host list --json");
         expect(prompt).toContain("okou ssh exec");
         expect(prompt).toContain("okou ssh session");
@@ -11601,8 +11605,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(sshGuidance).toHaveLength(1);
         expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
         const token = claim.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a minted Run token");

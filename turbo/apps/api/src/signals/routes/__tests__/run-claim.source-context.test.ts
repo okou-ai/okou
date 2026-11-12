@@ -216,6 +216,12 @@ describe("Runner Claim current member and account sources", () => {
         prompt: "Use the member preferences current when the Runner claims",
       });
       await owned.run(async () => {
+        const pending = await fixture.api.readRun(owned.actor, queued.runId);
+        expect(pending.status).toBe("pending");
+        expect(pending.prompt).toBe(
+          "Use the member preferences current when the Runner claims",
+        );
+        expect(pending.appendSystemPrompt).toBeNull();
         await accept(
           preferences.update({
             headers: fixture.sessionHeaders(owned.actor),
@@ -229,6 +235,11 @@ describe("Runner Claim current member and account sources", () => {
         );
         owned.rememberClaim(queued.runId, claim.sandboxToken);
         expect(claim.userTimezone).toBe("America/Los_Angeles");
+        expect(claim.appendSystemPrompt).toContain("Timezone: Asia/Tokyo");
+        const running = await fixture.api.readRun(owned.actor, queued.runId);
+        expect(running.status).toBe("running");
+        expect(running.prompt).toBe(pending.prompt);
+        expect(running.appendSystemPrompt).toBe(claim.appendSystemPrompt);
         expect(
           claim.connectorRuntimeTargets.filter((target) => {
             return (

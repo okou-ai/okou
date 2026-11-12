@@ -438,6 +438,7 @@ describe("CHAT-02: shared user message queue", () => {
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
+    const forwardedClaim = await claimChatRun(runnerGroup, forwardedRunId);
     const forwardedRun = await api.readRun(actor, forwardedRunId);
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
     expect(
@@ -498,7 +499,7 @@ describe("CHAT-02: shared user message queue", () => {
       },
     });
 
-    await cancelChatRun(actor, forwardedRunId);
+    await cancelChatRun(actor, forwardedRunId, forwardedClaim.sandboxHeaders);
     await cancelChatRun(actor, source.runId);
   }, 90_000);
 
@@ -536,6 +537,7 @@ describe("CHAT-02: shared user message queue", () => {
       firstTargetThread.id,
       firstEventId,
     );
+    const firstTargetClaim = await claimChatRun(runnerGroup, firstTargetRunId);
     const firstTargetRun = await api.readRun(actor, firstTargetRunId);
     const firstTargetSystemPrompt = firstTargetRun.appendSystemPrompt ?? "";
     expect(firstTargetSystemPrompt).toContain("# This Run's Trigger");
@@ -726,7 +728,11 @@ describe("CHAT-02: shared user message queue", () => {
 
     // Freeing a slot picks the oldest queued thread first; the launched run
     // keeps the delegated autonomy budget carried by the queued input.
-    await cancelChatRun(actor, firstTargetRunId);
+    await cancelChatRun(
+      actor,
+      firstTargetRunId,
+      firstTargetClaim.sandboxHeaders,
+    );
     await flushWaitUntilForTest();
     const secondTargetRunId = await readPickedInputRun(
       actor,
@@ -818,6 +824,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!rotatedRunId) {
       throw new Error("Expected the rotated agent prompt to be promoted");
     }
+    const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);
     const rotatedRun = await api.readRun(actor, rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
@@ -835,8 +842,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(rotatedSystemPrompt).toContain(
       CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
     );
-    const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);
-
     await cancelChatRun(actor, rotatedRunId, rotatedClaim.sandboxHeaders);
 
     const incompletePrompt = "failed Web round before an agent retry";
@@ -885,16 +890,15 @@ describe("CHAT-02: shared user message queue", () => {
     if (!incompleteRunId) {
       throw new Error("Expected the incomplete agent prompt to be promoted");
     }
+    const promotedIncompleteClaim = await claimChatRun(
+      runnerGroup,
+      incompleteRunId,
+    );
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
     expect(incompleteSystemPrompt).toContain("# Incomplete Rounds Context");
     expect(incompleteSystemPrompt).toContain("Web chat files: use");
-    const promotedIncompleteClaim = await claimChatRun(
-      runnerGroup,
-      incompleteRunId,
-    );
-
     await cancelChatRun(
       actor,
       incompleteRunId,
@@ -1198,6 +1202,7 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the queued template message to auto-send");
     }
 
+    const queuedClaim = await claimChatRun(runnerGroup, queuedRunId);
     const run = await api.readRun(actor, queuedRunId);
     const inlineMarker = `[Template #1: ${style.title} (illustration)]`;
     expect(run.prompt).toBe(
@@ -1215,7 +1220,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(run.appendSystemPrompt).toContain("# Inline Templates");
     expect(run.appendSystemPrompt).toContain(style.illustrationStyleId);
 
-    const queuedClaim = await claimChatRun(runnerGroup, queuedRunId);
     expect(queuedClaim.claim.prompt).toBe(run.prompt);
     expect(queuedClaim.claim.appendSystemPrompt).toBe(run.appendSystemPrompt);
     await cancelChatRun(actor, queuedRunId, queuedClaim.sandboxHeaders);
@@ -1496,12 +1500,13 @@ describe("CHAT-02: shared user message queue", () => {
       }),
     ).toBeTruthy();
 
+    const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
     const followUp = await api.readRun(actor, promoted.runId);
     expect(followUp.prompt).toContain("queue-first waits for the anchor");
     expect(followUp.appendSystemPrompt ?? "").not.toContain(
       "queue-first message to recall",
     );
-    await cancelChatRun(actor, promoted.runId);
+    await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
   }, 90_000);
 
   it("waits when a fresh cancellation recovery is the only dispatch blocker", async () => {

@@ -165,6 +165,7 @@ test("prepares queued inputs from current membership while preserving an already
   if (!nextId) {
     throw new Error("Queued Project input did not create a Run");
   }
+  const nextClaim = await fixture.claimChatRun(runnerGroup, nextId);
   const next = await fixture.api.readRun(actor, nextId);
   expect(next.appendSystemPrompt).toContain(`PROJECT_ID=${latestId}`);
   expect(next.appendSystemPrompt).not.toContain(`Current Project: "Launch"`);
@@ -182,4 +183,5 @@ test("prepares queued inputs from current membership while preserving an already
   expect((await fixture.api.readRun(actor, nextId)).appendSystemPrompt).toBe(
     next.appendSystemPrompt,
   );
+  await fixture.cancelChatRun(actor, nextId, nextClaim.sandboxHeaders);
 });

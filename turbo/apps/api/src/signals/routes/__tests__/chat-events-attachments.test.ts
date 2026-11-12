@@ -157,7 +157,7 @@ async function publishPrivateChatTemplates(actor: ApiTestUser) {
 
 describe("CHAT-02: generation templates and attachments", () => {
   it("uses the userMessage document for the runtime prompt", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -241,7 +241,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     expect(run.prompt).toBe(
       [
         `[Template #1: ${style.title} (illustration)]`,
@@ -277,11 +280,11 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it("lists the agents and chat threads the message links", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const referencedAgentId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -315,7 +318,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     expect(run.appendSystemPrompt).toContain(
       [
         "# Referenced Agents and Threads",
@@ -328,11 +334,11 @@ describe("CHAT-02: generation templates and attachments", () => {
       ].join("\n"),
     );
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it("projects referenced passages without requiring every feedback note", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const userMessage: UserMessageInputDocument = {
       version: 1,
@@ -360,7 +366,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     expect(run.prompt).toBe(prompt);
     expect(run.appendSystemPrompt).not.toContain(
       "# Referenced Agents and Threads",
@@ -384,7 +393,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage.parts,
     );
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it("projects forwarded passages from the authoritative source title", async () => {
@@ -607,7 +616,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflow = WORKFLOW_TEMPLATE_ITEMS[0];
@@ -673,7 +682,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "legacy fallback",
       userMessage,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     const firstMarker = `[Template #1: ${style.title} (illustration)]`;
     const secondMarker = `[Template #2: ${workflow.title} (workflow)]`;
     const feedbackMarker = `[Template #3: ${style.title} (illustration)]`;
@@ -725,11 +737,11 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const userMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
@@ -757,7 +769,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "Compare these presentation templates",
       userMessage,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
 
     for (const [index, item] of PRESENTATION_TEMPLATE_PICKER_ITEMS.entries()) {
       const runbook = findPresentationRunbookPackage(item.templateId);
@@ -784,7 +799,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ...userMessage.parts,
       { type: "model", selectedModel: "claude-fable-5-1" },
     ]);
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it("preserves the attachment userMessage order in the runtime prompt", async () => {
@@ -856,7 +871,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("uses only the canonical template part", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -872,7 +887,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       template: generationTemplate,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     expect(run.prompt).toBe(
       "draw a dog\n\n[Template #1: Illustration template (illustration)]",
     );
@@ -895,7 +913,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ]),
       },
     });
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 90_000);
 
   it.each([
@@ -934,7 +952,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   );
 
   it("includes cover capture and publishing guidance for templates and revisions", async () => {
-    const { actor: owner, agentId } = await entitledChatActor();
+    const { actor: owner, agentId, runnerGroup } = await entitledChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
@@ -964,7 +982,11 @@ describe("CHAT-02: generation templates and attachments", () => {
         },
       },
     });
-    const presentationRun = await api.readRun(actor, presentation.runId);
+    const presentationClaim = await claimChatRun(
+      runnerGroup,
+      presentation.runId,
+    );
+    const presentationRun = presentationClaim.claim;
     expect(presentationRun.prompt).toBe(
       "make a launch deck\n\n[Template #1: Playful Launch Presentation (presentation)]",
     );
@@ -995,19 +1017,23 @@ describe("CHAT-02: generation templates and attachments", () => {
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
     expect(presentationPrompt).toContain("--artifact-kind presentation-html");
-    await cancelChatRun(actor, presentation.runId);
+    await cancelChatRun(
+      actor,
+      presentation.runId,
+      presentationClaim.sandboxHeaders,
+    );
 
     const revision = await sendChatRun(actor, {
       agentId,
       threadId: presentation.threadId,
       prompt: "Revise the deck and publish the updated HTML",
     });
-    const revisionPrompt =
-      (await api.readRun(actor, revision.runId)).appendSystemPrompt ?? "";
+    const revisionClaim = await claimChatRun(runnerGroup, revision.runId);
+    const revisionPrompt = revisionClaim.claim.appendSystemPrompt ?? "";
     expect(revisionPrompt).not.toContain("# Inline Templates");
     expect(revisionPrompt).toContain("okou host screenshot");
     expect(revisionPrompt).toContain("previewImageUrl");
-    await cancelChatRun(actor, revision.runId);
+    await cancelChatRun(actor, revision.runId, revisionClaim.sandboxHeaders);
 
     const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
     if (!websiteTemplate) {
@@ -1021,7 +1047,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { websiteTemplateId: websiteTemplate.id },
       },
     });
-    const websiteRun = await api.readRun(actor, website.runId);
+    const websiteClaim = await claimChatRun(runnerGroup, website.runId);
+    const websiteRun = websiteClaim.claim;
     const websitePrompt = websiteRun.appendSystemPrompt ?? "";
     expect(websitePrompt).toContain("okou host screenshot");
     expect(websitePrompt).toContain(" --preview ");
@@ -1041,11 +1068,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(websitePrompt).toMatch(
       /with `okou generate image-batch wait <state-dir>`/,
     );
-    await cancelChatRun(actor, website.runId);
+    await cancelChatRun(actor, website.runId, websiteClaim.sandboxHeaders);
   }, 90_000);
 
   it("keeps selected templates usable without recommending disabled managed image generation", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     await setPaidToolDisabled(context, actor, "image-generation", true);
     const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
       return item.slug === "playful-launch-presentation";
@@ -1072,8 +1099,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         prompt: "use this template",
         template,
       });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      const prompt = claimed.claim.appendSystemPrompt ?? "";
       expect(prompt).toContain("# Inline Templates");
       expect(prompt).not.toContain("okou generate image-batch");
       expect(prompt).not.toContain("--provider built-in");
@@ -1085,12 +1112,12 @@ describe("CHAT-02: generation templates and attachments", () => {
         );
         expect(prompt).toMatch(/- Style description: \S/);
       }
-      await cancelChatRun(actor, run.runId);
+      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
     }
   });
 
   it("uses R2 for archive-backed styles", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS.find((item) => {
       return item.illustrationStyleId === "image-style:ink-storefront";
     });
@@ -1106,13 +1133,13 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { illustrationStyleId: style.illustrationStyleId },
       },
     });
-    const defaultR2Prompt =
-      (await api.readRun(actor, defaultR2Run.runId)).appendSystemPrompt ?? "";
+    const claimed = await claimChatRun(runnerGroup, defaultR2Run.runId);
+    const defaultR2Prompt = claimed.claim.appendSystemPrompt ?? "";
     expect(defaultR2Prompt).toContain(
       "Style source: private R2 registry resource image-style:ink-storefront",
     );
     expect(defaultR2Prompt).toContain("--compile --style-source r2");
-    await cancelChatRun(actor, defaultR2Run.runId);
+    await cancelChatRun(actor, defaultR2Run.runId, claimed.sandboxHeaders);
   }, 90_000);
 
   it("is one-shot: a follow-up without re-attaching the style gets no template context", async () => {
@@ -1131,8 +1158,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { illustrationStyleId: style.illustrationStyleId },
       },
     });
-    const firstPrompt = (await api.readRun(actor, first.runId))
-      .appendSystemPrompt;
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstPrompt = firstClaim.claim.appendSystemPrompt;
     expect(firstPrompt).toContain("# Inline Templates");
     expect(firstPrompt).toContain(
       `okou generate image --provider built-in --style ${style.illustrationStyleId} --prompt "<user request>" --compile`,
@@ -1144,7 +1171,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(firstPrompt).toContain("--compiled-prompt");
     expect(firstPrompt).toContain(style.illustrationStyleId);
 
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "here is a fox")]);
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
       lastEventSequence: 0,
@@ -1162,8 +1188,8 @@ describe("CHAT-02: generation templates and attachments", () => {
       threadId: first.threadId,
       prompt: "another one",
     });
-    const secondPrompt = (await api.readRun(actor, second.runId))
-      .appendSystemPrompt;
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    const secondPrompt = secondClaim.claim.appendSystemPrompt;
     expect(secondPrompt).not.toContain("# Inline Templates");
     expect(secondPrompt).toContain("# This Chat Thread");
     expect(secondPrompt).not.toContain(style.illustrationStyleId);
@@ -1173,7 +1199,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       second.runId,
       "another one",
     );
-    await cancelChatRun(actor, second.runId);
+    await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
 
     // Turn 3: attaching a website template resolves only that selection.
     const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
@@ -1189,8 +1215,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { websiteTemplateId: websiteTemplate.id },
       },
     });
-    const thirdPrompt = (await api.readRun(actor, third.runId))
-      .appendSystemPrompt;
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+    const thirdPrompt = thirdClaim.claim.appendSystemPrompt;
     expect(thirdPrompt).toContain(
       `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
     );
@@ -1198,22 +1224,22 @@ describe("CHAT-02: generation templates and attachments", () => {
     // The illustration style is not attached to this message; only the selected
     // website template supplies live instructions for this turn.
     expect(thirdPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, third.runId);
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
 
     // A brand-new thread starts clean: neither template carries over.
     const fresh = await sendChatRun(actor, { agentId, prompt: "draw a cat" });
-    const freshPrompt = (await api.readRun(actor, fresh.runId))
-      .appendSystemPrompt;
+    const freshClaim = await claimChatRun(runnerGroup, fresh.runId);
+    const freshPrompt = freshClaim.claim.appendSystemPrompt;
     expect(freshPrompt).not.toContain("# Inline Templates");
     expect(freshPrompt).not.toContain(
       "okou generate image --provider built-in --style",
     );
     expect(freshPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, fresh.runId);
+    await cancelChatRun(actor, fresh.runId, freshClaim.sandboxHeaders);
   }, 120_000);
 
   it("injects workflow templates as one-shot context without prior template selections", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflowTemplate = WORKFLOW_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -1231,11 +1257,18 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { illustrationStyleId: style.illustrationStyleId },
       },
     });
-    const illustrationPrompt = (await api.readRun(actor, illustration.runId))
-      .appendSystemPrompt;
+    const illustrationClaim = await claimChatRun(
+      runnerGroup,
+      illustration.runId,
+    );
+    const illustrationPrompt = illustrationClaim.claim.appendSystemPrompt;
     expect(illustrationPrompt).toContain("# Inline Templates");
     expect(illustrationPrompt).toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, illustration.runId);
+    await cancelChatRun(
+      actor,
+      illustration.runId,
+      illustrationClaim.sandboxHeaders,
+    );
 
     const workflow = await sendChatRun(actor, {
       agentId,
@@ -1246,8 +1279,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { workflowTemplateId: workflowTemplate.id },
       },
     });
-    const workflowPrompt = (await api.readRun(actor, workflow.runId))
-      .appendSystemPrompt;
+    const workflowClaim = await claimChatRun(runnerGroup, workflow.runId);
+    const workflowPrompt = workflowClaim.claim.appendSystemPrompt;
     expect(workflowPrompt).toContain("# Inline Templates");
     expect(workflowPrompt).toContain(
       `Auto-inbox label (${workflowTemplate.id})`,
@@ -1262,15 +1295,15 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(workflowPrompt).toContain("# Incomplete Rounds Context");
     expect(workflowPrompt).toContain("User: draw a labeled inbox");
     expect(workflowPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, workflow.runId);
+    await cancelChatRun(actor, workflow.runId, workflowClaim.sandboxHeaders);
 
     const followUp = await sendChatRun(actor, {
       agentId,
       threadId: illustration.threadId,
       prompt: "continue the thread",
     });
-    const followUpPrompt = (await api.readRun(actor, followUp.runId))
-      .appendSystemPrompt;
+    const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
+    const followUpPrompt = followUpClaim.claim.appendSystemPrompt;
     // Both cancelled runs remain incomplete context without carrying either
     // prior template selection into this run.
     expect(followUpPrompt).not.toContain("# Inline Templates");
@@ -1279,11 +1312,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(followUpPrompt).toContain("User: draw a labeled inbox");
     expect(followUpPrompt).toContain("User: create the workflow version");
     expect(followUpPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, followUp.runId);
+    await cancelChatRun(actor, followUp.runId, followUpClaim.sandboxHeaders);
   }, 120_000);
 
   it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected a chat organization");
@@ -1451,8 +1484,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    const systemPrompt = (await api.readRun(actor, sent.runId))
-      .appendSystemPrompt;
+    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    const systemPrompt = claimed.claim.appendSystemPrompt;
     expect(systemPrompt).toContain("# Inline Templates");
     expect(systemPrompt).toContain(style.illustrationStyleId);
     expect(systemPrompt).toContain(
@@ -1461,11 +1494,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(systemPrompt).toContain(
       `./${userTemplateDirectory(customId)}/SKILL.md`,
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
   }, 60_000);
 
   it("injects the pinned public source for a Document template", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const template: GenerationTemplateRequest = {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
@@ -1475,15 +1508,18 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "Prepare my invoice",
       template,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     expect(run.appendSystemPrompt).toContain(
       "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 60_000);
 
   it("preserves multiple Document references and their pinned sources in the run", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const references = [
       {
         id: "document-template:creative-brief",
@@ -1544,7 +1580,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
     const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
-    const run = await api.readRun(actor, sent.runId);
+    const { claim: run, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      sent.runId,
+    );
     const systemPrompt = run.appendSystemPrompt;
     expect(systemPrompt).toBeDefined();
     if (!systemPrompt) {
@@ -1602,7 +1641,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         return part.type === "template";
       }),
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelChatRun(actor, sent.runId, sandboxHeaders);
   }, 60_000);
 
   it("rejects unknown generation template selections", async () => {
@@ -2205,7 +2244,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("persists attachments and injects them into the run prompt", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "diagram final 100%.png";
     chat.mockCompletedUploadObject(actor, fileId, filename, 42);
@@ -2227,7 +2266,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
 
-    const created = await api.readRun(actor, run.runId);
+    const { claim: created, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
     expect(created.prompt).toContain(`[Web file] ${filename} (image/png)`);
     expect(created.prompt).toContain(`[ID] ${fileId}`);
     expect(created.appendSystemPrompt).toContain("okou web download-file -h");
@@ -2259,7 +2301,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       filenameSnapshot: filename,
       contentType: "image/png",
     });
-    await cancelChatRun(actor, run.runId);
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 60_000);
 
   it("accepts repeated references to one uploaded file in the same input", async () => {

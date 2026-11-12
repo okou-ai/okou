@@ -146,10 +146,10 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: "gpt-6-astra",
       runOptions: { codexServiceTier: "fast" },
     });
+    const firstCodexClaim = await claimChatRun(runnerGroup, firstCodex.runId);
     const firstCodexRun = await api.readRun(actor, firstCodex.runId);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiPrompt);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiAnswer);
-    const firstCodexClaim = await claimChatRun(runnerGroup, firstCodex.runId);
     expect(firstCodexClaim.claim.cliAgentType).toBe("codex");
     expect(
       claimEnvironment(firstCodexClaim.claim).OKOU_CODEX_SERVICE_TIER,
@@ -234,12 +234,11 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: piModel,
     });
     await flushWaitUntilForTest();
+    const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
     const piFollowUpRun = await api.readRun(actor, piFollowUp.runId);
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
-    const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
-
     expect(piFollowUpClaim.claim.nativeContinuation).toMatchObject({
       sessionId: firstPi.threadId,
       generationRunId: returnedPi.runId,

@@ -197,22 +197,8 @@ describe("Teams message launch context", () => {
         agentId: owned.defaultAgentId,
         error: null,
         prompt: "hello from teams diagnostics",
+        appendSystemPrompt: null,
       });
-      expect(detail.body.appendSystemPrompt).toContain(
-        `Tenant ID: ${fixture.teamsTenantId}`,
-      );
-      expect(detail.body.appendSystemPrompt).toContain(
-        "Conversation ID: 19:e2e-dm@thread.v2",
-      );
-      expect(detail.body.appendSystemPrompt).toContain(
-        "Conversation type: personal",
-      );
-      expect(detail.body.appendSystemPrompt).toContain(
-        "Thread ID: activity-e2e",
-      );
-      expect(detail.body.appendSystemPrompt).toContain(
-        "Activity ID: activity-e2e",
-      );
 
       const chat = createChatFilesBddApi(context);
       const threads = await chat.requestThreadEvents(owned.actor, {}, [200]);

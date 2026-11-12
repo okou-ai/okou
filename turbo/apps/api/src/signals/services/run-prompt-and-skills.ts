@@ -144,35 +144,28 @@ export function resolveRunSkillVolumes(
   return skillVolumes;
 }
 
-interface RenderedRunPrompts {
-  readonly userPrompt: string;
-  readonly systemPrompt: string;
-}
-
 /** Render the complete prompt contributions in their stable injection order. */
-export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
-  const variables = part.systemPromptVariables;
-  return {
-    userPrompt: part.userPromptVariables.message ?? "",
-    systemPrompt: [
-      variables.agentIdentity,
-      variables.executionLimit,
-      variables.tools,
-      [variables.userIdentity, variables.channelUserIdentity]
-        .filter(Boolean)
-        .join("\n"),
-      variables.integrationContext,
-      variables.continuationContext,
-      variables.generationTemplatePrompt,
-      variables.computerUseContext,
-      variables.suggestionFeedback,
-      variables.connectors,
-      variables.codexImageUpload,
-      variables.builtInImageModel,
-      // Keep the product policy last, after all caller and integration text.
-      variables.restrictedExplicitContent,
-    ]
+export function renderRunSystemPrompt(
+  variables: SystemPromptVariables,
+): string {
+  return [
+    variables.agentIdentity,
+    variables.executionLimit,
+    variables.tools,
+    [variables.userIdentity, variables.channelUserIdentity]
       .filter(Boolean)
-      .join("\n\n"),
-  };
+      .join("\n"),
+    variables.integrationContext,
+    variables.continuationContext,
+    variables.generationTemplatePrompt,
+    variables.computerUseContext,
+    variables.suggestionFeedback,
+    variables.connectors,
+    variables.codexImageUpload,
+    variables.builtInImageModel,
+    // Keep the product policy last, after all caller and integration text.
+    variables.restrictedExplicitContent,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

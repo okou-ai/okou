@@ -7,7 +7,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import {
   mergeRunPromptAndSkills,
-  renderRunPrompts,
   type SkillVolume,
   type SystemPromptVariables,
 } from "../run-prompt-and-skills";
@@ -29,7 +28,6 @@ import { createWebThreadPrompt } from "./web";
 
 export interface PromptAndSkillVolumes {
   readonly systemPromptVariables: SystemPromptVariables;
-  readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly skillVolumes: readonly SkillVolume[];
 }
@@ -253,11 +251,9 @@ export function createPromptAndSkillVolumesSignals(
       runtime,
       suggestions,
     ]);
-    const prompts = renderRunPrompts(combined);
     return {
       systemPromptVariables: combined.systemPromptVariables,
-      appendedSystemPrompt: prompts.systemPrompt,
-      userPrompt: prompts.userPrompt,
+      userPrompt: combined.userPromptVariables.message ?? "",
       skillVolumes: combined.skillVolumes,
     };
   });

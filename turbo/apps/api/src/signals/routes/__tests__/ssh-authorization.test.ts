@@ -396,7 +396,21 @@ describe("SSH chat authorization", () => {
     if (!continuation?.runId) {
       throw new Error("Expected an approved SSH continuation Run");
     }
-    resumed.push({ actor: s.run.actor, runId: continuation.runId });
+    const continuationOwner: (typeof resumed)[number] = {
+      actor: s.run.actor,
+      runId: continuation.runId,
+    };
+    resumed.push(continuationOwner);
+    const claimed = await createRunsApi(context).requestClaimRunnerJobAs(
+      `Bearer vm0_official_${"c".repeat(64)}`,
+      continuation.runId,
+      [200],
+      { runnerIdentity: s.run.runnerIdentity },
+    );
+    if (claimed.status !== 200) {
+      throw new Error("Expected the approved SSH continuation to be claimed");
+    }
+    continuationOwner.sandboxToken = claimed.body.sandboxToken;
     const continued = await createRunsApi(context).readRun(
       s.run.actor,
       continuation.runId,

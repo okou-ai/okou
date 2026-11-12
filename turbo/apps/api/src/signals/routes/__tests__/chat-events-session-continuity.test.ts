@@ -950,12 +950,12 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "retry with the same model",
         model: "claude-fable-5-1",
       });
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
       const secondRun = await api.readRun(actor, second.runId);
       const appended = secondRun.appendSystemPrompt ?? "";
       expect(appended).toContain("# Incomplete Rounds Context");
       expect(appended).toContain(`User: ${firstPrompt}`);
 
-      const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim.cliAgentType).toBe(
         firstClaim.claim.cliAgentType,
       );

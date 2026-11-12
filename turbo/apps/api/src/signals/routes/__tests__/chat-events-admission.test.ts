@@ -213,7 +213,7 @@ describe("CHAT-02: web chat send and client ids", () => {
   });
 
   it("creates a web chat run with client-provided ids", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
     const clientThreadId = randomUUID();
     const clientEventId = randomUUID();
@@ -294,6 +294,7 @@ describe("CHAT-02: web chat send and client ids", () => {
       throw new Error("Expected the picked input to launch a run");
     }
 
+    const { sandboxHeaders } = await claimChatRun(runnerGroup, runId);
     const run = await api.readRun(actor, runId);
     expect(run.prompt).toBe(prompt);
     expect(run.appendSystemPrompt).toContain(
@@ -366,6 +367,7 @@ describe("CHAT-02: web chat send and client ids", () => {
     expect(emptyThreadSend.body.error.message).toBe(
       "Client thread id is already in use",
     );
+    await cancelChatRun(actor, runId, sandboxHeaders);
   }, 90_000);
 
   it("rejects unauthenticated, unknown-agent, and foreign private-agent sends", async () => {
@@ -639,15 +641,14 @@ describe("CHAT-02: interrupting active chat runs", () => {
       threadId: first.threadId,
       prompt: "resume after interruptions",
     });
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
     const thirdRun = await api.readRun(actor, third.runId);
     const appended = thirdRun.appendSystemPrompt ?? "";
     expect(appended).toContain("# Incomplete Rounds Context");
     expect(appended).toContain("RUN_STATUS: cancelled");
     expect(appended).toContain("User: long task to interrupt");
     expect(appended).toContain("User: cancelled through the cancel api");
-    await claimChatRun(runnerGroup, third.runId);
-
-    await cancelChatRun(actor, third.runId);
+    await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
   }, 90_000);
 });
 

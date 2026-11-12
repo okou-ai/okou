@@ -1002,7 +1002,8 @@ describe("canonical Discord ingress", () => {
     if (!inputs[0]?.runId) {
       throw new Error("Expected Discord run launch");
     }
-    const run = await runsApi.readRun(actor.actor, inputs[0].runId);
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const run = await runsApi.claimRunnerJob(inputs[0].runId);
     expect(run.prompt).toBe("@Okou preserve this request");
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
@@ -2254,7 +2255,9 @@ describe("canonical Discord ingress", () => {
     if (!thread) {
       throw new Error("Expected the second organization's DM chat");
     }
-    const run = await launchedRun(second, thread.id);
+    const queued = await launchedRun(second, thread.id);
+    await runsApi.heartbeatRunner(second.runnerGroup);
+    const run = await runsApi.claimRunnerJob(queued.runId);
     expect(run.prompt).toBe("hi");
     expect(run.appendSystemPrompt).not.toContain("42 open deals");
     expect(run.appendSystemPrompt).not.toContain(firstDm.content);
