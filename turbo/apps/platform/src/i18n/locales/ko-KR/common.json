@@ -7407,7 +7407,7 @@
       "codeInstructions": "추가할 이메일 주소에서 이 코드를 제목이나 본문의 첫 줄에 넣어 Okou로 보내세요.",
       "connected": "이메일 연결됨",
       "deleteAria": "{{email}} 삭제",
-      "description": "Okou에 이메일 보내기",
+      "description": "이메일로 Okou와 대화하세요",
       "emailAddress": "이메일 주소",
       "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
       "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",

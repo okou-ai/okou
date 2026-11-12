@@ -7508,7 +7508,7 @@
       "codeInstructions": "Invia questo codice a Okou dall’indirizzo che vuoi aggiungere. Usalo come oggetto o nella prima riga del messaggio.",
       "connected": "Email collegata",
       "deleteAria": "Elimina {{email}}",
-      "description": "Scrivi a Okou",
+      "description": "Parla con il tuo Okou via email",
       "emailAddress": "Indirizzo e-mail",
       "healthNotice": "Non usare questa integrazione per informazioni sui pazienti soggette a HIPAA.",
       "invalidLink": "Questo link di collegamento non è valido. Invia una nuova email a Okou.",

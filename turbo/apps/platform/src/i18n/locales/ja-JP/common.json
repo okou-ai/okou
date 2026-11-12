@@ -7407,7 +7407,7 @@
       "codeInstructions": "追加するメールアドレスから、このコードを件名または本文の最初の行に入れて Okou に送信してください。",
       "connected": "メールを接続しました",
       "deleteAria": "{{email}} を削除",
-      "description": "Okou にメールを送る",
+      "description": "メールで Okou と会話",
       "emailAddress": "メールアドレス",
       "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
       "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",

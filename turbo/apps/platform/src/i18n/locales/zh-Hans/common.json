@@ -7407,7 +7407,7 @@
       "codeInstructions": "从待添加的邮箱给 Okou 发送此验证码，放在邮件主题或正文首行均可。",
       "connected": "邮箱已连接",
       "deleteAria": "删除 {{email}}",
-      "description": "给 Okou 发邮件",
+      "description": "通过邮件与 Okou 对话",
       "emailAddress": "邮箱地址",
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
