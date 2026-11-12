@@ -7,6 +7,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -40,6 +41,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  RadioGroup,
   Textarea,
 } from "@okouai/ui";
 import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
@@ -716,11 +718,11 @@ function HomeSuggestionFeedback({ item }: { readonly item: Suggestion }) {
 }
 
 /**
- * One segment per waiting suggestion. The current one fills over the
- * suggestion's turn and then shows the next, wrapping to the first. It pauses
- * while the pointer or focus is on the greeting and while the review is open.
- * Choosing a segment shows its suggestion and restarts the turn; the arrow
- * keys move between segments, which hold a single tab stop.
+ * One segment per waiting suggestion, as a radio group: the shared group owns
+ * the single tab stop, arrow keys and selection. The current segment fills over
+ * the suggestion's turn and then shows the next, wrapping to the first. It
+ * pauses while the pointer or focus is on the greeting and while the review is
+ * open. Choosing a segment shows its suggestion and starts its turn.
  */
 function HomeSuggestionProgress({
   itemId,
@@ -738,52 +740,33 @@ function HomeSuggestionProgress({
     detach(show(position, signal), Reason.DomCallback);
   };
   return (
-    <div
-      role="group"
+    <RadioGroup
       aria-label={t(($) => {
         return $.chat.agentSuggestions.homeCard.navigation;
       })}
+      value={index}
+      onValueChange={(position: number) => {
+        select(position);
+      }}
       className="pointer-events-auto flex min-w-0 items-center gap-1"
     >
       {Array.from({ length: count }, (_, position) => {
-        const current = position === index;
         return (
-          <button
+          <RadioPrimitive.Root
             key={position}
-            type="button"
+            value={position}
+            nativeButton
+            render={<button type="button" />}
             aria-label={t(
               ($) => {
                 return $.chat.agentSuggestions.homeCard.show;
               },
               { index: position + 1, total: count },
             )}
-            aria-current={current}
-            tabIndex={current ? 0 : -1}
-            className="flex h-6 shrink-0 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => {
-              select(position);
-            }}
-            onKeyDown={(event) => {
-              const step =
-                event.key === "ArrowRight"
-                  ? 1
-                  : event.key === "ArrowLeft"
-                    ? -1
-                    : 0;
-              if (step === 0) {
-                return;
-              }
-              const next = (position + step + count) % count;
-              select(next);
-              const target =
-                event.currentTarget.parentElement?.children.item(next);
-              if (target instanceof HTMLElement) {
-                target.focus();
-              }
-            }}
+            className="flex h-6 shrink-0 items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="block h-[3px] w-4 overflow-hidden rounded-full bg-foreground/12">
-              {current && (
+              {position === index && (
                 <span
                   key={itemId}
                   data-testid="suggestion-progress"
@@ -798,10 +781,10 @@ function HomeSuggestionProgress({
                 />
               )}
             </span>
-          </button>
+          </RadioPrimitive.Root>
         );
       })}
-    </div>
+    </RadioGroup>
   );
 }
 

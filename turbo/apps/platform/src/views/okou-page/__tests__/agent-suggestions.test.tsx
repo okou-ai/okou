@@ -100,7 +100,7 @@ function makeOption(
 }
 function button(
   name: string,
-  role: "button" | "tab" = "button",
+  role: "button" | "tab" | "radio" = "button",
   container: ParentNode = document.body,
 ) {
   const found = queryAllByRoleFast(role, container).find((element) => {
@@ -389,27 +389,21 @@ test("My Okou's home speaks the waiting suggestion in its greeting, rotates thro
   expect(capabilities).not.toContainElement(list);
   expect(screen.getByTestId("chat-greeting")).toContainElement(list);
   expect(screen.queryByTestId("chat-tagline")).toBeNull();
-  const segments = within(list).getByRole("group", {
+  const segments = within(list).getByRole("radiogroup", {
     name: "Browse suggestions",
   });
-  expect(button("Show suggestion 1 of 3", "button", segments)).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
+  expect(button("Show suggestion 1 of 3", "radio", segments)).toBeChecked();
   // jsdom runs no CSS animation; the end of the current segment's fill is the
   // end of that suggestion's turn.
   fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
   await within(list).findByRole("heading", { name: "Suggested action 2" });
-  expect(button("Show suggestion 2 of 3", "button", segments)).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
-  click(button("Show suggestion 3 of 3", "button", segments));
+  expect(button("Show suggestion 2 of 3", "radio", segments)).toBeChecked();
+  click(button("Show suggestion 3 of 3", "radio", segments));
   await within(list).findByRole("heading", { name: "Suggested action 3" });
   // The rotation wraps from the last suggestion back to the first.
   fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
   await within(list).findByRole("heading", { name: "Suggested action 1" });
-  click(button("Show suggestion 3 of 3", "button", segments));
+  click(button("Show suggestion 3 of 3", "radio", segments));
   await within(list).findByRole("heading", { name: "Suggested action 3" });
   click(button("Suggested action 3", "button", list));
   const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
@@ -429,7 +423,7 @@ test("My Okou's home speaks the waiting suggestion in its greeting, rotates thro
   });
 });
 
-test("Arrow keys move between suggestion segments that hold one tab stop", async () => {
+test("Arrow keys choose suggestion segments that hold one tab stop", async () => {
   mockPool(numberedSuggestions(3));
   await setupPage({
     context,
@@ -442,19 +436,19 @@ test("Arrow keys move between suggestion segments that hold one tab stop", async
   });
   const list = await screen.findByRole("region", { name: "Suggestions" });
   await within(list).findByRole("heading", { name: "Suggested action 1" });
-  const segments = within(list).getByRole("group", {
+  const segments = within(list).getByRole("radiogroup", {
     name: "Browse suggestions",
   });
-  const first = button("Show suggestion 1 of 3", "button", segments);
+  const first = button("Show suggestion 1 of 3", "radio", segments);
   expect(first).toHaveAttribute("tabindex", "0");
-  expect(button("Show suggestion 2 of 3", "button", segments)).toHaveAttribute(
+  expect(button("Show suggestion 2 of 3", "radio", segments)).toHaveAttribute(
     "tabindex",
     "-1",
   );
   first.focus();
   await userEvent.keyboard("{ArrowLeft}");
   await within(list).findByRole("heading", { name: "Suggested action 3" });
-  expect(button("Show suggestion 3 of 3", "button", segments)).toHaveFocus();
+  expect(button("Show suggestion 3 of 3", "radio", segments)).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
   await within(list).findByRole("heading", { name: "Suggested action 1" });
   expect(first).toHaveFocus();
@@ -534,7 +528,7 @@ test("The review advances in its original order, returns to earlier waiting sugg
   });
   const card = await screen.findByRole("region", { name: "Suggestions" });
   await within(card).findByRole("heading", { name: "Suggested action 1" });
-  click(button("Show suggestion 3 of 8", "button", card));
+  click(button("Show suggestion 3 of 8", "radio", card));
   await within(card).findByRole("heading", { name: "Suggested action 3" });
   click(button("Suggested action 3", "button", card));
   const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
