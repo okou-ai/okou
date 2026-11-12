@@ -1234,6 +1234,163 @@ test.each(["existing", "this page"] as const)(
   },
 );
 
+test.each([false, true])(
+  "Retry a failed scope-recovery catalog without replaying an upload (native import: %s)",
+  async (nativeImport) => {
+    mockWideScreen();
+    const user = userEvent.setup({ delay: null });
+    const popup = installAuthorizationPopup();
+    const drive = installDriveMocks(context, "connected", {
+      filename: "report.txt",
+      contentType: "text/plain",
+      selectedAccountReady: true,
+      agentAuthorized: true,
+      uploadError: "scope",
+      ...(nativeImport
+        ? { existingMimeType: GOOGLE_WORKSPACE_MIME_TYPES.document }
+        : {}),
+    });
+    const retryRequested = context.mocks.deferred<void>();
+    const recovery = context.mocks.deferred<void>();
+    let unavailable = true;
+    context.mocks.api(
+      connectorCatalogContract.get,
+      async ({ params, respond }) => {
+        if (params.connectorSlug !== "google-drive") {
+          return respond(404, {
+            error: { code: "NOT_FOUND", message: "Connector not found" },
+          });
+        }
+        if (unavailable) {
+          return respond(500, {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Drive catalog unavailable",
+            },
+          });
+        }
+        if (!retryRequested.settled()) {
+          retryRequested.resolve();
+        }
+        await recovery.promise;
+        return respond(200, {
+          connector: googleDriveCatalogItem("connected"),
+        });
+      },
+    );
+    // Keep the static status route ahead of the overridden slug route.
+    context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+      return respond(200, {
+        connectors: [googleDriveCatalogItem("connected")],
+      });
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.ArtifactPreviewToolbar]: true },
+    });
+    await openDriveArtifactMenu(
+      "Upload to Google Drive",
+      "report.txt",
+      "More artifact actions",
+    );
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await expect(
+      screen.findByText(
+        "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+      ),
+    ).resolves.toBeInTheDocument();
+    await expect(
+      screen.findByText("Drive catalog unavailable"),
+    ).resolves.toBeInTheDocument();
+    const moreButton = () => {
+      return buttonNamed("More artifact actions", artifactPreview());
+    };
+    click(moreButton());
+    const failedMenu = await screen.findByRole("menu");
+    await expect(
+      within(failedMenu).findByText("Some actions are unavailable"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      roleItemNamed("menuitem", "Download", failedMenu),
+    ).not.toHaveAttribute("aria-disabled", "true");
+    const expectedEditorLinks = nativeImport
+      ? ["https://drive.google.test/file/drive-file-1"]
+      : [];
+    expect(
+      queryAllByRoleFast("menuitem", failedMenu)
+        .filter((item) => {
+          return item.textContent?.trim() === "Open in Google Docs";
+        })
+        .map((item) => {
+          return item.getAttribute("href");
+        }),
+    ).toStrictEqual(expectedEditorLinks);
+    expect(drive.syncRequests).toHaveLength(1);
+    expect(drive.oauthRequests).toHaveLength(0);
+    unavailable = false;
+    await user.keyboard("{End}");
+    expect(roleItemNamed("menuitem", "Retry", failedMenu)).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await retryRequested.promise;
+    await waitFor(() => {
+      expect(failedMenu).not.toBeInTheDocument();
+    });
+    await act(() => {
+      recovery.resolve();
+    });
+    click(moreButton());
+    const recoveredMenu = await screen.findByRole("menu");
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Reconnect Google Drive", recoveredMenu),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(
+      queryAllByRoleFast("menuitem", recoveredMenu).filter((item) => {
+        return item.textContent?.trim() === "Reconnect Google Drive";
+      }),
+    ).toHaveLength(1);
+    expect(within(recoveredMenu).queryByText("Retry")).not.toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("menuitem", recoveredMenu)
+        .filter((item) => {
+          return item.textContent?.trim() === "Open in Google Docs";
+        })
+        .map((item) => {
+          return item.getAttribute("href");
+        }),
+    ).toStrictEqual(expectedEditorLinks);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(recoveredMenu).not.toBeInTheDocument();
+      expect(moreButton()).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
+    click(roleItemNamed("menuitem", "Reconnect Google Drive"));
+    await waitFor(() => {
+      expect(popup.location.href).toBe(AUTHORIZATION_URL);
+      expect(drive.oauthRequests[0]?.account).toStrictEqual({
+        intent: "reconnect",
+        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+      });
+    });
+    expect(drive.syncRequests).toHaveLength(1);
+    drive.completeAuthorization();
+    click(moreButton());
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Upload to Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(drive.syncRequests).toHaveLength(1);
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await expectSyncCompletedPreview("Synced to Google Drive", moreButton);
+    expect(drive.syncRequests).toHaveLength(2);
+  },
+);
+
 test("Dismissed Drive scope recovery never resumes an upload", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();

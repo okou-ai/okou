@@ -246,7 +246,7 @@ function useGoogleDriveCompletedOperation(
     : undefined;
 }
 
-function useGoogleDriveAvailability(
+export function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
@@ -275,6 +275,7 @@ function useGoogleDriveAvailability(
   return {
     googleDriveAuthMethod,
     googleDriveConnector,
+    googleDriveCatalogFailed: catalogItemLoadable.state === "hasError",
     googleDriveReady: accountReady,
     pendingAction: resolveGoogleDrivePendingAction(recovery),
     scopeRequired: completedOperation?.recovery !== undefined,
