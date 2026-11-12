@@ -726,12 +726,10 @@ function HomeSuggestionProgress({
   itemId,
   index,
   count,
-  paused,
 }: {
   readonly itemId: string;
   readonly index: number;
   readonly count: number;
-  readonly paused: boolean;
 }) {
   const { t } = useTranslation();
   const show = useSet(showHomeSuggestion$);
@@ -789,10 +787,11 @@ function HomeSuggestionProgress({
                 <span
                   key={itemId}
                   data-testid="suggestion-progress"
-                  className={cn(
-                    "block size-full bg-[linear-gradient(to_right,color-mix(in_srgb,var(--color-foreground)_55%,transparent)_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)_-_1px),transparent_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)))] motion-safe:animate-suggestion-progress group-hover/suggestion:[animation-play-state:paused] group-focus-within/suggestion:[animation-play-state:paused]",
-                    paused && "[animation-play-state:paused]",
-                  )}
+                  // Every pause is a group variant. A bare play-state utility
+                  // would lose to the `animation` shorthand that
+                  // `motion-safe:animate-*` emits later at the same
+                  // specificity; the group variants outrank it.
+                  className="block size-full bg-[linear-gradient(to_right,color-mix(in_srgb,var(--color-foreground)_55%,transparent)_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)_-_1px),transparent_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)))] motion-safe:animate-suggestion-progress group-hover/suggestion:[animation-play-state:paused] group-focus-within/suggestion:[animation-play-state:paused] group-data-[paused]/suggestion:[animation-play-state:paused]"
                   onAnimationEnd={() => {
                     select(index + 1);
                   }}
@@ -828,6 +827,7 @@ function HomeSuggestionPreview({
   return (
     <section
       aria-label={label}
+      data-paused={paused || undefined}
       className="group/suggestion relative isolate flex min-h-14 min-w-0 flex-1 items-center gap-4"
     >
       <DialogTrigger
@@ -853,7 +853,6 @@ function HomeSuggestionPreview({
               itemId={item.id}
               index={index}
               count={count}
-              paused={paused}
             />
           )}
         </div>
