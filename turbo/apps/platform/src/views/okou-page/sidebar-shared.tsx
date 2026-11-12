@@ -7,9 +7,11 @@ import {
   avatarTextureUrl,
   defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
-import { RunningIndicator } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { OkouAvatar, RunningIndicator } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { agents$ } from "../../signals/agent.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import type { SidebarChatThreadIndicatorState } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
@@ -171,11 +173,50 @@ function DrawnAvatarImage({
  * composer configuration, so it gets the one tile that clears the five brand
  * colours it is painted in, by the same rule as every other agent.
  */
-export function defaultAgentAvatarTextureUrl(): string {
+function defaultAgentAvatarTextureUrl(): string {
   // Not guarded for emptiness, for the same reason `agentAvatarTexture` is
   // not: the suite pins this list to exactly one tile, so a repaint that
   // emptied it should fail there rather than quietly drop the texture.
   return avatarTextureUrl(defaultAgentAvatarTextures()[0]!);
+}
+
+/**
+ * Whether the default artwork gives way to the animated design-system avatar.
+ *
+ * The organization default agent is Okou, and its stored avatar is the flat
+ * default drawing. Every surface draws agents through `AgentAvatarImg` or
+ * `AvatarFromUrl`, so swapping here reaches every place Okou appears with one
+ * decision. An agent whose avatar was changed keeps its own.
+ */
+function useOkouAvatarFor(rawAvatarUrl: string | null | undefined): boolean {
+  const animatedAvatar =
+    useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+  return animatedAvatar && rawAvatarUrl === DEFAULT_AGENT_AVATAR_URL;
+}
+
+/**
+ * Okou in a slot sized for an image. The caller's classes size the slot; its
+ * corner rounding is dropped because the avatar brings its own frame.
+ */
+function OkouAvatarInSlot({
+  alt,
+  className,
+  size,
+  "data-testid": testId,
+}: {
+  alt: string;
+  className: string;
+  size?: number;
+  "data-testid"?: string;
+}) {
+  return (
+    <OkouAvatar
+      size={size}
+      label={alt === "" ? undefined : alt}
+      className={cn(className, "rounded-none")}
+      data-testid={testId}
+    />
+  );
 }
 
 /**
@@ -192,24 +233,31 @@ export function AvatarFromUrl({
   alt,
   className,
   size,
-  textureUrl,
   "data-testid": testId,
 }: {
   avatarUrl: string | null | undefined;
   alt: string;
   className: string;
   size?: number;
-  /** Brand texture to draw behind the artwork; see `AgentAvatarImg`. */
-  textureUrl?: string;
   "data-testid"?: string;
 }) {
+  const okou = useOkouAvatarFor(avatarUrl);
+  if (okou) {
+    return (
+      <OkouAvatarInSlot
+        alt={alt}
+        className={className}
+        size={size}
+        data-testid={testId}
+      />
+    );
+  }
   const svgConfig = resolveAvatarSvgConfig(avatarUrl);
   if (svgConfig) {
     return (
       <AvatarSvgPreview
         config={svgConfig}
         size={size}
-        textureUrl={textureUrl}
         className={className}
         alt={alt}
         data-testid={testId}
@@ -219,13 +267,7 @@ export function AvatarFromUrl({
   const src = resolveAvatarUrl(avatarUrl);
   if (src) {
     return (
-      <DrawnAvatarImage
-        src={src}
-        alt={alt}
-        className={className}
-        textureUrl={textureUrl}
-        data-testid={testId}
-      />
+      <img src={src} alt={alt} className={className} data-testid={testId} />
     );
   }
   // Transparent placeholder, matching AgentAvatarImg: reserves the avatar's box
@@ -289,6 +331,17 @@ export function AgentAvatarImg({
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
+  const okou = useOkouAvatarFor(rawAvatarUrl);
+  if (okou) {
+    return (
+      <OkouAvatarInSlot
+        alt={alt}
+        className={className}
+        size={size}
+        data-testid={testId}
+      />
+    );
+  }
 
   // SVG avatar (preset or custom svg:)
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);

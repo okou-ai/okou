@@ -105,6 +105,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.OkouAnimatedAvatar]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Animated Okou avatar",
+    description:
+      "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.FriendReferrals]: {
     maintainer: "yuma@okou.ai",
     displayName: "Friend referrals",

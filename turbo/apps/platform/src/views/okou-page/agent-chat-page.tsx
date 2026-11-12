@@ -5,7 +5,6 @@ import {
   defaultAgentChatPageActive$,
   defaultAgentId$,
 } from "../../signals/agent.ts";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -20,6 +19,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  OkouAvatar,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
@@ -46,12 +46,7 @@ import {
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import {
-  AgentAvatarImg,
-  AvatarFromUrl,
-  defaultAgentAvatarTextureUrl,
-  useAgentAvatarTexture,
-} from "./sidebar-shared.tsx";
+import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
@@ -362,18 +357,10 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && agentId === defaultId ? (
-    // My Okou always shows the organization default artwork, so it takes that
-    // artwork's texture directly, whatever the default agent's own avatar is.
-    // Not a link and no hairline: the texture is the frame's only edge, as it
-    // is on the textured profile link below.
-    <div className={AGENT_AVATAR_FRAME}>
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt=""
-        className={AGENT_AVATAR_IMAGE}
-        textureUrl={defaultAgentAvatarTextureUrl()}
-      />
-    </div>
+    // My Okou's greeting is the one place Okou is shown large and alone, so it
+    // is the one place the avatar moves. The shared avatar owns its frame and
+    // texture, and holds still for reduced-motion users.
+    <OkouAvatar size={56} />
   ) : (
     <LegacyChatAgentAvatar agentId={agentId} />
   );

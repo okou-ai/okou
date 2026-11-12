@@ -24,6 +24,11 @@ export {
   cardClassName,
 } from "./components/ui/card";
 export { Badge, type BadgeProps } from "./components/ui/badge";
+export {
+  OkouAvatar,
+  type OkouAvatarMood,
+  type OkouAvatarProps,
+} from "./components/ui/okou-avatar";
 export { inlineReferenceVariants } from "./components/ui/inline-reference";
 export { IconButton, type IconButtonProps } from "./components/ui/icon-button";
 export { Checkbox } from "./components/ui/checkbox";
