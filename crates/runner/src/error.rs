@@ -60,48 +60,25 @@ impl From<runner_executor::ExecutorError> for RunnerError {
 
 impl From<runner_host::HostError> for RunnerError {
     fn from(error: runner_host::HostError) -> Self {
-        match error {
-            runner_host::HostError::Config(message) => Self::Config(message),
-            runner_host::HostError::Internal(message) => Self::Internal(message),
-            runner_host::HostError::Io(error) => Self::Io(error),
-        }
+        runner_executor::ExecutorError::from(error).into()
     }
 }
 
 impl From<runner_provider::ProviderError> for RunnerError {
     fn from(error: runner_provider::ProviderError) -> Self {
-        match error {
-            runner_provider::ProviderError::Api(message) => Self::Api(message),
-            runner_provider::ProviderError::ApiStatus(error) => Self::ApiStatus(error),
-            runner_provider::ProviderError::ApiTransport(error) => Self::ApiTransport(error),
-            runner_provider::ProviderError::ApiBodyRead(error) => Self::ApiBodyRead(error),
-            runner_provider::ProviderError::Config(message) => Self::Config(message),
-            runner_provider::ProviderError::Internal(message) => Self::Internal(message),
-            runner_provider::ProviderError::Io(error) => Self::Io(error),
-        }
+        runner_executor::ExecutorError::from(error).into()
     }
 }
 
 impl From<runner_storage::StorageError> for RunnerError {
     fn from(error: runner_storage::StorageError) -> Self {
-        match error {
-            runner_storage::StorageError::Sandbox(error) => Self::Sandbox(error),
-            runner_storage::StorageError::Cancelled => Self::Cancelled,
-            runner_storage::StorageError::Config(message) => Self::Config(message),
-            runner_storage::StorageError::Internal(message) => Self::Internal(message),
-            runner_storage::StorageError::Io(error) => Self::Io(error),
-        }
+        runner_executor::ExecutorError::from(error).into()
     }
 }
 
 impl From<runner_lifecycle::LifecycleError> for RunnerError {
     fn from(error: runner_lifecycle::LifecycleError) -> Self {
-        match error {
-            runner_lifecycle::LifecycleError::Sandbox(error) => Self::Sandbox(error),
-            runner_lifecycle::LifecycleError::Config(message) => Self::Config(message),
-            runner_lifecycle::LifecycleError::Internal(message) => Self::Internal(message),
-            runner_lifecycle::LifecycleError::Io(error) => Self::Io(error),
-        }
+        runner_executor::ExecutorError::from(error).into()
     }
 }
 
@@ -113,11 +90,7 @@ impl From<runner_supervisor::heartbeat::HeartbeatError> for RunnerError {
 
 impl From<runner_network::NetworkError> for RunnerError {
     fn from(error: runner_network::NetworkError) -> Self {
-        match error {
-            runner_network::NetworkError::Config(message) => Self::Config(message),
-            runner_network::NetworkError::Internal(message) => Self::Internal(message),
-            runner_network::NetworkError::Io(error) => Self::Io(error),
-        }
+        runner_executor::ExecutorError::from(error).into()
     }
 }
 
