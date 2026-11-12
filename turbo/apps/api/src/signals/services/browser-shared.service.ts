@@ -18,8 +18,6 @@ import {
   type BrowserViewerConnection,
   type BrowserViewerAcquisition,
 } from "@okouai/api-contracts/contracts/browser";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -30,16 +28,11 @@ import {
   browserThreadProfiles,
   browserSessionInstances,
 } from "@okouai/db/schema/browser-session";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
-import {
-  ORG_SENTINEL_USER_ID,
-  userFeatureSwitchOverridesFromRows,
-} from "./feature-switch-scope";
 import {
   controlBrowserOwner$,
   authorityStillCurrent,
@@ -527,44 +520,12 @@ const publishSharedMetadata$ = command(
   },
 );
 
-function sharedBrowserMode(input$: SharedBrowserInputNode) {
+function sharedBrowserContext(input$: SharedBrowserInputNode) {
   return computed(async (get) => {
     const input = await get(input$);
     if (!input) {
-      return null;
+      return missing();
     }
-    const db = get(db$);
-    const rows = await db
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(
-        and(
-          eq(userFeatureSwitches.orgId, input.orgId),
-          inArray(userFeatureSwitches.userId, [
-            input.userId,
-            ORG_SENTINEL_USER_ID,
-          ]),
-        ),
-      );
-    const enabled = isFeatureEnabled(FeatureSwitchKey.BrowserSharedOwner, {
-      orgId: input.orgId,
-      userId: input.userId,
-      overrides: userFeatureSwitchOverridesFromRows(rows, input.userId),
-    });
-    return enabled ? { input } : null;
-  });
-}
-
-function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
-  return computed(async (get) => {
-    const mode = await get(mode$);
-    if (!mode) {
-      return null;
-    }
-    const { input } = mode;
     if (!input.runId && !input.chatThreadId) {
       return {
         kind: "error",
@@ -645,14 +606,14 @@ function sharedBrowserContext(mode$: ReturnType<typeof sharedBrowserMode>) {
       chatThreadId: row.chatThreadId,
       ...(input.runId ? { runId: input.runId } : {}),
     };
-    return { kind: "ok", owner, mode } as const;
+    return { kind: "ok", owner, input } as const;
   });
 }
 
 function sharedBrowserView(context$: ReturnType<typeof sharedBrowserContext>) {
   return computed(async (get) => {
     const ctx = await get(context$);
-    if (!ctx || ctx.kind === "error") {
+    if (ctx.kind === "error") {
       return null;
     }
     const [view] = await get(db$)
@@ -704,10 +665,10 @@ function sharedBrowserPresent(
       { get, set },
       includeViewer: boolean,
       signal: AbortSignal,
-    ): Promise<Result<BrowserViewerAcquisition> | null> => {
+    ): Promise<Result<BrowserViewerAcquisition>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const view = await get(view$);
@@ -900,13 +861,10 @@ function sharedBrowserOpen(
   // Reclamation can replace the binding captured by the initial computed read.
   const reconciledView$ = sharedBrowserView(context$);
   return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<Result<Connection> | null> => {
+    async ({ get, set }, signal: AbortSignal): Promise<Result<Connection>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const current = await get(view$);
@@ -923,7 +881,7 @@ function sharedBrowserOpen(
             connectSharedBrowser$,
             {
               owner: ctx.owner,
-              input: ctx.mode.input,
+              input: ctx.input,
               profile: current.profile,
               window: current.window,
               initial: false,
@@ -944,9 +902,7 @@ function sharedBrowserOpen(
         reconcileSharedBrowsers$,
         {
           ...ctx.owner,
-          operationId: ctx.mode.input.viewer
-            ? ctx.mode.input.operationId
-            : undefined,
+          operationId: ctx.input.viewer ? ctx.input.operationId : undefined,
         },
         signal,
       );
@@ -960,7 +916,7 @@ function sharedBrowserOpen(
             {
               owner: ctx.owner,
               previous: view?.profile ?? null,
-              initialDisplay: ctx.mode.input.initialDisplay,
+              initialDisplay: ctx.input.initialDisplay,
             },
             signal,
           );
@@ -973,7 +929,7 @@ function sharedBrowserOpen(
             connectSharedBrowser$,
             {
               owner: ctx.owner,
-              input: ctx.mode.input,
+              input: ctx.input,
               profile,
               initial: created,
               window:
@@ -1001,10 +957,10 @@ function sharedBrowserLease(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<Result<BrowserSession> | null> => {
+    ): Promise<Result<BrowserSession>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const view = await get(view$);
@@ -1078,10 +1034,10 @@ function sharedBrowserResize(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<Result<BrowserSession> | null> => {
+    ): Promise<Result<BrowserSession>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const view = await get(view$);
@@ -1092,15 +1048,15 @@ function sharedBrowserResize(
         view.profile.status !== "active" ||
         !view.profile.providerSessionId ||
         view.window.expiresAt <= nowDate() ||
-        !ctx.mode.input.aspectRatio
+        !ctx.input.aspectRatio
       ) {
         return unavailable();
       }
       const { window, browser } = view;
       const providerSessionId = view.profile.providerSessionId;
-      const aspectRatio = ctx.mode.input.aspectRatio;
+      const aspectRatio = ctx.input.aspectRatio;
       const operation = await settleIncludingAbort(
-        (async (): Promise<Result<BrowserSession> | null> => {
+        (async (): Promise<Result<BrowserSession>> => {
           const session = await provider(
             findBrowserUseSession(providerSessionId, signal),
             signal,
@@ -1239,10 +1195,10 @@ function sharedBrowserViewer(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<Result<BrowserViewerConnection> | null> => {
+    ): Promise<Result<BrowserViewerConnection>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const view = await get(view$);
@@ -1261,7 +1217,7 @@ function sharedBrowserViewer(
       const browser = view.browser;
       const window = view.window;
       const operation = await settleIncludingAbort(
-        (async (): Promise<Result<BrowserViewerConnection> | null> => {
+        (async (): Promise<Result<BrowserViewerConnection>> => {
           const session = await provider(
             findBrowserUseSession(providerSessionId, signal),
             signal,
@@ -1301,10 +1257,10 @@ function sharedBrowserClose(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<Result<Record<string, never>> | null> => {
+    ): Promise<Result<Record<string, never>>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
-      if (!ctx || ctx.kind === "error") {
+      if (ctx.kind === "error") {
         return ctx;
       }
       const view = await get(view$);
@@ -1318,7 +1274,7 @@ function sharedBrowserClose(
         const { window, browser } = view;
         const providerSessionId = view.profile.providerSessionId;
         const operation = await settleIncludingAbort(
-          (async (): Promise<Result<Record<string, never>> | null> => {
+          (async (): Promise<Result<Record<string, never>>> => {
             const session = await provider(
               findBrowserUseSession(providerSessionId, signal),
               signal,
@@ -1356,8 +1312,7 @@ function sharedBrowserClose(
 }
 
 export function createSharedBrowserGraph(input$: SharedBrowserInputNode) {
-  const mode$ = sharedBrowserMode(input$);
-  const context$ = sharedBrowserContext(mode$);
+  const context$ = sharedBrowserContext(input$);
   const view$ = sharedBrowserView(context$);
   const openNative$ = sharedBrowserOpen(context$, view$);
   const open$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -1365,13 +1320,7 @@ export function createSharedBrowserGraph(input$: SharedBrowserInputNode) {
     signal.throwIfAborted();
     const ctx = await get(context$);
     signal.throwIfAborted();
-    if (
-      !result ||
-      result.kind === "error" ||
-      !ctx ||
-      ctx.kind === "error" ||
-      !ctx.mode.input.viewer
-    ) {
+    if (result.kind === "error" || ctx.kind === "error" || !ctx.input.viewer) {
       return result;
     }
     const viewer = await settleIncludingAbort(

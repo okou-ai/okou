@@ -6,7 +6,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   createDeferredPromise,
   isAbortError,
@@ -18,8 +18,7 @@ import {
 } from "../utils.ts";
 import { detachBrowser } from "./reporting.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { logger } from "../log.ts";
+
 import type {
   AddressSubmitNotice,
   BrowserConnection,
@@ -55,8 +54,6 @@ import type {
   ViewerTransport,
   WindowSizeSync,
 } from "./viewer/types.ts";
-
-const L = logger("Browser");
 
 interface Mounted<E extends HTMLElement> {
   readonly node: E;
@@ -1256,9 +1253,6 @@ function createRootObservation(
             signal.throwIfAborted();
             if (result.status === "rejected" && !isAbortError(result.reason)) {
               // The coordinator reports only when the current episode stops retrying.
-              if (!get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner]) {
-                L.error("Browser viewer startup failed", result.reason);
-              }
               set(observer$, null);
             }
           }
@@ -1550,7 +1544,6 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   const retainedFrame$ = computed((get) => {
     const frame = get(context.presentedFrame$);
     if (
-      !get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner] ||
       !frame ||
       get(context.paused$) ||
       frame.identity.nodes.canvas !== get(graph.canvas.mounted$)
@@ -1696,7 +1689,6 @@ function createRuntimeRecovery(
     const intent = get(context.model.intent$);
     const authorized = get(context.authority$) && lease !== null;
     return {
-      enabled: get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner],
       paused: get(context.paused$),
       pending: get(context.pending$),
       nodes: get(graph.nodes$),

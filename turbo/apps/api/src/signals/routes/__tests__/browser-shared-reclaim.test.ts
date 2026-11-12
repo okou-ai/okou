@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -15,7 +15,7 @@ import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -496,38 +496,30 @@ describe("shared Browser expiry through public reopen", () => {
 });
 
 describe("shared Browser teardown through chat deletion", () => {
-  it.each([true, false])(
-    "preserves active siblings and stops after the last deletion with admission enabled=%s",
-    async (enabled) => {
-      const f = await fixture();
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const b = await f.start();
-        const first = await open(a);
-        const sibling = await open(b);
-        const bPage = navigate(
-          f,
-          sibling.window.primaryWindowId,
-          "https://b.example.test/active",
-        );
-        if (!enabled) {
-          await updateFeatureSwitchesForUser(context, f.featureActor, {
-            [FeatureSwitchKey.BrowserSharedOwner]: false,
-          });
-        }
-        const chat = createChatFilesBddApi(context);
-        await chat.deleteThread(f.owned.actor, a.threadId);
-        expect(pages(f, first.window.primaryWindowId)).toHaveLength(0);
-        expect(f.provider.native.targets.get(bPage.targetId)).toStrictEqual(
-          bPage,
-        );
-        expect(f.provider.sessionIds.size).toBe(1);
-        await chat.deleteThread(f.owned.actor, b.threadId);
-        expect(f.provider.native.targets.size).toBe(0);
-        expect(f.provider.sessionIds.size).toBe(0);
-        expect(f.provider.createdIds).toHaveLength(1);
-      });
-    },
-  );
+  it("preserves active siblings and stops after the last deletion", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      const bPage = navigate(
+        f,
+        sibling.window.primaryWindowId,
+        "https://b.example.test/active",
+      );
+      const chat = createChatFilesBddApi(context);
+      await chat.deleteThread(f.owned.actor, a.threadId);
+      expect(pages(f, first.window.primaryWindowId)).toHaveLength(0);
+      expect(f.provider.native.targets.get(bPage.targetId)).toStrictEqual(
+        bPage,
+      );
+      expect(f.provider.sessionIds.size).toBe(1);
+      await chat.deleteThread(f.owned.actor, b.threadId);
+      expect(f.provider.native.targets.size).toBe(0);
+      expect(f.provider.sessionIds.size).toBe(0);
+      expect(f.provider.createdIds).toHaveLength(1);
+    });
+  });
 });

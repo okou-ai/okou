@@ -1,17 +1,13 @@
 import { useGet, useLastLoadable } from "ccstate-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   browserSessionPageSignals$,
   type BrowserSessionPageSignals,
 } from "../../signals/browser-session/browser-session-page-state.ts";
 import {
-  BrowserSessionLoading,
   BrowserSessionNotFound,
   BrowserSessionPanel,
-  BrowserSessionUnavailable,
 } from "../okou-page/browser-session-panel.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 function BrowserSessionPageContent({
   signals,
@@ -19,19 +15,11 @@ function BrowserSessionPageContent({
   readonly signals: BrowserSessionPageSignals;
 }) {
   const threadAccessible = useLastLoadable(signals.threadAccessible$);
-  const sharedViewer =
-    useGet(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
   // The combined read can fail before presentation exists. Keep its native
   // recovery owner mounted; only a confirmed missing chat selects NotFound.
   // This mounts no connection until the authoritative acquisition succeeds.
-  if (sharedViewer && threadAccessible.state !== "hasData") {
+  if (threadAccessible.state !== "hasData") {
     return <BrowserSessionPanel signals={signals.browser} />;
-  }
-  if (threadAccessible.state === "loading") {
-    return <BrowserSessionLoading />;
-  }
-  if (threadAccessible.state === "hasError") {
-    return <BrowserSessionUnavailable />;
   }
   return threadAccessible.data ? (
     <BrowserSessionPanel signals={signals.browser} />

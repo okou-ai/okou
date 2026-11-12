@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { HttpResponse, http } from "msw";
 import { object, record, strictObject, string, tuple, uuid } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -12,7 +12,7 @@ import { browserRoutes } from "../../browser";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { requireOrgId, okouTokenFromClaim } from "./chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
+
 import { publicChatActor } from "./public-chat-actor";
 import { createNativeWindowProvider } from "./browser-native-window";
 import { TEST_BROWSER_EXTENSION } from "../../../../__tests__/browser-extension";
@@ -191,7 +191,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
     return setupApp({ context, routes: browserRoutes })(browserContract);
   }
 
-  async function fixture(enabled = true, provider = profileProvider()) {
+  async function fixture(provider = profileProvider()) {
     mockEnv("OKOU_BROWSER_USE_API_KEY", "owner-profile-test-key");
     server.use(...provider.handlers);
     const owned = await publicChatActor(context, {
@@ -200,14 +200,6 @@ export function createSharedBrowserFixtures(context: TestContext) {
     });
     const featureActor = { ...owned.actor, orgId: requireOrgId(owned.actor) };
     const chat = createChatFilesBddApi(context);
-    if (enabled) {
-      owned.ownsFeatureSwitches();
-      await owned.run(() => {
-        return updateFeatureSwitchesForUser(context, featureActor, {
-          [FeatureSwitchKey.BrowserSharedOwner]: true,
-        });
-      });
-    }
     async function start(browserEnabled = true) {
       return await owned.run(async () => {
         const sent = await chat.sendAndLaunch(owned.actor, {

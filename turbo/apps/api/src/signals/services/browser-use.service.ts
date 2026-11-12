@@ -3686,10 +3686,6 @@ export async function applyBrowserUseUserAction(
   return operation.value;
 }
 
-function disposableBrowserUseTabUrl(url: string): boolean {
-  return url === "about:blank" || url === "chrome://newtab/";
-}
-
 async function tryCloseRestoredBrowserSeed(
   cdpUrl: string,
   window: BrowserUseWindowCandidate,
@@ -3779,68 +3775,6 @@ export async function tryCloseBrowserUseWindow(
     }),
     signal,
   );
-}
-
-export async function restoreBrowserUseTabUrls(
-  cdpUrl: string,
-  urls: readonly string[],
-  signal: AbortSignal,
-): Promise<void> {
-  if (urls.length === 0) {
-    return;
-  }
-  const restorable = restorableBrowserUseTabUrls(urls);
-  if (restorable.length === 0) {
-    return;
-  }
-  const cdpSignal = browserUseCdpSignal(signal);
-  await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    const targets = browserUseCdpTargetsSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        { id: 1, method: "Target.getTargets", params: {} },
-        cdpSignal,
-      ),
-      { reportInput: true },
-    );
-    let commandId = 2;
-    let restored = 0;
-    for (const url of restorable) {
-      const result = await settle(
-        sendBrowserUseCdpCommand(
-          socket,
-          { id: commandId, method: "Target.createTarget", params: { url } },
-          cdpSignal,
-        ),
-      );
-      commandId += 1;
-      signal.throwIfAborted();
-      if (result.ok) {
-        restored += 1;
-      }
-    }
-    if (restored === 0) {
-      throw new Error("Browser Use CDP did not restore any tab");
-    }
-    for (const target of targets.targetInfos) {
-      if (target.type !== "page" || !disposableBrowserUseTabUrl(target.url)) {
-        continue;
-      }
-      await settle(
-        sendBrowserUseCdpCommand(
-          socket,
-          {
-            id: commandId,
-            method: "Target.closeTarget",
-            params: { targetId: target.targetId },
-          },
-          cdpSignal,
-        ),
-      );
-      commandId += 1;
-      signal.throwIfAborted();
-    }
-  });
 }
 
 export async function resizeBrowserUseSession(

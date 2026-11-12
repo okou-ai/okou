@@ -13,11 +13,12 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
-  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { initSentry } from "../../../lib/sentry.ts";
+
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -74,11 +75,14 @@ function mockViewer(
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: session });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: session,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -94,6 +98,12 @@ async function setupViewer(windowId?: number, nativeBase64 = true) {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
   return browser;
+}
+
+async function expectDisabled(element: HTMLElement, disabled: boolean) {
+  await waitFor(() => {
+    expect(element).toHaveProperty("disabled", disabled);
+  });
 }
 
 function reportedCleanupError(
@@ -904,6 +914,7 @@ test.each(["first image", "input initialization"] as const)(
 );
 
 test("A created tab with a failed first image retries the image without creating another tab", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const browser = await setupViewer(0);
   const image = browser.holdTargetFrames("created-1");
   const created = browser.holdNextNative("createTab");
@@ -935,22 +946,10 @@ test("A created tab with a failed first image retries the image without creating
   act(() => {
     image.release("!");
   });
-  await screen.findByText("Browser view unavailable");
+  await screen.findByText("Reconnecting…");
   expect(screen.queryByText("Nothing open yet")).toBeNull();
-  const retry = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Retry live image";
-  });
-  if (!retry) {
-    throw new Error("Missing image recovery control");
-  }
-  await waitFor(() => {
-    expect(retry).toBeEnabled();
-  });
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "The browser frame could not be decoded.",
-  );
   expect(newTab).toBeDisabled();
-  click(retry);
+  advanceRecovery(1000);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -1175,9 +1174,10 @@ test.each([
   { code: 1000, wasClean: true },
   { code: 1006, wasClean: false },
 ])(
-  "A native close ($code) preserves the uncertain new-tab result until manual recovery",
+  "A native close ($code) preserves the uncertain new-tab result during automatic recovery",
   async ({ code, wasClean }) => {
     const sentry = context.mocks.sentry();
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const browser = await setupViewer(0);
     const created = browser.holdNextNative("createTab");
     click(screen.getByLabelText("New tab", { selector: "button" }));
@@ -1187,7 +1187,7 @@ test.each([
     act(() => {
       browser.disconnect({ code, wasClean, reason: "private-close-reason" });
     });
-    await screen.findByText("Browser disconnected");
+    await screen.findByText("Reconnecting…");
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(
       sentry.breadcrumbs.filter((entry) => {
@@ -1213,14 +1213,8 @@ test.each([
     await act(async () => {
       await created.release();
     });
-    expect(screen.getByText("Browser disconnected")).toBeInTheDocument();
-    const reconnect = queryAllByRoleFast("button").find((button) => {
-      return button.textContent?.trim() === "Reconnect";
-    });
-    if (!reconnect) {
-      throw new Error("Missing reconnect control");
-    }
-    click(reconnect);
+    expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
+    advanceRecovery(1000);
     await waitFor(() => {
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
@@ -1238,6 +1232,7 @@ test.each([
 
 test("A native close distinguishes cancelled late attachments from unfinished requests", async () => {
   const sentry = context.mocks.sentry();
+  browserRecoveryClock(context.signal);
   const browser = await setupViewer(0);
   act(() => {
     browser.move("other-page", 0);
@@ -1259,7 +1254,7 @@ test("A native close distinguishes cancelled late attachments from unfinished re
   act(() => {
     browser.disconnect({ code: 1001, wasClean: true });
   });
-  await screen.findByText("Browser disconnected");
+  await screen.findByText("Reconnecting…");
   expect(
     sentry.breadcrumbs.find((entry) => {
       return entry.category === "browser.connection";
@@ -1306,7 +1301,6 @@ test("An empty assigned window can create a native tab without a source document
 });
 
 test("An unavailable required extension never admits CDP-only viewing", async () => {
-  const startupErrors = recordBrowserStartupErrors();
   const sentry = context.mocks.sentry();
   initSentry();
   mockViewer(0, undefined, false);
@@ -1327,13 +1321,13 @@ test("An unavailable required extension never admits CDP-only viewing", async ()
         }),
       }),
     );
-    expect(startupErrors).toHaveLength(1);
   });
 });
 
 test.each(["Runtime.removeBinding", "Target.detachFromTarget"])(
   "Bridge loss with unacknowledged %s still releases its page and reconnects",
   async (cleanupMethod) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const browser = await setupViewer(0);
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
@@ -1353,7 +1347,7 @@ test.each(["Runtime.removeBinding", "Target.detachFromTarget"])(
       browser.resetWorker();
     });
     await release.received;
-    await screen.findByText("Browser disconnected");
+    await screen.findByText("Reconnecting…");
     await waitFor(() => {
       expect(browser.detached).toContain("example-page-session");
     });
@@ -1374,13 +1368,7 @@ test.each(["Runtime.removeBinding", "Target.detachFromTarget"])(
     expect(keyUp).toBeLessThan(pageDetach);
     expect(browser.targets).toHaveLength(2);
     // The closed incarnation no longer blocks reconnecting to the same browser.
-    const reconnect = queryAllByRoleFast("button").find((button) => {
-      return button.textContent?.trim() === "Reconnect";
-    });
-    if (!reconnect) {
-      throw new Error("Missing reconnect control");
-    }
-    click(reconnect);
+    advanceRecovery(1000);
     await waitFor(() => {
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
@@ -2531,6 +2519,7 @@ test("A payload-less context reset retires composition before accepting new remo
 });
 
 test("Retrying an image waits for both original input and capture cleanup", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const browser = await setupViewer(0);
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
@@ -2545,24 +2534,12 @@ test("Retrying an image waits for both original input and capture cleanup", asyn
     browser.frame("!");
   });
   await pendingStop.received;
-  await screen.findByText("Browser view unavailable");
-  function retryButton() {
-    const button = queryAllByRoleFast("button").find((candidate) => {
-      return candidate.textContent?.trim() === "Retry live image";
-    });
-    if (!button) {
-      throw new Error("Missing image recovery control");
-    }
-    return button;
-  }
-  expect(retryButton()).toBeDisabled();
+  await screen.findByText("Reconnecting…");
+  expect(input).toBeDisabled();
   await pendingInput.release();
-  expect(retryButton()).toBeDisabled();
+  expect(input).toBeDisabled();
   await pendingStop.release();
-  await waitFor(() => {
-    expect(retryButton()).toBeEnabled();
-  });
-  await userEvent.click(retryButton());
+  advanceRecovery(1000);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -2864,8 +2841,9 @@ test.each([
   "pending original stop",
   "resume preparation",
 ] as const)(
-  "A resume after a failed %s requires explicit recovery before accepting input",
+  "A resume after a failed %s recovers before accepting input",
   async (failure) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const visibility = context.mocks.browser.visibilityState("visible");
     const browser = await setupViewer(0);
     if (failure !== "resume preparation") {
@@ -2888,19 +2866,20 @@ test.each([
       }
     });
     await act(stop.release);
-    await screen.findByText("Browser view unavailable");
-    const retry = await waitFor(() => {
-      const name =
-        failure !== "resume preparation" ? "Retry live image" : "Reconnect";
-      const button = queryAllByRoleFast("button").find((candidate) => {
-        return candidate.textContent?.trim() === name;
-      });
-      expect(button).toBeEnabled();
-      return button!;
-    });
+    await screen.findByText(
+      failure === "resume preparation"
+        ? "Browser view unavailable"
+        : "Reconnecting…",
+    );
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     const image = browser.holdTargetFrames("example-page");
-    await userEvent.click(retry);
+    if (failure === "resume preparation") {
+      const retry = screen.getByText("Reconnect", { selector: "button" });
+      await expectDisabled(retry, false);
+      click(retry);
+    } else {
+      advanceRecovery(1000);
+    }
     await act(async () => {
       await image.received;
     });
@@ -3075,26 +3054,20 @@ test.each(
 );
 
 test.each(["preparation", "first image"] as const)(
-  "Pausing an explicit image retry during %s leaves its replacement owner usable",
+  "Pausing automatic image recovery during %s leaves its replacement owner usable",
   async (phase) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const visibility = context.mocks.browser.visibilityState("visible");
     const browser = await setupViewer(0);
     act(() => {
       browser.frame("!");
     });
-    await screen.findByText("Browser view unavailable");
-    const retry = await waitFor(() => {
-      const button = queryAllByRoleFast("button").find((candidate) => {
-        return candidate.textContent?.trim() === "Retry live image";
-      });
-      expect(button).toBeEnabled();
-      return button!;
-    });
+    await screen.findByText("Reconnecting…");
     const old =
       phase === "preparation"
         ? browser.holdNext("Page.createIsolatedWorld")
         : browser.holdTargetFrames("example-page");
-    await userEvent.click(retry);
+    advanceRecovery(1000);
     await act(async () => {
       await old.received;
     });
@@ -3442,13 +3415,14 @@ test("A visibility pause discards an unfinished composition before fresh text is
 });
 
 test("An old image cleanup cannot replace a newly selected tab", async () => {
+  browserRecoveryClock(context.signal);
   const browser = await setupViewer();
   const stop = browser.holdNext("Page.stopScreencast");
   act(() => {
     browser.frame("!");
   });
   await stop.received;
-  await screen.findByText("Browser view unavailable");
+  await screen.findByText("Reconnecting…");
   await userEvent.click(
     screen.getByLabelText("Other", { selector: '[role="tab"]' }),
   );
@@ -3958,13 +3932,25 @@ test("A split connection recovers if the control session detaches while its imag
 });
 
 test.each(["Page.enable", "Page.getFrameTree"])(
-  "An ordinary initialization failure in %s during opening remains visible",
+  "An ordinary initialization failure in %s during opening follows recovery policy",
   async (method) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const browser = mockViewer(0);
     browser.failNext(method, "Page initialization failed");
     await setupPage({ context, path: `/browsers/${threadId}` });
-    await screen.findByText("Browser view unavailable");
+    await screen.findByText(
+      method === "Page.getFrameTree"
+        ? "Reconnecting…"
+        : "Browser view unavailable",
+    );
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    if (method === "Page.getFrameTree") {
+      advanceRecovery(1000);
+      await expectDisabled(
+        screen.getByLabelText("Remote browser input"),
+        false,
+      );
+    }
   },
 );
 
@@ -4015,8 +4001,9 @@ test("A split viewer retries its selected image after frames loss during page ad
 });
 
 test.each(["Page.enable", "Page.getFrameTree"])(
-  "An initialization failure in %s after opening selection handoff stays failed",
+  "An initialization failure in %s after opening selection handoff follows recovery policy",
   async (method) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const browser = mockViewer(0);
     const firstCapture = browser.holdNext("Page.startScreencast");
     await setupPage({ context, path: `/browsers/${threadId}` });
@@ -4030,14 +4017,28 @@ test.each(["Page.enable", "Page.getFrameTree"])(
       });
     });
     await failure.received;
-    // An erroneous replay would now remain visibly pending instead of failing.
-    browser.holdNext("Target.attachToTarget");
+    // A transient failure must not publish before retry admission.
+    const retry = browser.holdNext("Target.attachToTarget");
     await act(async () => {
       await failure.release();
       await firstCapture.release();
     });
-    await screen.findByText("Browser view unavailable");
+    await screen.findByText(
+      method === "Page.getFrameTree"
+        ? "Reconnecting…"
+        : "Browser view unavailable",
+    );
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    if (method === "Page.getFrameTree") {
+      advanceRecovery(1000);
+      await retry.received;
+      await expectDisabled(screen.getByLabelText("Remote browser input"), true);
+      await act(retry.release);
+      await expectDisabled(
+        screen.getByLabelText("Remote browser input"),
+        false,
+      );
+    }
   },
 );
 
@@ -4202,6 +4203,7 @@ test("A detached session releases a held capture request without waiting for its
 });
 
 test("A late session-detachment receipt resolves capture-only retirement uncertainty", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const browser = await setupViewer(0);
   const proof = browser.holdNextDetach("example-page-session");
   browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
@@ -4211,10 +4213,11 @@ test("A late session-detachment receipt resolves capture-only retirement uncerta
       removedTabId: 11,
     });
   });
-  await screen.findByText("Browser view unavailable");
+  await screen.findByText("Reconnecting…");
   await act(async () => {
     await proof.release();
   });
+  advanceRecovery(1000);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -4375,7 +4378,11 @@ async function chooseHealthyTabAfterRetirementFailure(
   act(() => {
     browser.nativeEvent("tab-attached", undefined, { tabId: 12, windowId: 0 });
   });
-  await screen.findByText("Browser view unavailable");
+  await screen.findByText(
+    method === "Page.stopScreencast"
+      ? "Reconnecting…"
+      : "Browser view unavailable",
+  );
   click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
@@ -4632,6 +4639,7 @@ test("Losing the last scoped target keeps foreign tabs excluded and permits a na
 test.each(["present target", "failed inventory", "unsupported membership"])(
   "A selected membership failure with %s revokes input until fresh proof",
   async (failure) => {
+    const advanceRecovery = browserRecoveryClock(context.signal);
     const browser = await setupViewer(0);
     const membership = browser.holdNextMembership("example-page");
     act(() => {
@@ -4646,16 +4654,20 @@ test.each(["present target", "failed inventory", "unsupported membership"])(
       "Membership unavailable",
       failure === "unsupported membership" ? -32_601 : -32_000,
     );
-    await screen.findByText("Browser view unavailable");
+    await screen.findByText(
+      failure === "unsupported membership"
+        ? "Browser view unavailable"
+        : "Reconnecting…",
+    );
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeDisabled();
-    const reconnect = queryAllByRoleFast("button").find((button) => {
-      return button.textContent?.trim() === "Reconnect";
-    });
-    expect(reconnect).toBeDefined();
-    click(reconnect!);
+    if (failure === "unsupported membership") {
+      click(screen.getByText("Reconnect", { selector: "button" }));
+    } else {
+      advanceRecovery(1000);
+    }
     if (failure === "failed inventory") {
       await screen.findByText("No tabs open");
     }
@@ -4742,6 +4754,7 @@ test.each([
 test.each(["window removal", "connection loss"])(
   "A pending target-loss confirmation cannot hide %s",
   async (failure) => {
+    browserRecoveryClock(context.signal);
     const browser = await setupViewer(0);
     const membership = browser.holdNextMembership("example-page");
     act(() => {
@@ -4759,7 +4772,9 @@ test.each(["window removal", "connection loss"])(
         browser.disconnect({ code: 1006, wasClean: false });
       }
     });
-    await screen.findByText("Browser disconnected");
+    await screen.findByText(
+      failure === "window removal" ? "Browser disconnected" : "Reconnecting…",
+    );
     await confirmation.release();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(

@@ -727,6 +727,9 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
     if (native.method === "getWindow") {
       return browserExtensionReply(native.windowId === 7 ? window : null);
     }
+    if (native.method === "closeWindow") {
+      return browserExtensionReply(null);
+    }
     throw new Error(`Unhandled native browser request: ${native.method}`);
   }
   if (command.method === "Target.getTargets") {
@@ -735,6 +738,9 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
         { targetId: "page-target", type: "page", url: "about:blank" },
       ],
     };
+  }
+  if (command.method === "Target.createTarget") {
+    return { targetId: "page-target" };
   }
   if (command.method === "Browser.getWindowForTarget") {
     return { windowId: 7 };

@@ -7,8 +7,7 @@ import {
   type State,
 } from "ccstate";
 import { timeout } from "signal-timers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+
 import {
   claimBrowserFailure,
   ownsBrowserFailure,
@@ -31,10 +30,7 @@ import {
   isRecoverableReadFailure,
   validateConfiguration,
 } from "../cdp/errors.ts";
-import {
-  captureSentryLogError,
-  sentryLogContext,
-} from "../../../lib/sentry-config.ts";
+
 import { diagnostic, isImageFailure } from "./diagnostic.ts";
 import type { ImageEvent } from "./image-recovery.ts";
 import { i18n } from "../../../i18n/index.ts";
@@ -3292,36 +3288,13 @@ function createDisconnectionHandling(
       return;
     }
     const established = get(connectedState$);
-    const automatic = get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
-    if (automatic) {
-      // Recovery owns the final report, including rejected in-flight effects.
-      claimDisconnectionReport(fault);
-    }
+    // Recovery owns the final report, including rejected in-flight effects.
+    claimDisconnectionReport(fault);
     if (source !== get(clientState$) && established) {
       set(framesDisconnected$, fault, source);
       return;
     }
     set(disconnectingState$, true);
-    if (!automatic && established) {
-      captureSentryLogError("Browser", [
-        "Browser viewer disconnected",
-        fault,
-        sentryLogContext({
-          tags: { browser_event: "established-disconnect" },
-          contexts: {
-            browser_viewer: {
-              kind: fault.kind,
-              role: source === get(clientState$) ? "control" : "frames",
-            },
-            ...(fault.connection
-              ? { browser_connection: { ...fault.connection } }
-              : {}),
-            ...(fault.window ? { browser_window: { ...fault.window } } : {}),
-          },
-        }),
-      ]);
-      claimDisconnectionReport(fault);
-    }
     set(connectedState$, false);
     set(readinessFailure$, fault);
     set(

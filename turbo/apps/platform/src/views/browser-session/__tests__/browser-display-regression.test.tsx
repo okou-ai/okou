@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import {
@@ -61,11 +61,14 @@ function mockViewer(
       viewer: { browser: session, cdpUrl, extension: TEST_BROWSER_EXTENSION },
     });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: session,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -74,11 +77,10 @@ function mockViewer(
   return browser;
 }
 
-async function openViewer(sharedOwner = false) {
+async function openViewer() {
   await setupPage({
     context,
     path: `/browsers/${threadId}`,
-    featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: sharedOwner },
   });
   return screen.findByRole("region", { name: "Remote browser viewer" });
 }
@@ -434,16 +436,12 @@ test.each(["frame", "capture receipt"] as const)(
       expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
       expect(input).toBeEnabled();
     });
+    const capture = browser.holdNext("Page.startScreencast");
     act(() => {
       browser.frame("!");
     });
-    const retry = await within(viewer).findByText("Retry live image");
-    await waitFor(() => {
-      expect(retry).toBeEnabled();
-    });
-    const capture = browser.holdNext("Page.startScreencast");
+    await screen.findByText("Reconnecting…");
     const frame = browser.holdTargetFrames("example-page");
-    click(retry);
     await capture.received;
     await frame.received;
     if (first === "frame") {
@@ -486,85 +484,73 @@ test.each(["frame", "capture receipt"] as const)(
   },
 );
 
-test.each([false, true])(
-  "A window resize keeps the accepted picture while capture is pending (shared owner %s)",
-  async (sharedOwner) => {
-    let canvasBox = new DOMRect(0, 0, 900, 600);
-    const browser = mockViewer(() => {
-      return canvasBox;
-    });
-    const viewer = await openViewer(sharedOwner);
-    await waitFor(() => {
-      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
-      expect(
-        within(viewer).getByLabelText("Remote browser input"),
-      ).toBeEnabled();
-    });
-    act(() => {
-      browser.frame("AAAA");
-    });
+test("A window resize keeps the accepted picture while capture is pending", async () => {
+  let canvasBox = new DOMRect(0, 0, 900, 600);
+  const browser = mockViewer(() => {
+    return canvasBox;
+  });
+  const viewer = await openViewer();
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  act(() => {
+    browser.frame("AAAA");
+  });
 
-    const failures = observeFailures(viewer);
-    const frame = browser.holdTargetFrames("example-page");
-    canvasBox = new DOMRect(0, 0, 720, 480);
-    act(() => {
-      window.dispatchEvent(new Event("resize"));
-    });
+  const failures = observeFailures(viewer);
+  const frame = browser.holdTargetFrames("example-page");
+  canvasBox = new DOMRect(0, 0, 720, 480);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
 
-    await frame.received;
-    expect(
-      within(viewer).getByLabelText("Remote browser input"),
-    ).toBeDisabled();
-    expect(
-      within(viewer).queryByText("Browser view unavailable"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(viewer).getByRole("img", { name: "Live browser view" }),
-    ).toBeInTheDocument();
-    act(() => {
-      frame.release();
-    });
-    await waitFor(() => {
-      expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
-      expect(
-        within(viewer).getByLabelText("Remote browser input"),
-      ).toBeEnabled();
-    });
-    expect(
-      browser.requests.filter((request) => {
-        return request.method === "Browser.setWindowBounds";
-      }),
-    ).toStrictEqual([]);
-    expect(failures).toStrictEqual([]);
-  },
-);
+  await frame.received;
+  expect(within(viewer).getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    within(viewer).queryByText("Browser view unavailable"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(viewer).getByRole("img", { name: "Live browser view" }),
+  ).toBeInTheDocument();
+  act(() => {
+    frame.release();
+  });
+  await waitFor(() => {
+    expect(browser.viewport).toStrictEqual({ width: 720, height: 480 });
+    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(
+    browser.requests.filter((request) => {
+      return request.method === "Browser.setWindowBounds";
+    }),
+  ).toStrictEqual([]);
+  expect(failures).toStrictEqual([]);
+});
 
-test.each([false, true])(
-  "Returning to a visible viewer does not flash a failure during display setup (shared owner %s)",
-  async (sharedOwner) => {
-    const visibility = context.mocks.browser.visibilityState("visible");
-    const browser = mockViewer();
-    const viewer = await openViewer(sharedOwner);
-    const input = within(viewer).getByLabelText("Remote browser input");
-    await waitFor(() => {
-      expect(input).toBeEnabled();
-    });
-    const failures = observeFailures(viewer);
-    act(() => {
-      visibility.changeTo("hidden");
-    });
-    await within(viewer).findByText("Viewing paused");
-    expect(input).toBeDisabled();
-    act(() => {
-      visibility.changeTo("visible");
-    });
-    await waitFor(() => {
-      expect(input).toBeEnabled();
-      expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
-    });
-    expect(
-      within(viewer).getByRole("img", { name: "Live browser view" }),
-    ).toBeInTheDocument();
-    expect(failures).toStrictEqual([]);
-  },
-);
+test("Returning to a visible viewer does not flash a failure during display setup", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = mockViewer();
+  const viewer = await openViewer();
+  const input = within(viewer).getByLabelText("Remote browser input");
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  const failures = observeFailures(viewer);
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await within(viewer).findByText("Viewing paused");
+  expect(input).toBeDisabled();
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+    expect(browser.viewport).toStrictEqual({ width: 900, height: 600 });
+  });
+  expect(
+    within(viewer).getByRole("img", { name: "Live browser view" }),
+  ).toBeInTheDocument();
+  expect(failures).toStrictEqual([]);
+});

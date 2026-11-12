@@ -5,7 +5,7 @@ import type {
   BrowserViewerConnection,
   BrowserViewerAcquisition,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import {
   command,
@@ -36,7 +36,7 @@ import {
 } from "../image-load.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 import { threadComputerAccessVersion } from "./chat-thread-event-sourcing.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
+
 import { authenticatedSessionKey$ } from "../auth.ts";
 
 // One heartbeat per minute keeps an open browser panel comfortably inside its
@@ -57,7 +57,7 @@ type BrowserSessionResult =
   BrowserSession | BrowserAuthorizationRequired | null;
 type BrowserAcquisitionResult =
   BrowserViewerAcquisition | BrowserAuthorizationRequired | null;
-type BrowserAcquisitionMode = "legacy" | "summary" | "viewer";
+type BrowserAcquisitionMode = "summary" | "viewer";
 interface BrowserAcquisitionScope {
   readonly authorizationScope: string;
   readonly mode: BrowserAcquisitionMode;
@@ -517,9 +517,6 @@ function createBrowserSessionAcquisitionSignals(
     ]);
   });
   const mode$ = computed((get): BrowserAcquisitionMode => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner]) {
-      return "legacy";
-    }
     return get(viewerRequested$) ? "viewer" : "summary";
   });
   const acquisitionScope$ = computed((get): BrowserAcquisitionScope => {
@@ -634,40 +631,15 @@ function createBrowserSessionReadSignals(
       return acquisition;
     }
     const lifecycleSession = acquisition.browser;
-    if (lifetime.scope.mode === "viewer") {
-      // Shared acquisition is a single operation, never a summary-authorized
-      // second credential lookup. An old non-GA API cannot satisfy this mode.
-      if (acquisition.viewer === undefined) {
-        throw new Error(
-          "Shared Browser viewer acquisition is not supported by this API",
-        );
-      }
-      return acquisition.viewer
-        ? { ...acquisition.viewer, requestedSession: lifecycleSession }
-        : null;
+    // Acquisition validates presentation and native credentials together.
+    if (acquisition.viewer === undefined) {
+      throw new Error(
+        "Shared Browser viewer acquisition is not supported by this API",
+      );
     }
-    if (lifecycleSession?.status !== "active") {
-      return null;
-    }
-    const response = await browserAuthorizationResult(
-      accept(
-        get(apiClient$)(browserContract).viewerConnection({
-          params: { threadId: descriptor.threadId },
-        }),
-        [200],
-        undefined,
-        AUTHORIZATION_OPTIONS,
-      ),
-    );
-    if (isBrowserUnauthorized(response)) {
-      return response;
-    }
-    return {
-      ...response.body,
-      // This snapshot identifies the request for retained-panel visibility;
-      // native admission uses only the authoritative response below.
-      requestedSession: lifecycleSession,
-    };
+    return acquisition.viewer
+      ? { ...acquisition.viewer, requestedSession: lifecycleSession }
+      : null;
   });
 
   const browserConnection$ = computed(

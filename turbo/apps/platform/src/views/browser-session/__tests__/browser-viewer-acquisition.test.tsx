@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -200,7 +200,6 @@ function fixture(
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: true },
         ...(access
           ? { cachedChatThreadEvents: access.cachedChatThreadEvents }
           : {}),

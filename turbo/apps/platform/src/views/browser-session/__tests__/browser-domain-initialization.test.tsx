@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   act,
   cleanup,
@@ -15,7 +15,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   mockBrowserCdp,
-  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -36,7 +35,6 @@ function viewer() {
   mockNow(() => {
     return now + elapsed;
   }, context.signal);
-  recordBrowserStartupErrors();
   const session: BrowserSession = {
     threadId,
     name: "domain initialization",
@@ -105,7 +103,6 @@ function viewer() {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: true },
       });
     },
     advance(ms: number) {

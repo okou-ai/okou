@@ -57,11 +57,14 @@ function mockViewer(crashed = false) {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: session });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
       browser: session,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: session,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {

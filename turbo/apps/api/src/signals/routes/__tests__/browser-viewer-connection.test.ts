@@ -86,6 +86,7 @@ async function viewerScenario() {
       return HttpResponse.json({ webSocketDebuggerUrl: provider.discoveryUrl });
     }),
     browserUseCdpHandler(webSocketUrl),
+    browserUseCdpHandler(`wss://${providerId}.cdp.browser-use.com/`),
   );
   const chat = createChatFilesBddApi(context);
   const threadIds: string[] = [];
@@ -175,7 +176,7 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
     const stopped = await client().viewerConnection({ headers, params });
     expect(stopped).toMatchObject({
       status: 409,
-      body: { error: { code: "BROWSER_NOT_LIVE" } },
+      body: { error: { code: "BROWSER_RECLAIMING" } },
     });
   });
 });
