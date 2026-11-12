@@ -2,6 +2,7 @@ import {
   array,
   boolean,
   discriminatedUnion,
+  int,
   literal,
   object,
   record,
@@ -297,6 +298,7 @@ export const firewallApiSchema = object({
     object({
       kind: literal("cloudflare_access"),
       configId: uuid(),
+      generation: int().positive().max(2_147_483_647),
     }).strict(),
   ]).optional(),
   base: string(),

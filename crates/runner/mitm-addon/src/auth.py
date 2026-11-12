@@ -62,7 +62,8 @@ from firewall_auth_cache import (
     FirewallAuthFetchSaturatedError,
     InvalidBillableAuthExpiryError,
     get_firewall_headers,
-    get_uncached_network_admission,
+    get_network_admission,
+    invalidate_cached_firewall_headers,
 )
 from firewall_auth_client import (
     ConnectorNotConfiguredError,
@@ -185,6 +186,15 @@ class _FirewallAuthPlan:
 class _NetworkAdmission:
     identity: tuple[str, str, str]
     result: dict = field(repr=False)
+    cache_key: FirewallAuthCacheKey
+    cache_entry_identity: FirewallAuthCacheEntryIdentity
+
+
+def invalidate_network_admission(flow: http.HTTPFlow) -> None:
+    """A rejected physical flow can invalidate only the network lease it consumed."""
+    retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
+    if isinstance(retained, _NetworkAdmission):
+        invalidate_cached_firewall_headers(retained.cache_key, retained.cache_entry_identity)
 
 
 async def _resolve_network_admission(
@@ -216,8 +226,21 @@ async def _resolve_network_admission(
             prepared_normal_body=None,
             network_request={"method": identity[0], "url": identity[1], "intent": intent},
         )
-        result = await get_uncached_network_admission(request)
-        flow.metadata[metadata_keys.CUSTOM_NETWORK_ADMISSION] = _NetworkAdmission(identity, result)
+        network_identity = json.dumps(
+            {"applicationIdentity": context.auth_cache_key.auth_identity, "networkIntent": intent},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        cache_key = replace(
+            context.auth_cache_key,
+            purpose="network",
+            auth_identity=hashlib.sha256(network_identity).hexdigest(),
+        )
+        cached = await get_network_admission(cache_key, request)
+        result = cached["network_admission"]
+        flow.metadata[metadata_keys.CUSTOM_NETWORK_ADMISSION] = _NetworkAdmission(
+            identity, result, cache_key, cached["cache_entry_identity"]
+        )
     flow.metadata[metadata_keys.CUSTOM_NETWORK_BOUND] = result["kind"] == "cloudflare_access"
     return result["headers"] if result["kind"] == "cloudflare_access" else {}
 
@@ -364,11 +387,17 @@ def _build_firewall_auth_identity(
     auth_request: FirewallAuthRequest,
 ) -> _ResolvedFirewallAuthIdentity:
     normal_body = auth_request.to_bytes(force_refresh=False)
+    # Network revisions invalidate only their own cache, not valid application credentials.
+    identity_body = (
+        replace(auth_request, network_intent=None, prepared_normal_body=None).to_bytes()
+        if auth_request.network_intent is not None
+        else normal_body
+    )
     sandbox_token_sha256 = hashlib.sha256(auth_request.sandbox_token.encode("utf-8")).hexdigest()
     material = {
         "firewallName": firewall_name,
         "firewallBase": firewall_base,
-        "authBodySha256": hashlib.sha256(normal_body).hexdigest(),
+        "authBodySha256": hashlib.sha256(identity_body).hexdigest(),
         "sandboxTokenSha256": sandbox_token_sha256,
     }
     canonical_json = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")

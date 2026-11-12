@@ -232,6 +232,8 @@ async function setupCustomOAuthFirewall(
     connect,
     request,
     agentId: agent.agentId,
+    runId: run.runId,
+    runnerGroup,
     headers,
   };
 }
@@ -284,7 +286,11 @@ async function bindCustomOAuthNetwork(
   return {
     api,
     config,
-    intent: { kind: "cloudflare_access" as const, configId: config.id },
+    intent: {
+      kind: "cloudflare_access" as const,
+      configId: config.id,
+      generation: 1,
+    },
   };
 }
 
@@ -553,6 +559,7 @@ test("run network admission uses current bindings and rotation independently of 
     orgRole: "org:admin",
   });
   await fixture.run(async () => {
+    mockEnv("ABLY_API_KEY", "test.key:secret");
     const custom = await setupCustomOAuthFirewall(
       "configured",
       undefined,
@@ -607,7 +614,13 @@ test("run network admission uses current bindings and rotation independently of 
     expect((await custom.request(custom.account.id, false, true)).status).toBe(
       403,
     );
-    const intent = { kind: "cloudflare_access" as const, configId: config.id };
+    const intent = {
+      kind: "cloudflare_access" as const,
+      configId: config.id,
+      generation: 1,
+    };
+    const admissionTime = now();
+    mockNow(admissionTime);
     const admitted = await custom.request(
       custom.account.id,
       false,
@@ -618,6 +631,7 @@ test("run network admission uses current bindings and rotation independently of 
       status: 200,
       body: {
         headers: {},
+        expiresAt: Math.floor(admissionTime / 1000) + 30,
         networkAdmission: {
           ...intent,
           generation: 1,
@@ -628,6 +642,7 @@ test("run network admission uses current bindings and rotation independently of 
         },
       },
     });
+    context.mocks.ably.batchPublish.mockClear();
     await accept(
       api.update({
         headers,
@@ -640,6 +655,48 @@ test("run network admission uses current bindings and rotation independently of 
       }),
       [200],
     );
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith({
+      channels: [`runner-group:${custom.runnerGroup}`],
+      messages: [
+        {
+          name: "connector-runtime-sync",
+          data: JSON.stringify({
+            runId: custom.runId,
+            target: { kind: "custom", customConnectorId: connector.id },
+          }),
+          encoding: "json",
+        },
+      ],
+    });
+    const [synchronized] = await createRunsApi(context).syncConnectorRuntime(
+      custom.runId,
+      {
+        targets: [
+          {
+            kind: "custom",
+            customConnectorId: connector.id,
+            sourceId: custom.account.id,
+            baseUrlVars: {},
+          },
+        ],
+      },
+    );
+    expect(synchronized).toMatchObject({
+      state: "available",
+      firewall: {
+        firewall: {
+          apis: [
+            expect.objectContaining({
+              networkIntent: {
+                kind: "cloudflare_access",
+                configId: config.id,
+                generation: 2,
+              },
+            }),
+          ],
+        },
+      },
+    });
     const rotated = await custom.request(
       custom.account.id,
       false,

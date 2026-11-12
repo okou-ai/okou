@@ -95,6 +95,7 @@ from auth import (
     FirewallAuthHandlingResult,
     FirewallHeaderPhaseAuthResult,
     handle_firewall_request,
+    invalidate_network_admission,
     is_billable_firewall,
     mark_auth_base_forwarding_saturated,
     mark_auth_base_request_length_required,
@@ -2157,6 +2158,8 @@ def _finish_response_handling(
         and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
         and flow.response.status_code in (401, 403)
     )
+    if flow.response and flow.response.status_code in (401, 403):
+        invalidate_network_admission(flow)
     if authentication_unattributed:
         log_proxy_entry(
             proxy_log_path,

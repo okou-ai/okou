@@ -56,6 +56,7 @@ import json
 import math
 import socket
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -939,7 +940,9 @@ def _parse_firewall_auth_success(
             if (
                 set(value) != {"kind", "configId", "generation", "headers"}
                 or not isinstance(expected, dict)
-                or expected != {"kind": "cloudflare_access", "configId": value.get("configId")}
+                or set(expected) != {"kind", "configId", "generation"}
+                or expected.get("kind") != "cloudflare_access"
+                or expected.get("configId") != value.get("configId")
                 or isinstance(value.get("generation"), bool)
                 or not isinstance(value.get("generation"), int)
                 or value["generation"] <= 0
@@ -969,6 +972,10 @@ def _parse_firewall_auth_success(
     elif "networkAdmission" in decoded_map:
         raise _malformed_firewall_auth_success("unsolicited network admission")
     expires_at = _parse_expires_at(decoded_map)
+    if request.network_admission and (
+        not is_supported_expiry(expires_at) or expires_at <= time.time()
+    ):
+        raise _malformed_firewall_auth_success("network admission requires a future expiry")
     resolved_secrets = _parse_required_string_list(decoded_map, "resolvedSecrets")
     refreshed_connectors = _parse_required_string_list(decoded_map, "refreshedConnectors")
     refreshed_secrets = _parse_required_string_list(decoded_map, "refreshedSecrets")

@@ -458,8 +458,12 @@ function customConnectorRuntimeNetworkIntent(
   if (!enabled) {
     return undefined;
   }
-  return binding
-    ? { kind: "cloudflare_access" as const, configId: binding.configId }
+  return binding?.status === "available"
+    ? {
+        kind: "cloudflare_access" as const,
+        configId: binding.configId,
+        generation: binding.generation,
+      }
     : { kind: "direct" as const };
 }
 

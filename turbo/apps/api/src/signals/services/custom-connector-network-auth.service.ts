@@ -17,6 +17,9 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { resolveConnectorRuntimeTargets$ } from "./connector-runtime-sync.service";
 import { resolveCustomConnectorNetworkAdmission$ } from "./custom-connector-network-authority.service";
 import { CustomConnectorNetworkError } from "./custom-connector-network-error";
+import { nowDate } from "../../lib/time";
+
+const NETWORK_ADMISSION_LEASE_SECONDS = 30;
 
 interface NetworkRunAuthority {
   readonly agentId: string | null;
@@ -57,11 +60,16 @@ function validateNetworkRequestScope(args: {
   const api = firewall.apis.find((candidate) => {
     return candidate.id === matched.apiId;
   });
+  // A registry generation invalidates cached leases. A fresh lookup may advance
+  // that observed generation when a rotation notification was missed.
   if (
     !api ||
     firewall.name !== matched.name ||
     api.networkIntent === undefined ||
-    JSON.stringify(api.networkIntent) !== JSON.stringify(request.intent)
+    api.networkIntent.kind !== request.intent.kind ||
+    (api.networkIntent.kind === "cloudflare_access" &&
+      (request.intent.kind !== "cloudflare_access" ||
+        api.networkIntent.configId !== request.intent.configId))
   ) {
     return {
       error: resourceUnavailable(
@@ -247,7 +255,9 @@ export const admitCustomConnectorNetworkRequest$ = command(
       status: 200 as const,
       body: {
         headers: {},
-        expiresAt: null,
+        expiresAt:
+          Math.floor(nowDate().getTime() / 1000) +
+          NETWORK_ADMISSION_LEASE_SECONDS,
         resolvedSecrets: [],
         refreshedConnectors: [],
         refreshedSecrets: [],

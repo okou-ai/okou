@@ -439,7 +439,10 @@ def resolve_firewall_entries(
                                     )
                             elif intent.get("kind") == "cloudflare_access":
                                 if (
-                                    set(intent) != {"kind", "configId"}
+                                    set(intent) != {"kind", "configId", "generation"}
+                                    or isinstance(intent.get("generation"), bool)
+                                    or not isinstance(intent.get("generation"), int)
+                                    or not 1 <= intent["generation"] <= 2**31 - 1
                                     or _optional_uuid_field(
                                         intent,
                                         "configId",

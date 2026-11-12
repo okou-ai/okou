@@ -183,6 +183,7 @@ export const prepareCustomConnectorNetworkBinding$ = command(
       .select({
         id: cloudflareAccessConfigs.id,
         name: cloudflareAccessConfigs.name,
+        generation: cloudflareAccessConfigs.generation,
       })
       .from(cloudflareAccessConfigs)
       .where(
@@ -207,6 +208,7 @@ export const prepareCustomConnectorNetworkBinding$ = command(
         configId: config.id,
         status: "available",
         name: config.name,
+        generation: config.generation,
       },
     };
   },

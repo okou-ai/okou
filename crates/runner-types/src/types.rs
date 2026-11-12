@@ -283,6 +283,7 @@ pub enum CustomConnectorNetworkIntent {
     CloudflareAccess {
         #[serde(rename = "configId")]
         config_id: String,
+        generation: u32,
     },
 }
 

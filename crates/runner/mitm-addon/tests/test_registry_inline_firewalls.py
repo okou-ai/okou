@@ -26,6 +26,7 @@ class TestRegistryInlineFirewalls:
         intent = {"kind": kind}
         if kind == "cloudflare_access":
             intent["configId"] = custom_id
+            intent["generation"] = 1
         entry["firewall"]["apis"][0]["networkIntent"] = intent
         write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
         with mitm_ctx():

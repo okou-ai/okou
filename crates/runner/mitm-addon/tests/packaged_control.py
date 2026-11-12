@@ -596,7 +596,11 @@ def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, u
                 "base": "https://example.com/api/",
                 "auth": {},
                 "hostPolicy": {"kind": "publicDestination"},
-                "networkIntent": {"kind": "cloudflare_access", "configId": config_id},
+                "networkIntent": {
+                    "kind": "cloudflare_access",
+                    "configId": config_id,
+                    "generation": 1,
+                },
             },
             network_policy={"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"},
         )
@@ -627,7 +631,7 @@ def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, u
         assert sent["networkRequest"] == {
             "method": "POST",
             "url": "https://example.com/api/items",
-            "intent": {"kind": "cloudflare_access", "configId": config_id},
+            "intent": {"kind": "cloudflare_access", "configId": config_id, "generation": 1},
         }
         assert "encryptedSecrets" not in sent
         assert sent["authHeaders"] == {}

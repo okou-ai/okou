@@ -16,7 +16,8 @@ export function customConnectorNetworkBindingSelection() {
       'type', 'cloudflare_access',
       'configId', ${binding.configId},
       'status', 'available',
-      'name', ${config.name}
+      'name', ${config.name},
+      'generation', ${config.generation}
     )`,
     })
     .from(binding)

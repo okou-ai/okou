@@ -147,8 +147,12 @@ export const prepareCustomConnectorNetworkFetch$ = command(
             definitionUpdatedAt: connector.updatedAt.toISOString(),
           }
         : undefined;
-    const intent: CustomConnectorNetworkIntent = binding
-      ? { kind: "cloudflare_access", configId: binding.configId }
+    const intent: CustomConnectorNetworkIntent = snapshot
+      ? {
+          kind: "cloudflare_access",
+          configId: snapshot.configId,
+          generation: snapshot.generation,
+        }
       : { kind: "direct" };
     const firewall = customConnectorSetupFirewall(connector);
     return {

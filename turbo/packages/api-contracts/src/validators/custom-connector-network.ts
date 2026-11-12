@@ -12,7 +12,12 @@ import { cloudflareAccessCredentialsSchema } from "./cloudflare-access-credentia
 
 export const customConnectorNetworkIntentSchema = discriminatedUnion("kind", [
   object({ kind: literal("direct") }).strict(),
-  object({ kind: literal("cloudflare_access"), configId: uuid() }).strict(),
+  object({
+    kind: literal("cloudflare_access"),
+    configId: uuid(),
+    // Observed revision for cache invalidation, not a credential selector.
+    generation: int().positive().max(2_147_483_647),
+  }).strict(),
 ]);
 export type CustomConnectorNetworkIntent = zInfer<
   typeof customConnectorNetworkIntentSchema
@@ -55,6 +60,7 @@ export const customConnectorNetworkMetadataSchema = discriminatedUnion(
     customConnectorCloudflareBindingSchema.extend({
       status: literal("available"),
       name: string(),
+      generation: int().positive().max(2_147_483_647),
     }),
     customConnectorCloudflareBindingSchema.extend({
       status: literal("unavailable"),
