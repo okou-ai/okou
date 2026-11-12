@@ -107,6 +107,13 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             cases[event["case"]].append(event)
 
 
+def validate_witness_clock_order(events, message):
+    """Require strict two-clock order in an already-admitted witness sequence."""
+    for field in ("monotonic_ns", "unix_ns"):
+        if any(a[field] >= b[field] for a, b in zip(events, events[1:])):
+            raise ValueError(message)
+
+
 def validate_residency(sample):
     age = sample.get("sample_age_ns")
     if type(age) is not int or age < 0:
