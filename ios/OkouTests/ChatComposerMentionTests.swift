@@ -99,7 +99,8 @@ final class ChatComposerMentionTests: XCTestCase {
       input.pasteDelegate as? ChatComposerTextInput.Coordinator)
     let tracedDelegate = NativePasteDelegate(delegate: pasteDelegate, trace: trace)
     input.pasteDelegate = tracedDelegate
-    defer { input.pasteDelegate = pasteDelegate }
+    // pasteDelegate is weak; retain the forwarding delegate through async paste.
+    defer { input.pasteDelegate = tracedDelegate.delegate }
     let observer = NotificationCenter.default.addObserver(
       forName: UITextView.textDidChangeNotification, object: input, queue: .main
     ) { _ in
