@@ -271,9 +271,6 @@ private struct WorkspaceRootView: View {
     }
     .ignoresSafeArea()
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
-    .onChange(of: sidebar.isOpen) { _, isOpen in
-      if isOpen { Task { await store.refreshNavigation() } }
-    }
     .overlay(alignment: .top) {
       ChatFeedbackBanner(store: store)
         .padding(.top, headerHeight)
