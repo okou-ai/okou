@@ -1,4 +1,5 @@
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { renderRunPrompts } from "./run-prompt-and-skills";
@@ -2061,7 +2062,13 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      workflowName: event.workflowName,
+      // Staff migration retains queued event bytes while reassigning the live
+      // Automation. Resolve its new execution name without rewriting history.
+      // Remove after every pre-cutover queued input has drained.
+      workflowName:
+        target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
+          ? target.workflow.name
+          : event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
       automation: target.automation,
