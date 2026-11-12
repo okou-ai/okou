@@ -34,6 +34,8 @@ import {
   SegmentControl,
   SegmentControlItem,
   surfaceVariants,
+  Tabs,
+  TabsContent,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -432,45 +434,34 @@ function useCapabilityTabs(signals: ComposerSignals) {
   const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
   const task = useGet(signals.taskChips.task$);
   const workflowKind = useGet(signals.taskChips.home.workflowKind$);
-  return [
-    {
-      id: "search",
-      Icon: UserRoundSearch,
-      label: copy.search.title,
-      open: () => {
-        openExplore("search");
-      },
-    },
-    {
-      id: "research",
-      Icon: Telescope,
-      label: copy.research.title,
-      open: () => {
-        openExplore("research");
-      },
-    },
-    {
-      id: "create",
-      Icon: Shapes,
-      label: copy.create.title,
-      open: () => {
-        openTask(isCreateTask(task) ? task : "presentation");
-      },
-    },
-    {
-      id: "workflow",
-      Icon: Route,
-      label: tasks.workflow,
-      open: () => {
-        openWorkflow(workflowKind);
-      },
-    },
+  const tabs = [
+    { id: "search", Icon: UserRoundSearch, label: copy.search.title },
+    { id: "research", Icon: Telescope, label: copy.research.title },
+    { id: "create", Icon: Shapes, label: copy.create.title },
+    { id: "workflow", Icon: Route, label: tasks.workflow },
   ] as const satisfies readonly {
     readonly id: CapabilityGroup;
     readonly Icon: LucideIcon;
     readonly label: string;
-    readonly open: () => void;
   }[];
+  const open = (group: CapabilityGroup) => {
+    switch (group) {
+      case "search":
+      case "research": {
+        openExplore(group);
+        return;
+      }
+      case "create": {
+        openTask(isCreateTask(task) ? task : "presentation");
+        return;
+      }
+      case "workflow": {
+        openWorkflow(workflowKind);
+        return;
+      }
+    }
+  };
+  return { tabs, open };
 }
 
 /**
@@ -580,10 +571,7 @@ function CapabilityViewAll({
   readonly selected: ComposerTask;
 }) {
   const { t } = useTranslation();
-  const browseTemplates = useTaskTemplateBrowse(
-    signals,
-    selected === "workflow" ? "visualization" : selected,
-  );
+  const browseTemplates = useTaskTemplateBrowse(signals, selected);
   const browseWorkflows = useSet(signals.taskChips.workflows.browse$);
   const browse =
     selected === "workflow"
@@ -634,17 +622,17 @@ function CapabilityTray({
   readonly className: string;
 }) {
   const { t } = useTranslation();
-  const tabs = useCapabilityTabs(signals);
+  const { tabs, open } = useCapabilityTabs(signals);
   const group = capabilityGroup(selected);
+  // The shared root and panel carry Base UI's tab semantics and keyboard
+  // model; the list and its tabs are drawn here because the shared
+  // `TabsList`/`TabsTrigger` are the segment-track skin, and these tabs are
+  // the tray's own top edge.
   return (
-    <TabsPrimitive.Root
+    <Tabs
       value={group}
       onValueChange={(value: CapabilityGroup) => {
-        tabs
-          .find((tab) => {
-            return tab.id === value;
-          })
-          ?.open();
+        open(value);
       }}
       className={cn(
         "flex min-w-0 flex-col motion-safe:animate-capability-tray-in",
@@ -669,7 +657,7 @@ function CapabilityTray({
           );
         })}
       </TabsPrimitive.List>
-      <TabsPrimitive.Panel
+      <TabsContent
         value={group}
         data-slot="capability-tray"
         className={cn(
@@ -701,8 +689,8 @@ function CapabilityTray({
             headerless
           />
         )}
-      </TabsPrimitive.Panel>
-    </TabsPrimitive.Root>
+      </TabsContent>
+    </Tabs>
   );
 }
 

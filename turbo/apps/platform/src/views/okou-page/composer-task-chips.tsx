@@ -228,15 +228,16 @@ function ComposerTemplateCover({
 /**
  * What a type's "View all" opens: the template picker on the catalog its shelf
  * samples. The capability tray draws the control in its own tab row, so the
- * shelf and the tray read the same answer from here. Chart has no catalog.
+ * shelf and the tray read the same answer from here.
  */
 export function useTaskTemplateBrowse(
   signals: ComposerSignals,
-  task: Exclude<ComposerTask, "workflow">,
+  task: ComposerTask,
 ): (() => void) | null {
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setPickerCategory = useSet(signals.template.setDocumentCategory$);
-  if (task === "visualization") {
+  // Workflows browse the workflow picker instead; Chart has no catalog.
+  if (task === "workflow" || task === "visualization") {
     return null;
   }
   if (task === "presentation") {

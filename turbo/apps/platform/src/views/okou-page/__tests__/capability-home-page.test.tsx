@@ -13,7 +13,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   composerInlineTemplates,
   findComposerEditor,
-  tabByText,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -47,6 +46,15 @@ async function setupHome() {
 }
 function capabilities() {
   return screen.getByRole("group", { name: "Explore Okou capabilities" });
+}
+function dialogTab(dialog: HTMLElement, label: string): HTMLElement {
+  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
+    return item.textContent?.replace(/\s+/g, " ").trim() === label;
+  });
+  if (!tab) {
+    throw new Error(`Expected ${label} tab in the dialog`);
+  }
+  return tab;
 }
 function capabilityTab(label: string): HTMLElement {
   const list = screen.getByRole("tablist", {
@@ -246,7 +254,10 @@ test("The tray names a type once and browses its catalog from the header line", 
   const tray = screen.getByRole("tabpanel");
   click(button("View all", tray));
   const dialog = await screen.findByRole("dialog");
-  expect(dialog).toBeInTheDocument();
+  expect(dialogTab(dialog, "Presentation")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   click(button("Close", dialog));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -325,7 +336,11 @@ test("Workflow suggestions preserve the draft and open the real workflow picker"
   // "View all" sits beside the kinds in the tray's header line.
   click(button("View all", screen.getByRole("tabpanel")));
   const dialog = await screen.findByRole("dialog");
-  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
+  // Scoped to the picker: the open capability tab is also named Workflow.
+  expect(dialogTab(dialog, "Workflow")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(
     button("Select workflow template Morning brief", dialog),
   ).toBeInTheDocument();
