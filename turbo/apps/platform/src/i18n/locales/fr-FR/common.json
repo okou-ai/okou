@@ -1651,13 +1651,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Tout est à jour",
-        "emptyTitle": "Aucune nouvelle suggestion",
         "feedback": "Actions de la suggestion",
-        "loading": "Chargement des suggestions",
         "navigation": "Parcourir les suggestions",
-        "next": "Suggestion suivante",
-        "previous": "Suggestion précédente",
-        "retry": "Réessayer"
+        "show": "Afficher la suggestion {{index}} sur {{total}}"
       },
       "label": "Suggestions",
       "lessLikeThis": "Less like this",

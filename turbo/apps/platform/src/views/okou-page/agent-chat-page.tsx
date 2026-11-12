@@ -33,7 +33,7 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
   AgentSuggestions,
-  HomeSuggestionsCard,
+  HomeSuggestionGreeting,
   SuggestionSaveErrors,
 } from "./agent-suggestions.tsx";
 import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
@@ -475,13 +475,32 @@ export function AgentComposerPage() {
   const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
 
   const switches = useGet(featureSwitch$);
+  const capabilityHome = switches[FeatureSwitchKey.HomeCapabilities];
+  const taglineHeading = (
+    <h2
+      aria-label={tagline}
+      data-testid="chat-tagline"
+      className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+    >
+      <GreetingTokens
+        text={tagline}
+        animate={animateGreeting}
+        onAnimationComplete={finishGreetingEntrance}
+      />
+    </h2>
+  );
   const heading =
     currentChatAgentId === undefined || tagline === "" ? null : (
       <div
         key={greetingIdentity}
         data-slot="chat-greeting"
         data-testid="chat-greeting"
-        className="flex max-w-full items-center gap-4"
+        // On the capability home a waiting suggestion takes the line beside
+        // the avatar, so the greeting spans its row.
+        className={cn(
+          "flex max-w-full items-center gap-4",
+          capabilityHome && "min-w-0 flex-1",
+        )}
       >
         {/* The avatar is the greeting's first word. Only the first
             greeting in this App lifetime takes the entrance; changing
@@ -495,27 +514,15 @@ export function AgentComposerPage() {
         >
           <ChatAgentAvatar agentId={currentChatAgentId} />
         </span>
-        <h2
-          aria-label={tagline}
-          data-testid="chat-tagline"
-          className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
-        >
-          <GreetingTokens
-            text={tagline}
-            animate={animateGreeting}
-            onAnimationComplete={finishGreetingEntrance}
-          />
-        </h2>
+        {capabilityHome && showSuggestions ? (
+          <HomeSuggestionGreeting fallback={taglineHeading} />
+        ) : (
+          taglineHeading
+        )}
       </div>
     );
-  if (switches[FeatureSwitchKey.HomeCapabilities]) {
-    return (
-      <CapabilityHomePage
-        signals={composerSignals}
-        heading={heading}
-        suggestions={showSuggestions ? <HomeSuggestionsCard /> : null}
-      />
-    );
+  if (capabilityHome) {
+    return <CapabilityHomePage signals={composerSignals} heading={heading} />;
   }
 
   return (

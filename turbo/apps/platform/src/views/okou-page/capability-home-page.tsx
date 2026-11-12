@@ -223,7 +223,10 @@ function ExploreCapabilityCard({
   );
 }
 
-/** The blog link, kept quiet under the cards. */
+/**
+ * The blog link. It rides in the corner beside the growth entry, outside the
+ * page's flow, so it costs the home no height and belongs to no card.
+ */
 function ExploreLink() {
   const { t } = useTranslation();
   return (
@@ -233,8 +236,8 @@ function ExploreLink() {
       rel="noopener noreferrer"
       className={buttonVariants({
         variant: "quiet",
-        size: "xs",
-        className: "-ml-2.5 gap-1.5 text-xs",
+        size: "sm",
+        className: "gap-1.5 px-2.5 text-[13px]",
       })}
     >
       <Compass aria-hidden />
@@ -904,17 +907,15 @@ function HomeWorkflowSuggestions({
 }
 
 /**
- * Shared discovery and template surface; the host owns its composer and
- * header, and may include a suggestion card in the capability grid.
+ * Shared discovery and template surface; the host owns its composer, header
+ * and greeting.
  */
 export function CapabilityHomeContent({
   signals,
   heading,
-  suggestions,
 }: {
   readonly signals: ComposerSignals;
   readonly heading?: ReactNode;
-  readonly suggestions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const selected = useGet(signals.taskChips.home.task$);
@@ -974,21 +975,11 @@ export function CapabilityHomeContent({
             )}
           >
             {heading !== undefined && (
-              // The suggestion strip rides in the greeting row, so showing it
-              // never pushes the cards or the composer down.
-              <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-3">
-                {heading}
-                {suggestions && (
-                  <div className="min-w-0 basis-full @3xl:max-w-110 @3xl:flex-1 @3xl:basis-0">
-                    {suggestions}
-                  </div>
-                )}
-              </div>
+              // A waiting suggestion speaks in the greeting's own line, so
+              // showing it never pushes the cards or the composer down.
+              <div className="flex min-h-14 items-center">{heading}</div>
             )}
             <CapabilityCards signals={signals} />
-            <div className="-mt-2 flex min-w-0 px-1">
-              <ExploreLink />
-            </div>
           </div>
         ) : (
           <>
@@ -1019,21 +1010,17 @@ export function CapabilityHomeContent({
 export function CapabilityHomePage({
   signals,
   heading,
-  suggestions,
 }: {
   readonly signals: ComposerSignals;
   readonly heading: ReactNode;
-  readonly suggestions: ReactNode;
 }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <GrowthEntryHeader />
+      <GrowthEntryHeader>
+        <ExploreLink />
+      </GrowthEntryHeader>
       <div className="isolate flex min-h-0 flex-1 flex-col">
-        <CapabilityHomeContent
-          signals={signals}
-          heading={heading}
-          suggestions={suggestions}
-        />
+        <CapabilityHomeContent signals={signals} heading={heading} />
         <footer data-chat-composer className="relative shrink-0">
           <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
             <div className="mx-auto max-w-[900px]">

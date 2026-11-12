@@ -1627,13 +1627,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "सब पूरा हो गया",
-        "emptyTitle": "कोई नया सुझाव नहीं",
         "feedback": "सुझाव के विकल्प",
-        "loading": "सुझाव लोड हो रहे हैं",
         "navigation": "सुझाव देखें",
-        "next": "अगला सुझाव",
-        "previous": "पिछला सुझाव",
-        "retry": "फिर कोशिश करें"
+        "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
       },
       "label": "सुझाव",
       "lessLikeThis": "Less like this",

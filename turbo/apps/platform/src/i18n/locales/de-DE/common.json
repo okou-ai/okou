@@ -1627,13 +1627,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Alles erledigt",
-        "emptyTitle": "Keine neuen Vorschläge",
         "feedback": "Vorschlagsaktionen",
-        "loading": "Vorschläge werden geladen",
         "navigation": "Vorschläge durchsehen",
-        "next": "Nächster Vorschlag",
-        "previous": "Vorheriger Vorschlag",
-        "retry": "Erneut versuchen"
+        "show": "Vorschlag {{index}} von {{total}} anzeigen"
       },
       "label": "Vorschläge",
       "lessLikeThis": "Less like this",
