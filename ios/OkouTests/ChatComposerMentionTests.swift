@@ -116,7 +116,8 @@ final class ChatComposerMentionTests: XCTestCase {
     trace.record("paste returned")
     trace.record("business wait started")
     try await waitForBusinessResult(
-      message: "Paste stages=\(trace.stages); native change=\(String(describing: trace.nativeChange)); "
+      message: "Paste stages=\(trace.stages); "
+        + "native change=\(String(describing: trace.nativeChange)); "
         + "canonical at native change=\(String(describing: trace.canonicalAtNativeChange)); "
         + "elapsed=\(trace.started.duration(to: .now)); "
         + "document=\(workspace.newComposer.document); "
