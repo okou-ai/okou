@@ -32,11 +32,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { getArtifactShareScope } from "../../signals/artifact-sharing.ts";
 import { getHostedSiteShareScope } from "../../signals/hosted-site-sharing.ts";
 import {
-  artifactGoogleDriveCatalogItem$,
-  inactiveArtifactGoogleDriveCatalogItem$,
-  needsArtifactGoogleDriveCatalog,
-} from "../../signals/artifact-preview-actions.ts";
-import {
   artifactDeletionSurface,
   confirmArtifactDeletion$,
   type ArtifactDeletionOrigin,
@@ -45,6 +40,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import {
   ArtifactDownloadMenu,
+  useGoogleDriveAvailability,
   type ArtifactDownloadMenuProps,
 } from "./artifact-actions.tsx";
 
@@ -52,6 +48,7 @@ function usePreviewShareFailures(
   surface: "dialog" | "sidebar" | "page",
   url: string,
   syncTarget: ArtifactDownloadMenuProps["syncTarget"],
+  driveEnabled = true,
 ) {
   const shareSurface = surface === "dialog" ? "dialog" : "sidebar";
   const shareScope = getArtifactShareScope(shareSurface);
@@ -60,16 +57,12 @@ function usePreviewShareFailures(
   const siteSession = useGet(siteScope.session$);
   const sharing = useLoadable(shareScope.details$);
   const hostedSite = useLoadable(siteScope.settings$);
-  const drive = useLoadable(
-    needsArtifactGoogleDriveCatalog(syncTarget)
-      ? artifactGoogleDriveCatalogItem$
-      : inactiveArtifactGoogleDriveCatalogItem$,
-  );
+  const drive = useGoogleDriveAvailability(syncTarget, driveEnabled);
   return {
     sharing: shareSession?.source.url === url && sharing.state === "hasError",
     hostedSite:
       siteSession?.sourceUrl === url && hostedSite.state === "hasError",
-    drive: drive.state === "hasError" && !syncTarget?.accountReady,
+    drive: drive.googleDriveCatalogFailed,
   };
 }
 
@@ -96,6 +89,7 @@ export function ArtifactPreviewMoreMenu({
     surface,
     downloadProps.url,
     downloadProps.syncTarget,
+    downloadProps.showGoogleDriveAction,
   );
   const currentSession =
     session?.artifactId === artifactId && session?.sourceKind === undefined
