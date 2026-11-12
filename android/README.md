@@ -11,9 +11,11 @@ appearance. Compact windows use bottom navigation; wider windows use a rail.
 Home remains usable while Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from
 the stored data stream and restored across relaunch/configuration changes.
-Owned UI resources cover the twelve current Web locales, following the device
-language with distinct Simplified/Traditional Chinese resources. Account-backed
-palette/language selection is separate future work.
+Owned UI resources cover the twelve current Web locales, with distinct
+Simplified/Traditional Chinese resources. Workspace settings select the eight
+Web color palettes and the languages allowed by canonical `supportedLocales`.
+Palette/language preferences synchronize through the member/workspace API;
+Light/Dark/Follow system remains device-local and independent.
 
 The workspace presentation owner retains native text, selection and IME state
 across navigation and configuration changes; previews are independent immutable
@@ -118,7 +120,8 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 The `androidTest` suite launches the real Activity and uses UI Automator to
 exercise platform keyboard/insets and Back, retained editor/caret state,
 appearance restoration with a new Activity owner, native system bars and live
-platform night-mode changes. The existing JVM/Robolectric tests retain the
+platform night-mode changes, plus palette/language changes and retained editing
+through native app-language recreation. The existing JVM/Robolectric tests retain the
 broader state/error/localization matrix.
 
 On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
@@ -143,7 +146,7 @@ Compile/package the suite without starting a device:
 ```
 
 Use an isolated test emulator. The fixture snapshots/restores app preferences,
-platform night mode and keyboard settings, scopes its UI Automation shell
+platform night mode, app locale, fixture API preferences and keyboard settings, scopes its UI Automation shell
 permissions, and closes its Activity owners on success and failure. It does not
 contact a backend. A new Activity owner is not a process-death restoration test.
 
@@ -176,6 +179,10 @@ exercise real routes, native editor selection, back/configuration retention,
 appearance and adaptive navigation. LocalizedResourcesTest verifies native
 locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
+MemberPreferencesModelTest covers confirmed versus pending selections, failed
+saves/retry/readback and retired work. PaletteColorsTest resolves all sixteen
+mode/palette combinations from generated resources; LegacyLanguageSettingsTest
+exercises pre-Android13 app-language changes through the real Activity.
 Add modules/shared helpers only for actual application boundaries. Preferences
 DataStore has one lazy process owner; its observation starts asynchronously at
 the retained presentation owner and does not gate Home on disk IO.

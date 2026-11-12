@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import android.app.LocaleManager
 import android.app.UiModeManager
 import android.content.res.Configuration
 import android.os.Bundle
@@ -22,6 +23,7 @@ import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -120,6 +122,58 @@ class NativeShellTest {
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             editor("Retained during platform configuration changes")
+        }
+
+    @Test
+    fun paletteAndLanguageChangesRetainTheDraftAndReloadMemberPreferences() =
+        onIsolatedDevice("member-preferences") {
+            fun select(value: String) {
+                val target = By.pkg(app.packageName).text(value)
+                if (device.findObject(target) == null) {
+                    requireNotNull(
+                            device.wait(
+                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                WAIT,
+                            )
+                        )
+                        .scrollUntil(
+                            Direction.DOWN,
+                            object : Condition<UiObject2, Boolean> {
+                                // Resolve virtual descendants from the current window after
+                                // scrolls.
+                                override fun apply(container: UiObject2) = device.hasObject(target)
+                            },
+                        )
+                }
+                requireNotNull(device.wait(Until.findObject(target), WAIT)) {
+                        "Native preference choice not reachable: $value"
+                    }
+                    .click()
+            }
+            launch()
+            val draft = "Preserve my draft across language changes"
+            editor().click()
+            awaitActivity("IME becomes visible before changing preferences") { imeVisible(it) }
+            editor().text = draft
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitActivity("IME is dismissed before opening settings") { !imeVisible(it) }
+            click(R.string.settings)
+            select("Default")
+            select("Blue horizon")
+            select("English")
+            select("繁體中文")
+            awaitActivity("Traditional Chinese is applied by Android") {
+                it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
+            }
+            click(R.string.home)
+            editor(draft)
+            closeActivity()
+            launch()
+            click(R.string.settings)
+            select("藍色地平線")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            select("繁體中文")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
         }
 
     private fun launch() {
@@ -233,6 +287,10 @@ class NativeShellTest {
     private fun onIsolatedDevice(name: String, test: () -> Unit) {
         val store = app.appearancePreferences
         val preferences = runBlocking { store.data.first() }
+        val apiFixture = app as TestOkouApplication
+        val apiPreferences = apiFixture.snapshotApiPreferences()
+        val locales = requireNotNull(app.getSystemService(LocaleManager::class.java))
+        val applicationLocales = locales.applicationLocales
         val resolver = app.contentResolver
         val keyboard = Settings.Secure.getString(resolver, SHOW_IME_WITH_HARD_KEYBOARD)
         val mode = requireNotNull(app.getSystemService(UiModeManager::class.java))
@@ -269,6 +327,8 @@ class NativeShellTest {
                 }
             }
             restore { closeActivity() }
+            restore { apiFixture.restoreApiPreferences(apiPreferences) }
+            restore { locales.applicationLocales = applicationLocales }
             restore { runBlocking { store.updateData { preferences } } }
             restore {
                 assertTrue(

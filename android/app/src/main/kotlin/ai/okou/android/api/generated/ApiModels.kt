@@ -114,6 +114,60 @@ data class InitializePreferencesRequest(
     val `locale`: InitializePreferencesRequestLocale,
 )
 
+@Serializable
+enum class UpdatePreferencesRequestLocale {
+    @SerialName("en-US") EN_US,
+    @SerialName("pt-BR") PT_BR,
+    @SerialName("ja-JP") JA_JP,
+    @SerialName("ko-KR") KO_KR,
+    @SerialName("id-ID") ID_ID,
+    @SerialName("de-DE") DE_DE,
+    @SerialName("es-ES") ES_ES,
+    @SerialName("it-IT") IT_IT,
+    @SerialName("fr-FR") FR_FR,
+    @SerialName("hi-IN") HI_IN,
+    @SerialName("zh-Hans") ZH_HANS,
+    @SerialName("zh-Hant") ZH_HANT,
+}
+
+@Serializable
+enum class UpdatePreferencesRequestSendMode {
+    @SerialName("enter") ENTER,
+    @SerialName("cmd-enter") CMD_ENTER,
+}
+
+@Serializable
+enum class UpdatePreferencesRequestTheme {
+    @SerialName("light") LIGHT,
+    @SerialName("dark") DARK,
+    @SerialName("system") SYSTEM,
+}
+
+@Serializable
+enum class UpdatePreferencesRequestColorTheme {
+    @SerialName("default") DEFAULT,
+    @SerialName("golden-hour") GOLDEN_HOUR,
+    @SerialName("citrus-spark") CITRUS_SPARK,
+    @SerialName("berry-blush") BERRY_BLUSH,
+    @SerialName("cotton-sky") COTTON_SKY,
+    @SerialName("blue-horizon") BLUE_HORIZON,
+    @SerialName("daydream") DAYDREAM,
+    @SerialName("deep-lagoon") DEEP_LAGOON,
+}
+
+@Serializable
+data class UpdatePreferencesRequest(
+    val `timezone`: String? = null,
+    val `locale`: UpdatePreferencesRequestLocale? = null,
+    val `pinnedAgentIds`: List<String>? = null,
+    val `sendMode`: UpdatePreferencesRequestSendMode? = null,
+    val `cloudBrowserEnabledByDefault`: Boolean? = null,
+    val `chatResourcesEnabledByDefault`: Boolean? = null,
+    val `theme`: UpdatePreferencesRequestTheme? = null,
+    val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
+    val `captureNetworkBodiesRemaining`: Long? = null,
+)
+
 @Serializable data class ApiErrorError(val `message`: String, val `code`: String)
 
 @Serializable data class ApiError(val `error`: ApiErrorError)

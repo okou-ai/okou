@@ -80,6 +80,23 @@ Clerk alone persists encrypted authentication/device credentials through its
 Android Keystore owner. Credentials never enter appearance DataStore or content
 caches. Workspace drafts remain in-memory presentation data.
 
+`MemberPreferencesModel` belongs to that presentation store and owns canonical
+preferences, pending selections and save/refresh/error state. Palette and locale
+updates send only selected fields through the existing preferences API. Local
+appearance stays in DataStore. A missing palette displays Default without a
+write; a saved locale outside `supportedLocales` displays English as on Web.
+Native app-locales APIs project the current workspace's language and return to
+system language without a workspace. AppCompat supports Android 24–32 and the
+platform handles Android 33+. Locale recreation retains the session, editing and
+navigation owners. Server bootstrap restores canonical preferences on a new owner;
+no separate member-preference cache or durable draft store is introduced.
+
+Preferences refresh on foreground without replacing those owners. Automatic
+refresh preserves unconfirmed selections after failed saves, including a resume
+caused by locale recreation; explicit refresh reads back the canonical result.
+An HTTP authorization/update-required failure retires the workspace, while an
+ordinary save/network failure remains visible and retryable in Settings.
+
 Signing out or changing account/workspace closes API resources, cancels pending
 work and clears the old presentation store before another owner can be published.
 Both before and after token acquisition, the captured identity and generation must
@@ -97,9 +114,9 @@ the test Application/runner live only in test source sets; production has no byp
 The existing native device suite exercises the real Activity with an explicitly
 injected test workspace.
 
-Host tests and a successfully built APK do not prove provider registration or
-interactive authentication. Device acceptance must cover the actual enabled
-methods, sign-up, OAuth return/cancel, workspace and account switch, sign-out,
-expiration/revocation, and process death/restoration. Report physical/provider
-evidence separately from host tests and emulator CI. Full palette/locale preference
-presentation and synchronization remain A5.
+CI emulator tests exercise native controls, configuration/app-language changes,
+system bars and retained editing with test-only authentication/API fixtures.
+Keep that evidence distinct from live provider registration, OAuth/passkeys and
+process-death acceptance. A successful build or fixture-backed test does not
+establish that an external instance is configured. Provider setup above describes
+those deployment requirements, rather than an additional physical-device CI gate.

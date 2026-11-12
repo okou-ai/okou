@@ -118,7 +118,7 @@ val generateBrandFonts =
 val generateLicenseAssets =
     tasks.register<PrepareBrandFiles>("generateLicenseAssets") {
         sourceFiles.from(fileTree("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") })
-        sourceFiles.from("../../ios/Okou/DesignSystem/Lucide-LICENSE.txt")
+        sourceFiles.from("../../ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt")
         outputDirectory.set(layout.buildDirectory.dir("generated/brand/assets"))
         fonts.set(false)
     }
@@ -147,6 +147,7 @@ androidComponents.onVariants { variant ->
 }
 
 dependencies {
+    implementation(libs.appcompat)
     implementation(libs.clerk.ui)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)

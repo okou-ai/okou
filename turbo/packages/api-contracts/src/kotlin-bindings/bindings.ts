@@ -18,7 +18,7 @@ interface KotlinRouteBinding {
   };
 }
 
-/** The selected native bootstrap surface, not an export of every Web contract. */
+/** The selected native workspace/preferences surface, not an export of every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   { name: "organization", response: "Organization", route: orgContract.get },
   {
@@ -31,6 +31,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     response: "UserPreferences",
     request: "InitializePreferencesRequest",
     route: userPreferencesContract.initialize,
+  },
+  {
+    name: "updatePreferences",
+    response: "UserPreferences",
+    request: "UpdatePreferencesRequest",
+    route: userPreferencesContract.update,
   },
 ];
 
@@ -52,6 +58,11 @@ export const kotlinTypeBindings: readonly {
   {
     name: "InitializePreferencesRequest",
     schema: userPreferencesContract.initialize.body,
+    direction: "input",
+  },
+  {
+    name: "UpdatePreferencesRequest",
+    schema: userPreferencesContract.update.body,
     direction: "input",
   },
   { name: "ApiError", schema: apiErrorSchema, direction: "output" },
