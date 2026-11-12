@@ -19,7 +19,7 @@ _CUSTOM_ID = "550e8400-e29b-41d4-a716-446655440000"
 _CONFIG_ID = "550e8400-e29b-41d4-a716-446655440002"
 
 
-def _network_response(secret: str, generation: int) -> dict:
+def _network_response(secret: str, generation: int) -> dict[str, object]:
     return firewall_auth_success_response({}, expires_at=time.time() + 3600) | {
         "networkAdmission": {
             "kind": "cloudflare_access",
