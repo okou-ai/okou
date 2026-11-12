@@ -191,7 +191,9 @@ impl IngressHandler {
                 Ok(Err(status)) => return response(status, ""),
                 Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
             };
-            let verdict = intake.submit(self.identity, run_id, &bytes, permit).await;
+            let verdict = intake
+                .submit(self.identity, run_id, &bytes, permit, dispatch::now_ms())
+                .await;
             return self.dispatch_response(run_id, verdict);
         }
         if request.method() != Method::GET {
@@ -282,10 +284,17 @@ impl IngressRuntime {
         let cancel = runtime.cancel.clone();
         runtime.task = Some(tokio::spawn(async move {
             let mut connections = JoinSet::new();
+            let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
+            expiry_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => break,
+                    _ = expiry_tick.tick() => {
+                        if let Some(intake) = handler.dispatch.get() {
+                            intake.expire(dispatch::now_ms());
+                        }
+                    },
                     Some(_) = connections.join_next(), if !connections.is_empty() => {},
                     accepted = socket.accept() => {
                         let stream = match accepted {

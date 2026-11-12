@@ -1,8 +1,8 @@
-//! Process-lifetime custody. A lost response never releases accepted execution.
-//! Records are compact and never evicted: saturation permanently closes new
-//! intake for this process while replay of known Runs remains available.
+//! Delivery-window deduplication. A lost response or expired history never
+//! releases accepted execution. Senders retain the original immutable deadline.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,7 +14,6 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 
 pub(super) const MAX_BODY: usize = 4 * 1024 * 1024;
-const MAX_RECORDS: usize = 65_536;
 const MAX_VALIDITY_MS: u64 = 60_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -41,6 +40,7 @@ struct Envelope {
 
 struct Record {
     digest: [u8; 32],
+    not_after: u64,
     verdict: watch::Sender<Disposition>,
 }
 
@@ -48,7 +48,7 @@ pub(crate) struct DispatchIntake {
     records: Mutex<HashMap<RunId, Record>>,
     sender: mpsc::Sender<DispatchWork>,
     slots: Arc<Semaphore>,
-    max_records: usize,
+    latest_time_ms: AtomicU64,
 }
 
 pub(crate) struct DispatchWork {
@@ -95,7 +95,7 @@ impl DispatchIntake {
                 records: Mutex::new(HashMap::new()),
                 sender,
                 slots,
-                max_records: MAX_RECORDS,
+                latest_time_ms: AtomicU64::new(0),
             },
             receiver,
         )
@@ -105,18 +105,44 @@ impl DispatchIntake {
         self.slots.clone().try_acquire_owned().ok()
     }
 
+    fn observe_time(&self, now: u64) -> u64 {
+        // Once history expires, a stale timestamp or clock rollback must not
+        // make that original request admissible again.
+        self.latest_time_ms
+            .fetch_max(now, Ordering::Relaxed)
+            .max(now)
+    }
+
+    pub(super) fn expire(&self, now: u64) {
+        if now == u64::MAX {
+            // An invalid wall-clock sample must not erase or poison history.
+            return;
+        }
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let now = self.observe_time(now);
+        records.retain(|_, record| record.not_after > now);
+    }
+
     pub(super) async fn submit(
         &self,
         identity: RunnerProcessIdentity,
         run_id: RunId,
         bytes: &[u8],
         permit: OwnedSemaphorePermit,
+        received_at_ms: u64,
     ) -> Disposition {
+        if received_at_ms == u64::MAX {
+            return Disposition::Unknown;
+        }
+        let received_at = tokio::time::Instant::now();
+        let now = self.observe_time(received_at_ms);
         let digest: [u8; 32] = Sha256::digest(bytes).into();
         let receiver = {
             let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
             records.get(&run_id).map(|record| {
-                if record.digest == digest {
+                if record.not_after <= now {
+                    Err(Disposition::Unknown)
+                } else if record.digest == digest {
                     Ok(record.verdict.subscribe())
                 } else {
                     Err(Disposition::Conflict)
@@ -139,14 +165,12 @@ impl DispatchIntake {
         {
             return Disposition::Unknown;
         }
-        let now = now_ms();
         if envelope.not_after <= now || envelope.not_after > now.saturating_add(MAX_VALIDITY_MS) {
             return Disposition::Unknown;
         }
         // Freeze the remaining validity on a monotonic clock before decoding or
         // waiting for local resources. Wall-clock adjustment must not extend it.
-        let deadline = tokio::time::Instant::now()
-            + std::time::Duration::from_millis(envelope.not_after - now);
+        let deadline = received_at + std::time::Duration::from_millis(envelope.not_after - now);
         let context =
             match decode_execution_publication(envelope.execution_context.get().as_bytes()) {
                 Ok(context) if context.run_id == run_id && !context.sandbox_token.is_empty() => {
@@ -159,17 +183,20 @@ impl DispatchIntake {
         let mut to_submit = None;
         let receiver = {
             let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+            let now = self.observe_time(received_at_ms);
+            if envelope.not_after <= now || tokio::time::Instant::now() >= deadline {
+                return Disposition::Unknown;
+            }
             // A concurrent request may have installed its record during decoding.
             if let Some(record) = records.get(&run_id) {
+                if record.not_after <= now {
+                    return Disposition::Unknown;
+                }
                 if record.digest != digest {
                     return Disposition::Conflict;
                 }
                 record.verdict.subscribe()
             } else {
-                if records.len() >= self.max_records {
-                    // No eviction means this process can never accept this unseen Run later.
-                    return Disposition::Rejected;
-                }
                 let (verdict, receiver) = watch::channel(Disposition::Pending);
                 to_submit = Some(DispatchWork {
                     context: context.take(),
@@ -178,7 +205,14 @@ impl DispatchIntake {
                     permit: permit.take(),
                     verdict: verdict.clone(),
                 });
-                records.insert(run_id, Record { digest, verdict });
+                records.insert(
+                    run_id,
+                    Record {
+                        digest,
+                        not_after: envelope.not_after,
+                        verdict,
+                    },
+                );
                 receiver
             }
         };

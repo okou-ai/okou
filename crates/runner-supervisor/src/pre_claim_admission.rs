@@ -193,6 +193,10 @@ pub(crate) async fn admit_supplied(
         return SuppliedAdmission::Rejected;
     }
     let run_id = context.run_id;
+    // Live Run ownership outlasts the short HTTP deduplication window.
+    if ctx.cancel_tokens.handle(run_id).await.is_some() {
+        return SuppliedAdmission::Unknown;
+    }
     let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
         &request.candidate,
         request.profile_name,

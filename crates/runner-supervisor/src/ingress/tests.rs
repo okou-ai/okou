@@ -173,6 +173,71 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
 }
 
 #[tokio::test]
+async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
+    let (_root, directory) = namespace();
+    let id = identity(1);
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
+        .await
+        .unwrap();
+    let (intake, mut receiver) =
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+    runtime.enable_dispatch(intake);
+    let socket = directory.join(format!("{}.sock", id.runner_id()));
+    let run_id = runner_types::ids::RunId::new_v4();
+    let deadline = dispatch::now_ms() + 60_000;
+    let mut input = serde_json::json!({
+        "runnerId": id.runner_id(), "heartbeatGeneration": id.heartbeat_generation(),
+        "profile": "vm0/default", "notAfter": deadline,
+        "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
+    });
+    let original = dispatch_request(id, run_id, &input.to_string());
+    let peer_socket = socket.clone();
+    let sent = original.clone();
+    let sending = tokio::spawn(async move { request(&peer_socket, &sent).await });
+    let owned = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    owned.settle(dispatch::Disposition::Accepted);
+    let response = sending.await.unwrap();
+    assert_eq!(response.0, 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
+        "accepted"
+    );
+    // Drive the same expiry action used by the listener's periodic sweep at
+    // the original deadline, while retaining the independent work owner.
+    runtime.handler.dispatch.get().unwrap().expire(deadline);
+    let response = request(&socket, &original).await;
+    assert_eq!(response.0, 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
+        "unknown"
+    );
+    assert!(receiver.try_recv().is_err());
+    let fresh = runner_types::ids::RunId::new_v4();
+    input["executionContext"]["runId"] = serde_json::json!(fresh);
+    input["notAfter"] = serde_json::json!(deadline + 60_000);
+    let next = dispatch_request(id, fresh, &input.to_string());
+    let peer_socket = socket.clone();
+    let sending = tokio::spawn(async move { request(&peer_socket, &next).await });
+    let work = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    work.settle(dispatch::Disposition::Accepted);
+    drop(work);
+    let response = sending.await.unwrap();
+    assert_eq!(response.0, 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
+        "accepted"
+    );
+    drop(owned);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
 async fn dispatch_bounds_chunked_bodies_even_without_content_length() {
     let (_root, directory) = namespace();
     let id = identity(1);

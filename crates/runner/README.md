@@ -45,12 +45,16 @@ says nothing about earlier attempts. A possibly accepted earlier attempt must
 remain pinned to that owner even if a retry gets 429.
 
 Retry an existing request with identical bytes, including its original deadline.
-Each process retains at most 65,536 compact Run verdicts without eviction.
-After saturation it rejects all unseen Runs; replace it through normal drain
-and restart to restore new intake. Existing replay remains available after its
-deadline. Different input for a known Run returns conflict. A new process or
-generation cannot settle the previous process's custody: neither generation
-mismatch, connection loss, nor a missing route authorizes blind reassignment.
+Within that window, identical delivery shares its recorded verdict and changed
+input returns conflict. At or after the original deadline, retries return unknown,
+including formerly accepted or rejected input. Expired records are reclaimed
+periodically; cumulative traffic does not impose a process-lifetime intake limit.
+Existing Run registration guards execution independently of this short history.
+The sender must never renew a Run's deadline or reopen completed work. Once the
+window closes, stop resending and reconcile ordinary Run status, completion or
+timeout against the pinned owner. A new process or generation cannot settle the
+previous process's custody: generation mismatch, expired history, connection loss
+or a missing route never authorizes blind reassignment.
 Caller disconnect and Caddy restart do not cancel accepted execution.
 
 ## Configure Host I/O Capacity
