@@ -934,6 +934,7 @@ export function CapabilityHomeContent({
   const { t } = useTranslation();
   const selected = useGet(signals.taskChips.home.task$);
   const close = useSet(signals.taskChips.home.close$);
+  const focusEditor = useSet(signals.editor.focus$);
   const pageSignal = useGet(pageSignal$);
   const closeButton = (
     <Button
@@ -994,7 +995,12 @@ export function CapabilityHomeContent({
               <div className="flex min-h-14 items-center">{heading}</div>
             )}
             <CapabilityCards signals={signals} entrance={entrance} />
-            <CapabilityHomeCompliance entrance={entrance} />
+            <CapabilityHomeCompliance
+              entrance={entrance}
+              // The block takes its focused hide control with it; the
+              // composer is where the page's focus starts, so it goes there.
+              onHidden={focusEditor}
+            />
           </div>
         ) : (
           <>

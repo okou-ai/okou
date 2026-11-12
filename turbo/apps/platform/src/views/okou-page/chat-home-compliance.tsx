@@ -50,8 +50,11 @@ export function ChatHomeCompliance() {
  */
 export function CapabilityHomeCompliance({
   entrance,
+  onHidden,
 }: {
   readonly entrance: boolean;
+  /** Takes focus off the hide control, which leaves with the block. */
+  readonly onHidden: () => void;
 }) {
   const { t } = useTranslation();
   const title = useComplianceTitle();
@@ -97,6 +100,7 @@ export function CapabilityHomeCompliance({
             onClick={() => {
               // Reduced motion has no fold to wait for, so the block goes at once.
               hide(!matchMedia("(prefers-reduced-motion: reduce)").matches);
+              onHidden();
             }}
           >
             <X aria-hidden />

@@ -138,11 +138,15 @@ test.each([
 
 test("Hiding the compliance block keeps it hidden on this device", async () => {
   mockTemplateChat();
-  await setupHome();
+  const editor = await setupHome();
   const compliance = await screen.findByRole("region", {
     name: COMPLIANCE_TITLE,
   });
-  click(button("Hide compliance", compliance));
+  const hide = button("Hide compliance", compliance);
+  hide.focus();
+  await userEvent.keyboard("{Enter}");
+  // The control leaves with the block, so focus goes to the composer.
+  expect(editor).toHaveFocus();
   // It leaves the accessibility tree at once and folds its height away; the
   // fold's end unmounts it.
   await waitFor(() => {
