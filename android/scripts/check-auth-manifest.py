@@ -17,7 +17,10 @@ def require(condition, message):
 
 
 def audit(path, package):
-    root = ET.parse(path).getroot()
+    content = Path(path).read_text()
+    require("<!DOCTYPE" not in content and "<!ENTITY" not in content,
+            "Manifest DTD/entity declarations are not supported")
+    root = ET.fromstring(content)
     require(package in {"ai.okou.android", "ai.okou.android.debug"}, "Unexpected package")
     require(root.get("package") == package, "Unexpected application package")
     app = root.find("application")

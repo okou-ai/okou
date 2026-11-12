@@ -46,6 +46,13 @@ class AuthenticationManifestTest(unittest.TestCase):
         for package in ["ai.okou.android", "ai.okou.android.debug"]:
             self.audit(fixture(package), package)
 
+    def test_dtd_and_entity_input_is_rejected_before_parsing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "AndroidManifest.xml"
+            path.write_text('<!DOCTYPE manifest [<!ENTITY injected "value">]><manifest>&injected;</manifest>')
+            with self.assertRaisesRegex(ValueError, "DTD/entity"):
+                policy["audit"](path, "ai.okou.android")
+
     def test_extra_entries_wrong_routes_permissions_and_backup_fail_closed(self):
         base = fixture("ai.okou.android")
         mutations = []
