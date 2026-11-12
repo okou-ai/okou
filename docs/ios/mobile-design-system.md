@@ -197,9 +197,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`, unless a
   glass group draws the glass around them (the sidebar's chat list menu is `.plain()`).
   Paired controls in one bar are the same size.
-  The sidebar filter uses `ChatListFilterMenu` with that native configuration so
-  `SidebarMenuButton` can suspend page swipes through the menu's dismissal
-  animation, until UIKit has returned the lifted button to its source.
+  The sidebar filter uses `ChatListFilterMenu` with that native configuration.
+  UIKit owns menu presentation and navigation-gesture arbitration.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
   draft, mic then send (`.glassProminent`, `primary`) once there is content, and stop
   (`interrupt`) alone while a run is active and the draft is empty. In the open composer
@@ -314,8 +313,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
   left swipe anywhere in the sidebar closes it, as does its back button; a swipe is never
   the only way back. Content that scrolls
-  sideways (a code block or a table) keeps the finger, and from there the chat still opens
-  the sidebar from its leading edge. UIKit owns the interactive pop; the list’s left
+  sideways (a code block or a table) participates in UIKit's native gesture arbitration.
+  UIKit owns the interactive pop and its recognition policy; the list’s left
   swipe requests a native push rather than driving a custom transition.
   A page swipe never also taps the row under it. Chat rows keep their actions on the
   right swipe — Mark as read/unread, Archive — so they never compete with closing.
