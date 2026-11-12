@@ -5,7 +5,8 @@ struct SubscriptionTeardownRule: NativeRule {
   var configuration = SeverityConfiguration<Self>(.error)
   static let description = RuleDescription(
     identifier: "okou_subscription_teardown", name: "Release the original subscription",
-    description: "Pair native subscriptions and observer tokens with their owner's teardown",
+    description:
+      "Release original subscriptions and observer tokens at teardown and before replacement",
     kind: .lint)
 
   func validate(file: SwiftLintFile) -> [StyleViolation] {
@@ -64,7 +65,26 @@ struct SubscriptionTeardownRule: NativeRule {
           }
         }
         let results = trace.block(scope, states: [initial])
-        if !trace.reachedCreation || !results.allSatisfy({ trace.finished($0) }) {
+        let slots = trace.retainedSlots
+        let acquisition = NativeLifetimeTrace(
+          kind: kind, creation: node.position, owner: owner, slots: slots)
+        let acquired = slots.isEmpty ? results : acquisition.block(scope, states: [initial])
+        let lifetime = NativeLifetimeScope(
+          statements: scope, locals: initial.locals,
+          initializer: ancestors(of: scope).prefix(2).contains {
+            $0.is(InitializerDeclSyntax.self)
+          })
+        let singles = trace.retained.filter { owner.fields.contains($0.key) && $0.value == .handle }
+        let replaced =
+          singles.keys.contains {
+            !trace.preserves(node, scope: lifetime, storage: "self." + $0)
+          }
+          || slots.contains {
+            !$0.fresh(in: scope, repeated: lifetime.repeated(node))
+              && !trace.preserves(node, scope: lifetime, storage: $0.storage, slot: $0)
+          }
+        if !trace.reachedCreation || !acquired.allSatisfy({ acquisition.finished($0) }) || replaced
+        {
           positions.append(node.positionAfterSkippingLeadingTrivia)
         }
       } else if let binding = ancestors(of: node).compactMap({

@@ -1,13 +1,13 @@
 import SwiftSyntax
 
-struct NativeTaskIndex {
+struct NativeLifetimeIndex {
   let identity: String
   var freshUUID: AbsolutePosition?
 
   static func resolve(
-    _ expression: ExprSyntax, aliases: [String: NativeTaskIndex] = [:], depth: Int = 0
-  ) -> NativeTaskIndex {
-    guard depth < 16 else { return NativeTaskIndex(identity: "unknown:\(expression.position)") }
+    _ expression: ExprSyntax, aliases: [String: NativeLifetimeIndex] = [:], depth: Int = 0
+  ) -> NativeLifetimeIndex {
+    guard depth < 16 else { return NativeLifetimeIndex(identity: "unknown:\(expression.position)") }
     if let reference = expression.as(DeclReferenceExprSyntax.self) {
       let name = reference.baseName.text
       for ancestor in ancestors(of: expression) {
@@ -26,7 +26,7 @@ struct NativeTaskIndex {
                 && expression.position < binding.endPosition)
             {
               guard variable.bindingSpecifier.text == "let" else {
-                return NativeTaskIndex(
+                return NativeLifetimeIndex(
                   identity: "mutable:\(binding.position):\(expression.position)")
               }
               if let source = binding.initializer?.value {
@@ -39,7 +39,7 @@ struct NativeTaskIndex {
                   return original
                 }
               }
-              return NativeTaskIndex(identity: "local:\(binding.position)")
+              return NativeLifetimeIndex(identity: "local:\(binding.position)")
             }
           }
         }
@@ -62,78 +62,79 @@ struct NativeTaskIndex {
         if let parameter = parameters?.first(where: { ($0.secondName ?? $0.firstName).text == name }
         ) {
           if parameter.type.trimmedDescription.hasPrefix("inout ") {
-            return NativeTaskIndex(identity: "mutable:\(parameter.position):\(expression.position)")
+            return NativeLifetimeIndex(
+              identity: "mutable:\(parameter.position):\(expression.position)")
           }
           let identity = "parameter:\(parameter.position)"
-          return aliases[identity] ?? NativeTaskIndex(identity: identity)
+          return aliases[identity] ?? NativeLifetimeIndex(identity: identity)
         }
         if let loop = ancestor.as(ForStmtSyntax.self),
-          loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
+          nativeLifetimeBindings(loop.pattern).contains(name)
         {
-          return NativeTaskIndex(identity: "iteration:\(loop.position)")
+          return NativeLifetimeIndex(identity: "iteration:\(loop.position):\(name)")
         }
         if let closure = ancestor.as(ClosureExprSyntax.self),
           closureParameters(closure).contains(name)
         {
-          return NativeTaskIndex(identity: "closure:\(closure.position):\(name)")
+          return NativeLifetimeIndex(identity: "closure:\(closure.position):\(name)")
         }
         if ancestor.is(MemberBlockSyntax.self) { break }
       }
-      return NativeTaskIndex(identity: "self." + name)
+      return NativeLifetimeIndex(identity: "self." + name)
     }
     if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {
       if base.trimmedDescription == "self" {
-        return NativeTaskIndex(identity: "self." + member.declName.baseName.text)
+        return NativeLifetimeIndex(identity: "self." + member.declName.baseName.text)
       }
       let original = resolve(base, aliases: aliases, depth: depth + 1)
-      return NativeTaskIndex(
+      return NativeLifetimeIndex(
         identity: original.identity + "." + member.declName.baseName.text,
         freshUUID: member.declName.baseName.text == "uuidString" ? original.freshUUID : nil)
     }
     if let literal = expression.as(StringLiteralExprSyntax.self),
       literal.segments.allSatisfy({ $0.is(StringSegmentSyntax.self) })
     {
-      return NativeTaskIndex(identity: expression.trimmedDescription)
+      return NativeLifetimeIndex(identity: expression.trimmedDescription)
     }
     if expression.is(IntegerLiteralExprSyntax.self) {
-      return NativeTaskIndex(identity: expression.trimmedDescription)
+      return NativeLifetimeIndex(identity: expression.trimmedDescription)
     }
     if let call = expression.as(FunctionCallExprSyntax.self), call.arguments.isEmpty {
       if ["UUID", "Foundation.UUID", "UUID.init", "Foundation.UUID.init"].contains(
         call.calledExpression.trimmedDescription)
       {
-        return NativeTaskIndex(identity: "uuid:\(call.position)", freshUUID: call.position)
+        return NativeLifetimeIndex(identity: "uuid:\(call.position)", freshUUID: call.position)
       }
       if let member = call.calledExpression.as(MemberAccessExprSyntax.self),
         member.declName.baseName.text == "lowercased", let base = member.base
       {
         let original = resolve(base, aliases: aliases, depth: depth + 1)
         if original.freshUUID != nil {
-          return NativeTaskIndex(
+          return NativeLifetimeIndex(
             identity: original.identity + ".lowercased()", freshUUID: original.freshUUID)
         }
       }
     }
-    return NativeTaskIndex(identity: "expression:\(expression.position)")
+    return NativeLifetimeIndex(identity: "expression:\(expression.position)")
   }
 
   private static func optional(_ name: String, in conditions: ConditionElementListSyntax)
-    -> NativeTaskIndex?
+    -> NativeLifetimeIndex?
   {
     for condition in conditions {
       if let binding = condition.condition.as(OptionalBindingConditionSyntax.self),
         binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
       {
-        return NativeTaskIndex(identity: "binding:\(binding.position)")
+        return NativeLifetimeIndex(identity: "binding:\(binding.position)")
       }
     }
     return nil
   }
 }
 
-struct NativeTaskSlot {
+struct NativeLifetimeSlot {
   let field: String
-  let index: NativeTaskIndex
+  let index: NativeLifetimeIndex
   let syntax: SubscriptCallExprSyntax
 
   var storage: String { "self." + field + "[" + index.identity + "]" }
@@ -144,4 +145,17 @@ struct NativeTaskSlot {
     else { return false }
     return true
   }
+}
+
+func nativeLifetimeBindings(_ pattern: PatternSyntax) -> Set<String> {
+  if let identifier = pattern.as(IdentifierPatternSyntax.self) {
+    return [identifier.identifier.text]
+  }
+  if let tuple = pattern.as(TuplePatternSyntax.self) {
+    return tuple.elements.reduce(into: []) { $0.formUnion(nativeLifetimeBindings($1.pattern)) }
+  }
+  if let binding = pattern.as(ValueBindingPatternSyntax.self) {
+    return nativeLifetimeBindings(binding.pattern)
+  }
+  return []
 }
