@@ -227,6 +227,12 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     }
     let items_path = tmp.path().join("delivery-items.json");
     std::fs::copy(&original_items_path, &items_path)?;
+    // Only collaboration assertions still need their original in-memory values.
+    let original_collaborations = delivery_items
+        .as_array_mut()
+        .ok_or("delivery items must be an array")?
+        .split_off(collaboration_start);
+    drop(delivery_items);
     runtime.config.user_env.insert(
         "MOCK_CODEX_DELIVERY_ITEMS_PATH".into(),
         items_path.to_string_lossy().into_owned(),
@@ -484,10 +490,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             .any(|event| common::contains_json_text(event, "for delivery"))
     );
     let local_events = read_jsonl(runtime.paths.agent_log_file())?;
-    for original in &delivery_items
-        .as_array()
-        .ok_or("delivery items must be an array")?[collaboration_start..]
-    {
+    for original in &original_collaborations {
         let item_id = original["id"]
             .as_str()
             .ok_or("collaboration item omitted id")?;
