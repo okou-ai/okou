@@ -7,8 +7,7 @@ import {
   type State,
 } from "ccstate";
 import { timeout } from "signal-timers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+
 import {
   claimBrowserFailure,
   ownsBrowserFailure,
@@ -31,10 +30,7 @@ import {
   isRecoverableReadFailure,
   validateConfiguration,
 } from "../cdp/errors.ts";
-import {
-  captureSentryLogError,
-  sentryLogContext,
-} from "../../../lib/sentry-config.ts";
+
 import { diagnostic, isImageFailure } from "./diagnostic.ts";
 import type { ImageEvent } from "./image-recovery.ts";
 import { i18n } from "../../../i18n/index.ts";
@@ -1455,7 +1451,7 @@ function createDisplayGraph(
     const client = get(clientState$);
     return client
       ? createDisplaySync(client, {
-          windowId: connection.windowId ?? null,
+          windowId: connection.windowId,
           capturePending$,
           refresh$: refreshCapture$,
           settled$: displaySettled$,
@@ -3292,36 +3288,13 @@ function createDisconnectionHandling(
       return;
     }
     const established = get(connectedState$);
-    const automatic = get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
-    if (automatic) {
-      // Recovery owns the final report, including rejected in-flight effects.
-      claimDisconnectionReport(fault);
-    }
+    // Recovery owns the final report, including rejected in-flight effects.
+    claimDisconnectionReport(fault);
     if (source !== get(clientState$) && established) {
       set(framesDisconnected$, fault, source);
       return;
     }
     set(disconnectingState$, true);
-    if (!automatic && established) {
-      captureSentryLogError("Browser", [
-        "Browser viewer disconnected",
-        fault,
-        sentryLogContext({
-          tags: { browser_event: "established-disconnect" },
-          contexts: {
-            browser_viewer: {
-              kind: fault.kind,
-              role: source === get(clientState$) ? "control" : "frames",
-            },
-            ...(fault.connection
-              ? { browser_connection: { ...fault.connection } }
-              : {}),
-            ...(fault.window ? { browser_window: { ...fault.window } } : {}),
-          },
-        }),
-      ]);
-      claimDisconnectionReport(fault);
-    }
     set(connectedState$, false);
     set(readinessFailure$, fault);
     set(
@@ -3412,11 +3385,7 @@ function createEventsGraph(
       return;
     }
     const windowId = context.connection.windowId;
-    if (
-      event.kind === "window-removed" &&
-      windowId !== null &&
-      event.windowId === windowId
-    ) {
+    if (event.kind === "window-removed" && event.windowId === windowId) {
       set(
         disconnected$,
         new CdpFault(
@@ -3436,7 +3405,7 @@ function createEventsGraph(
       );
       return;
     }
-    if (!changesMembership(event, windowId ?? undefined)) {
+    if (!changesMembership(event, windowId)) {
       return;
     }
     set(directory.invalidate$);
@@ -3599,15 +3568,11 @@ function createConnectionBootstrap(
   } = context;
   const startDiscovery$ = createInitialDiscovery(context, links$);
   return command(async ({ get, set }, signal: AbortSignal) => {
-    validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
+    validateConfiguration(connection.cdpUrl, connection.windowId);
     const transport = get(model.transport$);
     if (transport !== "shared" && transport !== "split") {
       throw new CdpFault("configuration", "The transport mode is invalid.");
     }
-    set(
-      model.configure$,
-      connection.windowId !== null && connection.windowId !== undefined,
-    );
     // Keep the wire independent of admission/DOM cancellation until releases are written.
     const lifetime = set(resetOwner$);
     const client = createCdpClient(
@@ -4113,15 +4078,12 @@ function createTabClosingGraph(
       };
       // Reserve the replacement before awaiting: other pending closes cannot
       // keep the assigned native window alive once their requests complete.
-      const preserveWindow =
-        context.connection.windowId !== null &&
-        context.connection.windowId !== undefined &&
-        snapshot.inventory.targets.every((target) => {
-          return (
-            get(closingTargets$).has(target.id) ||
-            !set(tabOpening.canKeepWindow$, target.id)
-          );
-        });
+      const preserveWindow = snapshot.inventory.targets.every((target) => {
+        return (
+          get(closingTargets$).has(target.id) ||
+          !set(tabOpening.canKeepWindow$, target.id)
+        );
+      });
       await set(directory.assertMember$, targetId, signal);
       if (preserveWindow) {
         await set(tabOpening.open$, signal);

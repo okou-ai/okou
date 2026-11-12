@@ -45,7 +45,7 @@ export function nativeReadFault(error: unknown): CdpFault {
 /** Native membership invalidations have no authority over CDP page identities. */
 export function changesMembership(
   event: NativeEvent,
-  windowId?: number,
+  windowId: number,
 ): boolean {
   if (event.kind === "tab-replaced") {
     return true;
@@ -58,9 +58,7 @@ export function changesMembership(
       "tab-attached",
       "window-removed",
     ].includes(event.kind) &&
-    (windowId === undefined ||
-      event.windowId === windowId ||
-      event.oldWindowId === windowId)
+    (event.windowId === windowId || event.oldWindowId === windowId)
   );
 }
 

@@ -78,8 +78,7 @@ export const browserSessionSchema = object({
   timeoutMinutes: number().int().positive(),
   // Only live provider instances have persisted window dimensions.
   screen: browserScreenSchema.optional(),
-  // Published by the shared-owner writer after its CLI readers are deployed.
-  // Per-thread Browsers have no shared native-window context.
+  // Present while this chat has a live assigned window.
   window: browserWindowContextSchema.optional(),
   // When Okou reclaims the live provider instance unless somebody leases it
   // again. Null once no provider instance is running.
@@ -98,6 +97,8 @@ export type BrowserSession = zInfer<typeof browserSessionSchema>;
 
 export const browserCreateRequestSchema = object({
   name: string().trim().min(1).max(64).default("browser"),
+  // Retained for supported API clients; shared provisioning uses the provider's
+  // default location. Remove with the API consumer gate in #42932.
   proxyCountryCode: string()
     .trim()
     .length(2)
@@ -201,7 +202,7 @@ export const browserContract = c.router({
       ...commonErrorResponses,
     },
     summary:
-      "Create a new managed browser for the current chat thread using its isolated profile",
+      "Open the current chat's window in its owner's shared Browser profile",
   },
   use: {
     method: "POST",

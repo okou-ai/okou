@@ -187,17 +187,6 @@ test("only signed-in shared callers can opt into viewer credentials", async () =
         .browser.window,
     ).toStrictEqual(ordinary.body.browser.window);
   });
-  const legacy = await fixture(false);
-  await legacy.owned.run(async () => {
-    const a = await legacy.start();
-    const params = { threadId: a.threadId };
-    const denied = await client().open({ headers, params, query, body: {} });
-    expect(denied).toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_VIEWER_ACQUISITION_UNAVAILABLE" } },
-    });
-    expect(legacy.provider.sessionRequests).toHaveLength(0);
-  });
 });
 
 test.each(["get", "open", "viewerConnection"] as const)(

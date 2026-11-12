@@ -19,6 +19,8 @@ import {
   maximumEncodedFrameLength,
 } from "../../../signals/browser/display/limits.ts";
 
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
+
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
@@ -44,6 +46,10 @@ async function setupViewer() {
     liveUrl: "https://viewer.example/live",
     screenshotUrl: null,
     proxyCountryCode: null,
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
     timeoutMinutes: 240,
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
@@ -57,11 +63,14 @@ async function setupViewer() {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, {
-      browser,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
+      browser: browser,
+      viewer: {
+        browser,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -116,7 +125,8 @@ test.each(["shared", "split"] as const)(
   },
 );
 
-test("A frame above its budget retains the connection and supports explicit image retry", async () => {
+test("A frame above its budget retains the connection and recovers its image automatically", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const { remote, firstImage } = await setupViewer();
   act(() => {
     firstImage.release();
@@ -125,13 +135,9 @@ test("A frame above its budget retains the connection and supports explicit imag
   act(() => {
     remote.frame("A".repeat(maximumEncodedFrameLength + 4));
   });
-  await screen.findByText("Browser view unavailable");
-  const retry = button("Retry live image");
-  await waitFor(() => {
-    expect(retry).toBeEnabled();
-  });
+  await screen.findByText("Reconnecting…");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  click(retry);
+  advanceRecovery(1000);
   await expectReady();
 });
 

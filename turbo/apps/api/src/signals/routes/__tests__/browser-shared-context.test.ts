@@ -1,5 +1,5 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { http } from "msw";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -7,17 +7,14 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
+
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -158,20 +155,6 @@ test("requires cloud-browser authorization for a no-Run chat", async () => {
   });
 });
 
-test("preserves the legacy no-Run rejection when shared ownership is disabled", async () => {
-  const f = await fixture(false);
-  await f.owned.run(async () => {
-    const params = await createThread(f);
-    await expect(
-      client().open({ headers, params, body: {} }),
-    ).resolves.toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_RUN_REQUIRED" } },
-    });
-    expect(f.provider.sessionRequests).toHaveLength(0);
-  });
-});
-
 test("keeps no-Run chat access scoped to both the user and organization", async () => {
   const owner = await fixture();
   const params = await owner.owned.run(async () => {
@@ -185,36 +168,27 @@ test("keeps no-Run chat access scoped to both the user and organization", async 
       { ...foreign.featureActor, orgId: owner.featureActor.orgId },
       { ...owner.featureActor, orgId: foreign.featureActor.orgId },
     ]) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      const checked = await settleIncludingAbort(async () => {
-        for (const response of [
-          await client().get({ headers, params }),
-          await client().open({ headers, params, body: {} }),
-          await client().viewerConnection({ headers, params }),
-          await client().leaseByThread({ headers, params, body: {} }),
-          await client().resizeByThread({
-            headers,
-            params,
-            body: { aspectRatio: 2 },
-          }),
-          await client().close({ headers, params, body: {} }),
-        ]) {
-          expect(response).toMatchObject({
-            status: 404,
-            body: { error: { code: "BROWSER_NOT_FOUND" } },
-          });
-        }
-      });
-      const cleaned = await settleIncludingAbort(
-        deleteFeatureSwitchesForUser(context, actor),
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
       );
-      if (!checked.ok) {
-        throw checked.error;
-      }
-      if (!cleaned.ok) {
-        throw cleaned.error;
+      for (const response of [
+        await client().get({ headers, params }),
+        await client().open({ headers, params, body: {} }),
+        await client().viewerConnection({ headers, params }),
+        await client().leaseByThread({ headers, params, body: {} }),
+        await client().resizeByThread({
+          headers,
+          params,
+          body: { aspectRatio: 2 },
+        }),
+        await client().close({ headers, params, body: {} }),
+      ]) {
+        expect(response).toMatchObject({
+          status: 404,
+          body: { error: { code: "BROWSER_NOT_FOUND" } },
+        });
       }
     }
     expect(foreign.provider.sessionRequests).toHaveLength(0);
@@ -225,7 +199,6 @@ test.each(["profile", "instance"] as const)(
   "rejects publication when a no-Run chat's authorization is revoked during %s preparation",
   async (phase) => {
     const f = await fixture(
-      true,
       profileProvider(async () => {
         if (phase === "profile") {
           await revoke();

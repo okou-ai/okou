@@ -24,6 +24,8 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { openQualityInput } from "./browser-settings-test-helpers.ts";
 
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
+
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 const endpoint = "wss://browser.example/frames-recovery";
@@ -35,6 +37,7 @@ async function inputReady() {
 }
 
 async function setupSplitViewer() {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const browser = mockBrowserCdp(context, endpoint, {
     targets: [
       {
@@ -77,13 +80,13 @@ async function setupSplitViewer() {
     },
   };
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, {
       browser: session,
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: session,
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
@@ -99,7 +102,7 @@ async function setupSplitViewer() {
   const mode = await screen.findByRole("menu", { name: "Connection mode" });
   click(within(mode).getByText("Separate image connection"));
   await inputReady();
-  return browser;
+  return Object.assign(browser, { advanceRecovery });
 }
 
 function loseFrames(browser: ReturnType<typeof mockBrowserCdp>) {
@@ -108,12 +111,9 @@ function loseFrames(browser: ReturnType<typeof mockBrowserCdp>) {
   });
 }
 
-async function retryButton() {
-  const button = await screen.findByText("Retry live image");
-  await waitFor(() => {
-    return expect(button).toBeEnabled();
-  });
-  return button;
+async function recoveryPending() {
+  await screen.findByText("Reconnecting…");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
 }
 
 test("Repeated frames loss recovers only capture and waits for a fresh scoped image", async () => {
@@ -124,13 +124,13 @@ test("Repeated frames loss recovers only capture and waits for a fresh scoped im
       return request.sessionId === original;
     })!.connectionId;
     loseFrames(browser);
-    const retry = await retryButton();
+    await recoveryPending();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(
       screen.getByLabelText("Other", { selector: '[role="tab"]' }),
     ).toBeEnabled();
     const image = browser.holdTargetFrames("example-page");
-    click(retry);
+    browser.advanceRecovery(4000);
     await image.received;
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     act(() => {
@@ -186,16 +186,12 @@ test.each(["navigation", "input"] as const)(
     }
     await receipt.received;
     loseFrames(browser);
-    const retry = await screen.findByText("Retry live image");
-    expect(retry).toBeDisabled();
+    await recoveryPending();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     await act(async () => {
       await receipt.release();
     });
-    await waitFor(() => {
-      return expect(retry).toBeEnabled();
-    });
-    click(retry);
+    browser.advanceRecovery(4000);
     await inputReady();
     expect(
       browser.requests.filter((request) => {
@@ -220,12 +216,11 @@ test("Capture closure cannot erase a failed original input receipt", async () =>
   });
   await receipt.received;
   loseFrames(browser);
-  const retry = await screen.findByText("Retry live image");
-  expect(retry).toBeDisabled();
+  await recoveryPending();
   await act(async () => {
     await receipt.release();
   });
-  await screen.findByText("Reconnect");
+  await screen.findByText("Reconnecting…");
   expect(screen.queryByText("Retry live image")).not.toBeInTheDocument();
   expect(input).toBeDisabled();
   click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
@@ -247,7 +242,8 @@ test("A late capture configuration receipt cannot replace recovered imagery", as
   await capture.received;
   await userEvent.keyboard("{Escape}");
   loseFrames(browser);
-  click(await retryButton());
+  await recoveryPending();
+  browser.advanceRecovery(4000);
   await inputReady();
   await act(async () => {
     await capture.release();
@@ -260,15 +256,16 @@ test("A replacement image socket may fail during opening and retry without repla
   const browser = await setupSplitViewer();
   loseFrames(browser);
   browser.setAutoOpen(false);
-  click(await retryButton());
+  await recoveryPending();
+  browser.advanceRecovery(4000);
   await waitFor(() => {
     return expect(browser.connections()).toBe(4);
   });
   loseFrames(browser);
-  const retry = await retryButton();
+  await recoveryPending();
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   browser.setAutoOpen(true);
-  click(retry);
+  browser.advanceRecovery(4000);
   await inputReady();
   expect(
     browser.requests.filter((request) => {
@@ -286,7 +283,7 @@ test("Closing the last tab after frames loss retains a blank without replacing c
     ).not.toBeInTheDocument();
   });
   loseFrames(browser);
-  await retryButton();
+  await recoveryPending();
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   const close = screen.getByLabelText("Close Example");
   expect(close).toBeEnabled();
@@ -310,11 +307,11 @@ test("Frames loss during new-tab capture retries that tab without creating a dup
   click(screen.getByLabelText("New tab", { selector: "button" }));
   await capture.received;
   loseFrames(browser);
-  const retry = await retryButton();
+  await recoveryPending();
   await act(async () => {
     await capture.release();
   });
-  click(retry);
+  browser.advanceRecovery(4000);
   await inputReady();
   expect(queryAllByRoleFast("tab")).toHaveLength(3);
   expect(screen.getByLabelText("Address")).toHaveValue("");
@@ -325,16 +322,16 @@ test("Frames loss during an in-place image retry remains image-retryable", async
   act(() => {
     return browser.frame("!");
   });
-  const retry = await retryButton();
+  await recoveryPending();
   const capture = browser.holdNext("Page.startScreencast");
-  click(retry);
+  browser.advanceRecovery(4000);
   await capture.received;
   loseFrames(browser);
-  const retryAgain = await retryButton();
+  await recoveryPending();
   await act(async () => {
     await capture.release();
   });
-  click(retryAgain);
+  browser.advanceRecovery(4000);
   await inputReady();
   expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
 });
@@ -352,7 +349,8 @@ test("A late old-frame decode failure cannot poison the replacement image", asyn
   });
   await received.promise;
   loseFrames(browser);
-  click(await retryButton());
+  await recoveryPending();
+  browser.advanceRecovery(4000);
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   act(() => {
     decoding.reject(new Error("old image decode failed"));
@@ -365,7 +363,8 @@ test("Changing selection while the replacement socket opens never restores the r
   const browser = await setupSplitViewer();
   loseFrames(browser);
   browser.setAutoOpen(false);
-  click(await retryButton());
+  await recoveryPending();
+  browser.advanceRecovery(4000);
   await waitFor(() => {
     return expect(browser.connections()).toBe(4);
   });
@@ -387,7 +386,8 @@ test("Unmount closes an opening replacement socket and cannot revive the viewer"
   const browser = await setupSplitViewer();
   loseFrames(browser);
   browser.setAutoOpen(false);
-  click(await retryButton());
+  await recoveryPending();
+  browser.advanceRecovery(4000);
   await waitFor(() => {
     return expect(browser.connections()).toBe(4);
   });
@@ -411,7 +411,7 @@ test.each(["control", "extension", "window"] as const)(
   async (failure) => {
     const browser = await setupSplitViewer();
     loseFrames(browser);
-    await retryButton();
+    await recoveryPending();
     act(() => {
       if (failure === "control") {
         browser.disconnect({ code: 1006, wasClean: false }, 0);
@@ -421,7 +421,7 @@ test.each(["control", "extension", "window"] as const)(
         browser.nativeEvent("window-removed", undefined, { windowId: 0 });
       }
     });
-    await screen.findByText("Browser disconnected");
+    await screen.findByText("Reconnecting…");
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
@@ -432,7 +432,7 @@ test.each(["control", "extension", "window"] as const)(
 test("A target moved to a sibling window during image loss is not recovered into the viewer", async () => {
   const browser = await setupSplitViewer();
   loseFrames(browser);
-  await retryButton();
+  await recoveryPending();
   act(() => {
     return browser.move("example-page", 1);
   });

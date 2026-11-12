@@ -669,7 +669,7 @@ function createPresentationProof(context: SyncCommands) {
         result.kind !== "completed" ||
         completion?.outcome !== result ||
         completion.windowId !== result.windowId ||
-        (host.windowId !== null && completion.windowId !== host.windowId) ||
+        completion.windowId !== host.windowId ||
         !completion.presentation.transform
       ) {
         return null;

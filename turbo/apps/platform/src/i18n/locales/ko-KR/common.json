@@ -968,7 +968,7 @@
       "allow": "허용",
       "allowed": "허용됨",
       "cardDescription": "이 채팅에 클라우드 브라우저를 사용합니다. Computer Use 연결이 해제됩니다.",
-      "description": "{{assistantName}}는 이 채팅 스레드에 대해 격리된 클라우드 브라우저 프로필을 사용합니다. 활성화하면 스레드의 컴퓨터 사용이 연결 해제됩니다.",
+      "description": "{{assistantName}}에서는 웹사이트 로그인 상태가 채팅 간에 공유됩니다. 각 채팅에는 별도의 브라우저 창과 탭이 있습니다. 브라우저를 활성화하면 이 채팅의 Computer Use 연결이 해제됩니다.",
       "enable": "이 스레드에 대해 활성화",
       "enabled": "클라우드 브라우저 활성화됨",
       "linkExpires": "링크는 {{date}}에 만료됩니다.",
@@ -1445,7 +1445,6 @@
     },
     "title": "클라우드 브라우저",
     "unavailable": {
-      "description": "이 브라우저는 이 채팅에 속하지 않거나 제거되었습니다.",
       "title": "브라우저를 사용할 수 없습니다"
     }
   },

@@ -15,7 +15,7 @@ export interface CdpConnectionObservation {
 /** Non-secret binding identity for private lifecycle joins, never authority. */
 export interface CdpWindowObservation {
   readonly source: "native-window-removed";
-  readonly instanceId: string | null;
+  readonly instanceId: string;
   readonly primaryWindowId: number;
 }
 
@@ -64,7 +64,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function validateConfiguration(url: string, windowId?: number): void {
+export function validateConfiguration(url: string, windowId: number): void {
   if (
     !URL.canParse(url) ||
     !["ws:", "wss:"].includes(new URL(url).protocol) ||
@@ -75,7 +75,7 @@ export function validateConfiguration(url: string, windowId?: number): void {
       "cdpUrl must be an absolute browser debugger WebSocket URL.",
     );
   }
-  if (windowId !== undefined && !Number.isSafeInteger(windowId)) {
+  if (!Number.isSafeInteger(windowId)) {
     throw new CdpFault("configuration", "windowId must be an integer.");
   }
 }

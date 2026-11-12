@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { describe, expect, it } from "vitest";
@@ -11,7 +10,7 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import {
   createSharedBrowserFixtures,
   MINUTE,
@@ -203,58 +202,17 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("shared-window native Browser input", () => {
-  it("requires a shared window before creating input after shared mode is enabled", async () => {
-    const f = await fixture(false);
+  it("keeps separately created input requests independently pending", async () => {
+    const f = await fixture();
     await f.owned.run(async () => {
-      f.owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: false,
-      });
-      const a = await f.start();
-      await open(a);
-      const [providerSessionId] = f.provider.sessionIds;
-      const [page] = f.provider.native.targets.values();
-      if (!providerSessionId || !page) {
-        throw new Error("Expected a live legacy Browser");
+      const s = await scenario(f);
+      const first = await s.request();
+      const second = await s.request();
+      expect(second.requestToken).not.toBe(first.requestToken);
+      for (const params of [first, second]) {
+        const observed = await accept(client().get({ headers, params }), [200]);
+        expect(observed.body.state).toBe("pending");
       }
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      let legacyUnavailable = true;
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
-          return legacyUnavailable
-            ? HttpResponse.json(
-                { detail: "Legacy provider unavailable" },
-                { status: 503 },
-              )
-            : undefined;
-        }),
-      );
-      const response = await client().create({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(a.claim)}` },
-        body: {
-          kind: "input",
-          title: "Complete the website form",
-          reason: "The website requires a password",
-          callbackPrompt: "Continue after entering the password",
-          pageTargetId: page.targetId,
-          fields: [
-            {
-              key: "password",
-              label: "Password",
-              fieldKind: "password",
-              required: true,
-              backendNodeId: 42,
-            },
-          ],
-        },
-      });
-      legacyUnavailable = false;
-      expect(response).toMatchObject({
-        status: 409,
-        body: { error: { code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE" } },
-      });
     });
   });
 
@@ -628,31 +586,6 @@ describe("shared-window native Browser input", () => {
         ).status,
       ).toBe(410);
       expect((await s.create(s.a, page.targetId)).status).toBe(201);
-      expect(s.state.writes).toBe(0);
-    });
-  });
-
-  it("keeps shared admission gated while cancellation remains bounded and idempotent", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      const s = await scenario(f);
-      const params = await s.request();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: false,
-      });
-      expect((await s.create()).status).toBe(409);
-      expect(
-        (await client().preflight({ headers, params, body: {} })).status,
-      ).toBe(410);
-      expect(
-        (await accept(client().cancel({ headers, params, body: {} }), [200]))
-          .body.state,
-      ).toBe("cancelled");
-      mockNow(START + 11 * MINUTE);
-      expect(
-        (await accept(client().cancel({ headers, params, body: {} }), [200]))
-          .body.state,
-      ).toBe("cancelled");
       expect(s.state.writes).toBe(0);
     });
   });

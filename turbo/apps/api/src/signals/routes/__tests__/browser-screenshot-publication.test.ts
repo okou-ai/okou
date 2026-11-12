@@ -6,14 +6,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
+
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+
 import { browserRoutes } from "../browser";
-import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
+
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createSharedBrowserFixtures } from "./helpers/browser-shared-fixture";
@@ -24,15 +24,6 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
-}
-
-function reconcile() {
-  return accept(
-    setupApp({ context, routes: cronBrowserReconcileRoutes })(
-      cronBrowserReconcileContract,
-    ).reconcile({ headers: { authorization: "Bearer test-cron-secret" } }),
-    [200],
-  );
 }
 
 function storage() {
@@ -94,36 +85,6 @@ function storage() {
     },
   };
 }
-
-test("publishes legacy Browser captures with their ready private file through the existing cron", async () => {
-  await setupApp({
-    context,
-    routes: cronBrowserReconcileRoutes,
-    isolatePg: true,
-  });
-  const f = await fixture(false);
-  await f.owned.run(async () => {
-    installBrowserWindowContentCommands(f.provider.native);
-    const a = await f.start();
-    await open(a);
-    const s3 = storage();
-    await reconcile();
-    await flushWaitUntilForTest();
-    const browser = await view(a);
-    if (!browser.screenshotUrl) {
-      throw new Error("Expected the legacy Browser's published screenshot");
-    }
-    const key = decodeURIComponent(
-      new URL(browser.screenshotUrl).pathname.slice(1),
-    );
-    expect(s3.bytes(key)?.toString()).toMatch(/^preview:/u);
-    await createChatFilesBddApi(context).requestWebFileUrl(
-      f.owned.actor,
-      key.split("/")[1] ?? "",
-      [200],
-    );
-  });
-});
 
 test("keeps the accepted screenshot downloadable after the shared provider retires", async () => {
   const f = await fixture();

@@ -1,8 +1,7 @@
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -29,12 +28,9 @@ import { HttpResponse, http } from "msw";
 import { aroundEach, describe, expect, it } from "vitest";
 import {
   array,
-  literal,
   object,
   strictObject,
   string,
-  uuid,
-  null as zNull,
   unknown as zUnknown,
   type infer as zInfer,
 } from "zod";
@@ -244,7 +240,7 @@ function mockNativeInputTarget(): void {
         };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -302,7 +298,7 @@ async function createNativePasswordActionForPreflightTest(
     }),
   );
   await accept(
-    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -483,7 +479,7 @@ function mockNativeNumberTarget(args: NativeConstrainedMockArgs): void {
         return mockNativeConstrainedCall(args, command.params);
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -580,7 +576,7 @@ function mockNativeSelectTarget(args: {
         return { result: { value: controls } };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -651,7 +647,7 @@ function mockNativeCheckboxTarget(args: {
         };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -804,7 +800,7 @@ async function setupNativeMixedVerificationScenario(
         };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -823,7 +819,7 @@ async function setupNativeMixedVerificationScenario(
     }),
   );
   await accept(
-    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -1135,7 +1131,7 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
         return { result: { value } };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -1154,7 +1150,7 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
     }),
   );
   await accept(
-    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -1389,7 +1385,7 @@ function mockNativeRadioTarget(state: NativeRadioMockState): void {
         return mockNativeRadioCallFunctionOn(state, command.params);
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -1489,7 +1485,7 @@ function mockNativeFileTarget(state: {
         };
       }
       default: {
-        return {};
+        return undefined;
       }
     }
   });
@@ -1603,7 +1599,7 @@ async function setupNativeFileScenario(
   }
   await run(() => {
     return accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
   });
@@ -3259,7 +3255,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -3492,7 +3488,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -3924,7 +3920,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -4239,7 +4235,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -4483,7 +4479,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -4792,7 +4788,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -5027,7 +5023,7 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -5639,7 +5635,7 @@ describe("Browser user-action route", () => {
       if (command.method === "Page.captureScreenshot") {
         return { data: Buffer.from("screenshot").toString("base64") };
       }
-      return {};
+      return undefined;
     });
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
@@ -5682,7 +5678,7 @@ describe("Browser user-action route", () => {
     );
 
     await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
     controlWritable = false;
@@ -7067,6 +7063,33 @@ function chatThreadComputerUseHostClient() {
   );
 }
 
+/** Open the shared Browser before the website fixture populates its initial page. */
+async function useInputBrowser(
+  args: Parameters<ReturnType<typeof client>["use"]>[0],
+) {
+  const website = context.mocks.browserUseCdp.command.getMockImplementation();
+  context.mocks.browserUseCdp.command.mockImplementation((command) => {
+    return command.method === "Target.getTargets"
+      ? {
+          targetInfos: [
+            { targetId: "page-target", type: "page", url: "about:blank" },
+          ],
+        }
+      : website?.(command);
+  });
+  const result = await settleIncludingAbort(client().use(args));
+  context.mocks.browserUseCdp.command.mockImplementation(
+    website ??
+      (() => {
+        return undefined;
+      }),
+  );
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
 async function requestBrowserUse(
   headers: Readonly<Record<string, string>>,
 ): Promise<Response> {
@@ -7142,6 +7165,12 @@ function acceptBrowserUseCdpSessions(
       ),
       browserUseCdpHandler(
         webSocketUrl,
+        eventsBeforeReply,
+        withholdReply,
+        afterReply,
+      ),
+      browserUseCdpHandler(
+        `wss://${providerSessionId}.cdp.browser-use.com/`,
         eventsBeforeReply,
         withholdReply,
         afterReply,
@@ -7373,7 +7402,7 @@ describe("okou browser route", () => {
         expect(initial.body.browser).toMatchObject({
           threadId: owned.current.threadId,
           status: "active",
-          screen: { width: 1440, height: 900, resizable: true },
+          window: { instanceId: expect.any(String), primaryWindowId: 7 },
         });
         const leased = await accept(
           client().leaseByThread({ headers, params, body: {} }),
@@ -7428,7 +7457,7 @@ describe("okou browser route", () => {
           threadId: owned.current.threadId,
           status: "active",
           idleExpiresAt,
-          screen: initial.body.browser.screen,
+          window: initial.body.browser.window,
         });
         await withMockNowForTest(STARTED_AT_MS + 2 * MINUTE_MS, async () => {
           const renewed = await accept(
@@ -7446,10 +7475,9 @@ describe("okou browser route", () => {
             }),
             [200],
           );
-          expect(resized.body.browser.screen).toStrictEqual({
-            width: 1440,
-            height: 720,
-            resizable: true,
+          expect(resized.body.browser).toMatchObject({
+            status: "active",
+            window: initial.body.browser.window,
           });
           const persisted = await accept(
             client().get({ headers, params }),
@@ -7459,7 +7487,7 @@ describe("okou browser route", () => {
             threadId: owned.current.threadId,
             status: "active",
             idleExpiresAt: renewed.body.browser.idleExpiresAt,
-            screen: resized.body.browser.screen,
+            window: resized.body.browser.window,
           });
         });
       });
@@ -7546,9 +7574,6 @@ describe("okou browser route", () => {
 
   it("keeps managed browser access off when the user explicitly disables it", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
-    });
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Try to open a managed browser without enabling it",
@@ -7584,56 +7609,8 @@ describe("okou browser route", () => {
     });
   });
 
-  it("includes native input guidance for the thread-owned Browser", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: false,
-    });
-    const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      prompt: "Open a managed browser",
-      cloudBrowserEnabled: true,
-    });
-
-    await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain(
-      "Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
-    );
-    expect(appendSystemPrompt).toContain("okou browser input-request");
-    expect(appendSystemPrompt).toContain(
-      "Browser tab continuity: When resuming a page after `okou browser use`",
-    );
-    expect(appendSystemPrompt).toContain("`okou browser tab list`");
-    expect(appendSystemPrompt).not.toContain("Browser shared profile:");
-    expect(appendSystemPrompt).toContain(
-      "Keep the selected tab only if non-sensitive page evidence confirms it",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Origin or selection alone is not proof, even with one match",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
-    );
-    expect(appendSystemPrompt).toContain("Browser input completion:");
-    expect(appendSystemPrompt).toContain(
-      "Direct Browser takeover is a last resort, not the default for login",
-    );
-    expect(appendSystemPrompt).toContain("Browser user input priority:");
-    expect(appendSystemPrompt).not.toContain(
-      "Okou Browser is currently off for this chat thread",
-    );
-  });
-
   it("describes shared Browser tabs, login state and native input", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
-    });
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Use this chat's shared Browser",
@@ -8161,1680 +8138,4 @@ describe("okou browser route", () => {
       ).toStrictEqual(appliedEvents);
     });
   });
-
-  it("keeps current Browser reads and leases isolated across threads", async () => {
-    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const chat = createChatFilesBddApi(context);
-    const threadIds: string[] = [];
-    const providerIds = [randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    let providerIndex = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerIndex];
-        providerIndex += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(
-          providerBrowser(String(params.id), { status: "stopped" }),
-        );
-      }),
-    );
-    const owned = await publicChatActor(context, {
-      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
-      clockTime: STARTED_AT_MS,
-      beforeWorkspaceCleanup: async (actor) => {
-        for (const threadId of threadIds) {
-          await chat.deleteThread(actor, threadId);
-          await flushWaitUntilForTest();
-        }
-      },
-    });
-    await owned.run(async () => {
-      async function createThread(prompt: string) {
-        const sent = await chat.sendAndLaunch(owned.actor, {
-          agentId: owned.agentId,
-          prompt,
-          cloudBrowserEnabled: true,
-        });
-        threadIds.push(sent.threadId);
-        const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-        return {
-          threadId: sent.threadId,
-          headers: {
-            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
-          },
-        };
-      }
-      const first = await createThread("Open the first thread's Browser");
-      const other = await createThread("Use a separate Browser in this thread");
-      for (const { headers } of [first, other]) {
-        for (const response of [
-          await client().current({ headers }),
-          await client().lease({ headers, body: {} }),
-        ]) {
-          expect(response).toMatchObject({
-            status: 404,
-            body: { error: { code: "BROWSER_NOT_FOUND" } },
-          });
-        }
-      }
-      const created = await accept(
-        client().create({
-          headers: first.headers,
-          body: { name: "first-current", proxyCountryCode: null },
-        }),
-        [201],
-      );
-      expect(created.body.browser.threadId).toBe(first.threadId);
-      expect(created.body.cdpUrl).toBe(
-        `https://${providerIds[0]}.cdp.browser-use.com/`,
-      );
-      for (const response of [
-        await client().current({ headers: other.headers }),
-        await client().lease({ headers: other.headers, body: {} }),
-      ]) {
-        expect(response).toMatchObject({
-          status: 404,
-          body: { error: { code: "BROWSER_NOT_FOUND" } },
-        });
-      }
-      const attached = await accept(
-        client().use({ headers: other.headers, body: {} }),
-        [200],
-      );
-      expect(attached.body.browser.threadId).toBe(other.threadId);
-      expect(attached.body.cdpUrl).toBe(
-        `https://${providerIds[1]}.cdp.browser-use.com/`,
-      );
-      for (const { headers, threadId } of [first, other]) {
-        const current = await accept(client().current({ headers }), [200]);
-        expect(current.body.browser).toMatchObject({
-          threadId,
-          status: "active",
-          idleExpiresAt: isoAt(10 * MINUTE_MS),
-        });
-      }
-      mockNow(STARTED_AT_MS + MINUTE_MS);
-      const leased = await accept(
-        client().lease({ headers: first.headers, body: {} }),
-        [200],
-      );
-      expect(leased.body.browser).toMatchObject({
-        threadId: first.threadId,
-        idleExpiresAt: isoAt(11 * MINUTE_MS),
-      });
-      const untouched = await accept(
-        client().current({ headers: other.headers }),
-        [200],
-      );
-      expect(untouched.body.browser.idleExpiresAt).toBe(isoAt(10 * MINUTE_MS));
-      mockNow(STARTED_AT_MS + 2 * MINUTE_MS);
-      const reused = await accept(
-        client().use({ headers: other.headers, body: {} }),
-        [200],
-      );
-      expect(reused.body.cdpUrl).toBe(attached.body.cdpUrl);
-      expect(reused.body.browser).toMatchObject({
-        threadId: other.threadId,
-        idleExpiresAt: isoAt(12 * MINUTE_MS),
-      });
-      for (const [thread, minutes] of [
-        [first, 11],
-        [other, 12],
-      ] as const) {
-        const current = await accept(
-          client().current({ headers: thread.headers }),
-          [200],
-        );
-        expect(current.body.browser).toMatchObject({
-          threadId: thread.threadId,
-          status: "active",
-          idleExpiresAt: isoAt(minutes * MINUTE_MS),
-        });
-      }
-    });
-  });
-
-  it("attaches concurrent requests to the same thread browser", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const current = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open this browser from concurrent requests",
-    );
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const providerId = randomUUID();
-        acceptBrowserUseCdpSessions([providerId]);
-        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(
-          providerBrowser(String(params.id), { status: "stopped" }),
-        );
-      }),
-    );
-
-    const results = await Promise.all(
-      Array.from({ length: 3 }, () => {
-        return client().use({
-          headers: current.claim.browserHeaders,
-          body: {},
-        });
-      }),
-    );
-    expect(
-      results.some((result) => {
-        return result.status === 200;
-      }),
-    ).toBeTruthy();
-    const attached = await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
-      [200],
-    );
-    expect(attached.body.browser).toMatchObject({
-      threadId: current.threadId,
-      status: "active",
-    });
-    for (const result of results) {
-      expect([200, 409]).toContain(result.status);
-      if (result.status === 200) {
-        expect(result.body.browser).toMatchObject({
-          threadId: current.threadId,
-          status: "active",
-        });
-        expect(result.body.cdpUrl).toBe(attached.body.cdpUrl);
-      }
-    }
-
-    await chat.deleteThread(actor, current.threadId);
-    await flushWaitUntilForTest();
-  });
-
-  it("rejects and stops a provider that finishes starting after its thread is deleted", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const current = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a browser while its provider is still starting",
-    );
-    const providerId = randomUUID();
-    acceptBrowserUseCdpSessions([providerId]);
-    const createStarted = createDeferredPromise<void>(context.signal);
-    const finishCreate = createDeferredPromise<void>(context.signal);
-    const stoppedProviderIds: string[] = [];
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, async () => {
-        createStarted.resolve(undefined);
-        await finishCreate.promise;
-        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const stoppedId = String(params.id);
-        stoppedProviderIds.push(stoppedId);
-        return HttpResponse.json(
-          providerBrowser(stoppedId, { status: "stopped" }),
-        );
-      }),
-    );
-
-    const [started] = await Promise.all([
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
-      (async () => {
-        const deleted = await settleIncludingAbort(
-          (async () => {
-            await createStarted.promise;
-            await chat.deleteThread(actor, current.threadId);
-          })(),
-        );
-        finishCreate.resolve(undefined);
-        if (!deleted.ok) {
-          throw deleted.error;
-        }
-      })(),
-    ]);
-    expect(started).toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_RUN_ENDED" } },
-    });
-    await flushWaitUntilForTest();
-    expect(stoppedProviderIds).toStrictEqual([providerId]);
-
-    await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [404],
-    );
-  });
-
-  it("isolates profiles across concurrent thread browser sessions", async () => {
-    const { routeMocks, runs, chat, webhooks, actor, agent } =
-      await setupBrowserScenario();
-    const first = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser",
-    );
-    const firstBrowserHeaders = first.claim.browserHeaders;
-    const other = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Use a separate profile from another thread",
-    );
-
-    const profileIds = [randomUUID(), randomUUID()] as const;
-    const providerIds = [randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    const providerCreateBodies: unknown[] = [];
-    const deletedProfiles: string[] = [];
-    const stoppedProviderIds: string[] = [];
-    let profileCreates = 0;
-    let providerCreates = 0;
-    // Count only the provider instances owned by this test's scoped threads.
-    const providerStops = () => {
-      return stoppedProviderIds.filter((stopped) => {
-        return (providerIds as readonly string[]).includes(stopped);
-      }).length;
-    };
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        expect(request.headers.get("x-browser-use-api-key")).toBe(
-          "test-browser-use-key",
-        );
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        expect(body.name).toMatch(/^okou-browser-profile-[0-9a-f-]{36}$/u);
-        const profileId = profileIds[profileCreates];
-        profileCreates += 1;
-        if (!profileId) {
-          return HttpResponse.json(
-            { error: "unexpected profile create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerProfile(profileId, body.name), {
-          status: 201,
-        });
-      }),
-      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, ({ params }) => {
-        const profileId = String(params.id);
-        deletedProfiles.push(profileId);
-        if (
-          profileId === profileIds[0] &&
-          deletedProfiles.filter((deleted) => {
-            return deleted === profileId;
-          }).length === 1
-        ) {
-          return HttpResponse.json(
-            { detail: "temporary Browser Use outage" },
-            { status: 503 },
-          );
-        }
-        return new HttpResponse(null, { status: 204 });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, async ({ request }) => {
-        providerCreateBodies.push(await request.json());
-        const id = providerIds[providerCreates];
-        providerCreates += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(
-        `${BROWSER_USE_API_URL}/browsers/:id`,
-        async ({ params, request }) => {
-          await expect(request.json()).resolves.toStrictEqual({
-            action: "stop",
-          });
-          stoppedProviderIds.push(String(params.id));
-          return HttpResponse.json(
-            providerBrowser(String(params.id), { status: "stopped" }),
-          );
-        },
-      ),
-    );
-
-    const firstCreateRequest = client().create({
-      headers: firstBrowserHeaders,
-      body: {
-        name: "booking",
-        proxyCountryCode: null,
-      },
-    });
-    const otherCreateRequest = client().create({
-      headers: other.claim.browserHeaders,
-      body: {
-        name: "research",
-        proxyCountryCode: null,
-      },
-    });
-    const [created, createdInOtherThread] = await Promise.all([
-      accept(firstCreateRequest, [201]),
-      accept(otherCreateRequest, [201]),
-    ]);
-    expect(created.body.browser).toMatchObject({
-      name: "booking",
-      status: "active",
-      // The API always requests the provider's longest lifetime and manages
-      // reclamation through the idle lease instead.
-      timeoutMinutes: 240,
-      idleExpiresAt: isoAt(10 * MINUTE_MS),
-      viewerUrl: `https://app.okou.ai/browsers/${created.body.browser.threadId}`,
-      screen: {
-        width: 1440,
-        height: 900,
-        resizable: true,
-      },
-    });
-    expect(created.body.cdpUrl).toMatch(
-      /^https:\/\/[0-9a-f-]{36}\.cdp\.browser-use\.com\/$/u,
-    );
-    expect(createdInOtherThread.body.browser).toMatchObject({
-      name: "research",
-      status: "active",
-      viewerUrl: `https://app.okou.ai/browsers/${createdInOtherThread.body.browser.threadId}`,
-      screen: {
-        width: 1440,
-        height: 900,
-        resizable: true,
-      },
-    });
-    expect(profileCreates).toBe(2);
-    expect(providerCreates).toBe(2);
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls
-        .map(([command]) => {
-          return command;
-        })
-        .filter((command) => {
-          return command.method === "Browser.setContentsSize";
-        }),
-    ).toStrictEqual([
-      {
-        id: 3,
-        method: "Browser.setContentsSize",
-        params: { windowId: 7, width: 1440, height: 900 },
-      },
-      {
-        id: 3,
-        method: "Browser.setContentsSize",
-        params: { windowId: 7, width: 1440, height: 900 },
-      },
-    ]);
-
-    const crossThreadResize = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request(
-      `/api/chat-threads/${createdInOtherThread.body.browser.threadId}/browser/resize`,
-      {
-        method: "POST",
-        headers: {
-          ...firstBrowserHeaders,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ aspectRatio: 0.75 }),
-      },
-    );
-    expect(crossThreadResize.status).toBe(404);
-    await expect(crossThreadResize.json()).resolves.toMatchObject({
-      error: { code: "BROWSER_NOT_FOUND" },
-    });
-
-    expect(
-      providerCreateBodies.map((body) => {
-        return strictObject({
-          profileId: uuid(),
-          proxyCountryCode: zNull(),
-          timeout: literal(240),
-          browserScreenWidth: literal(1440),
-          browserScreenHeight: literal(900),
-          allowResizing: literal(true),
-          enableRecording: literal(false),
-          extensionIds: array(uuid()).length(1),
-        }).parse(body).profileId;
-      }),
-    ).toStrictEqual(expect.arrayContaining([...profileIds]));
-    expect(deletedProfiles).toStrictEqual([]);
-
-    const createdProviderId = new URL(created.body.cdpUrl).hostname.split(
-      ".",
-    )[0];
-    if (!createdProviderId) {
-      throw new Error("Expected a Browser Use provider ID");
-    }
-    const cdpWebSocketUrl = browserUseCdpWebSocketUrl(createdProviderId);
-    context.mocks.browserUseCdp.connect.mockClear();
-    context.mocks.browserUseCdp.command.mockClear();
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const resized = await accept(
-      client().resizeByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: created.body.browser.threadId },
-        body: { aspectRatio: 0.75 },
-      }),
-      [200],
-    );
-    expect(resized.body.browser).toMatchObject({
-      threadId: created.body.browser.threadId,
-      screen: {
-        width: 1440,
-        height: 1920,
-        resizable: true,
-      },
-    });
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledWith(
-      cdpWebSocketUrl,
-    );
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.map(([command]) => {
-        return command;
-      }),
-    ).toStrictEqual([
-      { id: 1, method: "Target.getTargets", params: {} },
-      {
-        id: 2,
-        method: "Browser.getWindowForTarget",
-        params: { targetId: "page-target" },
-      },
-      {
-        id: 3,
-        method: "Browser.setContentsSize",
-        params: { windowId: 7, width: 1440, height: 1920 },
-      },
-    ]);
-
-    const restoredForAnotherViewer = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        extraHeaders: { origin: "https://app.okou.ai" },
-        params: { threadId: created.body.browser.threadId },
-      }),
-      [200],
-    );
-    expect(restoredForAnotherViewer.body.browser.screen).toStrictEqual({
-      width: 1440,
-      height: 1920,
-      resizable: true,
-    });
-    expect(restoredForAnotherViewer.body.browser.viewerUrl).toBe(
-      `https://app.okou.ai/browsers/${created.body.browser.threadId}`,
-    );
-
-    context.mocks.browserUseCdp.command.mockClear();
-    const clampedTall = await accept(
-      client().resizeByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: created.body.browser.threadId },
-        body: { aspectRatio: 0.1 },
-      }),
-      [200],
-    );
-    expect(clampedTall.body.browser.screen).toStrictEqual({
-      width: 1440,
-      height: 3456,
-      resizable: true,
-    });
-    const clampedWide = await accept(
-      client().resizeByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: created.body.browser.threadId },
-        body: { aspectRatio: 10 },
-      }),
-      [200],
-    );
-    expect(clampedWide.body.browser.screen).toStrictEqual({
-      width: 1440,
-      height: 320,
-      resizable: true,
-    });
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls
-        .map(([command]) => {
-          return command;
-        })
-        .filter((command) => {
-          return command.method === "Browser.setContentsSize";
-        }),
-    ).toStrictEqual([
-      {
-        id: 3,
-        method: "Browser.setContentsSize",
-        params: { windowId: 7, width: 1440, height: 3456 },
-      },
-      {
-        id: 3,
-        method: "Browser.setContentsSize",
-        params: { windowId: 7, width: 1440, height: 320 },
-      },
-    ]);
-    const copiedToAnotherThread = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request(`/api/chat-threads/${randomUUID()}/browser`, {
-      headers: firstBrowserHeaders,
-    });
-    expect(copiedToAnotherThread.status).toBe(404);
-
-    const duplicateNew = await accept(
-      client().create({
-        headers: firstBrowserHeaders,
-        body: {
-          name: "another",
-          proxyCountryCode: null,
-        },
-      }),
-      [201],
-    );
-    expect(duplicateNew.body.browser).toMatchObject({
-      threadId: created.body.browser.threadId,
-      name: "booking",
-      status: "active",
-    });
-    expect(providerCreates).toBe(2);
-    expect(profileCreates).toBe(2);
-    expect(deletedProfiles).toStrictEqual([]);
-
-    // A terminal run leaves its browser live so the user can keep using it, and
-    // restarts the idle lease from the end of the run. The clock moves first so
-    // the refreshed deadline cannot be confused with the one create wrote.
-    mockNow(STARTED_AT_MS + 2 * MINUTE_MS);
-    await webhooks.requestAgentComplete(
-      {
-        runId: first.runId,
-        exitCode: 0,
-      },
-      first.claim.sandboxHeaders,
-      [200],
-    );
-    await webhooks.requestAgentComplete(
-      {
-        runId: other.runId,
-        exitCode: 0,
-      },
-      other.claim.sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(providerStops()).toBe(0);
-    const stillLive = await accept(
-      client().get({
-        headers: firstBrowserHeaders,
-        params: { threadId: created.body.browser.threadId },
-      }),
-      [200],
-    );
-    expect(stillLive.body.browser).toMatchObject({
-      status: "active",
-      idleExpiresAt: isoAt(12 * MINUTE_MS),
-    });
-
-    // Thread deletion releases both local slots and requests provider cleanup
-    // without waiting for Browser Use.
-    mockNow(Date.parse("2026-08-03T06:00:00.000Z"));
-    await chat.deleteThread(actor, first.threadId);
-    await chat.deleteThread(actor, other.threadId);
-    await flushWaitUntilForTest();
-    expect(providerStops()).toBe(2);
-    expect(
-      deletedProfiles.filter((profileId) => {
-        return profileId === profileIds[0];
-      }),
-    ).toHaveLength(1);
-    expect(
-      deletedProfiles.filter((profileId) => {
-        return profileId === profileIds[1];
-      }),
-    ).toHaveLength(1);
-  }, 120_000);
-
-  it.each([
-    { caseName: "provider rejects resize", abortAfterReply: false },
-    { caseName: "deadline aborts after resize reply", abortAfterReply: true },
-  ])(
-    "can retry browser start after its initial size cannot be applied: $caseName",
-    async ({ abortAfterReply }) => {
-      const { runs, chat, actor, agent } = await setupBrowserScenario();
-      const first = await createClaimedChatRun(
-        chat,
-        runs,
-        actor,
-        agent.agentId,
-        "Open a managed browser whose window cannot be resized",
-      );
-      const providerId = randomUUID();
-      const deadline = new AbortController();
-      if (abortAfterReply) {
-        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-          return milliseconds === 15_000 ? deadline.signal : undefined;
-        });
-      }
-      acceptBrowserUseCdpSessions(
-        [providerId],
-        undefined,
-        undefined,
-        abortAfterReply
-          ? (command) => {
-              if (command.method === "Browser.setContentsSize") {
-                // MSW queues the reply dispatch first. Abort after its listener
-                // settles, before the command's awaiting continuation resumes.
-                queueMicrotask(() => {
-                  deadline.abort(
-                    new DOMException("CDP deadline", "TimeoutError"),
-                  );
-                });
-              }
-            }
-          : undefined,
-      );
-      context.mocks.browserUseCdp.command.mockImplementation((command) => {
-        return !abortAfterReply && command.method === "Browser.setContentsSize"
-          ? new Error("test resize failure")
-          : undefined;
-      });
-      let providerStops = 0;
-      server.use(
-        http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-          const body = strictObject({ name: string() }).parse(
-            await request.json(),
-          );
-          return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-            status: 201,
-          });
-        }),
-        http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-          return HttpResponse.json(providerBrowser(providerId), {
-            status: 201,
-          });
-        }),
-        http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-          providerStops += 1;
-          return HttpResponse.json(
-            providerBrowser(String(params.id), { status: "stopped" }),
-          );
-        }),
-      );
-
-      const failed = await requestBrowserUse(first.claim.browserHeaders);
-      expect(failed.status).toBe(502);
-      await expect(failed.json()).resolves.toMatchObject({
-        error: { code: "BROWSER_USE_RESIZE_ERROR" },
-      });
-      await flushWaitUntilForTest();
-      expect(providerStops).toBe(1);
-
-      const current = await accept(
-        client().current({ headers: first.claim.browserHeaders }),
-        [200],
-      );
-      expect(current.body.browser.status).toBe("error");
-      expect(current.body.browser).not.toHaveProperty("screen");
-
-      const retryProviderId = randomUUID();
-      acceptBrowserUseCdpSessions([retryProviderId]);
-      context.mocks.abortSignal.timeout.mockImplementation(() => {
-        return undefined;
-      });
-      context.mocks.browserUseCdp.command.mockImplementation(() => {
-        return undefined;
-      });
-      server.use(
-        http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-          return HttpResponse.json(providerBrowser(retryProviderId), {
-            status: 201,
-          });
-        }),
-        http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-          return HttpResponse.json(providerBrowser(String(params.id)));
-        }),
-      );
-      const retried = await accept(
-        client().use({ headers: first.claim.browserHeaders, body: {} }),
-        [200],
-      );
-      expect(retried.body.browser).toMatchObject({
-        threadId: first.threadId,
-        status: "active",
-        screen: { width: 1440, height: 900, resizable: true },
-      });
-      expect(retried.body.cdpUrl).toBe(
-        `https://${retryProviderId}.cdp.browser-use.com/`,
-      );
-
-      await chat.deleteThread(actor, first.threadId);
-      await flushWaitUntilForTest();
-      expect(providerStops).toBe(2);
-    },
-    120_000,
-  );
-
-  it("lets the signed-in viewer restart an error browser after its run completes", async () => {
-    const owned = await setupOwnedComputerBrowserScenario();
-    const { chat, actor, agentId } = owned;
-    const routeMocks = createRouteMocks(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const sent = await owned.run(() => {
-      return chat.sendAndLaunch(actor, {
-        agentId,
-        prompt: "Open a browser that the viewer can restart after completion",
-        cloudBrowserEnabled: true,
-      });
-    });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-    const browserHeaders = {
-      authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
-    };
-    const providerIds = [randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    let providerCreates = 0;
-    let rejectResize = true;
-    context.mocks.browserUseCdp.command.mockImplementation((command) => {
-      return rejectResize && command.method === "Browser.setContentsSize"
-        ? new Error("test resize failure")
-        : undefined;
-    });
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerCreates];
-        providerCreates += 1;
-        if (!id) {
-          throw new Error("Unexpected browser provider creation");
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(
-          providerBrowser(String(params.id), { status: "stopped" }),
-        );
-      }),
-    );
-    await owned.run(async () => {
-      const failed = await requestBrowserUse(browserHeaders);
-      expect(failed.status).toBe(502);
-      await expect(failed.json()).resolves.toMatchObject({
-        error: { code: "BROWSER_USE_RESIZE_ERROR" },
-      });
-      await flushWaitUntilForTest();
-      const current = await accept(
-        client().current({ headers: browserHeaders }),
-        [200],
-      );
-      expect(current.body.browser.status).toBe("error");
-
-      await webhooks.requestAgentComplete(
-        { runId: sent.runId, exitCode: 0 },
-        claimed.sandboxHeaders,
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const ended = await requestBrowserUse(browserHeaders);
-      expect(ended.status).toBe(409);
-      await expect(ended.json()).resolves.toMatchObject({
-        error: { code: "BROWSER_RUN_ENDED" },
-      });
-
-      rejectResize = false;
-      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const reopened = await accept(
-        client().open({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { threadId: sent.threadId },
-          body: {},
-        }),
-        [200],
-      );
-      expect(reopened.body.browser).toMatchObject({
-        threadId: sent.threadId,
-        status: "active",
-        screen: { width: 1440, height: 900, resizable: true },
-      });
-      expect(reopened.body).not.toHaveProperty("cdpUrl");
-      const observed = await accept(
-        client().get({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { threadId: sent.threadId },
-        }),
-        [200],
-      );
-      expect(observed.body.browser.status).toBe("active");
-      expect(providerCreates).toBe(2);
-      await chat.deleteThread(actor, sent.threadId);
-      await flushWaitUntilForTest();
-      await accept(
-        client().get({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { threadId: sent.threadId },
-        }),
-        [404],
-      );
-    });
-  });
-
-  it("reclaims the earliest idle lease before starting past org concurrency", async () => {
-    // Two managed browsers keep the third start past the limit, independent of
-    // the Pro plan's own concurrency.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const owned = await setupOwnedComputerBrowserScenario();
-    const { chat, actor, agentId } = owned;
-    async function createOwnedBrowserRun(prompt: string) {
-      const sent = await owned.run(() => {
-        return chat.sendAndLaunch(actor, {
-          agentId,
-          prompt,
-          cloudBrowserEnabled: true,
-        });
-      });
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-      return {
-        ...sent,
-        claim: {
-          browserHeaders: {
-            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
-          },
-        },
-      };
-    }
-    const first = await createOwnedBrowserRun("Open a managed browser");
-    const other = await createOwnedBrowserRun(
-      "Use the shared profile from another thread",
-    );
-    // Claim inside the existing one-slot admission window; Browser still sees2.
-    async function createCandidate(prompt: string) {
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-      const result = await settleIncludingAbort(createOwnedBrowserRun(prompt));
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-      if (!result.ok) {
-        throw result.error;
-      }
-      return {
-        threadId: result.value.threadId,
-        browserHeaders: result.value.claim.browserHeaders,
-      };
-    }
-
-    const providerIds = [randomUUID(), randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    let providerCreates = 0;
-    const providerStopAttempts: string[] = [];
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerCreates];
-        providerCreates += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const providerId = String(params.id);
-        providerStopAttempts.push(providerId);
-        if (providerId === providerIds[0]) {
-          return HttpResponse.json(
-            { detail: "temporary Browser Use outage" },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json(
-          providerBrowser(providerId, { status: "stopped" }),
-        );
-      }),
-    );
-
-    await owned.run(async () => {
-      await accept(
-        client().create({
-          headers: first.claim.browserHeaders,
-          body: { name: "booking", proxyCountryCode: null },
-        }),
-        [201],
-      );
-      await accept(
-        client().create({
-          headers: other.claim.browserHeaders,
-          body: { name: "research", proxyCountryCode: null },
-        }),
-        [201],
-      );
-      expect(providerCreates).toBe(2);
-
-      mockNow(STARTED_AT_MS + MINUTE_MS);
-      await accept(
-        client().lease({
-          headers: other.claim.browserHeaders,
-          body: {},
-        }),
-        [200],
-      );
-      const candidate = await createCandidate(
-        "Start past the managed browser concurrency limit",
-      );
-      await accept(
-        client().create({
-          headers: candidate.browserHeaders,
-          body: {
-            name: "concurrency-replacement",
-            proxyCountryCode: null,
-          },
-        }),
-        [201],
-      );
-      await flushWaitUntilForTest();
-      expect(providerCreates).toBe(3);
-      expect(providerStopAttempts).toStrictEqual([providerIds[0]]);
-
-      const reclaimed = await accept(
-        client().get({
-          headers: first.claim.browserHeaders,
-          params: {
-            threadId: (
-              await accept(
-                client().current({
-                  headers: first.claim.browserHeaders,
-                }),
-                [200],
-              )
-            ).body.browser.threadId,
-          },
-        }),
-        [200],
-      );
-      expect(reclaimed.body.browser).toMatchObject({
-        status: "suspended",
-        suspensionReason: "reconcile",
-      });
-      // Each deletion frees a run slot and can pick another fixture thread.
-      // Settle that route-owned work before deleting the next one.
-      for (const threadId of [
-        first.threadId,
-        other.threadId,
-        candidate.threadId,
-      ]) {
-        await chat.deleteThread(actor, threadId);
-        await flushWaitUntilForTest();
-      }
-      expect(providerStopAttempts).toStrictEqual([
-        providerIds[0],
-        providerIds[1],
-        providerIds[2],
-      ]);
-    });
-  }, 120_000);
-
-  it("rereads applied screen sizes and restores the newest height across provider replacements", async () => {
-    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const chat = createChatFilesBddApi(context);
-    let threadId: string | undefined;
-    const providerIds = [randomUUID(), randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    const stoppedProviders = new Set<string>();
-    let providerIndex = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerIndex];
-        providerIndex += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const id = String(params.id);
-        return HttpResponse.json(
-          providerBrowser(id, {
-            status: stoppedProviders.has(id) ? "stopped" : "active",
-          }),
-        );
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const id = String(params.id);
-        stoppedProviders.add(id);
-        return HttpResponse.json(providerBrowser(id, { status: "stopped" }));
-      }),
-    );
-    const owned = await publicChatActor(context, {
-      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
-      clockTime: STARTED_AT_MS,
-      beforeWorkspaceCleanup: async (actor) => {
-        if (threadId) {
-          await chat.deleteThread(actor, threadId);
-          await flushWaitUntilForTest();
-        }
-      },
-    });
-    await owned.run(async () => {
-      const sent = await chat.sendAndLaunch(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "Keep my preferred browser window size when reconnecting",
-        cloudBrowserEnabled: true,
-      });
-      threadId = sent.threadId;
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-      const headers = {
-        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
-      };
-      const params = { threadId: sent.threadId };
-      let active = await accept(client().use({ headers, body: {} }), [200]);
-      expect(active.body.browser.screen).toStrictEqual({
-        width: 1440,
-        height: 900,
-        resizable: true,
-      });
-
-      for (const { aspectRatio, height } of [
-        { aspectRatio: 0.75, height: 1920 },
-        { aspectRatio: 2, height: 720 },
-      ]) {
-        const expectedScreen = { width: 1440, height, resizable: true };
-        const resized = await accept(
-          client().resizeByThread({ headers, params, body: { aspectRatio } }),
-          [200],
-        );
-        expect(resized.body.browser.screen).toStrictEqual(expectedScreen);
-        const current = await accept(client().get({ headers, params }), [200]);
-        expect(current.body.browser.screen).toStrictEqual(expectedScreen);
-        const leased = await accept(
-          client().leaseByThread({ headers, params, body: {} }),
-          [200],
-        );
-        expect(leased.body.browser.screen).toStrictEqual(expectedScreen);
-        const reused = await accept(client().use({ headers, body: {} }), [200]);
-        expect(reused.body.cdpUrl).toBe(active.body.cdpUrl);
-        expect(reused.body.browser.screen).toStrictEqual(expectedScreen);
-
-        const providerId = new URL(active.body.cdpUrl).hostname.split(".")[0];
-        if (!providerId) {
-          throw new Error("Expected a Browser Use provider ID");
-        }
-        stoppedProviders.add(providerId);
-        const resumed = await accept(
-          client().use({ headers, body: {} }),
-          [200],
-        );
-        expect(resumed.body.cdpUrl).not.toBe(active.body.cdpUrl);
-        expect(resumed.body.browser).toMatchObject({
-          threadId: sent.threadId,
-          status: "active",
-          screen: expectedScreen,
-        });
-        active = resumed;
-      }
-    });
-  });
-
-  it("keeps the browser live across runs and reuses its renewable lease", async () => {
-    const { routeMocks, runs, chat, webhooks, actor, runnerGroup, agent } =
-      await setupBrowserScenario();
-    const first = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser",
-    );
-
-    const providerIds = [randomUUID(), randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    const savedTabUrls = [
-      "https://example.com/research?q=one",
-      "http://example.org/draft#section",
-    ] as const;
-    const cdpWebSocketUrls = [
-      browserUseCdpWebSocketUrl(providerIds[0]),
-      browserUseCdpWebSocketUrl(providerIds[1]),
-      browserUseCdpWebSocketUrl(providerIds[2]),
-    ] as const;
-    let currentCdpWebSocketUrl: string | null = null;
-    context.mocks.browserUseCdp.connect.mockImplementation((url) => {
-      currentCdpWebSocketUrl = url;
-    });
-    context.mocks.browserUseCdp.command.mockImplementation((command) => {
-      if (command.method === "Target.getTargets") {
-        if (currentCdpWebSocketUrl === cdpWebSocketUrls[0]) {
-          return {
-            targetInfos: [
-              {
-                targetId: "first-tab",
-                type: "page",
-                url: savedTabUrls[0],
-              },
-              {
-                targetId: "duplicate-first-tab",
-                type: "page",
-                url: savedTabUrls[0],
-              },
-              {
-                targetId: "second-tab",
-                type: "page",
-                url: savedTabUrls[1],
-              },
-              {
-                targetId: "internal-tab",
-                type: "page",
-                url: "chrome://settings/",
-              },
-              {
-                targetId: "embedded-page",
-                type: "iframe",
-                url: "https://example.net/embedded",
-              },
-            ],
-          };
-        }
-        return {
-          targetInfos: [
-            {
-              targetId: "default-tab",
-              type: "page",
-              url: "about:blank",
-            },
-          ],
-        };
-      }
-      if (
-        currentCdpWebSocketUrl === cdpWebSocketUrls[1] &&
-        command.method === "Target.createTarget" &&
-        command.params.url === savedTabUrls[0]
-      ) {
-        return new Error("test tab restoration failure");
-      }
-      if (
-        currentCdpWebSocketUrl === cdpWebSocketUrls[2] &&
-        command.method === "Browser.setContentsSize"
-      ) {
-        return new Error("test resize failure");
-      }
-      return undefined;
-    });
-    let providerCreates = 0;
-    let providerStops = 0;
-    let firstStopFailures = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerCreates];
-        providerCreates += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(
-        `${BROWSER_USE_API_URL}/browsers/:id`,
-        async ({ params, request }) => {
-          await expect(request.json()).resolves.toStrictEqual({
-            action: "stop",
-          });
-          const providerId = String(params.id);
-          if (providerId === providerIds[0] && firstStopFailures === 0) {
-            firstStopFailures += 1;
-            return HttpResponse.json(
-              { detail: "temporary Browser Use outage" },
-              { status: 503 },
-            );
-          }
-          providerStops += 1;
-          return HttpResponse.json(
-            providerBrowser(providerId, { status: "stopped" }),
-          );
-        },
-      ),
-    );
-
-    const opened = await accept(
-      client().use({ headers: first.claim.browserHeaders, body: {} }),
-      [200],
-    );
-    const threadId = opened.body.browser.threadId;
-    expect(opened.body.browser).toMatchObject({
-      status: "active",
-      idleExpiresAt: isoAt(10 * MINUTE_MS),
-      screen: {
-        width: 1440,
-        height: 900,
-        resizable: true,
-      },
-    });
-    expect(providerCreates).toBe(1);
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const fitted = await accept(
-      client().resizeByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId },
-        body: { aspectRatio: 0.75 },
-      }),
-      [200],
-    );
-    expect(fitted.body.browser.screen).toStrictEqual({
-      width: 1440,
-      height: 1920,
-      resizable: true,
-    });
-
-    // The run ends without stopping the browser, and the thread's next message
-    // starts a run right away instead of waiting for browser cleanup.
-    mockNow(STARTED_AT_MS + 3 * MINUTE_MS);
-    await webhooks.requestAgentComplete(
-      { runId: first.runId, exitCode: 0 },
-      first.claim.sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(0);
-    const released = await accept(
-      client().get({
-        headers: first.claim.browserHeaders,
-        params: { threadId },
-      }),
-      [200],
-    );
-    expect(released.body.browser).toMatchObject({
-      status: "active",
-      idleExpiresAt: isoAt(13 * MINUTE_MS),
-    });
-
-    await runs.heartbeatRunner(runnerGroup);
-    mockNow(STARTED_AT_MS + 5 * MINUTE_MS);
-    const followup = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
-      threadId: first.threadId,
-      prompt: "Continue in the same browser",
-    });
-    const followupRunId = followup.runId;
-    const followupClaim = await claimChatRun(runs, followupRunId);
-
-    // The next run attaches to the very same provider instance.
-    const reused = await accept(
-      client().use({ headers: followupClaim.browserHeaders, body: {} }),
-      [200],
-    );
-    expect(reused.body.browser).toMatchObject({
-      threadId: threadId,
-      status: "active",
-      idleExpiresAt: isoAt(15 * MINUTE_MS),
-    });
-    expect(providerCreates).toBe(1);
-
-    const leased = await accept(
-      client().lease({ headers: followupClaim.browserHeaders, body: {} }),
-      [200],
-    );
-    expect(leased.body.browser).toMatchObject({
-      threadId: threadId,
-      idleExpiresAt: isoAt(15 * MINUTE_MS),
-    });
-
-    await chat.deleteThread(actor, threadId);
-    await flushWaitUntilForTest();
-  }, 120_000);
-
-  it("reads and renews the replacement Browser after its old provider becomes unavailable", async () => {
-    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const chat = createChatFilesBddApi(context);
-    let threadId: string | undefined;
-    const providerIds = [randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    const stoppedProviders = new Set<string>();
-    const unavailableProviders = new Set<string>();
-    let providerIndex = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
-        return new HttpResponse(null, { status: 204 });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerIndex];
-        providerIndex += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const id = String(params.id);
-        if (unavailableProviders.has(id)) {
-          return HttpResponse.json(
-            { detail: "retired provider is unavailable" },
-            { status: 503 },
-          );
-        }
-        const stopped = stoppedProviders.has(id);
-        return HttpResponse.json({
-          ...providerBrowser(id, { status: stopped ? "stopped" : "active" }),
-          liveUrl: stopped ? null : `https://live.browser-use.com/?wss=${id}`,
-        });
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const id = String(params.id);
-        stoppedProviders.add(id);
-        return HttpResponse.json(providerBrowser(id, { status: "stopped" }));
-      }),
-    );
-    const owned = await publicChatActor(context, {
-      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
-      clockTime: STARTED_AT_MS,
-      beforeWorkspaceCleanup: async (actor) => {
-        if (threadId) {
-          await chat.deleteThread(actor, threadId);
-          await flushWaitUntilForTest();
-        }
-      },
-    });
-    await owned.run(async () => {
-      const sent = await chat.sendAndLaunch(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "Reconnect to my browser after the provider stops",
-        cloudBrowserEnabled: true,
-      });
-      threadId = sent.threadId;
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-      const headers = {
-        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
-      };
-      const params = { threadId: sent.threadId };
-      const original = await accept(client().use({ headers, body: {} }), [200]);
-      expect(original.body.browser).toMatchObject({
-        status: "active",
-        idleExpiresAt: isoAt(10 * MINUTE_MS),
-      });
-
-      const originalId = new URL(original.body.cdpUrl).hostname.split(".")[0];
-      if (!originalId) {
-        throw new Error("Expected a Browser Use provider ID");
-      }
-      stoppedProviders.add(originalId);
-      mockNow(STARTED_AT_MS + 2 * MINUTE_MS);
-      const replacement = await accept(
-        client().use({ headers, body: {} }),
-        [200],
-      );
-      expect(replacement.body.cdpUrl).not.toBe(original.body.cdpUrl);
-      const replacementId = new URL(replacement.body.cdpUrl).hostname.split(
-        ".",
-      )[0];
-      if (!replacementId) {
-        throw new Error("Expected a replacement Browser Use provider ID");
-      }
-      unavailableProviders.add(originalId);
-      const expectedLiveUrl = `https://live.browser-use.com/?wss=${replacementId}`;
-      const current = await accept(client().get({ headers, params }), [200]);
-      expect(current.body.browser).toMatchObject({
-        threadId: sent.threadId,
-        status: "active",
-        liveUrl: expectedLiveUrl,
-        idleExpiresAt: isoAt(12 * MINUTE_MS),
-      });
-
-      mockNow(STARTED_AT_MS + 3 * MINUTE_MS);
-      const leased = await accept(
-        client().leaseByThread({ headers, params, body: {} }),
-        [200],
-      );
-      expect(leased.body.browser.idleExpiresAt).toBe(isoAt(13 * MINUTE_MS));
-      mockNow(STARTED_AT_MS + 4 * MINUTE_MS);
-      const resized = await accept(
-        client().resizeByThread({
-          headers,
-          params,
-          body: { aspectRatio: 2 },
-        }),
-        [200],
-      );
-      expect(resized.body.browser).toMatchObject({
-        liveUrl: expectedLiveUrl,
-        idleExpiresAt: isoAt(14 * MINUTE_MS),
-        screen: { width: 1440, height: 720, resizable: true },
-      });
-      const observed = await accept(client().get({ headers, params }), [200]);
-      expect(observed.body.browser).toMatchObject({
-        liveUrl: expectedLiveUrl,
-        idleExpiresAt: isoAt(14 * MINUTE_MS),
-        screen: resized.body.browser.screen,
-      });
-      const reused = await accept(client().use({ headers, body: {} }), [200]);
-      expect(reused.body.cdpUrl).toBe(replacement.body.cdpUrl);
-      expect(reused.body.browser.liveUrl).toBe(expectedLiveUrl);
-    });
-  });
-
-  it("keeps viewer close actions separate from Browser and thread deletion", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const first = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser",
-    );
-
-    const providerIds = [randomUUID(), randomUUID(), randomUUID()] as const;
-    acceptBrowserUseCdpSessions(providerIds);
-    let providerCreates = 0;
-    let providerStops = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = strictObject({ name: string() }).parse(
-          await request.json(),
-        );
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        const id = providerIds[providerCreates];
-        providerCreates += 1;
-        if (!id) {
-          return HttpResponse.json(
-            { error: "unexpected browser create" },
-            { status: 500 },
-          );
-        }
-        return HttpResponse.json(providerBrowser(id), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        const providerId = String(params.id);
-        if (
-          providerIds.some((id) => {
-            return id === providerId;
-          })
-        ) {
-          providerStops += 1;
-        }
-        return HttpResponse.json(
-          providerBrowser(providerId, { status: "stopped" }),
-        );
-      }),
-    );
-
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    await accept(
-      client().close({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: first.threadId },
-        body: {},
-      }),
-      [200],
-    );
-
-    await accept(
-      client().use({ headers: first.claim.browserHeaders, body: {} }),
-      [200],
-    );
-
-    await accept(
-      client().close({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: first.threadId },
-        body: {},
-      }),
-      [200],
-    );
-
-    const alreadyActive = await accept(
-      client().open({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: first.threadId },
-        body: {},
-      }),
-      [200],
-    );
-    expect(alreadyActive.body).toMatchObject({
-      browser: { threadId: first.threadId, status: "active" },
-    });
-
-    const closed = await accept(
-      client().close({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: first.threadId },
-        body: {},
-      }),
-      [200],
-    );
-    expect(closed.body).toStrictEqual({});
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(0);
-    const stillActive = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: first.threadId },
-      }),
-      [200],
-    );
-    expect(stillActive.body.browser.status).toBe("active");
-
-    await chat.deleteThread(actor, first.threadId);
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(1);
-  }, 120_000);
 });

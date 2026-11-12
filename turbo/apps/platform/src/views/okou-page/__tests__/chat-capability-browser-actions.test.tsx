@@ -192,11 +192,15 @@ function managedBrowserSession(args: {
     viewerUrl: `https://browser.example.test/view/${RUN_THREAD_ID}`,
     liveUrl: args.liveUrl,
     screenshotUrl: args.screenshotUrl,
-    proxyCountryCode: "US",
+    proxyCountryCode: null,
     timeoutMinutes: 240,
     ...(args.status === "active"
       ? {
           screen: { width: 1440, height: 900, resizable: true },
+          window: {
+            instanceId: "20000000-0000-4000-a000-000000001108",
+            primaryWindowId: 0,
+          },
           idleExpiresAt: "2026-08-18T12:10:00.000Z",
           suspendedAt: null,
           suspensionReason: null,
@@ -281,9 +285,15 @@ async function openManagedBrowserChat(
   sharedWorkerTestTransport: "direct" | "message-port" = "direct",
 ) {
   const cdpUrl = "wss://cdp.browser-use.com/research";
-  mockBrowserCdp(context, cdpUrl);
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, { browser, cdpUrl, extension: TEST_BROWSER_EXTENSION });
+  mockBrowserCdp(context, cdpUrl, {
+    targets: [
+      {
+        targetId: "example-page",
+        title: "Example",
+        url: "https://example.com",
+        windowId: 0,
+      },
+    ],
   });
   let browser = managedBrowserSession({
     status: "active",
@@ -303,13 +313,33 @@ async function openManagedBrowserChat(
       ].join("\n\n"),
     ),
   });
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
+  context.mocks.api(browserContract.get, ({ params, query, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
+    return respond(200, {
+      browser,
+      ...(query?.viewer === "native"
+        ? {
+            viewer:
+              browser.status === "active"
+                ? { browser, cdpUrl, extension: TEST_BROWSER_EXTENSION }
+                : null,
+          }
+        : {}),
+    });
   });
-  context.mocks.api(browserContract.open, ({ params, respond }) => {
+  context.mocks.api(browserContract.open, ({ params, query, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
+    return respond(200, {
+      browser,
+      ...(query?.viewer === "native"
+        ? {
+            viewer:
+              browser.status === "active"
+                ? { browser, cdpUrl, extension: TEST_BROWSER_EXTENSION }
+                : null,
+          }
+        : {}),
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
@@ -433,8 +463,11 @@ test.each([false, true])(
         `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
       ),
     });
-    context.mocks.api(browserContract.get, ({ respond }) => {
-      return respond(200, { browser });
+    context.mocks.api(browserContract.get, ({ query, respond }) => {
+      return respond(200, {
+        browser,
+        ...(query?.viewer === "native" ? { viewer: null } : {}),
+      });
     });
 
     await setupPage({

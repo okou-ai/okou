@@ -15,7 +15,6 @@ import { expect, test, vi } from "vitest";
 import { HttpResponse } from "msw";
 import {
   mockBrowserCdp,
-  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import {
@@ -42,7 +41,6 @@ function mockViewer(endpointAliases: readonly string[] = []) {
   mockNow(() => {
     return now + elapsed;
   }, context.signal);
-  const startupErrors = recordBrowserStartupErrors();
   const errorLog = vi.spyOn(console, "error");
   const sentry = context.mocks.sentry();
   initSentry();
@@ -101,32 +99,23 @@ function mockViewer(endpointAliases: readonly string[] = []) {
       },
     });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ params, respond }) => {
-    return respond(200, {
-      browser: session(params.threadId),
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
-    });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     return respond(200, { browser: session(params.threadId) });
   });
   return {
     browser,
     sentry,
-    startupErrors,
     errorLogs() {
       return errorLog.mock.calls.filter(([prefix]) => {
         return prefix === "[E][Browser]" || prefix === "[E][Promise]";
       });
     },
     session,
-    start(enabled = true, refined = false) {
+    start(refined = false) {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
         featureSwitches: {
-          [FeatureSwitchKey.BrowserSharedOwner]: enabled,
           [FeatureSwitchKey.CloudBrowserPanel]: refined,
         },
       });
@@ -577,7 +566,6 @@ test.each(["removed", "moved"] as const)(
       });
     });
     expect(viewer.sentry.reports).toHaveLength(0);
-    expect(viewer.startupErrors).toHaveLength(0);
     expect(viewer.errorLogs()).toHaveLength(0);
   },
 );
@@ -638,7 +626,6 @@ test.each(["healthy", "recovering"] as const)(
       expect.objectContaining({ windowId: 101, url: "about:blank" }),
     );
     expect(viewer.sentry.reports).toHaveLength(0);
-    expect(viewer.startupErrors).toHaveLength(0);
   },
 );
 
@@ -1075,7 +1062,7 @@ test("A failed successor reports its own terminal initialization error after tar
 
 test("The refined panel shows a non-blocking recovery status without a reclaim footer", async () => {
   const viewer = mockViewer();
-  await viewer.start(true, true);
+  await viewer.start(true);
   await ready();
   act(() => {
     viewer.browser.frame("!");
@@ -1539,7 +1526,6 @@ test.each(["attempt", "pacing"] as const)(
         },
       },
     });
-    expect(viewer.startupErrors).toHaveLength(0);
   },
 );
 
@@ -1688,21 +1674,6 @@ test.each([403, 409] as const)(
     expect(viewer.sentry.reports).toHaveLength(2);
   },
 );
-
-test("A disabled shared Browser switch retains manual recovery", async () => {
-  const viewer = mockViewer();
-  await viewer.start(false);
-  await ready();
-  act(() => {
-    viewer.browser.disconnect({ code: 1006, wasClean: false });
-  });
-  await screen.findByText("Browser disconnected");
-  expect(reconnect()).toBeEnabled();
-  viewer.advance(180_000);
-  click(reconnect());
-  await ready();
-  expect(viewer.browser.connections()).toBe(2);
-});
 
 test("The episode ceiling ends a stalled descriptor and late work cannot start another budget", async () => {
   const viewer = mockViewer();

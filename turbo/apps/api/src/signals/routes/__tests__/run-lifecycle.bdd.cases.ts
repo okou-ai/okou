@@ -11095,9 +11095,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           appendSystemPrompt.indexOf("- Cross-thread chat run completion:"),
         );
         expect(appendSystemPrompt).toContain("okou upgrade pro");
-        // The run's chat thread owns its Cloud Browser.
+        // The run uses its chat window in the owner's shared Browser.
         expect(appendSystemPrompt).toContain(
-          "`okou browser use` creates, reuses, or resumes a remote browser",
+          "`okou browser use` creates, reuses, or resumes this chat's managed Browser",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Each chat has its own window and tabs; website login state is shared across chats.",
         );
         expect(appendSystemPrompt).not.toContain(
           "Okou Browser is currently off for this chat thread",
