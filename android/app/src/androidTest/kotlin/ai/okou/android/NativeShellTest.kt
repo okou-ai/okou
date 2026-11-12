@@ -23,10 +23,9 @@ import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
-import androidx.test.uiautomator.UiScrollable
-import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -129,11 +128,17 @@ class NativeShellTest {
     fun paletteAndLanguageChangesRetainTheDraftAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
             fun select(value: String) {
-                assertTrue(UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView(value))
-                requireNotNull(
-                        device.wait(Until.findObject(By.pkg(app.packageName).text(value)), WAIT)
-                    )
-                    .click()
+                val target = By.pkg(app.packageName).text(value)
+                val option =
+                    device.findObject(target)
+                        ?: requireNotNull(
+                                device.wait(
+                                    Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                    WAIT,
+                                )
+                            )
+                            .scrollUntil(Direction.DOWN, Until.findObject(target))
+                requireNotNull(option) { "Native preference choice not reachable: $value" }.click()
             }
             launch()
             val draft = "Preserve my draft across language changes"
