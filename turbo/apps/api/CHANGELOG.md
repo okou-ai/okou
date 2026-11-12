@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.64.0](https://github.com/okou-ai/okou/compare/api-v2.63.0...api-v2.64.0) (2026-11-12)
+
+
+### Features
+
+* add email workspace binding commands ([#46756](https://github.com/okou-ai/okou/issues/46756)) ([79b09c6](https://github.com/okou-ai/okou/commit/79b09c6f37978f2124b39912b743384cfc16fdb4))
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+* allow unlinking the login email integration ([#46749](https://github.com/okou-ai/okou/issues/46749)) ([d6f52fc](https://github.com/okou-ai/okou/commit/d6f52fcb2b01ba376fd83e41b4f2494a264f2567))
+* **api:** provide the official office skill source ([#46765](https://github.com/okou-ai/okou/issues/46765)) ([180d511](https://github.com/okou-ai/okou/commit/180d511e6658aa4971ccbd926e6b20efd9ee3d44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/db bumped to 2.31.0
+    * @okouai/pi-agent-runtime bumped to 1.51.108
+
 ## [2.63.0](https://github.com/okou-ai/okou/compare/api-v2.62.0...api-v2.63.0) (2026-11-12)
 
 

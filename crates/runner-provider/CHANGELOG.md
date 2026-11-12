@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.18.2...runner-provider-v0.19.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
 ## [0.18.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.18.1...runner-provider-v0.18.2) (2026-11-12)
 
 ## [0.18.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.18.0...runner-provider-v0.18.1) (2026-11-11)

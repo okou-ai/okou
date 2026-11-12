@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.22.0](https://github.com/okou-ai/okou/compare/cli-v10.21.5...cli-v10.22.0) (2026-11-12)
+
+
+### Features
+
+* add email workspace binding commands ([#46756](https://github.com/okou-ai/okou/issues/46756)) ([79b09c6](https://github.com/okou-ai/okou/commit/79b09c6f37978f2124b39912b743384cfc16fdb4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/pi-agent-runtime bumped to 1.51.108
+
 ## [10.21.5](https://github.com/okou-ai/okou/compare/cli-v10.21.4...cli-v10.21.5) (2026-11-12)
 
 
