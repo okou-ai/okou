@@ -12,7 +12,14 @@ import type {
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { Button, Card, CardContent, cn, buttonVariants } from "@okouai/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  OkouAvatar,
+  cn,
+  buttonVariants,
+} from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
@@ -132,12 +139,25 @@ function groupSharedMessages(
   return groups;
 }
 
+function useAnimatedOkouAvatar(): boolean {
+  return useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+}
+
 function SharedAssistantAvatar({
   assistantName,
 }: {
   readonly assistantName: string;
 }) {
-  return (
+  // The shared avatar brings its own frame, so it replaces the image frame
+  // rather than sitting inside it.
+  return useAnimatedOkouAvatar() ? (
+    <OkouAvatar
+      size={36}
+      label={assistantName}
+      data-shared-assistant-avatar=""
+      className="size-7 @[900px]:size-9"
+    />
+  ) : (
     <div
       data-shared-assistant-avatar=""
       className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}
@@ -156,18 +176,23 @@ function SharedAssistantNameLine({
 }: {
   readonly assistantName: string;
 }) {
+  const animatedAvatar = useAnimatedOkouAvatar();
   return (
     <div
       data-shared-assistant-name-line=""
       className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}
     >
-      <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
-        <AvatarFromUrl
-          avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-          alt=""
-          className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS}
-        />
-      </span>
+      {animatedAvatar ? (
+        <OkouAvatar size={28} />
+      ) : (
+        <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
+          <AvatarFromUrl
+            avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+            alt=""
+            className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS}
+          />
+        </span>
+      )}
       <span className="min-w-0 truncate">{assistantName}</span>
     </div>
   );

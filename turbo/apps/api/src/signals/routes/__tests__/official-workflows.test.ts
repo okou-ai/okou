@@ -261,6 +261,14 @@ describe("Workflow schedules", () => {
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -290,6 +298,9 @@ describe("Workflow schedules", () => {
     const started = await fireSchedule(actor, automation);
     const claim = await runs.claimRunnerJob(started.runId);
     expect(claim.prompt).toContain("scheduled-report");
+    expect(claim.appendSystemPrompt).not.toContain(
+      "# Suggestions feedback context",
+    );
   });
 });
 

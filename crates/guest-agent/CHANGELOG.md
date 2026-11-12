@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.109.70](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.69...guest-agent-v0.109.70) (2026-11-11)
+
+
+### Refactoring
+
+* **ipc:** centralize cgroup self-placement writes ([#46641](https://github.com/okou-ai/okou/issues/46641)) ([f89ce04](https://github.com/okou-ai/okou/commit/f89ce0406f37c41e1eb2b451f1f2f3b007b920c6))
+
+## [0.109.69](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.68...guest-agent-v0.109.69) (2026-11-11)
+
 ## [0.109.68](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.67...guest-agent-v0.109.68) (2026-11-11)
 
 

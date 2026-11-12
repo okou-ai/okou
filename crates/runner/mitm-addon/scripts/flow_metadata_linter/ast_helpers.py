@@ -403,15 +403,7 @@ def _static_mapping_first_key_outcomes(
         return _static_outcomes((node.key,), may_be_empty=True)
     if not isinstance(node, ast.Call):
         return _static_outcomes((), may_be_empty=True)
-    if isinstance(node.func, ast.Attribute) and _is_mapping_copy_call(node):
-        return _static_mapping_first_key_outcomes(node.func.value)
-    if _is_unbound_dict_copy_call(node):
-        return _static_unbound_mapping_outcomes(node, include_all=False)
-    if _is_dict_fromkeys_call(node):
-        return _static_fromkeys_outcomes(node, include_all=False)
-    if _is_dict_constructor_call(node):
-        return _static_dict_constructor_outcomes(node, include_all=False)
-    return _static_outcomes((), may_be_empty=True)
+    return _static_mapping_call_outcomes(node, include_all=False)
 
 
 def _static_mapping_key_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
@@ -437,14 +429,23 @@ def _static_mapping_key_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
         return _static_outcomes((node.key,), may_be_empty=True)
     if not isinstance(node, ast.Call):
         return _static_outcomes((), may_be_empty=True)
+    return _static_mapping_call_outcomes(node, include_all=True)
+
+
+def _static_mapping_call_outcomes(node: ast.Call, *, include_all: bool) -> _StaticIterableOutcomes:
+    """Project supported mapping calls while retaining the caller's key selection."""
     if isinstance(node.func, ast.Attribute) and _is_mapping_copy_call(node):
-        return _static_mapping_key_outcomes(node.func.value)
+        return (
+            _static_mapping_key_outcomes(node.func.value)
+            if include_all
+            else _static_mapping_first_key_outcomes(node.func.value)
+        )
     if _is_unbound_dict_copy_call(node):
-        return _static_unbound_mapping_outcomes(node, include_all=True)
+        return _static_unbound_mapping_outcomes(node, include_all=include_all)
     if _is_dict_fromkeys_call(node):
-        return _static_fromkeys_outcomes(node, include_all=True)
+        return _static_fromkeys_outcomes(node, include_all=include_all)
     if _is_dict_constructor_call(node):
-        return _static_dict_constructor_outcomes(node, include_all=True)
+        return _static_dict_constructor_outcomes(node, include_all=include_all)
     return _static_outcomes((), may_be_empty=True)
 
 

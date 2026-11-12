@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.36.3](https://github.com/okou-ai/okou/compare/ios-v0.36.2...ios-v0.36.3) (2026-11-12)
+
+
+### Refactoring
+
+* **ios:** own conversation history and recovery reads ([#46672](https://github.com/okou-ai/okou/issues/46672)) ([335ad62](https://github.com/okou-ai/okou/commit/335ad62be0a2dbde459cf02165a1d7b3601440c9))
+
+## [0.36.2](https://github.com/okou-ai/okou/compare/ios-v0.36.1...ios-v0.36.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** badge a folded project's folder and overlap the unread badge ([#46651](https://github.com/okou-ai/okou/issues/46651)) ([80fb3be](https://github.com/okou-ai/okou/commit/80fb3bef905a255b7206f39fdd4827d3a678b200))
+* **ios:** fade composer controls with the keyboard ([#46669](https://github.com/okou-ai/okou/issues/46669)) ([0702f33](https://github.com/okou-ai/okou/commit/0702f33e5c5aaa099ca4a91e8f4448330a27e176))
+* **ios:** keep empty editor height stable during focus ([#46636](https://github.com/okou-ai/okou/issues/46636)) ([cb7c831](https://github.com/okou-ai/okou/commit/cb7c8313b9d8c0a116b9593605fdf0c3e293c487))
+
+
+### Refactoring
+
+* **ios:** own mail draft card reads with ccstate ([#46613](https://github.com/okou-ai/okou/issues/46613)) ([ebfecbd](https://github.com/okou-ai/okou/commit/ebfecbd2b153b09e1a9f53a99f2dd59ca33bfd22))
+* **ios:** retire computer authorization read owners ([#46656](https://github.com/okou-ai/okou/issues/46656)) ([b5c49ba](https://github.com/okou-ai/okou/commit/b5c49bad63eec5d9085db7b56eeec9b27c3d424d))
+* **ios:** use native navigation for the chat sidebar ([#46659](https://github.com/okou-ai/okou/issues/46659)) ([137d86e](https://github.com/okou-ai/okou/commit/137d86e92b9c8f595a32c30e28ed0110ebb1cb47))
+
+## [0.36.1](https://github.com/okou-ai/okou/compare/ios-v0.36.0...ios-v0.36.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ios:** allow testflight builds to progress beyond internal testing ([#46626](https://github.com/okou-ai/okou/issues/46626)) ([8e0e118](https://github.com/okou-ai/okou/commit/8e0e1187f3b6bb1048d6619482419128d13fb81d))
+* **ios:** keep search fixed at the top of its sheet ([#46617](https://github.com/okou-ai/okou/issues/46617)) ([aacfa85](https://github.com/okou-ai/okou/commit/aacfa8560e3e9e194cedb13ae290898d55e8935c))
+
+## [0.36.0](https://github.com/okou-ai/okou/compare/ios-v0.35.3...ios-v0.36.0) (2026-11-11)
+
+
+### Features
+
+* **ios:** order the sidebar by projects and neutralize the brown accent ([#46586](https://github.com/okou-ai/okou/issues/46586)) ([8ad7f1e](https://github.com/okou-ai/okou/commit/8ad7f1e2b471d08ddbd0cf67e63e1428f1bbc6e0))
+
+
+### Refactoring
+
+* **ios:** persist project disclosure in sqlite ([#46546](https://github.com/okou-ai/okou/issues/46546)) ([b82ee92](https://github.com/okou-ai/okou/commit/b82ee92b4d09e499175a224ba5b9bb51ca7b503a))
+* **ios:** share permission card read resources ([#46584](https://github.com/okou-ai/okou/issues/46584)) ([5335094](https://github.com/okou-ai/okou/commit/53350940c22251d11f8ea1351af172e8ea9bfe05))
+
 ## [0.35.3](https://github.com/okou-ai/okou/compare/ios-v0.35.2...ios-v0.35.3) (2026-11-11)
 
 

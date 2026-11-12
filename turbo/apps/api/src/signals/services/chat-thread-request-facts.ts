@@ -43,5 +43,7 @@ export interface ChatThreadRequestFacts {
      * this input. Other producers omit it.
      */
     readonly requestReceivedAt?: number;
+    /** Ephemeral join key for pre-Run enqueue observations; never persisted. */
+    readonly enqueueObservationId?: string;
   };
 }

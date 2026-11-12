@@ -7,9 +7,11 @@ import {
   avatarTextureUrl,
   defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
-import { RunningIndicator } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { OkouAvatar, RunningIndicator } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { agents$ } from "../../signals/agent.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import type { SidebarChatThreadIndicatorState } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
@@ -132,6 +134,92 @@ function useAgentAvatarState(id: string): AgentAvatarState {
 }
 
 /**
+ * A drawn file: an uploaded image, or the organization default agent's own
+ * SVG. Both are transparent, so a texture behind them shows through.
+ */
+function DrawnAvatarImage({
+  src,
+  alt,
+  className,
+  textureUrl,
+  "data-testid": testId,
+}: {
+  src: string;
+  alt: string;
+  className: string;
+  textureUrl?: string;
+  "data-testid"?: string;
+}) {
+  if (!textureUrl) {
+    return (
+      <img src={src} alt={alt} className={className} data-testid={testId} />
+    );
+  }
+  return (
+    <span className={cn("relative block overflow-hidden", className)}>
+      <AvatarTextureLayer url={textureUrl} />
+      <img
+        src={src}
+        alt={alt}
+        className="absolute inset-0 h-full w-full object-cover object-top"
+        data-testid={testId}
+      />
+    </span>
+  );
+}
+
+/**
+ * The organization default agent's texture. It is one drawn file rather than a
+ * composer configuration, so it gets the one tile that clears the five brand
+ * colours it is painted in, by the same rule as every other agent.
+ */
+function defaultAgentAvatarTextureUrl(): string {
+  // Not guarded for emptiness, for the same reason `agentAvatarTexture` is
+  // not: the suite pins this list to exactly one tile, so a repaint that
+  // emptied it should fail there rather than quietly drop the texture.
+  return avatarTextureUrl(defaultAgentAvatarTextures()[0]!);
+}
+
+/**
+ * Whether the default artwork gives way to the animated design-system avatar.
+ *
+ * The organization default agent is Okou, and its stored avatar is the flat
+ * default drawing. Every surface draws agents through `AgentAvatarImg` or
+ * `AvatarFromUrl`, so swapping here reaches every place Okou appears with one
+ * decision. An agent whose avatar was changed keeps its own.
+ */
+function useOkouAvatarFor(rawAvatarUrl: string | null | undefined): boolean {
+  const animatedAvatar =
+    useGet(featureSwitch$)[FeatureSwitchKey.OkouAnimatedAvatar];
+  return animatedAvatar && rawAvatarUrl === DEFAULT_AGENT_AVATAR_URL;
+}
+
+/**
+ * Okou in a slot sized for an image. The caller's classes size the slot; its
+ * corner rounding is dropped because the avatar brings its own frame.
+ */
+function OkouAvatarInSlot({
+  alt,
+  className,
+  size,
+  "data-testid": testId,
+}: {
+  alt: string;
+  className: string;
+  size?: number;
+  "data-testid"?: string;
+}) {
+  return (
+    <OkouAvatar
+      size={size}
+      label={alt === "" ? undefined : alt}
+      className={cn(className, "rounded-none")}
+      data-testid={testId}
+    />
+  );
+}
+
+/**
  * Render an avatar from an avatarUrl string (preset, svg, or custom upload).
  * Does NOT look up the agent — use this when you already have the avatarUrl.
  *
@@ -153,6 +241,17 @@ export function AvatarFromUrl({
   size?: number;
   "data-testid"?: string;
 }) {
+  const okou = useOkouAvatarFor(avatarUrl);
+  if (okou) {
+    return (
+      <OkouAvatarInSlot
+        alt={alt}
+        className={className}
+        size={size}
+        data-testid={testId}
+      />
+    );
+  }
   const svgConfig = resolveAvatarSvgConfig(avatarUrl);
   if (svgConfig) {
     return (
@@ -195,15 +294,10 @@ export function useAgentAvatarTexture(id: string | null): string | null {
   if (id === null) {
     return null;
   }
-  // The organization default agent is one drawn file rather than a composer
-  // configuration, and it is the avatar most people see: every workspace's
-  // chat home opens on it. It gets the one tile that clears the five brand
-  // colours it is painted in, by the same rule as everyone else.
+  // The organization default agent is the avatar most people see: every
+  // workspace's chat home opens on it.
   if (rawAvatarUrl === DEFAULT_AGENT_AVATAR_URL) {
-    // Not guarded for emptiness, for the same reason `agentAvatarTexture` is
-    // not: the suite pins this list to exactly one tile, so a repaint that
-    // emptied it should fail there rather than quietly drop the texture.
-    return avatarTextureUrl(defaultAgentAvatarTextures()[0]!);
+    return defaultAgentAvatarTextureUrl();
   }
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
   if (!svgConfig || isLegacyAvatarSvgConfig(svgConfig)) {
@@ -237,6 +331,17 @@ export function AgentAvatarImg({
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
+  const okou = useOkouAvatarFor(rawAvatarUrl);
+  if (okou) {
+    return (
+      <OkouAvatarInSlot
+        alt={alt}
+        className={className}
+        size={size}
+        data-testid={testId}
+      />
+    );
+  }
 
   // SVG avatar (preset or custom svg:)
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
@@ -254,25 +359,15 @@ export function AgentAvatarImg({
     );
   }
 
-  // A drawn file: an uploaded image, or the organization default agent's own
-  // SVG. Both are transparent, so a texture behind them shows through.
   if (src) {
-    const image = (
-      <img src={src} alt={alt} className={className} data-testid={testId} />
-    );
-    if (!textureUrl) {
-      return image;
-    }
     return (
-      <span className={cn("relative block overflow-hidden", className)}>
-        <AvatarTextureLayer url={textureUrl} />
-        <img
-          src={src}
-          alt={alt}
-          className="absolute inset-0 h-full w-full object-cover object-top"
-          data-testid={testId}
-        />
-      </span>
+      <DrawnAvatarImage
+        src={src}
+        alt={alt}
+        className={className}
+        textureUrl={textureUrl}
+        data-testid={testId}
+      />
     );
   }
 

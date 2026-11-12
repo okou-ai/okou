@@ -550,6 +550,7 @@
       "openDocs": "In Google Docs öffnen",
       "openSheets": "In Google Sheets öffnen",
       "openSlides": "In Google Slides öffnen",
+      "reconnect": "Google Drive erneut verbinden",
       "synced": "Mit Google Drive synchronisiert",
       "syncedFiles_one": "Mit Google Drive synchronisiert",
       "syncedFiles_other": "{{count}} Dateien mit Google Drive synchronisiert",
@@ -1627,13 +1628,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Alles erledigt",
-        "emptyTitle": "Keine neuen Vorschläge",
         "feedback": "Vorschlagsaktionen",
-        "loading": "Vorschläge werden geladen",
         "navigation": "Vorschläge durchsehen",
-        "next": "Nächster Vorschlag",
-        "previous": "Vorheriger Vorschlag",
-        "retry": "Erneut versuchen"
+        "show": "Vorschlag {{index}} von {{total}} anzeigen"
       },
       "label": "Vorschläge",
       "lessLikeThis": "Less like this",
@@ -2149,6 +2146,8 @@
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
         "personalAccount": "Persönliches Abonnement {{account}}",
         "personalAccountDisconnected": "Persönliches Abonnement getrennt",
+        "providerBadRequestDescription": "Versuche es erneut oder wechsle zu einem anderen Modell, um fortzufahren.",
+        "providerBadRequestTitle": "Der Modellanbieter hat einen Fehler zurückgegeben",
         "providerBalanceDescription": "Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.",
         "providerBalanceTitle": "Dein Abonnementkonto benötigt mehr Guthaben",
         "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Einstellungen > Modelle“ und versuchen Sie es erneut.",
@@ -3197,6 +3196,7 @@
   "cloudflareAccess": {
     "affectedMembers_one": "{{count}} Mitglied",
     "affectedMembers_other": "{{count}} Mitglieder",
+    "bindingUnavailable": "Nicht verfügbar",
     "cancel": "Abbrechen",
     "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Deine Änderungen wurden nicht gespeichert.",
     "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
@@ -3209,7 +3209,7 @@
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden.",
     "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
     "impactChanged": "Die betroffenen Hosts haben sich geändert. Die Änderung wurde nicht angewendet.",
-    "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
+    "inUse": "Dieser Cloudflare Access wird noch verwendet. Lösen oder ändern Sie zuerst die Zuordnung der abhängigen Hosts und benutzerdefinierten Connectors.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
     "loadFailed": "Cloudflare Access konnte nicht geladen werden.",
     "loading": "Cloudflare Access wird geladen…",
@@ -5501,6 +5501,7 @@
     "modelTemporarilyUnavailable": "Modell vorübergehend nicht verfügbar",
     "modelUnavailable": "Das aktuelle Modell ist nicht verfügbar.",
     "overloaded": "{{model}} ist überlastet. Wechseln Sie zu einem anderen Modell.",
+    "providerBadRequest": "Der Modellanbieter hat einen Fehler zurückgegeben. Versuche es erneut oder wechsle zu einem anderen Modell, um fortzufahren.",
     "providerBalance": "Dein verbundenes Abonnementkonto hat nicht genügend Guthaben.",
     "transient": "Ein Fehler ist aufgetreten.",
     "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."

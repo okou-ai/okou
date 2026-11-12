@@ -548,6 +548,7 @@
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
       "openSlides": "Buka di Google Slides",
+      "reconnect": "Hubungkan ulang Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
@@ -1624,13 +1625,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Semua beres",
-        "emptyTitle": "Belum ada saran baru",
         "feedback": "Tindakan saran",
-        "loading": "Memuat saran",
         "navigation": "Jelajahi saran",
-        "next": "Saran berikutnya",
-        "previous": "Saran sebelumnya",
-        "retry": "Coba lagi"
+        "show": "Tampilkan saran {{index}} dari {{total}}"
       },
       "label": "Saran",
       "lessLikeThis": "Less like this",
@@ -2141,6 +2138,8 @@
         "outputLimitTitle": "Jawaban mencapai batas panjang",
         "personalAccount": "Langganan pribadi {{account}}",
         "personalAccountDisconnected": "Langganan pribadi terputus",
+        "providerBadRequestDescription": "Coba lagi atau beralih ke model lain untuk melanjutkan.",
+        "providerBadRequestTitle": "Penyedia model mengembalikan kesalahan",
         "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
         "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
         "providerConnectionDescription": "Buka Setelan > Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
@@ -3184,6 +3183,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} anggota",
+    "bindingUnavailable": "Tidak tersedia",
     "cancel": "Batal",
     "changed": "Cloudflare Access ini berubah saat Anda mengedit. Perubahan Anda tidak disimpan.",
     "clientIdPlaceholder": "Tempel Client ID Service Token",
@@ -3196,7 +3196,7 @@
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
     "impactChanged": "Host yang terdampak telah berubah. Perubahan tidak diterapkan.",
-    "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
+    "inUse": "Cloudflare Access ini masih digunakan. Lepaskan atau ubah pengaitan host dan konektor kustom yang bergantung padanya terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
     "loadFailed": "Tidak dapat memuat Cloudflare Access.",
     "loading": "Memuat Cloudflare Access…",
@@ -5483,6 +5483,7 @@
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
     "overloaded": "{{model}} sedang kelebihan beban. Beralih ke model lain.",
+    "providerBadRequest": "Penyedia model mengembalikan kesalahan. Coba lagi atau beralih ke model lain untuk melanjutkan.",
     "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."

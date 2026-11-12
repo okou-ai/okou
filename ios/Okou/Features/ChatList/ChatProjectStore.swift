@@ -43,12 +43,14 @@ final class ChatProjectStore {
   private var revision = 0
   private var closed = false
   private var blocked = false
-  private var expansionKey: String?
-  private let defaults: UserDefaults
+  private let disclosure: ProjectDisclosureStorage?
+  private var restoredDisclosure = false
+  private var hasConfirmedProjects = false
+  private var disclosureTasks: [UUID: Task<Void, Never>] = [:]
 
   init(
     client: APIClient, resources: WorkspaceResources, sync: ChatSync,
-    defaults: UserDefaults = .standard,
+    disclosure: ProjectDisclosureStorage? = nil,
     didFail: @escaping @MainActor (Error) -> Void,
     didChangeMembership: @escaping @MainActor () async -> Void
   ) {
@@ -61,17 +63,30 @@ final class ChatProjectStore {
     service = ChatProjects(client: client)
     self.resources = resources
     self.sync = sync
-    self.defaults = defaults
+    self.disclosure = disclosure
     self.didFail = didFail
     self.didChangeMembership = didChangeMembership
   }
 
-  func restore(userID: String, workspaceID: String, apiURL: URL) async {
-    guard !closed else { return }
-    let key = "project-expansion:\(apiURL.absoluteString):\(userID):\(workspaceID)"
-    if expansionKey != key {
-      expansionKey = key
-      expansion = defaults.dictionary(forKey: key) as? [String: Bool] ?? [:]
+  func restore() async {
+    guard !closed, !Task.isCancelled else { return }
+    if !restoredDisclosure, let disclosure {
+      do {
+        let saved = try await disclosure.load().value
+        try Task.checkCancellation()
+        guard !closed else { return }
+        let known = Set(projects.map(\.id))
+        let restored = saved.filter { !hasConfirmedProjects || known.contains($0) }
+        // A click during the disk read wins, including an explicit collapse.
+        expansion = Dictionary(uniqueKeysWithValues: restored.map { ($0, true) })
+          .merging(expansion) { _, current in current }
+        restoredDisclosure = true
+      } catch is CancellationError {
+        return
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        didFail(error)
+      }
     }
     let previous = revision
     if !restoredSnapshot, let cached = await sync.cachedProjects(), !closed, previous == revision {
@@ -84,7 +99,7 @@ final class ChatProjectStore {
 
   func activate() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
-    if !active {
+    if !active, subscription == nil {
       do {
         subscription = try stateStore.watch(listValue) { [weak self] in
           self?.confirmProjects()
@@ -97,20 +112,41 @@ final class ChatProjectStore {
     await publication?.value
   }
 
-  func toggle(_ id: String) {
-    guard !closed else { return }
+  @discardableResult
+  func toggle(_ id: String) -> Task<Void, Never>? {
+    guard !closed else { return nil }
     expansion[id] = !isExpanded(id)
-    persistExpansion()
+    return persistDisclosure(id, expanded: isExpanded(id))
   }
 
-  func expand(_ id: String) {
-    guard !closed else { return }
+  @discardableResult
+  func expand(_ id: String) -> Task<Void, Never>? {
+    guard !closed else { return nil }
     expansion[id] = true
-    persistExpansion()
+    return persistDisclosure(id, expanded: true)
   }
 
-  private func persistExpansion() {
-    if let expansionKey { defaults.set(expansion, forKey: expansionKey) }
+  private func persistDisclosure(_ id: String, expanded: Bool) -> Task<Void, Never>? {
+    guard let disclosure else { return nil }
+    return observeDisclosure(disclosure.setExpanded(expanded, projectID: id))
+  }
+
+  @discardableResult
+  private func observeDisclosure(_ operation: Task<Void, Error>) -> Task<Void, Never> {
+    let id = UUID()
+    let task = Task { [weak self] in
+      defer { self?.disclosureTasks[id] = nil }
+      do {
+        try await operation.value
+        try Task.checkCancellation()
+      } catch is CancellationError {
+      } catch {
+        guard let self, !closed, !Task.isCancelled else { return }
+        didFail(error)
+      }
+    }
+    disclosureTasks[id] = task
+    return task
   }
 
   var stateStore: CCState.Store { resources.store }
@@ -150,9 +186,10 @@ final class ChatProjectStore {
           revision += 1
           projects = result
           restoredSnapshot = true
+          hasConfirmedProjects = true
           let knownIDs = Set(result.map(\.id))
           expansion = expansion.filter { knownIDs.contains($0.key) }
-          persistExpansion()
+          if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
           await sync.persistProjects(result)
         } catch is CancellationError {
         } catch {
@@ -206,8 +243,9 @@ final class ChatProjectStore {
       body: { [service] eventID in try await service.delete(id, eventID: eventID) },
       confirm: { [self] _ in
         projects.removeAll { $0.id == id }
-        expansion[id] = nil
-        persistExpansion()
+        // Retain a collapse overlay until an in-flight preference restore finishes.
+        expansion[id] = restoredDisclosure ? nil : false
+        persistDisclosure(id, expanded: false)
         await sync.persistProjects(projects)
         guard !closed, !Task.isCancelled else { return }
         await didChangeMembership()
@@ -280,5 +318,9 @@ final class ChatProjectStore {
     do { try subscription?.cancel() } catch { didFail(error) }
     subscription = nil
     for entry in tasks.values { entry.task.cancel() }
+    for task in disclosureTasks.values { task.cancel() }
+    disclosureTasks.removeAll()
+    // Storage owns accepted disk mutations; UI teardown cancels only their waiters.
+    _ = disclosure?.close()
   }
 }

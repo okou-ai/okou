@@ -292,6 +292,13 @@ export const firewallBaseHostPolicySchema = union([
 ]);
 
 export const firewallApiSchema = object({
+  networkIntent: discriminatedUnion("kind", [
+    object({ kind: literal("direct") }).strict(),
+    object({
+      kind: literal("cloudflare_access"),
+      configId: uuid(),
+    }).strict(),
+  ]).optional(),
   base: string(),
   hostPolicy: firewallBaseHostPolicySchema.optional(),
   auth: firewallAuthSchema,

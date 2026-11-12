@@ -548,6 +548,7 @@
       "openDocs": "在 Google 文档中打开",
       "openSheets": "在 Google 表格中打开",
       "openSlides": "在 Google 幻灯片中打开",
+      "reconnect": "重新连接 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已将 {{count}} 个文件同步到 Google Drive",
@@ -1624,13 +1625,9 @@
       "editReason": "修改原因",
       "homeCard": {
         "completeTitle": "全部处理完了",
-        "emptyTitle": "暂时没有新建议",
         "feedback": "建议操作",
-        "loading": "正在加载建议",
         "navigation": "切换建议",
-        "next": "下一条建议",
-        "previous": "上一条建议",
-        "retry": "重试"
+        "show": "查看第 {{index}} 条建议（共 {{total}} 条）"
       },
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
@@ -2141,6 +2138,8 @@
         "outputLimitTitle": "回复达到了长度上限",
         "personalAccount": "个人订阅 {{account}}",
         "personalAccountDisconnected": "个人订阅已断开",
+        "providerBadRequestDescription": "可以重试，或切换模型继续。",
+        "providerBadRequestTitle": "模型服务商返回错误",
         "providerBalanceDescription": "请检查订阅账号的用量或额度余额，然后重试。",
         "providerBalanceTitle": "你的订阅账号需要更多额度",
         "providerConnectionDescription": "到「设置 > 模型」中重新连接或更新账户，然后再试。",
@@ -3184,6 +3183,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 位成员",
+    "bindingUnavailable": "不可用",
     "cancel": "取消",
     "changed": "此 Cloudflare Access 在编辑期间发生了变化。更改未保存。",
     "clientIdPlaceholder": "粘贴 Service Token Client ID",
@@ -3196,7 +3196,7 @@
     "failed": "无法保存 Cloudflare Access 更改。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
     "impactChanged": "受影响的主机已发生变化，此次更改未应用。",
-    "inUse": "有 SSH 主机正在使用此 Cloudflare Access。主机所有者须先重新绑定或删除该主机。",
+    "inUse": "此 Cloudflare Access 仍被引用。请先解除或更换依赖它的主机和自定义连接器的网络绑定。",
     "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
     "loadFailed": "无法加载 Cloudflare Access。",
     "loading": "正在加载 Cloudflare Access…",
@@ -5483,6 +5483,7 @@
     "modelTemporarilyUnavailable": "模型暂时不可用",
     "modelUnavailable": "当前模型不可用。",
     "overloaded": "{{model}}负载过高。请改用其他模型。",
+    "providerBadRequest": "模型服务商返回错误。可以重试，或切换模型继续。",
     "providerBalance": "你连接的订阅账号余额不足。",
     "transient": "出了点问题。",
     "vm0Credits": "积分不足。请充值积分，或连接个人 Codex 或 Claude 订阅后继续。"

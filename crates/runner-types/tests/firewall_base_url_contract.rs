@@ -90,6 +90,7 @@ fn firewall(base: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),
         apis: vec![FirewallApi {
+            network_intent: None,
             id: String::new(),
             base,
             auth: FirewallAuth {

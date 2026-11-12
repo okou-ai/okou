@@ -1,4 +1,5 @@
 import { uploadResource } from "../../lib/resource-fetch.ts";
+import type { StorageUploadContext } from "../../lib/storage-upload-error.ts";
 import {
   command,
   computed,
@@ -12,7 +13,7 @@ import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
-import { apiClient$ } from "../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import type {
   GenerationTemplateRequest,
@@ -160,7 +161,9 @@ async function uploadPart(
   uploadUrl: string,
   body: Blob,
   headers: Readonly<Record<string, string>>,
-  onProgress: ((bytes: number) => void) | undefined,
+  context: StorageUploadContext & {
+    readonly onProgress?: (bytes: number) => void;
+  },
   signal: AbortSignal,
 ): Promise<void> {
   let attempts = 0;
@@ -168,7 +171,13 @@ async function uploadPart(
     async (attemptSignal) => {
       attempts += 1;
       const [result] = await Promise.allSettled([
-        uploadResource(uploadUrl, body, headers, onProgress, attemptSignal),
+        uploadResource(
+          uploadUrl,
+          body,
+          headers,
+          { ...context, attempt: attempts },
+          attemptSignal,
+        ),
       ]);
       attemptSignal.throwIfAborted();
       if (
@@ -176,7 +185,7 @@ async function uploadPart(
         result.value >= 200 &&
         result.value < 300
       ) {
-        onProgress?.(body.size);
+        context.onProgress?.(body.size);
         return true;
       }
       if (result.status === "rejected") {
@@ -218,6 +227,33 @@ function throwStorageUploadFailure(
   throw error;
 }
 
+const prepareStorageUpload$ = command(
+  async (
+    _visitor,
+    createClient: ApiClientFactory,
+    file: File,
+    signal: AbortSignal,
+  ) => {
+    const client = createClient(uploadsContract);
+    const contentType = inferUploadContentType(file);
+    return await accept(
+      client.prepare({
+        body: {
+          filename: file.name,
+          contentType,
+          size: file.size,
+          ...(file.size >= MULTIPART_UPLOAD_THRESHOLD_BYTES
+            ? { multipart: true as const }
+            : {}),
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+  },
+);
+
 /**
  * Presigns, transfers and finalizes one file, returning its canonical info.
  *
@@ -235,23 +271,10 @@ const uploadFileToStorage$ = command(
   ): Promise<FileInfo> => {
     const createClient = get(apiClient$);
     const client = createClient(uploadsContract);
-    const contentType = inferUploadContentType(file);
-
-    // Step 1: ask the server to sign either one PUT URL or R2
-    // multipart URLs. The file body never travels through the app runtime.
-    const prepared = await accept(
-      client.prepare({
-        body: {
-          filename: file.name,
-          contentType,
-          size: file.size,
-          ...(file.size >= MULTIPART_UPLOAD_THRESHOLD_BYTES
-            ? { multipart: true as const }
-            : {}),
-        },
-        fetchOptions: { signal },
-      }),
-      [200],
+    const prepared = await set(
+      prepareStorageUpload$,
+      createClient,
+      file,
       signal,
     );
     signal.throwIfAborted();
@@ -277,14 +300,20 @@ const uploadFileToStorage$ = command(
                 part.uploadUrl,
                 file.slice(start, end, prepared.body.contentType),
                 { "content-type": prepared.body.contentType },
-                (bytes) => {
-                  if (uploadedBytes$ && bytes > transferredBytes) {
-                    const delta = bytes - transferredBytes;
-                    transferredBytes = bytes;
-                    set(uploadedBytes$, (total) => {
-                      return total + delta;
-                    });
-                  }
+                {
+                  file_id: prepared.body.id,
+                  file_size: file.size,
+                  part_number: part.partNumber,
+                  part_count: multipart.parts.length,
+                  onProgress: (bytes) => {
+                    if (uploadedBytes$ && bytes > transferredBytes) {
+                      const delta = bytes - transferredBytes;
+                      transferredBytes = bytes;
+                      set(uploadedBytes$, (total) => {
+                        return total + delta;
+                      });
+                    }
+                  },
                 },
                 signal,
               ),
@@ -306,7 +335,6 @@ const uploadFileToStorage$ = command(
         throwStorageUploadFailure(file.name, failure.reason, signal);
       }
 
-      signal.throwIfAborted();
       const completed = await accept(
         client.completeMultipart({
           body: {
@@ -333,12 +361,18 @@ const uploadFileToStorage$ = command(
           "content-type": prepared.body.contentType,
           ...prepared.body.uploadHeaders,
         },
-        (bytes) => {
-          if (uploadedBytes$) {
-            set(uploadedBytes$, (previous) => {
-              return Math.max(previous, bytes);
-            });
-          }
+        {
+          file_id: prepared.body.id,
+          file_size: file.size,
+          part_number: 1,
+          part_count: 1,
+          onProgress: (bytes) => {
+            if (uploadedBytes$) {
+              set(uploadedBytes$, (previous) => {
+                return Math.max(previous, bytes);
+              });
+            }
+          },
         },
         signal,
       ),

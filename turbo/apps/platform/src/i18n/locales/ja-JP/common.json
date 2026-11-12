@@ -548,6 +548,7 @@
       "openDocs": "Google ドキュメントで開く",
       "openSheets": "Google スプレッドシートで開く",
       "openSlides": "Google スライドで開く",
+      "reconnect": "Google Drive に再接続",
       "synced": "Google Drive に同期されました",
       "syncedFiles_one": "Google Drive に同期されました",
       "syncedFiles_other": "{{count}} ファイルを Google Drive に同期しました",
@@ -1624,13 +1625,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "すべて確認しました",
-        "emptyTitle": "新しい提案はありません",
         "feedback": "提案への操作",
-        "loading": "提案を読み込み中",
         "navigation": "提案を切り替える",
-        "next": "次の提案",
-        "previous": "前の提案",
-        "retry": "再試行"
+        "show": "提案 {{index}}/{{total}} を表示"
       },
       "label": "提案",
       "lessLikeThis": "Less like this",
@@ -2141,6 +2138,8 @@
         "outputLimitTitle": "応答が長さの上限に達しました",
         "personalAccount": "個人サブスクリプション {{account}}",
         "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
+        "providerBadRequestDescription": "再試行するか、別のモデルに切り替えて続行してください。",
+        "providerBadRequestTitle": "モデル提供元からエラーが返されました",
         "providerBalanceDescription": "サブスクリプションアカウントの使用量またはクレジット残高を確認してから、もう一度お試しください。",
         "providerBalanceTitle": "サブスクリプションアカウントのクレジットが不足しています",
         "providerConnectionDescription": "「設定 > モデル」でアカウントを再接続または更新してから、再試行してください。",
@@ -3184,6 +3183,7 @@
   },
   "cloudflareAccess": {
     "affectedMembers_other": "{{count}} 人のメンバー",
+    "bindingUnavailable": "利用不可",
     "cancel": "キャンセル",
     "changed": "編集中にこの Cloudflare Access が変更されました。変更は保存されていません。",
     "clientIdPlaceholder": "Service Token の Client ID を貼り付け",
@@ -3196,7 +3196,7 @@
     "failed": "Cloudflare Accessの変更を保存できませんでした。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
     "impactChanged": "影響を受けるホストが変更されました。変更は適用されていません。",
-    "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
+    "inUse": "この Cloudflare Access は使用中です。先に依存するホストとカスタムコネクタの関連付けを解除または変更してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "loadFailed": "Cloudflare Access を読み込めませんでした。",
     "loading": "Cloudflare Access を読み込み中…",
@@ -5483,6 +5483,7 @@
     "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
     "modelUnavailable": "現在のモデルは利用できません。",
     "overloaded": "{{model}} は混雑しています。別のモデルに切り替えてください。",
+    "providerBadRequest": "モデル提供元からエラーが返されました。再試行するか、別のモデルに切り替えて続行してください。",
     "providerBalance": "接続されたサブスクリプションアカウントの残高が不足しています。",
     "transient": "エラーが発生しました。",
     "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"

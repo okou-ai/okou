@@ -53,6 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Custom connector Cloudflare Access",
+    description:
+      "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
     displayName: "Composer media previews",
@@ -68,7 +75,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Email Okou and continue each email conversation in its own chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+    enabledEmailHashes: [
+      fnv1a("yuma@vm0.ai"),
+      fnv1a("qa-signup-20261112-21e53024@okou.io"),
+    ],
   },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
@@ -92,6 +102,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "My Okou",
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouAnimatedAvatar]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Animated Okou avatar",
+    description:
+      "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -206,14 +224,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Free plan artifact paywall",
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.HelpMenu]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Help menu",
-    description:
-      "Add a Help submenu above Sign out in the account menu, with Shortcuts and a link to the docs.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

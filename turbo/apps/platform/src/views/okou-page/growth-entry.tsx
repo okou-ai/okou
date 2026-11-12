@@ -309,13 +309,17 @@ export function GrowthEntryHeader({
   // check in alone. Where it does not, the split control remains the admin's
   // entry. Friend referrals have their own independently gated entry.
   const showGrowthEntry = isAdmin && !getStartedShown;
+  // The labelled entry closes the row and the icon buttons lead into it. An
+  // icon pair at the far end of a row reads as stray chrome hung off a
+  // labelled control rather than as part of the corner, and the corner is
+  // what the entry's `align="end"` menu is drawn against.
   return (
     <CornerHeader>
       {children}
-      <GetStartedEntry />
-      {showGrowthEntry ? <AdminGrowthEntry /> : null}
       <FriendReferralEntry />
       <UserNotificationsEntry desktop />
+      <GetStartedEntry />
+      {showGrowthEntry ? <AdminGrowthEntry /> : null}
     </CornerHeader>
   );
 }

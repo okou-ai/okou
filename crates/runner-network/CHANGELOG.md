@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-network-v0.5.8...runner-network-v0.6.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
 ## [0.5.8](https://github.com/okou-ai/okou/compare/runner-network-v0.5.7...runner-network-v0.5.8) (2026-11-11)
 
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-network-v0.5.6...runner-network-v0.5.7) (2026-11-11)

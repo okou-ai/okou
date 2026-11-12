@@ -20,6 +20,7 @@ import {
 } from "../validators/cloudflare-access";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { cloudflareCustomConnectorReferenceSchema } from "../validators/custom-connector-network";
 
 export {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
@@ -30,7 +31,10 @@ export {
   scopedCloudflareAccessConfigSchema,
 } from "../validators/cloudflare-access";
 const configResponseSchema = scopedCloudflareAccessConfigSchema;
-const viewQuery = object({ view: literal("scoped").optional() }).strict();
+const viewQuery = object({
+  view: literal("scoped").optional(),
+  includeCustomConnectors: literal("true").optional(),
+}).strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -60,6 +64,7 @@ const deleteBody = object({
 }).strict();
 // Only aggregate host usage is exposed to the reviewing administrator.
 const impactPreviewSchema = object({
+  customConnectors: array(cloudflareCustomConnectorReferenceSchema).optional(),
   expectedRevision: revision,
   ownHostCount: int().nonnegative(),
   otherHostCount: int().nonnegative(),
@@ -129,7 +134,10 @@ export const cloudflareAccessContract = c.router({
     path: "/api/cloudflare-access/configs/:configId/impact-preview",
     headers: authHeadersSchema,
     pathParams,
-    query: object({ operation: zEnum(["convert", "delete"]) }).strict(),
+    query: object({
+      operation: zEnum(["convert", "delete"]),
+      includeCustomConnectors: literal("true").optional(),
+    }).strict(),
     responses: { 200: impactPreviewSchema, ...errors },
   },
   convertToPersonal: {

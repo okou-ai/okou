@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Beranda</string>
+    <string name="settings">Setelan</string>
+    <string name="back">Kembali</string>
+    <string name="home_title">Ruang untuk ide berikutnya</string>
+    <string name="home_description">Tulis draf dan lihat pratinjaunya di perangkat ini.</string>
+    <string name="draft_label">Draf</string>
+    <string name="draft_hint">Apa yang sedang Anda pikirkan?</string>
+    <string name="local_preview">Pratinjau draf</string>
+    <string name="preview_title">Pratinjau</string>
+    <string name="appearance">Tampilan</string>
+    <string name="appearance_description">Pilih tampilan Okou di perangkat ini.</string>
+    <string name="appearance_system">Ikuti sistem</string>
+    <string name="appearance_light">Terang</string>
+    <string name="appearance_dark">Gelap</string>
+    <string name="on_this_device">Di perangkat ini</string>
+    <string name="appearance_local">Tampilan hanya disimpan di perangkat ini.</string>
+    <string name="appearance_loading">Memuat tampilan…</string>
+    <string name="appearance_saving">Menyimpan tampilan…</string>
+    <string name="appearance_read_failed">Tidak dapat memuat tampilan. Coba lagi.</string>
+    <string name="appearance_write_failed">Tidak dapat menyimpan tampilan. Coba lagi.</string>
+    <string name="retry">Coba lagi</string>
+    <plurals name="draft_lines">
+        <item quantity="other">%1$d baris</item>
+    </plurals>
+</resources>

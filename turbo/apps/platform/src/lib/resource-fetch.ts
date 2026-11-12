@@ -1,4 +1,10 @@
 import { createDeferredPromise } from "../signals/utils.ts";
+import {
+  StorageUploadError,
+  type StorageUploadContext,
+  type StorageUploadObservation,
+} from "./storage-upload-error.ts";
+import { monotonicNow } from "./time.ts";
 
 /**
  * Read public assets and transfer presigned objects without application auth.
@@ -18,7 +24,10 @@ export async function uploadResource(
   url: string | URL,
   body: Blob,
   headers: Readonly<Record<string, string>>,
-  onProgress: ((bytes: number) => void) | undefined,
+  context: StorageUploadContext & {
+    readonly attempt: number;
+    readonly onProgress?: (bytes: number) => void;
+  },
   signal: AbortSignal,
 ): Promise<number> {
   signal.throwIfAborted();
@@ -32,10 +41,35 @@ export async function uploadResource(
   ) {
     throw new TypeError("Presigned uploads require an external HTTP URL");
   }
+  const startedAt = monotonicNow();
   const request = new XMLHttpRequest();
+  let reportedBytes = 0;
+  const observe = (
+    requestEvent: StorageUploadObservation["request_event"],
+  ): StorageUploadObservation => {
+    const responseStatus = request.status;
+    return {
+      file_id: context.file_id,
+      file_size: context.file_size,
+      part_number: context.part_number,
+      part_count: context.part_count,
+      attempt: context.attempt,
+      request_event: requestEvent,
+      target_origin: target.origin,
+      response_status: responseStatus,
+      ready_state: request.readyState,
+      reported_bytes: reportedBytes,
+      total_bytes: body.size,
+      elapsed_ms: Math.round(Math.max(0, monotonicNow() - startedAt)),
+      timeout_ms: request.timeout,
+      online: navigator.onLine,
+      with_credentials: request.withCredentials,
+    };
+  };
   const progress = (event: ProgressEvent) => {
+    reportedBytes = Math.max(reportedBytes, Math.min(body.size, event.loaded));
     if (!signal.aborted) {
-      onProgress?.(Math.min(body.size, event.loaded));
+      context.onProgress?.(Math.min(body.size, event.loaded));
     }
   };
   request.upload.addEventListener("progress", progress);
@@ -53,9 +87,13 @@ export async function uploadResource(
       completion.resolve(request.status);
     }
   };
-  const failed = () => {
+  const failed = (event: Event) => {
     if (!completion.settled()) {
-      completion.reject(new TypeError("Storage upload failed"));
+      completion.reject(
+        new StorageUploadError(
+          observe(event.type === "timeout" ? "timeout" : "error"),
+        ),
+      );
     }
   };
   const aborted = () => {

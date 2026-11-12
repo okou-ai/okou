@@ -8,7 +8,6 @@ struct ChatSidebarView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
-  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
@@ -18,14 +17,13 @@ struct ChatSidebarView: View {
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
-    notifications: NotificationService, sidebar: SidebarInteraction, headerHeight: CGFloat,
+    notifications: NotificationService, headerHeight: CGFloat,
     accountError: Binding<String?>, close: @escaping () -> Void, newChat: @escaping () -> Void
   ) {
     self.store = store
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.notifications = notifications
-    self.sidebar = sidebar
     self.headerHeight = headerHeight
     _accountError = accountError
     self.close = close
@@ -184,9 +182,9 @@ struct ChatSidebarView: View {
   }
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
-  /// beside it with no arrow, and on the right the chat filter. A left swipe returns to the
-  /// chat the sidebar covers. The name leaves once rows scroll under the bar; the glass
-  /// buttons stay.
+  /// beside it with no arrow, and on the right the chat filter and the way back to the chat in
+  /// one glass group. A left swipe returns to the chat too. The name leaves once rows scroll
+  /// under the bar; the glass buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher
@@ -201,7 +199,7 @@ struct ChatSidebarView: View {
         .animation(OkouMotion.transition, value: isScrolled)
         // The switcher's label already names the workspace.
         .accessibilityHidden(true)
-      threadFilterMenu
+      headerActions
     }
     .frame(minHeight: headerHeight)
   }
@@ -386,7 +384,8 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     let project = group.project
     let expanded = store.projects.isExpanded(project.id)
-    let trailing: OkouChatTrailing = group.section.hasUnread ? .unread : .none
+    // An open project leaves unread to its chats' own dots.
+    let unread = !expanded && group.section.hasUnread
     return Button {
       withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
         store.projects.toggle(project.id)
@@ -395,17 +394,16 @@ struct ChatSidebarView: View {
       // The chat rows' geometry: the folder in the status column, so the name starts on the
       // chat titles' edge.
       HStack(spacing: OkouSpace.ten) {
+        // A folded project badges its folder, as the menu button does for the whole list: the
+        // trailing column keeps the chevron, in line with the chats' own dots.
         OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
+          .modifier(OkouUnreadBadge(isVisible: unread))
           .frame(width: statusColumn, alignment: .leading)
-        // Unread takes priority over working in a folded project; an open one leaves it to its chats.
+        // Unread takes priority over working in a folded project.
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-          .okouShimmerText(
-            !expanded && trailing != .unread && group.section.isWorking)
+          .okouShimmerText(!expanded && !unread && group.section.isWorking)
         Spacer(minLength: 0)
-        if !expanded {
-          OkouChatTrailingMark(trailing: trailing)
-        }
         // The fold's own mark ends the row in the trailing column, turning from down (open)
         // to right (folded) with the disclosure.
         OkouIcon("chevron-down", size: OkouIconSize.standard)
@@ -418,7 +416,13 @@ struct ChatSidebarView: View {
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("project-\(project.id)")
-    .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
+    // The badge is drawn only, so the value names it, as the menu button's does.
+    .accessibilityValue(
+      [
+        expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
+        unread ? String(localized: "Unread") : nil,
+      ].compactMap { $0 }.joined(separator: ", ")
+    )
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
@@ -518,6 +522,8 @@ struct ChatSidebarView: View {
         menu: ChatThreadMenu(
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 },
           pinNeighbors: pinNeighbors))
+    } preview: {
+      ChatThreadPreview(thread: thread, workspace: store)
     }
     .menuOrder(.fixed)
     // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
@@ -536,16 +542,28 @@ struct ChatSidebarView: View {
 
   }
 
-  /// The chat list menu, top right: the filters, Mark all as read and New project, so the
-  /// header keeps one control. On the default Chats it is a glass circle; any other filter
-  /// names itself in a capsule, so a filtered list never reads as missing chats.
-  private var threadFilterMenu: some View {
-    ChatListFilterMenu(
-      sidebar: sidebar, store: store, selection: threadFilter,
-      newProject: { showEditor(creationEditor) }
-    )
-    .frame(height: OkouControl.minimumTarget)
-    .fixedSize(horizontal: true, vertical: false)
+  /// Top right, one glass capsule as iOS groups related bar buttons: the chat list menu on the
+  /// left (the filters, Mark all as read and New project) and the way back to the chat on the
+  /// right, toward the page it returns to. On the default Chats the menu is an icon; any other
+  /// filter names itself, so a filtered list never reads as missing chats.
+  private var headerActions: some View {
+    HStack(spacing: 0) {
+      ChatListFilterMenu(
+        store: store, selection: threadFilter,
+        newProject: { showEditor(creationEditor) }
+      )
+      .frame(height: OkouControl.minimumTarget)
+      .fixedSize(horizontal: true, vertical: false)
+      Button(action: close) {
+        OkouToolbarIcon("arrow-right")
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Close sidebar")
+      .accessibilityIdentifier("close-sidebar")
+    }
+    .modifier(OkouGlassControl(shape: .capsule))
   }
 
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {

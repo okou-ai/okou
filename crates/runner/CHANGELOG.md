@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.245.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.4...runner-rs-v0.245.5) (2026-11-12)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.3...runner-rs-v0.245.4) (2026-11-12)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.2...runner-rs-v0.245.3) (2026-11-12)
+
+
+### Refactoring
+
+* **runner:** reuse existing domain error conversion paths ([#46663](https://github.com/okou-ai/okou/issues/46663)) ([e520c67](https://github.com/okou-ai/okou/commit/e520c67b283822d3a9b36db29bc3fdef86849619))
+
+## [0.245.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.1...runner-rs-v0.245.2) (2026-11-11)
+
+
+### Refactoring
+
+* **python:** centralize response capture metadata cleanup ([#46638](https://github.com/okou-ai/okou/issues/46638)) ([42906b3](https://github.com/okou-ai/okou/commit/42906b3110df9c01cadac54edfaa192dac89ca10))
+
+## [0.245.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.0...runner-rs-v0.245.1) (2026-11-11)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.70...runner-rs-v0.245.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Refactoring
+
+* **python:** share raw request probe snapshots ([#46598](https://github.com/okou-ai/okou/issues/46598)) ([5e0131b](https://github.com/okou-ai/okou/commit/5e0131b3e250f23baa3127759afb086d2f795a7c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.70](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.69...runner-rs-v0.244.70) (2026-11-11)
 
 

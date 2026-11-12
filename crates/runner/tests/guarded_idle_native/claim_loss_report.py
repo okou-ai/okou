@@ -75,9 +75,8 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
             raise ValueError("claim changed the original physical owner")
         ordered = [terminal[1], *events[:5], terminal[2], terminal[3], *events[5:7], terminal[4],
                    *events[7:], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("claim/rollback/original saving clocks lost ordering")
+        report.validate_witness_clock_order(
+            ordered, "claim/rollback/original saving clocks lost ordering")
         waiting, pool, progress, rejected, restored, tail, tail_progress, status, completed, joined = [e["evidence"] for e in events]
         initial = waiting.get("published_status")
         failure.status(initial, sandbox=identity[0])

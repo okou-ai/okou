@@ -3,12 +3,15 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { object, string } from "zod";
 import { checkIosConsumption } from "./ios-consumption";
+import { checkAndroidConsumption } from "./android-consumption";
+import { androidResponseTransforms } from "../client-transforms/android";
 import { iosResponseTransforms } from "../client-transforms/ios";
 import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
 import {
   DESKTOP_PUBLISHED_VERSION_ORACLE,
   IOS_PUBLISHED_VERSION_ORACLE,
+  ANDROID_PUBLISHED_VERSION_ORACLE,
   type NativeFloorChange,
   evaluateRuntimeApiGate,
   parseStableVersion,
@@ -37,6 +40,9 @@ const LINT_OPTIONS = {
   "ios-floor": "single",
   "ios-base-floor": "single",
   "ios-published-version": "single",
+  "android-floor": "single",
+  "android-base-floor": "single",
+  "android-published-version": "single",
 } as const;
 
 type OptionSpec = Readonly<Record<string, "single" | "repeatable">>;
@@ -45,6 +51,7 @@ type ParsedOptions = ReadonlyMap<string, readonly string[]>;
 const USAGE = `Usage:
   tsx src/runtime-api-schema/cli.ts build --out runtime-api-schema.json
   tsx src/runtime-api-schema/cli.ts lint-ios-consumption [--root repository-root]
+  tsx src/runtime-api-schema/cli.ts lint-android-consumption [--root repository-root]
   tsx src/runtime-api-schema/cli.ts lint --against online-schema.json
     [--current current-schema.json] [--base-schema base-schema.json]
     [--report-out report.json] [--block-owner <owner>]...
@@ -52,6 +59,8 @@ const USAGE = `Usage:
     [--desktop-published-version x.y.z]
     [--ios-floor ios-client-compatibility.json --ios-base-floor base-ios-client-compatibility.json]
     [--ios-published-version x.y.z]
+    [--android-floor android-client-compatibility.json --android-base-floor base-android-client-compatibility.json]
+    [--android-published-version x.y.z]
 
 Findings on --block-owner owners fail the lint unless proven; other owners only
 warn. Owners: ${runtimeApiRouteOwners.join(", ")}.
@@ -69,24 +78,34 @@ export async function runRuntimeApiSchemaCli(
 ): Promise<number> {
   const [command, ...rest] = argv;
   try {
-    if (command === "lint-ios-consumption") {
+    if (
+      command === "lint-ios-consumption" ||
+      command === "lint-android-consumption"
+    ) {
+      const android = command === "lint-android-consumption";
       const options = parseOptions(rest, { root: "single" });
       const root =
         single(options, "root") ??
         fileURLToPath(new URL("../../../../../", import.meta.url));
-      const findings = await checkIosConsumption(resolve(root));
+      const findings = await (android
+        ? checkAndroidConsumption(resolve(root))
+        : checkIosConsumption(resolve(root)));
       for (const finding of findings) {
         console.error(
           "::error file=" +
             finding.file +
             ",line=" +
             finding.line +
-            ",title=iOS API consumption::" +
+            `,title=${android ? "Android" : "iOS"} API consumption::` +
             finding.problem,
         );
       }
       if (findings.length > 0) return 1;
-      console.log("iOS API consumption inventory covers all Swift API calls.");
+      console.log(
+        android
+          ? "Android generated bindings and API consumption inventory are current."
+          : "iOS API consumption inventory covers all Swift API calls.",
+      );
       return 0;
     }
     if (command === "build") {
@@ -123,6 +142,7 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
   const blockingOwners = readBlockingOwners(options);
   const desktop = await readNativePolicy(options, "desktop");
   const ios = await readNativePolicy(options, "ios");
+  const android = await readNativePolicy(options, "android");
 
   const currentPath = single(options, "current");
   const current = currentPath
@@ -139,17 +159,7 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
     );
   }
 
-  if (
-    online &&
-    blockingOwners.has("ios") &&
-    !online.routes.some((route) => {
-      return route.owner === "ios";
-    })
-  ) {
-    console.warn(
-      "::warning::Production has no iOS contract baseline yet. The next API production promotion must publish the iOS route inventory before iOS schema changes can be compared.",
-    );
-  }
+  warnMissingNativeBaselines(online, blockingOwners);
   const result = evaluateRuntimeApiGate({
     findings: online ? compareRuntimeApiSchemas(online, current) : [],
     ...(online && base
@@ -166,6 +176,11 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
       ? { iosPublishedVersion: ios.publishedVersion }
       : {}),
     iosTransforms: iosResponseTransforms,
+    ...(android.floor ? { androidFloor: android.floor } : {}),
+    ...(android.publishedVersion
+      ? { androidPublishedVersion: android.publishedVersion }
+      : {}),
+    androidTransforms: androidResponseTransforms,
   });
 
   console.log(renderRuntimeApiGateReport(result));
@@ -185,9 +200,30 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
   return result.passed ? 0 : 1;
 }
 
+function warnMissingNativeBaselines(
+  online: RuntimeApiSchemaDocument | undefined,
+  blockingOwners: ReadonlySet<RuntimeApiRouteOwner>,
+): void {
+  if (online) {
+    for (const owner of ["ios", "android"] as const) {
+      if (
+        blockingOwners.has(owner) &&
+        !online.routes.some((route) => {
+          return route.owner === owner;
+        })
+      ) {
+        const label = owner === "ios" ? "iOS" : "Android";
+        console.warn(
+          `::warning::Production has no ${label} contract baseline yet. The next API production promotion must publish the ${label} route inventory before ${label} schema changes can be compared.`,
+        );
+      }
+    }
+  }
+}
+
 async function readNativePolicy(
   options: ParsedOptions,
-  client: "desktop" | "ios",
+  client: "desktop" | "ios" | "android",
 ): Promise<{
   readonly floor: NativeFloorChange | undefined;
   readonly publishedVersion: string | undefined;
@@ -268,14 +304,14 @@ function readBlockingOwners(
 
 function readPublishedVersion(
   options: ParsedOptions,
-  client: "desktop" | "ios" = "desktop",
+  client: "desktop" | "ios" | "android" = "desktop",
 ): string | undefined {
   const value = single(options, `${client}-published-version`);
   if (value === undefined || parseStableVersion(value)) {
     return value;
   }
   console.warn(
-    `::warning::Ignoring --${client}-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${client === "ios" ? IOS_PUBLISHED_VERSION_ORACLE : DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+    `::warning::Ignoring --${client}-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${client === "android" ? ANDROID_PUBLISHED_VERSION_ORACLE : client === "ios" ? IOS_PUBLISHED_VERSION_ORACLE : DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
   );
   return undefined;
 }

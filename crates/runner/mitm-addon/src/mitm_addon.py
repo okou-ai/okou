@@ -75,6 +75,7 @@ import registry_control
 import request_authority
 import request_body_admission
 import request_classification
+import request_probe_snapshot
 import request_streaming
 import response_encoding_negotiation
 import response_streaming
@@ -1298,26 +1299,10 @@ async def _try_firewall_request_stream_from_headers(
 ) -> None:
     allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
-    request_headers_snapshot = http.Headers(flow.request.headers.fields)
-    request_target_snapshot = (
-        flow.request.data.scheme,
-        flow.request.data.host,
-        flow.request.data.port,
-        flow.request.data.authority,
-        flow.request.data.path,
-    )
+    request_snapshot = request_probe_snapshot.RequestProbeSnapshot.capture(flow.request)
 
     def restore_request_state() -> None:
-        # Restore raw fields without the URL setter's ASCII reparsing: even a
-        # rejected query can contain native non-ASCII bytes.
-        (
-            flow.request.data.scheme,
-            flow.request.data.host,
-            flow.request.data.port,
-            flow.request.data.authority,
-            flow.request.data.path,
-        ) = request_target_snapshot
-        flow.request.headers = http.Headers(request_headers_snapshot.fields)
+        request_snapshot.restore(flow.request)
 
     def fall_back() -> None:
         restore_request_state()

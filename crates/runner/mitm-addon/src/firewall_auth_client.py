@@ -216,6 +216,7 @@ class FirewallAuthRequest:
     vars_map: dict | None = None
     firewall_billable: bool = False
     matched_firewall: dict | None = None
+    network_admission: bool = False
     prepared_normal_body: bytes | None = field(default=None, repr=False, compare=False)
 
     def to_body(self, *, force_refresh: bool = False) -> dict:
@@ -240,6 +241,8 @@ class FirewallAuthRequest:
             body["firewallBillable"] = True
         if self.matched_firewall is not None:
             body["matchedFirewall"] = self.matched_firewall
+        if self.network_admission:
+            body["networkAdmission"] = True
         if force_refresh:
             body["forceRefresh"] = True
         return body
@@ -909,6 +912,11 @@ def _parse_firewall_auth_success(
         raise _malformed_firewall_auth_success("headers is required")
 
     headers = _parse_string_map(decoded_map["headers"], "headers")
+    if request.network_admission:
+        if decoded_map.get("networkAdmission") != {"kind": "direct"}:
+            raise _malformed_firewall_auth_success("expected Direct network admission")
+    elif "networkAdmission" in decoded_map:
+        raise _malformed_firewall_auth_success("unsolicited network admission")
     expires_at = _parse_expires_at(decoded_map)
     resolved_secrets = _parse_required_string_list(decoded_map, "resolvedSecrets")
     refreshed_connectors = _parse_required_string_list(decoded_map, "refreshedConnectors")

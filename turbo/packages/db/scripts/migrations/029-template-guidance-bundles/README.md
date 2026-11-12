@@ -35,20 +35,16 @@ and review inventory if that boundary cannot be established or a source changes.
 
 ## Plan and isolated rehearsal
 
-When source credentials are available only to GitHub's protected production
-environment, use `capture-guidance` on the existing `copy-presentation-templates.yml`
-manual workflow. It remains main-only and requires the normal production review.
-Provide the frozen inventory JSON and an ephemeral RSA public key (2048 bits or
-larger). Keep the private key only in the rehearsal controller's private directory.
-The capture process only GETs the exact source objects, verifies every file, and
-never opens a database connection. It uploads a metadata report and an AES-256-GCM
-encrypted archive, with the data key wrapped using RSA-OAEP-SHA256; plaintext
-temporary files are removed. The artifact expires after one day. Download it
-from the verified run/commit, authenticate/decrypt it privately, and retain only
-the reviewed source files for the isolated rehearsal. Never upload private keys,
-plaintext packages, credentials or signed URLs as artifacts.
-
-The capture command is also usable with a GET-only local/rehearsal object peer:
+Run the standalone capture command on an authorized machine with GET-only
+source credentials, or against a local/rehearsal object peer. Supply the frozen
+inventory JSON and an ephemeral RSA public key (2048 bits or larger). Keep the
+private key only in the rehearsal controller's private directory. Capture only
+GETs the exact source objects, verifies every file and never opens a database
+connection. Its new private output directory contains a metadata report and an
+AES-256-GCM encrypted archive, with the data key wrapped using RSA-OAEP-SHA256;
+plaintext temporary files are removed. Authenticate/decrypt it privately and
+retain only the reviewed source files for the isolated rehearsal. Never publish
+private keys, plaintext packages, credentials or signed URLs.
 
 ```sh
 node --import tsx scripts/migrations/029-template-guidance-bundles/capture.ts \
@@ -117,45 +113,8 @@ inspect the recorded outcomes, then reuse the same reviewed plan with a fresh
 receipt path only when its frozen source and owner conditions remain valid.
 Changed owners require a fresh inventory/plan, never relaxed CAS predicates.
 
-Production requires a separately reviewed production-bound plan and execution
-authorization. Reconcile every current owner and verify real selection/claims
-before removing the temporary NULL bridge. Historical Storage cleanup and Memory
-migration remain separately scoped.
-
-## Protected production entry point
-
-The main-only production workflow also accepts `plan-guidance` and
-`apply-guidance`. Both retain production environment review and first verify
-the main-owned writer rollback floor against both canonical API serving commits.
-Writer drain remains a separately verified attestation, not a consequence of
-that ancestry check.
-
-For `plan-guidance`, supply the reviewed `frozen_inventory`. The job resolves
-the exact default/protected production branch and its unique read/write endpoint,
-using the existing `RO` login with a read-only session. It verifies SELECT access
-and absence of UPDATE privileges on both owner tables. Source operations are GET
-only. Every current NULL owner must appear in the inventory. The artifact contains
-only `plan.json`, `inventory.json` and `metadata.json`; no credentials or packages.
-
-The adapter explicitly sets its preflight session read-only before checking
-privileges. The authenticated `session_user` must match the requested login;
-privilege checks use the effective `current_user`. Apply additionally requires
-UPDATE access to each owner's `guidance_bundle` column. A rejected privilege
-preflight retains only its context, scope and privilege booleans in
-`preflight.json`, without starting the backfill operator or recording credentials.
-
-Review that complete plan, including source hashes, owner revisions, scope and
-writer/drain evidence. Then dispatch `apply-guidance` on the same main commit
-with `plan_run_id`, the exact `plan_sha256`, and `writers_drained: true`. The job
-checks the successful main workflow run and its mode/commit/attempt before
-downloading the exact named artifact. It validates all artifact files and hashes,
-rechecks the full NULL-owner census and every planned owner before effects, and
-invokes the unchanged CAS operator using the production owner role. Canonical
-objects are immutable; legacy objects/records are not modified. Owner snapshots
-and the fsynced per-row receipt remain available for reconciliation.
-
-An apply job cannot be rerun with GitHub's rerun button. After an uncertain result,
-inspect the stored receipts and current state. A fresh, explicitly reviewed apply
-run can reconcile the same plan idempotently only while its source and owner
-conditions still hold. If main changes between planning and execution, dispatch
-and review a new read-only plan; do not relax the commit or scope binding.
+Run production planning and apply manually on an authorized machine, with a
+separately reviewed production-bound plan and execution authorization. Verify the
+current target, writer/rollback prerequisites and real selection/claims before
+execution. Historical Storage cleanup and Memory migration remain separately
+scoped.

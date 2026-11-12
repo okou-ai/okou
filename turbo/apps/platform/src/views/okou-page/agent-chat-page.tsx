@@ -5,7 +5,6 @@ import {
   defaultAgentChatPageActive$,
   defaultAgentId$,
 } from "../../signals/agent.ts";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -20,6 +19,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  OkouAvatar,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
@@ -33,7 +33,7 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
   AgentSuggestions,
-  HomeSuggestionsCard,
+  HomeSuggestionGreeting,
   SuggestionSaveErrors,
 } from "./agent-suggestions.tsx";
 import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
@@ -46,11 +46,7 @@ import {
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import {
-  AgentAvatarImg,
-  AvatarFromUrl,
-  useAgentAvatarTexture,
-} from "./sidebar-shared.tsx";
+import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
@@ -361,13 +357,10 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && agentId === defaultId ? (
-    <div className={AGENT_AVATAR_FRAME}>
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt=""
-        className={AGENT_AVATAR_IMAGE}
-      />
-    </div>
+    // My Okou's greeting is the one place Okou is shown large and alone, so it
+    // is the one place the avatar moves. The shared avatar owns its frame and
+    // texture, and holds still for reduced-motion users.
+    <OkouAvatar size={56} />
   ) : (
     <LegacyChatAgentAvatar agentId={agentId} />
   );
@@ -450,15 +443,11 @@ function LegacyChatAgentAvatar({
 }
 
 /**
- * The new-chat page of an Agent, or of a Project when `projectPage` is set.
- * A Project's page keeps the greeting: the conversation is still with Okou,
- * and the composer's toolbar names the Project the chat starts in.
+ * The new-chat page of an Agent, and of a Project. A Project's page is the
+ * same page: it keeps the greeting, because the conversation is still with
+ * Okou, and the composer's toolbar names the Project the chat starts in.
  */
-export function AgentComposerPage({
-  projectPage = false,
-}: {
-  projectPage?: boolean;
-} = {}) {
+export function AgentComposerPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const user = useLastResolved(user$);
@@ -479,13 +468,32 @@ export function AgentComposerPage({
   const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
 
   const switches = useGet(featureSwitch$);
+  const capabilityHome = switches[FeatureSwitchKey.HomeCapabilities];
+  const taglineHeading = (
+    <h2
+      aria-label={tagline}
+      data-testid="chat-tagline"
+      className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+    >
+      <GreetingTokens
+        text={tagline}
+        animate={animateGreeting}
+        onAnimationComplete={finishGreetingEntrance}
+      />
+    </h2>
+  );
   const heading =
     currentChatAgentId === undefined || tagline === "" ? null : (
       <div
         key={greetingIdentity}
         data-slot="chat-greeting"
         data-testid="chat-greeting"
-        className="flex max-w-full items-center gap-4"
+        // On the capability home a waiting suggestion takes the line beside
+        // the avatar, so the greeting spans its row.
+        className={cn(
+          "flex max-w-full items-center gap-4",
+          capabilityHome && "min-w-0 flex-1",
+        )}
       >
         {/* The avatar is the greeting's first word. Only the first
             greeting in this App lifetime takes the entrance; changing
@@ -499,27 +507,15 @@ export function AgentComposerPage({
         >
           <ChatAgentAvatar agentId={currentChatAgentId} />
         </span>
-        <h2
-          aria-label={tagline}
-          data-testid="chat-tagline"
-          className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
-        >
-          <GreetingTokens
-            text={tagline}
-            animate={animateGreeting}
-            onAnimationComplete={finishGreetingEntrance}
-          />
-        </h2>
+        {capabilityHome && showSuggestions ? (
+          <HomeSuggestionGreeting fallback={taglineHeading} />
+        ) : (
+          taglineHeading
+        )}
       </div>
     );
-  if (!projectPage && switches[FeatureSwitchKey.HomeCapabilities]) {
-    return (
-      <CapabilityHomePage
-        signals={composerSignals}
-        heading={heading}
-        suggestions={showSuggestions ? <HomeSuggestionsCard /> : null}
-      />
-    );
+  if (capabilityHome) {
+    return <CapabilityHomePage signals={composerSignals} heading={heading} />;
   }
 
   return (

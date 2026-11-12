@@ -874,6 +874,8 @@ async function serveLegacyHostedSite(
 
   if (isSiteDownloadPath(pathname)) {
     if (!presentation) return privateResponse(notFoundResponse());
+    // Tolerate old API presentation during deployment/rollback. Require this
+    // field after APIs omitting it neither serve nor remain rollback targets (#46746).
     if (presentation.downloadAllowed === false)
       return privateResponse(paidPlanRequiredResponse());
     return withSiteAuthHeaders(

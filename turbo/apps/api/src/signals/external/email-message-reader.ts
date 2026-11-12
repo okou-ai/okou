@@ -1,5 +1,14 @@
 import { Buffer } from "node:buffer";
-import { array, lazy, object, string, type ZodType } from "zod";
+import {
+  array,
+  boolean,
+  coerce,
+  iso,
+  lazy,
+  object,
+  string,
+  type ZodType,
+} from "zod";
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
 import type {
   Firewall,
@@ -11,10 +20,18 @@ import { settle } from "../utils";
 export interface SourceEmailMessage {
   readonly providerMessageId: string;
   readonly providerConversationId: string;
+  readonly receivedAt: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string;
   readonly attachmentNames: readonly string[];
 }
+
+export interface SourceEmailHistory {
+  readonly messages: readonly SourceEmailMessage[];
+  readonly truncated: boolean;
+}
+
+const MAX_HISTORY_MESSAGES = 20;
 
 export class EmailMessageReadError extends Error {
   constructor(
@@ -152,6 +169,14 @@ const gmailPartSchema: ZodType<GmailPart> = lazy(() => {
   });
 });
 
+const gmailMessageSchema = object({
+  id: string(),
+  threadId: string(),
+  internalDate: coerce.number().int().nonnegative(),
+  labelIds: array(string()).default([]),
+  payload: gmailPartSchema,
+});
+
 async function gmailBody(
   reader: EmailMessageReader,
   id: string,
@@ -223,19 +248,25 @@ async function readGmailMessage(
   if (raw === null) {
     return null;
   }
-  const message = object({
-    id: string(),
-    threadId: string(),
-    payload: gmailPartSchema,
-  }).parse(raw);
+  const message = gmailMessageSchema.parse(raw);
+  const rfcId = message.payload.headers.find((header) => {
+    return header.name.toLowerCase() === "message-id";
+  });
+  return rfcId?.value.trim() === reader.messageId
+    ? await gmailMessage(reader, message, signal)
+    : null;
+}
+
+async function gmailMessage(
+  reader: EmailMessageReader,
+  message: typeof gmailMessageSchema._output,
+  signal: AbortSignal,
+): Promise<SourceEmailMessage> {
   const headers = Object.fromEntries(
     message.payload.headers.map((header) => {
       return [header.name.toLowerCase(), header.value];
     }),
   );
-  if (headers["message-id"]?.trim() !== reader.messageId) {
-    return null;
-  }
   const parts = [message.payload];
   const attachmentNames: string[] = [];
   while (parts.length > 0) {
@@ -251,11 +282,28 @@ async function readGmailMessage(
   return {
     providerMessageId: message.id,
     providerConversationId: message.threadId,
+    receivedAt: message.internalDate,
     headers,
     body: await gmailBody(reader, message.id, message.payload, signal),
     attachmentNames,
   };
 }
+
+const outlookMessageSchema = object({
+  id: string(),
+  conversationId: string(),
+  internetMessageId: string(),
+  receivedDateTime: iso.datetime({ offset: true }),
+  isDraft: boolean(),
+  subject: string(),
+  internetMessageHeaders: array(
+    object({ name: string(), value: string() }),
+  ).default([]),
+  body: object({ contentType: string(), content: string() }),
+});
+
+const OUTLOOK_MESSAGE_FIELDS =
+  "id,conversationId,internetMessageId,receivedDateTime,isDraft,internetMessageHeaders,subject,body";
 
 async function readOutlookMessage(
   reader: EmailMessageReader,
@@ -280,29 +328,28 @@ async function readOutlookMessage(
   }
   const raw = await readJson(
     reader,
-    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(ids[0]!.id)}?$select=id,conversationId,internetMessageId,internetMessageHeaders,subject,body`,
+    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(ids[0]!.id)}?$select=${OUTLOOK_MESSAGE_FIELDS}`,
     signal,
   );
   if (raw === null) {
     return null;
   }
-  const message = object({
-    id: string(),
-    conversationId: string(),
-    internetMessageId: string(),
-    subject: string(),
-    internetMessageHeaders: array(
-      object({ name: string(), value: string() }),
-    ).default([]),
-    body: object({ contentType: string(), content: string() }),
-  }).parse(raw);
+  const message = outlookMessageSchema.parse(raw);
   if (message.internetMessageId !== reader.messageId) {
     return null;
   }
+  return outlookMessage(message);
+}
+
+function outlookMessage(
+  message: typeof outlookMessageSchema._output,
+): SourceEmailMessage {
   return {
     providerMessageId: message.id,
     providerConversationId: message.conversationId,
+    receivedAt: Date.parse(message.receivedDateTime),
     headers: {
+      date: message.receivedDateTime,
       ...Object.fromEntries(
         message.internetMessageHeaders.map((header) => {
           return [header.name.toLowerCase(), header.value];
@@ -317,6 +364,128 @@ async function readOutlookMessage(
         : message.body.content,
     attachmentNames: [],
   };
+}
+
+/** Use the provider-owned conversation, not RFC References, to scope history. */
+export async function readConnectedEmailHistory(
+  reader: EmailMessageReader,
+  current: SourceEmailMessage,
+  signal: AbortSignal,
+): Promise<SourceEmailHistory | null> {
+  const url = new URL(
+    reader.connectorSlug === "gmail"
+      ? `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(current.providerConversationId)}`
+      : "https://graph.microsoft.com/v1.0/me/messages",
+  );
+  if (reader.connectorSlug === "gmail") {
+    url.searchParams.set("format", "full");
+  } else {
+    // Graph requires the ordered property to come first in the filter.
+    url.searchParams.set(
+      "$filter",
+      `receivedDateTime le ${new Date(current.receivedAt).toISOString()} and conversationId eq '${current.providerConversationId.replaceAll("'", "''")}' and isDraft eq false`,
+    );
+    url.searchParams.set("$orderby", "receivedDateTime desc");
+    url.searchParams.set("$select", OUTLOOK_MESSAGE_FIELDS);
+    url.searchParams.set("$top", String(MAX_HISTORY_MESSAGES + 2));
+  }
+  const raw = await readJson(reader, url.toString(), signal);
+  if (raw === null) {
+    return null;
+  }
+  let messages: SourceEmailMessage[];
+  let truncated = false;
+  if (reader.connectorSlug === "gmail") {
+    const thread = object({
+      id: string(),
+      messages: array(gmailMessageSchema),
+    }).parse(raw);
+    if (
+      thread.id !== current.providerConversationId ||
+      !thread.messages.some((message) => {
+        return message.id === current.providerMessageId;
+      })
+    ) {
+      return null;
+    }
+    const prior = selectHistory(
+      thread.messages
+        .filter((message) => {
+          return !message.labelIds.includes("DRAFT");
+        })
+        .map((message) => {
+          return {
+            ...message,
+            providerMessageId: message.id,
+            providerConversationId: message.threadId,
+            receivedAt: message.internalDate,
+            headers: Object.fromEntries(
+              message.payload.headers.map((header) => {
+                return [header.name.toLowerCase(), header.value];
+              }),
+            ),
+          };
+        }),
+      current,
+    );
+    truncated = prior.length > MAX_HISTORY_MESSAGES;
+    messages = await Promise.all(
+      prior
+        .slice(0, MAX_HISTORY_MESSAGES)
+        .reverse()
+        .map((message) => {
+          return gmailMessage(reader, message, signal);
+        }),
+    );
+  } else {
+    const page = object({
+      value: array(outlookMessageSchema),
+      "@odata.nextLink": string().optional(),
+    }).parse(raw);
+    const prior = selectHistory(
+      page.value
+        .filter((message) => {
+          return !message.isDraft;
+        })
+        .map(outlookMessage),
+      current,
+    );
+    truncated =
+      prior.length > MAX_HISTORY_MESSAGES ||
+      page["@odata.nextLink"] !== undefined;
+    messages = prior.slice(0, MAX_HISTORY_MESSAGES).reverse();
+  }
+  return { messages, truncated };
+}
+
+function selectHistory<
+  T extends Pick<
+    SourceEmailMessage,
+    "providerMessageId" | "providerConversationId" | "receivedAt" | "headers"
+  >,
+>(messages: readonly T[], current: SourceEmailMessage): T[] {
+  const seenIds = new Set([current.providerMessageId]);
+  const seenRfcIds = new Set([current.headers["message-id"]?.trim()]);
+  return [...messages]
+    .sort((left, right) => {
+      return right.receivedAt - left.receivedAt;
+    })
+    .filter((message) => {
+      const rfcId = message.headers["message-id"]?.trim();
+      if (
+        message.providerConversationId !== current.providerConversationId ||
+        message.receivedAt > current.receivedAt ||
+        seenIds.has(message.providerMessageId) ||
+        (rfcId && seenRfcIds.has(rfcId))
+      ) {
+        return false;
+      }
+      seenIds.add(message.providerMessageId);
+      if (rfcId) {
+        seenRfcIds.add(rfcId);
+      }
+      return true;
+    });
 }
 
 export async function readConnectedEmailMessage(

@@ -30,14 +30,14 @@ final class ChatHTTPFixtureTests: XCTestCase {
       })
     for scheme in ["https", "http"] {
       let url = try XCTUnwrap(
-        URL(string: "\(scheme)://unregistered-\(UUID().uuidString).example.invalid"))
+        URL(string: "\(scheme)://unregistered-\(UUID().uuidString).example.invalid/api/me"))
       do {
         _ = try await fixture.session.data(from: url)
         XCTFail("An unregistered HTTP origin must be rejected")
       } catch let error as URLError {
         XCTAssertEqual(error.code, .unsupportedURL)
         XCTAssertTrue(error.localizedDescription.contains(url.absoluteString))
-        XCTAssertTrue(reports.withLock { $0.contains { $0.contains(url.absoluteString) } })
+        XCTAssertTrue(reports.withLock { $0.contains { $0.contains("GET \(url.absoluteString)") } })
       }
     }
   }

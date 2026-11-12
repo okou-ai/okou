@@ -18,6 +18,7 @@ import {
   webhookUsageEventContract,
 } from "../contracts/webhooks";
 import { iosRouteBindings } from "./ios-routes";
+import { androidRouteBindings } from "./android-routes";
 import { swiftRouteBindings } from "../swift-bindings/routes";
 
 export interface RuntimeApiRouteLike {
@@ -38,6 +39,7 @@ export const runtimeApiRouteOwners = [
   "mitm-addon",
   "desktop",
   "ios",
+  "android",
 ] as const;
 
 export type RuntimeApiRouteOwner = (typeof runtimeApiRouteOwners)[number];
@@ -138,6 +140,7 @@ const desktopRouteBindings: readonly RuntimeApiRouteBinding[] =
   });
 
 export const runtimeApiRouteBindings: readonly RuntimeApiRouteBinding[] = [
+  ...androidRouteBindings,
   ...runtimeServiceRouteBindings,
   ...desktopRouteBindings,
   ...iosRouteBindings,

@@ -24,10 +24,32 @@ import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { cronCleanupSuggestionsContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
+import {
+  cronCleanupSuggestionsContract,
+  cronExecuteWorkflowAutomationsContract,
+  cronOfficialWorkflowCatalogContract,
+} from "@okouai/api-contracts/contracts/cron";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
+import {
+  workflowAutomationsContract,
+  workflowsCollectionContract,
+} from "@okouai/api-contracts/contracts/workflows";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
+import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 
 type UserMessageDocument = zInfer<typeof userMessageDocumentSchema>;
@@ -96,6 +118,7 @@ async function primaryRun(
   enabled = true,
   secondary = false,
   member?: ApiTestUser,
+  feedbackObjects = new Map<string, Buffer>(),
 ) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -142,6 +165,7 @@ async function primaryRun(
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     runnerGroup,
+    feedbackObjects,
     headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
     prompt: claim.appendSystemPrompt ?? "",
   };
@@ -167,21 +191,119 @@ async function feedbackContext(
 ) {
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(fixture.runnerGroup);
-  const next = await runs.createThreadRun(fixture.actor, {
-    agentId: fixture.agentId,
-    model: "claude-fable-5-1",
-    prompt: "Maintain suggestions using current feedback",
+  mockEnv("CRON_SECRET", cronSecret);
+  installWorkflowVolumeS3Fixture(context, fixture.feedbackObjects, {
+    bundlesOnly: true,
   });
-  const run = await runs.readRun(fixture.actor, next.runId);
+  const app = setupApp({
+    context,
+    routes: [
+      ...cronOfficialWorkflowCatalogRoutes,
+      ...cronExecuteWorkflowAutomationsRoutes,
+      ...proactiveSuggestionsRoutes,
+      ...workflowAutomationsRoutes,
+      ...workflowsRoutes,
+    ],
+  });
+  const cronHeaders = { authorization: `Bearer ${cronSecret}` };
+  await accept(
+    app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
+    [200],
+  );
+  await runs.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
+  createRouteMocks(context).clerk.session(
+    fixture.actor.userId,
+    fixture.actor.orgId,
+    fixture.actor.orgRole,
+  );
+  await accept(
+    app(proactiveSuggestionsContract).update({
+      headers: humanHeaders,
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  const workflows = await accept(
+    app(workflowsCollectionContract).list({ headers: humanHeaders, query: {} }),
+    [200],
+  );
+  const workflow = workflows.body.find((item) => {
+    return item.official?.definitionName === "agent-suggestions";
+  });
+  if (!workflow) {
+    throw new Error("Expected the Suggestions workflow");
+  }
+  const automations = await accept(
+    app(workflowAutomationsContract).list({
+      headers: humanHeaders,
+      params: { workflowId: workflow.id },
+    }),
+    [200],
+  );
+  const automation = automations.body[0];
+  if (!automation?.nextRunAt) {
+    throw new Error("Expected the Suggestions schedule");
+  }
+  await withMockNowForTest(
+    Math.max(now(), Date.parse(automation.nextRunAt)),
+    async () => {
+      await accept(
+        app(cronExecuteWorkflowAutomationsContract).execute({
+          headers: cronHeaders,
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+    },
+  );
+  const current = await accept(
+    app(workflowAutomationsContract).get({
+      headers: humanHeaders,
+      params: { id: automation.id },
+    }),
+    [200],
+  );
+  if (!current.body.chatThreadId) {
+    throw new Error("Expected the Suggestions thread");
+  }
+  const events = await createChatFilesBddApi(context).listThreadEventRows(
+    fixture.actor,
+    current.body.chatThreadId,
+  );
+  const runId = [...events].reverse().find((event) => {
+    return event.eventType === "input.prompt" && event.runId;
+  })?.runId;
+  if (!runId) {
+    throw new Error("Expected the scheduled Suggestions Run");
+  }
+  const run = await runs.readRun(fixture.actor, runId);
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
-  await runs.requestCancelRun(fixture.actor, next.runId, [200]);
+  const claim = await runs.claimRunnerJob(runId);
+  await createChatEventsFixture(context).failChatRun(
+    runId,
+    { authorization: `Bearer ${claim.sandboxToken}` },
+    "Feedback context inspected",
+  );
+  await flushWaitUntilForTest();
+  await accept(
+    app(proactiveSuggestionsContract).update({
+      headers: humanHeaders,
+      body: { enabled: false },
+    }),
+    [200],
+  );
   return parsed;
 }
 
 describe("Agent suggestions", () => {
   it("pages management without hiding overflow cards or coupling their feedback", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     const inputs = Array.from({ length: 105 }, (_, priority) => {
       return input(priority);
@@ -1147,6 +1269,11 @@ describe("Suggestion custom follow-ups", () => {
   });
 
   it("keeps the card until a complete follow-up is accepted and repairs the receipt on replay", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     const value = input();
     await accept(
@@ -1639,7 +1766,12 @@ describe("Suggestion feedback context", () => {
     ]);
   });
 
-  it("injects saved feedback and edited reasons into later Runs, and applies Undo without publication", async () => {
+  it("injects saved feedback only into Suggestions Runs and applies reason edits and Undo without publication", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     const created = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -1671,6 +1803,16 @@ describe("Suggestion feedback context", () => {
         until: expect.any(String),
       },
     ]);
+    const runs = createRunsApi(context);
+    const ordinary = await runs.createThreadRun(fixture.actor, {
+      agentId: fixture.agentId,
+      model: "claude-fable-5-1",
+      prompt: "Help me with an unrelated task",
+    });
+    expect(
+      (await runs.readRun(fixture.actor, ordinary.runId)).appendSystemPrompt,
+    ).not.toContain("# Suggestions feedback context");
+    await runs.requestCancelRun(fixture.actor, ordinary.runId, [200]);
     await accept(
       client().feedback({
         headers: humanHeaders,
@@ -1707,6 +1849,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("keeps one member's feedback out of another member's Run context", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     const created = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -1726,7 +1873,25 @@ describe("Suggestion feedback context", () => {
       [200],
     );
     const member = createBddApi(context).user({ orgId: fixture.actor.orgId });
-    const other = await primaryRun(true, false, member);
+    const other = await primaryRun(
+      true,
+      false,
+      member,
+      fixture.feedbackObjects,
+    );
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organizationMembership.created",
+      data: {
+        id: `membership-${member.userId}`,
+        organization: { id: member.orgId },
+        publicUserData: { userId: member.userId },
+        role: member.orgRole,
+      },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
     expect((await feedbackContext(other)).feedback).toStrictEqual([]);
     expect((await feedbackContext(fixture)).feedback[0]?.reason).toBe(
       "Private review preference",
@@ -1734,6 +1899,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("keeps feedback revisions and canonical context scoped to their card when two cards share a feedback UUID", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-01T00:00:00.000Z");
     mockNow(start);
     const fixture = await primaryRun();
@@ -1799,6 +1969,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("carries a selected direction without treating dismissal as a preference", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     const selected = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -1835,6 +2010,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("retains feedback after card compaction and expires action facts at seven days and preferences at thirty days", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-01T00:00:00.000Z");
     const day = 86_400_000;
     mockNow(start);
@@ -1872,6 +2052,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("keeps each suggestion's original context across feedback pages", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const start = Date.parse("2026-10-01T00:00:00.000Z");
     mockNow(start);
     const fixture = await primaryRun();
@@ -1931,6 +2116,11 @@ describe("Suggestion feedback context", () => {
   });
 
   it("marks a bounded snapshot incomplete instead of presenting omitted actions as no feedback", async () => {
+    await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
     const fixture = await primaryRun();
     for (let index = 0; index < 101; index++) {
       const created = await accept(

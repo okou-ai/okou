@@ -10,6 +10,7 @@ import Observation
 final class WorkspaceStore {
   private let client: APIClient
   private let sync: ChatSync
+  private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -24,6 +25,7 @@ final class WorkspaceStore {
   var error: String?
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
+  private(set) var threadPreview: ChatThreadPreviewResources?
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -113,7 +115,7 @@ final class WorkspaceStore {
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep)
   @ObservationIgnored lazy var projects = ChatProjectStore(
-    client: client, resources: resources, sync: sync,
+    client: client, resources: resources, sync: sync, disclosure: projectDisclosure,
     didFail: { [weak self] in self?.handle($0) },
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
@@ -139,6 +141,7 @@ final class WorkspaceStore {
   init(
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
+    projectDisclosure: ProjectDisclosureStorage? = nil,
     measurementScope: ChatCacheScope? = nil,
     voiceCapture: (@MainActor () -> any VoiceAudioCapture)? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
@@ -160,6 +163,7 @@ final class WorkspaceStore {
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
     self.draftStorage = draftStorage
+    self.projectDisclosure = projectDisclosure
     self.measurementScope = measurementScope
     self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
@@ -190,7 +194,7 @@ final class WorkspaceStore {
       }
     }
     await list.restoreCached()
-    await projects.restore(userID: userID, workspaceID: workspaceID, apiURL: client.baseURL)
+    await projects.restore()
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
     await withTaskCancellationHandler {
@@ -276,7 +280,30 @@ final class WorkspaceStore {
     return conversation
   }
 
+  func previewChat(_ id: String) {
+    guard !closed, !needsUpgrade, threadPreview?.threadID != id,
+      list.threads.contains(where: { $0.id == id })
+    else { return }
+    threadPreview?.close()
+    // Share serialized history reads without retaining a conversation, draft or realtime work.
+    threadPreview = ChatThreadPreviewResources(
+      threadID: id, sync: sync,
+      didFinish: { [weak self, sync] in
+        guard self?.conversations[id] == nil else { return }
+        _ = await sync.releaseHistory(threadID: id)
+      },
+      didFail: { [weak self] in self?.handle($0) })
+  }
+
+  func dismissChatPreview(_ id: String) {
+    guard threadPreview?.threadID == id else { return }
+    threadPreview?.close()
+    threadPreview = nil
+  }
+
   func close() {
+    threadPreview?.close()
+    threadPreview = nil
     closed = true
     sidebar.close()
     startupGeneration = UUID()
@@ -776,7 +803,7 @@ final class WorkspaceStore {
   func createChat(composerOptions: ChatComposerOptions? = nil) async
     -> ChatThread?
   {
-    guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
+    guard creationTask == nil, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     guard newModelSelection.canSend else { return nil }
     let selection = modelStore.configuration.map { _ in
       newModelSelection.captureNewChatSelection()

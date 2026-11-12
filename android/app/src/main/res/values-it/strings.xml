@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Home</string>
+    <string name="settings">Impostazioni</string>
+    <string name="back">Indietro</string>
+    <string name="home_title">Spazio per la tua prossima idea</string>
+    <string name="home_description">Scrivi una bozza e visualizzala su questo dispositivo.</string>
+    <string name="draft_label">Bozza</string>
+    <string name="draft_hint">A cosa stai pensando?</string>
+    <string name="local_preview">Visualizza bozza</string>
+    <string name="preview_title">Anteprima</string>
+    <string name="appearance">Aspetto</string>
+    <string name="appearance_description">Scegli l’aspetto di Okou su questo dispositivo.</string>
+    <string name="appearance_system">Segui il sistema</string>
+    <string name="appearance_light">Chiaro</string>
+    <string name="appearance_dark">Scuro</string>
+    <string name="on_this_device">Su questo dispositivo</string>
+    <string name="appearance_local">L’aspetto viene salvato solo su questo dispositivo.</string>
+    <string name="appearance_loading">Caricamento dell’aspetto…</string>
+    <string name="appearance_saving">Salvataggio dell’aspetto…</string>
+    <string name="appearance_read_failed">Impossibile caricare l’aspetto. Riprova.</string>
+    <string name="appearance_write_failed">Impossibile salvare l’aspetto. Riprova.</string>
+    <string name="retry">Riprova</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d riga</item>
+        <item quantity="many">%1$d righe</item>
+        <item quantity="other">%1$d righe</item>
+    </plurals>
+</resources>

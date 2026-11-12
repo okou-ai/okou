@@ -1145,7 +1145,10 @@ type DriveTokenResult<T> =
   | { readonly type: "ok"; readonly value: T }
   | { readonly type: "unauthorized" };
 
-type DriveUploadResult<T> = DriveTokenResult<T> | BadRequestResponse;
+type DriveUploadResult<T> =
+  | DriveTokenResult<T>
+  | { readonly type: "scope-required" }
+  | BadRequestResponse;
 
 async function findDriveFolder(
   args: {
@@ -1194,12 +1197,22 @@ async function findDriveFolder(
     return { type: "unauthorized" };
   }
   if (!response.ok) {
+    const providerReasons = await readDriveErrorReasons(response, signal);
     log.warn("Google Drive folder lookup failed", {
       phase: "folder_lookup",
       providerStatus: response.status,
-      providerReasons: await readDriveErrorReasons(response, signal),
+      providerReasons,
       attempt: args.attempt,
     });
+    // A token refresh cannot add consent. Only these explicit scope reasons
+    // justify reconnecting; file permissions, policy and quota failures do not.
+    if (
+      response.status === 403 &&
+      (providerReasons.includes("insufficientPermissions") ||
+        providerReasons.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
+    ) {
+      return { type: "scope-required" };
+    }
     return badRequestMessage(
       `Google Drive folder lookup failed with HTTP ${String(response.status)}`,
     );
@@ -1922,6 +1935,22 @@ const uploadArtifactRefreshingToken$ = command(
 type NotFoundResponse = ReturnType<typeof notFound>;
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 
+function driveScopeRequired(connectionId: string) {
+  return {
+    status: 403 as const,
+    body: {
+      error: {
+        code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+        message:
+          "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+      },
+      recovery: { action: "reconnect" as const, connectionId },
+    },
+  };
+}
+
+type DriveScopeRequiredResponse = ReturnType<typeof driveScopeRequired>;
+
 /**
  * Upload an owned artifact to the caller's authorized Google Drive account.
  *
@@ -1945,6 +1974,7 @@ export const syncArtifactToGoogleDrive$ = command(
   ): Promise<
     | NotFoundResponse
     | BadRequestResponse
+    | DriveScopeRequiredResponse
     | { readonly status: 200; readonly body: DriveSyncResult }
   > => {
     const featureSwitchOverrides = await get(
@@ -2317,6 +2347,7 @@ const uploadResolvedArtifact$ = command(
     signal: AbortSignal,
   ): Promise<
     | BadRequestResponse
+    | DriveScopeRequiredResponse
     | { readonly status: 200; readonly body: DriveSyncResult }
   > => {
     const { args, artifact, tokens, featureSwitchContext } = params;
@@ -2410,6 +2441,9 @@ const uploadResolvedArtifact$ = command(
     }
     if (result.type === "unauthorized") {
       return badRequestMessage("Google Drive upload failed with HTTP 401");
+    }
+    if (result.type === "scope-required") {
+      return driveScopeRequired(tokens.connection.connectorId);
     }
 
     return await finishDriveUpload(

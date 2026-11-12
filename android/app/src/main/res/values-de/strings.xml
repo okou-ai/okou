@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Start</string>
+    <string name="settings">Einstellungen</string>
+    <string name="back">Zurück</string>
+    <string name="home_title">Platz für deine nächste Idee</string>
+    <string name="home_description">Schreibe einen Entwurf und sieh ihn dir auf diesem Gerät an.</string>
+    <string name="draft_label">Entwurf</string>
+    <string name="draft_hint">Woran denkst du?</string>
+    <string name="local_preview">Entwurf ansehen</string>
+    <string name="preview_title">Vorschau</string>
+    <string name="appearance">Erscheinungsbild</string>
+    <string name="appearance_description">Wähle das Erscheinungsbild von Okou auf diesem Gerät.</string>
+    <string name="appearance_system">Systemeinstellung</string>
+    <string name="appearance_light">Hell</string>
+    <string name="appearance_dark">Dunkel</string>
+    <string name="on_this_device">Auf diesem Gerät</string>
+    <string name="appearance_local">Das Erscheinungsbild wird nur auf diesem Gerät gespeichert.</string>
+    <string name="appearance_loading">Erscheinungsbild wird geladen…</string>
+    <string name="appearance_saving">Erscheinungsbild wird gespeichert…</string>
+    <string name="appearance_read_failed">Erscheinungsbild konnte nicht geladen werden. Versuche es erneut.</string>
+    <string name="appearance_write_failed">Erscheinungsbild konnte nicht gespeichert werden. Versuche es erneut.</string>
+    <string name="retry">Erneut versuchen</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d Zeile</item>
+        <item quantity="other">%1$d Zeilen</item>
+    </plurals>
+</resources>

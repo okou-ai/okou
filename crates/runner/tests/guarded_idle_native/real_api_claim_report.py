@@ -66,9 +66,8 @@ def validate_owner(events, terminal, policy, native_input, claim, role, order, s
         raise ValueError("native claimant changed physical ownership")
     ordered = [terminal[1], *events[:2], terminal[2], terminal[3], *events[2:4],
                terminal[4], *events[4:], terminal[5]]
-    for field in ("monotonic_ns", "unix_ns"):
-        if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-            raise ValueError("claim/cleanup clocks lost positive ordering")
+    report.validate_witness_clock_order(
+        ordered, "claim/cleanup clocks lost positive ordering")
     progress, outcome, tail, tail_progress, status, completed, joined, saved = [e["evidence"] for e in events]
     run = native_input["claim_run_id"]
     runner = native_input["runner_ids"][0 if role == "a" else 1]
