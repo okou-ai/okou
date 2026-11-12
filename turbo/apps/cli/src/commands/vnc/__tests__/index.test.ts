@@ -774,7 +774,7 @@ describe("VNC screenshots", () => {
       path,
       sha256: createHash("sha256").update(expected).digest("hex"),
     });
-    expect(await readFile(path)).toEqual(expected);
+    expect((await readFile(path)).equals(expected)).toBe(true);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await readdir(directory)).toEqual(["large.png"]);
     expect(process.exitCode).toBe(0);
