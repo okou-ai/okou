@@ -19,7 +19,7 @@ private final class HeartbeatClock: @unchecked Sendable {
 
 @MainActor
 final class HostRequestDiagnosticsTests: XCTestCase {
-  func testRetriesUploadBoundedCorrelatedHistoryAtInfoLevel() throws {
+  func testRetriesUploadBoundedCorrelatedHistoryAtInfoLevel() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     var diagnostics = HostRequestDiagnostics()
@@ -30,6 +30,8 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     }
     diagnostics.finish(outcome: .recovered)
 
+    // SDK flush completion is not a receipt from the HTTP collector.
+    await fulfillment(of: [collector.expectation(eventCount: 2)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
     XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
@@ -44,7 +46,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertFalse(recovered.formatted.contains("private-error-description"))
   }
 
-  func testAwakeFailureEscalatesOnceAtNinetySecondsAndResetsAfterRecovery() throws {
+  func testAwakeFailureEscalatesOnceAtNinetySecondsAndResetsAfterRecovery() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
@@ -56,6 +58,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     diagnostics.failed(error: error, requests: [], retryDelay: 2, operation: operation)
     clock.advance(.seconds(79), awake: .seconds(79))
     diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
     XCTAssertEqual(try collector.events().compactMap { $0["level"].string }, ["info"])
 
     clock.advance(.seconds(1), awake: .seconds(1))
@@ -63,6 +66,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     clock.advance(.seconds(60), awake: .seconds(60))
     diagnostics.failed(error: error, requests: [], retryDelay: 60)
     diagnostics.finish(outcome: .recovered)
+    await fulfillment(of: [collector.expectation(eventCount: 3)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 3)
     let failure = try XCTUnwrap(events.first { $0["level"].string == "error" })
@@ -73,12 +77,13 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     diagnostics.failed(error: error, requests: [], retryDelay: 2)
     clock.advance(.seconds(90), awake: .seconds(90))
     diagnostics.failed(error: error, requests: [], retryDelay: 60)
+    await fulfillment(of: [collector.expectation(eventCount: 5)], timeout: 5)
     let episodes = try collector.events()
     XCTAssertEqual(episodes.filter { $0["level"].string == "error" }.count, 2)
     XCTAssertEqual(Set(episodes.compactMap { $0["tags"]["heartbeatEpisodeId"].string }).count, 2)
   }
 
-  func testSleepInterruptedFailureAndRecoveryRemainInfo() throws {
+  func testSleepInterruptedFailureAndRecoveryRemainInfo() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
@@ -92,6 +97,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     clock.advance(.seconds(3602), awake: .seconds(2))
     diagnostics.finish(outcome: .recovered)
 
+    await fulfillment(of: [collector.expectation(eventCount: 2)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.compactMap { $0["level"].string }, ["info", "info"])
     let recovered = try XCTUnwrap(
@@ -102,7 +108,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(context["systemSuspendedMs"].number), 3_631_549, accuracy: 0.001)
   }
 
-  func testRecoveryStillReportsAnAwakeOutageThatCrossedTheThresholdBetweenAttempts() throws {
+  func testRecoveryStillReportsAnAwakeOutageThatCrossedTheThresholdBetweenAttempts() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
@@ -111,6 +117,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     clock.advance(.seconds(91), awake: .seconds(91))
     diagnostics.finish(outcome: .recovered)
 
+    await fulfillment(of: [collector.expectation(eventCount: 3)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 3)
     let failure = try XCTUnwrap(events.first { $0["level"].string == "error" })
@@ -121,7 +128,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertEqual(failure["tags"]["heartbeatEpisodeId"], recovered["tags"]["heartbeatEpisodeId"])
   }
 
-  func testTransientHTTPFailuresAreInfoAndUnexpectedResponsesEscalateImmediately() throws {
+  func testTransientHTTPFailuresAreInfoAndUnexpectedResponsesEscalateImmediately() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     var diagnostics = HostRequestDiagnostics()
@@ -138,6 +145,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     }
     diagnostics.finish(outcome: .recovered)
 
+    await fulfillment(of: [collector.expectation(eventCount: 3)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 3)
     let first = try XCTUnwrap(events.first {
@@ -151,7 +159,7 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertFalse(failure.formatted.contains("private-response"))
   }
 
-  func testUnknownFailuresRemainErrorsEvenWithoutHTTP() throws {
+  func testUnknownFailuresRemainErrorsEvenWithoutHTTP() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     var diagnostics = HostRequestDiagnostics()
@@ -159,18 +167,20 @@ final class HostRequestDiagnosticsTests: XCTestCase {
       error: DesktopFailure("invalid_response", "private-decoder-error"), requests: [], retryDelay: 2)
     diagnostics.finish(outcome: .stopped)
 
+    await fulfillment(of: [collector.expectation(eventCount: 2)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
     let failure = try XCTUnwrap(events.first { $0["tags"]["heartbeatOutcome"].string == "failed" })
     XCTAssertEqual(failure["level"].string, "error")
     XCTAssertFalse(failure.formatted.contains("private-decoder-error"))
   }
-  func testStateDiagnosticsPreserveTheActualRouteAndCorrelateRecovery() throws {
+  func testStateDiagnosticsPreserveTheActualRouteAndCorrelateRecovery() async throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     var diagnostics = HostRequestDiagnostics(request: .state)
     diagnostics.failed(error: URLError(.networkConnectionLost), requests: [], retryDelay: 2)
     diagnostics.finish(outcome: .recovered)
+    await fulfillment(of: [collector.expectation(eventCount: 2)], timeout: 5)
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
     let recovered = try XCTUnwrap(events.first { $0["tags"]["hostRequestOutcome"].string == "recovered" })
