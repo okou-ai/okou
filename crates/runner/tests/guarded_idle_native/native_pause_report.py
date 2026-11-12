@@ -57,10 +57,9 @@ def validate(directory):
         failure.status(baseline, sandbox=identity[0])
         exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
               "native physical pause changed original inputs")
-        history, operation = later.identifier(captured.get("history_run_id")), later.identifier(captured.get("operation_run_id"))
-        if history == operation or history in identities or operation in identities:
-            raise ValueError("native physical pause replayed run or resource identity")
-        identities.update((history, operation))
+        history, operation = later.history_operation(
+            captured, identities, "native physical pause replayed run or resource identity"
+        )
         reuse = "thread:native-guarded-"+history
         exact(baseline["idle_sandboxes"], [{"reuse_key":reuse,"sandbox_id":identity[0]}],
               "native physical pause lost original history binding")
