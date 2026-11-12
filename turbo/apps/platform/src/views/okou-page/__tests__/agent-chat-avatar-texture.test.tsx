@@ -28,7 +28,8 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -40,6 +41,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000031";
+/** The organization default agent the onboarding mock reports. */
+const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 /**
  * The flattest hair in the cast on a `round` face: the artwork covers the least
@@ -218,6 +221,43 @@ test("Give the organization default agent its own texture", async () => {
   );
   // The artwork is the drawn file, still shown through the same frame.
   expect(frame.querySelector("img")).toHaveAttribute(
+    "src",
+    DEFAULT_AGENT_AVATAR_URL,
+  );
+});
+
+test("Keep the default agent's texture on the My Okou greeting", async () => {
+  // My Okou draws the organization default artwork on the home greeting
+  // without the profile link, whatever the default agent's own avatar is. It
+  // is still the same artwork on the same frame, so it keeps the same tile.
+  const agent: AgentResponse = {
+    agentId: DEFAULT_AGENT_ID,
+    isDefaultAgent: true,
+    ownerId: "test-user-123",
+    displayName: "Okou",
+    description: null,
+    sound: null,
+    avatarUrl: avatarComposerUrl(AVATAR),
+    visibility: "public",
+  };
+  context.mocks.data.agents([agent]);
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
+    return respond(200, agent);
+  });
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${DEFAULT_AGENT_ID}/chat?compose=1`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+  const greeting = await screen.findByTestId("chat-greeting");
+
+  await waitFor(() => {
+    expect(textureUrl(greeting)).toBe(
+      avatarTextureUrl(defaultAgentAvatarTextures()[0]!),
+    );
+  });
+  expect(greeting.querySelector("img")).toHaveAttribute(
     "src",
     DEFAULT_AGENT_AVATAR_URL,
   );
