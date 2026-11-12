@@ -2,41 +2,9 @@ import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/vali
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
-import { and, eq, exists, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import {
-  pgBooleanDecoder,
-  zodDriverValueDecoder,
-} from "../../lib/db-structured-result";
-
-/** A missing, disabled or bound definition cannot become Direct after preparation. */
-export function customConnectorDirectNetworkAdmission(
-  orgId: string,
-  connectorId: string,
-) {
-  const connector = orgCustomConnectors;
-  const binding = orgCustomConnectorCloudflareBindings;
-  return exists(
-    new QueryBuilder()
-      .select({ id: connector.id })
-      .from(connector)
-      .leftJoin(
-        binding,
-        and(
-          eq(binding.connectorId, connector.id),
-          eq(binding.orgId, connector.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(connector.id, connectorId),
-          eq(connector.orgId, orgId),
-          eq(connector.enabled, true),
-          isNull(binding.connectorId),
-        ),
-      ),
-  ).mapWith(pgBooleanDecoder);
-}
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 
 /** Read the org-owned network separately from the member's application account. */
 export function customConnectorNetworkBindingSelection() {
@@ -48,7 +16,8 @@ export function customConnectorNetworkBindingSelection() {
       'type', 'cloudflare_access',
       'configId', ${binding.configId},
       'status', 'available',
-      'name', ${config.name}
+      'name', ${config.name},
+      'generation', ${config.generation}
     )`,
     })
     .from(binding)

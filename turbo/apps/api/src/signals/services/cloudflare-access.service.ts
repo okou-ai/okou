@@ -34,6 +34,11 @@ import {
   type NetworkReference,
 } from "./network-config-model";
 import { publishNetworkHostInvalidation$ } from "./network-config-invalidation.service";
+import {
+  publishConnectorRuntimeSyncWakeups$,
+  reportConnectorRuntimeWakeupDiscoveryFailure,
+} from "./connector-runtime-wakeup.service";
+import { rootSignal$ } from "../context/root";
 
 interface Owner {
   readonly orgId: string;
@@ -305,11 +310,12 @@ function ownReferences(hosts: readonly NetworkReference[], owner: Owner) {
 }
 const publishUpdateInvalidation$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly actor: Actor;
       readonly scope: AccessScope;
       readonly affectedHosts: readonly NetworkReference[];
+      readonly rotatedConfigId?: string;
     },
   ) => {
     await publishCloudflareAccessClientInvalidation(args.actor, args.scope);
@@ -317,6 +323,35 @@ const publishUpdateInvalidation$ = command(
       orgId: args.actor.orgId,
       hosts: args.affectedHosts,
     });
+    if (args.scope === "organization" && args.rotatedConfigId) {
+      const references = cloudflareCustomConnectorReferencesQuery(
+        args.actor.orgId,
+        args.rotatedConfigId,
+      ).as("rotated_cloudflare_connector_references");
+      const dependents = await settle(
+        get(db$).select({ id: references.id }).from(references),
+      );
+      if (!dependents.ok) {
+        reportConnectorRuntimeWakeupDiscoveryFailure({
+          orgId: args.actor.orgId,
+          scopedToUser: false,
+          scopedToAgent: false,
+          targetCount: 0,
+          error: dependents.error,
+        });
+        return;
+      }
+      await set(
+        publishConnectorRuntimeSyncWakeups$,
+        {
+          scope: { orgId: args.actor.orgId },
+          targets: dependents.value.map(({ id }) => {
+            return { kind: "custom" as const, customConnectorId: id };
+          }),
+        },
+        get(rootSignal$),
+      );
+    }
   },
 );
 
@@ -444,6 +479,7 @@ export const updateCloudflareAccessConfig$ = command(
       actor: args.owner,
       scope: result.scope,
       affectedHosts: result.invalidatedHosts,
+      rotatedConfigId: args.configId,
     });
     return {
       ok: true as const,

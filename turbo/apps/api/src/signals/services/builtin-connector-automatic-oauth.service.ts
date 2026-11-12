@@ -234,7 +234,12 @@ function failure(error: unknown): Failure {
   if (error instanceof McpAutomaticOAuthError) {
     return {
       kind: "error",
-      reason: error.kind === "binding-drift" ? "stale-contract" : error.kind,
+      reason:
+        error.kind === "binding-drift"
+          ? "stale-contract"
+          : error.kind === "network" || error.kind === "unknown"
+            ? "temporary"
+            : error.kind,
     };
   }
   if (
@@ -1074,10 +1079,9 @@ const refreshAutomatic = command(
       ) {
         return await set(markReconnect$, account.id, signal);
       }
-      if (
-        refreshed.error instanceof McpAutomaticOAuthError &&
-        refreshed.error.kind === "temporary"
-      ) {
+      if (refreshed.error instanceof McpAutomaticOAuthError) {
+        // HTTP/protocol failures do not establish grant revocation. The
+        // positive invalid-grant/client and binding checks are handled above.
         return { kind: "unavailable", reason: "temporary" };
       }
       throw refreshed.error;

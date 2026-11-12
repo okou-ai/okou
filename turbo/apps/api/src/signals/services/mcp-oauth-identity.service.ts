@@ -1,5 +1,8 @@
+import {
+  buildDiscoveryUrls,
+  type FetchLike,
+} from "@modelcontextprotocol/client";
 import { accept } from "@okouai/connectors/accept";
-import { buildDiscoveryUrls } from "@modelcontextprotocol/client";
 import {
   createLocalJWKSet,
   decodeJwt,
@@ -135,6 +138,7 @@ function optionalOidcIdentityMetadata(
 async function discoverOptionalOidcIdentityMetadata(
   context: McpAutomaticOAuthIdentityContext,
   signal: AbortSignal,
+  fetchFn: FetchLike = mcpOAuthSafeFetch,
 ): Promise<McpAutomaticOAuthIdentityMetadata | undefined> {
   const oidcDiscoveryUrls = buildDiscoveryUrls(context.issuer).filter(
     (candidate) => {
@@ -144,7 +148,7 @@ async function discoverOptionalOidcIdentityMetadata(
   for (const candidate of oidcDiscoveryUrls) {
     const fetched = await settle(
       accept(
-        mcpOAuthSafeFetch(candidate.url, {
+        fetchFn(candidate.url, {
           headers: { accept: "application/json" },
           signal,
         }),
@@ -219,11 +223,9 @@ async function fetchOptionalIdentityJson(
   url: string,
   init: RequestInit,
   signal: AbortSignal,
+  fetchFn: FetchLike = mcpOAuthSafeFetch,
 ): Promise<unknown> {
-  const response = await accept(
-    mcpOAuthSafeFetch(url, { ...init, signal }),
-    [200],
-  );
+  const response = await accept(fetchFn(url, { ...init, signal }), [200]);
   return safeJsonParse(await response.text());
 }
 
@@ -232,6 +234,7 @@ async function optionalUserInfoClaims(
   accessToken: string,
   subject: string,
   signal: AbortSignal,
+  fetchFn?: FetchLike,
 ): Promise<zInfer<typeof userInfoClaimsSchema> | null> {
   const userInfoEndpoint = metadata.userInfoEndpoint;
   if (!userInfoEndpoint) {
@@ -249,6 +252,7 @@ async function optionalUserInfoClaims(
             },
           },
           signal,
+          fetchFn,
         ),
       );
       return parsed.success && parsed.data.sub === subject ? parsed.data : null;
@@ -267,6 +271,7 @@ async function discoverMcpAutomaticOAuthUserInfoResponse(
     readonly context: McpAutomaticOAuthIdentityContext;
     readonly accessToken: string;
     readonly idToken: string | undefined;
+    readonly fetchFn?: FetchLike;
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthUserInfo | null> {
@@ -275,7 +280,7 @@ async function discoverMcpAutomaticOAuthUserInfoResponse(
     return null;
   }
   const metadataResult = await settle(
-    discoverOptionalOidcIdentityMetadata(args.context, signal),
+    discoverOptionalOidcIdentityMetadata(args.context, signal, args.fetchFn),
     signal,
   );
   signal.throwIfAborted();
@@ -286,7 +291,12 @@ async function discoverMcpAutomaticOAuthUserInfoResponse(
   const result = await settle(
     (async () => {
       const jwks = jwksSchema.parse(
-        await fetchOptionalIdentityJson(metadata.jwksUri, {}, signal),
+        await fetchOptionalIdentityJson(
+          metadata.jwksUri,
+          {},
+          signal,
+          args.fetchFn,
+        ),
       );
       const verified = await jwtVerify(
         idToken,
@@ -310,6 +320,7 @@ async function discoverMcpAutomaticOAuthUserInfoResponse(
         args.accessToken,
         claims.sub,
         signal,
+        args.fetchFn,
       );
       const tokenLabels = optionalIdentityClaims(claims);
       const userInfoLabels = userInfo ? optionalIdentityClaims(userInfo) : null;
@@ -341,6 +352,7 @@ export async function discoverMcpAutomaticOAuthUserInfo(
     readonly context: McpAutomaticOAuthIdentityContext;
     readonly accessToken: string;
     readonly idToken: string | undefined;
+    readonly fetchFn?: FetchLike;
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthUserInfo | null> {
@@ -359,6 +371,7 @@ export async function discoverStaticCustomOAuthUserInfo(
     readonly clientId: string;
     readonly accessToken: string;
     readonly idToken: string | null;
+    readonly fetchFn?: FetchLike;
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthUserInfo | null> {
@@ -385,6 +398,7 @@ export async function discoverStaticCustomOAuthUserInfo(
       },
       accessToken: args.accessToken,
       idToken,
+      fetchFn: args.fetchFn,
     },
     signal,
   );

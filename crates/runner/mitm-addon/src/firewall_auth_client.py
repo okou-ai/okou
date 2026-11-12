@@ -72,6 +72,10 @@ import platform_api
 from aws_sigv4 import AwsSigV4Credentials
 
 MAX_FIREWALL_AUTH_RESPONSE_BODY_BYTES = 256 * 1024
+_MAX_CLOUDFLARE_TOKEN_LENGTH = 4096
+_MAX_CLOUDFLARE_GENERATION = 2**31 - 1
+_CLOUDFLARE_TOKEN_MIN_CODEPOINT = 0x21
+_CLOUDFLARE_TOKEN_MAX_CODEPOINT = 0x7E
 FIREWALL_AUTH_FETCH_DEADLINE_SECONDS = 10.0
 _MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES = 64 * 1024
 # RFC 8305's default cadence; four slots keep the oldest path eligible for about one second.
@@ -217,6 +221,8 @@ class FirewallAuthRequest:
     firewall_billable: bool = False
     matched_firewall: dict | None = None
     network_admission: bool = False
+    network_request: dict | None = None
+    network_intent: dict | None = None
     prepared_normal_body: bytes | None = field(default=None, repr=False, compare=False)
 
     def to_body(self, *, force_refresh: bool = False) -> dict:
@@ -243,6 +249,12 @@ class FirewallAuthRequest:
             body["matchedFirewall"] = self.matched_firewall
         if self.network_admission:
             body["networkAdmission"] = True
+        if self.network_request is not None:
+            body["networkRequest"] = self.network_request
+        if self.network_intent is not None:
+            body["networkIntent"] = self.network_intent
+        if not self.encrypted_secrets:
+            body.pop("encryptedSecrets", None)
         if force_refresh:
             body["forceRefresh"] = True
         return body
@@ -269,6 +281,8 @@ class FirewallAuthPayload:
     base: str | None = None
     query: dict[str, str] | None = None
     aws_sigv4: AwsSigV4Credentials | None = None
+    # Explicit network-only requests populate this field, cached separately from app credentials.
+    network_admission: dict | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -912,9 +926,48 @@ def _parse_firewall_auth_success(
         raise _malformed_firewall_auth_success("headers is required")
 
     headers = _parse_string_map(decoded_map["headers"], "headers")
+    network_admission = None
     if request.network_admission:
-        if decoded_map.get("networkAdmission") != {"kind": "direct"}:
-            raise _malformed_firewall_auth_success("expected Direct network admission")
+        value = decoded_map.get("networkAdmission")
+        expected = request.network_request.get("intent") if request.network_request else None
+        if not isinstance(value, dict):
+            raise _malformed_firewall_auth_success("missing network admission")
+        if value.get("kind") == "direct":
+            if value != {"kind": "direct"} or expected != {"kind": "direct"}:
+                raise _malformed_firewall_auth_success("network intent changed")
+        elif value.get("kind") == "cloudflare_access":
+            if (
+                set(value) != {"kind", "configId", "generation", "headers"}
+                or not isinstance(expected, dict)
+                or set(expected) != {"kind", "configId", "generation"}
+                or expected.get("kind") != "cloudflare_access"
+                or expected.get("configId") != value.get("configId")
+                or isinstance(value.get("generation"), bool)
+                or not isinstance(value.get("generation"), int)
+                or value["generation"] <= 0
+                or value["generation"] > _MAX_CLOUDFLARE_GENERATION
+            ):
+                raise _malformed_firewall_auth_success("invalid Cloudflare network identity")
+            pair = value.get("headers")
+            if not isinstance(pair, dict) or set(pair) != {
+                "CF-Access-Client-Id",
+                "CF-Access-Client-Secret",
+            }:
+                raise _malformed_firewall_auth_success("invalid Cloudflare network headers")
+            for token in pair.values():
+                if (
+                    not isinstance(token, str)
+                    or not 1 <= len(token) <= _MAX_CLOUDFLARE_TOKEN_LENGTH
+                    or any(
+                        ord(char) < _CLOUDFLARE_TOKEN_MIN_CODEPOINT
+                        or ord(char) > _CLOUDFLARE_TOKEN_MAX_CODEPOINT
+                        for char in token
+                    )
+                ):
+                    raise _malformed_firewall_auth_success("invalid Cloudflare header value")
+        else:
+            raise _malformed_firewall_auth_success("unsupported network admission")
+        network_admission = value
     elif "networkAdmission" in decoded_map:
         raise _malformed_firewall_auth_success("unsolicited network admission")
     expires_at = _parse_expires_at(decoded_map)
@@ -949,6 +1002,7 @@ def _parse_firewall_auth_success(
 
     payload = FirewallAuthPayload(
         headers=headers,
+        network_admission=network_admission,
         resolved_secrets=resolved_secrets,
         base=base,
         query=query,

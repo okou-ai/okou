@@ -35,7 +35,7 @@ import {
   DialogTitle,
   LoadErrorRow,
 } from "@okouai/ui";
-import { CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH } from "@okouai/api-contracts/validators/cloudflare-access";
+import { CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH } from "@okouai/api-contracts/validators/cloudflare-access-credentials";
 import type {
   CloudflareAccessConfig,
   ScopedCloudflareAccessConfig,

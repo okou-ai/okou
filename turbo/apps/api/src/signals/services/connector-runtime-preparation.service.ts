@@ -10,7 +10,11 @@ import {
   type NetworkPolicy,
   extractSecretNamesFromApis,
 } from "@okouai/connectors/firewall-types";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { safeSync } from "../utils";
 import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
 import type { CustomConnectorCredentialAccess } from "./custom-connector-credential-access.service";
@@ -342,13 +346,35 @@ function customRuntimePermissionPolicy(args: {
   return permissionPolicy;
 }
 
+function customRuntimeAuthUnavailable(args: {
+  readonly row: CustomConnectorRuntimeDataRows[number];
+  readonly headers: Record<string, string>;
+  readonly query: Record<string, string>;
+}) {
+  return (
+    Object.keys(args.headers).length === 0 &&
+    Object.keys(args.query).length === 0 &&
+    args.row.connector.kind === "mcp" &&
+    args.row.connector.authMode !== "none" &&
+    !(
+      args.row.connector.authMode === "automatic" &&
+      args.row.credentialAccess.kind === "current" &&
+      args.row.credentialAccess.resolvedAuthMethod === "none"
+    )
+  );
+}
+
 async function buildCustomConnectorRuntimeRow(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
   readonly context: BuildCustomConnectorRuntimeContextArgs;
   readonly selectedPermissionNames: readonly string[];
 }): Promise<BuiltCustomConnectorRuntimeRow> {
-  // Preparation cannot publish an executable Direct rule for a bound definition.
-  if (args.row.connector.networkBinding) {
+  const networkEnabled = isFeatureEnabled(
+    FeatureSwitchKey.CustomConnectorCloudflareAccess,
+    args.context.featureSwitchContext,
+  );
+  const binding = args.row.connector.networkBinding;
+  if (binding && (!networkEnabled || binding.status !== "available")) {
     return unavailableCustomConnectorRuntimeRow();
   }
   const hasProvidedBaseUrlVars =
@@ -361,18 +387,8 @@ async function buildCustomConnectorRuntimeRow(args: {
   const { headers, query } = customConnectorRuntimeAuth({
     row: args.row,
   });
-  if (Object.keys(headers).length === 0 && Object.keys(query).length === 0) {
-    if (
-      args.row.connector.kind === "mcp" &&
-      args.row.connector.authMode !== "none" &&
-      !(
-        args.row.connector.authMode === "automatic" &&
-        args.row.credentialAccess.kind === "current" &&
-        args.row.credentialAccess.resolvedAuthMethod === "none"
-      )
-    ) {
-      return unavailableCustomConnectorRuntimeRow();
-    }
+  if (customRuntimeAuthUnavailable({ row: args.row, headers, query })) {
+    return unavailableCustomConnectorRuntimeRow();
   }
   if (baseUrlVars === undefined) {
     return unavailableCustomConnectorRuntimeRow();
@@ -401,7 +417,16 @@ async function buildCustomConnectorRuntimeRow(args: {
     }
     return unavailableCustomConnectorRuntimeRow();
   }
-  const apis = apisResult.ok;
+  const networkIntent = customConnectorRuntimeNetworkIntent(
+    networkEnabled,
+    binding,
+  );
+  const apis = apisResult.ok.map((api) => {
+    return {
+      ...api,
+      ...(networkIntent ? { networkIntent } : {}),
+    };
+  });
   if (apis.length === 0) {
     return unavailableCustomConnectorRuntimeRow();
   }
@@ -424,6 +449,22 @@ async function buildCustomConnectorRuntimeRow(args: {
       permissionBundle,
     }),
   };
+}
+
+function customConnectorRuntimeNetworkIntent(
+  enabled: boolean,
+  binding: CustomConnectorExecutionDefinition["networkBinding"],
+) {
+  if (!enabled) {
+    return undefined;
+  }
+  return binding?.status === "available"
+    ? {
+        kind: "cloudflare_access" as const,
+        configId: binding.configId,
+        generation: binding.generation,
+      }
+    : { kind: "direct" as const };
 }
 
 export function orderedCustomConnectorRuntimeRows(
@@ -577,6 +618,7 @@ export function runtimeFirewall(firewall: ExpandedFirewallConfig): Firewall {
         base: api.base,
         ...(api.hostPolicy !== undefined ? { hostPolicy: api.hostPolicy } : {}),
         auth: api.auth,
+        ...(api.networkIntent ? { networkIntent: api.networkIntent } : {}),
         permissions: api.permissions ?? [],
       };
     }),

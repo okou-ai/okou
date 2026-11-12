@@ -431,6 +431,17 @@ const loadCustomSnapshot$ = command(
   },
 );
 
+function customTargetIsAccountless(
+  sourceId: string | undefined,
+  row: CustomConnectorRuntimeDataRows[number],
+) {
+  return (
+    sourceId === undefined &&
+    row.connector.authMode === "none" &&
+    row.credentialAccess.kind === "absent"
+  );
+}
+
 async function resolveCustomTarget(args: {
   readonly registration: Extract<
     ConnectorRuntimeTargetRegistration,
@@ -457,11 +468,15 @@ async function resolveCustomTarget(args: {
   const accountResolution = args.snapshot.accountResolutions.get(
     connectorAccountTargetKey(target),
   );
-  if (accountResolution?.kind !== "resolved") {
-    return customAbsentResult(target, "connector-unavailable");
-  }
   const custom = args.snapshot.customTargets.get(target.customConnectorId);
   if (!custom) {
+    return customAbsentResult(target, "connector-unavailable");
+  }
+  const accountless = customTargetIsAccountless(
+    args.registration.sourceId,
+    custom.row,
+  );
+  if (accountResolution?.kind !== "resolved" && !accountless) {
     return customAbsentResult(target, "connector-unavailable");
   }
   if (custom.row.credentialAccess.kind === "incompatible") {
@@ -479,7 +494,7 @@ async function resolveCustomTarget(args: {
     });
     return customAbsentResult(target, "connector-unavailable");
   }
-  if (custom.row.credentialAccess.kind === "absent") {
+  if (custom.row.credentialAccess.kind === "absent" && !accountless) {
     return customAbsentResult(target, "connector-unavailable");
   }
   const row = custom.row;
@@ -532,17 +547,23 @@ async function resolveCustomTarget(args: {
     state: "available" as const,
     firewall: {
       ...state.firewall,
-      sourceId: accountResolution.account.connectorId,
+      ...(accountResolution?.kind === "resolved"
+        ? { sourceId: accountResolution.account.connectorId }
+        : {}),
     },
     networkPolicy: state.networkPolicy,
     baseUrlVars: { ...resolvedTarget.baseUrlVars },
     ...(args.snapshot.memberRules === undefined
       ? {}
       : {
-          accountBinding: {
-            connectionId: accountResolution.account.connectorId,
-            baseUrlVars: { ...resolvedTarget.baseUrlVars },
-          },
+          ...(accountResolution?.kind === "resolved"
+            ? {
+                accountBinding: {
+                  connectionId: accountResolution.account.connectorId,
+                  baseUrlVars: { ...resolvedTarget.baseUrlVars },
+                },
+              }
+            : {}),
           ...nextMemberPermissionSync(
             args.snapshot.memberRules,
             customConnectorInternalName(target.customConnectorId),

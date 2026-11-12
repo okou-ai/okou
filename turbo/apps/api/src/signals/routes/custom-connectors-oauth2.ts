@@ -1,3 +1,7 @@
+import {
+  prepareCustomConnectorNetworkFetch$,
+  type CustomConnectorNetworkSnapshot,
+} from "../services/custom-connector-network-authority.service";
 import { command } from "ccstate";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -268,6 +272,8 @@ type CustomOAuthPersistenceResult =
   | { readonly ok: false; readonly message: string };
 
 interface CustomOAuthPersistenceArgs {
+  readonly definitionUpdatedAt: Date;
+  readonly networkSnapshot?: CustomConnectorNetworkSnapshot;
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -429,10 +435,21 @@ const completeAutomaticOAuthCallback$ = command(
             "Automatic OAuth callback changed",
           );
         }
+        const network = await set(
+          prepareCustomConnectorNetworkFetch$,
+          {
+            connector: args.connector,
+            userId: args.state.userId,
+            setupSnapshot: args.context.networkSnapshot ?? null,
+          },
+          signal,
+        );
         const token = await set(
           exchangeCustomConnectorAutomaticOAuthCode$,
           {
             context: args.context,
+            fetchFn: network.fetch,
+            networkSnapshot: network.snapshot,
             redirectUri: args.state.redirectUri,
             cimdClientId: clientMetadata.client_id,
             code: args.authorizationCode,
@@ -450,6 +467,8 @@ const completeAutomaticOAuthCallback$ = command(
             userId: args.state.userId,
             connectorId: args.connector.id,
             storageVersion: args.connector.storageVersion,
+            definitionUpdatedAt: args.connector.updatedAt,
+            networkSnapshot: network.snapshot,
             token: effectiveInitialToken(token, args.state.authorizationUrl),
             featureContext: args.featureContext,
             account: args.state.accountMutation,
@@ -490,6 +509,9 @@ const completeCustomOAuthCallback$ = command(
         readonly oauthConfig: CustomConnectorOAuthConfigRow;
       };
       readonly authorizationCode: string;
+      readonly context: NonNullable<
+        ReturnType<typeof parseValidCustomConnectorOAuthState>
+      > & { readonly authMode: "oauth" };
       readonly featureContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -512,9 +534,19 @@ const completeCustomOAuthCallback$ = command(
     }
     const completed = await tapError(
       (async () => {
+        const network = await set(
+          prepareCustomConnectorNetworkFetch$,
+          {
+            connector: args.connector,
+            userId: args.state.userId,
+            setupSnapshot: args.context.networkSnapshot ?? null,
+          },
+          signal,
+        );
         const token = await exchangeCustomConnectorOAuth2Code(
           {
             config: args.connector.oauthConfig,
+            fetchFn: network.fetch,
             clientSecret: credentials.clientSecret,
             code: args.authorizationCode,
             codeVerifier: args.state.codeVerifier,
@@ -530,6 +562,8 @@ const completeCustomOAuthCallback$ = command(
             userId: args.state.userId,
             connectorId: args.connector.id,
             storageVersion: args.connector.storageVersion,
+            definitionUpdatedAt: args.connector.updatedAt,
+            networkSnapshot: network.snapshot,
             token: effectiveInitialToken(token, args.state.authorizationUrl),
             featureContext: args.featureContext,
             account: args.state.accountMutation,
@@ -595,6 +629,7 @@ const completeCurrentOAuthCallback$ = command(
       {
         state: args.state,
         connector: args.connector,
+        context: args.context,
         authorizationCode: args.authorizationCode,
         featureContext: args.featureContext,
       },

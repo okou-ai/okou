@@ -118,6 +118,10 @@ export interface SlackFixtureIdentity {
 }
 
 export interface ApiTestMocks {
+  readonly dns: {
+    readonly resolve4: Mock<(hostname: string) => Promise<string[]>>;
+    readonly resolve6: Mock<(hostname: string) => Promise<string[]>>;
+  };
   readonly clerkRetryJitter: (value: number) => () => void;
   readonly abortSignal: {
     readonly timeout: AbortSignalTimeoutMock;
@@ -627,6 +631,10 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       connect: vi.fn<(url: string) => void>(),
       command: vi.fn<(command: BrowserUseCdpCommand) => unknown>(),
     },
+    dns: {
+      resolve4: vi.fn<(hostname: string) => Promise<string[]>>(),
+      resolve6: vi.fn<(hostname: string) => Promise<string[]>>(),
+    },
     clerk,
     s3: {
       send: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1034,6 +1042,13 @@ vi.mock("node:https", async (importOriginal) => {
   return await mockBoundedRequestModule(
     importOriginal as () => Promise<typeof import("node:https")>,
   );
+});
+
+vi.mock("node:dns/promises", () => {
+  return {
+    resolve4: apiTestMocks.dns.resolve4,
+    resolve6: apiTestMocks.dns.resolve6,
+  };
 });
 
 vi.mock("node:http", async (importOriginal) => {
@@ -1564,6 +1579,8 @@ export function apiTestS3PresignedUrl(command: unknown): string {
 }
 
 export function resetApiTestMocks(): void {
+  apiTestMocks.dns.resolve4.mockReset();
+  apiTestMocks.dns.resolve6.mockReset();
   apiTestMocks.abortSignal.timeout.mockReset();
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
