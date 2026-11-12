@@ -32,6 +32,7 @@ import { billingInvoicesRoutes } from "./routes/billing-invoices";
 import { billingPortalRoutes } from "./routes/billing-portal";
 import { billingRedeemRoutes } from "./routes/billing-redeem";
 import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
+import { billingSurveyRoutes } from "./routes/billing-survey";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
@@ -337,6 +338,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingInvoicesRoutes,
   ...billingPortalRoutes,
   ...billingRedeemCodeRoutes,
+  ...billingSurveyRoutes,
   ...billingRedeemRoutes,
   ...billingRestoreRoutes,
   ...billingStatusRoutes,

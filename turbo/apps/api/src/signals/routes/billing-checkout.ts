@@ -427,8 +427,20 @@ function usagePackCheckoutTierConflicts(
 }
 
 const confirmPlanPurchaseForOrg$ = command(
-  async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
-    const result = await set(confirmPlanPurchase$, orgId, previewToken, signal);
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    previewToken: string,
+    signal: AbortSignal,
+  ) => {
+    const result = await set(
+      confirmPlanPurchase$,
+      orgId,
+      userId,
+      previewToken,
+      signal,
+    );
     signal.throwIfAborted();
     if (result.status === "invalid_preview") {
       return conflict("Plan purchase preview is no longer valid");
@@ -469,6 +481,7 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
     const confirmation = await set(
       confirmPlanPurchaseForOrg$,
       auth.orgId,
+      auth.userId,
       bodyResult.data.previewToken,
       signal,
     );
@@ -533,6 +546,7 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
     startPlanPurchase$,
     {
       orgId: auth.orgId,
+      userId: auth.userId,
       tier,
       priceId,
       trialDays,
@@ -578,6 +592,7 @@ const checkoutConfirmAuthed$ = command(
     return await set(
       confirmPlanPurchaseForOrg$,
       auth.orgId,
+      auth.userId,
       bodyResult.data.previewToken,
       signal,
     );
@@ -598,11 +613,18 @@ const checkoutConfirm$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const confirmUsagePackPurchaseForOrg$ = command(
-  async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    previewToken: string,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     const result = await set(
       confirmUsagePackPurchase$,
       orgId,
+      userId,
       previewToken,
       signal,
     );
@@ -654,6 +676,7 @@ const usagePackCheckoutAuthed$ = command(
       return await set(
         confirmUsagePackPurchaseForOrg$,
         auth.orgId,
+        auth.userId,
         body.previewToken,
         signal,
       );
@@ -722,6 +745,7 @@ const usagePackCheckoutAuthed$ = command(
       startUsagePackPurchase$,
       {
         orgId: auth.orgId,
+        userId: auth.userId,
         tier: body.tier,
         planPriceId,
         allocations,
@@ -761,6 +785,7 @@ const usagePackCheckoutConfirmAuthed$ = command(
     return await set(
       confirmUsagePackPurchaseForOrg$,
       auth.orgId,
+      auth.userId,
       bodyResult.data.previewToken,
       signal,
     );

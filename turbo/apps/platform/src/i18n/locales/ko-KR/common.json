@@ -1313,6 +1313,40 @@
       "description": "더 많은 크레딧 및 동시 실행",
       "getPlan": "{{plan}} 받기"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "가격만 확인하고 있었어요",
+          "needs_approval": "다른 사람의 승인이 필요해요",
+          "not_ready_yet": "아직 결정할 준비가 안 됐어요",
+          "not_seeing_value": "아직 가치를 느끼지 못했어요",
+          "other": "기타",
+          "payment_issue": "결제 중 문제가 있었어요",
+          "price_higher_than_expected": "가격이 예상보다 높았어요",
+          "results_not_good_enough": "결과가 만족스럽지 않았어요"
+        },
+        "description": "질문은 하나뿐이에요. 답변은 서비스 개선에 도움이 됩니다.",
+        "question": "구매를 완료하지 않은 이유가 무엇인가요?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "지금은 더 필요하지 않아요",
+          "not_sure_worth_it": "아직 그만한 가치가 있는지 모르겠어요",
+          "other": "기타",
+          "still_trying": "좀 더 써 보고 싶어요",
+          "too_expensive": "너무 비싸요"
+        },
+        "question": "오늘 업그레이드하지 않는 이유가 무엇인가요?",
+        "reward": "이 워크스페이스에서 조건을 충족하는 첫 답변에 30일 동안 유효한 보너스 크레딧 {{credits}}개가 지급됩니다.",
+        "thanksWithCredits": "감사합니다! 크레딧 {{credits}}개가 추가되어 계속 사용할 수 있어요."
+      },
+      "error": "답변을 보내지 못했어요. 다시 시도해 주세요.",
+      "notNow": "나중에",
+      "otherLabel": "답변",
+      "otherPlaceholder": "자세히 알려 주세요(선택)",
+      "submit": "제출",
+      "thanks": "알려 주셔서 감사합니다."
+    },
     "toasts": {
       "autoRechargeUpdated": "자동 충전이 업데이트되었습니다",
       "cancellationScheduledDate": "취소가 예약되었습니다. 현재 플랜은 {{date}}까지 활성 상태입니다.",

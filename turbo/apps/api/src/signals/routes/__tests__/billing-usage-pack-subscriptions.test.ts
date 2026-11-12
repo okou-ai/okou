@@ -1508,7 +1508,10 @@ describe("usage pack allocation management", () => {
         ).toHaveBeenCalledWith(
           expect.objectContaining({
             customer: customerId,
-            metadata: managedUsagePackMetadata(managedFixture),
+            metadata: {
+              ...managedUsagePackMetadata(managedFixture),
+              billingSurveyUserId: fixture.userId,
+            },
             subscription_data: {
               metadata: managedUsagePackMetadata(managedFixture),
             },
