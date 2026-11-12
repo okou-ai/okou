@@ -390,13 +390,13 @@ def main():
                         )
                         path = f"/runners/{runner_id}/control/health?probe=1"
                         assert response(context, port, path) == (200, label + b":" + path.encode())
-                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}/services/events"
+                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}/"
                         assert response(context, port, path, True) == (101, label + b":ping")
                         payload = b"stream-" * 16384
                         assert response(context, port, path, method="POST", body=payload) == (
                             200, label + b":" + path.encode() + b":" + payload
                         )
-                        streamed_http(context, port, path, backend)
+                        streamed_http(context, port, path.rstrip("/"), backend)
                     for path in [
                         "/",
                         "/runners/not-a-uuid",
@@ -426,7 +426,7 @@ def main():
                     for runner_id, label in zip(ids, [b"first", b"second"], strict=True):
                         path = f"/runners/{runner_id}/control/health"
                         assert response(context, port, path) == (200, label + b":" + path.encode())
-                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}/services/events"
+                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}/"
                         assert response(context, port, path, True) == (101, label + b":ping")
                     assert before == {
                         p.name: (p.stat().st_ino, p.stat().st_mode)

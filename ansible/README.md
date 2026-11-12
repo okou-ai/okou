@@ -25,13 +25,11 @@ Runner creates and validates its namespace/socket; provisioning rejects unsafe
 existing ancestors, owners, modes, ACLs or symlinks instead of changing private
 live state. Missing sockets return 502 until their Runner starts.
 
-Runner control uses `/runners/<runnerId>/control/...`; future platform sandbox
-services reserve `/runners/<runnerId>/sandbox/runs/<runId>/services/<service>/...`.
+Runner control uses `/runners/<runnerId>/control/...`; future sandbox access
+reserves only `/runners/<runnerId>/sandbox/runs/<runId>/`. Paths below that
+prefix, destination resolution and sandbox authorization remain future design.
 Paths are unversioned. HTTP and classic WebSocket upgrades share TLS, routing
-and the Unix upstream. Application handlers own operation/upgrade validation,
-authorization and exact live Run/service assignment. No arbitrary client IP,
-port or Unix path is accepted. Arbitrary untrusted web applications additionally
-need a separately designed browser origin; path isolation does not supply it.
+and the Unix upstream. No sandbox handler is implemented in this slice.
 
 An official non-local Runner binds its listener and requests its own
 `https://<hostname>/runners/<runnerId>/control/health` before publishing the first
@@ -64,8 +62,8 @@ Runner control uses the existing official Runner service credential in
 Run dispatch share this service identity; there are no per-interface credentials
 or health-specific HMACs. API owns user permission checks and Run assignment;
 Runner owns local admission and execution deduplication. Browser/Guest sandbox
-access requires separate user/Run/service authorization and never receives this
-service credential. The API's general signing/KMS keys remain API-owned.
+access needs its own authorization design and never receives this service
+credential. The API's general signing/KMS keys remain API-owned.
 
 Only authenticated `GET /runners/<runnerId>/control/health` is implemented now.
 Reserved routes and WebSocket application operations remain rejected until
