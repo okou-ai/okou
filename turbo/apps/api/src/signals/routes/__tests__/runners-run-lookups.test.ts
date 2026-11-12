@@ -10,7 +10,7 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 const context = testContext();
 
 describe("Runner run lookup ownership", () => {
-  it("keeps a same-workspace denial from consuming a job or exposing its terminal state", async () => {
+  it("scopes active runtime synchronization to its owner without exposing terminal state", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
@@ -35,34 +35,13 @@ describe("Runner run lookup ownership", () => {
       });
 
       await api.requestSyncConnectorRuntimeAs(
-        ownerBearer,
-        run.runId,
-        body,
-        [404],
-      );
-      await api.requestSyncConnectorRuntimeAs(
         memberBearer,
         run.runId,
         body,
-        [404],
-      );
-      const denied = await api.requestClaimRunnerJobAs(
-        memberBearer,
-        run.runId,
         [403],
       );
-      expect(denied.body).toMatchObject({
-        error: { code: "FORBIDDEN", message: "Job does not belong to user" },
-      });
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "pending",
-      });
-
-      const claimed = await owned.claimPatRun(ownerBearer, run.runId, [200]);
-      if (claimed.status !== 200) {
-        throw new Error("Expected the owner to claim the unconsumed job");
-      }
-      expect(claimed.body).toMatchObject({
+      const execution = await owned.claimRunnerRun(run.runId);
+      expect(execution).toMatchObject({
         prompt: "the owner's queued lookup",
         isFirstRun: true,
         cliAgentType: "claude-code",
@@ -102,7 +81,7 @@ describe("Runner run lookup ownership", () => {
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        { authorization: `Bearer ${claimed.body.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
@@ -126,7 +105,7 @@ describe("Runner run lookup ownership", () => {
     });
   });
 
-  it("keeps completed and pending lookups separate as another run becomes claimable and running", async () => {
+  it("keeps completed and running lookups separate across distinct executions", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
@@ -167,17 +146,8 @@ describe("Runner run lookup ownership", () => {
         agentId,
         prompt: "a distinct queued lookup",
       });
-      expect(next.status).toBe("pending");
+      expect(next.status).toBe("running");
       await api.requestSyncConnectorRuntimeAs(bearer, first.runId, body, [409]);
-      await api.requestSyncConnectorRuntimeAs(bearer, next.runId, body, [404]);
-      const staleClaim = await api.requestClaimRunnerJobAs(
-        bearer,
-        first.runId,
-        [404],
-      );
-      expect(staleClaim.body).toMatchObject({
-        error: { code: "NOT_FOUND", message: "Job not found in queue" },
-      });
 
       const nextClaim = await owned.claimRunnerRun(next.runId);
       expect(nextClaim).toMatchObject({

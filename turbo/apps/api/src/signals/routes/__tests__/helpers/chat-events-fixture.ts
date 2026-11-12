@@ -36,7 +36,6 @@ import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-autom
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import {
   createBddApi,
-  expectApiError,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./api-bdd";
@@ -955,16 +954,14 @@ export function createChatEventsFixture(context: TestContext) {
     runId: string,
     tier: "fast" | undefined,
   ) {
+    const input = await api.executionInput(runId);
+    await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+      status: "running",
+    });
     if (tier === "fast") {
-      const oldClaim = await api.requestClaimRunnerJob(true, runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2] },
-      });
-      expectApiError(oldClaim.body);
-      await expect(api.readRun(actor, runId)).resolves.toMatchObject({
-        status: "pending",
-      });
+      expect(input.piModelConfig).toMatchObject({ serviceTier: tier });
     }
-    return await api.executionInput(runId);
+    return input;
   }
 
   function mockPiObjectStore(): Map<string, Buffer> {

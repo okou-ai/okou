@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -19,13 +18,13 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerSshRoutes } from "../runner-ssh";
-import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -115,7 +114,7 @@ interface Fixture extends Owner {
   readonly threadId?: string;
   readonly sandboxToken: string;
   readonly runnerIdentity: {
-    runnerId: ReturnType<typeof randomUUID>;
+    runnerId: string;
     heartbeatGeneration: number;
   };
   readonly connectionId: string;
@@ -187,7 +186,14 @@ function useClaimedFixture() {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = await runs.configureRunnerGroup();
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: runnerHeaders.authorization,
+    });
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -214,35 +220,17 @@ function useClaimedFixture() {
       agentId,
       prompt: "Use my configured SSH host",
     });
+    const input = await runs.executionInput(runId);
     claimedRunCleanups.push(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
     });
-    // Preserve the process-generation bigint boundary with a real heartbeat and claim.
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
+    // Preserve the process-generation bigint boundary with a real heartbeat and dispatch.
+    const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
       throw new Error("Expected the Runner claim to issue its sandbox token");
     }

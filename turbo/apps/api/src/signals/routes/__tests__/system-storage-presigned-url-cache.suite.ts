@@ -97,6 +97,9 @@ describe("system storage presigned URL cache", () => {
       },
       signedCount,
       async claim(prompt: string) {
+        await owned.run(() => {
+          return api.registerDirectRunner(owned.runnerGroup);
+        });
         const run = await owned.sendChatRun(owned.actor, {
           agentId: owned.agentId,
           prompt,

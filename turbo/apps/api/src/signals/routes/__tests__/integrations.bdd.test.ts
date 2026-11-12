@@ -27,6 +27,7 @@ import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
+import { singleton } from "../../../lib/singleton";
 import { server } from "../../../mocks/server";
 import { seededSkillBundleArchive } from "../../../test-fixtures/seeded-skill-bundle-archive";
 
@@ -257,17 +258,25 @@ async function flushWaitUntilAndAssert(assertion: () => void): Promise<void> {
   assertion();
 }
 
+const observedDispatches = singleton(() => {
+  return new WeakMap<AbortSignal, Set<string>>();
+});
 async function pollRunnerRun(
   runnerGroup: string,
   message: string,
 ): Promise<string> {
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
-  const poll = await runs.pollRunner(runnerGroup);
-  const runId = poll.body.job?.runId;
+  const observed =
+    observedDispatches().get(context.signal) ?? new Set<string>();
+  observedDispatches().set(context.signal, observed);
+  const runId = runs.receivedDispatches(runnerGroup).find((entry) => {
+    return !observed.has(entry.executionContext.runId);
+  })?.executionContext.runId;
   if (!runId) {
     throw new Error(message);
   }
+  observed.add(runId);
   return runId;
 }
 
@@ -643,7 +652,7 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     throw new Error("Expected historical Slack ingress to create a run");
   }
   expect(historicalRun).toMatchObject({
-    status: "pending",
+    status: "running",
     triggerSource: "slack",
   });
   const historicalRunId = await pollSlackRun(args.runnerGroup);
@@ -823,15 +832,6 @@ async function expectSlackPiOwnership(args: {
     args.scenario.chatThreadId,
     0,
   );
-  const duplicateClaim = await runs.requestClaimRunnerJob(
-    true,
-    args.runId,
-    [404],
-    {
-      capabilities: { piModelConfigGenerations: [1, 2] },
-    },
-  );
-  expect(duplicateClaim.status).toBe(404);
   const events = (
     await chat.listThreadEvents(args.scenario.actor, args.scenario.chatThreadId)
   ).events;
@@ -2197,7 +2197,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: channelId,
     });
     const runId = await pollSlackRun(runnerGroup);
-    expect((await runs.readRun(actor, runId)).status).toBe("pending");
+    expect((await runs.readRun(actor, runId)).status).toBe("running");
     expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
       "agents.sessions.setStatus",
       {
@@ -3690,7 +3690,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect((await runs.readRun(actor, freshRunId)).status).toBe("pending");
+    expect((await runs.readRun(actor, freshRunId)).status).toBe("running");
     expect((await runs.readRun(actor, otherRunId)).status).toBe("running");
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
     expect(context.mocks.slack.apiCall).toHaveBeenLastCalledWith(

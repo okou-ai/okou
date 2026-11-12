@@ -92,7 +92,6 @@ export async function withConnectorRuntime(
   owned.runId = runId;
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
-  expect((await runs.pollRunner(runnerGroup)).body.job?.runId).toBe(runId);
   const claim = await runs.executionInput(runId);
   expect((await runs.readRun(actor, runId)).status).toBe("running");
   await consume({

@@ -28,6 +28,7 @@ import {
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
 import { persistStoragePresignedUrls$ } from "./system-storage-presigned-url-cache.service";
+import { recordExecutionPreparationTimings } from "./api-dispatch-timing.service";
 import {
   claimedWorkflowSchema,
   workflowClaimInput,
@@ -174,6 +175,27 @@ export const prepareDirectRun$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return publication.responseBody;
+    recordExecutionPreparationTimings({
+      runId: input.run.id,
+      runnerGroup: input.runnerGroup,
+      profile: input.profile,
+      records: prepared.materialized.connectorOperationTimings,
+      phase: "dispatch",
+    });
+    return {
+      executionContext: publication.responseBody,
+      contextSnapshot: {
+        runId: run.id,
+        userId: run.userId,
+        prompt: run.prompt,
+        appendSystemPrompt: run.appendSystemPrompt,
+        context: {
+          ...context,
+          networkPolicies: response.refreshedPolicies.networkPolicies,
+        },
+        secretNames: Object.keys(prepared.materialized.secrets ?? {}),
+        secretValues: response.secretValues,
+      },
+    };
   },
 );

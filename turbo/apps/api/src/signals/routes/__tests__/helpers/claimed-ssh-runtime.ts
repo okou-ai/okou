@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { expect } from "vitest";
 
-import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
+import type { TestContext } from "../../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
-import { runnersRoutes } from "../../runners";
 import { createBddApi } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
@@ -21,7 +18,7 @@ interface RuntimeOptions {
   readonly agentId?: string;
   readonly group?: string;
   readonly runnerIdentity?: {
-    readonly runnerId: ReturnType<typeof randomUUID>;
+    readonly runnerId: string;
     readonly heartbeatGeneration: number;
   };
 }
@@ -64,44 +61,32 @@ export function createClaimedSshRuntimeApi(
           visibility: "public",
         })
       ).agentId;
-    const group = runtimeOptions.group ?? (await runs.configureRunnerGroup());
+    const group =
+      runtimeOptions.group ??
+      (await runs.configureRunnerGroup({ registerRunner: false }));
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+    const candidate = runtimeOptions.runnerIdentity ?? {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.registerDirectRunner(group, {
+      runnerIdentity: candidate,
+      heartbeatAuthorization: options.runnerHeaders.authorization,
+    });
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId,
       prompt: "Use my configured SSH hosts",
       model: "claude-sonnet-5-5",
     });
     active.set(runId, owner);
-    const runnerIdentity = runtimeOptions.runnerIdentity ?? {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
+    const input = await runs.executionInput(runId);
+    const selected = runs.dispatchedRun(runId);
+    const runnerIdentity = {
+      runnerId: selected.runnerId,
+      heartbeatGeneration: selected.heartbeatGeneration,
     };
-    await runs.requestHeartbeatRunnerAs(
-      options.runnerHeaders.authorization,
-      [200],
-      {
-        group,
-        runnerId: runnerIdentity.runnerId,
-        snapshotGeneration: runnerIdentity.heartbeatGeneration,
-      },
-    );
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: options.runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
-    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    const sandboxToken = input.sandboxToken;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!sandboxToken || !agentToken) {
       throw new Error("Expected the claim's sandbox and Agent credentials");
     }
@@ -175,6 +160,12 @@ export function createClaimedSshRuntimeApi(
         [200],
       );
       active.delete(runId);
+      const input = await runs.executionInput(runId);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
       await flushWaitUntilForTest();
     }
     paidOrganizations.clear();

@@ -682,10 +682,10 @@ describe("Workflow schedule recovery", () => {
     ).body;
     const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
       // Each user retry has its own request time rather than replaying one click.
       mockNow(startedAt + (failure + 1) * 60_000);
+      await runs.registerDirectRunner(runnerGroup);
       automation = await failManualScheduleRun(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
@@ -773,7 +773,7 @@ describe("Debug Morning Brief", () => {
 });
 
 describe("Workflow Run admission", () => {
-  it("selects current ordinary Workflows when a queued Run is claimed", async () => {
+  it("captures ordinary Workflows at dispatch and applies edits to later Runs", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
@@ -840,7 +840,7 @@ describe("Workflow Run admission", () => {
             .get("SKILL.md")
             ?.toString(),
         ).toContain(
-          workflow.workflowId === firstWorkflow.workflowId
+          workflow.workflowId === firstWorkflow.workflowId && run === null
             ? revised
             : workflow.instruction,
         );

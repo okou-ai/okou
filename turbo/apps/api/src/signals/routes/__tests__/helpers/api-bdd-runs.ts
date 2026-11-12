@@ -383,10 +383,14 @@ async function prepareStripeHttpEntitlement(
 }
 
 type DispatchEnvelope = zInfer<typeof runnerDispatchEnvelopeSchema>;
+interface CapturedDispatch {
+  readonly group: string;
+  readonly envelope: DispatchEnvelope;
+}
 const dispatchedInputs = singleton(() => {
-  return new WeakMap<AbortSignal, Map<string, DispatchEnvelope>>();
+  return new WeakMap<AbortSignal, Map<string, CapturedDispatch>>();
 });
-function executionInputs(context: TestContext): Map<string, DispatchEnvelope> {
+function executionInputs(context: TestContext): Map<string, CapturedDispatch> {
   let inputs = dispatchedInputs().get(context.signal);
   if (!inputs) {
     inputs = new Map();
@@ -540,6 +544,7 @@ export function createRunsApi(context: TestContext) {
         readonly heartbeatGeneration: number;
       };
       readonly hostname?: string;
+      readonly heartbeatAuthorization?: string;
       readonly maxConcurrent?: number;
       readonly heartbeat?: Partial<
         Omit<
@@ -558,14 +563,12 @@ export function createRunsApi(context: TestContext) {
       heartbeatGeneration: 1,
     };
     const hostname = options.hostname ?? `runner-${identity.runnerId}.okou.app`;
+    const authorization = `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`;
     server.use(
       http.post(
         `https://${hostname}/runners/${identity.runnerId}/control/runs/:runId/dispatch`,
         async ({ request, params }) => {
-          if (
-            request.headers.get("authorization") !==
-            OFFICIAL_RUNNER_AUTHORIZATION
-          ) {
+          if (request.headers.get("authorization") !== authorization) {
             return new HttpResponse(null, { status: 401 });
           }
           const bytes = await request.text();
@@ -579,10 +582,10 @@ export function createRunsApi(context: TestContext) {
           ) {
             throw new Error("Unexpected direct Runner identity");
           }
-          executionInputs(context).set(
-            envelope.executionContext.runId,
+          executionInputs(context).set(envelope.executionContext.runId, {
+            group,
             envelope,
-          );
+          });
           if (options.reply) {
             return await options.reply(envelope, bytes);
           }
@@ -596,7 +599,10 @@ export function createRunsApi(context: TestContext) {
     );
     await accept(
       runApp(context)(runnersHeartbeatContract).heartbeat({
-        headers: runnerHeaders(true),
+        headers: {
+          ...runnerHeaders(true),
+          authorization: options.heartbeatAuthorization ?? authorization,
+        },
         body: {
           ...runnerHeartbeatBody({
             group,
@@ -862,8 +868,18 @@ export function createRunsApi(context: TestContext) {
     createThreadRun,
     readThreadRunRejection,
     /** Complete input captured from the real API-to-Runner HTTP boundary. */
+    receivedDispatches(group: string) {
+      return [...executionInputs(context).values()]
+        .filter((entry) => {
+          return entry.group === group;
+        })
+        .map((entry) => {
+          return entry.envelope;
+        });
+    },
+
     dispatchedRun(runId: string) {
-      const envelope = executionInputs(context).get(runId);
+      const envelope = executionInputs(context).get(runId)?.envelope;
       if (!envelope) {
         throw new Error(`Run ${runId} was not directly dispatched`);
       }
@@ -872,7 +888,7 @@ export function createRunsApi(context: TestContext) {
 
     async executionInput(runId: string) {
       await flushWaitUntilForTest();
-      const envelope = executionInputs(context).get(runId);
+      const envelope = executionInputs(context).get(runId)?.envelope;
       if (!envelope) {
         throw new Error(`Run ${runId} was not directly dispatched`);
       }
@@ -893,10 +909,11 @@ export function createRunsApi(context: TestContext) {
           query: {
             runnerGroup,
             runnerId:
-              executionInputs(context).get(runId)?.runnerId ??
+              executionInputs(context).get(runId)?.envelope.runnerId ??
               defaultRunnerIdentity.runnerId,
             heartbeatGeneration:
-              executionInputs(context).get(runId)?.heartbeatGeneration ??
+              executionInputs(context).get(runId)?.envelope
+                .heartbeatGeneration ??
               defaultRunnerIdentity.heartbeatGeneration,
           },
         }),
@@ -1398,22 +1415,7 @@ export function createRunsApi(context: TestContext) {
     async requestHeartbeatRunner(
       validAuth: boolean,
       statuses: readonly (200 | 400 | 401 | 500)[],
-      args: {
-        readonly runnerId?: string;
-        readonly runnerHostname?: RunnerHeartbeatBody["runnerHostname"];
-        readonly group?: string;
-        readonly snapshotGeneration?: RunnerHeartbeatBody["snapshotGeneration"];
-        readonly snapshotSequence?: RunnerHeartbeatBody["snapshotSequence"];
-        readonly admittableProfiles?: RunnerHeartbeatBody["admittableProfiles"];
-        readonly maxConcurrent?: RunnerHeartbeatBody["maxConcurrent"];
-        readonly allocatedVcpu?: RunnerHeartbeatBody["allocatedVcpu"];
-        readonly allocatedMemoryMb?: RunnerHeartbeatBody["allocatedMemoryMb"];
-        readonly runningCount?: RunnerHeartbeatBody["runningCount"];
-        readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
-        readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
-        readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
-        readonly mode?: RunnerHeartbeatBody["mode"];
-      } = {},
+      args: Parameters<typeof runnerHeartbeatBody>[0] = {},
     ) {
       return await accept(
         runApp(context)(runnersHeartbeatContract).heartbeat({

@@ -116,7 +116,7 @@ import {
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/pick-chat-run.service";
 import {
-  recordClaimPreparationTimings,
+  recordExecutionPreparationTimings,
   type ApiDispatchTimingRecord,
 } from "../services/api-dispatch-timing.service";
 import {
@@ -128,7 +128,7 @@ import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-fi
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import { encryptExecutionSecrets$ } from "../services/execution-secrets.service";
-import { recordClaimedRunContextSnapshot } from "../services/run-context-snapshot.service";
+import { recordRunContextSnapshot } from "../services/run-context-snapshot.service";
 import {
   resolveRunnerReusePreference$,
   runnerPreferenceTelemetryDimensions,
@@ -1359,18 +1359,19 @@ function scheduleSuccessfulClaimSideEffects(args: {
   readonly connectorOperationTimings: readonly ApiDispatchTimingRecord[];
 }): void {
   const { job, run } = args.jobWithRun;
-  recordClaimPreparationTimings({
+  recordExecutionPreparationTimings({
     runId: run.id,
     runnerGroup: job.runnerGroup,
     profile: job.profile,
     records: args.connectorOperationTimings,
+    phase: "claim",
   });
-  recordClaimedRunContextSnapshot({
+  recordRunContextSnapshot({
     runId: run.id,
     userId: run.userId,
     prompt: run.prompt,
     appendSystemPrompt: run.appendSystemPrompt,
-    claimedAt: args.claimResult.claimedAt,
+    recordedAt: args.claimResult.claimedAt,
     context: { ...args.storedContext, networkPolicies: args.networkPolicies },
     secretNames: args.secretNames,
     secretValues: args.secretValues,

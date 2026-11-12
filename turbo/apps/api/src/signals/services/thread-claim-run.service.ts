@@ -5178,7 +5178,7 @@ interface BuildRunnerLaunchInputInput {
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
-/** Capture selectors and request receipts only; Claim owns runtime assembly. */
+/** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunchInput(input: {
   readonly args: BuildRunnerLaunchInputInput;
   readonly okouToken: string;

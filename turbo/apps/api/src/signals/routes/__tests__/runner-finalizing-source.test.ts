@@ -1,19 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS } from "@okouai/api-contracts/contracts/runners";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, nowDate } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   continuation,
   heartbeat,
-  poll,
   terminalPredecessor,
 } from "./helpers/runner-finalizing";
 
 const context = testContext();
-
 function codexAuthJson() {
   const exp = Math.floor(now() / 1000) + 7200;
   const jwt = (payload: Record<string, unknown>) => {
@@ -40,9 +38,32 @@ function codexAuthJson() {
   });
 }
 
-describe("independent finalizing resource source", () => {
+type Fixture = Awaited<ReturnType<typeof terminalPredecessor>>;
+async function expectOwner(
+  f: Fixture,
+  runId: string,
+  runnerId: string,
+  generation = 7,
+) {
+  await f.owned.run(async () => {
+    const owner = await f.api.requestRunRunner(f.actor, runId, [200]);
+    expect(owner.body).toMatchObject({
+      runnerId,
+      runnerHeartbeatGeneration: generation,
+    });
+  });
+}
+function producer(f: Fixture) {
+  return {
+    runId: f.run.runId,
+    reuseKey: `thread:${f.run.threadId}`,
+    profile: "vm0/default",
+  };
+}
+
+describe("Independent finalizing resource dispatch", () => {
   it.each(["sandbox", "home", "other-profile-home"] as const)(
-    "ranks previous-Run %s by producer independently of native history",
+    "routes previous-Run %s independently of native history",
     async (resource) => {
       const f = await terminalPredecessor(context, "failed", false);
       mockNow(f.clock + 2500);
@@ -50,6 +71,7 @@ describe("independent finalizing resource source", () => {
       const unrelatedSource = randomUUID();
       await heartbeat(f, {
         snapshotSequence: 2,
+        activeReuseProducers: resource === "sandbox" ? [producer(f)] : [],
         heldSandboxStates: [
           {
             reuseKey,
@@ -61,93 +83,61 @@ describe("independent finalizing resource source", () => {
           },
         ],
       });
-      const ready = randomUUID();
-      await heartbeat(f, {
-        runnerId: ready,
-        admittableProfiles: ["vm0/default"],
-        heldSandboxStates:
-          resource === "sandbox"
-            ? [
-                {
-                  reuseKey,
-                  lastCompletedAt: nowDate().toISOString(),
-                  reusableSandbox: {
-                    profile: "vm0/default",
-                    sourceRunId: f.run.runId,
-                  },
-                },
-              ]
-            : [],
-        heldHomeStates:
-          resource === "sandbox"
-            ? []
-            : [
-                {
-                  reuseKey,
-                  lastCompletedAt: nowDate().toISOString(),
-                  homeCaches: [
+      const ready = await f.owned.run(() => {
+        return f.api.registerDirectRunner(f.group, {
+          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 7 },
+          heartbeat: {
+            heldSandboxStates:
+              resource === "sandbox"
+                ? [
                     {
-                      profile: "vm0/default",
-                      homeAffinityVersion: 1,
-                      sourceRunId:
-                        resource === "home" ? f.run.runId : unrelatedSource,
+                      reuseKey,
+                      lastCompletedAt: nowDate().toISOString(),
+                      reusableSandbox: {
+                        profile: "vm0/default",
+                        sourceRunId: f.run.runId,
+                      },
                     },
+                  ]
+                : [],
+            heldHomeStates:
+              resource === "sandbox"
+                ? []
+                : [
                     {
-                      profile: "vm0/large",
-                      homeAffinityVersion: 1,
-                      sourceRunId: f.run.runId,
+                      reuseKey,
+                      lastCompletedAt: nowDate().toISOString(),
+                      homeCaches: [
+                        {
+                          profile: "vm0/default",
+                          homeAffinityVersion: 1,
+                          sourceRunId:
+                            resource === "home" ? f.run.runId : unrelatedSource,
+                        },
+                        {
+                          profile: "vm0/large",
+                          homeAffinityVersion: 1,
+                          sourceRunId: f.run.runId,
+                        },
+                      ],
                     },
                   ],
-                },
-              ],
+          },
+        });
       });
-      context.mocks.ably.publish.mockClear();
       const next = await continuation(f);
-      const preference =
-        resource === "other-profile-home"
-          ? {
-              kind: "preference",
-              tier: "reusableSandbox",
-              runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-              expiresAt: new Date(f.clock + 4500).toISOString(),
-            }
-          : {
-              kind: "preference",
-              ...(resource === "sandbox"
-                ? { tier: "exactSandbox", predecessorRunId: f.run.runId }
-                : {
-                    tier: "predecessorHome",
-                    predecessorRunId: f.run.runId,
-                    home: { evidence: "advertised" },
-                  }),
-              runnerIdentity: { runnerId: ready, heartbeatGeneration: 7 },
-              expiresAt: new Date(
-                f.clock + (resource === "sandbox" ? 3500 : 4500),
-              ).toISOString(),
-            };
-      expect((await poll(f, next.runId))?.runnerPreference).toStrictEqual(
-        preference,
+      await expectOwner(
+        f,
+        next.runId,
+        resource === "other-profile-home" ? f.runnerId : ready.runnerId,
       );
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "job",
-        expect.objectContaining({
-          runId: next.runId,
-          runnerPreference: preference,
-        }),
-      );
-      const claim = await f.owned.claimRunnerRun(next.runId);
-      // A ready resource's producer is distinct from a confirmed native
-      // generation. First-start publication must not change captured intent.
-      expect(claim.nativeContinuation).toMatchObject({
+      const input = await f.owned.claimRunnerRun(next.runId);
+      expect(input.nativeContinuation).toMatchObject({
         sessionId: null,
         generationRunId: null,
         recoveryPrompt: expect.stringContaining(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
-      });
-      await f.owned.run(async () => {
-        await f.api.requestCancelRun(f.actor, next.runId, [200]);
-        await flushWaitUntilForTest();
       });
     },
   );
@@ -166,281 +156,185 @@ describe("independent finalizing resource source", () => {
       mockNow(f.clock + 2500);
       await heartbeat(f, {
         snapshotSequence: 2,
+        activeReuseProducers: [producer(f)],
+      });
+      await f.owned.run(() => {
+        return f.api.registerDirectRunner(f.group, {
+          maxConcurrent: 8,
+          heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+        });
+      });
+      const next = await continuation(f, "gpt-6-astra");
+      await expectOwner(f, next.runId, f.runnerId);
+      const input = await f.owned.claimRunnerRun(next.runId);
+      expect(input.cliAgentType).toBe("codex");
+    },
+  );
+
+  it("dispatches to a failed producer that never reported native initialization", async () => {
+    const f = await terminalPredecessor(context, "failed", false);
+    mockNow(f.clock + 2500);
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      activeReuseProducers: [producer(f)],
+    });
+    await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+      });
+    });
+    const next = await continuation(f);
+    await expectOwner(f, next.runId, f.runnerId);
+    const input = await f.owned.claimRunnerRun(next.runId);
+    expect(input.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+    });
+  });
+
+  it("routes to a same-host replacement while its predecessor drains", async () => {
+    const f = await terminalPredecessor(context, "completed");
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      mode: "draining",
+      activeReuseProducers: [producer(f)],
+    });
+    const receiver = await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 8 },
+        hostname: `runner-${f.runnerId}.okou.app`,
+        maxConcurrent: 1,
+      });
+    });
+    await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+      });
+    });
+    mockNow(f.clock + 2000);
+    const next = await continuation(f);
+    expect(next.status).toBe("running");
+    await expectOwner(
+      f,
+      next.runId,
+      receiver.runnerId,
+      receiver.heartbeatGeneration,
+    );
+  });
+
+  it("keeps another Chat's producer out of a new Thread's placement", async () => {
+    const f = await terminalPredecessor(context, "failed", false);
+    mockNow(f.clock + 2500);
+    await f.owned.run(async () => {
+      const chat = createChatFilesBddApi(context);
+      const thread = await chat.createThread(f.actor, {
+        agentId: f.agentId,
+        title: "Independent Chat",
+      });
+      await heartbeat(f, {
+        snapshotSequence: 2,
         activeReuseProducers: [
           {
             runId: f.run.runId,
-            reuseKey: `thread:${f.run.threadId}`,
+            reuseKey: `thread:${thread.id}`,
             profile: "vm0/default",
           },
         ],
       });
-      context.mocks.ably.publish.mockClear();
-      const next = await continuation(f, "gpt-6-astra");
-      const preference = {
-        kind: "preference" as const,
-        tier: "finalizingPredecessor" as const,
-        predecessorRunId: f.run.runId,
-        runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-        expiresAt: new Date(
-          f.clock + 2500 + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-        ).toISOString(),
-      };
-      const job = await poll(f, next.runId);
-      expect(job?.runnerPreference).toStrictEqual(preference);
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "job",
-        expect.objectContaining({
-          runId: next.runId,
-          runnerPreference: preference,
-        }),
-      );
-      const claim = await f.owned.claimRunnerRun(next.runId);
-      expect(claim.cliAgentType).toBe("codex");
-      await f.owned.run(async () => {
-        await createWebhookCallbackApi(context).requestAgentComplete(
-          { runId: next.runId, exitCode: 1 },
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          [200],
-        );
-        await flushWaitUntilForTest();
+      const other = await f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
       });
-    },
-  );
-
-  it("finds a claimed failed source that never reported native initialization", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
-    mockNow(f.clock + 2500);
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${f.run.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
-    });
-    const next = await continuation(f);
-    const job = await poll(f, next.runId);
-    expect(job?.runnerPreference).toMatchObject({
-      tier: "finalizingPredecessor",
-      predecessorRunId: f.run.runId,
-    });
-    const preference = job?.runnerPreference;
-    const deadline =
-      f.clock + 2500 + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS;
-    expect(preference).toMatchObject({
-      expiresAt: new Date(deadline).toISOString(),
-    });
-    mockNow(deadline - 1);
-    await heartbeat(f, {
-      snapshotSequence: 3,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${f.run.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
-    });
-    expect((await poll(f, next.runId))?.runnerPreference).toStrictEqual(
-      preference,
-    );
-    mockNow(deadline);
-    expect((await poll(f, next.runId))?.runnerPreference).toStrictEqual({
-      kind: "noPreference",
-      reason: "expired",
-    });
-  });
-
-  it("skips an intermediary attempt cancelled before any Runner claim", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
-    mockNow(f.clock + 100);
-    const unstarted = await continuation(f);
-    await f.owned.run(() => {
-      return f.api.requestCancelRun(f.actor, unstarted.runId, [200]);
-    });
-    mockNow(f.clock + 2500);
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${f.run.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
-    });
-    const next = await continuation(f);
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
-      tier: "finalizingPredecessor",
-      predecessorRunId: f.run.runId,
-    });
-  });
-
-  it("selects the newest executed identity before checking producer eligibility", async () => {
-    const f = await terminalPredecessor(context, "failed");
-    mockNow(f.clock + 100);
-    const newer = await continuation(f);
-    const claimed = await f.owned.claimRunnerRun(newer.runId);
-    await f.owned.run(async () => {
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: newer.runId, exitCode: 1 },
-        { authorization: `Bearer ${claimed.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-    });
-    mockNow(f.clock + 3000);
-    const producer = {
-      reuseKey: `thread:${f.run.threadId}`,
-      profile: "vm0/default",
-    };
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [{ ...producer, runId: f.run.runId }],
-    });
-    const next = await continuation(f);
-    const withoutLatestProducer = await poll(f, next.runId);
-    expect(withoutLatestProducer?.runnerPreference).toMatchObject({
-      kind: "noPreference",
-    });
-    await heartbeat(f, {
-      snapshotSequence: 3,
-      activeReuseProducers: [{ ...producer, runId: newer.runId }],
-    });
-    const withLatestProducer = await poll(f, next.runId);
-    expect(withLatestProducer?.runnerPreference).toMatchObject({
-      tier: "finalizingPredecessor",
-      predecessorRunId: newer.runId,
-    });
-    const fresh = await f.owned.claimRunnerRun(next.runId);
-    expect(fresh.nativeContinuation).toMatchObject({
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir /tmp/okou-chat-history",
-      ),
-    });
-    await f.owned.run(async () => {
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: next.runId, exitCode: 1 },
-        { authorization: `Bearer ${fresh.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-    });
-  });
-
-  it("does not use another Chat's producer even when it advertises the target reuse key", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
-    mockNow(f.clock + 2500);
-    const next = await f.owned.run(() => {
-      return f.api.createThreadRun(f.actor, {
+      const next = await f.api.createThreadRun(f.actor, {
         agentId: f.agentId,
-        prompt: "Start an unrelated Chat",
+        threadId: thread.id,
+        prompt: "Start independent work",
       });
-    });
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${next.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
-    });
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
+      await expectOwner(
+        f,
+        next.runId,
+        other.runnerId,
+        other.heartbeatGeneration,
+      );
+      expect(
+        (await f.owned.claimRunnerRun(next.runId)).isFirstRun,
+      ).toBeTruthy();
     });
   });
 
-  it("keeps ready generic home lookup independent of missing source proof", async () => {
+  it("selects an advertised Home at the snapshot bound and clears it after an empty snapshot", async () => {
     const f = await terminalPredecessor(context, "failed", false);
     mockNow(f.clock + 2500);
+    const [firstThread, secondThread] = await f.owned.run(async () => {
+      const chat = createChatFilesBddApi(context);
+      const first = await chat.createThread(f.actor, {
+        agentId: f.agentId,
+        title: "Home snapshot bound",
+      });
+      const second = await chat.createThread(f.actor, {
+        agentId: f.agentId,
+        title: "Empty Home snapshot",
+      });
+      return [first, second] as const;
+    });
     await heartbeat(f, {
       snapshotSequence: 2,
-      heldHomeStates: [
-        {
-          reuseKey: `thread:${f.run.threadId}`,
+      heldHomeStates: Array.from({ length: 4096 }, (_entry, index) => {
+        return {
+          reuseKey: `thread:${index === 4095 ? firstThread.id : index === 4094 ? secondThread.id : randomUUID()}`,
           lastCompletedAt: nowDate().toISOString(),
           homeCaches: [
             {
-              sourceRunId: "33333333-3333-4333-8333-333333333333",
               profile: "vm0/default",
+              sourceRunId: randomUUID(),
               homeAffinityVersion: 1,
             },
           ],
-        },
-      ],
+        };
+      }),
     });
-    const next = await continuation(f);
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
-      tier: "homeCache",
-    });
-  });
-
-  it("does not route a history-free successor to stale producer inventory", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${f.run.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
-    });
-    mockNow(f.clock + 180_001);
-    const next = await continuation(f);
-    expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
-    });
-  });
-
-  it("prioritizes the selected producer's history-free job ahead of older unrelated work", async () => {
-    const f = await terminalPredecessor(context, "failed", false);
-    mockNow(f.clock + 2500);
-    const unrelated = await f.owned.run(() => {
-      return f.api.createThreadRun(f.actor, {
-        agentId: f.agentId,
-        prompt: "Older unrelated queued work",
+    await heartbeat(f, { snapshotSequence: 1, heldHomeStates: [] });
+    const alternative = await f.owned.run(() => {
+      return f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
       });
     });
-    await heartbeat(f, {
-      snapshotSequence: 2,
-      activeReuseProducers: [
-        {
-          runId: f.run.runId,
-          reuseKey: `thread:${f.run.threadId}`,
-          profile: "vm0/default",
-        },
-      ],
+    const next = await f.owned.run(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: firstThread.id,
+        prompt: "Use the Home at the end of the accepted inventory",
+      });
     });
-    mockNow(f.clock + 2501);
-    const next = await continuation(f);
-    const job = await poll(f, next.runId);
-    expect(job?.runnerPreference).toMatchObject({
-      tier: "finalizingPredecessor",
-      predecessorRunId: f.run.runId,
-    });
-    const blankRunner = randomUUID();
-    await heartbeat(f, { runnerId: blankRunner });
-    const response = await f.owned.run(() => {
-      return f.api.requestPollRunner(
-        true,
-        {
-          runnerId: blankRunner,
-          group: f.group,
-          supportedProfiles: ["vm0/default"],
-        },
+    await expectOwner(f, next.runId, f.runnerId);
+    const input = await f.owned.claimRunnerRun(next.runId);
+    expect(next.status).toBe("running");
+    await f.owned.run(async () => {
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: next.runId, exitCode: 1 },
+        { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
+      await flushWaitUntilForTest();
     });
-    expect(response.status === 200 && response.body.job?.runId).toBe(
-      unrelated.runId,
+    mockNow(f.clock + 5000);
+    await heartbeat(f, { snapshotSequence: 3, heldHomeStates: [] });
+    const cleared = await f.owned.run(() => {
+      return f.api.createThreadRun(f.actor, {
+        agentId: f.agentId,
+        threadId: secondThread.id,
+        prompt: "Start after the advertised Home was removed",
+      });
+    });
+    expect(cleared.status).toBe("running");
+    await expectOwner(
+      f,
+      cleared.runId,
+      alternative.runnerId,
+      alternative.heartbeatGeneration,
     );
   });
 });

@@ -9,7 +9,6 @@ import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -24,11 +23,11 @@ import { sshAccessRoutes } from "../ssh-access";
 import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
-import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -106,7 +105,15 @@ describe("live chat SSH Run inventory", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = await runs.configureRunnerGroup();
+    const secret = "d".repeat(64);
+    mockEnv("OFFICIAL_RUNNER_SECRET", secret);
+    await runs.configureRunnerGroup({
+      runnerIdentity: {
+        runnerId: randomUUID(),
+        heartbeatGeneration: 5_000_000_000,
+      },
+      heartbeatAuthorization: `Bearer vm0_official_${secret}`,
+    });
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -120,39 +127,16 @@ describe("live chat SSH Run inventory", () => {
       agentId,
       prompt: "List my enabled SSH hosts",
     });
+    const input = await runs.executionInput(runId);
     claimedRunCleanups.push(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
     });
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    const secret = "d".repeat(64);
-    mockEnv("OFFICIAL_RUNNER_SECRET", secret);
-    const runnerHeaders = {
-      authorization: `Bearer vm0_official_${secret}`,
-    };
-    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
       throw new Error("Expected the Runner claim to issue its Agent token");
     }

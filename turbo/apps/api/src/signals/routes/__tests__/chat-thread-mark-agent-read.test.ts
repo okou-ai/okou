@@ -10,6 +10,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -40,8 +41,8 @@ async function prepareChatRuntime(): Promise<void> {
  * Appends one terminal Run event to a caller thread the way a user does: a
  * chat send launches a Run, which the caller then cancels. Without
  * `threadId` the send creates a new thread. The Run must still be active when
- * it is cancelled, so the caller selects Fable, whose personal Claude
- * subscription route keeps it queued for the native Runner instead of Pi.
+ * it is cancelled. Its native Runner then acknowledges completion so the next
+ * input can use the released active slot.
  */
 async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;
@@ -53,9 +54,13 @@ async function appendCancelledRun(args: {
     prompt: `agent read ${randomUUID()}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
+  const input = await runs.executionInput(runId);
   await runs.requestCancelRun(args.actor, runId, [200]);
-  await flushWaitUntilForTest();
-
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    { runId, exitCode: 137 },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
   await flushWaitUntilForTest();
   await expect(chat.listUnreadChatThreadIds(args.actor)).resolves.toContain(
     threadId,
@@ -165,6 +170,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     const staleCursor = (await chat.readThread(fixture.actor, stale))
       .lastReadAt;
     mockNow(now() + 8 * 24 * 60 * 60 * 1000);
+    await runs.configureRunnerGroup();
     await appendCancelledRun({
       actor: fixture.actor,
       agentId: fixture.agentId,

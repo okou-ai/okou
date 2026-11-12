@@ -2,7 +2,6 @@ import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-r
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
@@ -16,11 +15,11 @@ import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
-import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { requireVncCredentialId } from "./helpers/vnc-response";
@@ -105,42 +104,31 @@ describe("private Runner VNC authority", () => {
     owner: Pick<VncRuntimeFixture, "orgId" | "userId" | "agentId">,
   ) {
     const actor = createBddApi(context).user(owner);
-    const group = await runs.configureRunnerGroup();
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: vncRunnerHeaders.authorization,
+    });
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId: owner.agentId,
       prompt: "Use my configured VNC desktop",
     });
+    const input = await runs.executionInput(runId);
     claimedRunCleanups.push(async () => {
       // Negative admission and KMS cases must not prevent owned Run cleanup.
       api.authenticate(owner);
       useSecretKmsProbe();
       await runs.requestCancelRun(actor, runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
     });
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.requestHeartbeatRunnerAs(vncRunnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: vncRunnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
+    const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
       throw new Error("Expected the Runner claim to issue its sandbox token");
     }

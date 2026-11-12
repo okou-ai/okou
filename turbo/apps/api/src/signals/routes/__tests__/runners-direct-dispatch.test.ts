@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import { expect, onTestFinished, test } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatEventsRoutes } from "../chat-events";
 import { createBddApi } from "./helpers/api-bdd";
@@ -10,6 +10,12 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
+import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cron";
+import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
+import { env } from "../../../lib/env";
 
 const context = testContext();
 
@@ -92,33 +98,115 @@ test("fails a Run with no serving process and releases its concurrency slot", as
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });
 
-test("retries identical bytes on the same process after a lost response and a later 429", async () => {
+test("persists preparation failure and releases admission before another Run", async () => {
   await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
-  const bytes: string[] = [];
+  await f.api.registerDirectRunner(f.group);
+  context.mocks.s3.getSignedUrl.mockRejectedValue(
+    new Error("Object signing is unavailable"),
+  );
+  const chat = createChatFilesBddApi(context);
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    f.actor,
+    {
+      agentId: f.agentId,
+      prompt: "Fail execution preparation",
+      clientEventId,
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected admission to enqueue");
+  }
+  await expect(flushWaitUntilForTest()).rejects.toThrow(
+    "Run execution preparation failed",
+  );
+  const events = await chat.listThreadEvents(f.actor, sent.body.threadId);
+  const admitted = events.events.find((event) => {
+    return event.revokesEventId === clientEventId;
+  });
+  if (!admitted?.runId) {
+    throw new Error("Expected a durable admitted Run");
+  }
+  await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
+    status: "failed",
+    error: "Run execution preparation failed",
+  });
+  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
+  f.api.acceptStorageDownloads();
+  const next = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    threadId: sent.body.threadId,
+    prompt: "Continue after preparation recovered",
+  });
+  expect(next.status).toBe("running");
+});
+
+test("keeps PAT-advertised serving capacity outside the official fleet", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
-    reply: (envelope, body) => {
-      bytes.push(body);
-      if (bytes.length === 1) {
+    maxConcurrent: 1,
+  });
+  const token = await f.api.createCliToken(f.actor);
+  const attacker = { runnerId: randomUUID(), heartbeatGeneration: 4 };
+  const hostname = `runner-${attacker.runnerId}.okou.app`;
+  server.use(
+    http.post(
+      `https://${hostname}/runners/${attacker.runnerId}/control/runs/:runId/dispatch`,
+      ({ params }) => {
+        return HttpResponse.json({
+          ...attacker,
+          runId: params.runId,
+          disposition: "accepted",
+        });
+      },
+    ),
+  );
+  await f.api.requestHeartbeatRunnerAs(`Bearer ${token.token}`, [200], {
+    runnerId: attacker.runnerId,
+    snapshotGeneration: attacker.heartbeatGeneration,
+    runnerHostname: hostname,
+    group: f.group,
+    ingressServiceActive: true,
+    maxConcurrent: 100,
+  });
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Use an official process",
+  });
+  expect(run.status).toBe("running");
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identity.runnerId,
+    runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+});
+
+test("recovers interrupted delivery through the ordinary Run heartbeat timeout", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const chat = createChatFilesBddApi(context);
+  const clock = now();
+  mockNow(clock);
+  onTestFinished(clearMockNow);
+  const request = new AbortController();
+  onTestFinished(() => {
+    request.abort();
+  });
+  const received = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  let interrupted = false;
+  const identity = await f.api.registerDirectRunner(f.group, {
+    reply: async (envelope) => {
+      if (!interrupted) {
+        interrupted = true;
+        received.resolve();
+        await release.promise;
         return HttpResponse.error();
       }
-      return HttpResponse.json(
-        {
-          runnerId: envelope.runnerId,
-          heartbeatGeneration: envelope.heartbeatGeneration,
-          runId: envelope.executionContext.runId,
-          disposition: bytes.length === 2 ? "busy" : "accepted",
-        },
-        { status: bytes.length === 2 ? 429 : 200 },
-      );
-    },
-  });
-  let alternatives = 0;
-  await f.api.registerDirectRunner(f.group, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
-    maxConcurrent: 1,
-    reply: (envelope) => {
-      alternatives++;
       return HttpResponse.json({
         runnerId: envelope.runnerId,
         heartbeatGeneration: envelope.heartbeatGeneration,
@@ -127,21 +215,129 @@ test("retries identical bytes on the same process after a lost response and a la
       });
     },
   });
-  const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
-    prompt: "ambiguous delivery",
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    f.actor,
+    {
+      agentId: f.agentId,
+      clientEventId,
+      prompt: "Interrupt this invocation after publication",
+    },
+    [201],
+    {},
+    AbortSignal.any([request.signal, context.signal]),
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the input to enqueue");
+  }
+  await received.promise;
+  request.abort();
+  release.resolve();
+  await flushWaitUntilForTest();
+  const page = await chat.listThreadEvents(f.actor, sent.body.threadId);
+  const admitted = page.events.find((event) => {
+    return event.revokesEventId === clientEventId;
   });
-  expect(run.status).toBe("running");
-  expect(bytes).toHaveLength(3);
-  expect(new Set(bytes).size).toBe(1);
-  expect(alternatives).toBe(0);
+  if (!admitted?.runId) {
+    throw new Error("Expected a durable admitted Run");
+  }
   expect(
-    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+    (await f.api.requestRunRunner(f.actor, admitted.runId, [200])).body,
   ).toMatchObject({
     runnerId: identity.runnerId,
     runnerHeartbeatGeneration: identity.heartbeatGeneration,
   });
+  mockNow(clock + 121_000);
+  await accept(
+    setupApp({ context, routes: cronCleanupSandboxesRoutes })(
+      cronCleanupSandboxesContract,
+    ).cleanup({
+      headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
+    status: "timeout",
+    error: "Run timed out (no heartbeat)",
+  });
+  expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
+  const next = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    threadId: sent.body.threadId,
+    prompt: "Continue after interrupted delivery recovered",
+  });
+  expect(next.status).toBe("running");
 });
+
+test.each(["lost", "process", "generation", "run"] as const)(
+  "retries identical bytes on the same process after a %s response and a later 429",
+  async (responseKind) => {
+    await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+    const f = await launchFixture();
+    const bytes: string[] = [];
+    const identity = await f.api.registerDirectRunner(f.group, {
+      reply: (envelope, body) => {
+        bytes.push(body);
+        if (bytes.length === 1) {
+          if (responseKind === "lost") {
+            return HttpResponse.error();
+          }
+          return HttpResponse.json({
+            runnerId:
+              responseKind === "process" ? randomUUID() : envelope.runnerId,
+            heartbeatGeneration:
+              responseKind === "generation"
+                ? envelope.heartbeatGeneration + 1
+                : envelope.heartbeatGeneration,
+            runId:
+              responseKind === "run"
+                ? randomUUID()
+                : envelope.executionContext.runId,
+            disposition: "accepted",
+          });
+        }
+        return HttpResponse.json(
+          {
+            runnerId: envelope.runnerId,
+            heartbeatGeneration: envelope.heartbeatGeneration,
+            runId: envelope.executionContext.runId,
+            disposition: bytes.length === 2 ? "busy" : "accepted",
+          },
+          { status: bytes.length === 2 ? 429 : 200 },
+        );
+      },
+    });
+    let alternatives = 0;
+    await f.api.registerDirectRunner(f.group, {
+      runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
+      maxConcurrent: 1,
+      reply: (envelope) => {
+        alternatives++;
+        return HttpResponse.json({
+          runnerId: envelope.runnerId,
+          heartbeatGeneration: envelope.heartbeatGeneration,
+          runId: envelope.executionContext.runId,
+          disposition: "accepted",
+        });
+      },
+    });
+    const run = await f.api.createThreadRun(f.actor, {
+      agentId: f.agentId,
+      prompt: "ambiguous delivery",
+    });
+    expect(run.status).toBe("running");
+    expect(bytes).toHaveLength(3);
+    expect(new Set(bytes).size).toBe(1);
+    expect(alternatives).toBe(0);
+    expect(
+      (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+    ).toMatchObject({
+      runnerId: identity.runnerId,
+      runnerHeartbeatGeneration: identity.heartbeatGeneration,
+    });
+  },
+);
 
 test("switches candidates only after a definite refusal", async () => {
   await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
@@ -187,6 +383,7 @@ test("tries every capacity-ranked candidate with the same prepared execution inp
   const offers: {
     readonly runnerId: string;
     readonly executionContext: unknown;
+    readonly notAfter: number;
   }[] = [];
   const candidates = [
     { totalVcpu: 4, totalMemoryMb: 32_768, maxConcurrent: 8 },
@@ -230,6 +427,13 @@ test("tries every capacity-ranked candidate with the same prepared execution inp
   expect(offers[2]?.executionContext).toStrictEqual(
     offers[0]?.executionContext,
   );
+  expect(
+    new Set(
+      offers.map((offer) => {
+        return offer.notAfter;
+      }),
+    ).size,
+  ).toBe(1);
   expect(
     (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
   ).toMatchObject({
@@ -278,8 +482,18 @@ test("selects a fresh serving process after stale, unavailable and untrusted-hos
   const clock = now();
   mockNow(clock);
   onTestFinished(clearMockNow);
-  await f.api.registerDirectRunner(f.group);
+  const stale = await f.api.registerDirectRunner(f.group, {
+    maxConcurrent: 100,
+  });
   mockNow(clock + 180_001);
+  await f.api.requestHeartbeatRunner(true, [200], {
+    group: f.group,
+    runnerId: stale.runnerId,
+    snapshotGeneration: stale.heartbeatGeneration,
+    runnerHostname: `runner-${stale.runnerId}.okou.app`,
+    maxConcurrent: 100,
+    ingressServiceActive: true,
+  });
   await f.api.registerDirectRunner(f.group, {
     hostname: "untrusted.example.test",
     maxConcurrent: 100,
@@ -293,7 +507,11 @@ test("selects a fresh serving process after stale, unavailable and untrusted-hos
   await f.api.registerDirectRunner(f.group, {
     heartbeat: { admittableProfiles: [] },
   });
+  await f.api.registerDirectRunner("vm0/unrelated-group", {
+    maxConcurrent: 100,
+  });
   const identity = await f.api.registerDirectRunner(f.group, {
+    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 2 },
     heartbeat: { snapshotSequence: 2 },
   });
   // A replay cannot remove this process's current serving observation.
@@ -302,6 +520,13 @@ test("selects a fresh serving process after stale, unavailable and untrusted-hos
     runnerId: identity.runnerId,
     snapshotGeneration: identity.heartbeatGeneration,
     snapshotSequence: 1,
+    mode: "starting",
+  });
+  await f.api.requestHeartbeatRunner(true, [200], {
+    group: f.group,
+    runnerId: identity.runnerId,
+    snapshotGeneration: 1,
+    snapshotSequence: 100,
     mode: "starting",
   });
   const run = await f.api.createThreadRun(f.actor, {
@@ -485,5 +710,71 @@ test("waits through short preferred-process 429s before using a roomier candidat
   ).toMatchObject({
     runnerId: identity.runnerId,
     runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+});
+
+test("advances when preferred busy pressure outlasts its preference without renewing delivery", async () => {
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
+  const f = await launchFixture();
+  const clock = now();
+  mockNow(clock);
+  onTestFinished(clearMockNow);
+  const identity = await f.api.registerDirectRunner(f.group, {
+    maxConcurrent: 1,
+  });
+  const first = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Establish the preferred process",
+    model: "claude-fable-5-1",
+  });
+  const input = await f.api.executionInput(first.runId);
+  await completePublicClaudeRun(
+    context,
+    first,
+    { authorization: `Bearer ${input.sandboxToken}` },
+    "Predecessor completed",
+  );
+  const deadlines: number[] = [];
+  await f.api.registerDirectRunner(f.group, {
+    runnerIdentity: identity,
+    maxConcurrent: 1,
+    reply: (envelope) => {
+      deadlines.push(envelope.notAfter);
+      mockNow(clock + 2000);
+      return HttpResponse.json(
+        {
+          runnerId: envelope.runnerId,
+          heartbeatGeneration: envelope.heartbeatGeneration,
+          runId: envelope.executionContext.runId,
+          disposition: "busy",
+        },
+        { status: 429 },
+      );
+    },
+  });
+  const alternative = await f.api.registerDirectRunner(f.group, {
+    reply: (envelope) => {
+      deadlines.push(envelope.notAfter);
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId: envelope.executionContext.runId,
+        disposition: "accepted",
+      });
+    },
+  });
+  const next = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    threadId: first.threadId,
+    prompt: "Continue after preference expires",
+  });
+  expect(next.status).toBe("running");
+  expect(deadlines).toHaveLength(2);
+  expect(new Set(deadlines).size).toBe(1);
+  expect(
+    (await f.api.requestRunRunner(f.actor, next.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: alternative.runnerId,
+    runnerHeartbeatGeneration: alternative.heartbeatGeneration,
   });
 });

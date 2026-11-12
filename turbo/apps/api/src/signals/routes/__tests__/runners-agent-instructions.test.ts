@@ -6,6 +6,7 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 const context = testContext();
 const api = createRunsApi(context);
@@ -99,7 +100,7 @@ describe("API dispatch-time Agent instructions", () => {
     });
   });
 
-  it("does not expose a dispatched Run through Claim after its Agent becomes private", async () => {
+  it("rejects later member inputs after the Agent becomes private and retains published instructions", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -122,13 +123,17 @@ describe("API dispatch-time Agent instructions", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "private",
       });
-      const rejected = await api.requestClaimRunnerJob(
-        true,
-        queued.runId,
-        [404],
+      const rejected = await createChatFilesBddApi(context).requestSendEvent(
+        member,
+        {
+          agentId: owned.agentId,
+          model: "gpt-6-luna",
+          prompt: "Require current private Agent authority",
+        },
+        [403],
       );
       expect(rejected.body).toMatchObject({
-        error: { message: "Job not found in queue" },
+        error: { message: "Only the private agent owner can run this agent" },
       });
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",

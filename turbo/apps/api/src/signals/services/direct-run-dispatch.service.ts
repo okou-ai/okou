@@ -13,7 +13,7 @@ import { and, arrayContains, eq, gt } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { apiStartTime$ } from "../context/hono";
 import { postRunnerDispatch } from "../external/runner-ingress";
@@ -30,6 +30,7 @@ import {
 } from "./direct-run-ownership.service";
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
+import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
 function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
   const fleet$ = computed(async (get) => {
@@ -127,7 +128,7 @@ type UnacceptedRunResult =
 export interface DirectRunDispatchResult {
   readonly kind: "accepted" | "uncertain" | "stopped" | "failed";
   readonly terminal: UnacceptedRunResult;
-  readonly failure: unknown;
+  readonly failure: Error | undefined;
 }
 
 /** This graph consumes only its owning admission's durable write result. */
@@ -144,7 +145,7 @@ export function createDirectRunDispatcher(
       const input = await get(input$);
       signal.throwIfAborted();
       const prepared = await settleIncludingAbort(async () => {
-        const [executionContext, fleet] = await joinAll([
+        const [publication, fleet] = await joinAll([
           (async () => {
             const preparation = await get(preparation$);
             signal.throwIfAborted();
@@ -153,7 +154,7 @@ export function createDirectRunDispatcher(
           get(fleet$),
         ]);
         signal.throwIfAborted();
-        return { input, executionContext, fleet };
+        return { input, ...publication, fleet };
       });
       signal.throwIfAborted();
       if (!prepared.ok) {
@@ -162,7 +163,11 @@ export function createDirectRunDispatcher(
           failureInput(input, null, "Run execution preparation failed"),
           signal,
         );
-        return { kind: "failed", terminal, failure: prepared.error };
+        return {
+          kind: "failed",
+          terminal,
+          failure: new Error("Run execution preparation failed"),
+        };
       }
       return await set(dispatchPreparedRun$, prepared.value, signal);
     },
@@ -262,16 +267,18 @@ const offerToProcess$ = command(
   },
 );
 
+interface PreparedRunDelivery {
+  readonly input: AdmittedRunLaunch;
+  readonly executionContext: ExecutionContext;
+  readonly fleet: DirectRunFleet;
+  readonly contextSnapshot: Omit<
+    Parameters<typeof recordRunContextSnapshot>[0],
+    "recordedAt"
+  >;
+}
+
 const dispatchPreparedRun$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly input: AdmittedRunLaunch;
-      readonly executionContext: ExecutionContext;
-      readonly fleet: DirectRunFleet;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, args: PreparedRunDelivery, signal: AbortSignal) => {
     signal.throwIfAborted();
     const input = args.input;
     let owner: DirectRunTarget | null = null;
@@ -325,7 +332,14 @@ const dispatchPreparedRun$ = command(
         if (!selected) {
           break;
         }
+        const firstOwner = owner === null;
         owner = target;
+        if (firstOwner) {
+          recordRunContextSnapshot({
+            ...args.contextSnapshot,
+            recordedAt: nowDate(),
+          });
+        }
         const preference = fleet.preference;
         const preferredUntil =
           preference.kind === "preference" &&
@@ -377,13 +391,17 @@ const dispatchPreparedRun$ = command(
       return outcome.value;
     }
     if (uncertain) {
-      throw outcome.error;
+      throw new Error("Run delivery outcome is uncertain");
     }
     const terminal = await set(
       failUnacceptedRun$,
-      failureInput(input, owner, reason),
+      failureInput(input, owner, "Run delivery failed"),
       signal,
     );
-    return { kind: "failed" as const, terminal, failure: outcome.error };
+    return {
+      kind: "failed" as const,
+      terminal,
+      failure: new Error("Run delivery failed"),
+    };
   },
 );

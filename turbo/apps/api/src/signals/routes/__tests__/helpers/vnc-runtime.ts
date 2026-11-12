@@ -185,7 +185,7 @@ export interface VncRuntimeFixture extends Owner {
   readonly agentId: string;
   readonly sandboxToken: string;
   readonly runnerIdentity: {
-    runnerId: ReturnType<typeof randomUUID>;
+    runnerId: string;
     heartbeatGeneration: number;
   };
   readonly connectionId: string;
