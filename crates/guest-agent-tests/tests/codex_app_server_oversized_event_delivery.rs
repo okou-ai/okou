@@ -268,7 +268,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     );
 
     let mut delivered = Vec::new();
-    for request in &requests {
+    for request in requests {
         let mut payload: Value = serde_json::from_str(&request.body)?;
         delivered.append(
             payload

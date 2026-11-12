@@ -697,7 +697,7 @@ async fn deliver_pi_rpc_with_skips(
     };
     let requests = server.take_requests()?;
     let mut delivered = Vec::new();
-    for request in &requests {
+    for request in requests {
         assert!(request.body.len() <= LIMIT);
         let mut payload: Value = serde_json::from_str(&request.body)?;
         delivered.append(
