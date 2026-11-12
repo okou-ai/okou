@@ -142,14 +142,20 @@ def reconcile(sandboxes: dict, registry_identity: str | None) -> None:
             _runs[run_id] = run
 
 
-def _state(flow: http.HTTPFlow) -> _Flow | None:
+def _state(flow: http.HTTPFlow, *, include_finished: bool = False) -> _Flow | None:
+    """Resolve retained custody, excluding finished flows unless requested."""
     state = flow.metadata.get(_FLOW_STATE)
-    return state if isinstance(state, _Flow) and state.run.retained else None
+    return (
+        state
+        if isinstance(state, _Flow)
+        and state.run.retained
+        and (include_finished or not state.finished)
+        else None
+    )
 
 
 def is_tracking(flow: http.HTTPFlow) -> bool:
-    state = _state(flow)
-    return state is not None and not state.finished
+    return _state(flow) is not None
 
 
 def admit(flow: http.HTTPFlow, *, namespace: str | None = None) -> None:
@@ -192,7 +198,7 @@ def _mark(run: _Run, reason: Reason) -> None:
 
 def mark(flow: http.HTTPFlow, reason: Reason) -> None:
     with _lock:
-        state = _state(flow)
+        state = _state(flow, include_finished=True)
         if state is not None:
             _mark(state.run, reason)
 
@@ -206,7 +212,7 @@ def observe(
         return
     with _lock:
         state = _state(flow)
-        if state is None or state.finished:
+        if state is None:
             return
         run = state.run
         if quantities.get("input_partition_incomplete") is True:
@@ -268,7 +274,7 @@ def observe(
 def websocket_pending(flow: http.HTTPFlow, *, pending: bool) -> None:
     with _lock:
         state = _state(flow)
-        if state is None or state.finished:
+        if state is None:
             return
         run = state.run
         if pending and state.flow_id not in run.pending:
@@ -286,7 +292,7 @@ def terminal_response(flow: http.HTTPFlow) -> None:
     """Settle one response without turning absent usage into provider zero."""
     with _lock:
         state = _state(flow)
-        if state is None or state.finished:
+        if state is None:
             return
         quantities = state.run.responses.get(state.response_key) if state.response_key else None
         if quantities is None:
@@ -304,7 +310,7 @@ def terminal_response(flow: http.HTTPFlow) -> None:
 
 def finish(flow: http.HTTPFlow, *, interrupted: bool = False) -> None:
     state = _state(flow)
-    if state is None or state.finished:
+    if state is None:
         return
     if interrupted or (state.websocket and state.flow_id in state.run.pending):
         mark(flow, "interrupted")
