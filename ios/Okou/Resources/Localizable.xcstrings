@@ -1,6 +1,13 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "主机" }
+        }
+      }
+    },
     "SSH access": {
       "localizations": {
         "zh-Hans": {
