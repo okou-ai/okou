@@ -287,6 +287,9 @@ test.each(["http", "mcp"] as const)(
     click(screen.getByRole("option", { name: gateway.name }));
     click(settings.summary);
     expect(settings.field).not.toBeVisible();
+    expect(settings.summary).toHaveTextContent(
+      `Cloudflare Access · ${gateway.name}`,
+    );
     click(settings.summary);
     expect(settings.field).toHaveTextContent(gateway.name);
     expect(within(dialog).getByLabelText("Display name")).toHaveValue(
@@ -308,6 +311,9 @@ test.each(["http", "mcp"] as const)(
     await page();
     await screen.findByText(connector.displayName);
     let dialog = await edit(connector.displayName);
+    await within(networkAdvancedSettings(dialog).summary).findByText(
+      `Cloudflare Access · ${gateway.name}`,
+    );
     await fill(
       within(dialog).getByLabelText("Display name"),
       "Renamed protected connector",
@@ -329,6 +335,11 @@ test.each(["http", "mcp"] as const)(
     });
     dialog = await edit("Renamed protected connector");
     await choose(dialog, "No Cloudflare Access");
+    const cleared = networkAdvancedSettings(dialog);
+    click(cleared.summary);
+    expect(cleared.summary).toHaveTextContent(
+      "Cloudflare Access will be removed on save",
+    );
     await save(dialog);
     expect(state.updates[2]).toMatchObject({
       networkBinding: null,
@@ -424,6 +435,9 @@ test.each(["http", "mcp"] as const)(
     let dialog = await screen.findByRole("dialog", {
       name: "Edit custom connector",
     });
+    expect(networkAdvancedSettings(dialog).summary).toHaveTextContent(
+      "Cloudflare Access is off",
+    );
     expandNetworkSettings(dialog);
     expect(
       within(dialog).getByLabelText("Cloudflare Access"),
@@ -447,6 +461,65 @@ test.each(["http", "mcp"] as const)(
     });
   },
 );
+
+test("A collapsed requirement distinguishes pending, failed and unavailable lookup before a valid rebind", async () => {
+  const connector = {
+    ...definition("http"),
+    networkBinding: {
+      type: "cloudflare_access" as const,
+      configId: gateway.id,
+      status: "unavailable" as const,
+      name: null,
+    },
+  };
+  const state = story([connector]);
+  const response = context.mocks.deferred<void>();
+  let loaded = false;
+  context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
+    if (!loaded) {
+      await response.promise;
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Unavailable" },
+      });
+    }
+    return respond(200, { configs: [replacement] });
+  });
+  await page(`/connectors?scope=custom&editCustomConnector=${connector.id}`);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Edit custom connector",
+  });
+  const settings = networkAdvancedSettings(dialog);
+  await within(settings.summary).findByText("Loading Cloudflare Access…");
+  expect(settings.field).toHaveTextContent("Loading Cloudflare Access…");
+  await fill(within(dialog).getByLabelText("Display name"), "Draft kept");
+  response.resolve();
+  await within(settings.summary).findByText(
+    "Could not load Cloudflare Access.",
+  );
+  expect(settings.field).toHaveTextContent("Could not load Cloudflare Access.");
+  loaded = true;
+  expandNetworkSettings(dialog);
+  click(settings.field);
+  const alternative = await screen.findByRole("option", {
+    name: replacement.name,
+  });
+  expect(settings.summary).toHaveTextContent("Cloudflare Access · Unavailable");
+  click(alternative);
+  expect(settings.summary).toHaveTextContent(replacement.name);
+  expect(
+    within(dialog).queryByText(
+      "This configuration is unavailable. Select another one or remove the requirement.",
+    ),
+  ).not.toBeInTheDocument();
+  click(settings.summary);
+  await save(dialog);
+  expect(state.updates[0]).toMatchObject({
+    displayName: "Draft kept",
+    networkBinding: { type: "cloudflare_access", configId: replacement.id },
+    storageVersion: 7,
+    authMode: "manual",
+  });
+});
 
 test("A configuration load failure and rejected save preserve the connector draft until explicit retry", async () => {
   const state = story();

@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import { ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   customConnectorCloudflareChoices$,
@@ -15,6 +15,130 @@ import {
 } from "../../../../signals/okou-page/settings/custom-connector-network.ts";
 import { invalidateCloudflareAccess$ } from "../../../../signals/cloudflare-access.ts";
 import { Link } from "../../../router/link.tsx";
+
+type NetworkSelection =
+  | { readonly state: "available"; readonly name: string }
+  | {
+      readonly state:
+        "none" | "removed" | "off" | "loading" | "error" | "unavailable";
+    };
+
+function networkSelection({
+  configId,
+  saved,
+  enabled,
+  loading,
+  loadFailed,
+  name,
+}: {
+  readonly configId: string;
+  readonly saved: boolean;
+  readonly enabled: boolean;
+  readonly loading: boolean;
+  readonly loadFailed: boolean;
+  readonly name: string | undefined;
+}): NetworkSelection {
+  if (!configId) {
+    return { state: saved ? "removed" : "none" };
+  }
+  if (!enabled) {
+    return { state: "off" };
+  }
+  if (loading) {
+    return { state: "loading" };
+  }
+  if (loadFailed) {
+    return { state: "error" };
+  }
+  return name === undefined
+    ? { state: "unavailable" }
+    : { state: "available", name };
+}
+
+function ConnectorNetworkSummary({
+  selection,
+}: {
+  readonly selection: NetworkSelection;
+}) {
+  const { t } = useTranslation();
+  if (selection.state === "none") {
+    return null;
+  }
+  const messages = {
+    removed: t(($) => {
+      return $.cloudflareAccess.connectorRemoval;
+    }),
+    off: t(($) => {
+      return $.cloudflareAccess.connectorOff;
+    }),
+    loading: t(($) => {
+      return $.cloudflareAccess.loading;
+    }),
+    error: t(($) => {
+      return $.cloudflareAccess.loadFailed;
+    }),
+    unavailable: t(($) => {
+      return $.cloudflareAccess.bindingUnavailable;
+    }),
+  };
+  const label =
+    selection.state === "available"
+      ? selection.name
+      : messages[selection.state];
+  const warning =
+    selection.state === "error" || selection.state === "unavailable";
+  return (
+    <span
+      className={`ml-auto flex max-w-1/2 min-w-0 items-center gap-1 text-right text-xs font-normal ${warning ? "text-destructive" : "text-muted-foreground"}`}
+    >
+      {warning && <AlertTriangle size={12} className="shrink-0" aria-hidden />}
+      <span className="min-w-0 break-words">
+        {(selection.state === "available" ||
+          selection.state === "unavailable") && (
+          <>
+            {t(($) => {
+              return $.cloudflareAccess.configuration;
+            })}
+            {" · "}
+          </>
+        )}
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function ConnectorNetworkLabel({ enabled }: { readonly enabled: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <label
+        htmlFor="custom-connector-cloudflare"
+        className="text-sm font-medium text-foreground"
+      >
+        {t(($) => {
+          return $.cloudflareAccess.configuration;
+        })}
+      </label>
+      {enabled && (
+        <Link
+          pathname="/connectors"
+          options={{
+            searchParams: new URLSearchParams({ scope: "private-network" }),
+          }}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline hover:text-foreground"
+        >
+          {t(($) => {
+            return $.cloudflareAccess.manage;
+          })}
+          <ExternalLink size={12} aria-hidden />
+        </Link>
+      )}
+    </div>
+  );
+}
 
 function ConnectorNetworkDescription({
   enabled,
@@ -32,43 +156,17 @@ function ConnectorNetworkDescription({
     <>
       <p
         id="custom-connector-cloudflare-description"
+        role={unavailable ? "status" : undefined}
         className="text-sm text-muted-foreground"
       >
         {t(($) => {
-          return enabled
-            ? $.cloudflareAccess.connectorRecipients
-            : $.cloudflareAccess.connectorDisabled;
+          return !enabled
+            ? $.cloudflareAccess.connectorDisabled
+            : unavailable
+              ? $.cloudflareAccess.connectorUnavailable
+              : $.cloudflareAccess.connectorHint;
         })}
       </p>
-      {enabled && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.connectorRequirements;
-          })}
-        </p>
-      )}
-      {unavailable && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.connectorUnavailable;
-          })}
-        </p>
-      )}
-      {enabled && (
-        <Link
-          pathname="/connectors"
-          options={{
-            searchParams: new URLSearchParams({ scope: "private-network" }),
-          }}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-fit text-sm text-muted-foreground underline hover:text-foreground"
-        >
-          {t(($) => {
-            return $.cloudflareAccess.manage;
-          })}
-        </Link>
-      )}
       {enabled && loading && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -87,6 +185,57 @@ function ConnectorNetworkDescription({
   );
 }
 
+function ConnectorNetworkSelect({
+  items,
+  configId,
+  onChange,
+  disabled,
+  retryOnOpen,
+}: {
+  readonly items: readonly { readonly value: string; readonly label: string }[];
+  readonly configId: string;
+  readonly onChange: (id: string) => void;
+  readonly disabled: boolean;
+  readonly retryOnOpen: boolean;
+}) {
+  const reload = useSet(invalidateCloudflareAccess$);
+  return (
+    <Select
+      items={items}
+      value={configId || "none"}
+      onValueChange={(value) => {
+        if (value !== null) {
+          onChange(value === "none" ? "" : value);
+        }
+      }}
+      onOpenChange={(open) => {
+        if (open && retryOnOpen) {
+          reload();
+        }
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        id="custom-connector-cloudflare"
+        variant="neutral"
+        className="w-full"
+        aria-describedby="custom-connector-cloudflare-description"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => {
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function CustomConnectorNetworkField({
   connector,
   configId,
@@ -99,7 +248,6 @@ export function CustomConnectorNetworkField({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(invalidateCloudflareAccess$);
   const enabled = useGet(customConnectorCloudflareEnabled$);
   const choices = useLoadable(customConnectorCloudflareChoices$);
   const saved = connector?.networkBinding;
@@ -107,6 +255,20 @@ export function CustomConnectorNetworkField({
     return null;
   }
   const configs = choices.state === "hasData" ? choices.data : null;
+  const loading = choices.state === "loading";
+  const loadFailed =
+    choices.state === "hasError" ||
+    (choices.state === "hasData" && configs === null);
+  const selection = networkSelection({
+    configId,
+    saved: saved !== undefined,
+    enabled,
+    loading,
+    loadFailed,
+    name: configs?.find((config) => {
+      return config.id === configId;
+    })?.name,
+  });
   const missingId = [saved?.configId, configId].filter((id): id is string => {
     return (
       !!id &&
@@ -114,6 +276,13 @@ export function CustomConnectorNetworkField({
         return config.id === id;
       })
     );
+  });
+  const missingLabel = t(($) => {
+    return loading
+      ? $.cloudflareAccess.loading
+      : loadFailed
+        ? $.cloudflareAccess.loadFailed
+        : $.cloudflareAccess.bindingUnavailable;
   });
   const items = [
     {
@@ -123,10 +292,7 @@ export function CustomConnectorNetworkField({
       }),
     },
     ...(configs ?? []).map((config) => {
-      return {
-        value: config.id,
-        label: config.name,
-      };
+      return { value: config.id, label: config.name };
     }),
     ...[...new Set(missingId)].map((id) => {
       return {
@@ -134,9 +300,7 @@ export function CustomConnectorNetworkField({
         label:
           saved?.configId === id && saved.status === "available"
             ? saved.name
-            : t(($) => {
-                return $.cloudflareAccess.bindingUnavailable;
-              }),
+            : missingLabel,
       };
     }),
   ];
@@ -152,63 +316,22 @@ export function CustomConnectorNetworkField({
             return $.connectors.custom.create.advancedSettings;
           })}
         </span>
+        <ConnectorNetworkSummary selection={selection} />
       </summary>
       <div className="mt-2 grid gap-2">
-        <label
-          htmlFor="custom-connector-cloudflare"
-          className="text-sm font-medium text-foreground"
-        >
-          {t(($) => {
-            return $.cloudflareAccess.configuration;
-          })}
-        </label>
-        <Select
+        <ConnectorNetworkLabel enabled={enabled} />
+        <ConnectorNetworkSelect
           items={items}
-          value={configId || "none"}
-          onValueChange={(value) => {
-            if (value !== null) {
-              onChange(value === "none" ? "" : value);
-            }
-          }}
-          onOpenChange={(open) => {
-            if (
-              open &&
-              (choices.state === "hasError" ||
-                (choices.state === "hasData" && !configs))
-            ) {
-              reload();
-            }
-          }}
+          configId={configId}
+          onChange={onChange}
           disabled={disabled}
-        >
-          <SelectTrigger
-            id="custom-connector-cloudflare"
-            variant="neutral"
-            className="w-full"
-            aria-describedby="custom-connector-cloudflare-description"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {items.map((item) => {
-              return (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
+          retryOnOpen={loadFailed}
+        />
         <ConnectorNetworkDescription
           enabled={enabled}
-          unavailable={
-            saved?.status === "unavailable" && configId === saved.configId
-          }
-          loading={choices.state === "loading"}
-          loadFailed={
-            choices.state === "hasError" ||
-            (choices.state === "hasData" && !configs)
-          }
+          unavailable={selection.state === "unavailable"}
+          loading={loading}
+          loadFailed={loadFailed}
         />
       </div>
     </details>
