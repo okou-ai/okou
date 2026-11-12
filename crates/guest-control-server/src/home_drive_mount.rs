@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use guest_contracts::home_mount::{HOME_DRIVE_MOUNT_TIMEOUT_MS, HOME_MOUNT_PATH};
 use guest_control_proto::{ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES};
 
-use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
+use crate::drain::{BoundedDrainHandle, DrainCancellation};
 use crate::error::to_io_error;
-use crate::helper_output::{captured_or_empty, truncate_utf8};
+use crate::helper_output::{CapturedHelperOutput, captured_or_empty};
 use crate::helper_program::TestHelperProgram;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
@@ -25,7 +25,6 @@ use crate::writer::GuestWriter;
 const THREAD_WORKER: &str = "gctl-mount";
 const THREAD_STDOUT: &str = "gctl-mount-out";
 const THREAD_STDERR: &str = "gctl-mount-err";
-const MAX_DIAGNOSTIC_BYTES: usize = u16::MAX as usize;
 
 #[derive(Clone)]
 pub(crate) enum HomeDriveMountProgram {
@@ -152,14 +151,6 @@ impl HomeDriveMountWorker {
     }
 }
 
-struct HomeDriveMountOutput {
-    termination: ExecTermination,
-    duration_ms: u32,
-    stdout: BoundedDrainResult,
-    stderr: BoundedDrainResult,
-    diagnostic: String,
-}
-
 fn handle_worker_request(
     request: HomeDriveMountRequest,
     writer: &GuestWriter,
@@ -221,7 +212,7 @@ struct RunMountInput<'a> {
     drain_deadline: Duration,
 }
 
-fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
+fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
     let RunMountInput {
         operation,
         program,
@@ -232,7 +223,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     let drain_cancel = match DrainCancellation::new() {
         Ok(cancel) => Arc::new(cancel),
         Err(error) => {
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to initialize home mount output drain cancellation: {error}"),
@@ -242,7 +233,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     let mut child = match program.spawn(operation) {
         Ok(spawned) => spawned,
         Err(error) => {
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to start home mount helper: {error}"),
@@ -269,7 +260,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
         Err(error) => {
             drop(stderr);
             kill_and_reap_child(child);
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::WaitFailed,
                 started,
                 format!("Failed to start home mount stdout drain: {error}"),
@@ -289,7 +280,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
             kill_and_reap_child(child);
             drop(drain_done_tx);
             let _ = stdout_drain.join();
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::WaitFailed,
                 started,
                 format!("Failed to start home mount stderr drain: {error}"),
@@ -319,42 +310,10 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
 
     let (termination, diagnostic) =
         outcome.into_exec_result("Failed to wait for home mount helper");
-    HomeDriveMountOutput {
-        termination,
-        duration_ms: elapsed_ms(started),
-        stdout,
-        stderr,
-        diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
+    CapturedHelperOutput::new(termination, started, stdout, stderr, diagnostic)
 }
 
-fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> HomeDriveMountOutput {
+fn abort_spawned(child: Child, started: Instant, diagnostic: &str) -> CapturedHelperOutput {
     kill_and_reap_child(child);
-    failed_output(ExecTermination::WaitFailed, started, diagnostic.to_string())
-}
-
-fn failed_output(
-    termination: ExecTermination,
-    started: Instant,
-    diagnostic: String,
-) -> HomeDriveMountOutput {
-    HomeDriveMountOutput {
-        termination,
-        duration_ms: elapsed_ms(started),
-        stdout: BoundedDrainResult {
-            captured: Some(Vec::new()),
-            capture_truncated: false,
-            stream_truncated: false,
-        },
-        stderr: BoundedDrainResult {
-            captured: Some(Vec::new()),
-            capture_truncated: false,
-            stream_truncated: false,
-        },
-        diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
-}
-
-fn elapsed_ms(started: Instant) -> u32 {
-    u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
+    CapturedHelperOutput::failed(ExecTermination::WaitFailed, started, diagnostic.to_string())
 }
