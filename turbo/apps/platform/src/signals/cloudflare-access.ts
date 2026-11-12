@@ -97,7 +97,7 @@ const cloudflareAccessConfigsData$ = computed(async (get) => {
   }
   const result = await accept(
     (await get(cloudflareAccessClient$)).client.list({
-      query: { view: "scoped" },
+      query: { view: "scoped", includeCustomConnectors: "true" },
     }),
     [200, 404],
     undefined,

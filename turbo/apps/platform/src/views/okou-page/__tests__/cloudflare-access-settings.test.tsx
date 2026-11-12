@@ -110,7 +110,10 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
   const updates: unknown[] = [];
   const deletes: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
-    expect(query).toStrictEqual({ view: "scoped" });
+    expect(query).toStrictEqual({
+      view: "scoped",
+      includeCustomConnectors: "true",
+    });
     return respond(200, { configs: current ? [current] : [] });
   });
   context.mocks.api(

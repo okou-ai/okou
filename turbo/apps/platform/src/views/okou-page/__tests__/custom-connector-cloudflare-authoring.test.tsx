@@ -77,18 +77,22 @@ function story(initial: readonly CustomConnectorResponse[] = []) {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
   });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
     return respond(200, {
       configs: [
         {
           ...gateway,
-          customConnectors: connectors
-            .filter((connector) => {
-              return connector.networkBinding?.configId === gateway.id;
-            })
-            .map(({ id, displayName, kind }) => {
-              return { id, displayName, kind };
-            }),
+          ...(query.includeCustomConnectors === "true"
+            ? {
+                customConnectors: connectors
+                  .filter((connector) => {
+                    return connector.networkBinding?.configId === gateway.id;
+                  })
+                  .map(({ id, displayName, kind }) => {
+                    return { id, displayName, kind };
+                  }),
+              }
+            : {}),
         },
         replacement,
         personal,
