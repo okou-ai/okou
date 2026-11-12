@@ -74,6 +74,15 @@ import {
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../../contracts/storages";
 import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../../contracts/data-router";
+import {
+  DEFAULT_RUNNER_PROFILE,
+  DEFAULT_RUNNER_PROFILE_VCPU,
+  DEFAULT_RUNNER_PROFILE_MEMORY_MB,
+  DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB,
+  DEFAULT_RUNNER_PROFILE_HOME_DISK_MB,
+  RUNNER_DISPATCH_MAX_BODY_BYTES,
+  RUNNER_DISPATCH_MAX_VALIDITY_MS,
+} from "../../contracts/runner-dispatch";
 
 const codexOauthPlaceholders =
   MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
@@ -205,6 +214,48 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE",
+    value: rustString(DEFAULT_RUNNER_PROFILE),
+    rustDoc: ["Canonical default Runner profile."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_VCPU",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_VCPU),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_MEMORY_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_MEMORY_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_ROOTFS_DISK_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_HOME_DISK_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_HOME_DISK_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DISPATCH_MAX_BODY_BYTES",
+    value: rustU32(RUNNER_DISPATCH_MAX_BODY_BYTES),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DISPATCH_MAX_VALIDITY_MS",
+    value: rustU32(RUNNER_DISPATCH_MAX_VALIDITY_MS),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
   {
     rustModulePath: ["data_router"],
     rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",
