@@ -413,12 +413,10 @@ def model_json_value_presence_paths() -> set[Path]:
 
 def model_json_usage_from_result(
     result: JsonExtractionResult,
-) -> tuple[dict | None, str | None]:
+) -> dict | None:
     """Map one complete shared JSON extraction into Chat Completions usage."""
 
-    if not result.complete:
-        return None, result.error
     usage = _usage_snapshot(result)
     if usage is None or not any(category in usage for category in MODEL_USAGE_CATEGORIES):
-        return None, None
-    return usage, None
+        return None
+    return usage

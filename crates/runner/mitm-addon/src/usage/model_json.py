@@ -16,14 +16,12 @@ ModelUsageProtocol = Literal[
     "openai_responses",
 ]
 
-ModelJsonUsageResult = tuple[dict | None, str | None]
-
 
 class _ModelJsonUsageRegistration(NamedTuple):
     scalar_fields: Callable[[], Mapping[JsonPath, ScalarField]]
     object_presence_paths: Callable[[], set[JsonPath]]
     value_presence_paths: Callable[[], set[JsonPath]]
-    usage_from_result: Callable[[JsonExtractionResult], ModelJsonUsageResult]
+    usage_from_result: Callable[[JsonExtractionResult], dict | None]
 
 
 _ANTHROPIC_MESSAGES_REGISTRATION = _ModelJsonUsageRegistration(
@@ -117,8 +115,10 @@ class ModelJsonResponseInspector:
         Call once after all response chunks have been fed. The returned ``usage`` and
         ``usage_error`` follow the selected protocol's usage contract.
         """
-        usage, usage_error = self._registration.usage_from_result(self._extractor.finish())
-        return ModelJsonResponseInspection(usage, usage_error)
+        result = self._extractor.finish()
+        if not result.complete:
+            return ModelJsonResponseInspection(None, result.error)
+        return ModelJsonResponseInspection(self._registration.usage_from_result(result), None)
 
 
 def create_model_json_response_inspector(
