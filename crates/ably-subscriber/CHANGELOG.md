@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.12](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.11...ably-subscriber-v2.0.12) (2026-11-12)
+
+
+### Refactoring
+
+* **ably-subscriber:** centralize receive-loop action dispatch ([#46848](https://github.com/okou-ai/okou/issues/46848)) ([4b1f112](https://github.com/okou-ai/okou/commit/4b1f112e92cdf6eb38f41db2ffb59bb142141aef))
+
 ## [2.0.11](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.10...ably-subscriber-v2.0.11) (2026-11-11)
 
 ## [2.0.10](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.9...ably-subscriber-v2.0.10) (2026-11-10)

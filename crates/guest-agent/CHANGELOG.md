@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.73](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.72...guest-agent-v0.109.73) (2026-11-12)
+
+
+### Refactoring
+
+* **guest-agent:** unify bounded codex history traversal ([#46875](https://github.com/okou-ai/okou/issues/46875)) ([e3b5acf](https://github.com/okou-ai/okou/commit/e3b5acf27ccf1903855603400ec400ed513756f5))
+
 ## [0.109.72](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.71...guest-agent-v0.109.72) (2026-11-12)
 
 ## [0.109.71](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.70...guest-agent-v0.109.71) (2026-11-12)

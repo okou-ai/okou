@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/runner-types-v0.16.0...runner-types-v0.17.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** accept complete directly dispatched runs ([#46843](https://github.com/okou-ai/okou/issues/46843)) ([ccbdf64](https://github.com/okou-ai/okou/commit/ccbdf64b3739a83fa0132392db0ca943dcca0dfb))
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/runner-types-v0.15.0...runner-types-v0.16.0) (2026-11-12)
 
 
