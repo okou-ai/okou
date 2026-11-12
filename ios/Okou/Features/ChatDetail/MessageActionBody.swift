@@ -13,6 +13,7 @@ enum MessageActionBody {
     case unavailablePermission(String)
     case mailDraft(String)
     case computerAuthorization(ChatComputerAuthorizationAction)
+    case sshAuthorization(ChatSSHAuthorizationAction)
   }
 
   /// Mail draft references on the configured web origin.
@@ -63,6 +64,10 @@ enum MessageActionBody {
         let block: Block
         if let approval = approvalBlock(value, webURL: webURL) {
           block = approval
+        } else if let action = ChatSSHAuthorizationAction.parse(
+          value, webURL: webURL, threadID: threadID)
+        {
+          block = .sshAuthorization(action)
         } else if let action = ChatComputerAuthorizationAction.parse(
           value, webURL: webURL, threadID: threadID)
         {

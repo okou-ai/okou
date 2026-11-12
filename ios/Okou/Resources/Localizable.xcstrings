@@ -1,6 +1,306 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "SSH access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 访问"
+          }
+        }
+      }
+    },
+    "SSH access allowed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允许 SSH 访问"
+          }
+        }
+      }
+    },
+    "SSH access revoked": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤销 SSH 访问"
+          }
+        }
+      }
+    },
+    "SSH access denied": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拒绝 SSH 访问"
+          }
+        }
+      }
+    },
+    "SSH request expired": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 申请已过期"
+          }
+        }
+      }
+    },
+    "SSH request changed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 申请已变更"
+          }
+        }
+      }
+    },
+    "SSH request unavailable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 申请不可用"
+          }
+        }
+      }
+    },
+    "This host · This chat only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅此主机 · 仅当前聊天"
+          }
+        }
+      }
+    },
+    "The task continues automatically after you allow access.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许后自动继续任务"
+          }
+        }
+      }
+    },
+    "Allow in this chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许当前聊天访问"
+          }
+        }
+      }
+    },
+    "Access details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问详情"
+          }
+        }
+      }
+    },
+    "Continue task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续任务"
+          }
+        }
+      }
+    },
+    "View on Web": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Web 中查看"
+          }
+        }
+      }
+    },
+    "Unable to confirm the result. Check the request status.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法确认结果，请检查状态。"
+          }
+        }
+      }
+    },
+    "Access is allowed. The task still needs to continue.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问已允许，任务尚未继续。"
+          }
+        }
+      }
+    },
+    "Continuation request submitted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续请求已提交"
+          }
+        }
+      }
+    },
+    "Ask for a new request in this chat.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在当前聊天中重新申请。"
+          }
+        }
+      }
+    },
+    "Remote user and address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程用户和地址"
+          }
+        }
+      }
+    },
+    "Access scope": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权范围"
+          }
+        }
+      }
+    },
+    "Purpose": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问用途"
+          }
+        }
+      }
+    },
+    "Allow commands and file transfers as this remote user until access is turned off.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许以此远程用户执行命令和传输文件，直到关闭访问。"
+          }
+        }
+      }
+    },
+    "Required connector permissions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所需的连接器权限"
+          }
+        }
+      }
+    },
+    "Approve these separately using the permission cards in this chat.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请通过当前聊天中的权限卡片单独批准。"
+          }
+        }
+      }
+    },
+    "Wait for the current task to finish before allowing access.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前任务结束后即可批准。"
+          }
+        }
+      }
+    },
+    "Approve the required connector permissions first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先批准配套的连接器权限。"
+          }
+        }
+      }
+    },
+    "The host configuration changed. Ask for a new request.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机配置已变更，请重新申请。"
+          }
+        }
+      }
+    },
+    "The requesting run is unavailable. Ask for a new request.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发起申请的运行已不可用，请重新申请。"
+          }
+        }
+      }
+    },
+    "This request cannot be approved right now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法批准此申请。"
+          }
+        }
+      }
+    },
+    "Local preview · No SSH access is granted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地预览 · 不会授予实际 SSH 访问权限"
+          }
+        }
+      }
+    },
+    "The lifecycle fix is ready. Allow access to staging Mac to continue verification.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生命周期补丁已实现。允许当前聊天访问 staging Mac 后，我会继续验证。"
+          }
+        }
+      }
+    },
     "": {
       "localizations": {
         "de": {
