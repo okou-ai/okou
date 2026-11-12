@@ -134,11 +134,7 @@ private struct ChatSearchContent: View {
         }
         ForEach(titles) { thread in
           resultButton(threadID: thread.id) {
-            VStack(alignment: .leading, spacing: OkouSpace.xs) {
-              Text(thread.displayTitle).lineLimit(1)
-              Text(agentName(thread.agentID)).font(.okou(.caption)).foregroundStyle(
-                OkouColor.mutedForeground)
-            }
+            Text(thread.displayTitle).lineLimit(1)
           }
         }
       }
