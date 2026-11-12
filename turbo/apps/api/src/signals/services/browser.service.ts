@@ -432,24 +432,13 @@ const stopActiveBrowserInstance$ = command(
     { set },
     target: ActiveBrowserInstance,
     reason: BrowserSuspensionReason,
-    suppliedOptions:
-      | {
-          readonly stopProvider: boolean;
-          readonly saveTabSnapshot?: boolean;
-        }
-      | undefined,
+    stopProvider: boolean,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const options = suppliedOptions ?? { stopProvider: true };
-    if (options.saveTabSnapshot ?? options.stopProvider) {
+    if (stopProvider) {
       await set(saveBrowserTabSnapshot$, target, signal);
     }
-    const stopped = await set(
-      commitBrowserStop$,
-      target,
-      reason,
-      options.stopProvider,
-    );
+    const stopped = await set(commitBrowserStop$, target, reason, stopProvider);
     signal.throwIfAborted();
     if (!stopped) {
       return false;
@@ -1205,10 +1194,7 @@ export const stopThreadBrowsers$ = command(
           stopActiveBrowserInstance$,
           target,
           "reconcile",
-          {
-            stopProvider: false,
-            saveTabSnapshot: false,
-          },
+          false,
           signal,
         )
       ) {
@@ -2153,7 +2139,7 @@ const reconcileBrowserInstance$ = command(
         userId: row.browser.userId,
       },
       reason,
-      { stopProvider },
+      stopProvider,
       signal,
     );
     return {
