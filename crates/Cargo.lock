@@ -2163,6 +2163,7 @@ dependencies = [
  "libc",
  "process-control-ipc",
  "process-launch",
+ "rustix",
  "serde",
  "serde_json",
  "shell-quote",
@@ -3655,6 +3656,7 @@ name = "process-launch"
 version = "0.1.5"
 dependencies = [
  "libc",
+ "rustix",
  "tempfile",
  "tokio",
 ]

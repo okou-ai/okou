@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::future::{Future, poll_fn};
 use std::io;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -344,20 +344,15 @@ fn process_session_id(pid: libc::pid_t) -> Result<libc::pid_t, nix::errno::Errno
 
 #[cfg(target_os = "linux")]
 fn open_pidfd(pid: libc::pid_t) -> io::Result<Option<OwnedFd>> {
-    // SAFETY: `pidfd_open` does not dereference user pointers and `pid` came
-    // from the kernel-owned `/proc` directory.
-    let result = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
-    if result < 0 {
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ESRCH) {
-            return Ok(None);
-        }
-        return Err(error);
+    let pid = Some(pid)
+        .filter(|pid| *pid > 0)
+        .and_then(rustix::process::Pid::from_raw)
+        .ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?;
+    match rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()) {
+        Ok(pidfd) => Ok(Some(pidfd)),
+        Err(error) if error == rustix::io::Errno::SRCH => Ok(None),
+        Err(error) => Err(error.into()),
     }
-    let fd = RawFd::try_from(result)
-        .map_err(|_| io::Error::other("pidfd_open returned an invalid file descriptor"))?;
-    // SAFETY: `fd` is a new descriptor returned by `pidfd_open`.
-    Ok(Some(unsafe { OwnedFd::from_raw_fd(fd) }))
 }
 
 #[cfg(target_os = "linux")]
