@@ -8,10 +8,14 @@ import {
 } from "../workflow-automation-context.service";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
+import type { ThreadContext } from "../thread-context.signals";
+import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 
 export function createAutomationThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createThreadAutomationContext>,
+  target$: ThreadContext["automationTarget$"],
+  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
@@ -39,12 +43,22 @@ export function createAutomationThreadPrompt(
     if (!eventPayload) {
       return null;
     }
+    // Temporary staff migration reader: queued events retain the old immutable
+    // name. New-mode executions use the same Automation's copied Workflow;
+    // already admitted legacy Runs keep their source namespace. Remove after
+    // pre-cutover inputs and pending Runs have drained.
+    const target = await get(target$);
+    const workflowName =
+      target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+      (await get(singleAgent$))
+        ? target.workflow.name
+        : context.workflowName;
     return {
       userPromptVariables: {
         message: [
           workflowAutomationAgentPrompt(
             storedWorkflowAutomationContext({
-              workflowName: context.workflowName,
+              workflowName,
               eventType,
               eventPayload,
             }),

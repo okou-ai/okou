@@ -113,7 +113,15 @@ export function readContentBundle(
         else chunks.push(chunk);
       });
       entry.on("end", () => {
-        return files.push({ path: entry.path, content: Buffer.concat(chunks) });
+        return files.push({
+          path: entry.path,
+          content: Buffer.concat(chunks),
+          // The canonical writer defaults to 0600. Preserve explicit public or
+          // executable modes when a shared package is republished by a copy.
+          ...(entry.mode === 0o644 || entry.mode === 0o755
+            ? { mode: entry.mode }
+            : {}),
+        });
       });
     },
   });

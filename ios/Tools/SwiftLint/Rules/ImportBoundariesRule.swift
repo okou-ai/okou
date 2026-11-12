@@ -72,7 +72,7 @@ struct ImportBoundariesRule: NativeRule {
         "OkouTests/NativeAuthFlowTests.swift",
       ],
       "ClerkKitUI": [
-        "Okou/DesignSystem/OkouAuthTheme.swift",
+        "Okou/DesignSystem/Foundations/OkouAuthTheme.swift",
         "Okou/Features/SignIn/NativeAuthView.swift",
       ],
     ]

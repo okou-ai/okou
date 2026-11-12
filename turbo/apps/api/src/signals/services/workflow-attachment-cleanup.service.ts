@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isStaffCopiedAttachment } from "@okouai/core/staff-single-agent-migration";
 import { command } from "ccstate";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { object as zObject, uuid as zUuid, string as zString } from "zod";
@@ -74,6 +75,10 @@ export function retireWorkflowAttachmentSql(
   admitted: SQL,
 ): SQL {
   if (attachments?.kind !== "bundle") {
+    return sql`SELECT NULL WHERE false`;
+  }
+  // The copy reads immutable content; only the retained source owns this upload.
+  if (isStaffCopiedAttachment({ ...owner, objectKey: attachments.objectKey })) {
     return sql`SELECT NULL WHERE false`;
   }
   const job = workflowAttachmentCleanupValues({

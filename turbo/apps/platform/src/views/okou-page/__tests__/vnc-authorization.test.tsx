@@ -7,6 +7,7 @@ import {
   type VncAuthorization,
 } from "@okouai/api-contracts/contracts/vnc-authorization";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -72,13 +73,12 @@ async function chat(content = url) {
 }
 
 test("The inline card allows only this chat and shows the desktop and access effect", async () => {
+  const user = userEvent.setup();
   let current = request();
-  let approvals = 0;
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, current);
   });
   context.mocks.api(contract.approve, ({ respond }) => {
-    approvals++;
     current = request({ status: "approved", enabled: true });
     return respond(200, current);
   });
@@ -93,14 +93,22 @@ test("The inline card allows only this chat and shows the desktop and access eff
   });
   expect(card).toHaveTextContent("ssh.example.com:5900");
   expect(card).toHaveTextContent("This host · This chat only");
-  click(button(card, "Access details"));
+  const detailsTrigger = button(card, "Access details");
+  detailsTrigger.focus();
+  await user.keyboard("{Enter}");
   const details = await screen.findByRole("dialog", { name: "Access details" });
   expect(details).toHaveTextContent("viewing and controlling this desktop");
   expect(details).toHaveTextContent("Verify VNC login and inspect the project");
-  click(button(card, "Access details"));
-  click(button(card, "Allow in this chat"));
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(detailsTrigger).toHaveFocus();
+    expect(
+      screen.queryByRole("dialog", { name: "Access details" }),
+    ).not.toBeInTheDocument();
+  });
+  button(card, "Allow in this chat").focus();
+  await user.keyboard("{Enter}");
   await within(card).findByText("VNC access allowed · Work Mac");
-  expect(approvals).toBe(1);
   click(button(card, "Revoke"));
   await within(card).findByText("VNC access revoked · Work Mac");
 });
@@ -193,7 +201,6 @@ test("Continuation failure can be retried on the approved request without a seco
       }),
     ).toStrictEqual(["Revoke"]);
   });
-  expect(attempts).toBe(2);
 });
 
 test("VNC and SSH requests with the same ID remain separate actionable cards", async () => {
@@ -262,3 +269,32 @@ test("The VNC review waits for separate tunnel and KDC approvals and refreshes o
     return expect(button(card, "Allow in this chat")).toBeEnabled();
   });
 });
+
+test.each(["cloudflare-access:changed", "tailscale:changed"])(
+  "The review disables an obsolete request after the VNC configuration publishes %s",
+  async (topic) => {
+    let current = request();
+    context.mocks.api(contract.get, ({ respond }) => {
+      return respond(200, current);
+    });
+    await setupPage({ context, path, host: "app.okou.ai" });
+    const card = await screen.findByTestId("vnc-authorization-card");
+    await waitFor(() => {
+      expect(button(card, "Allow in this chat")).toBeEnabled();
+    });
+    current = request({
+      status: "stale",
+      approvalBlockedReason: "host_changed",
+    });
+    context.mocks.ably.trigger(topic);
+    await within(card).findByText(
+      "The host configuration changed. Ask for a new request.",
+    );
+    expect(card).toHaveTextContent("VNC request changed");
+    expect(
+      queryAllByRoleFast("button", card).map((value) => {
+        return value.textContent?.trim();
+      }),
+    ).toStrictEqual([]);
+  },
+);

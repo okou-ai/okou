@@ -132,6 +132,9 @@ export function createHostAuthorizationSignals(
       "sshAuthorizationChanged",
       "vncAuthorizationChanged",
       "ssh:changed",
+      ...(protocol === "vnc"
+        ? ["cloudflare-access:changed", "tailscale:changed"]
+        : []),
       "connectorPermissionUpdated",
       "connector:changed",
     ]) {

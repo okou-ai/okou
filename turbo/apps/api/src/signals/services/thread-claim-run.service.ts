@@ -1,4 +1,5 @@
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { renderRunPrompts } from "./run-prompt-and-skills";
@@ -2061,7 +2062,13 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return buildWorkflowAutomationQueuedLaunchMaterial({
-      workflowName: event.workflowName,
+      // Staff migration retains queued event bytes while reassigning the live
+      // Automation. Resolve its new execution name without rewriting history.
+      // Remove after every pre-cutover queued input has drained.
+      workflowName:
+        target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
+          ? target.workflow.name
+          : event.workflowName,
       eventType: event.eventType,
       eventPayload: event.eventPayload,
       automation: target.automation,
@@ -4259,6 +4266,18 @@ export function createThreadClaimRunObjects(
         // telemetry or cancellation fails. Never reject its consumed input.
         if (get(internalCommittedRunId$) !== null) {
           throw settled.error;
+        }
+        // Temporary staff cutover reader: a preparation can capture the old
+        // Chat binding just before SQL reassigns it. The atomic binding fence
+        // rolled back publication; keep its input queued for a fresh normal
+        // pick instead of permanently rejecting it. No admission guard is
+        // bypassed. Remove after pre-cutover request preparations have drained
+        // and their rollback consumers are excluded (#46783).
+        if (
+          claim.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
+          settled.error instanceof ChatThreadBindingChanged
+        ) {
+          return null;
         }
         await settle(
           set(
