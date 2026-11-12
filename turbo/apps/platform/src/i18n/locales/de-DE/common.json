@@ -3237,6 +3237,7 @@
     "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
     "clientSecretPlaceholder": "Client-Secret des Service-Tokens einfügen",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "Erweiterte Einstellungen",
     "connectorDisabled": "Cloudflare Access ist deaktiviert. Die gespeicherte Zugriffsanforderung kann beibehalten oder entfernt werden.",
     "connectorHint": "Für Dienste, die durch Cloudflare Access geschützt sind.",
     "connectorMissing": "Dieser benutzerdefinierte Connector ist nicht mehr verfügbar.",

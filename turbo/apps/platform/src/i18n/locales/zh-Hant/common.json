@@ -3224,6 +3224,7 @@
     "clientIdPlaceholder": "貼上 Service Token Client ID",
     "clientSecretPlaceholder": "貼上 Service Token Client Secret",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "高階設定",
     "connectorDisabled": "Cloudflare Access 已關閉。你可以保留或移除已儲存的存取要求。",
     "connectorHint": "適用於受 Cloudflare Access 保護的服務。",
     "connectorMissing": "此自訂連接器已無法使用。",

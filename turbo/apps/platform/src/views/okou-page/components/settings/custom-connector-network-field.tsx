@@ -313,7 +313,7 @@ export function CustomConnectorNetworkField({
         />
         <span>
           {t(($) => {
-            return $.connectors.custom.create.advancedSettings;
+            return $.cloudflareAccess.connectorAdvanced;
           })}
         </span>
         <ConnectorNetworkSummary selection={selection} />

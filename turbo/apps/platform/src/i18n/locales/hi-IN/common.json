@@ -3237,6 +3237,7 @@
     "clientIdPlaceholder": "Service Token का Client ID पेस्ट करें",
     "clientSecretPlaceholder": "Service Token का Client Secret पेस्ट करें",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "एडवांस सेटिंग",
     "connectorDisabled": "Cloudflare Access बंद है। आप सहेजी गई पहुँच आवश्यकता को रख या हटा सकते हैं।",
     "connectorHint": "Cloudflare Access से सुरक्षित सेवाओं के लिए।",
     "connectorMissing": "यह कस्टम कनेक्टर अब उपलब्ध नहीं है।",

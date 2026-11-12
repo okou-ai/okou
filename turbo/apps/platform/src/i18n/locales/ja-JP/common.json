@@ -3224,6 +3224,7 @@
     "clientIdPlaceholder": "Service Token の Client ID を貼り付け",
     "clientSecretPlaceholder": "Service Token の Client Secret を貼り付け",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "詳細設定",
     "connectorDisabled": "Cloudflare Access はオフです。保存済みのアクセス要件は維持または削除できます。",
     "connectorHint": "Cloudflare Access で保護されたサービスに使用します。",
     "connectorMissing": "このカスタムコネクタは利用できなくなりました。",

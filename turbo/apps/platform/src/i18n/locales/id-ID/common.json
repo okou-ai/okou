@@ -3224,6 +3224,7 @@
     "clientIdPlaceholder": "Tempel Client ID Service Token",
     "clientSecretPlaceholder": "Tempel Client Secret Service Token",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "Pengaturan lanjutan",
     "connectorDisabled": "Cloudflare Access dinonaktifkan. Anda dapat mempertahankan atau menghapus persyaratan akses yang tersimpan.",
     "connectorHint": "Untuk layanan yang dilindungi Cloudflare Access.",
     "connectorMissing": "Konektor kustom ini tidak lagi tersedia.",

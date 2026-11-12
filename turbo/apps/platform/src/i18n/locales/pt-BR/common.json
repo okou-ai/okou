@@ -3285,6 +3285,7 @@
     "clientIdPlaceholder": "Cole o Client ID do Service Token",
     "clientSecretPlaceholder": "Cole o Client Secret do Service Token",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "Configurações avançadas",
     "connectorDisabled": "O Cloudflare Access está desativado. Você pode manter ou remover o requisito de acesso salvo.",
     "connectorHint": "Para serviços protegidos pelo Cloudflare Access.",
     "connectorMissing": "Este conector personalizado não está mais disponível.",

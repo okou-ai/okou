@@ -3224,6 +3224,7 @@
     "clientIdPlaceholder": "Service Token의 Client ID 붙여넣기",
     "clientSecretPlaceholder": "Service Token의 Client Secret 붙여넣기",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "고급 설정",
     "connectorDisabled": "Cloudflare Access가 꺼져 있습니다. 저장된 접근 요구 사항을 유지하거나 제거할 수 있습니다.",
     "connectorHint": "Cloudflare Access로 보호되는 서비스에 사용합니다.",
     "connectorMissing": "이 사용자 지정 커넥터는 더 이상 사용할 수 없습니다.",

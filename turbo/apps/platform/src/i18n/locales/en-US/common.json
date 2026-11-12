@@ -3237,6 +3237,7 @@
     "clientIdPlaceholder": "Paste the Service Token Client ID",
     "clientSecretPlaceholder": "Paste the Service Token Client Secret",
     "configuration": "Cloudflare Access",
+    "connectorAdvanced": "Advanced settings",
     "connectorDisabled": "Cloudflare Access is turned off. You can keep or remove the saved requirement.",
     "connectorHint": "Use this for a service protected by Cloudflare Access.",
     "connectorMissing": "This custom connector is no longer available.",
