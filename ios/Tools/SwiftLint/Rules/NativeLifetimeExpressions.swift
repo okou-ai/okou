@@ -24,7 +24,7 @@ extension NativeLifetimeTrace {
       if !candidates.isEmpty {
         guard subscriptCall.arguments.count == 1, let argument = subscriptCall.arguments.first
         else { return nil }
-        let index = NativeTaskIndex.resolve(argument.expression, aliases: path.indexAliases)
+        let index = NativeLifetimeIndex.resolve(argument.expression, aliases: path.indexAliases)
         return candidates.first { $0.index.identity == index.identity }?.storage
       }
       return key(subscriptCall.calledExpression, path: path)
@@ -84,14 +84,14 @@ extension NativeLifetimeTrace {
         for slot in slots where target == "self." + slot.field {
           path.values[slot.storage] = .unknown
         }
-        if kind.isTask, slots.isEmpty, !teardown, source == .handle, target.hasPrefix("self."),
+        if slots.isEmpty, !teardown, source == .handle, target.hasPrefix("self."),
           let subscriptCall = parts[0].as(SubscriptCallExprSyntax.self),
           subscriptCall.arguments.count == 1, let index = subscriptCall.arguments.first?.expression
         {
           retainedSlots.append(
-            NativeTaskSlot(
+            NativeLifetimeSlot(
               field: String(target.dropFirst(5)),
-              index: NativeTaskIndex.resolve(index, aliases: path.indexAliases),
+              index: NativeLifetimeIndex.resolve(index, aliases: path.indexAliases),
               syntax: subscriptCall))
         }
         retain(target, path: path)
@@ -195,7 +195,7 @@ extension NativeLifetimeTrace {
         let base = member.base,
         let slot = slots.first(where: {
           key(base, path: path) == "self." + $0.field
-            && NativeTaskIndex.resolve(argument.expression, aliases: path.indexAliases).identity
+            && NativeLifetimeIndex.resolve(argument.expression, aliases: path.indexAliases).identity
               == $0.index.identity
         })
       {
@@ -316,13 +316,11 @@ extension NativeLifetimeTrace {
           entering.immutable.insert(name)
           entering.values[name] = argument
         }
-        if kind.isTask {
-          for (parameter, argument) in zip(
-            function.signature.parameterClause.parameters, call.arguments)
-          {
-            entering.indexAliases["parameter:\(parameter.position)"] = NativeTaskIndex.resolve(
-              argument.expression, aliases: path.indexAliases)
-          }
+        for (parameter, argument) in zip(
+          function.signature.parameterClause.parameters, call.arguments)
+        {
+          entering.indexAliases["parameter:\(parameter.position)"] = NativeLifetimeIndex.resolve(
+            argument.expression, aliases: path.indexAliases)
         }
         results += block(body.statements, states: [entering])
       }
@@ -331,8 +329,7 @@ extension NativeLifetimeTrace {
     guard !results.isEmpty else { return }
     path.released = results.allSatisfy { result in
       if result.released { return true }
-      guard kind.isTask else { return false }
-      // A helper may move the original into a distinct owner-held drain collection.
+      // A helper may move the original into a distinct owner-held cleanup collection.
       return result.values.contains { name, value in
         name.hasPrefix("self.") && value != .unknown
           && path.values[name, default: .unknown] == .unknown
@@ -347,7 +344,7 @@ extension NativeLifetimeTrace {
   }
 
   private func retain(_ name: String, path: NativeLifetimePath) {
-    if kind.isTask, name.hasPrefix("self."), let value = path.values[name], value != .unknown {
+    if name.hasPrefix("self."), let value = path.values[name], value != .unknown {
       retained[String(name.dropFirst(5))] = value
     }
   }

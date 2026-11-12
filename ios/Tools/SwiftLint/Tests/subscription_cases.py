@@ -96,6 +96,7 @@ SUBSCRIPTION_CASES = [
           let store = CCState.Store()
           var subscriptions: [String: Subscription] = [:]
           func start(_ id: String) throws {
+            try? subscriptions[id]?.cancel()
             subscriptions[id] = try store.watch(value) {}
           }
           func detach() {
@@ -295,6 +296,7 @@ SUBSCRIPTION_CASES = [
         final class Controller: UIViewController {
           var token: NSObjectProtocol?
           override func viewDidLoad() {
+            guard token == nil else { return }
             token = NotificationCenter.default.addObserver(forName: event, object: nil, queue: .main) { _ in }
           }
           deinit { if let token { NotificationCenter.default.removeObserver(token) } }
