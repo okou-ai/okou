@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.37.0](https://github.com/okou-ai/okou/compare/ios-v0.36.7...ios-v0.37.0) (2026-11-12)
+
+
+### Features
+
+* **ios:** draw okou with the animated design-system avatar ([#46781](https://github.com/okou-ai/okou/issues/46781)) ([be6c6ee](https://github.com/okou-ai/okou/commit/be6c6eea7c70d71a04c844330983ab557d274e81))
+
+
+### Bug Fixes
+
+* **ios:** prepare the send button when the composer expands ([#46831](https://github.com/okou-ai/okou/issues/46831)) ([a63c041](https://github.com/okou-ai/okou/commit/a63c04177c01b36bef9f04abb9614e5d2cf4f255))
+
+
+### Refactoring
+
+* **ios:** own artifact preview and share reads with ccstate ([#46835](https://github.com/okou-ai/okou/issues/46835)) ([7ceae7e](https://github.com/okou-ai/okou/commit/7ceae7e828565f52ced77236716558a14d0f2c52))
+
 ## [0.36.7](https://github.com/okou-ai/okou/compare/ios-v0.36.6...ios-v0.36.7) (2026-11-12)
 
 

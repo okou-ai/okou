@@ -1737,6 +1737,13 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
         "finalizing successor should be claimed before its preference deadline"
     );
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(
+            predecessor_run_id,
+            successor_run_id,
+            Duration::from_secs(5),
+        )
+        .await;
     tokio::time::advance(Duration::from_millis(101)).await;
     wait_gate.release_one();
     wait_gate
@@ -1843,10 +1850,16 @@ async fn late_finalizing_successor_can_take_over_the_running_predecessor() {
         ))
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
-    // Give the newly claimed request time to observe its acceptance deadline
-    // while the producer cannot accept it. Its own grace must still be open.
+    env.start_observer
+        .wait_finalizing_handoff_requested(
+            predecessor_run_id,
+            successor_run_id,
+            Duration::from_secs(5),
+        )
+        .await;
+    // Advance the registered request's acceptance deadline while the producer
+    // cannot accept it. The producer's own grace must still be open.
     tokio::time::advance(Duration::from_millis(100)).await;
-    tokio::task::yield_now().await;
     exec_gate.release_one();
 
     wait_gate
@@ -1939,6 +1952,13 @@ async fn finalizing_successor_reuses_after_a_normal_telemetry_close_tail() {
             .any(|candidate| candidate.run_id() == successor_run_id)
     );
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(
+            predecessor_run_id,
+            successor_run_id,
+            Duration::from_secs(5),
+        )
+        .await;
     // Spare capacity makes premature fresh fallback observable. A completed
     // Guest can legitimately spend several seconds flushing final telemetry.
     tokio::time::advance(Duration::from_millis(4600)).await;
@@ -2009,6 +2029,9 @@ async fn pre_finalization_wait_ends_at_preference_deadline() {
             .any(|candidate| candidate.run_id() == run_id)
     );
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(predecessor_run_id, run_id, Duration::from_secs(5))
+        .await;
     tokio::time::advance(Duration::from_millis(99)).await;
     tokio::task::yield_now().await;
     assert_eq!(
@@ -2077,6 +2100,9 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
             .any(|candidate| candidate.run_id() == run_id)
     );
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(predecessor_run_id, run_id, Duration::from_secs(5))
+        .await;
     // The request already exists when finalization begins. Its acceptance grace
     // starts at that transition, independently of the earlier wait start.
     tokio::time::advance(Duration::from_millis(500)).await;
@@ -2328,6 +2354,9 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
     );
     assert_eq!(preference.deadline(), deadline);
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(native_generation_run_id, run_id, Duration::from_secs(5))
+        .await;
     tokio::time::advance(FINALIZING_TEST_PREFERENCE_LIFETIME + Duration::from_millis(1)).await;
     env.handle
         .wait_completion(run_id, Duration::from_secs(5))
@@ -2395,6 +2424,9 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
         "finalizing successor should be claimed before its deadline"
     );
 
+    env.start_observer
+        .wait_finalizing_handoff_requested(native_generation_run_id, run_id, Duration::from_secs(5))
+        .await;
     tokio::time::advance(FINALIZING_TEST_PREFERENCE_LIFETIME + Duration::from_millis(1)).await;
     env.handle
         .wait_completion(run_id, Duration::from_secs(5))
@@ -2450,6 +2482,7 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
     .await;
 
     let run_id = RunId::new_v4();
+    env.handle.block_claim(run_id);
     env.provider.set_claim_result(
         run_id,
         Some(context_with_native_source(
@@ -2471,6 +2504,21 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
         ))
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(5))
+            .await,
+        "successor Claim should remain gated before handoff registration"
+    );
+    let handoff_requested = env.start_observer.wait_finalizing_handoff_requested(
+        native_generation_run_id,
+        run_id,
+        Duration::from_secs(5),
+    );
+    tokio::pin!(handoff_requested);
+    assert!(futures_util::poll!(handoff_requested.as_mut()).is_pending());
+    env.handle.unblock_claim(run_id);
+    handoff_requested.await;
     wait_status_idle_reuse_keys_and_active_runs(
         &status_path,
         &[],
@@ -3124,6 +3172,9 @@ async fn same_run_duplicate_does_not_renew_claimed_finalizing_deadline() {
         1,
         "the first discovery should claim the finalizing successor"
     );
+    env.start_observer
+        .wait_finalizing_handoff_requested(native_generation_run_id, run_id, Duration::from_secs(5))
+        .await;
 
     env.handle
         .discover_tx

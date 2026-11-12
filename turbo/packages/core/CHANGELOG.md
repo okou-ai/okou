@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.833.0](https://github.com/okou-ai/okou/compare/core-v8.832.0...core-v8.833.0) (2026-11-12)
+
+
+### Features
+
+* **remote-control:** approve vnc chat access from message cards ([#46844](https://github.com/okou-ai/okou/issues/46844)) ([068dd05](https://github.com/okou-ai/okou/commit/068dd0513427864c4469e7c4b05d4e42dacf5841))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.55.0
+
 ## [8.832.0](https://github.com/okou-ai/okou/compare/core-v8.831.1...core-v8.832.0) (2026-11-12)
 
 

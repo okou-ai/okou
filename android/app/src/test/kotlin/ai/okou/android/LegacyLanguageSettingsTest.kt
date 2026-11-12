@@ -1,0 +1,40 @@
+package ai.okou.android
+
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.core.app.LocaleManagerCompat
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [24], qualifiers = "en-rUS", application = TestOkouApplication::class)
+class LegacyLanguageSettingsTest {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun applicationLanguageChangesUseTheNativeCompatibilityPathAndKeepTheDraft() {
+        compose.onNode(hasSetTextAction()).performTextInput("Keep this draft verbatim")
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("English").performScrollTo().performClick()
+        compose.onNodeWithText("日本語").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.activityRule.scenario.recreate()
+        compose.onNode(hasText("設定") and hasClickAction()).assertExists()
+        org.junit.Assert.assertEquals(
+            "en",
+            LocaleManagerCompat.getSystemLocales(compose.activity)[0]?.language,
+        )
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNode(hasSetTextAction()).assertTextContains("Keep this draft verbatim")
+    }
+}

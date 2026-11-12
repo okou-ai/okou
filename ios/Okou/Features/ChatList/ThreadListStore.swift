@@ -8,6 +8,7 @@ import Observation
 /// Navigation data and list presentation for one workspace.
 @MainActor @Observable
 final class ThreadListStore {
+  private let lifecycleTasks: LifecycleTasks
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored private let confirmedAgents = CCState.State<[AgentRecord]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
@@ -103,8 +104,10 @@ final class ThreadListStore {
     didLoadAgents: @escaping @MainActor ([AgentRecord]) -> Void = { _ in },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
-    }
+    },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let confirmedThreads = confirmedThreads
     let confirmedAgents = confirmedAgents
     threadsValue = Computed { try $0(confirmedThreads) }
@@ -231,6 +234,7 @@ final class ThreadListStore {
           didFail(error)
         }
       }
+      if let navigationPublication { lifecycleTasks.track(navigationPublication) }
     } catch is CancellationError {
       navigationPublication = nil
     } catch { didFail(error) }
@@ -310,6 +314,7 @@ final class ThreadListStore {
         }
       } while refreshAgain && !closed && !blocked && !Task.isCancelled
     }
+    lifecycleTasks.track(task)
     refreshTask = task
     await task.value
   }
@@ -363,6 +368,7 @@ final class ThreadListStore {
       } catch is CancellationError {
       } catch { show(error) }
     }
+    lifecycleTasks.track(task)
     updateTasks[thread.id] = task
     await task.value
     return succeeded && !closed && !Task.isCancelled
@@ -448,6 +454,7 @@ final class ThreadListStore {
         }
       } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
     }
+    lifecycleTasks.track(task)
     indicatorsTask = task
     await task.value
   }
@@ -507,6 +514,7 @@ final class ThreadListStore {
       } catch is CancellationError {
       } catch { show(error) }
     }
+    lifecycleTasks.track(task)
     pinTasks[eventID] = task
     lastPinIDs[current.id] = eventID
     updatingThreads.insert(current.id)
@@ -774,6 +782,7 @@ final class ThreadListStore {
         }
       }
     }
+    lifecycleTasks.track(task)
     updateTasks[id] = task
     didBegin()
     await task.value

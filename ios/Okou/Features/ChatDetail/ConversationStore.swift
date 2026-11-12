@@ -6,6 +6,7 @@ import Observation
 /// Presentation and local delivery state for one conversation in one workspace.
 @MainActor @Observable
 final class ConversationStore {
+  private let lifecycleTasks: LifecycleTasks
   struct PendingMessage: Codable, Identifiable {
     let id: String
     let text: String
@@ -217,16 +218,21 @@ final class ConversationStore {
     didRequestNewChat: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
-    }
+    },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
+    self.lifecycleTasks = lifecycleTasks
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     readResources = ConversationReadResources(
-      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail)
+      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail,
+      lifecycleTasks: lifecycleTasks)
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
-      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep)
+      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep,
+      lifecycleTasks: lifecycleTasks)
     self.thread = thread
     measurements = ConversationMeasurementCache(
       namespace: measurementScope.map {
@@ -237,7 +243,7 @@ final class ConversationStore {
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
-      syncSleep: readRetrySleep)
+      syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     self.sync = sync
     self.commands = commands
     self.webURL = webURL
@@ -373,6 +379,7 @@ final class ConversationStore {
         }
       } while refreshAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
+    lifecycleTasks.track(task)
     refreshTask = task
     await task.value
   }
@@ -562,6 +569,7 @@ final class ConversationStore {
       reconcileProjection()
       await submit(message)
     }
+    lifecycleTasks.track(task)
     failureRecoveryTask = task
     await task.value
   }
@@ -616,6 +624,7 @@ final class ConversationStore {
         return false
       }
     }
+    lifecycleTasks.track(task)
     sendTask = task
     // API acceptance ends sending. History can publish a failure card before its
     // read/mark-read work settles, and that card must already accept recovery.
@@ -648,6 +657,7 @@ final class ConversationStore {
         await refresh()
       }
     }
+    lifecycleTasks.track(task)
     stopTask = task
     await task.value
   }
@@ -739,6 +749,7 @@ final class ConversationStore {
       self.streamFlush = nil
       self.publishStream()
     }
+    if let streamFlush { lifecycleTasks.track(streamFlush) }
   }
 
   private func isPersisted(_ eventID: String) -> Bool {
@@ -755,7 +766,7 @@ final class ConversationStore {
     streamStop?()
     streamStop = nil
     streamFlush?.cancel()
-    activitySummary.stop()
+    activitySummary.close()
     runUsage.close()
     modelSelection?.close()
     cancelRefresh()
@@ -849,6 +860,7 @@ final class ConversationStore {
       renderWindow.expand()
       publishWindow()
     }
+    lifecycleTasks.track(task)
     expansionTask = task
     await task.value
   }

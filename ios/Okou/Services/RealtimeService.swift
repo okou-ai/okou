@@ -6,6 +6,8 @@ import Foundation
 /// run's text output, which streams on its own channel until the durable event replaces it.
 @MainActor
 final class RealtimeService {
+  private let lifecycleTasks: LifecycleTasks
+  private var tokenRequests: [UUID: Task<Void, Never>] = [:]
   /// One chunk of an assistant message while its run is live (`sessionOutputDeltaSchema`).
   struct RunOutputDelta: Sendable {
     let threadID: String
@@ -41,8 +43,10 @@ final class RealtimeService {
     tokenProvider: @escaping @Sendable () async throws -> Data,
     onChange: @escaping @MainActor (ChatInvalidation) -> Void,
     onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void,
-    createRealtime: @escaping (ARTClientOptions) -> ARTRealtime = { ARTRealtime(options: $0) }
+    createRealtime: @escaping (ARTClientOptions) -> ARTRealtime = { ARTRealtime(options: $0) },
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.userID = userID
     self.workspaceID = workspaceID
     self.tokenProvider = tokenProvider
@@ -61,16 +65,28 @@ final class RealtimeService {
     options.autoConnect = false
     options.clientId = userID
     options.useTokenAuth = true
-    options.authCallback = { [tokenProvider] _, completion in
-      Task {
-        do {
-          let data = try await tokenProvider()
-          guard let json = String(data: data, encoding: .utf8) else {
-            throw APIClientError.invalidResponse
-          }
-          let request = try ARTTokenRequest.fromJson(json as ARTJsonCompatible)
-          completion(request, nil)
-        } catch { completion(nil, error) }
+    options.authCallback = { [weak self, tokenProvider] _, completion in
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == generation, self.realtime != nil else {
+          completion(nil, CancellationError())
+          return
+        }
+        let id = UUID()
+        let task = Task { [weak self] in
+          defer { self?.tokenRequests[id] = nil }
+          do {
+            try Task.checkCancellation()
+            let data = try await tokenProvider()
+            try Task.checkCancellation()
+            guard let json = String(data: data, encoding: .utf8) else {
+              throw APIClientError.invalidResponse
+            }
+            let request = try ARTTokenRequest.fromJson(json as ARTJsonCompatible)
+            completion(request, nil)
+          } catch { completion(nil, error) }
+        }
+        lifecycleTasks.track(task)
+        tokenRequests[id] = task
       }
     }
     let realtime = createRealtime(options)
@@ -221,6 +237,7 @@ final class RealtimeService {
     isForeground = false
     reconcilePresence()
     generation = UUID()
+    for task in tokenRequests.values { task.cancel() }
     catchUpPending = false
     realtime?.close()
     realtime = nil

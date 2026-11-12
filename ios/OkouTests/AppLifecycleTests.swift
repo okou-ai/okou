@@ -206,34 +206,38 @@ final class AppLifecycleTests: XCTestCase {
     let suite = "lifecycle-" + UUID().uuidString
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-    let cacheDirectory = CacheTestDirectory(owner: self)
     let lifecycle = AppLifecycle(
       authentication: authentication, configuration: configuration,
       session: fixture.history.http.session,
-      notifications: NotificationService(
-        system: NotificationSystemFixture(), defaults: defaults,
-        makeCache: { cacheDirectory.cache(scope: $0) }))
+      notifications: NotificationService(system: NotificationSystemFixture(), defaults: defaults))
     let scopes = try authentication.workspaces.map {
       ChatCacheScope(
         apiBaseURL: configuration.apiURL, userID: try XCTUnwrap(authentication.userID),
         workspaceID: $0.id)
     }
+    let caches = LifecycleFixtureCaches()
+    caches.add(lifecycle.workspace?.data.cache)
     addTeardownBlock { @MainActor [fixture] in
-      for scope in scopes {
-        await ProjectDisclosureStorage(scope: scope).close().value
-      }
+      await caches.close()
       try Self.removeFixtureFiles(scopes)
       withExtendedLifetime(fixture) {}
     }
     // The HTTP fixture itself must outlive its URLSession and every service-owned worker.
     addTeardownBlock { @MainActor [fixture] in
-      lifecycle.close()
-      try await authentication.signOut()
-      await lifecycle.notifications.update(workspace: nil)
-      await lifecycle.notifications.refreshNotificationState(userID: nil)
-      _ = lifecycle.notifications.data(
+      let current = lifecycle.notifications.data(
         authentication: authentication, configuration: configuration,
         session: fixture.history.http.session)
+      caches.add(current?.cache)
+      await lifecycle.close().value
+      do { try await authentication.signOut() } catch {
+        XCTFail("Cannot sign out the lifecycle fixture: \(error)")
+      }
+      await lifecycle.notifications.update(workspace: nil)
+      await lifecycle.notifications.refreshNotificationState(userID: nil)
+      let remaining = lifecycle.notifications.data(
+        authentication: authentication, configuration: configuration,
+        session: fixture.history.http.session)
+      caches.add(remaining?.cache)
     }
     return lifecycle
   }
@@ -242,6 +246,7 @@ final class AppLifecycleTests: XCTestCase {
   private static func removeFixtureFiles(_ scopes: [ChatCacheScope]) throws {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
       0]
+    let cacheRoots = Set([support] + [PushConfiguration.directory()].compactMap { $0 })
     for scope in scopes {
       let identity = [scope.apiBaseURL.absoluteString, scope.userID, scope.workspaceID]
         .joined(separator: "\u{0}")
@@ -249,6 +254,7 @@ final class AppLifecycleTests: XCTestCase {
       var paths = [support.appending(path: "ChatDrafts/" + name)]
       for suffix in [".sqlite", ".sqlite-wal", ".sqlite-shm"] {
         paths.append(support.appending(path: "ProjectDisclosure/" + name + suffix))
+        paths += cacheRoots.map { $0.appending(path: "ChatCache/" + name + suffix) }
       }
       for path in paths {
         do { try FileManager.default.removeItem(at: path) } catch let error as CocoaError
@@ -256,6 +262,21 @@ final class AppLifecycleTests: XCTestCase {
         {}
       }
     }
+  }
+}
+
+/// Own the actual scoped connections, independently of ARC release timing.
+@MainActor
+private final class LifecycleFixtureCaches {
+  private var caches: [ChatCache] = []
+
+  func add(_ cache: ChatCache?) {
+    if let cache, !caches.contains(where: { $0 === cache }) { caches.append(cache) }
+  }
+
+  func close() async {
+    for cache in caches { await cache.close() }
+    caches = []
   }
 }
 

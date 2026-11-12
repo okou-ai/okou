@@ -26,6 +26,8 @@ interface StripeFrameState {
   readonly main: boolean;
   readonly origin: string;
   readonly payWithCard: StripeLocatorState;
+  readonly submit: StripeLocatorState;
+  readonly readyState: string;
 }
 
 interface LocatedStripeControl {
@@ -102,11 +104,11 @@ function visibleStripeFieldLocator(
 }
 
 function payWithCardLocator(frame: Frame): Locator {
-  return frame.getByRole("button", { name: /pay with card/i });
+  return frame.getByRole("button", { name: /pay with card|^card$/i });
 }
 
-function checkoutSubmitLocator(page: Page): Locator {
-  return page.getByRole("button", { name: /^(subscribe|start trial)$/i });
+function checkoutSubmitLocator(frame: Frame): Locator {
+  return frame.getByRole("button", { name: /^(subscribe|start trial)$/i });
 }
 
 function frameDetachedDuringDiscovery(page: Page, frame: Frame): boolean {
@@ -456,18 +458,42 @@ async function fillLocatedStripeField(
   return await fillFirst(field.locator, value, remainingTimeout(deadline));
 }
 
-async function waitForCheckoutFormReady(page: Page): Promise<void> {
+async function waitForCheckoutFormReady(page: Page): Promise<Frame> {
+  const form: { frame?: Frame } = {};
   try {
-    await checkoutSubmitLocator(page).waitFor({
-      state: "visible",
-      timeout: FIELD_TIMEOUT_MS,
-    });
+    // Hosted Checkout can render the entire form in a late-attaching Stripe
+    // descendant. Discover its semantic owner under one readiness deadline.
+    await expect
+      .poll(
+        async () => {
+          for (const frame of page.frames()) {
+            const submit = checkoutSubmitLocator(frame).filter({
+              visible: true,
+            });
+            if ((await locatorCount(page, frame, submit)) > 0) {
+              form.frame = frame;
+              return true;
+            }
+          }
+          return false;
+        },
+        {
+          timeout: FIELD_TIMEOUT_MS,
+          message: "Stripe Checkout submit control must be visible",
+        },
+      )
+      .toBe(true);
   } catch (error: unknown) {
-    if (error instanceof errors.TimeoutError) {
-      throw await stripeFieldError(page, CARD_NUMBER_FIELD);
-    }
-    throw error;
+    const state = await collectStripeCheckoutState(page).catch(() => null);
+    throw new Error(
+      `Stripe Checkout form did not become ready; state=${state ? JSON.stringify(state) : "unavailable"}`,
+      { cause: error },
+    );
   }
+  if (!form.frame) {
+    throw new Error("Stripe Checkout form frame unavailable after readiness");
+  }
+  return form.frame;
 }
 
 function remainingTimeout(deadline: number): number {
@@ -506,12 +532,15 @@ export async function collectStripeCheckoutState(
   const mainFrame = page.mainFrame();
   const frames = await Promise.all(
     page.frames().map(async (frame): Promise<StripeFrameState> => {
-      const [cardNumber, cardExpiry, cardCvc, payWithCard] = await Promise.all([
-        locatorState(stripeFieldLocator(frame, CARD_NUMBER_FIELD)),
-        locatorState(stripeFieldLocator(frame, CARD_EXPIRY_FIELD)),
-        locatorState(stripeFieldLocator(frame, CARD_CVC_FIELD)),
-        locatorState(payWithCardLocator(frame)),
-      ]);
+      const [cardNumber, cardExpiry, cardCvc, payWithCard, submit, readyState] =
+        await Promise.all([
+          locatorState(stripeFieldLocator(frame, CARD_NUMBER_FIELD)),
+          locatorState(stripeFieldLocator(frame, CARD_EXPIRY_FIELD)),
+          locatorState(stripeFieldLocator(frame, CARD_CVC_FIELD)),
+          locatorState(payWithCardLocator(frame)),
+          locatorState(checkoutSubmitLocator(frame)),
+          frame.evaluate(() => document.readyState),
+        ]);
       return {
         cardCvc,
         cardExpiry,
@@ -519,6 +548,8 @@ export async function collectStripeCheckoutState(
         main: frame === mainFrame,
         origin: sanitizedOrigin(frame.url()),
         payWithCard,
+        submit,
+        readyState,
       };
     }),
   );
@@ -530,8 +561,8 @@ export async function collectStripeCheckoutState(
   };
 }
 
-async function disableLinkSaveInfo(page: Page): Promise<void> {
-  const saveInfo = page.getByRole("checkbox", {
+async function disableLinkSaveInfo(frame: Frame): Promise<void> {
+  const saveInfo = frame.getByRole("checkbox", {
     name: /save my information/i,
   });
 
@@ -543,11 +574,8 @@ async function disableLinkSaveInfo(page: Page): Promise<void> {
 export async function fillStripeCheckout(page: Page): Promise<void> {
   await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 30_000 });
 
-  // Stripe can commit the hosted Checkout navigation while its form is still
-  // a skeleton. Use the final purchase control as the single layout-neutral
-  // readiness boundary before inspecting Card controls or field frames.
-  await waitForCheckoutFormReady(page);
-  await disableLinkSaveInfo(page);
+  const formFrame = await waitForCheckoutFormReady(page);
+  await disableLinkSaveInfo(formFrame);
 
   const cardNumber = await fillCardNumber(page, "4242424242424242");
   const cardExpiry = await fillStripeField(
@@ -558,22 +586,22 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   );
   await fillStripeField(page, cardExpiry.frame, CARD_CVC_FIELD, "123");
   await fillFirst(
-    page
+    formFrame
       .getByLabel(/cardholder name|name on card/i)
-      .or(page.locator('input[name="billingName"]')),
+      .or(formFrame.locator('input[name="billingName"]')),
     "Okou Billing E2E",
   );
   await fillFirst(
-    page
+    formFrame
       .getByLabel(/zip|postal/i)
-      .or(page.locator('input[name="billingPostalCode"]')),
+      .or(formFrame.locator('input[name="billingPostalCode"]')),
     "94107",
   );
 
   // Fill email after the other form actions and verify it before payment.
-  const email = page
+  const email = formFrame
     .getByLabel(/email/i)
-    .or(page.locator('input[name="email"]'))
+    .or(formFrame.locator('input[name="email"]'))
     .filter({ visible: true })
     .first();
   const emailAddress = `billing-e2e-${Date.now()}@vm0-e2e.ai`;
@@ -582,6 +610,6 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
 
   // Email edits can re-enable Link and its required phone field after the
   // earlier opt-out. Reassert the intended checkout form state before payment.
-  await disableLinkSaveInfo(page);
-  await checkoutSubmitLocator(page).click({ timeout: 30_000 });
+  await disableLinkSaveInfo(formFrame);
+  await checkoutSubmitLocator(formFrame).click({ timeout: 30_000 });
 }

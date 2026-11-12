@@ -7,6 +7,7 @@ import Foundation
 /// reconciliation and native projection remain in ConversationStore, not in this graph.
 @MainActor
 final class ConversationReadResources {
+  private let lifecycleTasks: LifecycleTasks
   struct Reads {
     let history: Task<ChatHistory, Error>
     let recovery: Task<Bool, Error>
@@ -33,8 +34,10 @@ final class ConversationReadResources {
   init(
     sync: ChatSync, threadID: String,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    didFail: @escaping @MainActor (Error) -> Void
+    didFail: @escaping @MainActor (Error) -> Void,
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
+    self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.sync = sync
     self.threadID = threadID
     self.sleep = sleep
@@ -63,6 +66,7 @@ final class ConversationReadResources {
         try signal.checkCancellation()
         return value
       }
+      lifecycleTasks.track(task)
       historyTask = task
       signal.onCancel { task.cancel() }
       return task
@@ -82,6 +86,7 @@ final class ConversationReadResources {
         try signal.checkCancellation()
         return value
       }
+      lifecycleTasks.track(task)
       recoveryTask = task
       signal.onCancel { task.cancel() }
       return task

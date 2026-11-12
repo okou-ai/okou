@@ -1,7 +1,11 @@
 package ai.okou.android.auth
 
 import ai.okou.android.TestAuthentication
+import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.UpdatePreferencesRequest
+import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
@@ -29,8 +33,14 @@ class SessionModelTest {
         WorkspaceSession {
         var closed = false
         var load: suspend () -> WorkspaceBootstrap = { testBootstrap(identity.workspaceId) }
+        var update: suspend () -> Unit = {}
 
         override suspend fun bootstrap() = load()
+
+        override suspend fun preferences() = testBootstrap(identity.workspaceId).preferences
+
+        override suspend fun updatePreferences(update: UpdatePreferencesRequest) =
+            preferences().also { this.update() }
 
         override fun close() {
             closed = true
@@ -213,6 +223,7 @@ class SessionModelTest {
             runCurrent()
             val original = model.uiState.value
             auth.state.value = testAuthenticationState("user-b", "session-b", "org-b")
+            original.ready?.preferences?.selectColorTheme(UserPreferencesColorTheme.COTTON_SKY)
             // SDK state may advance before the ViewModel or Compose consumes the new snapshot.
             model.chooseWorkspace("org-a", original.generation)
             model.signOut(original.generation)
@@ -227,6 +238,27 @@ class SessionModelTest {
             runCurrent()
             assertSame(replacement, model.uiState.value)
             assertFalse(resources.last().closed)
+        }
+    }
+
+    @Test
+    fun postBootstrapAuthorizationAndUpgradeErrorsRetireTheWorkspace() {
+        for ((failure, stage) in
+            listOf(
+                ApiFailure.Unauthenticated() to SessionStage.AccessRemoved,
+                ApiFailure.UpdateRequired(RequiredUpdate("0.3.0")) to SessionStage.UpdateRequired,
+            )) {
+            check(configure = { resource -> resource.update = { throw failure } }) {
+                model,
+                resources ->
+                runCurrent()
+                val ready = requireNotNull(model.uiState.value.ready)
+                ready.preferences.selectColorTheme(UserPreferencesColorTheme.BLUE_HORIZON)
+                runCurrent()
+                assertEquals(stage, model.uiState.value.stage)
+                assertNull(model.uiState.value.ready)
+                assertTrue(resources.single().closed)
+            }
         }
     }
 

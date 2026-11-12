@@ -3,7 +3,10 @@ package ai.okou.android
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
+import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.NativeSession
@@ -16,17 +19,52 @@ import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    // External API fixture data survives a new Activity/session owner, as the real server does.
+    private val preferences = mutableMapOf<Triple<String, String, String>, UserPreferences>()
+
+    fun snapshotApiPreferences() = preferences.toMap()
+
+    fun restoreApiPreferences(saved: Map<Triple<String, String, String>, UserPreferences>) {
+        preferences.clear()
+        preferences.putAll(saved)
+    }
+
     override fun createAuthentication(): Authentication = TestAuthentication()
 
     override fun createWorkspaceSession(
         identity: WorkspaceIdentity,
         tokens: WorkspaceTokenProvider,
-    ): WorkspaceSession =
-        object : WorkspaceSession {
-            override suspend fun bootstrap() = testBootstrap(identity.workspaceId)
+    ): WorkspaceSession {
+        val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
+        fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
+        return object : WorkspaceSession {
+
+            override suspend fun bootstrap() =
+                testBootstrap(identity.workspaceId).copy(preferences = stored())
+
+            override suspend fun preferences() = stored()
+
+            override suspend fun updatePreferences(
+                update: UpdatePreferencesRequest
+            ): UserPreferences {
+                val updated =
+                    stored()
+                        .copy(
+                            colorTheme =
+                                update.colorTheme?.let {
+                                    UserPreferencesColorTheme.valueOf(it.name)
+                                } ?: stored().colorTheme,
+                            locale =
+                                update.locale?.let { UserPreferencesLocale.valueOf(it.name) }
+                                    ?: stored().locale,
+                        )
+                preferences[key] = updated
+                return updated
+            }
 
             override fun close() = Unit
         }
+    }
 }
 
 class PendingAuthenticationApplication : TestOkouApplication() {
@@ -90,4 +128,4 @@ fun testBootstrap(workspace: String = "org-a") =
     )
 
 const val TEST_PREFERENCES =
-    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""

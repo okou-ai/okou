@@ -7,6 +7,7 @@ import ai.okou.android.api.generated.ApiHeaders
 import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import java.io.Closeable
 import java.io.IOException
@@ -137,6 +138,10 @@ class ApiClient(
         execute {
             api.initializePreferences(it, body)
         }
+
+    suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = execute {
+        api.updatePreferences(it, body)
+    }
 
     private fun checkAccess() {
         check(!closed.get()) { "API owner has closed" }

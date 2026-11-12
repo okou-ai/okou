@@ -12,6 +12,19 @@ struct NotificationWorkspace {
   let workspaceID: String
   let client: APIClient
   let sync: ChatSync
+  let cache: ChatCache?
+
+  init(
+    scopeID: String, userID: String, workspaceID: String, client: APIClient, sync: ChatSync,
+    cache: ChatCache? = nil
+  ) {
+    self.scopeID = scopeID
+    self.userID = userID
+    self.workspaceID = workspaceID
+    self.client = client
+    self.sync = sync
+    self.cache = cache
+  }
 }
 
 @MainActor
@@ -72,7 +85,6 @@ struct AppleNotificationSystem: NotificationSystem {
 final class NotificationService {
   private let system: any NotificationSystem
   private let defaults: UserDefaults
-  private let makeCache: @MainActor (ChatCacheScope) -> ChatCache
   private let installationID: String
   @ObservationIgnored var prepareWorkspace: (@MainActor () async -> NotificationWorkspace?)?
   private var requestedDeviceToken = false
@@ -114,21 +126,10 @@ final class NotificationService {
   }
 
   init(
-    system: any NotificationSystem = AppleNotificationSystem(), defaults: UserDefaults = .standard,
-    makeCache: @escaping @MainActor (ChatCacheScope) -> ChatCache = { scope in
-      let sharedDirectory = PushConfiguration.directory()
-      return ChatCache(
-        scope: scope, directory: sharedDirectory,
-        migratingFrom: sharedDirectory == nil
-          ? nil
-          : FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-          ).first)
-    }
+    system: any NotificationSystem = AppleNotificationSystem(), defaults: UserDefaults = .standard
   ) {
     self.system = system
     self.defaults = defaults
-    self.makeCache = makeCache
     let key = "ios-push-installation-id"
     installationID = defaults.string(forKey: key) ?? UUID().uuidString.lowercased()
     defaults.set(installationID, forKey: key)
@@ -162,12 +163,19 @@ final class NotificationService {
     ) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }
-    let cache = makeCache(
-      ChatCacheScope(
-        apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID))
+    let sharedDirectory = PushConfiguration.directory()
+    let cache = ChatCache(
+      scope: ChatCacheScope(
+        apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID),
+      directory: sharedDirectory,
+      migratingFrom: sharedDirectory == nil
+        ? nil
+        : FileManager.default.urls(
+          for: .applicationSupportDirectory, in: .userDomainMask
+        ).first)
     let data = NotificationWorkspace(
       scopeID: scopeID, userID: userID, workspaceID: workspaceID, client: client,
-      sync: ChatSync(client: client, cache: cache))
+      sync: ChatSync(client: client, cache: cache), cache: cache)
     preparedWorkspace = data
     return data
   }

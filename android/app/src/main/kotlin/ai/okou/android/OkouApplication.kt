@@ -6,7 +6,9 @@ import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.ClerkAuthentication
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.auth.initialLocale
 import android.app.Application
+import androidx.core.app.LocaleManagerCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
@@ -20,7 +22,14 @@ open class OkouApplication : Application() {
     open fun createWorkspaceSession(
         identity: WorkspaceIdentity,
         tokens: WorkspaceTokenProvider,
-    ): WorkspaceSession = CanonicalWorkspaceSession(identity, tokens)
+    ): WorkspaceSession =
+        CanonicalWorkspaceSession(
+            identity,
+            tokens,
+            // Locale.getDefault() may be the previous member's app language, not the device
+            // language.
+            locale = initialLocale(checkNotNull(LocaleManagerCompat.getSystemLocales(this)[0])),
+        )
 
     override fun onCreate() {
         super.onCreate()

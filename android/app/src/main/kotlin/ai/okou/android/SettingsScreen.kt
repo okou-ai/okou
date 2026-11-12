@@ -38,6 +38,7 @@ fun SettingsScreen(
     selectMode: (AppearanceMode) -> Unit,
     retry: () -> Unit,
     account: @Composable () -> Unit = {},
+    workspacePreferences: @Composable () -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
@@ -103,6 +104,7 @@ fun SettingsScreen(
                 stringResource(R.string.appearance_local),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            workspacePreferences()
         }
     }
 }
