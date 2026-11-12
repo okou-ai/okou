@@ -968,7 +968,7 @@
       "allow": "允许",
       "allowed": "已允许",
       "cardDescription": "在此聊天中使用云端浏览器。这将断开 Computer Use。",
-      "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
+      "description": "{{assistantName}} 会在不同对话间共享网站登录状态，每个对话使用独立的浏览器窗口和标签页。启用浏览器后，此对话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
       "linkExpires": "链接将于{{date}}过期。",

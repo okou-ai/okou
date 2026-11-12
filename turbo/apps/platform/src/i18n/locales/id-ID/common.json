@@ -968,7 +968,7 @@
       "allow": "Izinkan",
       "allowed": "Diizinkan",
       "cardDescription": "Gunakan browser cloud untuk chat ini. Ini memutuskan Computer Use.",
-      "description": "{{assistantName}} akan menggunakan profil browser cloud terisolasi untuk thread chat ini. Mengaktifkannya akan memutus Computer Use untuk thread ini.",
+      "description": "{{assistantName}} berbagi status login situs web antar-chat. Setiap chat memiliki jendela browser dan tab sendiri. Mengaktifkan browser akan memutus Computer Use untuk chat ini.",
       "enable": "Aktifkan untuk thread ini",
       "enabled": "Browser cloud diaktifkan",
       "linkExpires": "Tautan kedaluwarsa pada {{date}}.",

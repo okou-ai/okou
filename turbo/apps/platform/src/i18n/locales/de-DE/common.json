@@ -970,7 +970,7 @@
       "allow": "Zulassen",
       "allowed": "Zugelassen",
       "cardDescription": "Verwende einen Cloud-Browser für diesen Chat. Dadurch wird Computer Use getrennt.",
-      "description": "{{assistantName}} wird für diesen Chat-Thread ein isoliertes Cloud-Browser-Profil verwenden. Durch die Aktivierung wird die Computernutzung für den Thread getrennt.",
+      "description": "{{assistantName}} teilt den Anmeldestatus von Websites zwischen Chats. Jeder Chat hat ein eigenes Browserfenster und eigene Tabs. Beim Aktivieren des Browsers wird Computer Use für diesen Chat getrennt.",
       "enable": "Für diesen Thread aktivieren",
       "enabled": "Cloud-Browser aktiviert",
       "linkExpires": "Link läuft am {{date}} ab.",

@@ -307,7 +307,6 @@ const publishSharedInstance$ = command(
         {
           profileId: profile.providerProfileId,
           extensionId: profile.browserExtensionId,
-          proxyCountryCode: null,
           timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
           instanceId: profile.instanceId,
           initialDisplay: args.initialDisplay,

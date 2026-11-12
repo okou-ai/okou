@@ -988,7 +988,7 @@
       "allow": "Consenti",
       "allowed": "Consentito",
       "cardDescription": "Usa un browser cloud per questa chat. Questo disconnette Computer Use.",
-      "description": "{{assistantName}} utilizzerà un profilo browser cloud isolato per questo thread di chat. Abilitandolo, Computer Use verrà disconnesso dal thread.",
+      "description": "{{assistantName}} condivide lo stato di accesso ai siti web tra le chat. Ogni chat ha una propria finestra del browser con le relative schede. L'attivazione del browser disconnette Computer Use per questa chat.",
       "enable": "Abilita per questo thread",
       "enabled": "Browser cloud abilitato",
       "linkExpires": "Il collegamento scade {{date}}.",

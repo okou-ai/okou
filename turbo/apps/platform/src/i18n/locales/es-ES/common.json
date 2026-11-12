@@ -988,7 +988,7 @@
       "allow": "Permitir",
       "allowed": "Permitido",
       "cardDescription": "Usa un navegador en la nube para este chat. Esto desconecta Computer Use.",
-      "description": "{{assistantName}} usará un perfil aislado de navegador en la nube para este hilo de chat. Activarlo desconecta el uso del ordenador para el hilo.",
+      "description": "{{assistantName}} comparte el estado de inicio de sesión de los sitios web entre chats. Cada chat tiene su propia ventana de navegador y pestañas. Activar el navegador desconecta Computer Use de este chat.",
       "enable": "Habilitar este hilo",
       "enabled": "Navegador en la nube habilitado",
       "linkExpires": "El enlace caduca {{date}}.",

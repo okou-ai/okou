@@ -4024,9 +4024,8 @@ export async function createBrowserUseSession(
   args: {
     readonly profileId: string;
     readonly extensionId: string;
-    readonly proxyCountryCode: string | null;
     readonly timeoutMinutes: number;
-    readonly instanceId?: string;
+    readonly instanceId: string;
     readonly initialDisplay?: BrowserDisplaySize;
   },
   signal: AbortSignal,
@@ -4038,16 +4037,14 @@ export async function createBrowserUseSession(
       method: "POST",
       body: JSON.stringify({
         profileId: args.profileId,
-        proxyCountryCode: args.proxyCountryCode,
+        proxyCountryCode: null,
         timeout: args.timeoutMinutes,
         browserScreenWidth: screen.width,
         browserScreenHeight: screen.height,
         allowResizing: true,
         enableRecording: false,
         extensionIds: [args.extensionId],
-        metadata: args.instanceId
-          ? { okouInstanceId: args.instanceId }
-          : undefined,
+        metadata: { okouInstanceId: args.instanceId },
       }),
     },
     signal,

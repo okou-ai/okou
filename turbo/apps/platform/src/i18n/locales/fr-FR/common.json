@@ -988,7 +988,7 @@
       "allow": "Autoriser",
       "allowed": "Autorisé",
       "cardDescription": "Utilisez un navigateur cloud pour cette conversation. Cela déconnecte Computer Use.",
-      "description": "{{assistantName}} utilisera un profil de navigateur cloud isolé pour ce fil de discussion. L'activer déconnecte l'utilisation de l'ordinateur pour ce fil.",
+      "description": "{{assistantName}} partage les sessions de connexion aux sites web entre les conversations. Chaque conversation a sa propre fenêtre de navigateur et ses propres onglets. L’activation du navigateur déconnecte Computer Use pour cette conversation.",
       "enable": "Activer pour ce fil",
       "enabled": "Navigateur cloud activé",
       "linkExpires": "Le lien expirera le {{date}}.",

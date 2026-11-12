@@ -29,7 +29,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   browserSessionInstances,
-  browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
 import {
@@ -1210,20 +1209,16 @@ function browserUserActionCreationPlan(args: {
   const liveClock = query.$with("action_live_clock").as(
     query
       .select({
-        at: nowDateSql()
-          .mapWith(browserSessionInstances.lastTouchedAt)
-          .as("at"),
+        at: nowDateSql().mapWith(browserChatSessions.updatedAt).as("at"),
       })
       .from(run),
   );
   const browser = query.$with("action_browser").as(
     query
       .select({
-        runId: sql`${args.runId}`
-          .mapWith(nullableDriverValueDecoder(browserSessions.runId))
-          .as("input_run_id"),
+        runId: sql`${args.runId}`.mapWith(agentRuns.id).as("input_run_id"),
         providerSessionId: sql`${browserOwnerProfiles.providerSessionId}`
-          .mapWith(browserSessionInstances.providerSessionId)
+          .mapWith(browserUserActionRequests.providerSessionId)
           .as("input_provider_session_id"),
       })
       .from(browserChatSessions)
@@ -1249,9 +1244,7 @@ function browserUserActionCreationPlan(args: {
   const leaseClock = query.$with("action_lease_clock").as(
     query
       .select({
-        at: nowDateSql()
-          .mapWith(browserSessionInstances.lastTouchedAt)
-          .as("at"),
+        at: nowDateSql().mapWith(browserChatSessions.updatedAt).as("at"),
         runId: browser.runId,
         providerSessionId: browser.providerSessionId,
       })
@@ -1358,7 +1351,7 @@ const persistBrowserUserAction = command(
         )
         .returning({
           providerSessionId: sql`${plan.leaseClock.providerSessionId}`
-            .mapWith(browserSessionInstances.providerSessionId)
+            .mapWith(browserUserActionRequests.providerSessionId)
             .as("provider_session_id"),
         }),
     );
