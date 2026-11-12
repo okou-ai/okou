@@ -23,7 +23,7 @@ final class DesignSystemResourcesTests: XCTestCase {
     for name in OkouIconAssets.names {
       XCTAssertNotNil(OkouIcon.uiImage(name), "Missing compiled Lucide asset: \(name)")
     }
-    for name in [OkouBrand.symbol, OkouBrand.wordmark, OkouBrand.assistantAvatar] {
+    for name in [OkouBrand.symbol, OkouBrand.wordmark, OkouAvatar.texture] {
       XCTAssertNotNil(UIImage(named: name), "Missing compiled brand asset: \(name)")
     }
   }

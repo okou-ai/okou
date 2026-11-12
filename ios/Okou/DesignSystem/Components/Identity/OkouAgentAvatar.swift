@@ -12,7 +12,8 @@ struct OkouAgentAvatar: View {
   var body: some View {
     Group {
       if isDefault || avatarURL == Self.defaultURL {
-        Image(OkouBrand.assistantAvatar).resizable().scaledToFit()
+        // Wherever the default agent appears, Okou moves, as it does on Web.
+        OkouAvatar(size: size)
       } else if let url = avatarURL.flatMap(URL.init(string:)),
         ["https", "http"].contains(url.scheme),
         url.pathExtension.lowercased() != "svg"

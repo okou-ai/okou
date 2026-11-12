@@ -382,12 +382,28 @@
 
     var body: some View {
       OkouCatalogPage(.identity, close: close) {
-        OkouCatalogSection("Agents") {
-          HStack(spacing: OkouSpace.md) {
-            OkouAgentAvatar(
-              avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.greeting)
-            ForEach(["Research", "Design", "Finance"], id: \.self) { name in
-              OkouAgentAvatar(avatarURL: nil, name: name, size: OkouAvatarSize.greeting)
+        OkouCatalogSection("Okou") {
+          // The default agent at the sizes the app draws it (a long-press preview, the
+          // transcript, the new-chat greeting), then held still.
+          HStack(alignment: .bottom, spacing: OkouSpace.md) {
+            ForEach(
+              [OkouIconSize.menu, OkouAvatarSize.message, OkouAvatarSize.greeting], id: \.self
+            ) { size in
+              OkouAvatar(size: size)
+            }
+            OkouAvatar(size: OkouAvatarSize.greeting, motion: .still)
+          }
+          Text("Okou always moves; still holds the mood's best frame, as Reduce Motion does.")
+            .okouSectionNote()
+        }
+        OkouCatalogSection("Okou's moods") {
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: OkouSpace.md)]) {
+            ForEach(OkouAvatarMood.allCases) { mood in
+              VStack(spacing: OkouSpace.xs) {
+                OkouAvatar(size: OkouAvatarSize.greeting, mood: mood)
+                Text(verbatim: mood.rawValue).font(.okou(.caption))
+                  .foregroundStyle(OkouColor.mutedForeground)
+              }
             }
           }
         }

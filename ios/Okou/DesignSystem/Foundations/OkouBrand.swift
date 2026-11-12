@@ -3,7 +3,6 @@ import SwiftUI
 enum OkouBrand {
   static let symbol = "OkouMark"
   static let wordmark = "SignInWordmark"
-  static let assistantAvatar = "AssistantAvatar"
 }
 
 struct OkouWordmark: View {
