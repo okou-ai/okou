@@ -1,7 +1,10 @@
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { HISTORICAL_VIDEO_TEMPLATE_PREVIEW_URLS } from "@okouai/core/historical-video-template-preview-urls";
-import { WELCOME_THREAD_ASSETS } from "@okouai/core/welcome-thread-assets";
+import {
+  WELCOME_THREAD_ASSETS,
+  MY_OKOU_WELCOME_THREAD_ASSETS,
+} from "@okouai/core/welcome-thread-assets";
 
 // The official catalog and welcome assets own these resources. Match complete
 // URLs, never a static-host prefix that could admit unrelated executable HTML.
@@ -22,6 +25,7 @@ const officialPreviewUrls = Object.freeze([
   WELCOME_THREAD_ASSETS.presentationArtifactUrl,
   WELCOME_THREAD_ASSETS.websiteArtifactUrl,
   WELCOME_THREAD_ASSETS.quickStartUrl,
+  ...Object.values(MY_OKOU_WELCOME_THREAD_ASSETS),
 ]);
 
 export function isOfficialTemplatePreviewUrl(url: string): boolean {

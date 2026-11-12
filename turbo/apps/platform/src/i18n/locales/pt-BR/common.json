@@ -1085,6 +1085,8 @@
       "invalid": "Este link de permissão é inválido ou está indisponível.",
       "loadFailed": "Não foi possível verificar todas as permissões solicitadas. Nenhuma permissão pode ser alterada.",
       "loading": "Carregando permissões",
+      "myOkouScopeNote": "Aplica-se ao seu uso do Okou neste espaço de trabalho, não apenas à tarefa atual.",
+      "myOkouSharedScopeNote": "Aplica-se a este conector nos seus chats deste espaço de trabalho. Seus colegas têm suas próprias permissões.",
       "notNow": "Agora não",
       "review": "Revisar permissões",
       "scopeNote": "Aplica-se a este agente, não apenas à tarefa atual.",
@@ -3493,6 +3495,8 @@
         "unshared": "Não compartilhado com nenhum agente"
       },
       "filterWith": "Filtro: {{category}}",
+      "myOkouDescription": "Conecte serviços externos para o seu Okou usar.",
+      "myOkouDescriptionWithCount": "Conecte {{value}} serviços para o seu Okou usar.",
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",

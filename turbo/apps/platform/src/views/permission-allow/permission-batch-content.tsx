@@ -239,6 +239,11 @@ function BatchHeader({
 function BatchPermissionDetails({ batch }: BatchViewProps) {
   const { t } = useTranslation();
   const features = useLoadable(featureSwitch$);
+  const singleAgent =
+    features.state === "hasData" && features.data[FeatureSwitchKey.SingleAgent];
+  const sharedPermissions =
+    features.state === "hasData" &&
+    features.data[FeatureSwitchKey.ConnectorChatAccountAccess];
   const {
     complete,
     loadFailed,
@@ -261,10 +266,13 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
       )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return features.state === "hasData" &&
-            features.data[FeatureSwitchKey.ConnectorChatAccountAccess]
-            ? $.authorization.permissionBatch.sharedScopeNote
-            : $.authorization.permissionBatch.scopeNote;
+          return singleAgent
+            ? sharedPermissions
+              ? $.authorization.permissionBatch.myOkouSharedScopeNote
+              : $.authorization.permissionBatch.myOkouScopeNote
+            : sharedPermissions
+              ? $.authorization.permissionBatch.sharedScopeNote
+              : $.authorization.permissionBatch.scopeNote;
         })}
       </p>
       {groups.map(({ connector, items }) => {

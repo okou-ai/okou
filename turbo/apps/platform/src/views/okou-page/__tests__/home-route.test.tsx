@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -75,19 +76,25 @@ test("Home opens the current organization's default agent", async () => {
   });
 });
 
-test("Home preserves a prompt handoff when opening the default agent", async () => {
-  mockCurrentOrganizationAgents();
+test.each([false, true])(
+  "Home preserves a prompt handoff (My Okou=%s)",
+  async (singleAgent) => {
+    mockCurrentOrganizationAgents();
 
-  await setupPage({
-    context,
-    path: "/?prompt=Draft%20a%20launch%20plan",
-  });
+    await setupPage({
+      context,
+      path: "/?prompt=Draft%20a%20launch%20plan",
+      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
+    });
 
-  await screen.findByRole("textbox", { name: "Message" });
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${CURRENT_ORG_AGENT_ID}/chat`);
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Draft a launch plan",
-    );
-  });
-});
+    await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => {
+      expect(pathname()).toBe(
+        singleAgent ? "/" : `/agents/${CURRENT_ORG_AGENT_ID}/chat`,
+      );
+      expect(
+        screen.getByRole("textbox", { name: "Message" }),
+      ).toHaveTextContent("Draft a launch plan");
+    });
+  },
+);

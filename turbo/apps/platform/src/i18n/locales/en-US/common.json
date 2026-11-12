@@ -1064,6 +1064,8 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
+      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
+      "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
@@ -3441,6 +3443,8 @@
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Connect third-party services for your Okou to use.",
+      "myOkouDescriptionWithCount": "Connect {{value}} services for your Okou to use.",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",

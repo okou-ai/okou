@@ -24,6 +24,7 @@ const WELCOME_STEP_BASE =
 const WELCOME_SCENE_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
 const QUICK_START = "https://4nnp6iwpss.okou.app";
+const MY_OKOU_GUIDE = "https://my-okou-quickstart-20261112-review.okou.app";
 
 test.each([
   {
@@ -40,6 +41,11 @@ test.each([
     name: "Quick start",
     url: QUICK_START,
     cover: "quick-start-eb0e18d9a32b.png",
+  },
+  {
+    name: "My Okou quick start (English)",
+    url: MY_OKOU_GUIDE,
+    cover: "my-okou-quick-start.png",
   },
 ])(
   "An existing welcome message shows the $name cover before opening the HTML",
@@ -185,6 +191,18 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     ["Model tiers", `${WELCOME_SCENE_BASE}/model-tiers.png`],
     ["Workflow templates", `${WELCOME_STEP_BASE}/workflow-template-picker.png`],
     ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
+    [
+      "Personal Instructions",
+      `${MY_OKOU_GUIDE}/assets/my-okou-instructions-8ec43cd079ea.png`,
+    ],
+    [
+      "Private Workflow method",
+      `${MY_OKOU_GUIDE}/assets/my-okou-workflow-instructions-5f1222f7d3ea.png`,
+    ],
+    [
+      "Workflow sharing",
+      `${MY_OKOU_GUIDE}/assets/my-okou-workflow-settings-5c32a5d6a9c6.png`,
+    ],
   ] as const;
   const chat = createMarkdownChatFixture(context);
   const content = [
@@ -210,10 +228,11 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     return respond(200, { runs: [] });
   });
   const previewUrl = `https://ps-${"c".repeat(48)}.okou.app/`;
-  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+  context.mocks.api(hostContract.sitePreview, ({ query, respond }) => {
+    const myOkou = query.hostname === new URL(MY_OKOU_GUIDE).hostname;
     return respond(200, {
-      url: previewUrl,
-      expiresAt: "2099-01-01T00:00:00.000Z",
+      url: myOkou ? `${MY_OKOU_GUIDE}/` : previewUrl,
+      expiresAt: myOkou ? null : "2099-01-01T00:00:00.000Z",
     });
   });
   await setupPage({ context, path: chat.path, host: "app.okou.ai" });

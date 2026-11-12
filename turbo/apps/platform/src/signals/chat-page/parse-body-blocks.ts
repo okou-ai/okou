@@ -618,12 +618,20 @@ export function previewAttachmentFromUrl(
   url: string,
   title?: string,
 ): ChatAttachmentDescriptor {
+  const filename = filenameFromUrl(url);
+  // Official screenshots can live beneath a hosted guide's origin. Preserve
+  // their image identity instead of treating the asset path as the HTML site.
+  if (
+    isOfficialTemplatePreviewUrl(url) &&
+    CHAT_KIND_BY_EXTENSION[fileExt(filename)] === "image"
+  ) {
+    return { filename, url, contentType: "image/*" };
+  }
   const hosted = hostedSiteAttachment(url, title);
   if (hosted) {
     return hosted;
   }
 
-  const filename = filenameFromUrl(url);
   const trimmedTitle = title?.trim();
   if (trimmedTitle && /\.(?:html|htm)$/i.test(filename)) {
     return { filename: trimmedTitle, url, contentType: "text/html" };

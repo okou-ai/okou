@@ -1061,6 +1061,8 @@
       "invalid": "この権限リンクは無効か、利用できません。",
       "loadFailed": "リクエストされたすべての権限を確認できませんでした。権限は変更できません。",
       "loading": "権限を読み込み中",
+      "myOkouScopeNote": "現在のタスクだけでなく、このワークスペースでのあなたのOkouの利用に適用されます。",
+      "myOkouSharedScopeNote": "このワークスペース内のあなたのチャット全体で、このコネクタに適用されます。チームメンバーの権限はそれぞれ独立しています。",
       "notNow": "今はしない",
       "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
@@ -3428,6 +3430,8 @@
         "unshared": "どのエージェントとも共有されていません"
       },
       "filterWith": "フィルタ: {{category}}",
+      "myOkouDescription": "あなたのOkouが使う外部サービスを接続します。",
+      "myOkouDescriptionWithCount": "あなたのOkouが使う{{value}}件のサービスを接続します。",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",

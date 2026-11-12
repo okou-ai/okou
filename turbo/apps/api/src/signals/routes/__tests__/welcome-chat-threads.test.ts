@@ -1,3 +1,5 @@
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
@@ -14,6 +16,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
@@ -22,6 +25,7 @@ import { meModelProvidersResetSubscriptionRoutes } from "../me-model-providers-r
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -72,8 +76,8 @@ function metadataClient() {
   );
 }
 
-async function fixture() {
-  const actor = bdd.user();
+async function fixture(orgId?: string) {
+  const actor = bdd.user({ orgId });
   bdd.acceptAgentStorageWrites();
   await runs.grantProEntitlement(actor, {
     periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
@@ -353,6 +357,113 @@ describe("POST /api/welcome-chat-threads", () => {
         "https://pr-33252-app.omby.ai/?settings=people",
       );
       expect(content).toContain("https://pr-33252-www.omby.ai/docs");
+    },
+  );
+
+  it.each([
+    "en-US",
+    "pt-BR",
+    "ja-JP",
+    "ko-KR",
+    "id-ID",
+    "de-DE",
+    "es-ES",
+    "it-IT",
+    "fr-FR",
+    "hi-IN",
+    "zh-Hans",
+    "zh-Hant",
+  ] as const)(
+    "delivers the My Okou welcome in %s without legacy media",
+    async (locale) => {
+      const { actor } = await fixture();
+      await accept(
+        setupApp({ context, routes: featureSwitchesRoutes })(
+          featureSwitchesContract,
+        ).update({
+          headers: headers(actor),
+          body: { switches: { [FeatureSwitchKey.SingleAgent]: true } },
+        }),
+        [200],
+      );
+      await bdd.updateUserLocale(actor, locale);
+      mockEnv("APP_URL", "https://pr-33252-app.omby.ai");
+      const { body } = await create(actor);
+      const rows = await chat.listThreadEventRows(actor, body.id);
+      expect(rows).toHaveLength(1);
+      const content = rows[0]?.payload?.content ?? "";
+      expect(content).toContain("Instructions");
+      expect(content).toContain("Workflow");
+      expect(content).toContain(
+        "https://pr-33252-app.omby.ai/?settings=my-okou",
+      );
+      expect(content).toContain(
+        "https://pr-33252-app.omby.ai/?settings=people",
+      );
+      expect(content).toContain(
+        "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
+      );
+      expect(content).not.toContain("{{");
+      expect(content).toContain(
+        "https://my-okou-quickstart-20261112-review.okou.app",
+      );
+      for (const filename of [
+        "my-okou-instructions-8ec43cd079ea.png",
+        "my-okou-workflow-instructions-5f1222f7d3ea.png",
+        "my-okou-workflow-settings-5c32a5d6a9c6.png",
+      ]) {
+        expect(content).toContain(
+          `https://my-okou-quickstart-20261112-review.okou.app/assets/${filename}`,
+        );
+      }
+      expect(content).not.toContain("new-agent.png");
+      expect(content).not.toContain("https://4nnp6iwpss.okou.app");
+    },
+  );
+
+  it.each([undefined, false] as const)(
+    "respects staff defaults and an explicit %s override without rewriting an existing welcome",
+    async (override) => {
+      const { actor } = await fixture(createUniqueStaffOrgIdFixture());
+      const switches = setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      );
+      if (override !== undefined) {
+        await accept(
+          switches.update({
+            headers: headers(actor),
+            body: { switches: { [FeatureSwitchKey.SingleAgent]: override } },
+          }),
+          [200],
+        );
+      }
+      const { body } = await create(actor);
+      const rows = await chat.listThreadEventRows(actor, body.id);
+      const content = rows[0]?.payload?.content ?? "";
+      expect(content).toContain(
+        override === false
+          ? "**Give a job its own agent.**"
+          : "**Your preferences belong in personal Instructions.**",
+      );
+      await accept(
+        switches.update({
+          headers: headers(actor),
+          body: {
+            switches: { [FeatureSwitchKey.SingleAgent]: override === false },
+          },
+        }),
+        [200],
+      );
+      await accept(
+        welcomeClient().create({
+          headers: headers(actor),
+          body: { clientThreadId: body.id },
+        }),
+        [404],
+      );
+      await expect(
+        chat.listThreadEventRows(actor, body.id),
+      ).resolves.toStrictEqual(rows);
     },
   );
 

@@ -21,6 +21,18 @@ export const WELCOME_THREAD_ASSETS = Object.freeze({
   quickStartUrl: "https://4nnp6iwpss.okou.app",
 });
 
+// Versioned My Okou publications. Keep the legacy guide and screenshots above
+// intact for existing messages and recipients with singleAgent disabled.
+const MY_OKOU_GUIDE_BASE =
+  "https://my-okou-quickstart-20261112-review.okou.app";
+
+export const MY_OKOU_WELCOME_THREAD_ASSETS = Object.freeze({
+  myOkouQuickStartUrl: MY_OKOU_GUIDE_BASE,
+  personalInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-instructions-8ec43cd079ea.png`,
+  workflowInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-instructions-5f1222f7d3ea.png`,
+  workflowSharingUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-settings-5c32a5d6a9c6.png`,
+});
+
 const PREVIEW_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-10-26-previews";
 
