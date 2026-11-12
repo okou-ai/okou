@@ -9,6 +9,6 @@ public func extraRules() -> [any Rule.Type] {
     SubscriptionTeardownRule.self,
     ImportBoundariesRule.self,
     StorageBoundariesRule.self, GlobalMutableStateRule.self,
-    TaskLifecycleRule.self,
+    TaskLifecycleRule.self, DiscardedThrowingTaskRule.self,
   ]
 }
