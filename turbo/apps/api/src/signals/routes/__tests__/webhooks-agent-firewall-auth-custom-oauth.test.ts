@@ -546,6 +546,9 @@ test("custom network admission is explicitly opted in and leaves installed Runne
     await custom.connectors.updateFeatureSwitches(custom.actor, {
       [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
     });
+    const installedRunner = await custom.request(custom.account.id, false);
+    expect(installedRunner.status).toBe(legacy.status);
+    expect(installedRunner.body).toStrictEqual(legacy.body);
     const admitted = await custom.request(custom.account.id, false, true);
     expect(admitted.status).toBe(200);
     expect(admitted.body).toMatchObject({
