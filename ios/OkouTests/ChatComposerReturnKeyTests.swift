@@ -34,7 +34,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
         && conversation.pending.contains { $0.needsRetry }
     }
     let writes = try fixture.requests.sentMessages.withLock {
-      try $0.map { try JSONDecoder().decode([String: JSONValue].self, from: $0) }
+      try $0.map { try JSONDecoder().decode([String: MessageJSON].self, from: $0) }
     }
     XCTAssertEqual(writes.map { $0["prompt"]?.string }, ["Keep the existing work running"])
     XCTAssertEqual(conversation.history?.canStop, true)
