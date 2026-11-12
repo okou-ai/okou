@@ -64,6 +64,11 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   owner bridge; ending its cancelled work does not publish resource data.
   A data-producing `Task<Value, Never>` still cannot fabricate successful data
   from cancellation.
+  In data-producing reads, explicit cancellation branches inside an ordinary
+  catch retain that same contract, including Task/evaluation-signal flags and
+  `URLError.code == .cancelled`. Check the proven side of `if` and `guard`, not
+  every return in the handler. Throwing transport recovery and cleanup followed
+  by rethrowing the original error remain valid.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
 - Tests await observable completion or an owned gate. Fixed sleep durations,
@@ -194,6 +199,10 @@ indirect helper effects, and custom callback execution semantics need review.
 Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
 dispatch target, or cross-file teardown contract.
+Resource-failure checks recognize explicit caught-error tests, native cancellation
+flags and direct URL-error comparisons. Error aliases, arbitrary helper predicates,
+switch-based cancellation handling and indirect recovery still require review.
+Allowing a throwing recovery expression does not prove its cancellation ownership.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
 Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,
