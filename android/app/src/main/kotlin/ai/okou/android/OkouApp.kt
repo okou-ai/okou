@@ -47,6 +47,7 @@ fun OkouApp(
     appearance: AppearanceUiState,
     selectMode: (AppearanceMode) -> Unit,
     retryAppearance: () -> Unit,
+    account: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val navigation = rememberNavController()
@@ -139,7 +140,7 @@ fun OkouApp(
                 NavHost(navigation, Destination.Home.route, Modifier.weight(1f).fillMaxSize()) {
                     composable(Destination.Home.route) { HomeScreen(home) }
                     composable(Destination.Settings.route) {
-                        SettingsScreen(appearance, selectMode, retryAppearance)
+                        SettingsScreen(appearance, selectMode, retryAppearance, account)
                     }
                 }
             }

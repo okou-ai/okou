@@ -24,4 +24,18 @@
     <plurals name="draft_lines">
         <item quantity="other">%1$d 行</item>
     </plurals>
+    <string name="auth_welcome">歡迎使用 Okou</string>
+    <string name="auth_restoring">正在恢復登入狀態…</string>
+    <string name="auth_preparing_workspace">正在準備工作區…</string>
+    <string name="auth_choose_workspace">選擇工作區</string>
+    <string name="auth_no_workspace">你尚無可存取的工作區。</string>
+    <string name="auth_workspace_setup">前往網頁建立工作區</string>
+    <string name="auth_access_removed">登入狀態或工作區存取權限已變更。請重新登入或重新整理權限。</string>
+    <string name="auth_update_required">請更新 Okou 後繼續。</string>
+    <string name="auth_unavailable">無法載入登入狀態或工作區，請重試。</string>
+    <string name="auth_sign_out">登出</string>
+    <string name="auth_signing_out">正在登出…</string>
+    <string name="auth_workspace">工作區</string>
+    <string name="auth_switch_workspace">切換工作區</string>
+    <string name="auth_browser_unavailable">請安裝瀏覽器以開啟工作區設定頁面。</string>
 </resources>

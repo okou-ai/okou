@@ -24,4 +24,18 @@
     <plurals name="draft_lines">
         <item quantity="other">%1$d baris</item>
     </plurals>
+    <string name="auth_welcome">Selamat datang di Okou</string>
+    <string name="auth_restoring">Memulihkan sesi Anda…</string>
+    <string name="auth_preparing_workspace">Menyiapkan ruang kerja Anda…</string>
+    <string name="auth_choose_workspace">Pilih ruang kerja</string>
+    <string name="auth_no_workspace">Anda belum memiliki akses ke ruang kerja.</string>
+    <string name="auth_workspace_setup">Siapkan ruang kerja di web</string>
+    <string name="auth_access_removed">Sesi atau akses Anda berubah. Masuk lagi atau muat ulang akses.</string>
+    <string name="auth_update_required">Perbarui Okou untuk melanjutkan.</string>
+    <string name="auth_unavailable">Tidak dapat memuat sesi atau ruang kerja. Coba lagi.</string>
+    <string name="auth_sign_out">Keluar</string>
+    <string name="auth_signing_out">Sedang keluar…</string>
+    <string name="auth_workspace">Ruang kerja</string>
+    <string name="auth_switch_workspace">Ganti ruang kerja</string>
+    <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
 </resources>

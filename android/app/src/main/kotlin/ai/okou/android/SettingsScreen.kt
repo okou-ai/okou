@@ -37,6 +37,7 @@ fun SettingsScreen(
     state: AppearanceUiState,
     selectMode: (AppearanceMode) -> Unit,
     retry: () -> Unit,
+    account: @Composable () -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
@@ -46,6 +47,7 @@ fun SettingsScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            account()
             Text(
                 stringResource(R.string.appearance),
                 style = MaterialTheme.typography.titleLarge,
