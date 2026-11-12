@@ -215,7 +215,8 @@ test("waits for processing and persisted internal group availability", async (t)
 test("already distributed build is verified without another mutation", async (t) => {
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
-    if (url.pathname === "/v1/builds/build/buildBetaDetail") return betaResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
     if (url.pathname === "/v1/betaGroups/group")
       return { body: { data: { attributes: { isInternalGroup: true } } } };
     return { body: { data: [{ id: "build", type: "builds" }] } };
@@ -246,12 +247,7 @@ for (const [label, response, beta, error] of [
     /HTTP 403/,
   ],
   ["missing beta metadata", buildResponse(), betaResponse(null), /Timed out/],
-  [
-    "processing timeout",
-    buildResponse("PROCESSING"),
-    undefined,
-    /Timed out/,
-  ],
+  ["processing timeout", buildResponse("PROCESSING"), undefined, /Timed out/],
 ]) {
   test(`does not report success for ${label}`, async (t) => {
     const { client, requests } = await apple(t, ({ url }) => {
@@ -267,7 +263,8 @@ for (const [label, response, beta, error] of [
 test("distribution rechecks group and never assigns a build to an external group", async (t) => {
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
-    if (url.pathname === "/v1/builds/build/buildBetaDetail") return betaResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
     return { body: { data: { attributes: { isInternalGroup: false } } } };
   });
   await assert.rejects(distribute(client, release), /Refusing external/);
@@ -285,7 +282,8 @@ test("automatic internal group waits for Apple's assignment without writing", as
   let reads = 0;
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
-    if (url.pathname === "/v1/builds/build/buildBetaDetail") return betaResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
     if (url.pathname === "/v1/betaGroups/group")
       return {
         body: {
