@@ -273,7 +273,7 @@ function RemoteConnectionSkeleton() {
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <Skeleton className="size-9 shrink-0" />
-                <div className="grid min-w-0 flex-1 gap-1">
+                <div className="grid min-w-0 flex-1 grid-cols-1 gap-1">
                   <Skeleton className="h-5 w-28 max-w-full" />
                   <Skeleton className="h-5 w-80 max-w-full" />
                 </div>
