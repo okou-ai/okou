@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1121.0](https://github.com/okou-ai/okou/compare/app-v0.1120.0...app-v0.1121.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** add gated cloudflare access authoring ([#46841](https://github.com/okou-ai/okou/issues/46841)) ([794e401](https://github.com/okou-ai/okou/commit/794e401d206b8ea4ff4793dd38ad59192588ff46))
+* **remote-control:** approve vnc chat access from message cards ([#46844](https://github.com/okou-ai/okou/issues/46844)) ([068dd05](https://github.com/okou-ai/okou/commit/068dd0513427864c4469e7c4b05d4e42dacf5841))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.55.0
+    * @okouai/core bumped to 8.833.0
+    * @okouai/ui bumped to 1.21.4
+
 ## [0.1120.0](https://github.com/okou-ai/okou/compare/app-v0.1119.0...app-v0.1120.0) (2026-11-12)
 
 
