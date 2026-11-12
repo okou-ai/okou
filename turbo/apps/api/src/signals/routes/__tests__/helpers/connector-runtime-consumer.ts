@@ -7,7 +7,7 @@ import { createFirewallApi } from "./api-bdd-firewall";
 import { createRunsApi, type RunModel } from "./api-bdd-runs";
 
 type RunClaim = Awaited<
-  ReturnType<ReturnType<typeof createRunsApi>["claimRunnerJob"]>
+  ReturnType<ReturnType<typeof createRunsApi>["executionInput"]>
 >;
 type ConnectorRuntimeAuthBody = Omit<
   Parameters<ReturnType<typeof createFirewallApi>["requestFirewallAuth"]>[1],
@@ -57,7 +57,7 @@ export async function withConnectorRuntime(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, options);
   const agent = await bdd.createAgent(actor, {
@@ -93,7 +93,7 @@ export async function withConnectorRuntime(
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
   expect((await runs.pollRunner(runnerGroup)).body.job?.runId).toBe(runId);
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   expect((await runs.readRun(actor, runId)).status).toBe("running");
   await consume({
     claim,

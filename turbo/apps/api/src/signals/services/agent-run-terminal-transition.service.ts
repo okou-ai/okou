@@ -1,3 +1,7 @@
+import {
+  poisonAccountCleanupCondition,
+  poisonProviderCleanupCondition,
+} from "./unstarted-run-cleanup";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { captureBillingRunTerminalSql } from "@okouai/db/operations/billing-run-lifecycle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -35,7 +39,6 @@ import {
 import { notFound, runNotCancellable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 
 export interface CancelRunResult {
   readonly apiStartTime: number;
@@ -52,7 +55,7 @@ export interface CancelRunResult {
   readonly alreadyCancelled: boolean;
 }
 
-interface CancelRunArgs {
+export interface CancelRunArgs {
   readonly runId: string;
   readonly userId: string;
   readonly orgId: string;
@@ -342,7 +345,7 @@ function committedCancellationResult(
 /** The original tenant-scoped Run lock classifies current state, followed by
  * one atomic terminal/billing/cleanup/queue/slot statement. Started slots remain
  * held. The entry's existing post-commit abort and scheduling order is retained. */
-export const cancelRun$ = command(
+export const commitRunCancellation$ = command(
   async ({ set }, args: CancelRunArgs, signal: AbortSignal) => {
     const apiStartTime = args.apiStartTime ?? now();
     const writeDb = set(writeDb$);
@@ -469,18 +472,195 @@ export const cancelRun$ = command(
       run === undefined || run.releasedOrgId === null
         ? []
         : [{ runId: run.id, orgId: run.releasedOrgId }];
-    set(scheduleReleasedSlotPicks$, releasedSlots, signal);
-    return result;
+    return { result, releasedSlots };
   },
 );
 
-interface TerminalRunTransition {
+const poisonTerminalFields = {
+  id: agentRuns.id,
+  orgId: agentRuns.orgId,
+  userId: agentRuns.userId,
+  modelProviderId: agentRuns.modelProviderId,
+  startedAt: agentRuns.startedAt,
+} as const;
+
+interface UnacceptedRunFailure {
   readonly runId: string;
-  readonly orgId: string;
   readonly userId: string;
-  readonly runnerGroup: string | null;
-  readonly startedAt: Date | null;
+  readonly orgId: string;
+  readonly owner: UnacceptedRunOwner | null;
+  readonly error: string;
 }
+
+function unacceptedRunValues(args: UnacceptedRunFailure, completedAt: Date) {
+  return {
+    status: sql`CASE WHEN ${agentRuns.status} = 'cancelled' THEN 'cancelled' ELSE 'failed' END`,
+    completedAt: sql`COALESCE(${agentRuns.completedAt},${sql.param(completedAt, agentRuns.completedAt)})`,
+    error: sql`CASE WHEN ${agentRuns.status} = 'cancelled' THEN ${agentRuns.error} ELSE ${args.error} END`,
+    // A preselected but definitely unaccepted process has no finalizer.
+    cancellationRecoveryCompleted: true,
+  };
+}
+
+function unacceptedRunCondition(args: UnacceptedRunFailure) {
+  return and(
+    eq(agentRuns.id, args.runId),
+    eq(agentRuns.userId, args.userId),
+    eq(agentRuns.orgId, args.orgId),
+    or(
+      inArray(agentRuns.status, ["pending", "running"]),
+      and(
+        eq(agentRuns.status, "cancelled"),
+        eq(agentRuns.cancellationRecoveryCompleted, false),
+      ),
+    ),
+    args.owner
+      ? and(
+          eq(agentRuns.runnerId, args.owner.runnerId),
+          eq(
+            agentRuns.runnerHeartbeatGeneration,
+            args.owner.heartbeatGeneration,
+          ),
+        )
+      : and(
+          isNull(agentRuns.runnerId),
+          isNull(agentRuns.runnerHeartbeatGeneration),
+        ),
+  );
+}
+
+function unacceptedBillingSql(
+  status: "failed" | "cancelled",
+  completedAt: Date,
+) {
+  return captureBillingRunTerminalSql({
+    condition: sql`${agentRuns.id} IN (SELECT id FROM poison_terminal_runs WHERE status = ${status})`,
+    status,
+    completedAt,
+  });
+}
+
+/** Only the in-memory sender that proved non-acceptance may release this owner. */
+export interface UnacceptedRunOwner {
+  readonly runnerId: string;
+  readonly heartbeatGeneration: number;
+}
+
+export const failUnacceptedRun$ = command(
+  async ({ set }, args: UnacceptedRunFailure, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    const completedAt = nowDate();
+    const terminal = db.$with("poison_terminal_runs").as(
+      db
+        .update(agentRuns)
+        .set(unacceptedRunValues(args, completedAt))
+        .where(unacceptedRunCondition(args))
+        .returning({
+          ...poisonTerminalFields,
+          status: agentRuns.status,
+          error: agentRuns.error,
+        }),
+    );
+    // The two disjoint outcomes preserve a concurrent user cancellation.
+    const failedBilling = db
+      .$with("unaccepted_failed_billing", {
+        runId: billingRunAttribution.runId,
+      })
+      .as(unacceptedBillingSql("failed", completedAt));
+    const cancelledBilling = db
+      .$with("unaccepted_cancelled_billing", {
+        runId: billingRunAttribution.runId,
+      })
+      .as(unacceptedBillingSql("cancelled", completedAt));
+    const billing = db.$with("poison_run_billing").as(
+      db
+        .select({ runId: failedBilling.runId })
+        .from(failedBilling)
+        .unionAll(
+          db.select({ runId: cancelledBilling.runId }).from(cancelledBilling),
+        ),
+    );
+    const diagnostics = db.$with("poison_removed_diagnostics").as(
+      db
+        .delete(agentRunConnectorDiagnosticRegistrations)
+        .where(
+          inArray(
+            agentRunConnectorDiagnosticRegistrations.runId,
+            db.select({ id: terminal.id }).from(terminal),
+          ),
+        )
+        .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId }),
+    );
+    const accounts = db.$with("poison_removed_accounts").as(
+      db
+        .delete(modelProviderAccounts)
+        .where(poisonAccountCleanupCondition())
+        .returning({
+          id: modelProviderAccounts.id,
+          modelProviderId: modelProviderAccounts.modelProviderId,
+        }),
+    );
+    const providers = db
+      .$with("poison_removed_providers")
+      .as(
+        db
+          .delete(modelProviders)
+          .where(poisonProviderCleanupCondition())
+          .returning({ id: modelProviders.id }),
+      );
+    const released = db.$with("unaccepted_released_slots").as(
+      db
+        .delete(activeAgentRuns)
+        .where(
+          and(
+            inArray(
+              activeAgentRuns.runId,
+              db.select({ id: terminal.id }).from(terminal),
+            ),
+            gte(db.select({ count: count() }).from(billing), 0),
+            gte(db.select({ count: count() }).from(diagnostics), 0),
+            gte(db.select({ count: count() }).from(providers), 0),
+          ),
+        )
+        .returning({
+          runId: activeAgentRuns.runId,
+          orgId: activeAgentRuns.orgId,
+        }),
+    );
+    const [row] = await db
+      .with(
+        terminal,
+        failedBilling,
+        cancelledBilling,
+        billing,
+        diagnostics,
+        accounts,
+        providers,
+        released,
+      )
+      .select({
+        runId: terminal.id,
+        orgId: terminal.orgId,
+        userId: terminal.userId,
+        status: terminal.status,
+        error: terminal.error,
+        releasedOrgId: released.orgId,
+      })
+      .from(terminal)
+      .leftJoin(released, eq(released.runId, terminal.id));
+    signal.throwIfAborted();
+    return row
+      ? {
+          ...row,
+          releasedSlots:
+            row.releasedOrgId === null
+              ? []
+              : [{ runId: row.runId, orgId: row.releasedOrgId }],
+        }
+      : null;
+  },
+);
 
 export interface ReleasedRunSlot {
   readonly runId: string;
@@ -519,12 +699,8 @@ export type DeletedOwner =
  * transient diagnostic cleanup, and all held slots together, including started
  * runs. Only committed releases schedule picks; notification stays with Clerk.
  */
-export const cancelClerkDeletedOwnerRuns$ = command(
-  async (
-    { set },
-    owner: DeletedOwner,
-    signal: AbortSignal,
-  ): Promise<readonly TerminalRunTransition[]> => {
+export const commitClerkDeletedOwnerRuns$ = command(
+  async ({ set }, owner: DeletedOwner, signal: AbortSignal) => {
     const db = set(writeDb$);
     const runScope =
       owner.kind === "user"
@@ -609,15 +785,6 @@ export const cancelClerkDeletedOwnerRuns$ = command(
       .from(cancelled)
       .leftJoin(released, eq(released.runId, cancelled.runId));
     signal.throwIfAborted();
-    set(
-      scheduleReleasedSlotPicks$,
-      runs.flatMap((run) => {
-        return run.releasedOrgId === null
-          ? []
-          : [{ runId: run.runId, orgId: run.releasedOrgId }];
-      }),
-      signal,
-    );
     return runs;
   },
 );
@@ -1220,14 +1387,6 @@ function poisonTransitionCondition() {
   );
 }
 
-const poisonTerminalFields = {
-  id: agentRuns.id,
-  orgId: agentRuns.orgId,
-  userId: agentRuns.userId,
-  modelProviderId: agentRuns.modelProviderId,
-  startedAt: agentRuns.startedAt,
-} as const;
-
 function poisonTerminalValues(completedAt: Date, errorMessage: string) {
   return { status: "failed" as const, completedAt, error: errorMessage };
 }
@@ -1261,47 +1420,6 @@ function poisonStatementResult(
         : [{ runId: row.id, orgId: row.releasedOrgId }],
   };
 }
-function poisonAccountCleanupCondition() {
-  const query = new QueryBuilder();
-  return and(
-    isNotNull(modelProviderAccounts.disconnectedAt),
-    gte(query.select({ count: count() }).from(sql`poison_run_billing`), 0),
-    gte(
-      query.select({ count: count() }).from(sql`poison_removed_diagnostics`),
-      0,
-    ),
-    sql`EXISTS (
-      SELECT 1 FROM poison_terminal_runs
-      WHERE poison_terminal_runs.model_provider_id = ${modelProviderAccounts.id}
-        AND poison_terminal_runs.org_id = ${modelProviderAccounts.orgId}
-        AND poison_terminal_runs.user_id = ${modelProviderAccounts.userId}
-    ) AND NOT EXISTS (
-      SELECT 1 FROM ${agentRuns}
-      WHERE ${eq(agentRuns.modelProviderId, modelProviderAccounts.id)}
-        AND ${eq(agentRuns.orgId, modelProviderAccounts.orgId)}
-        AND ${eq(agentRuns.userId, modelProviderAccounts.userId)}
-        AND ${agentRuns.status} IN ('pending', 'running')
-        AND NOT EXISTS (
-          SELECT 1 FROM poison_terminal_runs
-          WHERE poison_terminal_runs.id = ${agentRuns.id}
-        )
-    )`,
-  );
-}
-
-function poisonProviderCleanupCondition() {
-  return sql`${modelProviders.id} IN (
-    SELECT model_provider_id FROM poison_removed_accounts
-  ) AND NOT EXISTS (
-    SELECT 1 FROM ${modelProviderAccounts}
-    WHERE ${eq(modelProviderAccounts.modelProviderId, modelProviders.id)}
-      AND NOT EXISTS (
-        SELECT 1 FROM poison_removed_accounts
-        WHERE poison_removed_accounts.id = ${modelProviderAccounts.id}
-      )
-  )`;
-}
-
 function poisonJobCleanupCondition() {
   const query = new QueryBuilder();
   return and(

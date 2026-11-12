@@ -91,7 +91,7 @@ function legacyPublicRunOwner(
     },
     cleanup,
     async claim(runId: string) {
-      const claim = await createRunsApi(context).claimRunnerJob(runId);
+      const claim = await createRunsApi(context).executionInput(runId);
       tokens.set(runId, claim.sandboxToken);
       return claim;
     },
@@ -310,7 +310,7 @@ export function createPublicRunLifecycle(
     },
     finish: lifecycle.finish,
     async claim(runId: string) {
-      const claim = await createRunsApi(context).claimRunnerJob(runId);
+      const claim = await createRunsApi(context).executionInput(runId);
       tokens.set(runId, claim.sandboxToken);
       return claim;
     },

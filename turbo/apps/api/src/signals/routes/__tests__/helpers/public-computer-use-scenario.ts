@@ -263,7 +263,7 @@ export function createPublicComputerUseScenario(
         bdd.acceptAgentStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         await run(() => {
           return runs.grantProEntitlement(actor, {
             run,
@@ -310,7 +310,7 @@ export function createPublicComputerUseScenario(
     claimExisting(actor: ApiTestUser, runId: string) {
       return run(async () => {
         remember(actor);
-        const actual = await runs.claimRunnerJob(runId);
+        const actual = await runs.executionInput(runId);
         claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
         activeClaims.set(`${actor.orgId}:${actor.userId}`, runId);
         return actual;
@@ -382,7 +382,7 @@ export function createPublicComputerUseScenario(
             return runs.heartbeatRunner(setup.runnerGroup);
           });
           const claim = await run(async () => {
-            const actual = await runs.claimRunnerJob(runId);
+            const actual = await runs.executionInput(runId);
             claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
             activeClaims.set(key, runId);
             return actual;

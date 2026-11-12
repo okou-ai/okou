@@ -12,7 +12,7 @@ describe("canonical Runner protocol execution", () => {
     const api = createRunsApi(context);
     const response = await api.requestRawHeartbeatRunner(true, [400], {
       runnerId: randomUUID(),
-      group: api.configureRunnerGroup(),
+      group: await api.configureRunnerGroup(),
       snapshotGeneration: 7,
       snapshotSequence: 42,
       totalVcpu: 8,
@@ -37,7 +37,7 @@ describe("canonical Runner protocol execution", () => {
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      const group = api.configureRunnerGroup();
+      const group = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",

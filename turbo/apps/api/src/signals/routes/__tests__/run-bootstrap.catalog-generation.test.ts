@@ -22,7 +22,7 @@ async function connectorActor() {
   const actor = bdd.user();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   const agents: string[] = [];
   const providerIds: string[] = [];
   const owner = publicRunOwner(context, actor, {

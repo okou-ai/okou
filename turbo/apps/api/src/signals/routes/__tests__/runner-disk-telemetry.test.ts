@@ -182,7 +182,7 @@ describe("Runner disk telemetry HTTP", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     await fixture.initializeDatabase();
     await fixture.grantEntitlement();
     await fixture.run(() => {

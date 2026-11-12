@@ -671,7 +671,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   }
   async function claimRun(runId: string) {
     return await own(async () => {
-      const claim = await runsApi.claimRunnerJob(runId);
+      const claim = await runsApi.executionInput(runId);
       claims.set(runId, claim.sandboxToken);
       return claim;
     });
@@ -1229,7 +1229,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       orgId: `org_${randomUUID()}`,
       orgRole: "org:admin",
     });
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     await own(() => {
       return enableFeishuIntegration(platform, actor, {
         [FeatureSwitchKey.OkouDebug]: true,

@@ -27,8 +27,8 @@ interface AgentReadFixture {
   readonly threadIds: readonly string[];
 }
 
-function prepareChatRuntime(): void {
-  runs.configureRunnerGroup();
+async function prepareChatRuntime(): Promise<void> {
+  await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   chatCallbacks.acceptChatObjectStorage();
@@ -71,7 +71,7 @@ async function appendCancelledRun(args: {
 async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  prepareChatRuntime();
+  await prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });

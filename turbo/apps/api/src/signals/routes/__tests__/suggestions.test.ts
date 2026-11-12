@@ -140,7 +140,7 @@ async function primaryRun(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   if (!member) {
     await runs.grantProEntitlement(actor);
   }
@@ -161,7 +161,7 @@ async function primaryRun(
     model: "claude-fable-5-1",
     prompt: "Curate useful suggestions",
   });
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
@@ -281,7 +281,7 @@ async function feedbackContext(
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   await createChatEventsFixture(context).failChatRun(
     runId,
     { authorization: `Bearer ${claim.sandboxToken}` },

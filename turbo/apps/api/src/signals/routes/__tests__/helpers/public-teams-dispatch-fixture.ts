@@ -213,7 +213,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         );
       }
       if (options.paidNative) {
-        runs.configureRunnerGroup();
+        await runs.configureRunnerGroup();
         await runs.grantProEntitlement(fixture.actor, {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,

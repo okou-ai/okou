@@ -455,7 +455,7 @@ function useClaimedFixture() {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(bootstrapActor);
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",

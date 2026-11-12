@@ -952,7 +952,7 @@ describe("POST /api/integrations/feishu/message", () => {
         await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor);
-      const runnerGroup = runsApi.configureRunnerGroup();
+      const runnerGroup = await runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
       const owner = publicRunOwner(context, actor, {
         restoreEnvironment: captureConnectorExternalState(context),

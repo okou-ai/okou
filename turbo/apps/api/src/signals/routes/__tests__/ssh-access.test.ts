@@ -106,7 +106,7 @@ describe("live chat SSH Run inventory", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",

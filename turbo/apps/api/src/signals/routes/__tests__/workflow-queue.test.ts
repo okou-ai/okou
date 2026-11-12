@@ -91,7 +91,7 @@ interface Scenario {
 }
 
 async function setup(): Promise<Scenario> {
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
   const { actor, customerId } = await wf.setupWorkflowOrg({ tier: "team" });
   if (!actor.orgId) {
@@ -354,14 +354,14 @@ async function requestRunCompletionThroughSandbox(
   runId: string,
 ) {
   await runsApi.heartbeatRunner(scenario.runnerGroup);
-  const claim = await runsApi.claimRunnerJob(runId);
+  const claim = await runsApi.executionInput(runId);
   await requestClaimedRunCompletionThroughSandbox(runId, claim);
   return claim;
 }
 
 async function requestClaimedRunCompletionThroughSandbox(
   runId: string,
-  claim: Awaited<ReturnType<typeof runsApi.claimRunnerJob>>,
+  claim: Awaited<ReturnType<typeof runsApi.executionInput>>,
 ) {
   const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
   const stagedOutputEvents = chatCallbacks.consumeMockChatOutputEvents();
@@ -568,7 +568,7 @@ describe("workflow queue", () => {
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const secondClaim = await runsApi.claimRunnerJob(runIds[1]!);
+    const secondClaim = await runsApi.executionInput(runIds[1]!);
     // API start is anchored only for runs picked by POST /api/chat/events.
     expect(secondClaim.apiStartTime).toBeUndefined();
   });
@@ -633,7 +633,7 @@ describe("workflow queue", () => {
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const secondClaim = await runsApi.claimRunnerJob(runIds[1]!);
+    const secondClaim = await runsApi.executionInput(runIds[1]!);
     expect(secondClaim.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\nSummary: signed workflow webhook received`,
     );
@@ -780,7 +780,7 @@ describe("workflow queue", () => {
       automation.threadId,
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const firstClaim = await runsApi.claimRunnerJob(firstRunId);
+    const firstClaim = await runsApi.executionInput(firstRunId);
     expectAccepted(await postWorkflowWebhook(automation, "wait for recovery"));
 
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
@@ -831,7 +831,7 @@ describe("workflow queue", () => {
       { eventType: "webhook-received", automationId: automation.automationId },
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await runsApi.executionInput(runId);
 
     await accept(
       automationsClient().delete({
@@ -866,7 +866,7 @@ describe("workflow queue", () => {
       webhookAutomation.threadId,
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const runningClaim = await runsApi.claimRunnerJob(runningRunId);
+    const runningClaim = await runsApi.executionInput(runningRunId);
     expectAccepted(
       await postWorkflowWebhook(webhookAutomation, "orphaned after deletion"),
     );
@@ -1068,7 +1068,7 @@ describe("workflow queue", () => {
   it("revokes an orphaned queued input after its workflow is deleted", async () => {
     const { scenario, automation, runningRunId } = await busyQueueFixture(1);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const runningClaim = await runsApi.claimRunnerJob(runningRunId);
+    const runningClaim = await runsApi.executionInput(runningRunId);
     const [queuedEvent] = await pendingAutomationEvents(automation.threadId);
     if (!queuedEvent) {
       throw new Error("Expected the workflow's queued input");

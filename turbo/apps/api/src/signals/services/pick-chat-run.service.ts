@@ -23,13 +23,14 @@ import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
+import type { RunSlotPickScheduler } from "./run-slot-pick-scheduler";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
   type PublishedChatThreadLease,
 } from "./queued-chat-thread.service";
 import {
-  createThreadClaimRunObjects,
+  createThreadRunLauncher,
   type ThreadClaim,
 } from "./thread-claim-run.service";
 
@@ -41,6 +42,7 @@ export interface OrgPickCursor {
 
 /** Actual lease-write receipt, including this invocation's plain prefetch. */
 interface LeasedThreadClaim extends ThreadClaim {
+  readonly scheduleReleasedSlots$: RunSlotPickScheduler;
   readonly queuedAt: Date;
   readonly userId: string;
   readonly agentId: string;
@@ -82,7 +84,7 @@ function createCapturedClaimObjects(
   claim: LeasedThreadClaim,
   context: AgentRunContextSignals,
 ) {
-  const preparation = createThreadClaimRunObjects(
+  const preparation = createThreadRunLauncher(
     {
       orgId: claim.orgId,
       chatThreadId: claim.chatThreadId,
@@ -90,6 +92,7 @@ function createCapturedClaimObjects(
     },
     context,
     claim.requestFacts,
+    claim.scheduleReleasedSlots$,
   );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
@@ -102,6 +105,7 @@ function createCapturedClaimObjects(
 }
 
 interface PickInput {
+  readonly scheduleReleasedSlots$: RunSlotPickScheduler;
   readonly orgId: string;
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
@@ -116,12 +120,16 @@ export interface PickIteration {
 }
 
 function captureThreadClaim(
-  receipt: Omit<LeasedThreadClaim, "context" | "requestFacts">,
+  receipt: Omit<
+    LeasedThreadClaim,
+    "context" | "requestFacts" | "scheduleReleasedSlots$"
+  >,
   input: PickInput,
 ): LeasedThreadClaim {
   const { context, requestFacts } = input;
   return Object.freeze({
     ...receipt,
+    scheduleReleasedSlots$: input.scheduleReleasedSlots$,
     ...(context === undefined ? {} : { context }),
     ...(requestFacts?.orgId === receipt.orgId &&
     requestFacts.thread.id === receipt.chatThreadId &&
@@ -348,7 +356,11 @@ function createPickObjects() {
       waitUntil(
         set(
           pick$,
-          { orgId: claim.orgId, chatThreadId: claim.chatThreadId },
+          {
+            orgId: claim.orgId,
+            chatThreadId: claim.chatThreadId,
+            scheduleReleasedSlots$: claim.scheduleReleasedSlots$,
+          },
           signal,
         ),
       );

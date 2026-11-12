@@ -167,7 +167,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
   it("dispatches signed webhook deliveries and de-duplicates retries", async () => {
     const { workflowId } = await setupFixture();
     const runsApi = createRunsApi(context);
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
     expect(new URL(webhook.webhookUrl).pathname).toBe(
       `/api/webhooks/workflow-automations/${webhook.token}`,
@@ -195,7 +195,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     if (!job) {
       throw new Error("Expected the accepted delivery to launch a run");
     }
-    const workflowClaim = await runsApi.claimRunnerJob(job.runId);
+    const workflowClaim = await runsApi.executionInput(job.runId);
     const workflowPrompt = workflowClaim.appendSystemPrompt ?? "";
     expect(workflowPrompt).toContain("okou slack message send --help");
     expect(workflowPrompt).not.toContain("Never use SLACK_TOKEN directly");
@@ -262,7 +262,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
   it("accepts a delivery whose launch is rejected and de-duplicates its retry", async () => {
     const { fixture, actor, workflowId } = await setupFixture();
     const runsApi = createRunsApi(context);
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
     const timestamp = Math.floor(now() / 1000);
     await expect(

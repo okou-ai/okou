@@ -2939,7 +2939,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -3475,7 +3475,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -4972,7 +4972,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     acceptGithubGrantRevocations();
     mockSlackConnectorOAuth();
     const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
@@ -5020,7 +5020,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     });
     expect(run.status).toBe("pending");
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     await gh.installGithubApp(actor, agent.agentId, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
@@ -5173,7 +5173,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     const doomed = bdd.user();
     await runs.grantProEntitlement(doomed);
@@ -5348,7 +5348,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
 
       const doomed = bdd.user();
       await runs.grantProEntitlement(doomed);
@@ -5698,7 +5698,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         prompt: "doomed run on the retained Agent",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(doomedRun.runId);
+      const claim = await runs.executionInput(doomedRun.runId);
 
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
@@ -5755,7 +5755,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
 
     const banned = bdd.user();
     const granted = await runs.grantProEntitlement(banned);

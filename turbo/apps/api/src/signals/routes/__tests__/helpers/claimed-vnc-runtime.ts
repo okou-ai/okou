@@ -60,7 +60,7 @@ export function createClaimedVncApi(context: TestContext) {
 
   async function runtime(value: Owner & { readonly agentId: string }) {
     const actor = bdd.user(value);
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId: value.agentId,
       prompt: "Use my configured VNC desktop",

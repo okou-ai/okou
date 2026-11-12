@@ -1040,7 +1040,7 @@ describe("POST /api/user-templates", () => {
   it("replaces the stored package rather than adding to it", async () => {
     const actor = bdd.user();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",

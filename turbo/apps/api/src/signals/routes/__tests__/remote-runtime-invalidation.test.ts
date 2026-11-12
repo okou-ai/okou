@@ -45,7 +45,7 @@ describe("protocol-specific remote runtime invalidation", () => {
       orgId: `org-${randomUUID()}`,
       userId: `user-${randomUUID()}`,
     };
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     const first = await claimed.runtime(owner, { group });
     const second = await claimed.runtime(owner, { group });
     const otherUser = await claimed.runtime({

@@ -10,8 +10,8 @@ import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 const context = testContext();
 const api = createRunsApi(context);
 
-describe("Runner claim-time Agent instructions", () => {
-  it("pins published instruction bytes at claim and selects later edits only for later claims", async () => {
+describe("API dispatch-time Agent instructions", () => {
+  it("pins published instruction bytes at dispatch and selects later edits for later Runs", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -37,7 +37,7 @@ describe("Runner claim-time Agent instructions", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe(current);
+      ).toBe("A at queue time");
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
@@ -47,7 +47,7 @@ describe("Runner claim-time Agent instructions", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe(current);
+      ).toBe("A at queue time");
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "claim the later edit",
@@ -70,7 +70,7 @@ describe("Runner claim-time Agent instructions", () => {
     });
   });
 
-  it("claims an empty-file package when instructions are cleared before claim", async () => {
+  it("dispatches an empty-file package when instructions are cleared before launch", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -80,12 +80,12 @@ describe("Runner claim-time Agent instructions", () => {
         owned.agentId,
         "Old managed file",
       );
+      await bdd.updateAgentInstructions(owned.actor, owned.agentId, "");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "clear instructions",
         model: "auto",
       });
-      await bdd.updateAgentInstructions(owned.actor, owned.agentId, "");
       const { claim } = await owned.claimChatRun(
         owned.runnerGroup,
         queued.runId,
@@ -99,7 +99,7 @@ describe("Runner claim-time Agent instructions", () => {
     });
   });
 
-  it("refuses a now-private Agent without consuming the queued claim", async () => {
+  it("does not expose a dispatched Run through Claim after its Agent becomes private", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -128,7 +128,7 @@ describe("Runner claim-time Agent instructions", () => {
         [404],
       );
       expect(rejected.body).toMatchObject({
-        error: { message: "Agent not found" },
+        error: { message: "Job not found in queue" },
       });
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",

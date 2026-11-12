@@ -535,7 +535,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
@@ -629,7 +629,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       owned.runId = run.runId;
       expect(run.status).toBe("pending");
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
+      const claim = await runs.executionInput(run.runId);
       owned.sandboxToken = claim.sandboxToken;
       const okouToken = claim.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
@@ -838,7 +838,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -880,7 +880,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     });
     expect(run.status).toBe("pending");
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     const okouToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the claimed run to include an Okou token");

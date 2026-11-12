@@ -285,7 +285,7 @@ interface CalendarScenario {
 }
 
 async function setupFixture(): Promise<CalendarScenario> {
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   const { actor } = await wf.setupWorkflowOrg();
@@ -654,7 +654,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       const firstJob = await runsApi.pollRunner(runnerGroup);
       expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
       const firstRunId = firstJob.body.job!.runId;
-      await runsApi.claimRunnerJob(firstRunId);
+      await runsApi.executionInput(firstRunId);
 
       // A redelivery for the same event revision dispatches nothing and no new
       // runner job appears.
@@ -872,7 +872,7 @@ describe("POST /api/webhooks/google-calendar", () => {
         if (!job.body.job) {
           throw new Error("Expected a selected-account Calendar run");
         }
-        const claim = await runsApi.claimRunnerJob(job.body.job.runId);
+        const claim = await runsApi.executionInput(job.body.job.runId);
         expect(
           Object.values(claim.secretConnectorMetadataMap ?? {}),
         ).toContainEqual(
@@ -1457,7 +1457,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     await runsApi.heartbeatRunner(runnerGroup);
     const firstJob = await runsApi.pollRunner(runnerGroup);
     expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
-    const firstClaim = await runsApi.claimRunnerJob(firstJob.body.job!.runId);
+    const firstClaim = await runsApi.executionInput(firstJob.body.job!.runId);
 
     // The same revision (same etag) arriving again dispatches nothing.
     const second = await postGoogleCalendarWebhook(webhookHeaders(watch));
@@ -1492,7 +1492,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     const thirdJob = await runsApi.pollRunner(runnerGroup);
     expect(thirdJob.body.job?.runId).toStrictEqual(expect.any(String));
     expect(thirdJob.body.job?.runId).not.toBe(firstJob.body.job?.runId);
-    await runsApi.claimRunnerJob(thirdJob.body.job!.runId);
+    await runsApi.executionInput(thirdJob.body.job!.runId);
     const idleAfterThird = await runsApi.pollRunner(runnerGroup);
     expect(idleAfterThird.body.job).toBeNull();
   });
@@ -1584,7 +1584,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     await runsApi.heartbeatRunner(runnerGroup);
     const firstJob = await runsApi.pollRunner(runnerGroup);
     expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
-    await runsApi.claimRunnerJob(firstJob.body.job!.runId);
+    await runsApi.executionInput(firstJob.body.job!.runId);
     const idleAfterFirst = await runsApi.pollRunner(runnerGroup);
     expect(idleAfterFirst.body.job).toBeNull();
 

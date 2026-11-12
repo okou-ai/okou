@@ -105,7 +105,7 @@ export type PromptMessage = Extract<ChatEvent, { eventType: "input.prompt" }>;
 type OutputMessage = Extract<ChatEvent, { eventType: "output.message" }>;
 
 export type RunnerClaim = Awaited<
-  ReturnType<ReturnType<typeof createRunsApi>["claimRunnerJob"]>
+  ReturnType<ReturnType<typeof createRunsApi>["executionInput"]>
 >;
 
 export interface EntitledChatActor {
@@ -370,7 +370,7 @@ export function createChatEventsFixture(context: TestContext) {
     api.acceptTelemetryIngest();
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     const { customerId } = await api.grantProEntitlement(actor, {
       ...(options.orgId === STAFF_ORG_ID
         ? {
@@ -633,7 +633,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly sandboxHeaders: { readonly authorization: string };
   }> {
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,
     };
@@ -964,11 +964,7 @@ export function createChatEventsFixture(context: TestContext) {
         status: "pending",
       });
     }
-    return await api.claimRunnerJob(runId, {
-      capabilities: {
-        piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
-      },
-    });
+    return await api.executionInput(runId);
   }
 
   function mockPiObjectStore(): Map<string, Buffer> {
@@ -1108,7 +1104,7 @@ export function createChatEventsFixture(context: TestContext) {
     api: {
       acceptStorageDownloads: api.acceptStorageDownloads,
       acceptTelemetryIngest: api.acceptTelemetryIngest,
-      claimRunnerJob: api.claimRunnerJob,
+      executionInput: api.executionInput,
       configureRunnerGroup: api.configureRunnerGroup,
       createCliToken: api.createCliToken,
       createPersonalModelProvider: api.createPersonalModelProvider,

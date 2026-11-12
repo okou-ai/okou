@@ -97,7 +97,7 @@ export async function publicChatActor(
   fixture.api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   fixture.chatCallbacks.disableVapid();
-  const runnerGroup = fixture.api.configureRunnerGroup();
+  const runnerGroup = await fixture.api.configureRunnerGroup();
   const { customerId } = await run(() => {
     return fixture.api.grantProEntitlement(actor, {
       tier: options.tier,
@@ -161,10 +161,10 @@ export async function publicChatActor(
       });
     },
     claimRunnerRun: (
-      ...parameters: Parameters<typeof fixture.api.claimRunnerJob>
+      ...parameters: Parameters<typeof fixture.api.executionInput>
     ) => {
       return run(async () => {
-        const claim = await fixture.api.claimRunnerJob(...parameters);
+        const claim = await fixture.api.executionInput(...parameters);
         owner.rememberClaim(parameters[0], claim.sandboxToken);
         return claim;
       });

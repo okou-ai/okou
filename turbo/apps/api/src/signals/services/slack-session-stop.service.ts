@@ -28,7 +28,7 @@ import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { createSlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
-import { cancelRun$ } from "./agent-run-terminal-transition.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
 import { reconcileCanonicalSlackThreadStatus$ } from "./canonical-slack-thread-status.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {

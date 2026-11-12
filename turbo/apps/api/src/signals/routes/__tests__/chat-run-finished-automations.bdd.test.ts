@@ -63,7 +63,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.

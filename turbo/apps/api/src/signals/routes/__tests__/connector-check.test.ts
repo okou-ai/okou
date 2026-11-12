@@ -193,7 +193,7 @@ async function createOwnedRun(
   bdd.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  runsApi.configureRunnerGroup();
+  await runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",

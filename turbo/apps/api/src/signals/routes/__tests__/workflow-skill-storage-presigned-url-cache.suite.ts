@@ -52,7 +52,7 @@ describe("workflow skill storage presigned URL cache", () => {
     const actor = bdd.user();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -152,7 +152,7 @@ describe("workflow skill storage presigned URL cache", () => {
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
+      const claim = await api.executionInput(run.runId);
       const mount = claim.contentBundles.skills.find((entry) => {
         return entry.mountPath === mountPath;
       });
@@ -328,7 +328,7 @@ describe("workflow skill storage presigned URL cache", () => {
       return await sign(...args);
     });
     const oldClaim = withMockNowForTest(startedAt, () => {
-      return api.claimRunnerJob(oldRun.runId);
+      return api.executionInput(oldRun.runId);
     });
     onTestFinished(async () => {
       if (!release.settled()) {

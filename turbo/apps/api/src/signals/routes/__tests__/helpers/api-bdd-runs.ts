@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { singleton } from "../../../../lib/singleton";
+import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { http, HttpResponse } from "msw";
 import { vi } from "vitest";
 import type { AppRouter } from "@okouai/api-contracts/contracts/trpc-contract";
@@ -248,6 +250,7 @@ function runnerHeartbeatBody(
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly mode?: RunnerHeartbeatBody["mode"];
+    readonly ingressServiceActive?: boolean;
   } = {},
 ): RunnerHeartbeatBody {
   return {
@@ -269,6 +272,7 @@ function runnerHeartbeatBody(
     heldHomeStates: args.heldHomeStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
     mode: args.mode ?? "running",
+    ingressServiceActive: args.ingressServiceActive,
   };
 }
 
@@ -376,6 +380,19 @@ async function prepareStripeHttpEntitlement(
       secret: "whsec_bdd_stripe",
     }),
   };
+}
+
+type DispatchEnvelope = zInfer<typeof runnerDispatchEnvelopeSchema>;
+const dispatchedInputs = singleton(() => {
+  return new WeakMap<AbortSignal, Map<string, DispatchEnvelope>>();
+});
+function executionInputs(context: TestContext): Map<string, DispatchEnvelope> {
+  let inputs = dispatchedInputs().get(context.signal);
+  if (!inputs) {
+    inputs = new Map();
+    dispatchedInputs().set(context.signal, inputs);
+  }
+  return inputs;
 }
 
 export function createRunsApi(context: TestContext) {
@@ -515,10 +532,88 @@ export function createRunsApi(context: TestContext) {
     };
   };
 
+  async function registerDirectRunner(
+    group: string,
+    options: {
+      readonly runnerIdentity?: {
+        readonly runnerId: string;
+        readonly heartbeatGeneration: number;
+      };
+      readonly hostname?: string;
+      readonly maxConcurrent?: number;
+      readonly reply?: (
+        envelope: DispatchEnvelope,
+        bytes: string,
+      ) => Response | Promise<Response>;
+    } = {},
+  ) {
+    const identity = options.runnerIdentity ?? defaultRunnerIdentity;
+    const hostname = options.hostname ?? `runner-${identity.runnerId}.okou.app`;
+    server.use(
+      http.post(
+        `https://${hostname}/runners/${identity.runnerId}/control/runs/:runId/dispatch`,
+        async ({ request, params }) => {
+          if (
+            request.headers.get("authorization") !==
+            OFFICIAL_RUNNER_AUTHORIZATION
+          ) {
+            return new HttpResponse(null, { status: 401 });
+          }
+          const bytes = await request.text();
+          const envelope = runnerDispatchEnvelopeSchema.parse(
+            JSON.parse(bytes),
+          );
+          if (
+            envelope.runnerId !== identity.runnerId ||
+            envelope.heartbeatGeneration !== identity.heartbeatGeneration ||
+            envelope.executionContext.runId !== params.runId
+          ) {
+            throw new Error("Unexpected direct Runner identity");
+          }
+          executionInputs(context).set(
+            envelope.executionContext.runId,
+            envelope,
+          );
+          if (options.reply) {
+            return await options.reply(envelope, bytes);
+          }
+          return HttpResponse.json({
+            ...identity,
+            runId: envelope.executionContext.runId,
+            disposition: "accepted",
+          });
+        },
+      ),
+    );
+    await accept(
+      runApp(context)(runnersHeartbeatContract).heartbeat({
+        headers: runnerHeaders(true),
+        body: runnerHeartbeatBody({
+          group,
+          runnerId: identity.runnerId,
+          runnerHostname: hostname,
+          snapshotGeneration: identity.heartbeatGeneration,
+          maxConcurrent: options.maxConcurrent,
+          ingressServiceActive: true,
+        }),
+      }),
+      [200],
+    );
+    return identity;
+  }
+
   return {
-    configureRunnerGroup(): string {
+    registerDirectRunner,
+    async configureRunnerGroup(
+      options: Parameters<typeof registerDirectRunner>[1] & {
+        readonly registerRunner?: boolean;
+      } = {},
+    ): Promise<string> {
       const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
       mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+      if (options.registerRunner !== false) {
+        await registerDirectRunner(group, options);
+      }
       return group;
     },
 
@@ -754,26 +849,22 @@ export function createRunsApi(context: TestContext) {
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
     createThreadRun,
     readThreadRunRejection,
-    async claimRunnerJob(
-      runId: string,
-      body: RunnerJobClaimRequest = {},
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      const response = await accept(
-        runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2" },
-          headers: runnerHeaders(true),
-          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
-          params: { id: runId },
-          body: {
-            runnerIdentity: defaultRunnerIdentity,
-            capabilities: defaultClaimCapabilities(),
-            ...body,
-          },
-        }),
-        [200],
-      );
-      return response.body;
+    /** Complete input captured from the real API-to-Runner HTTP boundary. */
+    dispatchedRun(runId: string) {
+      const envelope = executionInputs(context).get(runId);
+      if (!envelope) {
+        throw new Error(`Run ${runId} was not directly dispatched`);
+      }
+      return envelope;
+    },
+
+    async executionInput(runId: string) {
+      await flushWaitUntilForTest();
+      const envelope = executionInputs(context).get(runId);
+      if (!envelope) {
+        throw new Error(`Run ${runId} was not directly dispatched`);
+      }
+      return envelope.executionContext;
     },
 
     async readRunnerCancellation(
@@ -787,7 +878,15 @@ export function createRunsApi(context: TestContext) {
         ).get({
           headers: { authorization: `Bearer ${sandboxToken}` },
           params: { runId },
-          query: { runnerGroup, ...defaultRunnerIdentity },
+          query: {
+            runnerGroup,
+            runnerId:
+              executionInputs(context).get(runId)?.runnerId ??
+              defaultRunnerIdentity.runnerId,
+            heartbeatGeneration:
+              executionInputs(context).get(runId)?.heartbeatGeneration ??
+              defaultRunnerIdentity.heartbeatGeneration,
+          },
         }),
         [200],
       );

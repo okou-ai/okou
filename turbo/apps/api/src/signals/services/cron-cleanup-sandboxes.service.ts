@@ -31,10 +31,8 @@ import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import {
-  cancelRun$,
-  commitStaleRunTimeout$,
-} from "./agent-run-terminal-transition.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import { commitStaleRunTimeout$ } from "./agent-run-terminal-transition.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";

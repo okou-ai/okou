@@ -23,6 +23,7 @@ import { db$, writeDb$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { createRunSlotPickScheduler } from "./run-slot-pick-scheduler";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import {
   chatInputEnqueueCommits$,
@@ -196,7 +197,11 @@ export const pickEnqueuedChatThread$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { result } = await set(pickChatThread$, input, signal);
+    const { result } = await set(
+      pickChatThread$,
+      { ...input, scheduleReleasedSlots$: scheduleDirectReleasedSlots$ },
+      signal,
+    );
     return result;
   },
 );
@@ -252,7 +257,11 @@ export const pickOrgQueuedChatThreads$ = command(
     for (let visited = 0; visited < snapshot.count; visited++) {
       const { result: picked, cursor: nextCursor }: PickIteration = await set(
         pickChatThread$,
-        { orgId: input.orgId, after: cursor },
+        {
+          orgId: input.orgId,
+          after: cursor,
+          scheduleReleasedSlots$: scheduleDirectReleasedSlots$,
+        },
         signal,
       );
       cursor = nextCursor;
@@ -266,6 +275,10 @@ export const pickOrgQueuedChatThreads$ = command(
     }
     return launched;
   },
+);
+
+const scheduleDirectReleasedSlots$ = createRunSlotPickScheduler(
+  pickOrgQueuedChatThreads$,
 );
 
 /**

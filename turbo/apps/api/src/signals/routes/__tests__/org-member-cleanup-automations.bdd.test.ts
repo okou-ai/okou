@@ -219,7 +219,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
   });
 
   it("disables automations and stops event dispatch for the departing owner alone", async () => {
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());
     const peerAdmin = wf.user({
       orgId: orgIdOf(departing),
@@ -298,7 +298,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
   }, 60_000);
 
   it("disarms the same automations when Clerk reports the membership deleted", async () => {
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());
     const auditor = wf.user({
       orgId: orgIdOf(departing),

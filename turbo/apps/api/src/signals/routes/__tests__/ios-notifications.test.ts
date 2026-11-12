@@ -23,8 +23,8 @@ const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const callbacks = createChatCallbacksApi(context);
 
-function prepareRuntime() {
-  runs.configureRunnerGroup();
+async function prepareRuntime() {
+  await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   callbacks.acceptChatObjectStorage();
@@ -75,7 +75,7 @@ function reconcile(
 
 describe("iOS notification read-state reconciliation", () => {
   it("acknowledges only this installation's badge while preserving unread chats across workspaces", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const identity = { ...actor, orgId: actor.orgId! };
     const startedAt = now();
@@ -123,7 +123,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("never lets a delayed foreground acknowledgement move the badge cursor backwards", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const identity = { ...actor, orgId: actor.orgId! };
     const startedAt = now();
@@ -146,7 +146,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("binds badge acknowledgement to the exact installation revision and signed-in account", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const previous = bdd.user();
     const current = bdd.user();
     const previousIdentity = { ...previous, orgId: previous.orgId! };
@@ -192,7 +192,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("counts owned unread conversations across workspaces and clears only read or unavailable receipts", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const otherWorkspace = bdd.user({ userId: actor.userId });
     const foreign = bdd.user();
@@ -229,7 +229,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("removes an older read run while preserving a newer unread run in the same conversation", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const first = await unreadConversation(actor);
     await chat.markThreadRead(actor, first.threadId);

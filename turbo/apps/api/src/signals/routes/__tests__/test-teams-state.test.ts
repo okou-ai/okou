@@ -273,7 +273,7 @@ describe("Teams webhook dispatch", () => {
     const runs = createRunsApi(context);
     configurePublicTeamsMocks(fixture);
     runs.acceptStorageDownloads();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     owned.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Teams realtime failure",
     });

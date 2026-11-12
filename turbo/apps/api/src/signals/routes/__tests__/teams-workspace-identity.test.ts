@@ -573,7 +573,7 @@ test.each([
       await ownRuns.run(async () => {
         const runs = createRunsApi(context);
         const reads = createRunReadsApi(context);
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {

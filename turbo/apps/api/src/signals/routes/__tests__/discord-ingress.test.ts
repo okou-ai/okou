@@ -1234,7 +1234,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected Discord run launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
 
     expect(claim.appendSystemPrompt).toContain(
       "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
@@ -1988,7 +1988,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the next DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(nextInput.runId);
+    const claim = await runsApi.executionInput(nextInput.runId);
     expect(claim.prompt).toBe(nextDm.content);
     expect(claim.modelUsageProvider).toBe("claude-opus-5-5");
     expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
@@ -2049,7 +2049,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the current DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.prompt).toBe(next.content);
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
   });
@@ -2132,7 +2132,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the DM input to launch with its stored model");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.modelUsageProvider).toBe("gpt-6-astra");
     expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
@@ -2202,7 +2202,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the queued web input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.modelUsageProvider).toBe("gpt-6-astra");
     expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
@@ -2580,7 +2580,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected run with canonical file input");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.prompt).toContain("[Web file] notes.txt");
     expect(claim.appendSystemPrompt).toContain("private-history-1:");
     expect(claim.appendSystemPrompt).not.toContain("private-history-25:");

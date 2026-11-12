@@ -302,11 +302,7 @@ describe("CHAT-02: run-level model overrides", () => {
           status: "pending",
         });
       }
-      const claim = await api.claimRunnerJob(run.runId, {
-        capabilities: {
-          piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
-        },
-      });
+      const claim = await api.executionInput(run.runId);
       const sandboxHeaders = {
         authorization: `Bearer ${claim.sandboxToken}`,
       };

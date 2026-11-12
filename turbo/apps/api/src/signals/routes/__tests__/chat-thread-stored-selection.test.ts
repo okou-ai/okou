@@ -105,7 +105,7 @@ describe("public selection of a retired model for webhook automation", () => {
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
     context.mocks.s3.send.mockResolvedValue({});
-    runsApi.configureRunnerGroup();
+    await runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
     await chat.updateThreadModelSelection(actor, webhook.threadId, model);
     await expect(

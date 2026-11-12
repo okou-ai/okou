@@ -785,7 +785,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       if (!secondaryRunId) {
         throw new Error("Expected a queued run for the secondary account");
       }
-      const claim = await runs.claimRunnerJob(secondaryRunId);
+      const claim = await runs.executionInput(secondaryRunId);
       expect(
         Object.values(claim.secretConnectorMetadataMap ?? {}),
       ).toContainEqual(

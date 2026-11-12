@@ -160,7 +160,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      const runnerGroup = api.configureRunnerGroup();
+      const runnerGroup = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor);
       const { agentId } = await bdd.createAgent(actor, {
@@ -214,7 +214,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         }
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
+      const claim = await api.executionInput(run.runId);
       runOwner.sandboxToken = claim.sandboxToken;
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(connectionId);

@@ -7184,7 +7184,7 @@ async function claimChatRun(
   runId: string,
 ) {
   await flushWaitUntilForTest();
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   const okouToken = claim.platformEnvironment.OKOU_TOKEN;
   if (!okouToken) {
     throw new Error("Expected the runner claim to include OKOU_TOKEN");
@@ -7224,7 +7224,7 @@ async function setupBrowserScenario() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(orgActor);
   await runs.ensurePersonalSubscriptionModel(orgActor);
@@ -7511,7 +7511,7 @@ describe("okou browser route", () => {
         chat.readThreadMetadata(actor, sent.threadId),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       await flushWaitUntilForTest();
-      const claim = await runs.claimRunnerJob(sent.runId);
+      const claim = await runs.executionInput(sent.runId);
       const browser = await accept(
         client().get({
           headers: {
@@ -7580,7 +7580,7 @@ describe("okou browser route", () => {
       cloudBrowserEnabled: false,
     });
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     expect(claim.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
@@ -7618,7 +7618,7 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain("this chat's managed Browser");
     expect(appendSystemPrompt).toContain(
@@ -7655,7 +7655,7 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "prefer `okou browser input-request` over direct Browser takeover",

@@ -72,7 +72,7 @@ async function entitledActor(
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  api.configureRunnerGroup();
+  await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { customerId, tier });
   return actor;
 }
@@ -420,8 +420,8 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       }),
     ).not.toContain(runA.runId);
 
-    const claimA = await api.claimRunnerJob(runA.runId);
-    const claimB = await api.claimRunnerJob(runB.runId);
+    const claimA = await api.executionInput(runA.runId);
+    const claimB = await api.executionInput(runB.runId);
     await completeRun(runB.runId, claimB.sandboxToken);
 
     const runningOnly = await reads.requestListLogs(
@@ -495,7 +495,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(hiddenFromActor.body.error.message).toBe("Agent run not found");
     const memberDetail = await api.requestReadRun(member, runM.runId, [200]);
     expect(memberDetail.body).toMatchObject({ runId: runM.runId });
-    const claimM = await api.claimRunnerJob(runM.runId);
+    const claimM = await api.executionInput(runM.runId);
 
     // auth-me refreshes the caller's user-cache email, which the queue
     // surfaces for owner entries.
@@ -570,7 +570,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "cancel a running run",
     });
-    await api.claimRunnerJob(run.runId);
+    await api.executionInput(run.runId);
     const cancelled = await api.requestCancelRun(
       actor,
       run.runId.toUpperCase(),
@@ -592,7 +592,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken);
     const notCancellable = await api.requestCancelRun(actor, run.runId, [400]);
     expectApiError(notCancellable.body);
@@ -612,7 +612,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken);
     const outsider = bdd.user();
     const crossOrg = await api.requestCancelRun(
@@ -635,7 +635,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      api.configureRunnerGroup();
+      await api.configureRunnerGroup();
       await fixture.fund();
       await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
@@ -696,7 +696,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "pin the Connector Skill bundle",
       });
       fixture.registerRun(r1.runId);
-      const claim1 = await api.claimRunnerJob(r1.runId);
+      const claim1 = await api.executionInput(r1.runId);
       fixture.registerClaim(r1.runId, claim1.sandboxToken);
       const workflowMount = claim1.contentBundles.skills.find((mount) => {
         return mount.mountPath === readonlySkill.mountPath;
@@ -838,7 +838,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "continue the persisted session",
       });
       fixture.registerRun(continued.runId);
-      const continuedClaim = await api.claimRunnerJob(continued.runId);
+      const continuedClaim = await api.executionInput(continued.runId);
       fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
       expect(continuedClaim.vars).toStrictEqual(claim1.vars);
       expect(continuedClaim.contentBundles.skills).toContainEqual(
@@ -1018,7 +1018,7 @@ describe("RUN-01: run admission boundaries", () => {
       prompt: "capture from a staff organization",
       captureNetworkBodies: true,
     });
-    const captureClaim = await api.claimRunnerJob(allowed.runId);
+    const captureClaim = await api.executionInput(allowed.runId);
     expect(captureClaim.captureNetworkBodies).toBeTruthy();
     await api.requestCancelRun(staff, allowed.runId, [200]);
   });
@@ -1315,7 +1315,7 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: compose.agentId,
       prompt: "inspect activity events",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken, {
       lastEventSequence: 1,
     });
@@ -2098,7 +2098,7 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: agent.agentId,
       prompt: "agent run detail",
     });
-    const claim = await api.claimRunnerJob(agentRun.runId);
+    const claim = await api.executionInput(agentRun.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
     await webhooks.requestAgentComplete(
       {
@@ -2941,7 +2941,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
     });
-    const tokenClaim = await api.claimRunnerJob(tokenRun.runId);
+    const tokenClaim = await api.executionInput(tokenRun.runId);
     const okouToken = tokenClaim.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the claimed run to expose an OKOU_TOKEN");

@@ -130,7 +130,7 @@ async function entitledLinkedActor(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   integrations.configureAgentPhoneProvider();
   integrations.configureAgentPhoneWebhook();
   const sends = ap.captureAgentPhoneSends();
@@ -287,7 +287,7 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   if (!runId) {
     throw new Error("Expected an AgentPhone run to be dispatched");
   }
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   if (claim.cliAgentType !== "claude-code" && claim.cliAgentType !== "codex") {
     throw new Error(
       `Expected a native AgentPhone claim, got ${claim.cliAgentType}`,
@@ -2026,7 +2026,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
@@ -5922,7 +5922,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         prompt: "deliver a phone attachment",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
+      const claim = await runs.executionInput(run.runId);
       const okouToken = claim.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the claimed run to expose OKOU_TOKEN");

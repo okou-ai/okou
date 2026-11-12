@@ -391,7 +391,7 @@ async function setupConnectedTeamsActor(
     orgId: fixture.orgId,
     orgRole: "org:admin",
   });
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
 
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
@@ -538,7 +538,7 @@ async function claimTeamsRun(args: {
   readonly runId: string;
 }) {
   await runsApi.heartbeatRunner(args.runnerGroup);
-  return await runsApi.claimRunnerJob(args.runId);
+  return await runsApi.executionInput(args.runId);
 }
 
 async function completeSandboxRun(args: {
@@ -594,7 +594,7 @@ async function claimFollowUpInThread(args: {
     text: "continue in the same thread",
   });
   await runsApi.heartbeatRunner(args.runnerGroup);
-  return await runsApi.claimRunnerJob(followUpRunId);
+  return await runsApi.executionInput(followUpRunId);
 }
 
 async function setupOwnedTeamsSteering() {

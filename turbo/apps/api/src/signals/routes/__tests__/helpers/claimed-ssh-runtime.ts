@@ -64,7 +64,7 @@ export function createClaimedSshRuntimeApi(
           visibility: "public",
         })
       ).agentId;
-    const group = runtimeOptions.group ?? runs.configureRunnerGroup();
+    const group = runtimeOptions.group ?? (await runs.configureRunnerGroup());
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId,

@@ -92,7 +92,7 @@ async function claimEmailFileRun(additionalEmail?: string) {
   if (!runId) {
     throw new Error("Expected the Email run");
   }
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the run token");
@@ -200,7 +200,7 @@ describe("email-native signup", () => {
     return { sender, original, line: line!, replyTo: replyTo! };
   }
 
-  function signupProvider(sender: string) {
+  async function signupProvider(sender: string) {
     const actor = bdd.user({ email: sender });
     const profile = {
       id: actor.userId,
@@ -273,7 +273,7 @@ describe("email-native signup", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     return { actor, group };
   }
 
@@ -284,7 +284,7 @@ describe("email-native signup", () => {
       isolatePg: true,
     });
     const pending = await pendingSignup();
-    const { actor, group } = signupProvider(pending.sender);
+    const { actor, group } = await signupProvider(pending.sender);
     const confirmation = incoming({
       sender: pending.sender,
       text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
@@ -332,7 +332,7 @@ describe("email-native signup", () => {
     await runs.heartbeatRunner(group);
     const polled = await runs.pollRunner(group);
     expect(polled.body.job?.runId).toBeTruthy();
-    const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+    const claim = await runs.executionInput(polled.body.job!.runId);
     expect(claim.prompt).toContain("Please compare these options after signup");
     expect(claim.prompt).not.toContain(pending.line);
     verifiedDirectory(actor);
@@ -596,7 +596,7 @@ describe("email-native signup", () => {
       isolatePg: true,
     });
     const pending = await pendingSignup();
-    signupProvider(pending.sender);
+    await signupProvider(pending.sender);
     context.mocks.clerk.users.createUser.mockRejectedValue(
       new ClerkTransportTestError(403, [
         {
@@ -690,7 +690,7 @@ async function entitledActor(email?: string) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const group = runs.configureRunnerGroup();
+  const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   verifiedDirectory(actor);
@@ -791,7 +791,7 @@ async function setGmailContextReadPermission(action: "allow" | "deny") {
 }
 
 async function claimPendingEmail(
-  group: ReturnType<typeof runs.configureRunnerGroup>,
+  group: Awaited<ReturnType<typeof runs.configureRunnerGroup>>,
 ) {
   await runs.heartbeatRunner(group);
   const polled = await runs.pollRunner(group);
@@ -799,7 +799,7 @@ async function claimPendingEmail(
   if (!runId) {
     throw new Error("Expected an Email run");
   }
-  return await runs.claimRunnerJob(runId);
+  return await runs.executionInput(runId);
 }
 
 function mockEmailMessageLookup(
@@ -1030,7 +1030,7 @@ describe("Email integration", () => {
       if (!runId) {
         throw new Error("Expected the forwarded Email run");
       }
-      const claim = await runs.claimRunnerJob(runId);
+      const claim = await runs.executionInput(runId);
       expect(claim.prompt).toContain("Original message content");
       expect(claim.prompt).not.toContain(sourceBody);
       expect(claim.prompt).not.toContain("# Email Thread Context");
@@ -1466,7 +1466,7 @@ describe("Email integration", () => {
       if (!runId) {
         throw new Error("Expected the Email run");
       }
-      const claim = await runs.claimRunnerJob(runId);
+      const claim = await runs.executionInput(runId);
       expect(claim.prompt).toContain("Only the received forward is available");
       expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: not-found");
     },
@@ -1790,7 +1790,7 @@ describe("Email integration", () => {
       throw new Error("Expected the follow-up Email run");
     }
     expect(nextRunId).not.toBe(runId);
-    const next = await runs.claimRunnerJob(nextRunId);
+    const next = await runs.executionInput(nextRunId);
     expect(next.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
     expect(next.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
       first.body.chatThreadId,
@@ -1935,7 +1935,7 @@ describe("Email integration", () => {
       agentId: agent.agentId,
       prompt: "A web request",
     });
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const token = claim.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Web run token");
@@ -2154,7 +2154,7 @@ describe("Email integration", () => {
     if (!runId) {
       throw new Error("Expected an email run");
     }
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
@@ -2318,7 +2318,7 @@ describe("Email integration", () => {
     if (!runId) {
       throw new Error("Expected an email run");
     }
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     expect(claim.prompt).toContain("First independent request");
     expect(claim.appendSystemPrompt).toContain(
       "You are currently running inside: Email",
@@ -2448,7 +2448,7 @@ describe("Email integration", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     verifiedDirectory(actor);
     await accept(
       emailClient().connect({
@@ -2499,7 +2499,7 @@ describe("Email integration", () => {
         "Expected the first email to run before browser onboarding",
       );
     }
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     expect(claim.prompt).toContain("Please handle this after signup");
     await webhooks.requestAgentEvents(
       {
@@ -2758,7 +2758,7 @@ describe("Email workspace binding", () => {
       agentId: agent.agentId,
       prompt: "Inspect my email workspace",
     });
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     await accept(
       emailSessionClient().getBinding({
         headers: {
@@ -3051,7 +3051,7 @@ describe("Email multi-account connections", () => {
       await runs.heartbeatRunner(group);
       const polled = await runs.pollRunner(group);
       expect(polled.body.job?.runId).toBeTruthy();
-      const claim = await runs.claimRunnerJob(polled.body.job!.runId);
+      const claim = await runs.executionInput(polled.body.job!.runId);
       expect(claim.prompt).toContain("Use my connected workspace");
       expect(claim.appendSystemPrompt).toContain(
         `Verified sender: ${JSON.stringify(sender)}`,

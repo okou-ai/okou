@@ -1512,7 +1512,7 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the member default for a new thread instead of the caller run model", async () => {
     const fixture = await seedAgent();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
@@ -1533,7 +1533,7 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread using the workspace default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     expect(claim.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
     const token = claim.platformEnvironment.OKOU_TOKEN;
     if (!token) {
@@ -1563,7 +1563,7 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the member model and priority default and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     api.acceptStorageDownloads();
     await api.grantProEntitlement(fixture.actor);
     await api.ensurePersonalSubscriptionModel(fixture.actor);
@@ -1603,7 +1603,7 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread with the member's priority default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     expect(claim.piModelConfig).toMatchObject({
       model: PRIORITY_MODEL,
       serviceTier: "fast",

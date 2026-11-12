@@ -54,7 +54,7 @@ async function fixture(
       { [FeatureSwitchKey.CodexExecution]: framework === "codex" },
     );
   }
-  const group = runs.configureRunnerGroup();
+  const group = await runs.configureRunnerGroup();
   bdd.acceptAgentStorageWrites();
   const s3 = installWorkflowVolumeS3Fixture(context);
   const agent = await bdd.createAgent(actor, {
@@ -134,7 +134,7 @@ test.each([
     });
     await runs.heartbeatRunner(group);
     context.mocks.s3.send.mockClear();
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     expect(claim.cliAgentType).toBe(framework);
     expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -188,7 +188,7 @@ test.each([
       agentId: agent.agentId,
       prompt: "Use the next published version",
     });
-    const subsequent = await runs.claimRunnerJob(next.runId);
+    const subsequent = await runs.executionInput(next.runId);
     const later = subsequent.contentBundles.skills.find((entry) => {
       return entry.mountPath.endsWith(`/${workflow.name}`);
     })!;
@@ -221,7 +221,7 @@ test("shares a complete package hash across distinct Workflow owners", async () 
       agentId,
       prompt: "Use the shared package",
     });
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     const skill = claim.contentBundles.skills[0]!;
     expect(
       readClaimedContentBundle(s3.objects, skill).get("notes.md")?.toString(),
@@ -254,7 +254,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     instruction: "private body",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   expect(
     claim.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
@@ -290,7 +290,7 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
   });
   await runs.heartbeatRunner(group);
   // The claim mounts this slug's current winner.
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   const skill = claim.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${name}`);
   })!;
@@ -315,7 +315,7 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
     [204],
   );
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   expect(
     claim.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
@@ -345,7 +345,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
     instruction: "different invocation target",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   const invoked = claim.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${workflow.name}`);
   })!;
@@ -371,7 +371,7 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   const skill = claim.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${workflow.name}`);
   })!;
@@ -394,7 +394,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   await accept(
     detailClient().update({
       headers: headers(actor),

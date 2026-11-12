@@ -459,7 +459,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
       prompt: "long task to interrupt",
     });
     await api.heartbeatRunner(runnerGroup);
-    const firstClaim = await api.claimRunnerJob(first.runId);
+    const firstClaim = await api.executionInput(first.runId);
     context.mocks.ably.publish.mockClear();
 
     const peer = bdd.user({ orgId: actor.orgId });

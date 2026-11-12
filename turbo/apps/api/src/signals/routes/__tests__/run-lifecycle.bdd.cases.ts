@@ -621,7 +621,7 @@ async function entitledRunActor(
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
   const personal = await api.ensurePersonalSubscriptionModel(actor, route);
   const agent = await bdd.createAgent(actor, {
@@ -825,8 +825,8 @@ function useOrdinaryOAuthRuns() {
           ownedRuns.set(run.runId, { actor: args[0], acknowledged: false });
           return run;
         },
-        async claimRunnerJob(...args: Parameters<typeof runs.claimRunnerJob>) {
-          const claim = await runs.claimRunnerJob(...args);
+        async executionInput(...args: Parameters<typeof runs.executionInput>) {
+          const claim = await runs.executionInput(...args);
           const owned = ownedRuns.get(args[0]);
           if (!owned) {
             throw new Error(
@@ -981,10 +981,7 @@ async function setupSameThreadReuseScenario(
     agentId,
     prompt: "start reuse-preference session",
   });
-  const firstClaim = await api.claimRunnerJob(
-    first.runId,
-    sourceRunnerIdentity ? { runnerIdentity: sourceRunnerIdentity } : {},
-  );
+  const firstClaim = await api.executionInput(first.runId);
   expect(firstClaim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
     first.threadId,
   );
@@ -1160,7 +1157,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "turn this deck into a template",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const appendSystemPrompt = claim.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain(
           "okou resource pull skill:presentation-reverse-template --dir ./generated/resources",
@@ -1184,7 +1181,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the Okou CLI",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(claim.appendSystemPrompt).toContain(
           "You have access to the Okou CLI. Run commands with: `okou <command>`.",
         );
@@ -1217,7 +1214,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect this Run's provider-token usage",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(created.runId);
+        const claim = await api.executionInput(created.runId);
         const prompt = claim.appendSystemPrompt ?? "";
         const token = claim.platformEnvironment.OKOU_TOKEN;
         if (!token) {
@@ -1278,7 +1275,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(created.runId);
+        const claim = await api.executionInput(created.runId);
         expect(claim.appendSystemPrompt ?? "").toContain("Timezone: UTC");
         expect(claim.userTimezone).toBeUndefined();
         expect(claim.environment).toMatchObject({
@@ -1363,7 +1360,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(findFirewallEntry(claim.firewalls, "x")).toStrictEqual({
           kind: "builtin",
           name: "x",
@@ -1401,7 +1398,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         failEncryption = false;
-        const claimed = await api.claimRunnerJob(created.runId);
+        const claimed = await api.executionInput(created.runId);
         expect(claimed.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
@@ -1427,7 +1424,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "establish canonical storage for overlap",
         });
-        const initialClaim = await api.claimRunnerJob(initialRun.runId);
+        const initialClaim = await api.executionInput(initialRun.runId);
         const initialMemory = expectCanonicalStorageManifest(
           initialClaim.storageManifest,
         )?.storageMounts.find((mount) => {
@@ -1552,7 +1549,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         context.mocks.s3.getSignedUrl.mockResolvedValue(
           "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
         );
-        const largeClaim = await api.claimRunnerJob(largeRun.runId);
+        const largeClaim = await api.executionInput(largeRun.runId);
         const largeManifest = expectCanonicalStorageManifest(
           largeClaim.storageManifest,
         );
@@ -1603,7 +1600,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const created = await api.createThreadRun(actor, { agentId, prompt });
 
         const initialStorageCalls = [...context.mocks.s3.send.mock.calls];
-        const claim = await api.claimRunnerJob(created.runId);
+        const claim = await api.executionInput(created.runId);
         const mounts =
           expectCanonicalStorageManifest(claim.storageManifest)
             ?.storageMounts ?? [];
@@ -1717,9 +1714,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "resolve only exact storage candidates",
         });
-        expect(created.status).toBe("pending");
+        expect(created.status).toBe("running");
 
-        const claim = await api.claimRunnerJob(created.runId);
+        const claim = await api.executionInput(created.runId);
         const manifest = expectCanonicalStorageManifest(claim.storageManifest);
         if (!manifest) {
           throw new Error("Expected canonical Storage mounts");
@@ -1770,7 +1767,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "canonical storage claim",
         });
-        const canonicalClaim = await api.claimRunnerJob(canonicalRun.runId);
+        const canonicalClaim = await api.executionInput(canonicalRun.runId);
         const canonicalManifest = expectCanonicalStorageManifest(
           canonicalClaim.storageManifest,
         );
@@ -1814,7 +1811,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "persist canonical storage mounts",
         });
-        const initialClaim = await api.claimRunnerJob(initialRun.runId);
+        const initialClaim = await api.executionInput(initialRun.runId);
         const initialManifest = initialClaim.storageManifest;
         if (!initialManifest || !("storageMounts" in initialManifest)) {
           throw new Error("Expected an initial canonical Storage manifest");
@@ -1898,7 +1895,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: initialRun.threadId,
           prompt: "continue canonical storage session",
         });
-        const sessionClaim = await api.claimRunnerJob(sessionRun.runId);
+        const sessionClaim = await api.executionInput(sessionRun.runId);
 
         for (const bundle of workflowMounts) {
           expect(sessionClaim.contentBundles.skills).toContainEqual(
@@ -2077,8 +2074,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt,
         });
 
-        expect(created.status).toBe("pending");
-        const claim = await api.claimRunnerJob(created.runId);
+        expect(created.status).toBe("running");
+        const claim = await api.executionInput(created.runId);
         expect(claim.prompt).toBe(prompt);
         expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
           expect.objectContaining({
@@ -2104,8 +2101,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt,
         });
 
-        expect(created.status).toBe("pending");
-        const claim = await api.claimRunnerJob(created.runId);
+        expect(created.status).toBe("running");
+        const claim = await api.executionInput(created.runId);
         expect(claim.prompt).toBe(prompt);
 
         await api.requestCancelRun(actor, created.runId, [200]);
@@ -2123,7 +2120,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start a finalized timing session",
         });
-        const claim = await api.claimRunnerJob(first.runId);
+        const claim = await api.executionInput(first.runId);
         const history = `bdd timing session history ${first.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         mockSessionHistoryBlob(historyHash, history);
@@ -2149,7 +2146,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue finalized timing session",
         });
-        const resumedClaim = await api.claimRunnerJob(resumed.runId);
+        const resumedClaim = await api.executionInput(resumed.runId);
         expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: `bdd-timing-cli-${first.runId}`,
           generationRunId: expect.any(String),
@@ -2183,7 +2180,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "summarize the repository",
           });
-          expect(created.status).toBe("pending");
+          expect(created.status).toBe("running");
           expect(created.threadId).toMatch(/[0-9a-f-]{36}/);
 
           const queue = await api.readRunQueue(actor);
@@ -2385,7 +2382,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           status: "pending",
         });
 
-        await api.claimRunnerJob(run.runId);
+        await api.executionInput(run.runId);
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
@@ -2458,7 +2455,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "poll with explicit support list",
         });
-        expect(created.status).toBe("pending");
+        expect(created.status).toBe("running");
 
         const incompatiblePoll = await api.requestPollRunner(
           true,
@@ -2492,7 +2489,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(compatiblePoll.body.job?.experimentalProfile).toBe(
           "vm0/default",
         );
-        const claim = await api.claimRunnerJob(created.runId);
+        const claim = await api.executionInput(created.runId);
         expect(claim.cliAgentType).toBe("claude-code");
         await api.requestCancelRun(actor, created.runId, [200]);
       });
@@ -2628,7 +2625,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           return { cliSessionId, hash };
         };
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         const firstHistory = await finalized(
           first.runId,
           firstClaim.sandboxToken,
@@ -2639,7 +2636,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue the session",
         });
-        const resumedClaim = await api.claimRunnerJob(resumed.runId);
+        const resumedClaim = await api.executionInput(resumed.runId);
         expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: firstHistory.cliSessionId,
           generationRunId: expect.any(String),
@@ -2737,7 +2734,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "start a managed direct session",
           model: selectedModel,
         });
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         const initialStorageManifest = expectCanonicalStorageManifest(
           firstClaim.storageManifest,
         );
@@ -2779,7 +2776,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue on the same runtime and model family",
           model: selectedModel,
         });
-        const resumedClaim = await api.claimRunnerJob(resumed.runId);
+        const resumedClaim = await api.executionInput(resumed.runId);
         expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
           generationRunId: expect.any(String),
@@ -2809,7 +2806,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue on a different native runtime",
           model: NATIVE_RUNNER_ROUTE.model,
         });
-        const changedRuntimeClaim = await api.claimRunnerJob(
+        const changedRuntimeClaim = await api.executionInput(
           changedRuntime.runId,
         );
         expect(changedRuntimeClaim.cliAgentType).toBe("claude-code");
@@ -3734,7 +3731,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             kind: "noPreference",
           });
           if (holder === "full") {
-            const unavailableClaim = await api.claimRunnerJob(
+            const unavailableClaim = await api.executionInput(
               unavailableHolder.run.runId,
             );
             expect(unavailableClaim.prompt).toBe(
@@ -3772,7 +3769,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start ordered-heartbeat session",
         });
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         const cliAgentSessionId = `bdd-heartbeat-order-${first.runId}`;
         const reuseKey = `thread:${first.threadId}`;
         const history = `bdd heartbeat order history ${first.runId}`;
@@ -3989,7 +3986,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start reusable-priority session",
         });
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         const cliAgentSessionId = `bdd-reusable-priority-${first.runId}`;
         const reuseKey = `thread:${first.threadId}`;
         const history = `bdd reusable priority history ${first.runId}`;
@@ -4161,7 +4158,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start home-priority session",
         });
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         const cliAgentSessionId = `bdd-home-priority-${first.runId}`;
         const reuseKey = `thread:${first.threadId}`;
         const history = `bdd home priority history ${first.runId}`;
@@ -4264,7 +4261,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const actor = bdd.user();
         bdd.acceptAgentStorageWrites();
-        api.configureRunnerGroup();
+        await api.configureRunnerGroup();
 
         const completed = await bdd.completeOnboarding(actor);
         expect(completed.status).toBe(200);
@@ -4342,7 +4339,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await flushWaitUntilForTest();
           const picked = await waiting.launchedRun();
           const run = await api.readRun(owned.actor, picked.runId);
-          expect(run.status).toBe("pending");
+          expect(run.status).toBe("running");
           if (!run.createdAt) {
             throw new Error("Expected the consumed input's Run createdAt");
           }
@@ -4427,7 +4424,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!orderedRunIds[0]) {
           throw new Error("Expected a first ordered runner job");
         }
-        await api.claimRunnerJob(orderedRunIds[0]);
+        await api.executionInput(orderedRunIds[0]);
 
         const secondPoll = await api.requestPollRunner(
           true,
@@ -4561,7 +4558,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // so built-in model runs are refused before provider resolution.
         const uninitialized = bdd.user();
         bdd.acceptAgentStorageWrites();
-        api.configureRunnerGroup();
+        await api.configureRunnerGroup();
         const bareAgent = await bdd.createAgent(uninitialized, {
           displayName: "BDD uninitialized-org agent",
           visibility: "private",
@@ -4601,7 +4598,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
+        const runnerGroup = await api.configureRunnerGroup();
         const completed = await bdd.completeOnboarding(actor);
         const plan = publicPlanLifecycle(context, actor);
         await plan.update("active");
@@ -4792,7 +4789,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
+        const runnerGroup = await api.configureRunnerGroup();
         await api.grantProEntitlement(actor);
         await setPaidToolDisabled(context, actor, "image-generation", true);
         const agent = await bdd.createAgent(actor, {
@@ -4810,7 +4807,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const poll = await api.pollRunner(runnerGroup);
         expect(poll.body.job).toMatchObject({ runId: run.runId });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         // The managed provider firewall is configured, and its key travels
         // only inside the encrypted firewall secrets.
@@ -4875,7 +4872,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           runId: sent.runId,
           experimentalProfile: DEFAULT_PROFILE,
         });
-        const claim = await api.claimRunnerJob(sent.runId);
+        const claim = await api.executionInput(sent.runId);
         await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
           source: { model: selectedModel, providerType: "codex-oauth-token" },
         });
@@ -4912,7 +4909,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "generate an image with claude",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claudeWebClaim = await api.claimRunnerJob(claudeWebRun.runId);
+        const claudeWebClaim = await api.executionInput(claudeWebRun.runId);
         expect(claudeWebClaim.cliAgentType).toBe("claude-code");
         expect(claudeWebClaim.appendSystemPrompt ?? "").not.toContain(
           CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
@@ -4971,7 +4968,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(sent.runId);
+        const claim = await api.executionInput(sent.runId);
         expect(claim.cliAgentType).toBe("codex");
         expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
         expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
@@ -5032,7 +5029,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "run without enabled stored connectors",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment ?? {}).not.toHaveProperty("X_TOKEN");
         expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
@@ -5068,7 +5065,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the x connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment?.X_TOKEN).toBe(
           connectorPlaceholder("x", "X_TOKEN"),
@@ -5138,7 +5135,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
+        const runnerGroup = await api.configureRunnerGroup();
         await api.grantProEntitlement(actor);
 
         await oauth.connect(actor, {
@@ -5160,7 +5157,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(findFirewallEntry(claim.firewalls, "test-oauth")).toStrictEqual({
           kind: "builtin",
           name: "test-oauth",
@@ -5194,7 +5191,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use gitlab without the optional host",
         });
         await api.heartbeatRunner(runnerGroup);
-        const bareClaim = await api.claimRunnerJob(withoutHost.runId);
+        const bareClaim = await api.executionInput(withoutHost.runId);
         expect(bareClaim.environment?.GITLAB_TOKEN).toBe(
           connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
         );
@@ -5219,7 +5216,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use gitlab with the optional host",
         });
-        const hostClaim = await api.claimRunnerJob(withHost.runId);
+        const hostClaim = await api.executionInput(withHost.runId);
         expect(hostClaim.environment?.GITLAB_TOKEN).toBe(
           connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
         );
@@ -5266,7 +5263,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use prefetched connector auth credentials",
         });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(claim.environment).toMatchObject({
           X_TOKEN: connectorPlaceholder("x", "X_TOKEN"),
           GITLAB_TOKEN: connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
@@ -5313,7 +5310,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return (await api.pollRunner(runnerGroup)).body.job?.runId;
           })(),
         ).resolves.toBe(run.runId);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const figmaTokenPlaceholder = connectorPlaceholder(
           "figma",
           "FIGMA_TOKEN",
@@ -5407,7 +5404,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use lark before any cached access token exists",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment?.LARK_TOKEN).toBe(
           connectorPlaceholder("lark", "LARK_TOKEN"),
@@ -5594,7 +5591,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "refresh lark through exact current-catalog accounts",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const larkTarget = claim.connectorRuntimeTargets.find((target) => {
           return target.kind === "builtin" && target.connectorSlug === "lark";
         });
@@ -5690,7 +5687,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use google ads",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment).not.toHaveProperty(
           "GOOGLE_ADS_DEVELOPER_TOKEN",
@@ -5836,7 +5833,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "run without a connected axiom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment).not.toHaveProperty("OPENAI_TOKEN");
         expect(
@@ -5905,9 +5902,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               status: "pending",
             });
 
-            const capableClaim = await api.claimRunnerJob(run.runId, {
-              capabilities: { piModelConfigGenerations: [2, 3, 5] },
-            });
+            const capableClaim = await api.executionInput(run.runId);
             ownedRuns.rememberClaim(run.runId, capableClaim.sandboxToken);
             expect(capableClaim).toMatchObject({
               cliAgentType: "pi",
@@ -6026,7 +6021,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the no-auth HTTP and MCP connectors",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const httpInternalName = `custom_connector_${httpConnector.id.replaceAll("-", "")}`;
         const mcpInternalName = `custom_connector_${mcpConnector.id.replaceAll("-", "")}`;
         const automaticInternalName = `custom_connector_${automaticConnector.id.replaceAll("-", "")}`;
@@ -6139,7 +6134,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the explicitly connected custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         expect(findFirewallEntry(claim.firewalls, internalName)).toBeDefined();
         expect(claim.connectorRuntimeTargets).toContainEqual({
@@ -6191,7 +6186,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the custom connector instead of the built-in connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         expect(findFirewallEntry(claim.firewalls, "figma")).toMatchObject({
           kind: "builtin",
@@ -6265,7 +6260,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use custom auth for Figma files and built-in auth elsewhere",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         expect(findFirewallEntry(claim.firewalls, "figma")).toMatchObject({
           kind: "builtin",
@@ -6934,7 +6929,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the admitted MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         const mcpClient = setupApp({ context, routes: mcpConnectorsRoutes })(
           mcpConnectorsContract,
@@ -7165,7 +7160,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "identify an authorized MCP connector that needs connection",
         });
-        const disconnectedClaim = await api.claimRunnerJob(
+        const disconnectedClaim = await api.executionInput(
           disconnectedRun.runId,
         );
         expect(
@@ -7393,7 +7388,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const claim = await fixture.api.claimRunnerJob(run.runId);
+        const claim = await fixture.api.executionInput(run.runId);
         expect(claim.cliAgentType).toBe("claude-code");
         expectBoundedMcpAwareness(claim.appendSystemPrompt, fixture);
         await fixture.api.requestCancelRun(fixture.actor, run.runId, [200]);
@@ -7406,7 +7401,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const firstClaim = await fixture.api.claimRunnerJob(first.runId);
+        const firstClaim = await fixture.api.executionInput(first.runId);
         const initialPrompt = expectBoundedMcpAwareness(
           firstClaim.appendSystemPrompt,
           fixture,
@@ -7433,7 +7428,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue with bounded MCP awareness",
         });
-        const resumedClaim = await fixture.api.claimRunnerJob(resumed.runId);
+        const resumedClaim = await fixture.api.executionInput(resumed.runId);
         expect(resumedClaim.appendSystemPrompt).toContain("# Agent Tools");
         expect(
           mcpConnectorPromptSection(resumedClaim.appendSystemPrompt ?? ""),
@@ -7448,7 +7443,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const claudeClaim = await fixture.api.claimRunnerJob(claude.runId);
+        const claudeClaim = await fixture.api.executionInput(claude.runId);
         const claudePrompt = expectBoundedMcpAwareness(
           claudeClaim.appendSystemPrompt,
           fixture,
@@ -7479,7 +7474,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect MCP awareness with Codex",
           model: "gpt-6-astra",
         });
-        const codexClaim = await fixture.api.claimRunnerJob(codex.runId);
+        const codexClaim = await fixture.api.executionInput(codex.runId);
         expect(codexClaim.cliAgentType).toBe("codex");
         // Web chat Codex runs append their image-upload guidance after the
         // identical MCP section, without a heading of its own.
@@ -7621,7 +7616,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         owned.runId = run.runId;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         owned.sandboxToken = claim.sandboxToken;
         const runtimeTarget = customConnectorRuntimeRegistration(
           claim,
@@ -7933,7 +7928,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the current unrefreshable custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const currentClaim = await api.claimRunnerJob(currentRun.runId);
+        const currentClaim = await api.executionInput(currentRun.runId);
         expect(currentClaim.connectorRuntimeTargets).toContainEqual(target);
         expect(provider.tokenBodies).toHaveLength(1);
         await api.requestCancelRun(actor, currentRun.runId, [200]);
@@ -7952,7 +7947,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "try the expired unrefreshable custom connector",
         });
-        const expiredClaim = await api.claimRunnerJob(expiredRun.runId);
+        const expiredClaim = await api.executionInput(expiredRun.runId);
         expect(expiredClaim.connectorRuntimeTargets).toContainEqual(target);
         const [runtimeResult] = await api.syncConnectorRuntime(
           expiredRun.runId,
@@ -8384,7 +8379,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toStrictEqual(["authorization_code"]);
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(firstRun.runId);
+        const claim = await api.executionInput(firstRun.runId);
         const [runtimeResult] = await api.syncConnectorRuntime(firstRun.runId, {
           targets: [customConnectorRuntimeRegistration(claim, custom.id)],
         });
@@ -8441,7 +8436,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "retry the revoked OAuth custom connector",
         });
         expect(provider.tokenBodies).toHaveLength(2);
-        const secondClaim = await api.claimRunnerJob(secondRun.runId);
+        const secondClaim = await api.executionInput(secondRun.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         expect(
           findFirewallEntry(secondClaim.firewalls, internalName),
@@ -8600,7 +8595,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the OAuth MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         expect(
           inlineFirewallApis(claim.firewalls, internalName)[0],
@@ -8656,7 +8651,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use builtin Automatic OAuth through catalog no-auth",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
         expect(
           builtinFirewallEntry(claim.firewalls, catalog.slug),
@@ -8779,7 +8774,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "refresh builtin Automatic credentials",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const headers = { authorization: `Bearer ${claim.sandboxToken}` };
         const body = {
           encryptedSecrets:
@@ -8892,7 +8887,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use builtin Automatic without refresh token",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const body = {
           encryptedSecrets:
             claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
@@ -9199,7 +9194,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(kms.decryptCalls).toBe(0);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
@@ -9319,7 +9314,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use the updated custom connector route",
         });
-        const laterClaim = await api.claimRunnerJob(laterRun.runId);
+        const laterClaim = await api.executionInput(laterRun.runId);
         expect(laterClaim.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: saved.connector.id,
@@ -9400,7 +9395,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the optional custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
@@ -9549,7 +9544,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "do not use the incompatible custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const internalName = `custom_connector_${saved.connector.id.replaceAll("-", "")}`;
         expect(
           findFirewallEntry(claim.firewalls, internalName),
@@ -9822,7 +9817,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "do not admit an incomplete custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const incompleteClaim = await api.claimRunnerJob(incompleteRun.runId);
+        const incompleteClaim = await api.executionInput(incompleteRun.runId);
         const internalName = `custom_connector_${saved.connector.id.replaceAll("-", "")}`;
         expect(
           findFirewallEntry(incompleteClaim.firewalls, internalName),
@@ -9879,7 +9874,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "do not admit an unroutable custom connector",
         });
-        const unroutableClaim = await api.claimRunnerJob(unroutableRun.runId);
+        const unroutableClaim = await api.executionInput(unroutableRun.runId);
         expect(
           findFirewallEntry(unroutableClaim.firewalls, internalName),
         ).toBeUndefined();
@@ -9908,7 +9903,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use the fully recovered custom connector",
         });
-        const recoveredClaim = await api.claimRunnerJob(recoveredRun.runId);
+        const recoveredClaim = await api.executionInput(recoveredRun.runId);
         expect(recoveredClaim.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: saved.connector.id,
@@ -9978,7 +9973,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the optional-only custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
@@ -10099,7 +10094,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "expand custom and connector bases",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         const customApis = inlineFirewallApis(claim.firewalls, internalName);
@@ -10175,7 +10170,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "expire a queued permission",
         });
         mockNow(now() + 2 * 3_600_000);
-        const expiredClaim = await api.claimRunnerJob(expiringRun.runId);
+        const expiredClaim = await api.executionInput(expiringRun.runId);
         expect(expiredClaim.networkPolicies?.slack?.deny).toContain(
           "chat:write",
         );
@@ -10201,7 +10196,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             grants: [],
           }),
         ).resolves.toStrictEqual([]);
-        const revokedClaim = await api.claimRunnerJob(revokedRun.runId);
+        const revokedClaim = await api.executionInput(revokedRun.runId);
         expect(revokedClaim.networkPolicies?.slack?.deny).toContain(
           "chat:write",
         );
@@ -10224,7 +10219,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId: agent.agentId,
           prompt: "claim without built-in connectors",
         });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
@@ -10255,7 +10250,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.enableAgentConnectors(actor, agentId, ["slack"]);
 
         async function claimSlackContext(prompt: string): Promise<{
-          readonly claim: Awaited<ReturnType<typeof api.claimRunnerJob>>;
+          readonly claim: Awaited<ReturnType<typeof api.executionInput>>;
           readonly policy: {
             readonly allow: readonly string[];
             readonly deny: readonly string[];
@@ -10266,7 +10261,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt,
           });
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           await api.requestCancelRun(actor, run.runId, [200]);
           await oauth.finishCancelledRun(run.runId, claim.sandboxToken);
           const policy = claim.networkPolicies?.slack;
@@ -10415,7 +10410,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           permission: "chat:write",
           action: "deny",
         });
-        const snapshotClaim = await api.claimRunnerJob(snapshotRun.runId);
+        const snapshotClaim = await api.executionInput(snapshotRun.runId);
         const snapshotSlackTarget = builtinConnectorRuntimeRegistration(
           snapshotClaim,
           "slack",
@@ -10581,7 +10576,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "complete before runner policy cleanup",
         });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const history = `terminal refresh history ${run.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         mockSessionHistoryBlob(historyHash, history);
@@ -10639,7 +10634,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "fail before runner policy cleanup",
         });
-        const failedClaim = await api.claimRunnerJob(failedRun.runId);
+        const failedClaim = await api.executionInput(failedRun.runId);
         await webhooks.requestAgentComplete(
           {
             runId: failedRun.runId,
@@ -10715,7 +10710,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: firstPrompt,
         });
-        const firstClaim = await api.claimRunnerJob(first.runId);
+        const firstClaim = await api.executionInput(first.runId);
         expect(firstClaim.networkPolicies?.slack).toBeDefined();
 
         const history = `bdd combined claim history ${first.runId}`;
@@ -10755,7 +10750,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(resumedPoll.body.job).toMatchObject({
           runId: resumed.runId,
         });
-        const resumedClaim = await api.claimRunnerJob(resumed.runId);
+        const resumedClaim = await api.executionInput(resumed.runId);
         expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: `bdd-combined-cli-${first.runId}`,
           generationRunId: first.runId,
@@ -10805,7 +10800,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt,
           });
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           await api.requestCancelRun(actor, run.runId, [200]);
           const policy = claim.networkPolicies?.cloudflare;
           if (!policy) {
@@ -10852,7 +10847,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
+        const runnerGroup = await api.configureRunnerGroup();
         await api.grantProEntitlement(actor);
 
         await oauth.connect(actor, {
@@ -10872,7 +10867,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "thread run cloudflare defaults",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(claim.environment?.CLOUDFLARE_TOKEN).toBe(
           connectorPlaceholder("cloudflare", "CLOUDFLARE_TOKEN"),
         );
@@ -10915,7 +10910,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         bdd.acceptAgentStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
-        const runnerGroup = api.configureRunnerGroup();
+        const runnerGroup = await api.configureRunnerGroup();
 
         const completed = await bdd.completeOnboarding(actor);
         expect(completed.status).toBe(200);
@@ -10972,7 +10967,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "summarize release",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         const appendSystemPrompt = claim.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("# Agent Identity");
@@ -11171,7 +11166,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "prepare an Outlook email",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         for (const hint of [
           "Gmail email from web chat: use the Gmail skill",
           "Outlook email from web chat",
@@ -11233,7 +11228,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use my available capabilities",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const prompt = claim.appendSystemPrompt ?? "";
         expect(prompt).not.toContain("okou data tools --family web-search");
         // Discovery stays generic; the CLI hides disabled Router families.
@@ -11262,7 +11257,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "discover a managed research tool",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const prompt = claim.appendSystemPrompt ?? "";
         expect(prompt).toContain("okou data tools");
         expect(prompt).toContain("okou data describe <tool>");
@@ -11290,7 +11285,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "web-search", false);
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(queued.runId);
+        const claim = await api.executionInput(queued.runId);
         expect(claim.appendSystemPrompt).not.toContain(
           "okou data tools --family web-search",
         );
@@ -11323,7 +11318,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use the updated paid tool preferences",
         });
-        const enabledClaim = await api.claimRunnerJob(enabled.runId);
+        const enabledClaim = await api.executionInput(enabled.runId);
         expect(enabledClaim.appendSystemPrompt).toContain(
           "okou data tools --family web-search",
         );
@@ -11345,7 +11340,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "apply the latest paid tool preferences",
         });
-        const latestClaim = await api.claimRunnerJob(latest.runId);
+        const latestClaim = await api.executionInput(latest.runId);
         expect(
           latestClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
         ).toBe('["video-generation","web-search"]');
@@ -11366,7 +11361,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use Codex native web search",
           model: "gpt-6-astra",
         });
-        const codexSubscriptionClaim = await api.claimRunnerJob(
+        const codexSubscriptionClaim = await api.executionInput(
           codexSubscription.runId,
         );
         expect(codexSubscriptionClaim.cliAgentType).toBe("codex");
@@ -11401,7 +11396,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await setPaidToolDisabled(context, actor, "web-search", true);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(queued.runId);
+        const claim = await api.executionInput(queued.runId);
         expect(claim.cliAgentType).toBe("codex");
         expect(claim.appendSystemPrompt).not.toContain(
           "# Built-in image model",
@@ -11426,7 +11421,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use managed images with native web search",
           model: "gpt-6-astra",
         });
-        const managedClaim = await api.claimRunnerJob(managedImages.runId);
+        const managedClaim = await api.executionInput(managedImages.runId);
         expect(managedClaim.appendSystemPrompt).toContain(
           "# Built-in image model",
         );
@@ -11451,7 +11446,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use native images and web search",
           model: "gpt-6-astra",
         });
-        const nativeClaim = await api.claimRunnerJob(nativeTools.runId);
+        const nativeClaim = await api.executionInput(nativeTools.runId);
         expect(nativeClaim.platformEnvironment).toMatchObject({
           [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true",
           [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true",
@@ -11482,7 +11477,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: NATIVE_RUNNER_ROUTE.model,
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         // Router family preferences pass through opaquely for the CLI to apply.
         expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["scrape"]',
@@ -11506,7 +11501,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
-        const gatedOffClaim = await api.claimRunnerJob(gatedOff.runId);
+        const gatedOffClaim = await api.executionInput(gatedOff.runId);
         expect(gatedOffClaim.appendSystemPrompt ?? "").not.toContain(
           "okou banking access-request",
         );
@@ -11520,7 +11515,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
-        const gatedOnClaim = await api.claimRunnerJob(gatedOn.runId);
+        const gatedOnClaim = await api.executionInput(gatedOn.runId);
         const appendSystemPrompt = gatedOnClaim.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("okou banking access-request");
         expect(appendSystemPrompt).toContain("account-scoped, expiring grant");
@@ -11571,7 +11566,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(sshGuidance).toHaveLength(1);
         expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const token = claim.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a minted Run token");
@@ -11591,9 +11586,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "inspect my remote VNC desktop",
         });
-        expect(run.status).toBe("pending");
+        expect(run.status).toBe("running");
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const prompt = claim.appendSystemPrompt ?? "";
         const token = claim.platformEnvironment.OKOU_TOKEN;
         if (!token) {
@@ -11644,9 +11639,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "make me a deck about our quarterly plan",
           });
-          expect(run.status).toBe("pending");
+          expect(run.status).toBe("running");
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           const prompt = claim.appendSystemPrompt ?? "";
           const token = claim.platformEnvironment.OKOU_TOKEN;
           if (!token) {
@@ -11698,7 +11693,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "prepare the connector permissions needed for this task",
           });
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           const prompt = claim.appendSystemPrompt ?? "";
           if (enabled) {
             expect(prompt).toContain(
@@ -11771,7 +11766,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the private workflow override",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const workflowMounts = claim.contentBundles.skills.filter((skill) => {
           return (
             skill.mountPath === `/home/user/.claude/skills/${workflowName}`
@@ -11801,7 +11796,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue the task",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
 
         expect(claim.disallowedTools).toStrictEqual(
           EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
@@ -11847,7 +11842,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the workflow",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         expect(claim.cliAgentType).toBe("claude-code");
         expect(
           claim.contentBundles.skills.map((skill) => {
@@ -12002,13 +11997,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           // Current preview access cannot upgrade this Run's admission receipt.
           mockEnv("ENV", "preview");
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", claimBypass);
-          const claim = await api.claimRunnerJob(
-            runId,
-            {},
-            {
-              "x-vercel-protection-bypass": claimBypass,
-            },
-          );
+          const claim = await api.executionInput(runId);
           if (request.authorized) {
             expect(claim.platformEnvironment).toMatchObject({
               VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
@@ -12040,7 +12029,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "create history for a failed claim response",
         });
-        const sourceClaim = await api.claimRunnerJob(source.runId);
+        const sourceClaim = await api.executionInput(source.runId);
 
         await webhooks.requestAgentComplete(
           {
@@ -12681,7 +12670,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           const error = `provider failure for ${run.runId}`;
           const completed = await webhooks.requestAgentComplete(
             {
@@ -12764,7 +12753,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "recover native history after Runner fallback",
           });
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           const headers = { authorization: `Bearer ${claim.sandboxToken}` };
           if (terminalStatus === "cancelled") {
             await api.requestCancelRun(actor, run.runId, [200]);
@@ -12829,7 +12818,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             threadId: run.threadId,
             prompt: "resume recovered native history",
           });
-          const continuation = (await api.claimRunnerJob(next.runId))
+          const continuation = (await api.executionInput(next.runId))
             .nativeContinuation;
           // Cancellation retains the Active slot until recovery completion.
           // A prior failure completion already released it: recovery outputs
@@ -12877,7 +12866,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `complete with ${cliAgentType} history`,
             model,
           });
-          const claim = await api.claimRunnerJob(run.runId);
+          const claim = await api.executionInput(run.runId);
           expect(claim.cliAgentType).toBe(cliAgentType);
           const history = `bdd combined ${cliAgentType} history ${run.runId}`;
           const historyHash = createHash("sha256")
@@ -12969,7 +12958,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `resume combined ${cliAgentType} history`,
             model,
           });
-          const continuedClaim = await api.claimRunnerJob(continued.runId);
+          const continuedClaim = await api.executionInput(continued.runId);
           expect(continuedClaim.nativeContinuation).toMatchObject({
             sessionId: cliAgentSessionId,
             generationRunId: expect.any(String),
@@ -13014,7 +13003,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `resume successor ${cliAgentType} history`,
             model,
           });
-          const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
+          const afterRetryClaim = await api.executionInput(afterRetry.runId);
           expect(afterRetryClaim.nativeContinuation).toMatchObject({
             sessionId: successorCliAgentSessionId,
             generationRunId: expect.any(String),
@@ -13034,7 +13023,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "cancel before combined recovery",
         });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const history = `bdd cancellation recovery ${run.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         const cliAgentSessionId = `bdd-cancel-recovery-${run.runId}`;
@@ -13070,7 +13059,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: run.threadId,
           prompt: "resume cancellation recovery",
         });
-        const continuedClaim = await api.claimRunnerJob(continued.runId);
+        const continuedClaim = await api.executionInput(continued.runId);
         expect(continuedClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
           generationRunId: expect.any(String),
@@ -13092,7 +13081,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "time out after the runner execution budget",
         });
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const sandboxHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
@@ -13155,7 +13144,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "run until the execution deadline",
           });
-          const sourceClaim = await api.claimRunnerJob(source.runId);
+          const sourceClaim = await api.executionInput(source.runId);
           const history = `bdd timeout recovery history ${source.runId}`;
           const historyHash = createHash("sha256")
             .update(history)
@@ -13227,7 +13216,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             threadId: source.threadId,
             prompt: "continue after the execution deadline",
           });
-          const continuedClaim = await api.claimRunnerJob(continued.runId);
+          const continuedClaim = await api.executionInput(continued.runId);
           if (nativeState === "initialized") {
             expect(continuedClaim.nativeContinuation).toMatchObject({
               sessionId: cliSessionId,
@@ -13530,7 +13519,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "generate images",
           });
           await runs.heartbeatRunner(runnerGroup);
-          const claim = await runs.claimRunnerJob(run.runId);
+          const claim = await runs.executionInput(run.runId);
           await webhooks.requestAgentUsageEvent(
             {
               runId: run.runId,
@@ -13717,7 +13706,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "report events",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
+        const claim = await api.executionInput(run.runId);
         const sandboxHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
@@ -13785,7 +13774,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "publish ordinary assistant output",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         const sandboxHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
@@ -13839,7 +13828,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         const sandboxHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
@@ -13950,7 +13939,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(pending.status).toBe("pending");
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         expect(claim.apiStartTime).toBe(requestedAt);
         const sandboxHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -14213,7 +14202,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const acknowledgedAt = requestedAt + 5000;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         expect(claim.apiStartTime).toBe(requestedAt);
         await flushWaitUntilForTest();
         context.mocks.ably.publish.mockClear();
@@ -14323,7 +14312,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const acknowledgedAt = requestedAt + 2468;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         expect(claim.apiStartTime).toBe(requestedAt);
         expect(claim.cliAgentType).toBe("codex");
         await flushWaitUntilForTest();
@@ -14425,7 +14414,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await flushWaitUntilForTest();
         const picked = await waiting.launchedRun();
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(picked.runId);
+        const claim = await api.executionInput(picked.runId);
         // Only a pick inside its own send request is anchored at receipt.
         expect(claim.apiStartTime).toBeUndefined();
 
@@ -14448,7 +14437,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await flushWaitUntilForTest();
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         context.mocks.ably.publish.mockClear();
 
         await webhooks.requestAgentEvents(

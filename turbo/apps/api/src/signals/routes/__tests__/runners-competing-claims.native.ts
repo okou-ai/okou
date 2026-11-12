@@ -66,7 +66,7 @@ test("composes actual PostgreSQL claim arbitration with both native Guest owners
         reuseKey: string;
         runnerIds: readonly [string, string];
         controlDirectory: string;
-        predecessorContext: Awaited<ReturnType<typeof api.claimRunnerJob>>;
+        predecessorContext: Awaited<ReturnType<typeof api.executionInput>>;
         completedAt: string;
       }[] = [];
       for (const mode of ["fresh", "snapshot"] as const) {

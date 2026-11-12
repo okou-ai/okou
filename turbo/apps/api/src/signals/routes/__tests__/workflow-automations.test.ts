@@ -2445,7 +2445,7 @@ describe("okou workflow automations", () => {
   });
 
   it("finishes admitted thread deletion and notifies its Runner when the API instance lifetime ends during Calendar teardown", async () => {
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
     configureGoogleCalendarWatchMock({ baselineItems: [] });
@@ -2470,7 +2470,7 @@ describe("okou workflow automations", () => {
       throw new Error("Expected the public Run now request to start a Run");
     }
     await runs.heartbeatRunner(runnerGroup);
-    await runs.claimRunnerJob(run.runId);
+    await runs.executionInput(run.runId);
     mocks.clerk.session(
       scenario.fixture.userId,
       scenario.fixture.orgId,
@@ -2606,7 +2606,7 @@ describe("okou workflow automations", () => {
   });
 
   it("dispatches from a published Calendar channel after registration", async () => {
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const scenario = await setupFixture();
@@ -4440,7 +4440,7 @@ describe("okou workflow automations", () => {
   it("lazily binds a chat thread when a one-time automation runs now", async () => {
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56);
     mockNow(requestedAt);
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     const { workflowId } = await setupFixture();
     const created = await accept(
       automationsClient().create({
@@ -4466,7 +4466,7 @@ describe("okou workflow automations", () => {
     }
 
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     const requestedAtIso = new Date(requestedAt).toISOString();
     expect(claim.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: manual\nSummary: manual run requested at ${requestedAtIso}.`,
@@ -4766,7 +4766,7 @@ describe("okou workflow automations", () => {
     // A two-hop limit keeps the real chain short: the user-created root gets
     // 2, each agent-created Automation spends exactly one hop, and the third
     // derivation is refused.
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     const { actor, workflowId } = await setupFixture("pro", {
       maxAutonomyBudget: 2,
     });
@@ -4776,7 +4776,7 @@ describe("okou workflow automations", () => {
         throw new Error("Expected the Automation run to start");
       }
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(runId);
+      const claim = await runs.executionInput(runId);
       const okouToken = claim.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the claimed run to receive OKOU_TOKEN");

@@ -725,7 +725,7 @@ describe("thin MCP Web adapters", () => {
   it("recalls the supplied event directly and returns the native Web response", async () => {
     const f = await fixture();
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(f.actor);
@@ -890,7 +890,7 @@ describe("thin MCP Web adapters", () => {
   it("authorizes OAuth cancellation through the same Web entry, preserving peer denial and cancellation side effects", async () => {
     const f = await fixture();
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(f.actor);

@@ -81,7 +81,7 @@ async function setupCustomOAuthFirewall(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
@@ -94,7 +94,7 @@ async function setupCustomOAuthFirewall(
   });
   publicFixture.registerRun(run.runId);
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   publicFixture.registerClaim(run.runId, claim.sandboxToken);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const connector = await connectors.createCustomConnector(

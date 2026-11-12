@@ -269,7 +269,7 @@ describe("Workflow schedules", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.AgentSuggestion]: true },
     );
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.heartbeatRunner(runnerGroup);
@@ -296,7 +296,7 @@ describe("Workflow schedules", () => {
       )
     ).body;
     const started = await fireSchedule(actor, automation);
-    const claim = await runs.claimRunnerJob(started.runId);
+    const claim = await runs.executionInput(started.runId);
     expect(claim.prompt).toContain("scheduled-report");
     expect(claim.appendSystemPrompt).not.toContain(
       "# Suggestions feedback context",
@@ -572,7 +572,7 @@ describe("Workflow schedule recovery", () => {
     automation: WorkflowAutomationSummary,
   ) {
     const fired = await runScheduleNow(actor, automation.id);
-    const claim = await runs.claimRunnerJob(fired.runId);
+    const claim = await runs.executionInput(fired.runId);
     await webhooks.requestAgentComplete(
       {
         runId: fired.runId,
@@ -614,13 +614,13 @@ describe("Workflow schedule recovery", () => {
         [201],
       )
     ).body;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const [fired] = await Promise.all([
       runScheduleNow(actor, automation.id),
       runs.heartbeatRunner(runnerGroup),
     ]);
-    const claim = await runs.claimRunnerJob(fired.runId);
+    const claim = await runs.executionInput(fired.runId);
     expect(claim.cliAgentType).toBe("claude-code");
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
     const schedule = {
@@ -680,7 +680,7 @@ describe("Workflow schedule recovery", () => {
         [201],
       )
     ).body;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {

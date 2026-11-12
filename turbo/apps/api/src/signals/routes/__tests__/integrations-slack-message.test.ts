@@ -122,7 +122,7 @@ describe("POST /api/integrations/slack/message", () => {
     });
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
+    await api.configureRunnerGroup();
     const owner = publicRunOwner(context, actor, {
       restoreEnvironment: captureConnectorExternalState(context),
     });

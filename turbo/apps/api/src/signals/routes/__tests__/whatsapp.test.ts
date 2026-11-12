@@ -140,7 +140,7 @@ async function startWhatsappTask(setup: Awaited<ReturnType<typeof configure>>) {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(setup.actor);
   await runs.ensurePersonalSubscriptionModel(setup.actor);
   await runs.updateUserModelPreference(setup.actor, "claude-fable-5-1");
@@ -158,7 +158,7 @@ async function startWhatsappTask(setup: Awaited<ReturnType<typeof configure>>) {
   if (!runId) {
     throw new Error("Expected a queued WhatsApp run");
   }
-  const run = await runs.claimRunnerJob(runId);
+  const run = await runs.executionInput(runId);
   const threadId = run.platformEnvironment.OKOU_CHAT_THREAD_ID;
   if (!threadId) {
     throw new Error("Expected the run's chat thread");
@@ -699,7 +699,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(setup.actor);
       await runs.ensurePersonalSubscriptionModel(setup.actor);
       await runs.updateUserModelPreference(setup.actor, "claude-fable-5-1");
@@ -758,7 +758,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       if (!runId) {
         throw new Error("Expected a queued WhatsApp run");
       }
-      const run = await runs.claimRunnerJob(runId);
+      const run = await runs.executionInput(runId);
       if (scenario === "window-closed") {
         await createChatFilesBddApi(context).renameThread(
           setup.actor,

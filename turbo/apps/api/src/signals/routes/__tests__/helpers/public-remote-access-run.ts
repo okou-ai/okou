@@ -98,7 +98,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       visibility: "public",
     });
     state.agentId = agent.agentId;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     let runId: string;
     let threadId: string;
     if (source === "web") {

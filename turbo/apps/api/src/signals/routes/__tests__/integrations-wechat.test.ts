@@ -216,7 +216,7 @@ async function responseFixture() {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -282,7 +282,7 @@ async function responseFixture() {
           { timeout: 10_000 },
         )
         .toBeDefined();
-      return await runs.claimRunnerJob(uuid().parse(runId));
+      return await runs.executionInput(uuid().parse(runId));
     },
     async finish(
       run: { readonly runId: string; readonly sandboxToken: string },
@@ -1161,7 +1161,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -1241,7 +1241,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
         { timeout: 10_000 },
       )
       .toBeDefined();
-    return await runs.claimRunnerJob(uuid().parse(runId));
+    return await runs.executionInput(uuid().parse(runId));
   }
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
@@ -2458,7 +2458,7 @@ describe("WeChat system notices", () => {
     const owner = await fixture();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -2965,7 +2965,7 @@ test("a restored transport ignores provider backlog and accepts only newly creat
   const owner = await disconnectedLink();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  runs.configureRunnerGroup();
+  await runs.configureRunnerGroup();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();

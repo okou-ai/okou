@@ -974,7 +974,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       throw new Error("Expected a dispatched Google Forms workflow run");
     }
     await runs.heartbeatRunner(RUNNER_GROUP);
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     const eventContext = eventContextFromAgentPrompt(claim.prompt);
     expect(eventContext).toStrictEqual({
       automationId,
@@ -1030,7 +1030,7 @@ describe("Google Forms Pub/Sub webhook", () => {
         throw new Error("Expected a running Forms workflow");
       }
       await runs.heartbeatRunner(RUNNER_GROUP);
-      const claim = await runs.claimRunnerJob(runId);
+      const claim = await runs.executionInput(runId);
       const connection = await connectors.readDefaultBuiltinAccount(
         actor,
         "google-forms",
@@ -1815,7 +1815,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       throw new Error("Expected a second-account Google Forms run");
     }
     await runs.heartbeatRunner(RUNNER_GROUP);
-    const claim = await runs.claimRunnerJob(secondRunId);
+    const claim = await runs.executionInput(secondRunId);
     expect(
       Object.values(claim.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: secondConnector.id }));
@@ -2173,7 +2173,7 @@ describe("Google Forms Pub/Sub webhook", () => {
         if (!runId) {
           throw new Error("Expected a repaired Google Forms workflow run");
         }
-        const claim = await runs.claimRunnerJob(runId);
+        const claim = await runs.executionInput(runId);
         expect(
           Object.values(claim.secretConnectorMetadataMap ?? {}),
         ).toContainEqual(

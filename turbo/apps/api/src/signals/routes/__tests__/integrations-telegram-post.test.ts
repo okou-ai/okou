@@ -467,8 +467,8 @@ async function postWebhook(args: {
   );
 }
 
-function configureCanonicalTelegramRunner(): string {
-  const runnerGroup = runsApi.configureRunnerGroup();
+async function configureCanonicalTelegramRunner(): Promise<string> {
+  const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
@@ -767,7 +767,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("keeps concurrent first Telegram DMs on one owner-scoped thread", async () => {
-    configureCanonicalTelegramRunner();
+    await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const outsider = await createTelegramPostFixture();
     const actor = actorForFixture(fixture);
@@ -888,7 +888,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     telegramApiMocks();
     const prompt = "reuse this Telegram thread";
@@ -971,7 +971,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("rebuilds queued Telegram launch material from context", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
     const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
@@ -1262,7 +1262,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   }
 
   async function prepareTelegramDm() {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
     if (!actor.orgId) {
@@ -1612,7 +1612,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   async function runCanonicalTelegramForumScenario(
     phase: "callback" | "reply-chain" | "fresh-chain",
   ) {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
@@ -1866,7 +1866,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("does not deliver a completed Telegram reply after public unlink", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
     const prompt = `@${OFFICIAL_BOT_USERNAME} complete after unlink`;
@@ -1929,7 +1929,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   ])(
     "keeps Telegram completion terminal after provider HTTP $providerStatus",
     async ({ providerStatus, expectedAttempts }) => {
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       telegramApiMocks();
       const attemptedMessages: TelegramSendMessageBody[] = [];
@@ -2029,7 +2029,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     "preserves a Telegram topic attachment and ignores duplicate delivery",
     { timeout: 120_000 },
     async () => {
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
       const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
@@ -2164,7 +2164,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
 
@@ -2575,7 +2575,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (type) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       const bytes = Buffer.from(`telegram ${type} bytes`);
@@ -2737,7 +2737,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       const bytes = Buffer.from("recovered Telegram attachment");
@@ -2850,7 +2850,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (failure) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       context.mocks.telegram.getFile.mockResolvedValue({

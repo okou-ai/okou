@@ -17,7 +17,7 @@ async function createAgent(
 async function prepareRunCreation(...actors: readonly ApiTestUser[]) {
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  const group = api.configureRunnerGroup();
+  const group = await api.configureRunnerGroup();
   for (const actor of actors) {
     await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
@@ -40,7 +40,7 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       });
       if (status === "running") {
         await api.heartbeatRunner(group);
-        await api.claimRunnerJob(targetRun.runId);
+        await api.executionInput(targetRun.runId);
       }
       const response = await bdd.requestDeleteAgent(
         actor,

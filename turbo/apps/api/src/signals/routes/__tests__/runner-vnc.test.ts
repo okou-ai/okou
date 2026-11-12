@@ -105,7 +105,7 @@ describe("private Runner VNC authority", () => {
     owner: Pick<VncRuntimeFixture, "orgId" | "userId" | "agentId">,
   ) {
     const actor = createBddApi(context).user(owner);
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId: owner.agentId,
       prompt: "Use my configured VNC desktop",

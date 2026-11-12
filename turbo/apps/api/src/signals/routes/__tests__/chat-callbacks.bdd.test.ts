@@ -101,7 +101,7 @@ async function entitledChatActor(
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -1647,7 +1647,7 @@ describe("CHAT-02: completed chat callback", () => {
     if (!runId) {
       throw new Error("Expected a Slack run");
     }
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
     if (!threadId) {
       throw new Error("Expected a Slack chat thread");
@@ -1701,7 +1701,7 @@ describe("CHAT-02: completed chat callback", () => {
       if (!initialRunId) {
         throw new Error("Expected a Slack run");
       }
-      const claim = await api.claimRunnerJob(initialRunId);
+      const claim = await api.executionInput(initialRunId);
       const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
       if (!threadId) {
         throw new Error("Expected the canonical chat thread identity");
@@ -1752,7 +1752,7 @@ describe("CHAT-02: completed chat callback", () => {
       if (!externalRunId) {
         throw new Error("Expected the second Slack run");
       }
-      const externalClaim = await api.claimRunnerJob(externalRunId);
+      const externalClaim = await api.executionInput(externalRunId);
       expect(externalClaim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
         threadId,
       );
@@ -3670,7 +3670,7 @@ describe("CHAT-02: failed chat callbacks", () => {
           throw new Error("Expected the Slack subscription run");
         }
         runId = queuedRunId;
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         const chatThreadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
         if (!chatThreadId) {
           throw new Error("Expected the Slack subscription thread");

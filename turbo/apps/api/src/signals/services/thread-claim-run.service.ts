@@ -97,7 +97,13 @@ import {
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
 import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
-import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
+import {
+  createDirectRunDispatch,
+  dispatchDirectRun$,
+} from "./direct-run-dispatch.service";
+import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
+import type { RunSlotPickScheduler } from "./run-slot-pick-scheduler";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
   prepareRunnerReusePreference$,
@@ -269,11 +275,16 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { command, type Command, computed, type Computed, state } from "ccstate";
+import {
+  command,
+  type Command,
+  computed,
+  type Computed,
+  type State,
+  state,
+} from "ccstate";
 import {
   and,
   count,
@@ -312,7 +323,6 @@ import { isPersonalSubscriptionProviderType } from "./model-provider-account.ser
 import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
@@ -860,7 +870,7 @@ function isDirectSendContext(contextType: string | null): boolean {
 
 /** Runner payload facts the Thread assembles privately for one run. */
 type ThreadRunnerFacts = Omit<
-  BuildRunnerJobPayloadInput,
+  BuildRunnerLaunchInputInput,
   "run" | "workflowAutomationId"
 >;
 
@@ -1255,17 +1265,46 @@ export interface ThreadClaimRunObjects {
 }
 
 /** The admission input with the instant its reads are taken. */
-export function createThreadClaimRunObjects(
+export function createThreadRunLauncher(
   claim: ThreadClaim,
   bootstrap: AgentRunContextSignals,
-  requestFacts?: ChatThreadRequestFacts,
+  requestFacts: ChatThreadRequestFacts | undefined,
+  scheduleReleasedSlots$: RunSlotPickScheduler,
 ): ThreadClaimRunObjects {
-  // Re-resolve the queued pin against one current catalog snapshot per claim.
+  const internalAdmittedLaunch$ = state<AdmittedRunLaunch | null>(null);
+  const admittedLaunch$ = computed((get) => {
+    const admitted = get(internalAdmittedLaunch$);
+    if (admitted === null) {
+      throw new Error("Execution requires this graph's committed admission");
+    }
+    return Promise.resolve(admitted);
+  });
+  const directDispatch = createDirectRunDispatch(admittedLaunch$);
+  return createThreadClaimRunObjects(claim, bootstrap, requestFacts, {
+    admittedLaunch$: internalAdmittedLaunch$,
+    graph: directDispatch,
+    scheduleReleasedSlots$,
+  });
+}
+
+function createThreadClaimRunObjects(
+  claim: ThreadClaim,
+  bootstrap: AgentRunContextSignals,
+  requestFacts: ChatThreadRequestFacts | undefined,
+  dispatch: {
+    readonly admittedLaunch$: State<AdmittedRunLaunch | null>;
+    readonly graph: ReturnType<typeof createDirectRunDispatch>;
+    readonly scheduleReleasedSlots$: RunSlotPickScheduler;
+  },
+): ThreadClaimRunObjects {
   const claimCatalog$ = bootstrap.modelCatalog$;
   const pickStartedAt$ = computed(() => {
     return now();
   });
   const internalCommittedRunId$ = state<string | null>(null);
+  const internalAdmittedLaunch$ = dispatch.admittedLaunch$;
+  const directDispatch = dispatch.graph;
+  const scheduleReleasedSlotPicks$ = dispatch.scheduleReleasedSlots$;
   const publishChatQueueHeadConsumed$ = command(
     async (
       _context,
@@ -3472,7 +3511,7 @@ export function createThreadClaimRunObjects(
   const prepareRunnerInput$ = command(
     async (
       { get, set },
-      bodyOverride: BuildRunnerJobPayloadInput["body"] | undefined,
+      bodyOverride: BuildRunnerLaunchInputInput["body"] | undefined,
       signal: AbortSignal,
     ) => {
       const args = await get(runnerArgs$);
@@ -3553,7 +3592,7 @@ export function createThreadClaimRunObjects(
   const prepareRunnerStorage$ = command(
     async (
       { get, set },
-      bodyOverride: BuildRunnerJobPayloadInput["body"] | undefined,
+      bodyOverride: BuildRunnerLaunchInputInput["body"] | undefined,
       signal: AbortSignal,
     ) => {
       const [input, preparedStorage, piSessionId] = await Promise.all([
@@ -4085,8 +4124,8 @@ export function createThreadClaimRunObjects(
       const admissionTiming = new AdmissionAttemptTiming({
         poolCapture,
         runId: identity.runId,
-        runnerGroup: launch.runnerJobPayload.runnerGroup,
-        profile: launch.runnerJobPayload.profile,
+        runnerGroup: launch.runnerInput.runnerGroup,
+        profile: launch.runnerInput.profile,
         dimensions: timingDimensionsForCreateArgs(input.args),
         ...(input.context.body.triggerSource
           ? { triggerSource: input.context.body.triggerSource }
@@ -4120,6 +4159,7 @@ export function createThreadClaimRunObjects(
         );
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.run.id);
+          set(internalAdmittedLaunch$, result.admittedLaunch);
           const launched = context.launchRecord;
           if (launched.kind === "prompt") {
             // Creation is durable even if cancellation or activation fails next.
@@ -4173,21 +4213,47 @@ export function createThreadClaimRunObjects(
       });
       signal.throwIfAborted();
       recordThreadRunActivationMarkers(
-        pending.activation.runnerNotification,
-        pending.activation.apiStartTime,
-        pending.activation.timing.activationOrigin,
-      );
-      // A false publication result preserves the existing admitted-run policy.
-      // Neither false nor an exception can undo this durable creation.
-      await set(
-        activateCommittedRun$,
         {
-          notification: pending.activation.runnerNotification,
-          timing: pending.activation.timing,
-          activationScheduledAt: now(),
+          runId: pending.runId,
         },
+        pending.activation.apiStartTime,
+      );
+      const dispatched = await set(
+        dispatchDirectRun$,
+        { input: pending.activation.run, graph: directDispatch },
         signal,
       );
+      if (dispatched.terminal !== null) {
+        const terminal = dispatched.terminal;
+        set(scheduleReleasedSlotPicks$, terminal.releasedSlots, signal);
+        if (terminal.status !== "failed" && terminal.status !== "cancelled") {
+          throw new Error("Unaccepted Run has an invalid terminal status");
+        }
+        await set(
+          dispatchCompleteSideEffects$,
+          terminal.status === "failed"
+            ? {
+                kind: "terminal",
+                firstTerminalTransition: true,
+                runId: terminal.runId,
+                orgId: terminal.orgId,
+                status: "failed",
+                ...(terminal.error === null ? {} : { error: terminal.error }),
+              }
+            : {
+                kind: "cancellation-recovery",
+                runId: terminal.runId,
+                orgId: terminal.orgId,
+                userId: terminal.userId,
+                chatThreadId: pending.context.head.chatThreadId,
+                chatEventsAppended: false,
+              },
+          signal,
+        );
+      }
+      if (dispatched.failure !== undefined) {
+        throw dispatched.failure;
+      }
       const launched = pending.context.launchRecord;
       if (launched.kind === "prompt") {
         set(
@@ -4356,11 +4422,11 @@ type LaunchRunStatus = "pending" | "failed";
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly run: RunRecord;
-  readonly runnerJobCreatedAt: Date;
+  readonly admittedAt: Date;
 }
 
 interface PreparedRunnerLaunch {
-  readonly runnerJobPayload: RunnerJobPayload;
+  readonly runnerInput: RunnerLaunchInput;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
@@ -4385,8 +4451,9 @@ type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
       readonly run: RunRecord;
-      readonly runnerJobPayload: RunnerJobPayload;
-      readonly runnerJobCreatedAt: Date;
+      readonly runnerInput: RunnerLaunchInput;
+      readonly admittedAt: Date;
+      readonly admittedLaunch: AdmittedRunLaunch;
       readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
       readonly reusePreparation?: RunnerReusePreparation;
       readonly publicationReturnedAt: number;
@@ -4683,7 +4750,7 @@ interface PreparedAtomicLaunchRows {
 }
 
 interface PreparedAtomicLaunchPersistence {
-  readonly payload: RunnerJobPayload;
+  readonly payload: RunnerLaunchInput;
   readonly rows: PreparedAtomicLaunchRows;
   readonly diagnosticRegistrationPayload: zInfer<
     typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
@@ -4700,8 +4767,8 @@ export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchAr
 function prepareAtomicLaunchPersistence(
   commit: Omit<CommitPreparedLaunchArgs, "db">,
 ): PreparedAtomicLaunchPersistence {
-  const payload: RunnerJobPayload = {
-    ...commit.launch.runnerJobPayload,
+  const payload: RunnerLaunchInput = {
+    ...commit.launch.runnerInput,
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   };
   const rowsArgs = preparedLaunchRowsArgs({
@@ -4868,7 +4935,7 @@ type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 
 interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
   readonly commit: PreparedCommitPreparedLaunchArgs;
-  readonly payload: RunnerJobPayload;
+  readonly payload: RunnerLaunchInput;
   readonly publication: PendingLaunchPublication;
 }
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
@@ -4905,18 +4972,14 @@ function committedAtomicLaunchResponse(args: {
   readonly phaseTiming: ApiDispatchPhaseCollector;
 }): Extract<CreateRunRouteResult, { readonly status: 201 }> {
   args.phaseTiming.checkpoint(
-    "api_dispatch_phase_queue_insert",
-    args.committed.runnerJobCreatedAt.getTime(),
-  );
-  args.phaseTiming.checkpoint(
     "api_dispatch_phase_commit",
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  const dispatchedProfile = args.committed.runnerJobPayload.profile;
+  const dispatchedProfile = args.committed.runnerInput.profile;
   args.timing.flush({
     runId: args.committed.run.id,
-    runnerGroup: args.committed.runnerJobPayload.runnerGroup,
+    runnerGroup: args.committed.runnerInput.runnerGroup,
     profile: dispatchedProfile,
     dispatchPath: "direct",
     dimensions: timingDimensionsForCreateArgs(args.createArgs),
@@ -4928,15 +4991,7 @@ function committedAtomicLaunchResponse(args: {
   const pendingActivation: PendingRunActivation = {
     apiStartTime: args.createArgs.apiStartTime,
     chatThreadId: args.createArgs.chatThreadId,
-    runnerNotification: {
-      runnerGroup: args.committed.runnerJobPayload.runnerGroup,
-      runId: args.committed.run.id,
-      profile: dispatchedProfile,
-      reuseKey: args.committed.runnerJobPayload.reuseKey,
-      cliAgentSessionId: args.committed.runnerJobPayload.cliAgentSessionId,
-      createdAt: args.committed.runnerJobCreatedAt,
-      reusePreparation: args.committed.reusePreparation,
-    },
+    run: args.committed.admittedLaunch,
     timing: {
       activationOrigin: "direct",
       commitReturnedAt: args.transactionReturnedAt,
@@ -5122,7 +5177,7 @@ function selectedRunModelProviderArgs(
 }
 // --- Thread-private implementation: Runner payload ---
 
-interface BuildRunnerJobPayloadInput {
+interface BuildRunnerLaunchInputInput {
   readonly run: Pick<RunRecord, "id">;
   readonly workflowAutomationId: string | null;
   readonly resolved: ResolvedRunExecution;
@@ -5137,7 +5192,7 @@ interface BuildRunnerJobPayloadInput {
 
 /** Capture selectors and request receipts only; Claim owns runtime assembly. */
 function prepareRunnerLaunchInput(input: {
-  readonly args: BuildRunnerJobPayloadInput;
+  readonly args: BuildRunnerLaunchInputInput;
   readonly okouToken: string;
   readonly disabledPaidTools: readonly string[];
   readonly previewBypassAuthorized: boolean;
@@ -5200,7 +5255,7 @@ function finalizeRunnerLaunch(
 ): PreparedRunnerLaunch {
   const { args, group, context } = storage.input;
   return {
-    runnerJobPayload: {
+    runnerInput: {
       runnerGroup: group,
       profile: args.launchSnapshot.runnerProfile,
       cliAgentSessionId:
@@ -5568,8 +5623,8 @@ function flushQueueFirstClaimLostTiming(args: {
   args.phaseTiming.appendTo(args.timing);
   args.timing.flush({
     runId: args.identity.runId,
-    runnerGroup: args.launch.runnerJobPayload.runnerGroup,
-    profile: args.launch.runnerJobPayload.profile,
+    runnerGroup: args.launch.runnerInput.runnerGroup,
+    profile: args.launch.runnerInput.profile,
     dispatchPath: "direct",
     dimensions: {
       ...timingDimensionsForCreateArgs(args.createArgs),
@@ -5590,7 +5645,7 @@ type CreateRunBody = Omit<
   readonly triggerSource: TriggerSource;
 };
 
-interface RunnerJobPayload {
+interface RunnerLaunchInput {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
@@ -5714,10 +5769,63 @@ function pendingLaunchCommitResult(
         };
   return {
     ...persisted,
-    runnerJobPayload: args.persistence.payload,
+    runnerInput: args.persistence.payload,
+    admittedLaunch: admittedRunLaunch(
+      args,
+      admission,
+      persisted.run.createdAt,
+      reusePreparation,
+    ),
     queueFirstClaim: admission.queueFirstClaim,
     reusePreparation,
     publicationReturnedAt,
+  };
+}
+
+function admittedRunLaunch(
+  args: PreparedCommitPreparedLaunchArgs,
+  admission: AdmittedPreparedLaunch,
+  createdAt: Date,
+  reusePreparation: RunnerReusePreparation | undefined,
+): AdmittedRunLaunch {
+  const { rowsArgs: rows, metadata } = args.persistence.rows;
+  const payload = args.persistence.payload;
+  return {
+    run: {
+      id: args.identity.runId,
+      userId: rows.userId,
+      orgId: rows.orgId,
+      agentId: rows.resolved.agentId,
+      chatThreadId: rows.chatThreadId ?? null,
+      launchSnapshot: rows.launchSnapshot,
+      officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
+      prompt: rows.body.prompt,
+      appendSystemPrompt: rows.body.appendSystemPrompt ?? null,
+      vars: rows.body.vars ?? null,
+      storageMounts: [...args.launch.runStorageMounts],
+      modelProvider: metadata.modelProvider,
+      modelProviderId: metadata.modelProviderId,
+      modelProviderCredentialScope: metadata.modelProviderCredentialScope,
+      modelProviderAccountIdentity: admission.validatedAccountIdentity,
+      selectedModel: metadata.selectedModel,
+      modelRuntimeProvider: metadata.modelRuntimeProvider,
+      modelRuntimeModel: metadata.modelRuntimeModel,
+      builtInModelKeyId: metadata.builtInModelKeyId,
+      modelUsageProvider: metadata.modelUsageProvider,
+      modelLongContextMinTotalInputTokens:
+        metadata.modelLongContextMinTotalInputTokens,
+      reasoningEffort: metadata.reasoningEffort,
+      codexServiceTier: metadata.codexServiceTier,
+      isFirstRun: null,
+    },
+    executionContext: payload.executionContext,
+    runnerGroup: payload.runnerGroup,
+    profile: payload.profile,
+    reuseKey: payload.reuseKey,
+    cliAgentSessionId: payload.cliAgentSessionId,
+    createdAt,
+    apiStartTime: args.createArgs.apiStartTime,
+    reusePreparation,
   };
 }
 
@@ -5735,7 +5843,7 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     kind: literal("pending"),
     runId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
-    runnerJobCreatedAt: pgTimestampWithoutTimezoneToDateSchema,
+    admittedAt: pgTimestampWithoutTimezoneToDateSchema,
     boundThreadId: string().nullable(),
     billingAttributionId: string().nullable(),
   }),
@@ -5779,7 +5887,7 @@ function pendingAtomicLaunchResult(
       "pending",
       row.createdAt,
     ),
-    runnerJobCreatedAt: row.runnerJobCreatedAt,
+    admittedAt: row.admittedAt,
   };
 }
 
@@ -5787,28 +5895,6 @@ function pendingAtomicLaunchPlan(
   args: AtomicLaunchRowsPlanArgs,
   context: AtomicLaunchCteContext,
 ) {
-  const timestamps = runnerJobQueueTimestamps();
-  const insertedQueue = new QueryBuilder()
-    .$with("inserted_launch_runner_job", {
-      runId: runnerJobQueue.runId,
-      createdAt: runnerJobQueue.createdAt,
-    })
-    .as(
-      pendingLaunchInsertSql(
-        runnerJobQueue,
-        {
-          runId: returnedCteId(context.insertedRun),
-          runnerGroup: args.payload.runnerGroup,
-          profile: args.payload.profile,
-          cliAgentSessionId: args.payload.cliAgentSessionId,
-          reuseKey: args.payload.reuseKey,
-          executionContext: args.payload.executionContext,
-          ...timestamps,
-        },
-        ["runId", "createdAt"],
-        sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
-      ),
-    );
   const capture = billingRunAttributionWrite({
     id: context.rowsArgs.identity.runId,
     orgId: context.rowsArgs.orgId,
@@ -5835,7 +5921,7 @@ function pendingAtomicLaunchPlan(
         sql`EXISTS (SELECT 1 FROM ${context.insertedRun})`,
       ),
     );
-  const ctes = [...context.ctes, insertedQueue, attribution];
+  const ctes = [...context.ctes, attribution];
   const names = ctes.map((cte) => {
     return cte._.alias;
   });
@@ -5874,7 +5960,7 @@ function pendingAtomicLaunchPlan(
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
-      (SELECT ${returnedCteColumn(insertedQueue, "created_at")} FROM ${insertedQueue})::text AS "runnerJobCreatedAt",
+      (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "admittedAt",
       ${nullableReturnedCteId(context.updatedThread)} AS "boundThreadId"
     FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
