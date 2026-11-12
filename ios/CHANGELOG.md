@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.5](https://github.com/okou-ai/okou/compare/ios-v0.36.4...ios-v0.36.5) (2026-11-12)
+
+
+### Refactoring
+
+* **ios:** derive conversation projections with ccstate ([#46741](https://github.com/okou-ai/okou/issues/46741)) ([4c85af9](https://github.com/okou-ai/okou/commit/4c85af9f1351df685b44d28c163cb89c0394fedb))
+
 ## [0.36.4](https://github.com/okou-ai/okou/compare/ios-v0.36.3...ios-v0.36.4) (2026-11-12)
 
 
