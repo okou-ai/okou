@@ -35,7 +35,7 @@ import type {
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { screen, within } from "@testing-library/react";
 
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockAgentIds } from "../../../mocks/handlers/api-agents.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
@@ -80,6 +80,14 @@ export function customConnectorAccount(
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
+}
+
+export async function chooseConnectorAuthentication(
+  dialog: HTMLElement,
+  method: string,
+): Promise<void> {
+  click(within(dialog).getByRole("combobox", { name: "Authentication" }));
+  click(await screen.findByRole("option", { name: method }));
 }
 
 export function getConnectorAction(
