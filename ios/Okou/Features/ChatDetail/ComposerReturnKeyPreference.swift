@@ -1,20 +1,46 @@
+import ChatData
+import Observation
 import SwiftUI
 import UIKit
 
-/// A device-wide typing preference, independent of chat and workspace selection.
-enum ComposerReturnKeyPreference: String, CaseIterable, Identifiable {
-  case newline, send
-
-  static let storageKey = "okou.composerReturnKey"
-
-  var id: String { rawValue }
-
+extension ComposerReturnKeyPreference {
   var title: LocalizedStringKey {
     switch self {
     case .newline: "New line"
     case .send: "Send"
     }
   }
+}
+
+/// One app-owned value for all mounted composers and Settings; views never own persistence.
+@MainActor @Observable
+final class ComposerPreferences {
+  private let storage: ComposerPreferencesStorage
+  private(set) var returnKey = ComposerReturnKeyPreference.newline
+  private(set) var error: String?
+
+  init(storage: ComposerPreferencesStorage) {
+    self.storage = storage
+    do { returnKey = try storage.returnKey() } catch {
+      // Keep typing safe without discarding or overwriting an unreadable preference.
+      self.error = String(
+        localized: "Unable to load your keyboard preference. New line is being used.")
+    }
+  }
+
+  func setReturnKey(_ preference: ComposerReturnKeyPreference) {
+    do {
+      try storage.setReturnKey(preference)
+      returnKey = preference
+      error = nil
+    } catch {
+      self.error = String(localized: "Unable to save your keyboard preference. Please try again.")
+    }
+  }
+}
+
+extension EnvironmentValues {
+  @Entry var composerPreferences: ComposerPreferences? = nil
 }
 
 extension ComposerTextView {

@@ -1,3 +1,4 @@
+import ChatData
 import ChatDomain
 import SwiftUI
 import XCTest
@@ -7,16 +8,16 @@ import XCTest
 @MainActor
 final class ChatComposerReturnKeyTests: XCTestCase {
   func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {
-    let suite = "return-key-\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
     let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
     let host = UIHostingController(
       rootView: MentionComposerHarness(conversation: conversation, source: source)
-        .defaultAppStorage(defaults))
+        .environment(\.composerPreferences, preferences))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -27,12 +28,12 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(conversation.draft, "First\nSecond")
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
 
-    defaults.set(
-      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    preferences.setReturnKey(.send)
     try await eventually { input.returnKeyType == .send }
     input.insertText("\n")
     try await waitForBusinessResult {
-      conversation.draft.isEmpty && !fixture.state.value.withLock { $0.messages.isEmpty }
+      conversation.pending.isEmpty && conversation.draft.isEmpty
+        && conversation.messages.contains { $0.text.contains("First\nSecond") }
     }
     let sent = try fixture.state.value.withLock {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
@@ -41,18 +42,17 @@ final class ChatComposerReturnKeyTests: XCTestCase {
   }
 
   func testSendModeKeepsIMEConfirmationWithNativeEditingBeforeAnExplicitSend() async throws {
-    let suite = "return-key-\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set(
-      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    preferences.setReturnKey(.send)
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
     let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
     let host = UIHostingController(
       rootView: MentionComposerHarness(conversation: conversation, source: source)
-        .defaultAppStorage(defaults))
+        .environment(\.composerPreferences, preferences))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -65,7 +65,8 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     try await eventually { !input.isSettlingComposition }
     input.insertText("\n")
     try await waitForBusinessResult {
-      conversation.draft.isEmpty && !fixture.state.value.withLock { $0.messages.isEmpty }
+      conversation.pending.isEmpty && conversation.draft.isEmpty
+        && conversation.messages.contains { $0.text.contains("确认发布") }
     }
     let sent = try fixture.state.value.withLock {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
@@ -75,16 +76,16 @@ final class ChatComposerReturnKeyTests: XCTestCase {
   }
 
   func testSendModeSelectsAChatReferenceAndMenuNewlinePreservesItsPartsAndUndo() async throws {
-    let suite = "return-key-\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set(
-      ComposerReturnKeyPreference.send.rawValue, forKey: ComposerReturnKeyPreference.storageKey)
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    preferences.setReturnKey(.send)
     let fixture = MentionNavigationFixture()
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
     let host = UIHostingController(
-      rootView: MentionComposerHarness(workspace: workspace).defaultAppStorage(defaults))
+      rootView: MentionComposerHarness(workspace: workspace)
+        .environment(\.composerPreferences, preferences))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)

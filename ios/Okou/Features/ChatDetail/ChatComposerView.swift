@@ -29,8 +29,7 @@ struct ChatComposerView: View {
   var project: ChatProject? = nil
   var removeProject: (() -> Void)? = nil
 
-  @AppStorage(ComposerReturnKeyPreference.storageKey) private var storedReturnKey =
-    ComposerReturnKeyPreference.newline.rawValue
+  @Environment(\.composerPreferences) private var preferences
   @State private var isFocused = false
   @State private var showsPhotos = false
   @State private var showsFiles = false
@@ -55,7 +54,7 @@ struct ChatComposerView: View {
     hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
   private var returnKeyPreference: ComposerReturnKeyPreference {
-    ComposerReturnKeyPreference(rawValue: storedReturnKey) ?? .newline
+    preferences?.returnKey ?? .newline
   }
   private var canPerformPrimaryAction: Bool {
     (hasContent || showsStop) && attachments.isReady && !isBusy && !needsUpgrade

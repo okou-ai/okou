@@ -22446,6 +22446,47 @@
         }
       }
     },
+    "Unable to load your keyboard preference. New line is being used.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Die Tastatureinstellung konnte nicht geladen werden. Es wird eine neue Zeile eingefügt." }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Unable to load your keyboard preference. New line is being used." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se pudo cargar tu preferencia de teclado. Se usará Nueva línea." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Impossible de charger votre préférence de clavier. Le retour à la ligne est utilisé." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी कीबोर्ड प्राथमिकता लोड नहीं हो सकी। नई पंक्ति का उपयोग किया जा रहा है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Preferensi keyboard tidak dapat dimuat. Baris baru digunakan." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Impossibile caricare la preferenza della tastiera. Viene usata una nuova riga." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "キーボード設定を読み込めませんでした。改行を使用します。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "키보드 설정을 불러올 수 없습니다. 줄 바꿈이 사용됩니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Não foi possível carregar sua preferência de teclado. Nova linha será usada." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "无法读取键盘偏好设置，当前使用「换行」。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "無法讀取鍵盤偏好設定，目前使用「換行」。" }
+        }
+      }
+    },
     "Unable to open chat": {
       "localizations": {
         "de": {
@@ -22554,6 +22595,47 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "無法開啟結果" }
+        }
+      }
+    },
+    "Unable to save your keyboard preference. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Die Tastatureinstellung konnte nicht gespeichert werden. Versuche es erneut." }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Unable to save your keyboard preference. Please try again." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se pudo guardar tu preferencia de teclado. Inténtalo de nuevo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Impossible d’enregistrer votre préférence de clavier. Réessayez." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी कीबोर्ड प्राथमिकता सहेजी नहीं जा सकी। फिर से कोशिश करें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Preferensi keyboard tidak dapat disimpan. Coba lagi." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Impossibile salvare la preferenza della tastiera. Riprova." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "キーボード設定を保存できませんでした。もう一度お試しください。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "키보드 설정을 저장할 수 없습니다. 다시 시도해 주세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Não foi possível salvar sua preferência de teclado. Tente novamente." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "无法保存键盘偏好设置，请重试。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "無法儲存鍵盤偏好設定，請重試。" }
         }
       }
     },
