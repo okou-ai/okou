@@ -32,7 +32,10 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 fun interface WorkspaceTokenProvider {
-    /** Resolve a fresh token for this client's captured identity/workspace owner. */
+    /**
+     * Resolve the current token for this client's identity/workspace; unexpired tokens may be
+     * reused.
+     */
     suspend fun token(): String?
 }
 

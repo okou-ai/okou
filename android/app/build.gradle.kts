@@ -5,6 +5,24 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val appVersion = rootProject.file("version.txt").readText().trim()
+
+require(Regex("\\d+\\.\\d+\\.\\d+").matches(appVersion)) {
+    "Android version.txt must contain a stable x.y.z version"
+}
+
+val versionParts = appVersion.split('.').map { it.toInt() }
+val appVersionCode =
+    versionParts[0].toLong() * 1_000_000 + versionParts[1] * 1_000L + versionParts[2]
+
+require(
+    versionParts[1] < 1_000 &&
+        versionParts[2] < 1_000 &&
+        appVersionCode in 1..Int.MAX_VALUE.toLong()
+) {
+    "Android version must fit a monotonic major*1000000 + minor*1000 + patch versionCode"
+}
+
 android {
     namespace = "ai.okou.android"
     compileSdk = 35
@@ -12,8 +30,8 @@ android {
         applicationId = "ai.okou.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode.toInt()
+        versionName = appVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
     }

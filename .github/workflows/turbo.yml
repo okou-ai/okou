@@ -2762,7 +2762,7 @@ jobs:
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
-    # Blocking for Desktop- and iOS-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
+    # Blocking for Desktop-, iOS- and Android-owned routes (docs/deployment-compatibility.md#desktop-contract-gate);
     # Runner, Guest Agent, and MITM findings only warn.
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
@@ -2885,6 +2885,19 @@ jobs:
             echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Read published Android GitHub Release version
+        id: android-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node .github/scripts/checks/android-published-version.mjs)
+          if [ -n "$version" ]; then
+            echo "Published Android version: $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check iOS API consumption inventory
         working-directory: turbo
         run: pnpm --filter @okouai/api-contracts run lint-ios-api-consumption
@@ -2899,6 +2912,7 @@ jobs:
         env:
           DESKTOP_PUBLISHED_VERSION: ${{ steps.desktop-release.outputs.version }}
           IOS_PUBLISHED_VERSION: ${{ steps.ios-release.outputs.version }}
+          ANDROID_PUBLISHED_VERSION: ${{ steps.android-release.outputs.version }}
         run: |
           set -euo pipefail
           schema_dir=/tmp/runtime-api-schema
@@ -2919,8 +2933,6 @@ jobs:
             --android-floor "$PWD/apps/api/src/lib/android-client-compatibility.json"
             --android-base-floor "$schema_dir/android-base-floor.json"
           )
-          # No Android publication oracle is configured: never pass a claimed
-          # available version. A floor raise fails until real evidence is wired.
           if [ -f "$schema_dir/base.json" ]; then
             args+=(--base-schema "$schema_dir/base.json")
           fi
@@ -2929,6 +2941,9 @@ jobs:
           fi
           if [ -n "$IOS_PUBLISHED_VERSION" ]; then
             args+=(--ios-published-version "$IOS_PUBLISHED_VERSION")
+          fi
+          if [ -n "$ANDROID_PUBLISHED_VERSION" ]; then
+            args+=(--android-published-version "$ANDROID_PUBLISHED_VERSION")
           fi
           pnpm --filter @okouai/api-contracts run lint-runtime-api-compat -- "${args[@]}"
 

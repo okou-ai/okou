@@ -462,13 +462,21 @@ and their actual runtime route; a proof for another client never covers Android.
 Request/error/route changes cannot be proven by a success transform. Lowered or
 removed floors and unreachable transforms fail as for Desktop/iOS.
 
-The Android floor remains `null` until its release availability is verified.
-No Android publication oracle is currently configured in CI, so it supplies no
-published version and rejects a floor raise rather than trusting a tag, APK
-build or guessed distribution URL. Add verified publication evidence with the
-actual delivery owner before raising it. A base commit from before Android
-registration has no Android floor; its initial policy is null. Existing policy
-files are read and validated, including failures.
+The Android publication oracle reads GitHub Releases with the job's read-only
+contents permission. A non-draft, non-prerelease `android-vX.Y.Z` release with
+at least one nonempty `.apk` asset in the `uploaded` state establishes publication;
+the tag identifies the packaged Android version. CI checks the 20 highest stable
+Android tags in numeric version order and selects the highest qualifying release.
+A tag alone, an unfinished asset upload, or a CI build artifact does not establish
+publication. No app-store processing or TestFlight-style availability step is required.
+APK version, signing and installability remain the publisher's responsibility.
+
+The Android floor starts `null`. Once an APK has been published, a reviewed floor
+raise cannot exceed the published version; review must confirm that build supports
+the changed contract. Missing or unreadable publication evidence blocks a floor
+raise or a bounded transform proof, while unrelated changes remain unaffected.
+A base commit from before Android registration has no Android floor; its initial
+policy is null. Existing policy files are read and validated, including failures.
 
 The new inventory first becomes a production comparison baseline when the
 existing API promotion republishes the runtime schema snapshot. CI warns while

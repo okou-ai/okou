@@ -18,7 +18,7 @@ export const IOS_PUBLISHED_VERSION_ORACLE =
   "ios-v* release commit with a successful publish-ios-testflight job and successful internal availability verification in release-please.yml";
 
 export const ANDROID_PUBLISHED_VERSION_ORACLE =
-  "verified Android release availability; no publication oracle is configured yet, so CI cannot prove an Android floor raise";
+  "highest stable android-vX.Y.Z GitHub Release with a nonempty, uploaded APK asset";
 
 type NativeOwner = "desktop" | "ios" | "android";
 interface NativeClientPolicy {

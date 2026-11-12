@@ -151,6 +151,7 @@ describe("Android installed-client schema gate", () => {
     try {
       const schema = join(root, "production.json"),
         floor = join(root, "floor.json"),
+        baseFloor = join(root, "base-floor.json"),
         report = join(root, "report.json");
       await writeFile(
         schema,
@@ -162,6 +163,7 @@ describe("Android installed-client schema gate", () => {
         }),
       );
       await writeFile(floor, '{"minimumSupportedVersion":null}');
+      await writeFile(baseFloor, '{"minimumSupportedVersion":null}');
       const args = [
         "lint",
         "--against",
@@ -171,7 +173,7 @@ describe("Android installed-client schema gate", () => {
         "--android-floor",
         floor,
         "--android-base-floor",
-        floor,
+        baseFloor,
         "--report-out",
         report,
       ];
@@ -187,6 +189,26 @@ describe("Android installed-client schema gate", () => {
       ).toBe(1);
       expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
         passed: false,
+      });
+      await writeFile(floor, '{"minimumSupportedVersion":"0.2.0"}');
+      const raised = [...args, "--current", candidate];
+      expect(await runRuntimeApiSchemaCli(raised)).toBe(1);
+      expect(
+        await runRuntimeApiSchemaCli([
+          ...raised,
+          "--android-published-version",
+          "0.1.0",
+        ]),
+      ).toBe(1);
+      expect(
+        await runRuntimeApiSchemaCli([
+          ...raised,
+          "--android-published-version",
+          "0.2.0",
+        ]),
+      ).toBe(0);
+      expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
+        passed: true,
       });
     } finally {
       warn.mockRestore();

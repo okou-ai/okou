@@ -199,9 +199,31 @@ manifest audit; this is a location/contract exception, not a rule-wide exclusion
 or increased count baseline. See [public entry points](../docs/android/android-development.md#public-android-entry-points)
 before adding exported components, deep links or external Intent handling.
 
-This workflow is not a signing or store-publication pipeline. No release-please
-component or FCM credentials are configured. The transport below is available
-to feature owners; the local shell still makes no authenticated API requests.
+The validation workflow does not publish releases. FCM credentials are not
+configured. The transport below is available to feature owners; the local shell
+still makes no authenticated API requests.
+
+## GitHub Releases
+
+Release Please manages the independent `android` component through
+`version.txt` and `.release-please-manifest.json`. Gradle reads `version.txt` for
+`versionName` and derives a monotonic `versionCode` as
+`major * 1,000,000 + minor * 1,000 + patch`; minor and patch must be below 1,000
+and the result must fit a positive Android integer.
+
+When the normal release PR is merged, `release-please.yml` creates the
+`android-vX.Y.Z` release. Its `publish-android` job checks out the exact release
+target, builds the release APK, signs and verifies it, then uploads
+`okou-android-X.Y.Z.apk` to that release. The compatibility gate recognizes
+publication only after the APK upload completes. Store processing is not part
+of this distribution path.
+
+Signing is temporarily disposable: the build creates a fresh keystore, keeps
+its password in the signing tools' environment, and deletes the key on exit.
+Different releases therefore do not promise in-place upgrades. A user may need
+to uninstall an earlier APK, which removes local application data. The Release
+notes carry this limitation. Stable production signing is separate follow-up
+work before relying on upgrade continuity.
 
 ## Canonical API Bindings And Transport
 
@@ -238,7 +260,8 @@ elsewhere, including aliased/qualified declarations. First-party calls use this
 service; direct arbitrary HTTP in features is outside the transport contract.
 
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
-identity and a fresh suspending `WorkspaceTokenProvider`. Its ordinary methods
+identity and a suspending `WorkspaceTokenProvider` resolved for each request.
+The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
 cover current workspace and member preference bootstrap. The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
@@ -267,6 +290,16 @@ The real authenticated root must observe this state and present its native
 blocking update destination. No self-clear/retry is provided for an installed
 version that needs an update. The backend Android floor starts unset; see
 [Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
+
+GitHub Release is the Android distribution source for the compatibility gate.
+Publish the packaged APK as a nonempty `.apk` asset on a non-draft, non-prerelease
+`android-vX.Y.Z` release, with the tag matching the APK's `versionName`. CI reads
+release metadata and uses the highest qualifying version among the 20 highest
+stable Android tags; it does not require an app-store availability check. The
+publisher owns APK signing, the packaged version and installability. A local
+build or an Actions artifact alone is not publication. The [release pipeline](#github-releases)
+owns packaging and upload; a floor raise still requires a reviewed policy change
+after the compatible build is available.
 
 API requests do not follow redirects or automatically retry connection/status
 failures, including `503 Retry-After: 0`. A lost response is not remote rollback;
