@@ -188,15 +188,11 @@ impl SessionHistoryIdentity {
 
     /// Validate final identity metadata invariants.
     pub fn validate(&self) -> Result<(), SessionHistoryIdentityError> {
-        if !is_sha256_hex(&self.session_id_hash) {
-            return Err(SessionHistoryIdentityError::InvalidSessionIdHash);
-        }
-        if !is_sha256_hex(&self.history_hash) {
-            return Err(SessionHistoryIdentityError::InvalidHistoryHash);
-        }
-        if self.history_size_bytes == 0 {
-            return Err(SessionHistoryIdentityError::InvalidHistorySize);
-        }
+        validate_identity_fields(
+            &self.session_id_hash,
+            &self.history_hash,
+            self.history_size_bytes,
+        )?;
         self.history_source.validate()?;
         if !matches!(
             (self.framework, &self.history_source),
@@ -322,16 +318,11 @@ impl SessionHistoryIdentityExpectation {
 
     /// Validate expected final identity invariants.
     pub fn validate(&self) -> Result<(), SessionHistoryIdentityError> {
-        if !is_sha256_hex(&self.session_id_hash) {
-            return Err(SessionHistoryIdentityError::InvalidSessionIdHash);
-        }
-        if !is_sha256_hex(&self.history_hash) {
-            return Err(SessionHistoryIdentityError::InvalidHistoryHash);
-        }
-        if self.history_size_bytes == 0 {
-            return Err(SessionHistoryIdentityError::InvalidHistorySize);
-        }
-        Ok(())
+        validate_identity_fields(
+            &self.session_id_hash,
+            &self.history_hash,
+            self.history_size_bytes,
+        )
     }
 
     /// Return whether metadata read from the guest still matches runner's expected identity.
@@ -406,6 +397,23 @@ impl fmt::Display for SessionHistoryIdentityError {
 }
 
 impl std::error::Error for SessionHistoryIdentityError {}
+
+fn validate_identity_fields(
+    session_id_hash: &str,
+    history_hash: &str,
+    history_size_bytes: u64,
+) -> Result<(), SessionHistoryIdentityError> {
+    if !is_sha256_hex(session_id_hash) {
+        return Err(SessionHistoryIdentityError::InvalidSessionIdHash);
+    }
+    if !is_sha256_hex(history_hash) {
+        return Err(SessionHistoryIdentityError::InvalidHistoryHash);
+    }
+    if history_size_bytes == 0 {
+        return Err(SessionHistoryIdentityError::InvalidHistorySize);
+    }
+    Ok(())
+}
 
 fn is_sha256_hex(value: &str) -> bool {
     value.len() == 64
