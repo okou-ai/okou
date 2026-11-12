@@ -44,11 +44,17 @@ extension EnvironmentValues {
 }
 
 extension ComposerTextView {
-  func configureReturnKey(_ preference: ComposerReturnKeyPreference) {
-    guard returnKeyPreference != preference else { return }
+  func configureReturnKey(_ preference: ComposerReturnKeyPreference, canSend: Bool) {
+    // UIKit owns the empty-editor key state. A ready attachment or another
+    // editor block can still make an empty focused editor a valid Send target.
+    let automaticallyEnables = preference == .send && (hasText || !canSend)
+    guard returnKeyPreference != preference
+      || enablesReturnKeyAutomatically != automaticallyEnables
+    else { return }
     returnKeyPreference = preference
     returnKeyType = preference == .send ? .send : .default
-    if isFirstResponder { reloadInputViews() }
+    enablesReturnKeyAutomatically = automaticallyEnables
+    requestReturnKeyReload()
   }
 
   var canInsertNewline: Bool {
