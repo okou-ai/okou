@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sign an aligned release APK using the three production signing inputs.
 # Arguments: x.y.z, unsigned APK, output APK (must not exist). Requires JDK,
-# Python 3 and ANDROID_HOME/build-tools/35.0.0. No Gradle or remote writes.
+# Python 3 and ANDROID_HOME/build-tools/36.0.0. No Gradle or remote writes.
 set +x
 set -euo pipefail
 umask 077
@@ -18,7 +18,7 @@ output=$(realpath -m "$3")
 : "${ANDROID_RELEASE_KEYSTORE_BASE64:?Release keystore is required}"
 : "${ANDROID_RELEASE_KEYSTORE_PASSWORD:?Release keystore password is required}"
 : "${ANDROID_RELEASE_KEY_ALIAS:?Release key alias is required}"
-tools="$ANDROID_HOME/build-tools/35.0.0"
+tools="$ANDROID_HOME/build-tools/36.0.0"
 version_code=$(python3 - "$version" <<'PY'
 import sys
 major, minor, patch = map(int, sys.argv[1].split('.'))

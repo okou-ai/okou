@@ -4,7 +4,8 @@ Native Kotlin/Jetpack Compose client shell inside the Okou monorepo. Open this
 directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
-The application currently provides native **Home and Settings** destinations,
+Signed-out launches open the native Clerk login page. After authoritative
+membership and workspace bootstrap, the application provides **Home and Settings** destinations,
 an editable local draft preview, and device-local Light/Dark/Follow system
 appearance. Compact windows use bottom navigation; wider windows use a rail.
 Home remains usable while Preferences DataStore loads or reports an IO error;
@@ -14,19 +15,24 @@ Owned UI resources cover the twelve current Web locales, following the device
 language with distinct Simplified/Traditional Chinese resources. Account-backed
 palette/language selection is separate future work.
 
-The Activity retains native text, selection and IME state across navigation
-and configuration changes; previews are independent immutable text snapshots.
-It does not authenticate, send chats, contact
-production, register push, or publish to a store. Debug uses
+The workspace presentation owner retains native text, selection and IME state
+across navigation and configuration changes; previews are independent immutable
+text snapshots. Switching account/workspace or signing out retires that owner.
+Authentication and canonical preferences/member-memory bootstrap use production
+by default; see [native authentication](AUTHENTICATION.md)
+for public staging overrides, provider setup and verification boundaries. Chat
+Send, push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
 ## Prerequisites and Setup
 
 Use JDK 21, Python 3.9+, curl and unzip on Linux/macOS. The build targets JVM 17.
 Versions are pinned in `gradle/libs.versions.toml` and
-`gradle/wrapper/gradle-wrapper.properties`: Gradle 8.11.1, Kotlin 2.1.20,
-AGP 8.9.2, Compose BOM 2025.04.01, compile/target SDK 35, minSdk 24.
-These are a verified foundation toolchain, not a claim to be the latest releases.
+`gradle/wrapper/gradle-wrapper.properties`: Gradle 9.8.2, Kotlin/Compose compiler
+2.4.21, AGP 9.5.0 with built-in Kotlin, Compose BOM 2026.06.01 and Clerk 1.4.1.
+Compile SDK/build tools are 36; targetSdk remains 35 and minSdk remains 24
+(Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
+These pins align with the Clerk SDK release and are validated together.
 
 From the repository root:
 
@@ -39,7 +45,7 @@ bash android/scripts/setup-sdk.sh --accept-licenses
 ```
 
 The script downloads checksum-verified command-line tools `13114758` and installs
-`platforms;android-35`, `build-tools;35.0.0`, and platform-tools. It installs no
+`platforms;android-36`, `build-tools;36.0.0`, and platform-tools. It installs no
 emulator, system image, NDK, IDE, Java, or global shell-profile changes. Set
 `ANDROID_HOME` for an existing/custom SDK; otherwise setup/check default to
 `${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk`.

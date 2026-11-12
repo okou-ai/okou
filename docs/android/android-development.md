@@ -23,6 +23,12 @@ change durable identity. Temporary UI detachment, configuration changes and
 process death are distinct events. Persist meaningful drafts/cursors through
 the owning data contract; in-memory UI state is not durable storage.
 
+Observe authorization changes as well as identity. SDK client snapshots can
+change memberships, roles or permissions without changing user/session/workspace
+IDs. Revalidate those changes and fence pending token/API work against the
+captured authorization snapshot. Exclude incidental token timestamps from the
+snapshot key so routine renewal does not discard an authorized presentation.
+
 ## State and Async Work
 
 Follow [CCState principles on Android](android-ccstate.md) for single-source,

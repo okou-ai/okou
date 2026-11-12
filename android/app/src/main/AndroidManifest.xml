@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:name=".OkouApplication"
@@ -12,6 +13,14 @@
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
         android:theme="@style/Theme.Okou">
+        <!-- Clerk requires this component at startup; keep sharing private and disabled. -->
+        <provider
+            android:name="com.clerk.api.sharedsession.SharedSessionSyncProvider"
+            android:authorities="${applicationId}.clerk.shared-session-sync"
+            android:enabled="false"
+            android:exported="false"
+            android:grantUriPermissions="false"
+            tools:replace="android:exported" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

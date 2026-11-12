@@ -25,4 +25,18 @@
         <item quantity="one">%1$d Zeile</item>
         <item quantity="other">%1$d Zeilen</item>
     </plurals>
+    <string name="auth_welcome">Willkommen bei Okou</string>
+    <string name="auth_restoring">Sitzung wird wiederhergestellt…</string>
+    <string name="auth_preparing_workspace">Arbeitsbereich wird vorbereitet…</string>
+    <string name="auth_choose_workspace">Arbeitsbereich auswählen</string>
+    <string name="auth_no_workspace">Du hast noch keinen Zugriff auf einen Arbeitsbereich.</string>
+    <string name="auth_workspace_setup">Arbeitsbereich im Web einrichten</string>
+    <string name="auth_access_removed">Deine Sitzung oder dein Zugriff hat sich geändert. Melde dich erneut an oder aktualisiere den Zugriff.</string>
+    <string name="auth_update_required">Aktualisiere Okou, um fortzufahren.</string>
+    <string name="auth_unavailable">Sitzung oder Arbeitsbereich konnte nicht geladen werden. Versuche es erneut.</string>
+    <string name="auth_sign_out">Abmelden</string>
+    <string name="auth_signing_out">Abmeldung läuft…</string>
+    <string name="auth_workspace">Arbeitsbereich</string>
+    <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
+    <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
 </resources>
