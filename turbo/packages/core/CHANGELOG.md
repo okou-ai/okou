@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.830.0](https://github.com/okou-ai/okou/compare/core-v8.829.3...core-v8.830.0) (2026-11-12)
+
+
+### Features
+
+* **app:** draw every okou avatar with the animated design-system avatar ([#46728](https://github.com/okou-ai/okou/issues/46728)) ([2b40ec0](https://github.com/okou-ai/okou/commit/2b40ec0063dc9b4f64a0cbe17c88978eff8c88e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+
 ## [8.829.3](https://github.com/okou-ai/okou/compare/core-v8.829.2...core-v8.829.3) (2026-11-12)
 
 

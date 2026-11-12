@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.62.0](https://github.com/okou-ai/okou/compare/api-v2.61.2...api-v2.62.0) (2026-11-12)
+
+
+### Features
+
+* **android:** add generated api transport and release compatibility ([#46666](https://github.com/okou-ai/okou/issues/46666)) ([2898887](https://github.com/okou-ai/okou/commit/2898887d268ba4efdec8b7bbffdf6a93a9de7490))
+
+
+### Bug Fixes
+
+* **api:** remove desktop notification disconnect warning ([#46737](https://github.com/okou-ai/okou/issues/46737)) ([e27cfc3](https://github.com/okou-ai/okou/commit/e27cfc30dd86da43ec791718f1cb061e2d65bc68))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+    * @okouai/core bumped to 8.830.0
+    * @okouai/db bumped to 2.29.3
+    * @okouai/pi-agent-runtime bumped to 1.51.106
+
 ## [2.61.2](https://github.com/okou-ai/okou/compare/api-v2.61.1...api-v2.61.2) (2026-11-12)
 
 
