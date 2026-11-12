@@ -28,16 +28,17 @@ a component is in the same place in all three.
 
 ## Sources and ownership
 
-| Layer                                    | Authority                                                                                      | Native consumer                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Shared colors, light/dark, state layers  | [`globals.css`](../../turbo/packages/ui/src/styles/globals.css), exported `--color-*` bindings | `OkouColor.generated.swift`                                    |
-| App font family and sidebar-border alias | [`index.css`](../../turbo/apps/platform/src/views/css/index.css)                               | Geist / Geist Mono; generated sidebar-border                   |
-| Native geometry and motion               | `OkouMetrics.swift`                                                                            | `OkouSpace`, `OkouRadius`, `OkouControl`, `OkouMotion`         |
-| Typography and scaling                   | `OkouTypography.swift`; licensed fonts in `Resources/Fonts`                                    | `Font.okou`, UIKit font adapter                                |
-| Product icons                            | Web's pinned `lucide-react`; matching official `lucide-static` vectors                         | `icons.json`, generated assets, `OkouIcon`                     |
-| Product brand assets                     | Existing `OkouMark`, wordmark, and assistant avatar asset sets                                 | `OkouBrand`, `OkouWordmark`                                    |
-| Common components                        | `DesignSystem/Components/<group>/`                                                             | Buttons, fields, surfaces, empty states, auth theme            |
-| Feature composition                      | The owning feature                                                                             | Chat cards, composer, sidebar, attachment and permission views |
+| Layer                                    | Authority                                                                                      | Native consumer                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Shared colors, light/dark, state layers  | [`globals.css`](../../turbo/packages/ui/src/styles/globals.css), exported `--color-*` bindings | `OkouColor.generated.swift`                                            |
+| App font family and sidebar-border alias | [`index.css`](../../turbo/apps/platform/src/views/css/index.css)                               | Geist / Geist Mono; generated sidebar-border                           |
+| Native geometry and motion               | `OkouMetrics.swift`                                                                            | `OkouSpace`, `OkouRadius`, `OkouControl`, `OkouMotion`                 |
+| Typography and scaling                   | `OkouTypography.swift`; licensed fonts in `Resources/Fonts`                                    | `Font.okou`, UIKit font adapter                                        |
+| Product icons                            | Web's pinned `lucide-react`; matching official `lucide-static` vectors                         | `icons.json`, generated assets, `OkouIcon`                             |
+| Product brand assets                     | Existing `OkouMark` and wordmark asset sets                                                    | `OkouBrand`, `OkouWordmark`                                            |
+| Okou avatar                              | Web's `OkouAvatar` (`okou-avatar-artwork.ts`, `okou-avatar-rig.ts`) and the brand textures     | `OkouAvatarArtwork.generated.swift`, `OkouAvatarTexture`, `OkouAvatar` |
+| Common components                        | `DesignSystem/Components/<group>/`                                                             | Buttons, fields, surfaces, empty states, auth theme                    |
+| Feature composition                      | The owning feature                                                                             | Chat cards, composer, sidebar, attachment and permission views         |
 
 Brand artwork retains its approved shape, aspect ratio, and colors. Do not
 redraw logos with generic icons. Preserve multicolor partner/connector identities
@@ -125,7 +126,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample; navigation transitions are system-owned)                                     |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample, 30 fps Okou avatar; navigation transitions are system-owned)                 |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -509,12 +510,45 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
 #### Agent artwork
 
 `OkouAgentAvatar` is shared by chat rows, the new-chat greeting, and assistant
-messages. The default agent uses the canonical Okou
-avatar. Other agents show an uploaded bitmap image or a neutral tile with their
-name's initial. Keep the existing typography, semantic colors, native sizing,
-and accessible name in the shared component.
+messages. The default agent is drawn by `OkouAvatar`. Other agents show an
+uploaded bitmap image or a neutral tile with their name's initial. Keep the
+existing typography, semantic colors, native sizing, and accessible name in the
+shared component.
 
-Native has no avatar editor and does not bundle or compose avatar layers.
+`OkouAvatar` is Web's `OkouAvatar` drawn natively, and follows its rules:
+
+- **Figure and crop.** Okou comes from the 21-mood expression rig (Liangyou's
+  v27 artwork) on a 40-unit frame. The 48-unit artwork overhangs it, 4 left and
+  1.5 up, which puts the bun just inside the top edge and cuts at the collar, as
+  the iOS widget does.
+- **Frame.** A continuous-corner square with a radius of 30% of its side. Web
+  reaches the same profile with Figma's iOS corner smoothing.
+- **Texture.** The default agent's brand tile, `drop-lightblue-blue`: the one
+  tile that clears every colour Okou is painted in. It is centred at 180%, so two
+  or three marks read per tile.
+- **Lines.** Outlines are 2.89 artwork units, so their weight follows the
+  avatar's size. Facial lines keep one on-screen weight through squash and
+  stretch.
+- **Motion.** The avatar plays its mood (`idle` unless a caller picks another)
+  from the mood's hero moment, at 30 frames a second (`OkouMotion.avatarFrame`).
+  `.still` holds that moment for places that cannot or should not move, and
+  Reduce Motion always does. An avatar that leaves the screen stops drawing and
+  resumes where it left off.
+- **Everywhere.** Every surface that draws the default agent animates: the
+  new-chat greeting, assistant messages and the long-press chat preview. An
+  accessible name comes from the caller; without one the avatar is hidden from
+  VoiceOver.
+
+`sync-okou-avatar.py` generates `OkouAvatarArtwork.generated.swift` from Web's
+`okou-avatar-artwork.ts` and bundles the texture as a vector asset. The overlays,
+poses and drawing are ported by hand in `OkouAvatarArtwork.swift` and
+`OkouAvatarRig.swift`, so a mood is the same moment on both clients.
+`DesignSystem/Components/Identity/okou-avatar.json` records the hashes of the Web
+sources (artwork, rig, component and texture library); `--check` verifies them
+offline, so any Web change to the avatar fails until the port is reviewed.
+
+Native has no avatar editor and does not bundle or compose avatar layers; the
+default agent's drawing is the only avatar artwork it carries.
 Preset identifiers and SVG URLs use the initial tile. Keep persisted avatar
 values with their owning service; this presentation policy does not rewrite
 another client's avatar configuration. Unavailable custom images use the same
@@ -634,13 +668,14 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 #### Identity
 
-| Component                              | Use / states                                                                                                                                               |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouAgentAvatar`, `OkouWorkspaceLogo` | Shared avatar and workspace artwork with native sizing                                                                                                     |
-| `OkouProfileAvatar`                    | The signed-in person's photo in a circle with a hairline; without one the web's initial on `muted` (sidebar Settings, Settings profile row)                |
-| `OkouWorkspaceMenuLogos`               | Workspace logos for a system menu: each tile drawn once at 28 pt (`OkouAvatarSize.menu`) with the logo's own corners; a neutral tile until an upload loads |
-| `OkouWorkspaceGlassLogo`               | A workspace's logo as a 44 pt glass circle (the sidebar's switcher): the logo round at 28 pt (`OkouAvatarSize.glassControl`), concentric with the circle   |
-| `OkouLogoTile`                         | A partner logo or glyph on a quiet square tile (44 / 64 pt) so catalog marks line up                                                                       |
+| Component                              | Use / states                                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OkouAvatar`                           | Okou, the default agent: Web's 21-mood rig in a continuous-corner square over the brand texture; plays its mood at 30 fps, `.still` and Reduce Motion hold its hero frame |
+| `OkouAgentAvatar`, `OkouWorkspaceLogo` | Shared avatar and workspace artwork with native sizing                                                                                                                    |
+| `OkouProfileAvatar`                    | The signed-in person's photo in a circle with a hairline; without one the web's initial on `muted` (sidebar Settings, Settings profile row)                               |
+| `OkouWorkspaceMenuLogos`               | Workspace logos for a system menu: each tile drawn once at 28 pt (`OkouAvatarSize.menu`) with the logo's own corners; a neutral tile until an upload loads                |
+| `OkouWorkspaceGlassLogo`               | A workspace's logo as a 44 pt glass circle (the sidebar's switcher): the logo round at 28 pt (`OkouAvatarSize.glassControl`), concentric with the circle                  |
+| `OkouLogoTile`                         | A partner logo or glyph on a quiet square tile (44 / 64 pt) so catalog marks line up                                                                                      |
 
 #### Feature and catalog
 
@@ -937,6 +972,7 @@ python3 ios/scripts/sync-design-assets.py
 python3 ios/scripts/sync-design-tokens.py --check
 python3 ios/scripts/sync-design-assets.py --check
 python3 ios/scripts/sync-workspace-assets.py --check
+python3 ios/scripts/sync-okou-avatar.py --check
 xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push
 ```
 

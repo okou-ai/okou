@@ -1,0 +1,13 @@
+{
+  "sources": {
+    "turbo/packages/ui/src/components/ui/okou-avatar-artwork.ts": "24cbeb822d52f91f2c25c1757743255022860a7fdf2d69fae816115823632274",
+    "turbo/packages/ui/src/components/ui/okou-avatar-rig.ts": "bd2174da151faee9fdc3eaedb3a47f0a5ed19598996ed9aac5f4cf39a86a8264",
+    "turbo/packages/ui/src/components/ui/okou-avatar.tsx": "07c0af55116ef6306636ff012fd8eb9d2ea8e06d7aa6ece0b6c18ba6aedd2be4",
+    "turbo/packages/core/src/agent-avatar-texture.ts": "f1538a6a5a86d8b364954303e45fd62fe7bc2db71536569271193596d10602bb"
+  },
+  "texture": {
+    "name": "OkouAvatarTexture",
+    "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/drop-lightblue-blue.svg",
+    "sha256": "1be15eebd86096594926f5c6278a2fab01d6829a0f3413e3a6375facd3a90c38"
+  }
+}

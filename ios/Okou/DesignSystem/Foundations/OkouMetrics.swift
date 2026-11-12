@@ -163,6 +163,10 @@ enum OkouMotion {
   /// One sweep of a working title's band (`OkouShimmerText`): faster than the web's 3.5 s
   /// thinking label, so a working chat is obvious in a list read at a glance.
   static let shimmerText: Double = 1.5
+  /// One frame of an animated `OkouAvatar`. Its moods are slow sways and blinks, so 30 frames a
+  /// second reads as smooth and halves the drawing when several avatars move at once (Web's
+  /// shared avatar clock).
+  static let avatarFrame: TimeInterval = 1.0 / 30
   /// Streamed text is published at most this often so a row is not re-measured per chunk.
   static let streamFlush = Duration.milliseconds(120)
   /// Routine sync finishes sooner; only a slow sync shows its banner.
