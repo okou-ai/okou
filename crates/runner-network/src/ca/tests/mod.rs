@@ -1,3 +1,5 @@
+mod fixture_keys;
+
 use super::*;
 use runner_host::paths::HomePaths;
 use tokio::sync::OnceCell;
@@ -23,24 +25,34 @@ fn read_ca(ca_dir: &Path) -> CaBytes {
     }
 }
 
-fn generate_test_ca() -> CaBytes {
+fn generate_test_ca(key_der: &str) -> CaBytes {
     let dir = tempfile::tempdir().unwrap();
     let files = CaFiles::new(dir.path());
     let key_path = files.key.to_string_lossy();
     let cert_path = files.cert.to_string_lossy();
 
-    // Recovery inputs need valid RSA identities, not production-strength keys.
+    // Both recovery inputs retain distinct RSA2048 keys and fresh certificates.
+    // Prime generation is unrelated setup; import explicit synthetic inputs.
+    let input = dir.path().join("fixture-key.der");
+    std::fs::write(&input, hex::decode(key_der).unwrap()).unwrap();
+    run_openssl(&[
+        "pkey",
+        "-inform",
+        "DER",
+        "-in",
+        input.to_string_lossy().as_ref(),
+        "-out",
+        key_path.as_ref(),
+    ])
+    .unwrap();
     run_openssl(&[
         "req",
         "-new",
         "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
+        "-key",
+        key_path.as_ref(),
         "-days",
         "1",
-        "-keyout",
-        key_path.as_ref(),
         "-out",
         cert_path.as_ref(),
         "-subj",
@@ -63,8 +75,8 @@ async fn test_ca_identities() -> &'static TestCaIdentities {
     TEST_CA_IDENTITIES
         .get_or_init(|| async {
             tokio::task::spawn_blocking(|| {
-                let first = generate_test_ca();
-                let second = generate_test_ca();
+                let first = generate_test_ca(fixture_keys::FIRST);
+                let second = generate_test_ca(fixture_keys::SECOND);
                 assert!(first.key != second.key, "test CA identities should differ");
                 TestCaIdentities { first, second }
             })
