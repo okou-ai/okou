@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 libc = { workspace = true, features = ["std"] }
+rustix = { workspace = true, features = ["process", "std"] }
 tokio = { workspace = true, optional = true, features = ["io-util", "net", "process", "rt", "sync", "time"] }
 
 [features]
