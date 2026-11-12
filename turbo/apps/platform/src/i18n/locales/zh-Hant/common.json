@@ -6260,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "隱藏合規資訊",
       "link": "安全詳情",
       "status": {
         "aligned": "已對標",

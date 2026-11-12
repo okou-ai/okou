@@ -11,7 +11,6 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -3558,7 +3557,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           <ChatThreadBottomBar
             thread={thread}
             layout={showCapabilities ? "home" : "default"}
-            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
           />
         </div>
       </div>
@@ -3612,13 +3610,10 @@ function SharedThreadCreatedLink({
 function ChatThreadBottomBar({
   thread,
   layout,
-  below = null,
 }: {
   readonly thread: ChatPanelSignals;
   /** `home` while an empty thread shows the capability home above it. */
   readonly layout: ComposerLayout;
-  /** Shown under the composer, such as compliance on an empty thread's home. */
-  readonly below?: ReactNode;
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
@@ -3632,7 +3627,7 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} layout={layout} below={below} />,
+      <ChatThreadComposer thread={thread} layout={layout} />,
     );
   }
 
@@ -3924,11 +3919,9 @@ function RecommendedFollowupList({
 function ChatThreadComposer({
   thread,
   layout,
-  below,
 }: {
   readonly thread: ChatPanelSignals;
   readonly layout: ComposerLayout;
-  readonly below: ReactNode;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
@@ -3951,7 +3944,6 @@ function ChatThreadComposer({
       >
         <div className="mx-auto max-w-[900px]">
           <ChatComposer signals={thread.composer} layout={layout} />
-          {below}
         </div>
       </div>
     </footer>

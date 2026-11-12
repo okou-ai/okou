@@ -6344,6 +6344,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Ocultar conformidade",
       "link": "Detalhes de segurança",
       "status": {
         "aligned": "Alinhado",

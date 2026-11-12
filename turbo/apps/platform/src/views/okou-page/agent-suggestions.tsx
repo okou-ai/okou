@@ -793,17 +793,27 @@ function HomeSuggestionProgress({
  * the progress segments and the feedback menu sit above that trigger. The
  * trigger reaches 8px past the line on each side, so its focus ring clears the
  * text instead of cutting into its first glyph.
+ *
+ * On the session's first home the line takes the greeting's own entrance,
+ * one 70ms step after the avatar: the eyebrow at 70ms, the title at 140ms. Its
+ * end completes the greeting entrance, because the tagline that would
+ * otherwise complete it is not on the page. Later titles rise in briefly as
+ * the rotation reaches them.
  */
 function HomeSuggestionPreview({
   item,
   index,
   count,
   paused,
+  entrance,
+  onEntranceEnd,
 }: {
   readonly item: Suggestion;
   readonly index: number;
   readonly count: number;
   readonly paused: boolean;
+  readonly entrance: boolean;
+  readonly onEntranceEnd: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -825,7 +835,13 @@ function HomeSuggestionPreview({
         }
       />
       <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex h-4 min-w-0 items-center gap-2.5">
+        <div
+          className={cn(
+            "flex h-4 min-w-0 items-center gap-2.5",
+            entrance && "motion-safe:animate-chat-greeting-token",
+          )}
+          style={entrance ? { animationDelay: "70ms" } : undefined}
+        >
           <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium leading-4 text-muted-foreground">
             <Sparkles
               aria-hidden
@@ -843,7 +859,18 @@ function HomeSuggestionPreview({
         </div>
         <h2
           key={item.id}
-          className="truncate text-xl font-medium leading-7 text-foreground motion-safe:animate-suggestion-title-in"
+          className={cn(
+            "truncate text-xl font-medium leading-7 text-foreground",
+            entrance
+              ? "motion-safe:animate-chat-greeting-token"
+              : "motion-safe:animate-suggestion-title-in",
+          )}
+          style={entrance ? { animationDelay: "140ms" } : undefined}
+          onAnimationEnd={(event) => {
+            if (entrance && event.animationName === "chat-greeting-token") {
+              onEntranceEnd();
+            }
+          }}
         >
           {item.title}
         </h2>
@@ -915,8 +942,12 @@ function HomeSuggestionDetails() {
  */
 export function HomeSuggestionGreeting({
   fallback,
+  entrance,
+  onEntranceEnd,
 }: {
   readonly fallback: ReactNode;
+  readonly entrance: boolean;
+  readonly onEntranceEnd: () => void;
 }) {
   const result = useLastLoadable(homeSuggestionCard$);
   const setDetailsOpen = useSet(setHomeSuggestionDetailsOpen$);
@@ -935,6 +966,8 @@ export function HomeSuggestionGreeting({
           index={card.index}
           count={card.count}
           paused={card.detailsOpen}
+          entrance={entrance}
+          onEntranceEnd={onEntranceEnd}
         />
       ) : (
         fallback
