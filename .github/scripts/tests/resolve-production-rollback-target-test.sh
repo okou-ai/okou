@@ -34,7 +34,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT-c11cc11cc11cc11cc11cc11cc11cc11cc11cc11c}" ]; then
+    if [ "${3:-}" = "eddbe0f4edae253b6a9240e0f312f25b36acad5b" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_STAFF_SINGLE_AGENT_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_STAFF_SINGLE_AGENT_API_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT-c11cc11cc11cc11cc11cc11cc11cc11cc11cc11c}" ]; then
       [ "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID:-1}" = "1" ]
@@ -631,6 +637,24 @@ assert_failure() {
     fail "missing failure message: ${expected_message}"
   fi
 }
+
+# Staff activation must not select an API or Runner without the separately
+# deployed readers, even when the other artifact contains them.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates staff Single Agent preparation" \
+  run_resolver "${tmp_dir}/staff-single-agent-api.output" MOCK_STAFF_SINGLE_AGENT_API_VALID=0
+[ ! -s "${tmp_dir}/staff-single-agent-api.output" ] || fail "preparation-free staff API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "preparation-free staff API must fail before provider or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Runner release runner-rs-v1.2.3 predates staff Single Agent preparation" \
+  run_resolver "${tmp_dir}/staff-single-agent-runner.output" MOCK_STAFF_SINGLE_AGENT_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/staff-single-agent-runner.output" ] || fail "preparation-free staff Runner must not publish outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "preparation-free staff Runner must fail before Runner artifact or host access"
+fi
 
 # A paired rollback must not reintroduce an API without current-content
 # downloads or independently restart a Runner that still consumes inline claims.
