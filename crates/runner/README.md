@@ -35,11 +35,14 @@ releases local reservations and cannot later become acceptance for that input.
 Pending/unknown/conflict never prove an earlier attempt was rejected.
 
 Four preparation transactions are shared with existing acquisition. These slots
-release at executor handoff rather than Run completion. Intake waits up to three
-seconds for a slot, then returns HTTP 429, `Retry-After: 1`, and `busy`. This
-attempt acquired no custody; the response says nothing about earlier attempts.
-Allow bounded same-process retries for a preferred Runner. A possibly accepted
-earlier attempt must remain pinned to that owner even if a retry gets 429.
+release at executor handoff rather than Run completion. When full, intake returns
+HTTP 429 and `busy` immediately, before reading the body. The sender owns waiting
+and bounded same-process retries for a preferred Runner. No fixed `Retry-After`
+hint is sent; an initial jittered 100–200 ms backoff, increasing under sustained
+pressure within the sender's invocation budget, is the initial policy to validate
+against actual busy/retry outcomes. This attempt acquired no custody; the response
+says nothing about earlier attempts. A possibly accepted earlier attempt must
+remain pinned to that owner even if a retry gets 429.
 
 Retry an existing request with identical bytes, including its original deadline.
 Each process retains at most 65,536 compact Run verdicts without eviction.

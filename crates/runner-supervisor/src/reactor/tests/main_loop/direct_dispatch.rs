@@ -125,7 +125,7 @@ async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
 }
 
 #[tokio::test]
-async fn supplied_http_waits_for_shared_slots_then_429_retries_after_recovery() {
+async fn supplied_http_returns_429_before_body_intake_and_retries_after_slot_recovery() {
     let (mut config, env) = mock_run_config(test_profiles(), 32, 65536, 16);
     let peer = super::startup::configure_public_ingress(&mut config).await;
     let identity = config.runner.identity;
@@ -155,17 +155,35 @@ async fn supplied_http_waits_for_shared_slots_then_429_retries_after_recovery() 
     );
     let run_id = RunId::new_v4();
     let body = envelope(identity, run_id).to_string();
-    let started = Instant::now();
-    let response = client(&socket, identity, run_id, &body).await;
-    assert_eq!(response.0, 429);
-    assert!(response.1.to_ascii_lowercase().contains("retry-after: 1"));
-    assert_eq!(response.2["disposition"], "busy");
-    assert!(
-        started.elapsed() >= Duration::from_secs(3),
-        "brief pressure must get a local wait"
+    let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
+    // Withhold the body: a busy receiver must answer from headers alone,
+    // without waiting for either an admission slot or the upload deadline.
+    stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut bytes))
+        .await
+        .expect("full intake must answer without waiting for a slot or request body")
+        .unwrap();
+    let response = String::from_utf8(bytes).unwrap();
+    let (head, response_body) = response.split_once("\r\n\r\n").unwrap();
+    assert!(head.starts_with("HTTP/1.1 429 "));
+    assert!(!head.to_ascii_lowercase().contains("retry-after:"));
+    assert_eq!(
+        serde_json::from_str::<Value>(response_body).unwrap()["disposition"],
+        "busy"
     );
     assert!(env.cancel_tokens.handle(run_id).await.is_none());
     env.handle.unblock_claims();
+    for id in legacy {
+        assert_eq!(
+            env.handle
+                .wait_completion(id, Duration::from_secs(10))
+                .await
+                .unwrap()
+                .exit_code,
+            0
+        );
+    }
     // Identical retry becomes admissible; 429 did not install a permanent rejection.
     assert_eq!(
         client(&socket, identity, run_id, &body).await.2["disposition"],
@@ -179,16 +197,6 @@ async fn supplied_http_waits_for_shared_slots_then_429_retries_after_recovery() 
             .exit_code,
         0
     );
-    for id in legacy {
-        assert_eq!(
-            env.handle
-                .wait_completion(id, Duration::from_secs(10))
-                .await
-                .unwrap()
-                .exit_code,
-            0
-        );
-    }
     assert_eq!(env.handle.claim_candidates().len(), 4);
     peer.shutdown().await;
     shutdown(&env, runner).await;

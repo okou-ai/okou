@@ -101,14 +101,8 @@ impl DispatchIntake {
         )
     }
 
-    pub(super) async fn reserve(&self) -> Option<OwnedSemaphorePermit> {
-        tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            self.slots.clone().acquire_owned(),
-        )
-        .await
-        .ok()?
-        .ok()
+    pub(super) fn try_reserve(&self) -> Option<OwnedSemaphorePermit> {
+        self.slots.clone().try_acquire_owned().ok()
     }
 
     pub(super) async fn submit(

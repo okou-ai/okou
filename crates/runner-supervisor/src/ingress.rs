@@ -166,12 +166,9 @@ impl IngressHandler {
             let Some(intake) = self.dispatch.get() else {
                 return self.dispatch_response(run_id, dispatch::Disposition::Unknown);
             };
-            let Some(permit) = intake.reserve().await else {
+            let Some(permit) = intake.try_reserve() else {
                 let mut result = self.dispatch_response(run_id, dispatch::Disposition::Busy);
                 *result.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-                result
-                    .headers_mut()
-                    .insert("retry-after", hyper::header::HeaderValue::from_static("1"));
                 return result;
             };
             let read = async {

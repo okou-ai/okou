@@ -23,7 +23,7 @@ async fn compact_custody_never_evicts_accepted_work_or_reopens_an_unknown_attemp
         let intake = intake.clone();
         let bytes = bytes.clone();
         tokio::spawn(async move {
-            let permit = intake.reserve().await.unwrap();
+            let permit = intake.try_reserve().unwrap();
             intake
                 .submit(identity, first, bytes.as_bytes(), permit)
                 .await
@@ -39,7 +39,7 @@ async fn compact_custody_never_evicts_accepted_work_or_reopens_an_unknown_attemp
         let intake = intake.clone();
         let bytes = second_body.clone();
         tokio::spawn(async move {
-            let permit = intake.reserve().await.unwrap();
+            let permit = intake.try_reserve().unwrap();
             intake
                 .submit(identity, second, bytes.as_bytes(), permit)
                 .await
@@ -53,7 +53,7 @@ async fn compact_custody_never_evicts_accepted_work_or_reopens_an_unknown_attemp
         (second, second_body, Disposition::Unknown),
         (RunId::new_v4(), String::new(), Disposition::Unknown),
     ] {
-        let permit = intake.reserve().await.unwrap();
+        let permit = intake.try_reserve().unwrap();
         assert_eq!(
             intake
                 .submit(identity, run_id, bytes.as_bytes(), permit)
@@ -62,7 +62,7 @@ async fn compact_custody_never_evicts_accepted_work_or_reopens_an_unknown_attemp
         );
     }
     let third = RunId::new_v4();
-    let permit = intake.reserve().await.unwrap();
+    let permit = intake.try_reserve().unwrap();
     assert_eq!(
         intake
             .submit(identity, third, body(identity, third).as_bytes(), permit)
