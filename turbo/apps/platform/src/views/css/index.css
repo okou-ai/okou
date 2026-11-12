@@ -260,18 +260,6 @@
   --animate-capability-tray-in: capability-tray-in 360ms
     cubic-bezier(0.23, 1, 0.32, 1) both;
 
-  /* On the session's first home, the capability rows and the compliance block
-     under them settle in after the greeting: an 8px rise and a fade on the
-     greeting's own curve, one 70ms step apart through
-     `--capability-row-delay`. `animate-*` compiles to the `animation`
-     shorthand, so the delay rides inside it rather than in a separate
-     `animation-delay` rule it would reset. `backwards` holds the start through
-     the delay and then lets go, so nothing the element does later — such as the
-     compliance block folding away — fights a held end state. Consumers reach it
-     through `motion-safe:`. Keyframes stay below. */
-  --animate-capability-row-in: capability-row-in 560ms
-    cubic-bezier(0.22, 1, 0.36, 1) var(--capability-row-delay, 0ms) backwards;
-
   /* Home suggestions rotate in the greeting row. The current suggestion's
      progress segment fills over 8s, and its `animationend` shows the next
      suggestion. The fill animates `--okou-suggestion-progress` rather than a
@@ -309,6 +297,21 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
+  /* On the session's first home, the capability rows and the compliance block
+     under them settle in after the greeting: an 8px rise and a fade on the
+     greeting's own curve, one 70ms step apart through
+     `--capability-row-delay`. It lives in this inline block so the utility
+     carries the value itself: a theme variable is a custom property on
+     `:root`, where its own `var(--capability-row-delay)` would resolve before
+     any card could set one, leaving every row at 0ms. `animate-*` compiles to
+     the `animation` shorthand, so the delay rides inside it rather than in a
+     separate `animation-delay` rule it would reset. `backwards` holds the start
+     through the delay and then lets go, so nothing the element does later —
+     such as the compliance block folding away — fights a held end state.
+     Consumers reach it through `motion-safe:`. Keyframes stay below. */
+  --animate-capability-row-in: capability-row-in 560ms
+    cubic-bezier(0.22, 1, 0.36, 1) var(--capability-row-delay, 0ms) backwards;
+
   --color-palette-anchor: var(--okou-color-theme-anchor);
   --background-image-palette-gradient: linear-gradient(
     135deg,
