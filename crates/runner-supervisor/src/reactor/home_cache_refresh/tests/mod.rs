@@ -251,8 +251,10 @@ async fn repeated_home_cache_events_cannot_starve_a_later_quiet_publication() {
 async fn busy_home_cache_retries_do_not_refill_a_truncated_snapshot_or_emit_changes() {
     let (_dir, home, mut refresh, cache) = fixture();
     let snapshot = &refresh.context.snapshot;
-    let mut inventory = HomeCacheInventory::default();
-    inventory.truncated = true;
+    let inventory = HomeCacheInventory {
+        truncated: true,
+        ..Default::default()
+    };
     snapshot.finish_home_cache_refresh(snapshot.begin_home_cache_refresh(), inventory);
     let key = "a".repeat(64);
     let _lock = runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), &key))
