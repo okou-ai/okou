@@ -1796,6 +1796,8 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    /// Host-local ingress service activity, not public reachability or admission.
+    pub ingress_service_active: bool,
     /// Configured advisory host identity, independent of cache contents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_hostname: Option<String>,

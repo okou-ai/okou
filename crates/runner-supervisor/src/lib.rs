@@ -41,6 +41,7 @@ pub mod heartbeat;
 pub mod host_memory;
 pub mod idle_lifecycle;
 pub mod idle_pressure;
+pub mod ingress;
 pub mod job_lifecycle;
 mod network_log_http_adapter;
 pub mod orphan_reap;
