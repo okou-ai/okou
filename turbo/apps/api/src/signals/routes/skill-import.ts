@@ -9,11 +9,19 @@ import {
   skillImportSessionsContract,
   skillImportSkillsContract,
   type SkillImportRequest,
+  type SkillImportSkippedFile,
 } from "@okouai/api-contracts/contracts/skill-import";
+import {
+  normalizeWorkflowAttachmentFiles,
+  workflowAttachmentHash,
+  workflowAttachmentPath,
+  type WorkflowAttachmentFile,
+} from "@okouai/core/workflow-attachment-bundle";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
+import { win32 } from "node:path";
 import { command, computed } from "ccstate";
 import { and, asc, count, eq, isNull, or } from "drizzle-orm";
 
@@ -33,9 +41,10 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import { recordSkillImportFact } from "../services/skill-import-telemetry";
 import { workflowSummary } from "../services/workflow-data.service";
+import { WorkflowAttachmentError } from "../services/workflow-attachments.service";
 import type { RouteEntry } from "../route-entry";
-import { safeSync } from "../utils";
-import { createWorkflowRecord$ } from "./workflows";
+import { safeSync, settle } from "../utils";
+import { createWorkflowRecord$, type WorkflowCreationInput } from "./workflows";
 
 const BEARER_PREFIX = "Bearer ";
 
@@ -230,8 +239,8 @@ function isImportableText(value: string): boolean {
  * Text-only v1: report the first field carrying content a text skill cannot
  * hold. This covers the metadata as well, because PostgreSQL rejects a NUL in a
  * text value and rewrites an unpaired surrogate, so an unchecked field would
- * turn this documented refusal into a failed write or altered content. A
- * non-text path is named by position so the reply never echoes the bytes.
+ * turn this documented refusal into a failed write or altered content.
+ * Supplementary files are checked separately and can be skipped.
  */
 function firstBinaryField(body: SkillImportRequest): string | null {
   const textFields = [
@@ -244,57 +253,74 @@ function firstBinaryField(body: SkillImportRequest): string | null {
       return field;
     }
   }
-  for (const [index, file] of (body.files ?? []).entries()) {
-    if (!isImportableText(file.path)) {
-      return `files[${String(index)}].path`;
-    }
-    if (!isImportableText(file.content)) {
-      return file.path;
-    }
-  }
   return null;
 }
 
-function skillSizeError(body: SkillImportRequest) {
-  const instructionBytes = utf8Bytes(body.instruction);
-  if (instructionBytes > SKILL_IMPORT_LIMITS.maxInstructionBytes) {
-    return skillTooLarge(
-      `Instruction is ${String(instructionBytes)} bytes, over the ${String(
-        SKILL_IMPORT_LIMITS.maxInstructionBytes,
-      )} byte limit`,
-    );
-  }
-
-  const files = body.files ?? [];
-  if (files.length > SKILL_IMPORT_LIMITS.maxFilesPerSkill) {
-    return skillTooLarge(
-      `A skill may attach at most ${String(
-        SKILL_IMPORT_LIMITS.maxFilesPerSkill,
-      )} files`,
-    );
-  }
-
+function importableSkillFiles(input: SkillImportRequest["files"]) {
+  const files: WorkflowAttachmentFile[] = [];
+  const duplicates = new Map<
+    string,
+    { readonly index: number; readonly path: string }
+  >();
+  const skippedFiles: SkillImportSkippedFile[] = [];
   let totalBytes = 0;
-  for (const file of files) {
+  for (const file of input ?? []) {
+    if (!isImportableText(file.path) || !isImportableText(file.content)) {
+      skippedFiles.push({ path: file.path, reason: "binary_content" });
+      continue;
+    }
+    // Absolute and drive-relative paths cannot identify a file relative to the skill.
+    if (win32.parse(file.path).root) {
+      skippedFiles.push({ path: file.path, reason: "invalid_path" });
+      continue;
+    }
     const fileBytes = utf8Bytes(file.content);
     if (fileBytes > SKILL_IMPORT_LIMITS.maxFileBytes) {
-      return skillTooLarge(
-        `File "${file.path}" is over the ${String(
-          SKILL_IMPORT_LIMITS.maxFileBytes,
-        )} byte limit`,
-      );
+      skippedFiles.push({ path: file.path, reason: "size_limit" });
+      continue;
     }
+    // The writer owns canonical paths, reserved names and file/directory conflicts.
+    const attachment = {
+      path: file.path.replaceAll("\\", "/"),
+      content: Buffer.from(file.content, "utf8"),
+    };
+    const normalized = safeSync(() => {
+      return normalizeWorkflowAttachmentFiles([...files, attachment]);
+    });
+    if (!("ok" in normalized)) {
+      skippedFiles.push({ path: file.path, reason: "invalid_path" });
+      continue;
+    }
+    const identity = `${workflowAttachmentPath(attachment.path)}\0${workflowAttachmentHash(attachment.content)}`;
+    const duplicate = duplicates.get(identity);
+    if (duplicate) {
+      // Retain the greatest raw alias so the writer's duplicate-path winner is unchanged.
+      if (attachment.path > duplicate.path) {
+        files[duplicate.index] = attachment;
+        duplicates.set(identity, {
+          index: duplicate.index,
+          path: attachment.path,
+        });
+      }
+      continue;
+    }
+    if (
+      totalBytes + fileBytes > SKILL_IMPORT_LIMITS.maxTotalFileBytes ||
+      files.length >= SKILL_IMPORT_LIMITS.maxFilesPerSkill
+    ) {
+      skippedFiles.push({ path: file.path, reason: "size_limit" });
+      continue;
+    }
+    duplicates.set(identity, { index: files.length, path: attachment.path });
+    files.push(attachment);
     totalBytes += fileBytes;
   }
-  if (totalBytes > SKILL_IMPORT_LIMITS.maxTotalFileBytes) {
-    return skillTooLarge(
-      `Attached files total ${String(totalBytes)} bytes, over the ${String(
-        SKILL_IMPORT_LIMITS.maxTotalFileBytes,
-      )} byte limit`,
-    );
-  }
-
-  return null;
+  return {
+    files: normalizeWorkflowAttachmentFiles(files).map((file) => {
+      return { path: file.path, content: file.content.toString("utf8") };
+    }),
+    skippedFiles,
+  };
 }
 
 const uploadBody$ = bodyResultOf(skillImportSkillsContract.upload);
@@ -305,6 +331,15 @@ const uploadBody$ = bodyResultOf(skillImportSkillsContract.upload);
  * copy. The contract body parser then reads the same cached bytes.
  */
 const validatePayloadBytes$ = command(async ({ get }, signal: AbortSignal) => {
+  // Reject an oversize upload on its declared length before buffering it.
+  const declaredLength = Number(get(request$).header("content-length"));
+  if (declaredLength > SKILL_IMPORT_LIMITS.maxRequestBytes) {
+    return skillTooLarge(
+      `Request body is over the ${String(
+        SKILL_IMPORT_LIMITS.maxRequestBytes,
+      )} byte limit`,
+    );
+  }
   const payload = await get(request$).arrayBuffer();
   signal.throwIfAborted();
   if (payload.byteLength > SKILL_IMPORT_LIMITS.maxRequestBytes) {
@@ -325,21 +360,41 @@ const validatePayloadBytes$ = command(async ({ get }, signal: AbortSignal) => {
   return null;
 });
 
+const createImportedSkill$ = command(
+  async ({ set }, creation: WorkflowCreationInput, signal: AbortSignal) => {
+    const attempt = await settle(
+      set(createWorkflowRecord$, creation, signal),
+      signal,
+    );
+    if (attempt.ok) {
+      return { created: attempt.value, skippedFiles: [] };
+    }
+    if (
+      !(attempt.error instanceof WorkflowAttachmentError) ||
+      !creation.body.files?.length
+    ) {
+      throw attempt.error;
+    }
+    // These errors precede publication. Keep durable cleanup for the abandoned
+    // upload, and create a fresh instruction-only Workflow. Never retry a commit.
+    return {
+      created: await set(
+        createWorkflowRecord$,
+        { ...creation, body: { ...creation.body, files: [] } },
+        signal,
+      ),
+      skippedFiles: creation.body.files.map((file): SkillImportSkippedFile => {
+        return { path: file.path, reason: "upload_failed" };
+      }),
+    };
+  },
+);
+
 const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const session = resolveSession(get(authorization$));
   if (!session) {
     return sessionInvalid(
       "Skill import session is missing, invalid, or expired",
-    );
-  }
-
-  // Reject an oversize upload on its declared length before buffering it.
-  const declaredLength = Number(get(request$).header("content-length"));
-  if (declaredLength > SKILL_IMPORT_LIMITS.maxRequestBytes) {
-    return skillTooLarge(
-      `Request body is over the ${String(
-        SKILL_IMPORT_LIMITS.maxRequestBytes,
-      )} byte limit`,
     );
   }
 
@@ -362,9 +417,13 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const sizeError = skillSizeError(body);
-  if (sizeError) {
-    return sizeError;
+  const instructionBytes = utf8Bytes(body.instruction);
+  if (instructionBytes > SKILL_IMPORT_LIMITS.maxInstructionBytes) {
+    return skillTooLarge(
+      `Instruction is ${String(instructionBytes)} bytes, over the ${String(
+        SKILL_IMPORT_LIMITS.maxInstructionBytes,
+      )} byte limit`,
+    );
   }
 
   const name = normalizeSkillImportName(body.name);
@@ -423,22 +482,17 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
 
-  const created = await set(
-    createWorkflowRecord$,
+  const { files, skippedFiles } = importableSkillFiles(body.files);
+  const { created, skippedFiles: failedFiles } = await set(
+    createImportedSkill$,
     {
       orgId: session.orgId,
       member: { userId: session.userId, role: "member" },
       body: {
+        ...body,
         agentId: session.agentId,
         name,
-        instruction: body.instruction,
-        ...(body.displayName === undefined
-          ? {}
-          : { displayName: body.displayName }),
-        ...(body.description === undefined
-          ? {}
-          : { description: body.description }),
-        ...(body.files ? { files: body.files } : {}),
+        files,
       },
       visibility: "private" as const,
       importSource: session.provider,
@@ -446,6 +500,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     signal,
   );
+  skippedFiles.push(...failedFiles);
   if (created.kind === "error") {
     if (created.response.status === 409) {
       return skillNameTaken(created.response.body.error.message);
@@ -459,7 +514,12 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return {
     status: 201 as const,
-    body: { outcome: "created" as const, workflowId: created.workflowId, name },
+    body: {
+      outcome: "created" as const,
+      workflowId: created.workflowId,
+      name,
+      ...(skippedFiles.length ? { skippedFiles } : {}),
+    },
   };
 });
 
