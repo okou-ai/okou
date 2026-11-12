@@ -1472,7 +1472,6 @@
     },
     "title": "Browser cloud",
     "unavailable": {
-      "description": "Questo browser non appartiene a questa chat o è stato rimosso.",
       "title": "Browser non disponibile"
     }
   },

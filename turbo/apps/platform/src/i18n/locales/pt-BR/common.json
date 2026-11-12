@@ -1472,7 +1472,6 @@
     },
     "title": "Navegador na nuvem",
     "unavailable": {
-      "description": "Este navegador não pertence a este chat ou foi removido.",
       "title": "Navegador indisponível"
     }
   },

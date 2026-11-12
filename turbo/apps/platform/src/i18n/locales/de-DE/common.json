@@ -1448,7 +1448,6 @@
     },
     "title": "Cloud-Browser",
     "unavailable": {
-      "description": "Dieser Browser gehört nicht zu diesem Chat oder wurde entfernt.",
       "title": "Browser nicht verfügbar"
     }
   },

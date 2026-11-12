@@ -1472,7 +1472,6 @@
     },
     "title": "Navigateur cloud",
     "unavailable": {
-      "description": "Ce navigateur n'appartient pas à ce chat ou a été supprimé.",
       "title": "Navigateur indisponible"
     }
   },

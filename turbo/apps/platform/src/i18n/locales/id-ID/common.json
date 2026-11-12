@@ -1445,7 +1445,6 @@
     },
     "title": "Browser cloud",
     "unavailable": {
-      "description": "Browser ini bukan milik chat ini atau telah dihapus.",
       "title": "Browser tidak tersedia"
     }
   },
