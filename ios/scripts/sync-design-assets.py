@@ -12,7 +12,7 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SYSTEM = ROOT / "ios/Okou/DesignSystem"
+SYSTEM = ROOT / "ios/Okou/DesignSystem/Foundations"
 ASSETS = ROOT / "ios/Okou/Resources/Assets.xcassets"
 
 

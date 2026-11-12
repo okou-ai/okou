@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "turbo/packages/ui/src/styles/globals.css"
-OUTPUT = ROOT / "ios/Okou/DesignSystem/OkouColor.generated.swift"
+OUTPUT = ROOT / "ios/Okou/DesignSystem/Foundations/OkouColor.generated.swift"
 
 
 def block(source, selector):

@@ -99,8 +99,8 @@
 		0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				DesignSystem/OkouColor.generated.swift,
-				DesignSystem/OkouPlatformColor.swift,
+				DesignSystem/Foundations/OkouColor.generated.swift,
+				DesignSystem/Foundations/OkouPlatformColor.swift,
 			);
 			target = 0000000000000000000000AB /* OkouWidgets */;
 		};

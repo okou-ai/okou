@@ -10,7 +10,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-SYSTEM = ROOT / "ios/Okou/DesignSystem"
+SYSTEM = ROOT / "ios/Okou/DesignSystem/Components/Identity"
 ASSETS = ROOT / "ios/Okou/Resources/Assets.xcassets"
 SOURCES = ["turbo/packages/core/src/workspace-logo.ts", "turbo/packages/core/src/agent-avatar-texture.ts", "turbo/apps/platform/src/views/components/okou-logomark.tsx"]
 MANIFEST = SYSTEM / "workspace-assets.json"

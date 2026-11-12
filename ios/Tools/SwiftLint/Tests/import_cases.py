@@ -67,7 +67,7 @@ IMPORT_CASES = [
     ),
     (
         "shared authentication theme owns its SDK customization",
-        "Okou/DesignSystem/OkouAuthTheme.swift",
+        "Okou/DesignSystem/Foundations/OkouAuthTheme.swift",
         """
         import SwiftUI
         import ClerkKitUI
