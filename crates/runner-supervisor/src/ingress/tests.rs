@@ -10,7 +10,7 @@ fn identity(id: u128) -> RunnerProcessIdentity {
     RunnerProcessIdentity::new(Uuid::from_u128(id), 7).unwrap()
 }
 
-fn namespace() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn namespace() -> (tempfile::TempDir, PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("ingress");
     std::fs::create_dir(&path).unwrap();
@@ -18,7 +18,7 @@ fn namespace() -> (tempfile::TempDir, PathBuf) {
     (root, path)
 }
 
-async fn request(path: &std::path::Path, request: &str) -> (u16, String) {
+pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, String) {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = UnixStream::connect(path).await.unwrap();
         stream.write_all(request.as_bytes()).await.unwrap();
@@ -42,7 +42,7 @@ fn health_request(id: RunnerProcessIdentity, credential: &str) -> String {
     )
 }
 
-fn dispatch_request(
+pub(super) fn dispatch_request(
     id: RunnerProcessIdentity,
     run: runner_types::ids::RunId,
     body: &str,

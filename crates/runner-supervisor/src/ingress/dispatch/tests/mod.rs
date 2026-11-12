@@ -29,6 +29,60 @@ fn submit(
 }
 
 #[tokio::test]
+async fn idle_listener_releases_expired_history_on_its_own_tick() {
+    use crate::ingress::IngressRuntime;
+    use crate::ingress::test_support::{HOST, TOKEN};
+    use crate::ingress::tests::{dispatch_request, namespace, request};
+    use std::time::Duration;
+
+    let (_root, directory) = namespace();
+    let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
+    let runtime = IngressRuntime::start(directory.clone(), identity, HOST.into(), TOKEN)
+        .await
+        .unwrap();
+    let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
+    runtime.enable_dispatch(intake);
+    let socket = directory.join(format!("{}.sock", identity.runner_id()));
+    let run_id = RunId::new_v4();
+    let deadline = now_ms() + 60_000;
+    let bytes = body(identity, run_id, deadline);
+    let wire = dispatch_request(identity, run_id, &bytes);
+    let sending = tokio::spawn(async move { request(&socket, &wire).await });
+    let work = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    work.settle(Disposition::Accepted);
+    drop(work);
+    let response = sending.await.unwrap();
+    assert_eq!(response.0, 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
+        "accepted"
+    );
+
+    let intake = runtime.handler.dispatch.get().unwrap();
+    let mut retained = intake
+        .records
+        .lock()
+        .unwrap()
+        .get(&run_id)
+        .unwrap()
+        .verdict
+        .subscribe();
+    // Advance only the receiver's observed wall time, without invoking cleanup.
+    // The completed HTTP round trip proves the listener and its timer are armed.
+    intake.observe_time(deadline);
+    assert!(retained.has_changed().is_ok());
+    raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(1)).await;
+    tokio::time::timeout(Duration::from_secs(5), retained.changed())
+        .await
+        .expect("idle listener must reclaim expired history on its periodic tick")
+        .expect_err("the expired record's final verdict sender must be released");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
 async fn original_window_replays_then_reclaims_settled_history_without_closing_new_intake() {
     let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
     let (intake, mut receiver) = DispatchIntake::new(Arc::new(Semaphore::new(4)));
