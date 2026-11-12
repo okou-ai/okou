@@ -383,4 +383,75 @@ RESOURCE_FAILURE_CASES = [
         }
     """,
     ),
+    (
+        "Task captures preserve the identity of the evaluation signal",
+        "okou_resource_failures",
+        """
+        import CCState
+        let unrelated = Computed { get, options in
+          let signal = options.signal
+          return Task { [signal = otherTask] in
+            do { return try await service.load() }
+            catch {
+              if signal.isCancelled { return [] }
+              throw error
+            }
+          }
+        }
+        let captured = Computed { get, options in
+          let signal = options.signal
+          return Task { [signal] in
+            do { return try await service.load() }
+            catch { // violation
+              if signal.isCancelled { return [] }
+              throw error
+            }
+          }
+        }
+        let snapshot = Computed { get, options in
+          let signal = options.signal
+          return Task { [signal = signal] in
+            do { return try await service.load() }
+            catch { // violation
+              if signal.isCancelled { return [] }
+              throw error
+            }
+          }
+        }
+    """,
+    ),
+    (
+        "case bindings shadow an error while case names do not",
+        "okou_resource_failures",
+        """
+        import CCState
+        let unrelated = computedTask { get, options in
+          do { return try await service.load() }
+          catch {
+            switch cachedResult {
+            case .failure(let error):
+              if error is CancellationError { return [] }
+            case let .cached(error):
+              if error is CancellationError { return [] }
+            default: break
+            }
+            if case .failure(let error) = cachedResult {
+              if error is CancellationError { return [] }
+            }
+            throw error
+          }
+        }
+        let original = computedTask { get, options in
+          do { return try await service.load() }
+          catch { // violation
+            switch status {
+            case .error:
+              if error is CancellationError { return [] }
+            default: break
+            }
+            throw error
+          }
+        }
+    """,
+    ),
 ]

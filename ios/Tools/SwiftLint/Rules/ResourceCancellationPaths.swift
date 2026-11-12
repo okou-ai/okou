@@ -137,20 +137,45 @@ struct ResourceCancellationPaths {
   }
 
   private func binds(_ conditions: ConditionElementListSyntax, name: String) -> Bool {
-    conditions.contains {
-      $0.condition.as(OptionalBindingConditionSyntax.self)?
-        .pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
+    conditions.contains { binds($0, name: name) }
+  }
+
+  private func binds(_ condition: ConditionElementSyntax, name: String) -> Bool {
+    let pattern =
+      condition.condition.as(OptionalBindingConditionSyntax.self)?.pattern
+      ?? condition.condition.as(MatchingPatternConditionSyntax.self)?.pattern
+    return pattern.map { binds(Syntax($0), name: name) } ?? false
+  }
+
+  private func binds(_ node: Syntax, name: String) -> Bool {
+    if let identifier = node.as(IdentifierPatternSyntax.self) {
+      return identifier.identifier.text == name
     }
+    return node.children(viewMode: .sourceAccurate).contains { binds($0, name: name) }
   }
 
   private func shadowed(_ name: String, at node: ExprSyntax?, signalAlias: Bool = false) -> Bool {
     guard let node else { return false }
     for parent in ancestors(of: node) {
       if !signalAlias && parent.id == handler.id { break }
-      if signalAlias, let closure = parent.as(ClosureExprSyntax.self),
-        closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true
+      if signalAlias, let closure = parent.as(ClosureExprSyntax.self) {
+        if closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true {
+          break
+        }
+        for capture in closure.signature?.capture?.items ?? [] where capture.name.text == name {
+          if let source = capture.initializer?.value.trimmedDescription,
+            source != name, !signals.contains(source)
+          {
+            return true
+          }
+        }
+        if closureParameters(closure).contains(name) { return true }
+      }
+      if let branch = parent.as(SwitchCaseSyntax.self),
+        let label = branch.label.as(SwitchCaseLabelSyntax.self),
+        label.caseItems.contains(where: { binds(Syntax($0.pattern), name: name) })
       {
-        break
+        return true
       }
       if let conditional = parent.as(IfExprSyntax.self),
         node.position >= conditional.body.position,
@@ -161,15 +186,11 @@ struct ResourceCancellationPaths {
       }
       if let conditions = parent.as(ConditionElementListSyntax.self) {
         for item in conditions where item.endPosition <= node.position {
-          if item.condition.as(OptionalBindingConditionSyntax.self)?
-            .pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
-          {
-            return true
-          }
+          if binds(item, name: name) { return true }
         }
       }
       if let loop = parent.as(ForStmtSyntax.self), node.position >= loop.body.position,
-        loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name
+        binds(Syntax(loop.pattern), name: name)
       {
         return true
       }
