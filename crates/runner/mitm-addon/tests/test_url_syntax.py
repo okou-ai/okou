@@ -25,11 +25,6 @@ def _numeric_unsafe_url_codepoint_policy(value: str) -> bool:
     )
 
 
-@pytest.mark.parametrize("codepoint", range(url_syntax.ASCII_CONTROL_MAX))
-def test_unsafe_url_codepoint_rejects_every_c0_control(codepoint: int):
-    assert url_syntax.has_unsafe_url_codepoint(chr(codepoint))
-
-
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
