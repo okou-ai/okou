@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.245.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.5...runner-rs-v0.245.6) (2026-11-12)
+
+
+### Refactoring
+
+* **python:** centralize model json completion ownership ([#46732](https://github.com/okou-ai/okou/issues/46732)) ([9e9829a](https://github.com/okou-ai/okou/commit/9e9829a68ed0dff83a6a01031fdfb43df0823e46))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.245.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.4...runner-rs-v0.245.5) (2026-11-12)
 
 ### Release Dependencies
