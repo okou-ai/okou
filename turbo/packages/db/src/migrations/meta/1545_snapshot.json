@@ -1,5 +1,5 @@
 {
-  "id": "70823b79-f0ab-4e56-ac35-b5241608878a",
+  "id": "f469236a-2648-4376-88e2-ccea123ec894",
   "prevId": "cbe33d34-56eb-4d08-a999-0d9946a5fc42",
   "version": "7",
   "dialect": "postgresql",
@@ -27541,11 +27541,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ingress": {
-          "name": "ingress",
-          "type": "jsonb",
+        "ingress_service_active": {
+          "name": "ingress_service_active",
+          "type": "boolean",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": false
         },
         "runner_group": {
           "name": "runner_group",

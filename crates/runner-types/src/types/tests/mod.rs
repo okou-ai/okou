@@ -782,7 +782,7 @@ fn execution_context_rejects_invalid_canonical_storage_mount_behavior() {
 #[test]
 fn heartbeat_state_serializes_camel_case() {
     let state = HeartbeatState {
-        ingress: None,
+        ingress_service_active: true,
         runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
         runner_hostname: Some("prod-wire.example.test".into()),
         group: "vm0/production".into(),
@@ -825,6 +825,7 @@ fn heartbeat_state_serializes_camel_case() {
         json!({
             "runnerId": "550e8400-e29b-41d4-a716-446655440000",
             "runnerHostname": "prod-wire.example.test",
+            "ingressServiceActive": true,
             "group": "vm0/production",
             "snapshotGeneration": 7,
             "snapshotSequence": 42,
@@ -865,7 +866,7 @@ fn heartbeat_state_serializes_camel_case() {
 #[test]
 fn heartbeat_state_serializes_empty_held_state_arrays() {
     let state = HeartbeatState {
-        ingress: None,
+        ingress_service_active: false,
         runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
         runner_hostname: None,
         group: "vm0/production".into(),

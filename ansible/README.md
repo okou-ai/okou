@@ -36,22 +36,22 @@ need a separately designed browser origin; path isolation does not supply it.
 Caddy is optional at Runner runtime: there is no hard service dependency or
 startup wait. Missing/stopped Caddy or listener failure leaves ordinary
 heartbeats, Claim, Ably/poll execution and accepted-work cleanup operational.
-The optional ordered official heartbeat observation separates
-`caddyServiceActive` (bounded best-effort host probe), `listenerReady` and
-`dispatchProtocolVersion`. The current receiver is transport-only and reports
-dispatch version zero. Service-active never proves public reachability.
+The ordered official heartbeat reports only `ingressServiceActive`, sampled
+with a bounded best-effort host probe. Missing, inactive or unqueryable service
+state reports false. Older or nonofficial heartbeats clear it to false, and
+freshness uses the existing heartbeat timestamp. Service activity does not prove
+public reachability, a working listener or support for direct dispatch.
 
-Deploy the nullable schema/API heartbeat reader before Runner writers. This PR
-does not activate any direct sender. A later sender requires fresh positive
-official service/listener observations and implemented dispatch support; absent,
-false, unknown or stale observations retain Ably/poll. Readiness loss never
-revokes existing Run ownership or receipt/settlement authority.
+Deploy the additive schema/API heartbeat reader before Runner writers. This PR
+does not activate any direct sender. Future direct requests must handle refusal
+or connection failure through Ably while retaining poll. Service loss never
+revokes existing Run ownership or accepted-work cleanup.
 
 Only authenticated `GET /runners/<runnerId>/control/health` is implemented now.
 The health-only bearer is the lowercase hex HMAC-SHA256 under the existing
 official Runner service credential over these UTF-8 lines, including the final
 newline: `okou-runner-ingress-health`, canonical Runner UUID, decimal heartbeat
-generation, process nonce, canonical hostname. Compare in constant time; it
+generation, canonical hostname. Compare in constant time; it
 cannot authorize future dispatch or browser/sandbox operations. Do not log it.
 The API's general signing/KMS keys are never copied to Runner. Reserved routes
 and WebSocket application operations remain rejected until their own handlers

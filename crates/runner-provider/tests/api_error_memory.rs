@@ -194,7 +194,7 @@ async fn heartbeat_failure(
         RunCancellationRegistry::new(),
     );
     let state = HeartbeatState {
-        ingress: None,
+        ingress_service_active: false,
         runner_id: identity.runner_id().to_string(),
         runner_hostname: None,
         group: "test".into(),

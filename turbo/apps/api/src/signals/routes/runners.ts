@@ -622,8 +622,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const runnerHostname =
     auth.type === "official-runner" ? (body.data.runnerHostname ?? null) : null;
   const currentDate = nowDate();
-  const ingress =
-    auth.type === "official-runner" ? (body.data.ingress ?? null) : null;
+  const ingressServiceActive =
+    auth.type === "official-runner" && body.data.ingressServiceActive === true;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -634,7 +634,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .values({
       runnerId: body.data.runnerId,
       runnerHostname,
-      ingress,
+      ingressServiceActive,
       runnerGroup: body.data.group,
       heartbeatGeneration: snapshotOrder.generation,
       heartbeatSequence: snapshotOrder.sequence,
@@ -655,7 +655,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       target: runnerState.runnerId,
       set: {
         runnerHostname,
-        ingress,
+        ingressServiceActive,
         runnerGroup: body.data.group,
         heartbeatGeneration: snapshotOrder.generation,
         heartbeatSequence: snapshotOrder.sequence,

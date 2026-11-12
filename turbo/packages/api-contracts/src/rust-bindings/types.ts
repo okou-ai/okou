@@ -1,5 +1,4 @@
 import type { ZodType } from "zod";
-import { runnerIngressObservationSchema } from "../contracts/runner-ingress";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
@@ -131,33 +130,6 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
-  {
-    schema: runnerIngressObservationSchema,
-    rustModulePath: ["runners"],
-    rustTypeName: "RunnerIngressObservation",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "RunnerIngressObservation",
-        rustDoc: [
-          "Ordered official ingress observation, not public reachability or admission authority.",
-        ],
-        fields: {
-          processNonce: [
-            "Fresh process incarnation retained across listener lifetime.",
-          ],
-          caddyServiceActive: [
-            "Best-effort host unit observation; false on unavailable probe.",
-          ],
-          listenerReady: ["This process currently owns a bound HTTP listener."],
-          protocolVersion: ["Supported ingress observation protocol."],
-          dispatchProtocolVersion: [
-            "Zero is transport-only; no executable dispatch receiver.",
-          ],
-        },
-      },
-    ],
-  },
   {
     schema: runnersRunStartupContract.setStartup.body,
     rustModulePath: ["runners", "runs", "startup"],

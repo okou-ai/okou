@@ -489,8 +489,9 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
-    let ingress_settings = (!args.local && server.token.starts_with("vm0_official_"))
-        .then(|| (hostname.clone(), server.token.clone()));
+    let observe_ingress_service = !args.local && server.token.starts_with("vm0_official_");
+    let ingress_settings =
+        observe_ingress_service.then(|| (hostname.clone(), server.token.clone()));
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -813,9 +814,11 @@ async fn run_start_observed(
         None
     };
     let config = RunConfig {
-        ingress: ingress
-            .as_ref()
-            .map(runner_supervisor::ingress::IngressRuntime::state),
+        ingress_service_probe: if observe_ingress_service {
+            Arc::new(|| Box::pin(runner_host::ingress_service_status::is_active()))
+        } else {
+            Arc::new(|| Box::pin(async { false }))
+        },
         sandbox_op_reporter: host_telemetry
             .as_ref()
             .map(|telemetry| telemetry.reporter()),

@@ -5,10 +5,8 @@
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use api_contracts::generated::types::runners::RunnerIngressObservation;
 use bytes::Bytes;
 use hmac::{Hmac, KeyInit, Mac};
 use http_body_util::Full;
@@ -22,31 +20,10 @@ use runner_host::runner_process_identity::RunnerProcessIdentity;
 use sha2::Sha256;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 const MAX_CONNECTIONS: usize = 32;
 
-/// Process lifetime identity is independent of a listener or Caddy restart.
-pub struct IngressState {
-    nonce: String,
-    ready: AtomicBool,
-}
-
-impl IngressState {
-    /// Sampling is owned by ordinary heartbeat work, with a bounded host probe.
-    pub async fn observe(&self) -> RunnerIngressObservation {
-        RunnerIngressObservation {
-            process_nonce: self.nonce.clone(),
-            caddy_service_active: runner_host::ingress_service_status::is_active().await,
-            listener_ready: self.ready.load(Ordering::Acquire),
-            protocol_version: 1,
-            dispatch_protocol_version: 0,
-        }
-    }
-}
-
 struct Health {
-    state: Arc<IngressState>,
     identity: RunnerProcessIdentity,
     hostname: String,
     authorization: Hmac<Sha256>,
@@ -54,7 +31,6 @@ struct Health {
 
 impl Health {
     fn new(
-        state: Arc<IngressState>,
         identity: RunnerProcessIdentity,
         hostname: String,
         token: &str,
@@ -62,16 +38,14 @@ impl Health {
         let mut authorization = Hmac::<Sha256>::new_from_slice(token.as_bytes())?;
         authorization.update(
             format!(
-                "okou-runner-ingress-health\n{}\n{}\n{}\n{}\n",
+                "okou-runner-ingress-health\n{}\n{}\n{}\n",
                 identity.runner_id(),
                 identity.heartbeat_generation(),
-                state.nonce,
                 hostname
             )
             .as_bytes(),
         );
         Ok(Self {
-            state,
             identity,
             hostname,
             authorization,
@@ -124,9 +98,6 @@ impl Health {
             &serde_json::json!({
                 "runnerId": self.identity.runner_id(),
                 "heartbeatGeneration": self.identity.heartbeat_generation(),
-                "processNonce": self.state.nonce,
-                "listenerReady": self.state.ready.load(Ordering::Acquire),
-                "dispatchProtocolVersion": 0,
             })
             .to_string(),
         )
@@ -149,7 +120,6 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
 
 /// Explicitly joined around Root's reactor call, including startup errors.
 pub struct IngressRuntime {
-    state: Arc<IngressState>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -161,12 +131,7 @@ impl IngressRuntime {
         hostname: String,
         token: &str,
     ) -> Self {
-        let state = Arc::new(IngressState {
-            nonce: Uuid::new_v4().to_string(),
-            ready: AtomicBool::new(false),
-        });
         let mut runtime = Self {
-            state: state.clone(),
             cancel: CancellationToken::new(),
             task: None,
         };
@@ -191,7 +156,7 @@ impl IngressRuntime {
                 return runtime;
             }
         };
-        let health = match Health::new(state.clone(), identity, hostname, token) {
+        let health = match Health::new(identity, hostname, token) {
             Ok(health) => Arc::new(health),
             Err(error) => {
                 tracing::warn!(%error, "optional ingress health credential unavailable");
@@ -199,9 +164,7 @@ impl IngressRuntime {
             }
         };
         let cancel = runtime.cancel.clone();
-        state.ready.store(true, Ordering::Release);
         runtime.task = Some(tokio::spawn(async move {
-            let _ready = ListenerReady(state);
             let mut connections = JoinSet::new();
             loop {
                 tokio::select! {
@@ -240,12 +203,7 @@ impl IngressRuntime {
         runtime
     }
 
-    pub fn state(&self) -> Arc<IngressState> {
-        self.state.clone()
-    }
-
     pub async fn shutdown(mut self) {
-        self.state.ready.store(false, Ordering::Release);
         self.cancel.cancel();
         if let Some(task) = self.task.take() {
             let _ = task.await;
@@ -253,16 +211,8 @@ impl IngressRuntime {
     }
 }
 
-struct ListenerReady(Arc<IngressState>);
-impl Drop for ListenerReady {
-    fn drop(&mut self) {
-        self.0.ready.store(false, Ordering::Release);
-    }
-}
-
 impl Drop for IngressRuntime {
     fn drop(&mut self) {
-        self.state.ready.store(false, Ordering::Release);
         self.cancel.cancel();
         if let Some(task) = &self.task {
             task.abort();

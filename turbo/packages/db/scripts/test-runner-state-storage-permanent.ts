@@ -30,13 +30,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
   const observation = {
     runnerId,
     runnerHostname: "prod-storage.example.test",
-    ingress: {
-      processNonce: randomUUID(),
-      caddyServiceActive: false,
-      listenerReady: true,
-      protocolVersion: 1,
-      dispatchProtocolVersion: 0,
-    },
+    ingressServiceActive: true,
     runnerGroup,
     heartbeatGeneration: 9,
     heartbeatSequence: 4,
@@ -133,7 +127,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(defaults.heartbeatGeneration, 0);
     assert.equal(defaults.heartbeatSequence, 0);
     assert.equal(defaults.runnerHostname, null);
-    assert.equal(defaults.ingress, null);
+    assert.equal(defaults.ingressServiceActive, false);
     assert.equal(defaults.mode, "running");
     const [inserted] = await db
       .insert(runnerState)
@@ -149,7 +143,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     );
     assert.equal(inserted.totalVcpu, 8);
     assert.equal(inserted.runnerHostname, observation.runnerHostname);
-    assert.deepEqual(inserted.ingress, observation.ingress);
+    assert.equal(inserted.ingressServiceActive, true);
     assert.equal(inserted.allocatedMemoryMb, 4096);
     assert.deepEqual(
       await db
@@ -171,7 +165,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       heartbeatSequence: 5,
       heldHomeStates: [],
       runnerHostname: null,
-      ingress: null,
+      ingressServiceActive: false,
     };
     const [cleared] = await db
       .insert(runnerState)
@@ -187,7 +181,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.deepEqual(cleared.heldHomeStates, []);
     assert.equal(cleared.heartbeatSequence, 5);
     assert.equal(cleared.runnerHostname, null);
-    assert.equal(cleared.ingress, null);
+    assert.equal(cleared.ingressServiceActive, false);
     assert.deepEqual(cleared.heldSandboxStates, observation.heldSandboxStates);
     assert.deepEqual(
       cleared.activeReuseProducers,
@@ -198,7 +192,6 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       ...observation,
       heartbeatGeneration: 10,
       heartbeatSequence: 1,
-      ingress: { ...observation.ingress, processNonce: randomUUID() },
     };
     const [reset] = await db
       .insert(runnerState)
@@ -212,7 +205,7 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(reset?.heartbeatGeneration, 10);
     assert.equal(reset?.heartbeatSequence, 1);
     assert.equal(reset?.runnerHostname, observation.runnerHostname);
-    assert.deepEqual(reset?.ingress, restarted.ingress);
+    assert.equal(reset?.ingressServiceActive, true);
     const stale = { ...empty, runnerHostname: "untrusted-stale.example.test" };
     assert.deepEqual(
       await db
@@ -230,11 +223,11 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       await db
         .select({
           hostname: runnerState.runnerHostname,
-          ingress: runnerState.ingress,
+          ingressServiceActive: runnerState.ingressServiceActive,
         })
         .from(runnerState)
         .where(eq(runnerState.runnerId, runnerId)),
-      [{ hostname: observation.runnerHostname, ingress: restarted.ingress }],
+      [{ hostname: observation.runnerHostname, ingressServiceActive: true }],
     );
     assert.deepEqual(reset?.heldHomeStates, observation.heldHomeStates);
     assert.deepEqual(await holders(), [{ runnerId }]);

@@ -2,6 +2,7 @@ use super::*;
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use uuid::Uuid;
 
 const HOST: &str = "runner-ingress.example.org";
 const TOKEN: &str = "synthetic-official-runner-credential";
@@ -18,14 +19,15 @@ fn namespace() -> (tempfile::TempDir, PathBuf) {
     (root, path)
 }
 
-// The external health caller knows the public process nonce from heartbeat.
-// Its credential has a readonly purpose distinct from later dispatch signing.
-fn credential(identity: RunnerProcessIdentity, nonce: &str) -> String {
+// Health uses the existing Runner identity and has a readonly purpose distinct
+// from any future dispatch credential.
+fn credential(identity: RunnerProcessIdentity) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(TOKEN.as_bytes()).unwrap();
     mac.update(
         format!(
-            "okou-runner-ingress-health\n{}\n7\n{nonce}\n{HOST}\n",
-            identity.runner_id()
+            "okou-runner-ingress-health\n{}\n{}\n{HOST}\n",
+            identity.runner_id(),
+            identity.heartbeat_generation()
         )
         .as_bytes(),
     );
@@ -63,15 +65,13 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
     let second = IngressRuntime::start(directory.clone(), identity(2), HOST.into(), TOKEN).await;
     let first_path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let second_path = directory.join(format!("{}.sock", identity(2).runner_id()));
-    let token = credential(identity(1), &first.state.nonce);
+    let token = credential(identity(1));
     let valid = health_request(identity(1), &token);
     let (status, body) = request(&first_path, &valid).await;
     assert_eq!(status, 200);
     let health: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(health["runnerId"], identity(1).runner_id().to_string());
-    assert_eq!(health["processNonce"], first.state.nonce);
-    assert_eq!(health["listenerReady"], true);
-    assert_eq!(health["dispatchProtocolVersion"], 0);
+    assert_eq!(health["heartbeatGeneration"], 7);
     assert!(!body.contains(TOKEN));
     assert_eq!(
         request(&second_path, &health_request(identity(2), &token))
@@ -118,7 +118,7 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
     ] {
         let (status, body) = request(&first_path, &bad).await;
         assert_eq!(status, expected, "{bad}");
-        assert!(!body.contains(&first.state.nonce));
+        assert!(body.is_empty());
     }
     assert_eq!(
         request(&first_path, &health_request(identity(2), &token))
@@ -132,33 +132,34 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
 }
 
 #[tokio::test]
-async fn shutdown_joins_connections_and_a_new_process_rejects_previous_credentials() {
+async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_credentials() {
     let (_root, directory) = namespace();
     let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN).await;
-    let state = first.state();
-    let old_credential = credential(identity(1), &state.nonce);
+    let old_credential = credential(identity(1));
     let path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let mut slow = UnixStream::connect(&path).await.unwrap();
     slow.write_all(b"GET ").await.unwrap();
     first.shutdown().await;
-    assert!(!state.ready.load(Ordering::Acquire));
     assert!(!path.exists());
     let mut buffer = [0u8; 32];
     let closed = tokio::time::timeout(Duration::from_secs(5), slow.read(&mut buffer))
         .await
         .unwrap();
     assert!(matches!(closed, Ok(0) | Err(_)));
-    let second = IngressRuntime::start(directory, identity(1), HOST.into(), TOKEN).await;
-    assert_ne!(state.nonce, second.state.nonce);
+    let restarted = RunnerProcessIdentity::new(identity(1).runner_id(), 8).unwrap();
+    let second = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN).await;
     assert_eq!(
         request(&path, &health_request(identity(1), &old_credential))
             .await
             .0,
         401
     );
-    let observation = second.state.observe().await;
-    assert!(observation.listener_ready);
-    assert_eq!(observation.dispatch_protocol_version, 0);
+    assert_eq!(
+        request(&path, &health_request(restarted, &credential(restarted)))
+            .await
+            .0,
+        200
+    );
     second.shutdown().await;
 }
 
@@ -167,7 +168,6 @@ async fn unsafe_namespace_or_noncanonical_host_only_disables_optional_ingress() 
     let (_root, directory) = namespace();
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o777)).unwrap();
     let runtime = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN).await;
-    assert!(!runtime.state.observe().await.listener_ready);
     assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
     runtime.shutdown().await;
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
@@ -180,7 +180,7 @@ async fn unsafe_namespace_or_noncanonical_host_only_disables_optional_ingress() 
     ] {
         let runtime =
             IngressRuntime::start(directory.clone(), identity(1), hostname.into(), TOKEN).await;
-        assert!(!runtime.state.ready.load(Ordering::Acquire));
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
         runtime.shutdown().await;
     }
 }

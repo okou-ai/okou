@@ -1,5 +1,4 @@
 import { storedTemplateGuidanceBundleSchema } from "./template-guidance-bundle";
-import { runnerIngressObservationSchema } from "./runner-ingress";
 import {
   contentBundleSchema,
   claimedContentBundlesSchema,
@@ -1419,8 +1418,8 @@ export const heartbeatBodySchema = object({
   heldSandboxStates: array(heldSandboxStateSchema).max(1024),
   heldHomeStates: array(heldHomeStateSchema).max(MAX_HEARTBEAT_HOME_CACHES),
   activeReuseProducers: array(activeReuseProducerSchema).max(1024),
-  // Old/PAT writers may omit this; absence must clear an earlier observation.
-  ingress: runnerIngressObservationSchema.optional(),
+  // Old/PAT writers may omit this; absence clears earlier service activity.
+  ingressServiceActive: boolean().optional(),
   mode: zEnum(["starting", "running", "draining", "stopping"]),
 }).superRefine((heartbeat, ctx) => {
   const homeCacheCount = heartbeat.heldHomeStates.reduce((count, state) => {

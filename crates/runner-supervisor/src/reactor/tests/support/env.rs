@@ -274,7 +274,7 @@ fn build_mock_run_config_with_runtime(
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
 
     let config = RunConfig {
-        ingress: None,
+        ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
         sandbox_op_reporter: None,
         runner: RunnerInfo {
             identity: test_runner_identity(),

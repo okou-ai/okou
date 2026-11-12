@@ -56,7 +56,7 @@ impl Harness {
             RunCancellationRegistry::new(),
         );
         let controller = HeartbeatController::new(HeartbeatContext::new(HeartbeatContextInit {
-            ingress: None,
+            ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
             idle_pool: &Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
                 max_idle: 0,
             }))),

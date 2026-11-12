@@ -8,22 +8,6 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
-    /// Ordered official ingress observation, not public reachability or admission authority.
-    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct RunnerIngressObservation {
-        /// Fresh process incarnation retained across listener lifetime.
-        pub process_nonce: String,
-        /// Best-effort host unit observation; false on unavailable probe.
-        pub caddy_service_active: bool,
-        /// This process currently owns a bound HTTP listener.
-        pub listener_ready: bool,
-        /// Supported ingress observation protocol.
-        pub protocol_version: i64,
-        /// Zero is transport-only; no executable dispatch receiver.
-        pub dispatch_protocol_version: u64,
-    }
-
     /// Actual sandbox startup resource after preparation settles.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub enum SandboxStartupPath {

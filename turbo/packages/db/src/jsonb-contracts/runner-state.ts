@@ -1,14 +1,5 @@
 export type RunnerAdmittableProfiles = string[];
 
-/** Official ordered endpoint observation; never a public reachability proof. */
-export interface RunnerIngressObservation {
-  readonly processNonce: string;
-  readonly caddyServiceActive: boolean;
-  readonly listenerReady: boolean;
-  readonly protocolVersion: 1;
-  readonly dispatchProtocolVersion: number;
-}
-
 export interface RunnerActiveReuseProducer {
   readonly runId: string;
   readonly reuseKey: string;
