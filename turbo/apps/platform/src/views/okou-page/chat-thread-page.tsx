@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
@@ -121,6 +120,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  OkouAvatar,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -5811,13 +5811,8 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && thread.agentId === defaultId ? (
-    <span className={CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS}>
-      <AvatarFromUrl
-        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-        alt=""
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
-    </span>
+    // One per reply, so it holds still; the greeting is where Okou moves.
+    <OkouAvatar size={36} motion="static" className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );

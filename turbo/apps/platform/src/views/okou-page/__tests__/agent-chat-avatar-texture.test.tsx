@@ -226,10 +226,9 @@ test("Give the organization default agent its own texture", async () => {
   );
 });
 
-test("Keep the default agent's texture on the My Okou greeting", async () => {
-  // My Okou draws the organization default artwork on the home greeting
-  // without the profile link, whatever the default agent's own avatar is. It
-  // is still the same artwork on the same frame, so it keeps the same tile.
+test("Greet with Okou's own animated avatar under My Okou", async () => {
+  // My Okou draws Okou on the home greeting whatever the default agent's own
+  // avatar is, through the shared avatar: textured, framed, and moving.
   const agent: AgentResponse = {
     agentId: DEFAULT_AGENT_ID,
     isDefaultAgent: true,
@@ -252,13 +251,6 @@ test("Keep the default agent's texture on the My Okou greeting", async () => {
   });
   const greeting = await screen.findByTestId("chat-greeting");
 
-  await waitFor(() => {
-    expect(textureUrl(greeting)).toBe(
-      avatarTextureUrl(defaultAgentAvatarTextures()[0]!),
-    );
-  });
-  expect(greeting.querySelector("img")).toHaveAttribute(
-    "src",
-    DEFAULT_AGENT_AVATAR_URL,
-  );
+  const avatar = greeting.querySelector("[data-okou-avatar]");
+  expect(avatar).toHaveAttribute("data-okou-avatar", "animated");
 });

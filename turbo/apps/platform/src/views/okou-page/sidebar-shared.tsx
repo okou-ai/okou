@@ -171,7 +171,7 @@ function DrawnAvatarImage({
  * composer configuration, so it gets the one tile that clears the five brand
  * colours it is painted in, by the same rule as every other agent.
  */
-export function defaultAgentAvatarTextureUrl(): string {
+function defaultAgentAvatarTextureUrl(): string {
   // Not guarded for emptiness, for the same reason `agentAvatarTexture` is
   // not: the suite pins this list to exactly one tile, so a repaint that
   // emptied it should fail there rather than quietly drop the texture.
@@ -192,15 +192,12 @@ export function AvatarFromUrl({
   alt,
   className,
   size,
-  textureUrl,
   "data-testid": testId,
 }: {
   avatarUrl: string | null | undefined;
   alt: string;
   className: string;
   size?: number;
-  /** Brand texture to draw behind the artwork; see `AgentAvatarImg`. */
-  textureUrl?: string;
   "data-testid"?: string;
 }) {
   const svgConfig = resolveAvatarSvgConfig(avatarUrl);
@@ -209,7 +206,6 @@ export function AvatarFromUrl({
       <AvatarSvgPreview
         config={svgConfig}
         size={size}
-        textureUrl={textureUrl}
         className={className}
         alt={alt}
         data-testid={testId}
@@ -219,13 +215,7 @@ export function AvatarFromUrl({
   const src = resolveAvatarUrl(avatarUrl);
   if (src) {
     return (
-      <DrawnAvatarImage
-        src={src}
-        alt={alt}
-        className={className}
-        textureUrl={textureUrl}
-        data-testid={testId}
-      />
+      <img src={src} alt={alt} className={className} data-testid={testId} />
     );
   }
   // Transparent placeholder, matching AgentAvatarImg: reserves the avatar's box
