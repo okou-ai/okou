@@ -22,6 +22,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
 | `okou_subscription_teardown` | Release original CCState subscriptions and block-based notification tokens at teardown and before replacing a stored handle or dictionary slot.                                         | Native lifecycle ownership                                        |
 | `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
+| `okou_global_mutable_state`  | Keep stored file-level variables and mutable type storage out of production sources; retain computed properties, immutable constants and instance-owned state.                          | `no-package-variable` with Swift value semantics                  |
 | `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
 | `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 
@@ -156,6 +157,19 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   graph, identity and realtime modules while retaining system transport,
   storage, crypto and synchronization frameworks. Package test targets retain
   their test-framework and public package imports.
+- In App, Push, ChatDomain and ChatData production sources, file-level stored
+  `var` bindings and stored `static var` declarations belong in an explicit
+  instance owner instead. Private access, actor isolation and `private(set)` do
+  not change their lifetime. Conditional compilation does not create an owner.
+  Properties with `didSet`/`willSet` remain stored; getter/setter and shorthand
+  computed properties do not introduce that storage. Local variables, instance
+  properties, protocol requirements and native computed contracts remain valid.
+  Swift `let` arrays/dictionaries are immutable values and remain valid constants;
+  do not copy Web's restrictions on JavaScript mutable `const` containers.
+  Existing application/system owners held by `static let` retain their explicit
+  architecture and review contract. Native tests, test support and the lint tool
+  are outside this production-only declaration rule; all their existing rules
+  continue to apply.
 - Raw `UserDefaults` references, type aliases and injected production types
   belong to the notification-metadata and one-way preference-migration definition
   sites in `StorageBoundariesRule.swift`. Project disclosure uses its typed SQLite
@@ -213,6 +227,11 @@ property-wrapper declarations. They do not resolve arbitrary cross-file
 factories, inferred helper parameters, runtime suite-name values, or prove that
 a test suite is unique and eventually cleared. They do not inspect SQLite,
 Keychain, files, or third-party persistence internals.
+Global mutable state checks inspect explicit variable declarations at the owned
+App, Push, ChatDomain and ChatData production source paths. They do not prove
+that a `let` reference is deeply immutable, that a computed property is pure,
+or that a singleton has the right identity, cache bound or teardown. Other
+packages, cross-module storage and generated accessors still require review.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.
