@@ -245,7 +245,8 @@ struct ChatComposerView: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
             .tint(
-              showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted)
+              showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
+            )
             .disabled(
               (!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade
                 || voiceActive
