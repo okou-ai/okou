@@ -185,53 +185,57 @@ final class ChatModelSelectionStore {
 
   /// The sheet, composer and background callers observe one conversation-scoped read.
   /// No demand means no metadata I/O, including for an unsent new chat.
-  @ObservationIgnored lazy var metadataValue = Computed<Task<ChatModelSelection?, Error>> {
-    [weak self] get, options in
-    guard let self, !closed, try get(lifetime) else { throw CancellationError() }
-    let demand = try get(metadataDemand)
-    let signal = options.signal
-    let task = Task<ChatModelSelection?, Error> {
-      @MainActor [weak self, service = models.service, sleep = models.readRetrySleep, threadID] in
-      try Task.checkCancellation()
-      try signal.checkCancellation()
-      guard let self, !closed else { throw CancellationError() }
-      guard let demand, let threadID else { return nil }
-      defer {
-        if metadataID == demand {
-          metadataTask = nil
-          metadataID = nil
-        }
-      }
-      do {
-        let value = try await ChatReadRecovery.read("saved model selection", sleep: sleep) {
-          try await service.selection(threadID: threadID)
-        }
+  @ObservationIgnored lazy var metadataValue = makeMetadataValue()
+
+  private func makeMetadataValue() -> Computed<Task<ChatModelSelection?, Error>> {
+    Computed {
+      [weak self] get, options in
+      guard let self, !closed, try get(lifetime) else { throw CancellationError() }
+      let demand = try get(metadataDemand)
+      let signal = options.signal
+      let task = Task<ChatModelSelection?, Error> {
+        @MainActor [weak self, service = models.service, sleep = models.readRetrySleep, threadID] in
         try Task.checkCancellation()
         try signal.checkCancellation()
-        guard !closed else { throw CancellationError() }
-        // This confirmed snapshot is also consumed by send admission and draft capture.
-        stored = value
-        hasLoaded = true
-        uncertain = false
-        needsThreadReadback = false
-        error = nil
-        return value
-      } catch {
-        if !closed, !Task.isCancelled, !signal.isCancelled {
-          uncertain = true
-          models.report(error)
+        guard let self, !closed else { throw CancellationError() }
+        guard let demand, let threadID else { return nil }
+        defer {
+          if metadataID == demand {
+            metadataTask = nil
+            metadataID = nil
+          }
         }
-        throw error
+        do {
+          let value = try await ChatReadRecovery.read("saved model selection", sleep: sleep) {
+            try await service.selection(threadID: threadID)
+          }
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard !closed else { throw CancellationError() }
+          // This confirmed snapshot is also consumed by send admission and draft capture.
+          stored = value
+          hasLoaded = true
+          uncertain = false
+          needsThreadReadback = false
+          error = nil
+          return value
+        } catch {
+          if !closed, !Task.isCancelled, !signal.isCancelled {
+            uncertain = true
+            models.report(error)
+          }
+          throw error
+        }
       }
+      lifecycleTasks.track(task)
+      if let demand {
+        metadataTask?.cancel()
+        metadataTask = task
+        metadataID = demand
+      }
+      signal.onCancel { task.cancel() }
+      return task
     }
-    lifecycleTasks.track(task)
-    if let demand {
-      metadataTask?.cancel()
-      metadataTask = task
-      metadataID = demand
-    }
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   var isRefreshing: Bool { metadataTask != nil }
