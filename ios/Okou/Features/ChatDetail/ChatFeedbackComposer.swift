@@ -1,3 +1,4 @@
+import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -8,6 +9,8 @@ struct ChatFeedbackComposer: View {
   @Binding var isFocused: Bool
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
+  var returnKeyPreference = ComposerReturnKeyPreference.newline
+  var submitFromKeyboard: (@MainActor () -> Void)? = nil
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
 
@@ -82,7 +85,9 @@ struct ChatFeedbackComposer: View {
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
-                  expanded: state.document.hasFeedback || isFocused
+                  expanded: state.document.hasFeedback || isFocused,
+                  returnKeyPreference: returnKeyPreference,
+                  submitFromKeyboard: submitFromKeyboard
                 )
               }
               .id(block.id)

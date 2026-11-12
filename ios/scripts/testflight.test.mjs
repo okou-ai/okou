@@ -93,23 +93,27 @@ function setup({ url }) {
   throw new Error(`Unexpected request ${url}`);
 }
 
-function buildResponse(state = "IN_BETA_TESTING", processing = "VALID") {
+function buildResponse(processing = "VALID") {
   return {
     body: {
       data: [
         {
           id: "build",
           attributes: { processingState: processing, expired: false },
-          relationships: { buildBetaDetail: { data: { id: "detail" } } },
         },
       ],
-      included: [
-        {
-          type: "buildBetaDetails",
-          id: "detail",
-          attributes: { internalBuildState: state },
-        },
-      ],
+    },
+  };
+}
+
+function betaResponse(state = "IN_BETA_TESTING") {
+  return {
+    body: {
+      data: {
+        type: "buildBetaDetails",
+        id: "detail",
+        attributes: state === null ? {} : { internalBuildState: state },
+      },
     },
   };
 }
@@ -156,6 +160,7 @@ for (const condition of ["external", "missing", "empty"]) {
 
 test("waits for processing and persisted internal group availability", async (t) => {
   let reads = 0;
+  let betaReads = 0;
   let assigned = false;
   const { client, requests } = await apple(t, ({ url, method, body }) => {
     if (url.pathname === "/v1/builds") {
@@ -171,8 +176,17 @@ test("waits for processing and persisted internal group availability", async (t)
       );
       reads++;
       if (reads === 1) return { body: { data: [] } };
-      if (reads === 2) return buildResponse("PROCESSING", "PROCESSING");
-      return buildResponse(
+      if (reads === 2) return buildResponse("PROCESSING");
+      return buildResponse();
+    }
+    if (url.pathname === "/v1/builds/build/buildBetaDetail") {
+      assert.equal(
+        url.searchParams.get("fields[buildBetaDetails]"),
+        "internalBuildState",
+      );
+      betaReads++;
+      if (betaReads === 1) return betaResponse(null);
+      return betaResponse(
         assigned ? "IN_BETA_TESTING" : "READY_FOR_BETA_TESTING",
       );
     }
@@ -201,6 +215,8 @@ test("waits for processing and persisted internal group availability", async (t)
 test("already distributed build is verified without another mutation", async (t) => {
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
     if (url.pathname === "/v1/betaGroups/group")
       return { body: { data: { attributes: { isInternalGroup: true } } } };
     return { body: { data: [{ id: "build", type: "builds" }] } };
@@ -209,38 +225,48 @@ test("already distributed build is verified without another mutation", async (t)
   assert.ok(requests.every((r) => r.method === "GET"));
 });
 
-for (const [label, response, error] of [
-  ["invalid build", buildResponse("PROCESSING", "INVALID"), /rejected/],
+for (const [label, response, beta, error] of [
+  ["invalid build", buildResponse("INVALID"), undefined, /rejected/],
   [
     "processing exception",
-    buildResponse("PROCESSING_EXCEPTION"),
+    buildResponse(),
+    betaResponse("PROCESSING_EXCEPTION"),
     /requires action/,
   ],
   [
     "missing compliance",
-    buildResponse("MISSING_EXPORT_COMPLIANCE"),
+    buildResponse(),
+    betaResponse("MISSING_EXPORT_COMPLIANCE"),
     /requires action/,
   ],
-  ["denied API access", { status: 403, body: {} }, /HTTP 403/],
+  ["denied API access", { status: 403, body: {} }, undefined, /HTTP 403/],
   [
-    "processing timeout",
-    buildResponse("PROCESSING", "PROCESSING"),
-    /Timed out/,
+    "denied beta detail access",
+    buildResponse(),
+    { status: 403, body: {} },
+    /HTTP 403/,
   ],
+  ["missing beta metadata", buildResponse(), betaResponse(null), /Timed out/],
+  ["processing timeout", buildResponse("PROCESSING"), undefined, /Timed out/],
 ]) {
   test(`does not report success for ${label}`, async (t) => {
-    const { client, requests } = await apple(t, () => response);
+    const { client, requests } = await apple(t, ({ url }) => {
+      if (url.pathname === "/v1/builds") return response;
+      if (url.pathname === "/v1/builds/build/buildBetaDetail") return beta;
+      throw new Error(`Unexpected request ${url}`);
+    });
     await assert.rejects(distribute(client, release, { timeoutMs: 0 }), error);
     assert.ok(requests.every((r) => r.method === "GET"));
   });
 }
 
 test("distribution rechecks group and never assigns a build to an external group", async (t) => {
-  const { client, requests } = await apple(t, ({ url }) =>
-    url.pathname === "/v1/builds"
-      ? buildResponse()
-      : { body: { data: { attributes: { isInternalGroup: false } } } },
-  );
+  const { client, requests } = await apple(t, ({ url }) => {
+    if (url.pathname === "/v1/builds") return buildResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
+    return { body: { data: { attributes: { isInternalGroup: false } } } };
+  });
   await assert.rejects(distribute(client, release), /Refusing external/);
   assert.ok(requests.every((r) => r.method === "GET"));
 });
@@ -256,6 +282,8 @@ test("automatic internal group waits for Apple's assignment without writing", as
   let reads = 0;
   const { client, requests } = await apple(t, ({ url }) => {
     if (url.pathname === "/v1/builds") return buildResponse();
+    if (url.pathname === "/v1/builds/build/buildBetaDetail")
+      return betaResponse();
     if (url.pathname === "/v1/betaGroups/group")
       return {
         body: {

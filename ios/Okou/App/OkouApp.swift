@@ -8,6 +8,7 @@ struct OkouApp: App {
   @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var delegate
   @State private var authentication: AuthenticationService?
   @State private var lifecycle: AppLifecycle?
+  @State private var composerPreferences: ComposerPreferences?
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
@@ -57,6 +58,10 @@ struct OkouApp: App {
     OkouNavigationBar.applySearchField()
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
+    if !isTestHost {
+      _composerPreferences = State(
+        initialValue: ComposerPreferences(storage: ComposerPreferencesStorage()))
+    }
     let authentication = isTestHost || Self.isDesignPreview ? nil : AuthenticationService()
     _authentication = State(initialValue: authentication)
     if let authentication, case .success(let configuration) = configuration {
@@ -88,6 +93,7 @@ struct OkouApp: App {
         #endif
       }
       .modifier(OkouAppearance())
+      .environment(\.composerPreferences, composerPreferences)
       .task {
         if let lifecycle {
           await lifecycle.run()
