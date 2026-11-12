@@ -15,10 +15,8 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { resolveConnectorRuntimeTargets$ } from "./connector-runtime-sync.service";
-import {
-  CustomConnectorNetworkError,
-  resolveCustomConnectorNetworkAdmission$,
-} from "./custom-connector-network-authority.service";
+import { resolveCustomConnectorNetworkAdmission$ } from "./custom-connector-network-authority.service";
+import { CustomConnectorNetworkError } from "./custom-connector-network-error";
 
 interface NetworkRunAuthority {
   readonly agentId: string | null;

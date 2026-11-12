@@ -884,14 +884,18 @@ const prepareAutomaticOAuthStart$ = command(
       }
       const code = customConnectorAutomaticOAuthErrorCode(error);
       const response =
-        error.kind === "temporary"
+        error.kind === "temporary" ||
+        error.kind === "network" ||
+        error.kind === "unknown"
           ? {
               status: 502 as const,
               body: {
                 error: {
                   code,
                   message:
-                    "The MCP OAuth provider is temporarily unavailable. Try again later.",
+                    error.kind === "temporary"
+                      ? "The MCP OAuth provider is temporarily unavailable. Try again later."
+                      : error.message,
                 },
               },
             }
@@ -1376,14 +1380,18 @@ function automaticOAuthReauthorizationFailure(error: unknown) {
     throw error;
   }
   const code = customConnectorAutomaticOAuthErrorCode(error);
-  return error.kind === "temporary"
+  return error.kind === "temporary" ||
+    error.kind === "network" ||
+    error.kind === "unknown"
     ? {
         status: 502 as const,
         body: {
           error: {
             code,
             message:
-              "The MCP OAuth provider is temporarily unavailable. Try again later.",
+              error.kind === "temporary"
+                ? "The MCP OAuth provider is temporarily unavailable. Try again later."
+                : error.message,
           },
         },
       }
@@ -2509,10 +2517,7 @@ const handleAutomaticOAuthRefreshFailure$ = command(
       })();
       return { kind: "reconnect-required" };
     }
-    if (
-      args.error instanceof McpAutomaticOAuthError &&
-      args.error.kind === "temporary"
-    ) {
+    if (args.error instanceof McpAutomaticOAuthError) {
       throw new CustomConnectorOAuth2TokenRefreshError(args.error);
     }
     throw args.error;

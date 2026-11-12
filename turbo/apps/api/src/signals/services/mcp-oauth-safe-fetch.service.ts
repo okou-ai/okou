@@ -49,69 +49,13 @@ export class McpOAuthUnsafeUrlError extends Error {
   }
 }
 
-export class McpOAuthNetworkRejectedError extends Error {
-  constructor() {
+export class McpOAuthUnattributedResponseError extends Error {
+  constructor(readonly response: Response) {
     super(
-      "Cloudflare Access rejected the request; check its service token and application policy",
+      "The Access-protected request failed; its source is unknown. Check network access and application authentication, then retry explicitly",
     );
-    this.name = "McpOAuthNetworkRejectedError";
+    this.name = "McpOAuthUnattributedResponseError";
   }
-}
-
-function* authenticationChallenges(value: string): Generator<string> {
-  let start = 0;
-  let quoted = false;
-  let escaped = false;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    if (escaped) {
-      escaped = false;
-    } else if (quoted && char === "\\") {
-      escaped = true;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (!quoted && char === ",") {
-      yield value.slice(start, index);
-      start = index + 1;
-    }
-  }
-  if (!quoted) {
-    yield value.slice(start);
-  }
-}
-
-async function hasApplicationChallenge(response: Response): Promise<boolean> {
-  for (const challenge of authenticationChallenges(
-    response.headers.get("www-authenticate") ?? "",
-  )) {
-    const [scheme, parameters] = challenge.trim().split(/[ \t]+/u, 2);
-    if (
-      (scheme?.toLowerCase() === "bearer" ||
-        scheme?.toLowerCase() === "basic") &&
-      !parameters?.startsWith("=")
-    ) {
-      return true;
-    }
-  }
-  if (!response.headers.get("content-type")?.includes("application/json")) {
-    return false;
-  }
-  const parsed = await settle(response.clone().json());
-  if (
-    !parsed.ok ||
-    typeof parsed.value !== "object" ||
-    parsed.value === null ||
-    !("error" in parsed.value)
-  ) {
-    return false;
-  }
-  return [
-    "invalid_client",
-    "invalid_grant",
-    "invalid_token",
-    "insufficient_scope",
-    "unauthorized_client",
-  ].includes(String(parsed.value.error));
 }
 
 function allowedUrl(input: string | URL): URL {
@@ -437,10 +381,14 @@ export function createMcpOAuthSafeFetch(
       if (
         admitNetwork &&
         requestData.headers.has("CF-Access-Client-Id") &&
-        (response.status === 401 || response.status === 403) &&
-        !(await hasApplicationChallenge(response))
+        !response.ok
       ) {
-        throw new McpOAuthNetworkRejectedError();
+        // A challenge or OAuth JSON describes an error, not which reverse-proxied
+        // layer produced it. Do not let a token parser turn it into app revocation.
+        // GET/HEAD redirects retain their ordinary per-hop admission below.
+        if (redirectLocation(response) === null) {
+          throw new McpOAuthUnattributedResponseError(response);
+        }
       }
       const location = redirectLocation(response);
       if (location === null) {

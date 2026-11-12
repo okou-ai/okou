@@ -302,10 +302,6 @@ test.each([
         "quoted-escape": 'Digest realm="escaped \\\", Bearer, inside"',
         "auth-param": 'Digest realm="gateway", bearer = "value"',
       }[challenge];
-      const networkRejected =
-        challenge === "quoted" ||
-        challenge === "quoted-escape" ||
-        challenge === "auth-param";
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
         ...(challenge !== "parameters"
@@ -336,15 +332,8 @@ test.each([
         const start = await connectors.requestStartCustomConnectorOAuth2(
           actor,
           connector.id,
-          [networkRejected ? 400 : 200],
+          [200],
         );
-        if (networkRejected) {
-          expect(start.status).toBe(400);
-          await expect(
-            connectors.listCustomConnectorAccounts(actor, connector.id),
-          ).resolves.toStrictEqual([]);
-          return;
-        }
         if (start.status !== 200) {
           throw new Error("Expected successful MCP setup");
         }

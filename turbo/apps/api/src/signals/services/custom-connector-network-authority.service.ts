@@ -21,27 +21,11 @@ import {
   mcpOAuthSafeFetch,
 } from "./mcp-oauth-safe-fetch.service";
 import { parseCustomMcpEndpoint } from "./custom-mcp-endpoint";
+import { CustomConnectorNetworkError } from "./custom-connector-network-error";
 import {
   renderCustomConnectorRuntimePrefix,
   type CustomConnectorRow,
 } from "./custom-connector.service";
-
-export class CustomConnectorNetworkError extends Error {
-  constructor(
-    readonly reason: "changed" | "unavailable" | "scope" | "rejected",
-  ) {
-    super(
-      reason === "changed"
-        ? "Custom connector network authority changed; check the connector and retry explicitly"
-        : reason === "scope"
-          ? "The request is outside the custom connector's allowed network scope"
-          : reason === "rejected"
-            ? "Cloudflare Access rejected the request; check its service token and application policy"
-            : "Custom connector network authentication is unavailable",
-    );
-    this.name = "CustomConnectorNetworkError";
-  }
-}
 
 export interface CustomConnectorNetworkIdentity {
   readonly orgId: string;

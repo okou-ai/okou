@@ -252,6 +252,8 @@ export function customConnectorAutomaticOAuthErrorCode(
     case "unsafe-url": {
       return CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.UNSAFE_URL;
     }
+    case "network-unavailable":
+    case "response-unattributed":
     case "temporary-upstream": {
       return CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE;
     }

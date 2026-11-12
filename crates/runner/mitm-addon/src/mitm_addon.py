@@ -13,7 +13,7 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 
 import asyncio
 import tempfile
-from collections.abc import Awaitable, Iterator
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Literal, NoReturn
 
@@ -61,7 +61,6 @@ import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
-import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
@@ -126,8 +125,6 @@ from logging_utils import (
 _HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_BAD_GATEWAY = 502
 _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
-_MAX_NETWORK_CHALLENGE_HEADER_FIELDS = 2048
-_MAX_NETWORK_CHALLENGE_VALUE_BYTES = 8 * 1024
 # Request-header phase state.
 # Creator: requestheaders() and header-phase stream/auth helpers.
 # Consumer: request() and terminal cleanup.
@@ -2100,46 +2097,6 @@ async def _finish_response_after_terminal_work(
     )
 
 
-def _authentication_challenges(value: bytes) -> Iterator[bytes]:
-    start = 0
-    quoted = False
-    escaped = False
-    for index, char in enumerate(value):
-        if escaped:
-            escaped = False
-        elif quoted and char == b"\\"[0]:
-            escaped = True
-        elif char == b'"'[0]:
-            quoted = not quoted
-        elif not quoted and char == b","[0]:
-            yield value[start:index]
-            start = index + 1
-    if not quoted:
-        yield value[start:]
-
-
-def _response_has_application_auth_challenge(response: http.Response) -> bool:
-    values = http_header_syntax.bounded_header_values(
-        response.headers.fields,
-        b"www-authenticate",
-        max_fields=_MAX_NETWORK_CHALLENGE_HEADER_FIELDS,
-        max_value_bytes=_MAX_NETWORK_CHALLENGE_VALUE_BYTES,
-        separator_bytes=2,
-    )
-    if values is None:
-        return False
-    for value in values:
-        for item in _authentication_challenges(value):
-            challenge = item.split(maxsplit=1)
-            if (
-                challenge
-                and challenge[0].lower() in {b"bearer", b"basic"}
-                and (len(challenge) == 1 or not challenge[1].startswith(b"="))
-            ):
-                return True
-    return False
-
-
 def _finish_response_handling(
     flow: http.HTTPFlow,
     *,
@@ -2193,18 +2150,19 @@ def _finish_response_handling(
     # us the token is no longer valid, overriding whatever the DB believes.
     # request_force_refresh enforces a cooldown so a persistent non-token 401
     # can't amplify into a loop of provider refresh calls (#9860).
-    network_rejected = bool(
+    # Both reverse-proxied auth layers can send the same challenges and OAuth
+    # error bodies. A bound rejection cannot authorize app credential refresh.
+    authentication_unattributed = bool(
         flow.response
         and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
         and flow.response.status_code in (401, 403)
-        and not _response_has_application_auth_challenge(flow.response)
     )
-    if network_rejected:
+    if authentication_unattributed:
         log_proxy_entry(
             proxy_log_path,
             "warn",
-            "Cloudflare Access may have rejected this request; "
-            "check its service token and application policy",
+            "The Access-protected request failed authentication; its source is unknown. "
+            "Check network access and application authentication, then retry explicitly",
             type="cloudflare_access",
             status=flow.response.status_code if flow.response else 0,
         )
@@ -2212,7 +2170,7 @@ def _finish_response_handling(
         flow.response
         and flow.response.status_code == _HTTP_STATUS_UNAUTHORIZED
         and flow_metadata.firewall_base(flow.metadata)
-        and not network_rejected
+        and not authentication_unattributed
     ):
         cache_key = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_KEY)
         cache_entry_identity = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY)

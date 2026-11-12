@@ -28,25 +28,23 @@ def _network_response(secret: str, generation: int) -> dict:
 
 
 @pytest.mark.parametrize(
-    ("application_auth", "upstream_status", "application_challenge", "refresh_application_auth"),
+    ("application_auth", "upstream_status", "application_challenge"),
     [
-        (application_auth, upstream_status, None, False)
+        (application_auth, upstream_status, None)
         for application_auth in (False, True)
         for upstream_status in (200, 401, 403)
     ]
     + [
-        (True, 401, "Bearer", True),
-        (True, 401, 'bEaReR\trealm="application"', True),
-        (True, 401, "Basic", True),
-        (True, 401, 'Basic realm="application"', True),
-        (True, 401, "Bearerish", False),
-        pytest.param(True, 401, 'Digest realm="gateway", Bearer', True, id="combined-bearer"),
-        pytest.param(True, 401, 'Bearer, Basic realm="gateway"', True, id="bare-combined"),
-        pytest.param(True, 401, 'Digest realm="quoted, Bearer"', False, id="quoted-bearer"),
-        pytest.param(
-            True, 401, r'Digest realm="escaped \", Bearer, inside"', False, id="escaped-quote"
-        ),
-        pytest.param(True, 401, 'Digest realm="gateway", bearer = "value"', False, id="auth-param"),
+        (True, 401, "Bearer"),
+        (True, 401, 'bEaReR\trealm="application"'),
+        (True, 401, "Basic"),
+        (True, 401, 'Basic realm="application"'),
+        (True, 401, "Bearerish"),
+        pytest.param(True, 401, 'Digest realm="gateway", Bearer', id="combined-bearer"),
+        pytest.param(True, 401, 'Bearer, Basic realm="gateway"', id="bare-combined"),
+        pytest.param(True, 401, 'Digest realm="quoted, Bearer"', id="quoted-bearer"),
+        pytest.param(True, 401, r'Digest realm="escaped \", Bearer, inside"', id="escaped-quote"),
+        pytest.param(True, 401, 'Digest realm="gateway", bearer = "value"', id="auth-param"),
     ],
 )
 async def test_each_physical_request_admits_network_even_with_cached_or_no_app_auth(
@@ -56,7 +54,6 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
     application_auth,
     upstream_status,
     application_challenge,
-    refresh_application_auth,
 ):
     sandbox = _single_firewall_sandbox(
         tmp_path,
@@ -81,10 +78,6 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
             firewall_auth_success_response({"Authorization": "Bearer app"})
         )
     endpoint.queue_json_response(_network_response("rotated-pair", 2))
-    if refresh_application_auth:
-        endpoint.queue_json_response(
-            firewall_auth_success_response({"Authorization": "Bearer refreshed-app"})
-        )
     flows = [
         real_flow(
             with_response=False,
@@ -111,6 +104,7 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
             if index == 0:
                 flow.response = http.Response.make(
                     upstream_status,
+                    b'{"error":"invalid_grant"}',
                     headers={"WWW-Authenticate": application_challenge}
                     if application_challenge
                     else {},
@@ -118,6 +112,8 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
                 continuation = mitm_addon.response(flow)
                 if continuation is not None:
                     await continuation
+                assert flow.response.status_code == upstream_status
+                assert flow.response.content == b'{"error":"invalid_grant"}'
     assert [flow.request.headers["CF-Access-Client-Secret"] for flow in flows] == [
         "first-pair",
         "rotated-pair",
@@ -131,12 +127,12 @@ async def test_each_physical_request_admits_network_even_with_cached_or_no_app_a
         request_target = body["networkRequest"]
         assert isinstance(request_target, dict)
         assert request_target["url"] == "https://custom.example.test/api/items"
-    assert len(bodies) == (3 if application_auth else 2) + int(refresh_application_auth)
+    assert len(bodies) == (3 if application_auth else 2)
     if application_auth:
-        assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is (not refresh_application_auth)
+        assert flows[1].metadata[metadata_keys.AUTH_CACHE_HIT] is True
         assert [flow.request.headers["Authorization"] for flow in flows] == [
             "Bearer app",
-            "Bearer refreshed-app" if refresh_application_auth else "Bearer app",
+            "Bearer app",
         ]
     for flow in flows:
         if flow.response is None:

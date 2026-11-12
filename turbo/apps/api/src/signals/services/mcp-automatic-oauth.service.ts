@@ -37,9 +37,11 @@ import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import {
   McpOAuthUnsafeUrlError,
+  McpOAuthUnattributedResponseError,
   mcpOAuthSafeFetch,
   validateMcpOAuthUrl,
 } from "./mcp-oauth-safe-fetch.service";
+import { CustomConnectorNetworkError } from "./custom-connector-network-error";
 import {
   discoverMcpAutomaticOAuthUserInfo,
   type McpAutomaticOAuthUserInfo,
@@ -126,6 +128,8 @@ type AutomaticOAuthIncompatibleReason =
   | "registration-conflict";
 
 type AutomaticOAuthFailure =
+  | { readonly kind: "network"; readonly reason: "network-unavailable" }
+  | { readonly kind: "unknown"; readonly reason: "response-unattributed" }
   | {
       readonly kind: "unsafe";
       readonly reason: "unsafe-url";
@@ -216,6 +220,20 @@ function automaticOAuthRemoteFailure(
 ): McpAutomaticOAuthError {
   if (error instanceof McpAutomaticOAuthError) {
     return error;
+  }
+  if (error instanceof CustomConnectorNetworkError) {
+    return new McpAutomaticOAuthError(
+      { kind: "network", reason: "network-unavailable" },
+      error.message,
+      error,
+    );
+  }
+  if (error instanceof McpOAuthUnattributedResponseError) {
+    return new McpAutomaticOAuthError(
+      { kind: "unknown", reason: "response-unattributed" },
+      error.message,
+      error,
+    );
   }
   if (error instanceof RegistrationRejectedError) {
     return new McpAutomaticOAuthError(
@@ -322,9 +340,14 @@ async function probeAutomaticOAuthChallenge(
   signal: AbortSignal,
   fetchFn?: FetchLike,
 ): Promise<
-  | { readonly kind: "none" }
-  | { readonly kind: "oauth"; readonly context: CapturedUnauthorizedContext }
+  | { readonly kind: "none"; readonly unattributed: false }
+  | {
+      readonly kind: "oauth";
+      readonly context: CapturedUnauthorizedContext;
+      readonly unattributed: boolean;
+    }
 > {
+  let unattributed = false;
   const authProvider: AuthProvider = {
     token: () => {
       return Promise.resolve(undefined);
@@ -335,7 +358,25 @@ async function probeAutomaticOAuthChallenge(
   };
   const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
     authProvider,
-    fetch: fetchWithSignal(signal, fetchFn),
+    fetch: async (input, init) => {
+      const fetched = await settle(
+        fetchWithSignal(signal, fetchFn)(input, init),
+      );
+      if (fetched.ok) {
+        return fetched.value;
+      }
+      const error = fetched.error;
+      if (
+        error instanceof McpOAuthUnattributedResponseError &&
+        error.response.status === 401
+      ) {
+        // This unauthenticated resource probe only discovers a challenge. It
+        // never parses token errors, retries a token POST or changes an account.
+        unattributed = true;
+        return error.response;
+      }
+      throw error;
+    },
     onInsufficientScope: "throw",
   });
   const client = new Client({ name: "Okou", version: "1.0.0" });
@@ -344,11 +385,15 @@ async function probeAutomaticOAuthChallenge(
   signal.throwIfAborted();
   if (!connection.ok) {
     if (connection.error instanceof AutomaticOAuthChallengeCaptured) {
-      return { kind: "oauth", context: connection.error.context };
+      return {
+        kind: "oauth",
+        context: connection.error.context,
+        unattributed,
+      };
     }
     throw connection.error;
   }
-  return { kind: "none" };
+  return { kind: "none", unattributed: false };
 }
 
 function requiredHttpsUrl(value: string, field: string): string {
@@ -403,6 +448,7 @@ function selectedScope(
 }
 
 interface DiscoveredAutomaticOAuthAuthority {
+  readonly challengeUnattributed: boolean;
   readonly issuer: string;
   readonly resource: string;
   readonly resourceMetadataUrl: string | null;
@@ -501,6 +547,7 @@ async function discoverAutomaticOAuthAuthority(
     readonly protectedResourceMetadata: OAuthProtectedResourceMetadata;
     readonly challengeScope?: string;
     readonly additionalScopes?: readonly string[];
+    readonly challengeUnattributed: boolean;
   },
   signal: AbortSignal,
 ): Promise<DiscoveredAutomaticOAuthAuthority> {
@@ -583,6 +630,7 @@ async function discoverAutomaticOAuthAuthority(
     );
   }
   return {
+    challengeUnattributed: args.challengeUnattributed,
     issuer,
     resource,
     resourceMetadataUrl: args.resourceMetadataUrl?.toString() ?? null,
@@ -621,6 +669,20 @@ export function mcpAutomaticOAuthResourceMatchesEndpoint(
   );
 }
 
+function automaticOAuthAuthorityChanged(
+  authority: DiscoveredAutomaticOAuthAuthority,
+  message: string,
+): McpAutomaticOAuthError {
+  return new McpAutomaticOAuthError(
+    authority.challengeUnattributed
+      ? { kind: "unknown", reason: "response-unattributed" }
+      : { kind: "binding-drift", reason: "binding-drift" },
+    authority.challengeUnattributed
+      ? "MCP OAuth authority differs after an unattributed authentication challenge; check network access and retry explicitly"
+      : message,
+  );
+}
+
 function assertAutomaticOAuthAuthorityMatchesBinding(
   authority: DiscoveredAutomaticOAuthAuthority,
   binding: McpAutomaticOAuthBinding,
@@ -631,8 +693,8 @@ function assertAutomaticOAuthAuthorityMatchesBinding(
     authority.issuer !== binding.issuer ||
     authority.tokenEndpoint !== binding.tokenEndpoint
   ) {
-    throw new McpAutomaticOAuthError(
-      { kind: "binding-drift", reason: "binding-drift" },
+    throw automaticOAuthAuthorityChanged(
+      authority,
       "MCP OAuth token authority changed",
     );
   }
@@ -980,6 +1042,7 @@ async function discoverCurrentAutomaticOAuthAuthority(
       fetchFn,
       resourceMetadataUrl,
       protectedResourceMetadata: discovered.metadata,
+      challengeUnattributed: probe.unattributed,
     },
     signal,
   );
@@ -1008,8 +1071,8 @@ export async function prepareMcpAutomaticOAuthReauthorization(
     args.binding.registrationMethod === "dcr" &&
     args.binding.issuer !== authority.issuer
   ) {
-    throw new McpAutomaticOAuthError(
-      { kind: "binding-drift", reason: "binding-drift" },
+    throw automaticOAuthAuthorityChanged(
+      authority,
       "MCP OAuth dynamic registration belongs to a different issuer",
     );
   }
@@ -1095,6 +1158,22 @@ type AutomaticOAuthBoundClientContext = {
     }
 );
 
+function automaticOAuthContext(
+  authority: DiscoveredAutomaticOAuthAuthority,
+  client: AutomaticOAuthClientSelection,
+): McpAutomaticOAuthContext {
+  return {
+    issuer: authority.issuer,
+    resource: authority.resource,
+    resourceMetadataUrl: authority.resourceMetadataUrl,
+    authorizationEndpoint: authority.authorizationEndpoint,
+    tokenEndpoint: authority.tokenEndpoint,
+    authorizationResponseIssParameterSupported:
+      authority.authorizationResponseIssParameterSupported,
+    ...client,
+  };
+}
+
 export async function prepareMcpAutomaticOAuthAuthorization(
   args: {
     readonly fetchFn?: FetchLike;
@@ -1160,6 +1239,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       resourceMetadataUrl,
       protectedResourceMetadata: discovered.metadata,
       challengeScope: challengeParameters?.scope,
+      challengeUnattributed: probe.unattributed,
       additionalScopes: args.additionalScopes,
     },
     signal,
@@ -1198,31 +1278,12 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       args.authorizationPrompt,
     );
   }
-  const contextBase = {
-    issuer: authority.issuer,
-    resource: authority.resource,
-    resourceMetadataUrl: authority.resourceMetadataUrl,
-    authorizationEndpoint: authority.authorizationEndpoint,
-    tokenEndpoint: authority.tokenEndpoint,
-    authorizationResponseIssParameterSupported:
-      authority.authorizationResponseIssParameterSupported,
-    clientId: client.clientId,
-    tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
-  } as const;
-  const context: McpAutomaticOAuthContext =
-    client.registrationMethod === "dcr"
-      ? {
-          ...contextBase,
-          registrationMethod: "dcr",
-          dcrRegistrationId: client.dcrRegistrationId,
-        }
-      : { ...contextBase, registrationMethod: "cimd" };
   return {
     kind: "oauth",
     authorizationUrl: authorization.authorizationUrl.toString(),
     codeVerifier: authorization.codeVerifier,
     requestedScope: authority.scope ?? null,
-    context,
+    context: automaticOAuthContext(authority, client),
   };
 }
 
@@ -1449,15 +1510,9 @@ export async function refreshMcpAutomaticOAuthToken(
       }
       throw error;
     }
-    const remoteFailure = automaticOAuthRemoteFailure("token refresh", error);
-    if (remoteFailure.kind === "temporary") {
-      throw remoteFailure;
-    }
-    throw new McpAutomaticOAuthError(
-      { kind: "binding-drift", reason: "binding-drift" },
-      "MCP OAuth token authority changed",
-      remoteFailure,
-    );
+    // Only the explicit authority/registration comparisons above establish
+    // binding drift. A failed HTTP operation is not evidence of app revocation.
+    throw automaticOAuthRemoteFailure("token refresh", error);
   }
   const result = automaticOAuthTokenResult(refreshed.value);
   return {
