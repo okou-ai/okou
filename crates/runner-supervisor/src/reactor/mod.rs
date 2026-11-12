@@ -237,6 +237,7 @@ async fn abort_signal_handler_task(handler_task: SignalHandlerTask, context: &'s
 /// Test observation state is deliberately private and compiled only for this
 /// owner's unit target; dependency callers never inherit it through cfg(test).
 pub struct RunConfig {
+    pub ingress: Option<crate::ingress::IngressConfig>,
     pub ingress_service_probe: crate::heartbeat::IngressServiceProbe,
     pub runner: RunnerInfo,
     pub paths: RunPaths,
@@ -356,6 +357,7 @@ impl OrphanReapState {
 
 #[cfg(test)]
 struct RunTestHooks {
+    ingress_client: Option<reqwest::Client>,
     outer_job_panic: Option<OuterJobPanicPoint>,
     test_observer: StartLoopTestObserver,
     before_initial_home_cache_scan: Option<StartLoopTestGate>,
@@ -889,6 +891,7 @@ async fn handle_mitm_recovery_failure(
 /// Run the concrete retained reactor and perform its ordered resource teardown.
 pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let RunConfig {
+        ingress,
         ingress_service_probe,
         runner,
         paths,
@@ -926,10 +929,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     });
     let Some(started) = startup::start(
         startup::StartupResources {
+            ingress: None,
             sandbox_runtime,
             proxy,
             shutdown,
         },
+        ingress,
         startup::StartupContext {
             runner: &runner,
             paths: &paths,
@@ -954,6 +959,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let startup::StartedRunner {
         resources:
             startup::StartupResources {
+                ingress,
                 sandbox_runtime: SandboxRuntimeConfig { mut runtime },
                 proxy:
                     ProxyState {
@@ -1843,6 +1849,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     if let Some(handler_task) = signal_handler_task.take() {
         abort_signal_handler_task(handler_task, "shutdown").await;
         teardown.event("signal_handler_aborted");
+    }
+
+    if let Some(ingress) = ingress {
+        ingress.shutdown().await;
     }
 
     info!("shutting down factories");

@@ -61,8 +61,12 @@ fn health_request(id: RunnerProcessIdentity, credential: &str) -> String {
 #[tokio::test]
 async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
     let (_root, directory) = namespace();
-    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN).await;
-    let second = IngressRuntime::start(directory.clone(), identity(2), HOST.into(), TOKEN).await;
+    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
+        .await
+        .unwrap();
+    let second = IngressRuntime::start(directory.clone(), identity(2), HOST.into(), TOKEN)
+        .await
+        .unwrap();
     let first_path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let second_path = directory.join(format!("{}.sock", identity(2).runner_id()));
     let token = credential(identity(1));
@@ -134,7 +138,9 @@ async fn unix_health_is_authenticated_identity_bound_and_routes_are_disjoint() {
 #[tokio::test]
 async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_credentials() {
     let (_root, directory) = namespace();
-    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN).await;
+    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
+        .await
+        .unwrap();
     let old_credential = credential(identity(1));
     let path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let mut slow = UnixStream::connect(&path).await.unwrap();
@@ -147,7 +153,9 @@ async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_creden
         .unwrap();
     assert!(matches!(closed, Ok(0) | Err(_)));
     let restarted = RunnerProcessIdentity::new(identity(1).runner_id(), 8).unwrap();
-    let second = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN).await;
+    let second = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN)
+        .await
+        .unwrap();
     assert_eq!(
         request(&path, &health_request(identity(1), &old_credential))
             .await
@@ -164,12 +172,15 @@ async fn shutdown_joins_connections_and_a_new_generation_rejects_previous_creden
 }
 
 #[tokio::test]
-async fn unsafe_namespace_or_noncanonical_host_only_disables_optional_ingress() {
+async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
     let (_root, directory) = namespace();
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o777)).unwrap();
-    let runtime = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN).await;
+    assert!(
+        IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
+            .await
+            .is_err()
+    );
     assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
-    runtime.shutdown().await;
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
     for hostname in [
         "localhost",
@@ -178,9 +189,57 @@ async fn unsafe_namespace_or_noncanonical_host_only_disables_optional_ingress() 
         "Runner.example.org",
         "runner.example.org:443",
     ] {
-        let runtime =
-            IngressRuntime::start(directory.clone(), identity(1), hostname.into(), TOKEN).await;
+        assert!(
+            IngressRuntime::start(directory.clone(), identity(1), hostname.into(), TOKEN)
+                .await
+                .is_err()
+        );
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
-        runtime.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn public_health_requires_successful_bounded_current_process_response() {
+    use httpmock::{Method::GET, MockServer};
+
+    let server = MockServer::start_async().await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(HEALTH_TIMEOUT)
+        .build()
+        .unwrap();
+    let health = Health::new(identity(1), HOST.into(), TOKEN).unwrap();
+    let path = format!("/runners/{}/control/health", identity(1).runner_id());
+    let current = serde_json::to_string(&identity(1)).unwrap();
+    for (status, body, accepted) in [
+        (200, current.clone(), true),
+        (401, String::new(), false),
+        (302, current, false),
+        (200, serde_json::to_string(&identity(2)).unwrap(), false),
+        (
+            200,
+            serde_json::to_string(&RunnerProcessIdentity::new(identity(1).runner_id(), 8).unwrap())
+                .unwrap(),
+            false,
+        ),
+        (200, "invalid JSON".into(), false),
+        (200, " ".repeat(MAX_HEALTH_RESPONSE_BYTES + 1), false),
+    ] {
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path(&path).header(
+                    "authorization",
+                    format!("Bearer {}", credential(identity(1))),
+                );
+                then.status(status).body(body);
+            })
+            .await;
+        assert_eq!(
+            health.check(&client, &server.url(&path)).await.is_ok(),
+            accepted
+        );
+        mock.assert_async().await;
+        mock.delete_async().await;
     }
 }

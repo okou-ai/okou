@@ -330,19 +330,22 @@ def main():
                 notify_path.chmod(0o660)
                 notify.settimeout(10)
                 with (root / "caddy.log").open("wb") as log:
-                    process = subprocess.Popen(
-                        [str(caddy), "run", "--config", str(config_path)],
-                        stdout=log,
-                        stderr=log,
-                        user=consumer,
-                        group=consumer,
-                        extra_groups=[],
-                        env={
-                            "XDG_DATA_HOME": str(state),
-                            "XDG_CONFIG_HOME": str(state),
-                            "NOTIFY_SOCKET": str(notify_path),
-                        },
-                    )
+                    def start_caddy():
+                        return subprocess.Popen(
+                            [str(caddy), "run", "--config", str(config_path)],
+                            stdout=log,
+                            stderr=log,
+                            user=consumer,
+                            group=consumer,
+                            extra_groups=[],
+                            env={
+                                "XDG_DATA_HOME": str(state),
+                                "XDG_CONFIG_HOME": str(state),
+                                "NOTIFY_SOCKET": str(notify_path),
+                            },
+                        )
+
+                    process = start_caddy()
                     wait_ready(notify)
                     context = ssl.create_default_context(cafile=str(cert))
                     context.set_alpn_protocols(["http/1.1"])
@@ -406,6 +409,25 @@ def main():
                     assert (
                         response(context, port, f"/runners/{uuid.uuid4()}", True)[0] == 502
                     )
+                    assert before == {
+                        p.name: (p.stat().st_ino, p.stat().st_mode)
+                        for p in namespace.iterdir()
+                    }
+                    # Caddy's lifetime is independent of every live Runner
+                    # socket. Reconnect HTTP/WSS after restart without rebinding.
+                    process.terminate()
+                    assert process.wait(timeout=10) == 0
+                    assert before == {
+                        p.name: (p.stat().st_ino, p.stat().st_mode)
+                        for p in namespace.iterdir()
+                    }
+                    process = start_caddy()
+                    wait_ready(notify)
+                    for runner_id, label in zip(ids, [b"first", b"second"], strict=True):
+                        path = f"/runners/{runner_id}/control/health"
+                        assert response(context, port, path) == (200, label + b":" + path.encode())
+                        path = f"/runners/{runner_id}/sandbox/runs/{uuid.uuid4()}/services/events"
+                        assert response(context, port, path, True) == (101, label + b":ping")
                     assert before == {
                         p.name: (p.stat().st_ino, p.stat().st_mode)
                         for p in namespace.iterdir()

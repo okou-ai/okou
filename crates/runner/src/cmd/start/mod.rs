@@ -490,8 +490,17 @@ async fn run_start_observed(
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
     let observe_ingress_service = !args.local && server.token.starts_with("vm0_official_");
-    let ingress_settings =
-        observe_ingress_service.then(|| (hostname.clone(), server.token.clone()));
+    let ingress = if observe_ingress_service {
+        Some(runner_supervisor::ingress::IngressConfig {
+            directory: home.ingress_dir(),
+            hostname: hostname.clone().ok_or_else(|| {
+                RunnerError::Config("official Runner ingress requires a public hostname".into())
+            })?,
+            token: server.token.clone(),
+        })
+    } else {
+        None
+    };
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -800,20 +809,8 @@ async fn run_start_observed(
 
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
-    let ingress = if let Some((Some(hostname), token)) = ingress_settings {
-        Some(
-            runner_supervisor::ingress::IngressRuntime::start(
-                home.ingress_dir(),
-                runner_identity,
-                hostname,
-                &token,
-            )
-            .await,
-        )
-    } else {
-        None
-    };
     let config = RunConfig {
+        ingress,
         ingress_service_probe: if observe_ingress_service {
             Arc::new(|| Box::pin(runner_host::ingress_service_status::is_active()))
         } else {
@@ -876,9 +873,6 @@ async fn run_start_observed(
     };
 
     let run_result = reactor::run(config).await.map_err(Into::into);
-    if let Some(ingress) = ingress {
-        ingress.shutdown().await;
-    }
     drop(resource_locks);
     if let Err(e) = live_runner_instance_handle.remove_if_current().await {
         tracing::warn!(error = %e, "failed to remove live runner instance record");

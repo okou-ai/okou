@@ -33,9 +33,19 @@ authorization and exact live Run/service assignment. No arbitrary client IP,
 port or Unix path is accepted. Arbitrary untrusted web applications additionally
 need a separately designed browser origin; path isolation does not supply it.
 
-Caddy is optional at Runner runtime: there is no hard service dependency or
-startup wait. Missing/stopped Caddy or listener failure leaves ordinary
-heartbeats, Claim, Ably/poll execution and accepted-work cleanup operational.
+An official non-local Runner binds its listener and requests its own
+`https://<hostname>/runners/<runnerId>/control/health` before publishing the first
+Running heartbeat or entering `running`. The ten-second HTTPS request uses normal
+CA validation, no redirects, its scoped health credential, a bounded response,
+and the exact current Runner ID/generation. Missing hostname, listener failure or
+unreachable ingress fails startup and rolls back its resources. Provision public
+Caddy, DNS, firewall and certificates before starting this Runner artifact.
+
+This check runs only at startup. Running Runners and accepted Runs continue
+through Caddy restart; there is no hard systemd lifetime dependency or ongoing
+health watchdog. Caddy recovery restores connections to the same live sockets;
+existing WebSocket clients reconnect. Local queue and personal-token Runners
+retain their existing behavior.
 The ordered official heartbeat reports only `ingressServiceActive`, sampled
 with a bounded best-effort host probe. Missing, inactive or unqueryable service
 state reports false. Older or nonofficial heartbeats clear it to false, and
@@ -43,9 +53,10 @@ freshness uses the existing heartbeat timestamp. Service activity does not prove
 public reachability, a working listener or support for direct dispatch.
 
 Deploy the additive schema/API heartbeat reader before Runner writers. This PR
-does not activate any direct sender. Future direct requests must handle refusal
-or connection failure through Ably while retaining poll. Service loss never
-revokes existing Run ownership or accepted-work cleanup.
+does not activate a direct sender or change current Claim/Ably/poll execution.
+Later PRs replace job acquisition with API-owned full direct delivery, failing
+the Run when no Runner is available. Service loss never revokes existing Run
+ownership or accepted-work cleanup.
 
 Only authenticated `GET /runners/<runnerId>/control/health` is implemented now.
 The health-only bearer is the lowercase hex HMAC-SHA256 under the existing

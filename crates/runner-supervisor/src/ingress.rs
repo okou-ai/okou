@@ -1,8 +1,10 @@
-//! Optional host ingress. This owner never acquires or cancels Run ownership.
+//! Host ingress with startup-only public reachability validation.
+//! Caddy's runtime availability never acquires or cancels Run ownership.
 //! Only readonly health is implemented here; dispatch and sandbox paths remain
 //! reserved. Caddy terminates TLS and preserves the identity-bearing URI.
 
 use std::convert::Infallible;
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +24,15 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 const MAX_CONNECTIONS: usize = 32;
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_HEALTH_RESPONSE_BYTES: usize = 4096;
+
+/// Required only for official, non-local Runner startup.
+pub struct IngressConfig {
+    pub directory: PathBuf,
+    pub hostname: String,
+    pub token: String,
+}
 
 struct Health {
     identity: RunnerProcessIdentity,
@@ -50,6 +61,58 @@ impl Health {
             hostname,
             authorization,
         })
+    }
+
+    async fn check_public(&self) -> io::Result<()> {
+        let client = reqwest::Client::builder()
+            .https_only(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(HEALTH_TIMEOUT)
+            .build()
+            .map_err(io::Error::other)?;
+        self.check(&client, &self.url()).await
+    }
+
+    fn url(&self) -> String {
+        format!(
+            "https://{}/runners/{}/control/health",
+            self.hostname,
+            self.identity.runner_id()
+        )
+    }
+
+    async fn check(&self, client: &reqwest::Client, url: &str) -> io::Result<()> {
+        let credential = hex::encode(self.authorization.clone().finalize().into_bytes());
+        let mut response = client
+            .get(url)
+            .bearer_auth(credential)
+            .send()
+            .await
+            .map_err(io::Error::other)?;
+        if response.status() != StatusCode::OK {
+            return Err(io::Error::other(format!(
+                "public Runner health returned {}",
+                response.status()
+            )));
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(io::Error::other)? {
+            if body.len().saturating_add(chunk.len()) > MAX_HEALTH_RESPONSE_BYTES {
+                return Err(io::Error::other(
+                    "public Runner health response is too large",
+                ));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let identity: RunnerProcessIdentity =
+            serde_json::from_slice(&body).map_err(io::Error::other)?;
+        if identity != self.identity {
+            return Err(io::Error::other(
+                "public Runner health reached a different Runner process",
+            ));
+        }
+        Ok(())
     }
 
     fn handle(&self, request: Request<Incoming>) -> Response<Full<Bytes>> {
@@ -118,8 +181,9 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
     result
 }
 
-/// Explicitly joined around Root's reactor call, including startup errors.
+/// Owned by startup and then the running reactor, independently of Caddy.
 pub struct IngressRuntime {
+    health: Arc<Health>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -130,38 +194,23 @@ impl IngressRuntime {
         identity: RunnerProcessIdentity,
         hostname: String,
         token: &str,
-    ) -> Self {
-        let mut runtime = Self {
-            cancel: CancellationToken::new(),
-            task: None,
-        };
+    ) -> io::Result<Self> {
         if !canonical_hostname(&hostname) || token.is_empty() {
-            tracing::warn!(
-                "optional Runner ingress requires a canonical public hostname and service credential"
-            );
-            return runtime;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Runner ingress requires a canonical public hostname and service credential",
+            ));
         }
-        let bound = tokio::task::spawn_blocking(move || {
+        let health = Arc::new(Health::new(identity, hostname, token).map_err(io::Error::other)?);
+        let socket = tokio::task::spawn_blocking(move || {
             RunnerIngressSocket::bind(&directory, identity.runner_id())
         })
-        .await;
-        let socket = match bound {
-            Ok(Ok(socket)) => socket,
-            Ok(Err(error)) => {
-                tracing::warn!(%error, "optional Runner ingress unavailable");
-                return runtime;
-            }
-            Err(error) => {
-                tracing::warn!(%error, "optional Runner ingress bind task failed");
-                return runtime;
-            }
-        };
-        let health = match Health::new(identity, hostname, token) {
-            Ok(health) => Arc::new(health),
-            Err(error) => {
-                tracing::warn!(%error, "optional ingress health credential unavailable");
-                return runtime;
-            }
+        .await
+        .map_err(io::Error::other)??;
+        let mut runtime = Self {
+            health: health.clone(),
+            cancel: CancellationToken::new(),
+            task: None,
         };
         let cancel = runtime.cancel.clone();
         runtime.task = Some(tokio::spawn(async move {
@@ -174,7 +223,7 @@ impl IngressRuntime {
                     accepted = socket.accept() => {
                         let stream = match accepted {
                             Ok(stream) => stream,
-                            Err(error) => { tracing::warn!(%error, "optional ingress accept failed"); break; }
+                            Err(error) => { tracing::warn!(%error, "Runner ingress accept failed"); break; }
                         };
                         if connections.len() >= MAX_CONNECTIONS { continue; }
                         let health = health.clone();
@@ -200,7 +249,20 @@ impl IngressRuntime {
             while connections.join_next().await.is_some() {}
             drop(socket);
         }));
-        runtime
+        Ok(runtime)
+    }
+
+    /// Called once before the first Running publication, never as a watchdog.
+    pub async fn check_public_health(&self) -> io::Result<()> {
+        self.health.check_public().await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn check_public_health_with_client(
+        &self,
+        client: &reqwest::Client,
+    ) -> io::Result<()> {
+        self.health.check(client, &self.health.url()).await
     }
 
     pub async fn shutdown(mut self) {
@@ -257,3 +319,6 @@ fn canonical_hostname(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) mod test_support;
