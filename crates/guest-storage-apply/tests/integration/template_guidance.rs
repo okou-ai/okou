@@ -265,37 +265,42 @@ fn template_guidance_rejects_empty_archives() {
 
 #[test]
 fn template_guidance_enforces_file_count_and_payload_limits() {
-    let oversized = vec![0_u8; 25 * 1024 * 1024 + 1];
-    let payload = vec![0_u8; 25 * 1024 * 1024];
+    // Preserve the exact create_tar_gz inputs without recompressing 125 MiB per run.
+    // Regenerate the first with [("too-large.bin", &vec![0; 25 * 1024 * 1024 + 1])].
+    // The second uses a.bin/b.bin/c.bin/d.bin, each &vec![0; 25 * 1024 * 1024],
+    // followed by ("overflow.bin", b"x"). Keep the helper's modes and gzip settings.
+    let oversized = include_bytes!("../fixtures/template-file-overflow.tar.gz").as_slice();
+    let payload = include_bytes!("../fixtures/template-content-overflow.tar.gz").as_slice();
+    for (archive, expected) in [
+        (
+            oversized,
+            "9ce8c9fa2a2fff6cd7c6455ee699548398d3586ac11a80c0c37ccadb8af2e7f5",
+        ),
+        (
+            payload,
+            "f8d3ac82e996a45b1f0d5aaa594ac8925c716b6b1a9a5705fdce707f5f99b38d",
+        ),
+    ] {
+        assert_eq!(hex::encode(Sha256::digest(archive)), expected);
+    }
     let count = (0..201)
         .map(|index| format!("{index}.txt"))
         .collect::<Vec<_>>();
-    let archives = [
-        create_tar_gz(&[("too-large.bin", &oversized)]).unwrap(),
-        create_tar_gz(
-            &count
-                .iter()
-                .map(|path| (path.as_str(), b"".as_slice()))
-                .collect::<Vec<_>>(),
-        )
-        .unwrap(),
-        create_tar_gz(&[
-            ("a.bin", &payload),
-            ("b.bin", &payload),
-            ("c.bin", &payload),
-            ("d.bin", &payload),
-            ("overflow.bin", b"x"),
-        ])
-        .unwrap(),
-    ];
-    for archive in archives {
+    let count_archive = create_tar_gz(
+        &count
+            .iter()
+            .map(|path| (path.as_str(), b"".as_slice()))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    for archive in [oversized, count_archive.as_slice(), payload] {
         let dir = tempfile::tempdir().unwrap();
         let staged = dir.path().join("archive.tar.gz");
-        fs::write(&staged, &archive).unwrap();
+        fs::write(&staged, archive).unwrap();
         assert!(!apply(&manifest(
             &dir.path().join("mount"),
             &format!("file://{}", staged.display()),
-            &archive
+            archive
         )));
     }
 }
