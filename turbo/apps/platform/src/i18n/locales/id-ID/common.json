@@ -7412,7 +7412,6 @@
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
       "loadError": "Tidak dapat memuat koneksi email Anda",
-      "loginNotice": "Email login Anda tetap terhubung.",
       "manage": "Kelola",
       "manageDescription": "Kirim kode dari alamat email yang ingin ditambahkan.",
       "manageTitle": "Koneksi email",

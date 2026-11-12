@@ -7513,7 +7513,6 @@
       "healthNotice": "Non usare questa integrazione per informazioni sui pazienti soggette a HIPAA.",
       "invalidLink": "Questo link di collegamento non è valido. Invia una nuova email a Okou.",
       "loadError": "Impossibile caricare il collegamento email",
-      "loginNotice": "L’e-mail di accesso rimane collegata.",
       "manage": "Gestisci",
       "manageDescription": "Invia il codice dall’indirizzo e-mail che vuoi aggiungere.",
       "manageTitle": "Connessioni e-mail",

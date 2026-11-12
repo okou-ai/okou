@@ -7412,7 +7412,6 @@
       "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
       "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",
       "loadError": "メール接続を読み込めませんでした",
-      "loginNotice": "ログイン用メールは常に接続されます。",
       "manage": "管理",
       "manageDescription": "追加するメールアドレスからコードを送信してください。",
       "manageTitle": "メールの接続",

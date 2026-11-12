@@ -7412,7 +7412,6 @@
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
       "loadError": "无法加载邮箱连接",
-      "loginNotice": "登录邮箱始终保持连接。",
       "manage": "管理",
       "manageDescription": "从要添加的邮箱发送验证码。",
       "manageTitle": "邮箱连接",
