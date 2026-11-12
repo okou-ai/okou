@@ -8,8 +8,8 @@ import { refreshClerkSessionToken } from "./lib/auth";
 import { issueCliToken } from "./lib/cli-token";
 import { runnerTestAccounts } from "./lib/clerk-api";
 import { formatErrorReport } from "./lib/error-report";
-import { captureClerkReadiness } from "./lib/clerk-readiness";
 import { ensureRunnerOrganizationReady } from "./lib/onboarding";
+import { capturePaidOnboardingFailure } from "./lib/paid-onboarding-diagnostics";
 import {
   completeRunnerOnboarding,
   createRunnerCheckout,
@@ -17,10 +17,7 @@ import {
 } from "./lib/runner-onboarding";
 import { seedPreviewBypassCookie } from "./lib/preview-bypass";
 import { signInRunnerWithDiagnostics } from "./lib/runner-sign-in";
-import {
-  collectStripeCheckoutState,
-  fillStripeCheckout,
-} from "./lib/stripe-checkout";
+import { fillStripeCheckout } from "./lib/stripe-checkout";
 
 const RUNNER_CREDENTIAL_CONCURRENCY = 2;
 
@@ -263,7 +260,11 @@ async function preparePaidRunner(
     return verifiedToken;
   } catch (error: unknown) {
     try {
-      await capturePaidOnboardingFailure(page, target, outputDirectory);
+      await capturePaidOnboardingFailure(
+        page,
+        target.fileName,
+        outputDirectory,
+      );
     } catch (diagnosticError: unknown) {
       console.error("Unable to capture paid onboarding diagnostics", {
         diagnosticErrorType:
@@ -275,54 +276,6 @@ async function preparePaidRunner(
     }
     throw error;
   }
-}
-
-async function capturePaidOnboardingFailure(
-  page: Page,
-  target: RunnerCredentialTarget,
-  outputDirectory: string,
-): Promise<void> {
-  const diagnosticDirectory = join(
-    outputDirectory,
-    "e2e-runner-checkout-diagnostics",
-  );
-  const fileStem = target.fileName.replace(/\.json$/u, "");
-  await mkdir(diagnosticDirectory, { recursive: true });
-
-  const results = await Promise.allSettled([
-    writePaidOnboardingState(
-      page,
-      join(diagnosticDirectory, `${fileStem}.json`),
-    ),
-    page.screenshot({
-      fullPage: true,
-      path: join(diagnosticDirectory, `${fileStem}.png`),
-    }),
-  ]);
-  if (!results.some((result) => result.status === "fulfilled")) {
-    throw new Error("Unable to capture any paid onboarding diagnostic");
-  }
-}
-
-async function writePaidOnboardingState(
-  page: Page,
-  path: string,
-): Promise<void> {
-  const [stripeResult, clerk] = await Promise.all([
-    collectStripeCheckoutState(page).then(
-      (state) => ({ available: true as const, state }),
-      () => ({ available: false as const }),
-    ),
-    captureClerkReadiness(page),
-  ]);
-  const state = {
-    clerk,
-    stripe: stripeResult.available ? stripeResult.state : null,
-  };
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
 }
 
 function requiredEnvironmentVariable(name: string): string {
