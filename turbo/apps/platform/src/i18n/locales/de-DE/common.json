@@ -3261,7 +3261,6 @@
     "noConnectorAccess": "Ohne Cloudflare Access",
     "organization": "Organisation",
     "personal": "Persönlich",
-    "refresh": "Konfigurationen aktualisieren",
     "replace": "Service-Token ersetzen",
     "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden.",
     "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",

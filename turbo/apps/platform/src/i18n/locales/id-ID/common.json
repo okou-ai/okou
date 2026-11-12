@@ -3248,7 +3248,6 @@
     "noConnectorAccess": "Tanpa Cloudflare Access",
     "organization": "Organisasi",
     "personal": "Pribadi",
-    "refresh": "Muat ulang konfigurasi",
     "replace": "Ganti Service Token",
     "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan.",
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",

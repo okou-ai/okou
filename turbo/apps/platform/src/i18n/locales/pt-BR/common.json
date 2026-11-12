@@ -3309,7 +3309,6 @@
     "noConnectorAccess": "Sem Cloudflare Access",
     "organization": "Organização",
     "personal": "Pessoal",
-    "refresh": "Atualizar configurações",
     "replace": "Substituir Service Token",
     "resourceIdConflict": "Este ID de recurso não pode ser usado.",
     "revisionExhausted": "Esta configuração não pode mais ser atualizada. Crie uma nova.",

@@ -1,6 +1,5 @@
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
-  IconButton,
   Select,
   SelectContent,
   SelectItem,
@@ -8,7 +7,7 @@ import {
   SelectValue,
 } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import { RefreshCw } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   customConnectorCloudflareChoices$,
@@ -20,9 +19,13 @@ import { Link } from "../../../router/link.tsx";
 function ConnectorNetworkDescription({
   enabled,
   unavailable,
+  loading,
+  loadFailed,
 }: {
   readonly enabled: boolean;
   readonly unavailable: boolean;
+  readonly loading: boolean;
+  readonly loadFailed: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -66,24 +69,21 @@ function ConnectorNetworkDescription({
           })}
         </Link>
       )}
+      {enabled && loading && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.cloudflareAccess.loading;
+          })}
+        </p>
+      )}
+      {enabled && loadFailed && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.cloudflareAccess.loadFailed;
+          })}
+        </p>
+      )}
     </>
-  );
-}
-
-function RefreshConfigurations({ disabled }: { readonly disabled: boolean }) {
-  const { t } = useTranslation();
-  const reload = useSet(invalidateCloudflareAccess$);
-  return (
-    <IconButton
-      type="button"
-      disabled={disabled}
-      aria-label={t(($) => {
-        return $.cloudflareAccess.refresh;
-      })}
-      onClick={reload}
-    >
-      <RefreshCw size={16} />
-    </IconButton>
   );
 }
 
@@ -99,6 +99,7 @@ export function CustomConnectorNetworkField({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
+  const reload = useSet(invalidateCloudflareAccess$);
   const enabled = useGet(customConnectorCloudflareEnabled$);
   const choices = useLoadable(customConnectorCloudflareChoices$);
   const saved = connector?.networkBinding;
@@ -140,22 +141,42 @@ export function CustomConnectorNetworkField({
     }),
   ];
   return (
-    <div className="grid gap-2">
-      <label
-        htmlFor="custom-connector-cloudflare"
-        className="text-sm font-medium text-foreground"
-      >
-        {t(($) => {
-          return $.cloudflareAccess.configuration;
-        })}
-      </label>
-      <div className="flex items-center gap-2">
+    <details className="group rounded-lg border border-border">
+      <summary className="flex cursor-default list-none items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-state-hover">
+        <ChevronRight
+          size={16}
+          className="shrink-0 transition-transform group-open:rotate-90"
+        />
+        <span>
+          {t(($) => {
+            return $.connectors.custom.create.advancedSettings;
+          })}
+        </span>
+      </summary>
+      <div className="grid gap-2 border-t border-border px-3 py-4">
+        <label
+          htmlFor="custom-connector-cloudflare"
+          className="text-sm font-medium text-foreground"
+        >
+          {t(($) => {
+            return $.cloudflareAccess.configuration;
+          })}
+        </label>
         <Select
           items={items}
           value={configId || "none"}
           onValueChange={(value) => {
             if (value !== null) {
               onChange(value === "none" ? "" : value);
+            }
+          }}
+          onOpenChange={(open) => {
+            if (
+              open &&
+              (choices.state === "hasError" ||
+                (choices.state === "hasData" && !configs))
+            ) {
+              reload();
             }
           }}
           disabled={disabled}
@@ -178,30 +199,18 @@ export function CustomConnectorNetworkField({
             })}
           </SelectContent>
         </Select>
-        {enabled && <RefreshConfigurations disabled={disabled} />}
+        <ConnectorNetworkDescription
+          enabled={enabled}
+          unavailable={
+            saved?.status === "unavailable" && configId === saved.configId
+          }
+          loading={choices.state === "loading"}
+          loadFailed={
+            choices.state === "hasError" ||
+            (choices.state === "hasData" && !configs)
+          }
+        />
       </div>
-      <ConnectorNetworkDescription
-        enabled={enabled}
-        unavailable={
-          saved?.status === "unavailable" && configId === saved.configId
-        }
-      />
-      {enabled && choices.state === "loading" && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.loading;
-          })}
-        </p>
-      )}
-      {enabled &&
-        (choices.state === "hasError" ||
-          (choices.state === "hasData" && !configs)) && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.cloudflareAccess.loadFailed;
-            })}
-          </p>
-        )}
-    </div>
+    </details>
   );
 }

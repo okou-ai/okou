@@ -3248,7 +3248,6 @@
     "noConnectorAccess": "不使用 Cloudflare Access",
     "organization": "组织",
     "personal": "个人",
-    "refresh": "刷新配置",
     "replace": "替换 Service Token",
     "resourceIdConflict": "该资源 ID 无法使用。",
     "revisionExhausted": "该配置已无法继续更新，请新建一个。",

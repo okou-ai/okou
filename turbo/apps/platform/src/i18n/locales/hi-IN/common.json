@@ -3261,7 +3261,6 @@
     "noConnectorAccess": "Cloudflare Access के बिना",
     "organization": "संगठन",
     "personal": "व्यक्तिगत",
-    "refresh": "कॉन्फ़िगरेशन रीफ़्रेश करें",
     "replace": "Service Token बदलें",
     "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता।",
     "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।",

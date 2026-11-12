@@ -3248,7 +3248,6 @@
     "noConnectorAccess": "Cloudflare Access 사용 안 함",
     "organization": "조직",
     "personal": "개인",
-    "refresh": "구성 새로 고침",
     "replace": "Service Token 교체",
     "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다.",
     "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요.",

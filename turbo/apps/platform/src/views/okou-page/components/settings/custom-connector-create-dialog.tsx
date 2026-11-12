@@ -1338,14 +1338,6 @@ function CustomConnectorForm({
         setKind={setKind}
         editing={editing}
       />
-      <CustomConnectorNetworkField
-        connector={connector}
-        configId={form.cloudflareConfigId}
-        onChange={(value) => {
-          setField("cloudflareConfigId", value);
-        }}
-        disabled={submitting}
-      />
       <AuthenticationFields
         form={form}
         setField={setField}
@@ -1353,6 +1345,14 @@ function CustomConnectorForm({
         advancedApiDefinition={advancedApiDefinition}
         addAuthMethod={addAuthMethod}
         removeAuthMethod={removeAuthMethod}
+      />
+      <CustomConnectorNetworkField
+        connector={connector}
+        configId={form.cloudflareConfigId}
+        onChange={(value) => {
+          setField("cloudflareConfigId", value);
+        }}
+        disabled={submitting}
       />
       <DialogFooter>
         <Button

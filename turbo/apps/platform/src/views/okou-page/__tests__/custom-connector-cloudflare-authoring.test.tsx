@@ -162,7 +162,31 @@ async function page(
   });
 }
 
+function networkAdvancedSettings(dialog: HTMLElement) {
+  const field = within(dialog).getByLabelText("Cloudflare Access");
+  const disclosure = field.closest("details");
+  if (!disclosure) {
+    throw new Error("Expected Cloudflare Access in Advanced settings");
+  }
+  const summary = within(disclosure)
+    .getByText("Advanced settings")
+    .closest("summary");
+  if (!summary) {
+    throw new Error("Expected an Advanced settings disclosure control");
+  }
+  return { field, disclosure, summary };
+}
+
+function expandNetworkSettings(dialog: HTMLElement) {
+  const settings = networkAdvancedSettings(dialog);
+  if (!settings.disclosure.open) {
+    click(settings.summary);
+  }
+  return settings;
+}
+
 async function choose(dialog: HTMLElement, name: string) {
+  expandNetworkSettings(dialog);
   click(within(dialog).getByLabelText("Cloudflare Access"));
   click(await screen.findByRole("option", { name }));
 }
@@ -224,6 +248,8 @@ test.each(["http", "mcp"] as const)(
     const dialog = await screen.findByRole("dialog", {
       name: "New custom connector",
     });
+    const settings = networkAdvancedSettings(dialog);
+    expect(settings.field).not.toBeVisible();
     if (kind === "mcp") {
       click(within(dialog).getByLabelText("Connector type"));
       click(
@@ -251,12 +277,22 @@ test.each(["http", "mcp"] as const)(
       within(dialog).getByLabelText("Display name"),
       created.displayName,
     );
+    expandNetworkSettings(dialog);
+    expect(settings.field).toBeVisible();
     click(within(dialog).getByLabelText("Cloudflare Access"));
     await screen.findByRole("option", { name: gateway.name });
     expect(
       screen.queryByRole("option", { name: personal.name }),
     ).not.toBeInTheDocument();
     click(screen.getByRole("option", { name: gateway.name }));
+    click(settings.summary);
+    expect(settings.field).not.toBeVisible();
+    click(settings.summary);
+    expect(settings.field).toHaveTextContent(gateway.name);
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      created.displayName,
+    );
+    click(settings.summary);
     click(getConnectorAction("button", "Create", dialog));
     await screen.findByText(`Cloudflare Access: ${gateway.name}`, {
       exact: false,
@@ -388,6 +424,7 @@ test.each(["http", "mcp"] as const)(
     let dialog = await screen.findByRole("dialog", {
       name: "Edit custom connector",
     });
+    expandNetworkSettings(dialog);
     expect(
       within(dialog).getByLabelText("Cloudflare Access"),
     ).toHaveTextContent("Unavailable");
@@ -456,6 +493,7 @@ test("A configuration load failure and rejected save preserve the connector draf
   const dialog = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
+  expandNetworkSettings(dialog);
   await within(dialog).findByText("Loading Cloudflare Access…");
   await fill(within(dialog).getByLabelText("Display name"), "Draft survives");
   await fill(
@@ -473,7 +511,6 @@ test("A configuration load failure and rejected save preserve the connector draf
   response.resolve();
   await within(dialog).findByText("Could not load Cloudflare Access.");
   loaded = true;
-  click(getConnectorAction("button", "Refresh configurations", dialog));
   await choose(dialog, gateway.name);
   click(getConnectorAction("button", "Create", dialog));
   await screen.findByText("Configuration changed. Review your selection.");
