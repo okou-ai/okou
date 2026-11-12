@@ -33,9 +33,25 @@ struct ImportedAttachmentFile: Codable, Equatable, Transferable, Sendable {
 /// Copy provider-owned URLs while access is granted; file IO and thumbnail decoding stay off main.
 actor AttachmentFileImporter {
   static let shared = AttachmentFileImporter()
+  private let temporaryDirectory: URL
+
+  init(temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    self.temporaryDirectory = temporaryDirectory
+  }
 
   func copy(_ source: URL) throws -> ImportedAttachmentFile {
-    try Self.copyFile(source)
+    try Self.copyFile(source, temporaryDirectory: temporaryDirectory)
+  }
+
+  /// Materialize PhotoKit bytes only while the existing importer validates and retains its copy.
+  func photo(_ data: Data, filename: String) throws -> ImportedAttachmentFile {
+    try Task.checkCancellation()
+    let folder = temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let source = folder.appending(path: filename)
+    try data.write(to: source, options: .atomic)
+    return try Self.copyFile(source, temporaryDirectory: temporaryDirectory)
   }
 
   @MainActor static func image(from provider: NSItemProvider) async throws -> ImportedAttachmentFile
@@ -117,12 +133,14 @@ actor AttachmentFileImporter {
   }
 
   private nonisolated static func copyFile(
-    _ source: URL, filename: String? = nil, contentType: UTType? = nil
+    _ source: URL, filename: String? = nil, contentType: UTType? = nil,
+    temporaryDirectory: URL = FileManager.default.temporaryDirectory
   ) throws -> ImportedAttachmentFile {
     try Task.checkCancellation()
     let access = source.startAccessingSecurityScopedResource()
     defer { if access { source.stopAccessingSecurityScopedResource() } }
-    let directory = FileManager.default.temporaryDirectory
+    let directory =
+      temporaryDirectory
       .appending(path: "OkouAttachments/\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true,
