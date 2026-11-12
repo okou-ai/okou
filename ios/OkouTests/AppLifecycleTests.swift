@@ -215,8 +215,21 @@ final class AppLifecycleTests: XCTestCase {
         apiBaseURL: configuration.apiURL, userID: try XCTUnwrap(authentication.userID),
         workspaceID: $0.id)
     }
+    let lifetimes = LifecycleSyncLifetimes()
+    lifetimes.add(lifecycle.workspace?.data.sync)
+    addTeardownBlock { @MainActor [fixture] in
+      // Run after the owner-closing blocks have released their captures.
+      XCTAssertTrue(lifetimes.released, "Retired workspace still owns its cache")
+      guard lifetimes.released else { return }
+      for scope in scopes {
+        await ProjectDisclosureStorage(scope: scope).close().value
+      }
+      try Self.removeFixtureFiles(scopes)
+      withExtendedLifetime(fixture) {}
+    }
     // The HTTP fixture itself must outlive its URLSession and every service-owned worker.
     addTeardownBlock { @MainActor [fixture] in
+      lifetimes.add(lifecycle.workspace?.data.sync)
       lifecycle.close()
       try await authentication.signOut()
       await lifecycle.notifications.update(workspace: nil)
@@ -224,7 +237,6 @@ final class AppLifecycleTests: XCTestCase {
       _ = lifecycle.notifications.data(
         authentication: authentication, configuration: configuration,
         session: fixture.history.http.session)
-      try Self.removeFixtureFiles(scopes)
     }
     return lifecycle
   }
@@ -249,6 +261,19 @@ final class AppLifecycleTests: XCTestCase {
         {}
       }
     }
+  }
+}
+
+@MainActor
+private final class LifecycleSyncLifetimes {
+  private final class Owner {
+    weak var sync: ChatSync?
+    init(_ sync: ChatSync) { self.sync = sync }
+  }
+  private var owners: [Owner] = []
+  var released: Bool { owners.allSatisfy { $0.sync == nil } }
+  func add(_ sync: ChatSync?) {
+    if let sync { owners.append(Owner(sync)) }
   }
 }
 

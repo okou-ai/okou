@@ -389,11 +389,31 @@ final class AttachmentDraftTests: XCTestCase {
     let creating = expectation(description: "Server-default first chat is being created")
     let gate = AsyncStream<Void>.makeStream()
     defer { gate.continuation.finish() }
-    let fixture = AttachmentFlowFixture(creation: {
-      creating.fulfill()
-      for await _ in gate.stream {}
-      return true
-    })
+    let created = Mutex(false)
+    let fixture = AttachmentFlowFixture(
+      creation: {
+        creating.fulfill()
+        for await _ in gate.stream {}
+        created.withLock { $0 = true }
+        return true
+      },
+      threadList: { request in
+        switch request.url?.path {
+        case "/api/chat-threads/snapshot":
+          let threads =
+            created.withLock { $0 }
+            ? """
+            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"First conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            """ : ""
+          return ChatHTTPResponse(
+            body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/indicators":
+          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        default: throw URLError(.unsupportedURL)
+        }
+      })
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let storage = ChatDraftStorage(
