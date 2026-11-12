@@ -292,6 +292,7 @@ jobs:
             .github/scripts/artifacts/build-okou-cli-artifact.sh \
             .github/scripts/artifacts/build-okou-desktop-artifact.sh \
             .github/scripts/artifacts/build-okou-android-apk.sh \
+            .github/scripts/artifacts/sign-okou-android-apk.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/checks/check-release-please-component-releases.sh \
             .github/scripts/checks/check-release-please-workspace-coverage.sh \

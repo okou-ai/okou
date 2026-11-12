@@ -212,18 +212,92 @@ Release Please manages the independent `android` component through
 and the result must fit a positive Android integer.
 
 When the normal release PR is merged, `release-please.yml` creates the
-`android-vX.Y.Z` release. Its `publish-android` job checks out the exact release
-target, builds the release APK, signs and verifies it, then uploads
+`android-vX.Y.Z` release. Its single `publish-android` job checks out the exact
+release target, builds an unsigned APK, signs and verifies it, then uploads
 `okou-android-X.Y.Z.apk` to that release. The compatibility gate recognizes
 publication only after the APK upload completes. Store processing is not part
 of this distribution path.
 
-Signing is temporarily disposable: the build creates a fresh keystore, keeps
-its password in the signing tools' environment, and deletes the key on exit.
-Different releases therefore do not promise in-place upgrades. A user may need
-to uninstall an earlier APK, which removes local application data. The Release
-notes carry this limitation. Stable production signing is separate follow-up
-work before relying on upgrade continuity.
+### Release Signing
+
+Configure exactly these three entries in **Settings → Environments → production**:
+
+| Type     | Name                                | Content                                             |
+| -------- | ----------------------------------- | --------------------------------------------------- |
+| Secret   | `ANDROID_RELEASE_KEYSTORE_BASE64`   | Complete password-encrypted PKCS12 keystore, Base64 |
+| Secret   | `ANDROID_RELEASE_KEYSTORE_PASSWORD` | Shared keystore/private-key password                |
+| Variable | `ANDROID_RELEASE_KEY_ALIAS`         | The signing key's alias inside the keystore         |
+
+An administrator provisions the values through the secure GitHub UI or stdin,
+never command-line password arguments, chat or source. Base64 is an encoding;
+retain the keystore's password encryption. Encoded content must fit GitHub's
+48 KB Secret limit. Do not add duplicate repository/organization values or an
+expected-certificate, owner or backup-date Variable.
+
+Reuse the same durable key for future releases. New production keys should
+have long-lived certificates (Android recommends at least 25 years). Keep a
+secure recoverable original of the keystore and password outside the repository;
+GitHub's Secret API cannot export them. A password/container change must preserve
+the private key and certificate and update that recovery copy. Do not generate
+a replacement key to fix a lost password or file. A genuine key change requires
+an explicit migration decision.
+
+Build, signing and upload use runner-local files in the same production job;
+there is no Actions artifact transfer. The signing values are injected only
+into the signing step. Gradle/plugins and any other process on that runner are
+still trusted production code: step-scoped environment injection does not
+isolate earlier build processes from signing. Existing production environment
+reviewer/branch rules apply; there is no additional approval gate.
+
+The signing script decodes the key in a private temporary directory, supplies
+the password through environment-based tool options and deletes private files
+on exit or handled cancellation. Missing/malformed inputs, wrong password/alias,
+APK package/version mismatch and invalid signatures fail before upload, without
+temporary/debug fallback. It verifies the actual signer certificate against the
+selected keystore alias and preserves 16 KiB ZIP alignment. The logged SHA-256
+is derived public certificate information; it cannot independently detect an
+unintentionally replaced, otherwise valid keystore. Public certificates and
+fingerprints can be inspected from the keystore or APK when needed.
+
+Publication verifies the release tag's resolved commit against the exact
+checkout. Upload never overwrites an existing asset. Historical releases signed
+with disposable keys keep their warnings; new durable-signed releases do not
+receive that warning. Users of an old disposable-key APK can need to uninstall
+and reinstall once, losing local app data. Stable update identity begins with
+the first APK signed by the durable key.
+
+### Signing And Upgrade Verification
+
+Run the fixture suite with JDK 21 and the pinned SDK installed:
+
+```bash
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
+python3 android/scripts/release-signing.test.py
+```
+
+The normal Android checks include this suite. It uses an ephemeral test-only
+PKCS12 and real signing tools to verify increasing versions retain one signer,
+invalid configuration/signature rejection, cleanup and refusal to overwrite.
+Its manifest-only APK fixtures do not prove installation or production-key access.
+
+For protected acceptance, use the configured durable key to sign two builds
+of the real application with increasing `versionCode`, without publishing test
+versions. Install the first, open Settings and save an appearance preference:
+
+```bash
+adb install first.apk
+# Open the app and change its saved appearance in Settings.
+adb install -r second.apk
+adb shell am force-stop ai.okou.android
+adb shell am start -n ai.okou.android/.MainActivity
+```
+
+Confirm the upgraded package version and the saved appearance after relaunch.
+Inspect each APK with `apksigner verify --verbose --print-certs` and compare its
+certificate with the previously distributed durable-signed APK when available.
+The first durable release bootstraps that identity. Report fixture tests, real
+production signing, device upgrade/data retention and Release publication as
+separate evidence; a configured Secret name proves only its presence.
 
 ## Canonical API Bindings And Transport
 
