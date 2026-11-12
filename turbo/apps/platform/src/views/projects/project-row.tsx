@@ -53,12 +53,12 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { getChatThreadTitleParts } from "../../signals/chat-page/chat-thread-title.ts";
 import {
   clickProjectName$,
   selectedProjectId$,
 } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
+import { ProjectFolderIcon, projectNameParts } from "./project-icon.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   ChatThreadStateIndicator,
@@ -71,16 +71,6 @@ interface ProjectRowProps {
   readonly project: Project;
   readonly touch: boolean;
   readonly layout: ProjectRowLayout;
-}
-
-/**
- * A Project's name carries its emoji the way a chat title does. The folder
- * wears it as a badge, so the row's title shows the rest of the name. A name
- * that is only an emoji keeps it as the title.
- */
-function projectNameParts(name: string) {
-  const { emoji, text } = getChatThreadTitleParts(name);
-  return emoji && text ? { emoji, text } : { emoji: null, text: name };
 }
 
 function ProjectFoldMenuItem({
@@ -274,9 +264,8 @@ function ProjectActions({
 
 /**
  * The folder folds the Project's chats. Hovering the row turns it into the fold
- * arrow, and its tooltip names the action and shortcut. The name's emoji sits
- * on the folder's lower right corner, and the folder is cut away around it so
- * the gap holds on any row background.
+ * arrow, and its tooltip names the action and shortcut. The folder wears the
+ * name's emoji as a badge.
  */
 function ProjectFoldToggle({
   project,
@@ -289,9 +278,7 @@ function ProjectFoldToggle({
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
-  const Icon = expanded ? FolderOpen : Folder;
   const Chevron = expanded ? ChevronDown : ChevronRight;
-  const { emoji } = projectNameParts(project.name);
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -325,25 +312,13 @@ function ProjectFoldToggle({
                 layout === "list" ? "h-14 w-10 pl-3 pr-1" : "h-8 w-8 px-1",
               )}
             >
-              <span className="relative flex size-6 shrink-0 items-center justify-center rounded-md group-hover/project-fold:bg-nested-fill">
-                <Icon
-                  size={16}
-                  className={cn(
-                    "opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:hidden group-focus-visible/project-fold:hidden",
-                    // A circle around the badge's centre, which sits 13px
-                    // into the 16px folder.
-                    emoji &&
-                      "[mask-image:radial-gradient(circle_at_13px_13px,transparent_7.25px,#000_7.75px)]",
-                  )}
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md group-hover/project-fold:bg-nested-fill">
+                <ProjectFolderIcon
+                  name={project.name}
+                  open={expanded}
+                  className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+                  folderClassName="opacity-70 group-hover/project-fold:opacity-100"
                 />
-                {emoji && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute bottom-px right-px flex size-3 items-center justify-center font-family-emoji text-xs leading-none md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
-                  >
-                    {emoji}
-                  </span>
-                )}
                 <Chevron
                   size={16}
                   className="hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block"
