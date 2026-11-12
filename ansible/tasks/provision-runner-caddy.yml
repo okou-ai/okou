@@ -1,13 +1,13 @@
 - name: Provision dedicated Runner Caddy service
   vars:
-    runner_caddy_version: "2.11.7"
+    runner_caddy_version: "2.11.9"
     runner_caddy_archives:
       x86_64:
         arch: amd64
-        sha256: 727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b
+        sha256: 5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb
       aarch64:
         arch: arm64
-        sha256: d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42
+        sha256: 5e377cff994fc9362a6fcf695c53f226cfca3a3ef85bd3a3687cf252d6310165
   block:
     - name: Validate public Runner inventory hostname
       ansible.builtin.assert:
