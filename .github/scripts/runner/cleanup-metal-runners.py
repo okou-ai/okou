@@ -121,34 +121,66 @@ class GitHub:
                 result[number] = pull
         return result
 
+    def status_runs(self, status):
+        previous = None
+        for _ in range(2):
+            pages = self.query(
+                "--method",
+                "GET",
+                f"repos/{self.repository}/actions/runs",
+                "-f",
+                f"status={status}",
+                "-f",
+                "per_page=100",
+                "--paginate",
+                "--slurp",
+            )
+            if not pages:
+                raise RuntimeError(f"owner discovery returned no page for {status}")
+            records = {
+                record["id"]: record
+                for page in pages
+                for record in page["workflow_runs"]
+            }
+            reported = max(page["total_count"] for page in pages)
+            if reported >= RUN_SEARCH_LIMIT:
+                raise RuntimeError(
+                    f"owner discovery coverage unverified for {status}: "
+                    f"{len(records)} returned, {reported} reported; "
+                    f"GitHub search limit {RUN_SEARCH_LIMIT} reached"
+                )
+            if len(records) >= reported:
+                break
+            if previous is not None:
+                raise RuntimeError(
+                    f"owner discovery coverage unverified for {status} after recheck: "
+                    f"{len(records)} returned, {reported} reported"
+                )
+            # Page totals and run statuses are not an atomic snapshot. Require
+            # complete coverage on one recheck, not a union of two short lists.
+            previous = records
+        if previous is not None:
+            for run_id in sorted(previous.keys() - records.keys()):
+                record = self.query(
+                    "--method", "GET", f"repos/{self.repository}/actions/runs/{run_id}"
+                )
+                if record["id"] != run_id:
+                    raise RuntimeError(
+                        "owner recheck returned a different run identity"
+                    )
+                if record["status"] in ACTIVE_STATUSES:
+                    # It may have moved to a status already scanned this pass.
+                    records[run_id] = record
+                elif record["status"] != "completed":
+                    raise RuntimeError(f"owner recheck has unknown status for {run_id}")
+        return records
+
     def owners(self, pulls):
         previous = None
         for _ in range(4):
             runs = {}
             for status in ACTIVE_STATUSES:
-                pages = self.query(
-                    "--method",
-                    "GET",
-                    f"repos/{self.repository}/actions/runs",
-                    "-f",
-                    f"status={status}",
-                    "-f",
-                    "per_page=100",
-                    "--paginate",
-                    "--slurp",
-                )
-                if not pages:
-                    raise RuntimeError(f"owner discovery returned no page for {status}")
-                records = [record for page in pages for record in page["workflow_runs"]]
-                reported = max(page["total_count"] for page in pages)
-                observed = len({record["id"] for record in records})
-                if reported >= RUN_SEARCH_LIMIT or observed < reported:
-                    raise RuntimeError(
-                        f"owner discovery coverage unverified for {status}: "
-                        f"{observed} returned, {reported} reported; "
-                        f"GitHub search limit {RUN_SEARCH_LIMIT}"
-                    )
-                for record in records:
+                for record in self.status_runs(status).values():
                     if record["path"] in OWNER_PATHS and record["event"] in {
                         "pull_request",
                         "merge_group",
