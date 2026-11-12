@@ -33,7 +33,6 @@ import {
   connectedMailAccounts$,
   syncConnectedMailAccounts$,
   connectSignInEmail$,
-  signInEmailAddress,
 } from "../services/email-connection.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -231,7 +230,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const unlinkBody$ = bodyResultOf(contract.unlink);
 const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const { user, enabled } = await set(emailAccount$, signal);
+  const { enabled } = await set(emailAccount$, signal);
   if (!enabled) {
     return resourceUnavailable("Email integration is not available");
   }
@@ -240,11 +239,6 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
-  }
-  if (signInEmailAddress(user) === body.data.emailAddress.toLowerCase()) {
-    return resourceUnavailable(
-      "Use okou email logout in an Email conversation to disconnect your login email.",
-    );
   }
   await set(writeDb$)
     .update(emailUserLinks)

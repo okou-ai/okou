@@ -1,4 +1,5 @@
 import {
+  boolean,
   literal,
   object,
   string,
@@ -120,6 +121,8 @@ export const artifactReferencesContract = c.router({
         url: zUrl(),
         expiresAt: string(),
         downloadUrl: zUrl(),
+        // A denied App action retains a guarded URL for installed native readers.
+        downloadAllowed: boolean().optional(),
         sharedThreadSnapshot: literal(true).optional(),
         filename: string(),
         contentType: string(),

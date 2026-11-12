@@ -96,6 +96,28 @@ class ArchiveProofTests(unittest.TestCase):
         symbols.parent.mkdir(parents=True)
         symbols.write_bytes(b"extension symbols")
 
+        self.widgets = self.app / "PlugIns/OkouWidgets.appex"
+        self.widgets_info = {
+            "CFBundleIdentifier": "ai.okou.ios.widgets",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": "1",
+            "CFBundleExecutable": "OkouWidgets",
+            "CFBundleSupportedPlatforms": ["iPhoneOS"],
+            "NSExtension": {
+                "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
+            },
+        }
+        write_plist(self.widgets / "Info.plist", self.widgets_info)
+        (self.widgets / "OkouWidgets").write_bytes(
+            compiled_executable(b"compiled widgets code")
+        )
+        symbols = (
+            self.source
+            / "dSYMs/OkouWidgets.appex.dSYM/Contents/Resources/DWARF/OkouWidgets"
+        )
+        symbols.parent.mkdir(parents=True)
+        symbols.write_bytes(b"widgets symbols")
+
     def invoke(self, command, output=None, build_number="42", success=True):
         result = subprocess.run(
             [
@@ -129,7 +151,13 @@ class ArchiveProofTests(unittest.TestCase):
         }
 
     def package(
-        self, executable=None, build_number="42", signed=True, extension_executable=None
+        self,
+        executable=None,
+        build_number="42",
+        signed=True,
+        extension_executable=None,
+        widgets_info=None,
+        widgets_signed=True,
     ):
         ipa = self.work / "Okou.ipa"
         info = {**self.info, "CFBundleVersion": build_number}
@@ -165,6 +193,22 @@ class ArchiveProofTests(unittest.TestCase):
                 package.writestr(
                     prefix + "_CodeSignature/CodeResources", b"extension signature"
                 )
+            prefix = "Payload/Okou.app/PlugIns/OkouWidgets.appex/"
+            package.writestr(
+                prefix + "Info.plist",
+                plistlib.dumps(
+                    widgets_info
+                    or {**self.widgets_info, "CFBundleVersion": build_number}
+                ),
+            )
+            package.writestr(
+                prefix + "OkouWidgets", (self.widgets / "OkouWidgets").read_bytes()
+            )
+            if signed and widgets_signed:
+                package.writestr(prefix + "embedded.mobileprovision", b"widgets profile")
+                package.writestr(
+                    prefix + "_CodeSignature/CodeResources", b"widgets signature"
+                )
         return ipa
 
     def test_prepare_changes_only_bundle_build_numbers_and_preserves_source(self):
@@ -178,6 +222,7 @@ class ArchiveProofTests(unittest.TestCase):
                 "Info.plist",
                 str(APP_PATH / "Info.plist"),
                 str(APP_PATH / "PlugIns/OkouNotificationService.appex/Info.plist"),
+                str(APP_PATH / "PlugIns/OkouWidgets.appex/Info.plist"),
             ):
                 self.assertEqual(copied[name], digest)
         app_info = plistlib.loads(
@@ -192,6 +237,11 @@ class ArchiveProofTests(unittest.TestCase):
             ).read_bytes()
         )
         self.assertEqual(extension_info["CFBundleVersion"], "42")
+        widgets_info = plistlib.loads(
+            (self.destination / APP_PATH / "PlugIns/OkouWidgets.appex/Info.plist")
+            .read_bytes()
+        )
+        self.assertEqual(widgets_info["CFBundleVersion"], "42")
         self.assertEqual(app_info["CFBundleVersion"], "42")
         self.assertEqual(archive_info["ApplicationProperties"]["CFBundleVersion"], "42")
 
@@ -250,10 +300,38 @@ class ArchiveProofTests(unittest.TestCase):
         self.assertIn("symlink", self.invoke("prepare", success=False))
         self.assertEqual(outside.read_bytes(), b"must not be changed")
 
+    def test_prepare_requires_the_widget_extension(self):
+        for path in sorted(self.widgets.rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        self.widgets.rmdir()
+        self.assertIn("extension inventory", self.invoke("prepare", success=False))
+
+    def test_prepare_rejects_a_widget_extension_of_another_release(self):
+        for changes in (
+            {"CFBundleIdentifier": "ai.okou.ios.other"},
+            {"CFBundleVersion": "2"},
+            {"CFBundleSupportedPlatforms": ["iPhoneSimulator"]},
+            {"NSExtension": {"NSExtensionPointIdentifier": "com.apple.share-services"}},
+        ):
+            with self.subTest(changes=changes):
+                write_plist(self.widgets / "Info.plist", {**self.widgets_info, **changes})
+                self.invoke("prepare", success=False)
+                self.assertFalse(self.destination.exists())
+
+    def test_export_rejects_unsigned_or_mismatched_widget_extension(self):
+        self.assertIn(
+            "provisioning profile",
+            self.invoke(
+                "verify-export", self.package(widgets_signed=False), success=False
+            ),
+        )
+        ipa = self.package(widgets_info={**self.widgets_info, "CFBundleVersion": "1"})
+        self.assertIn("release identity", self.invoke("verify-export", ipa, success=False))
+
     def test_export_allows_signing_bytes_but_not_recompiled_sections(self):
         executable = (self.app / "Okou").read_bytes() + b"new code signature"
         result = self.invoke("verify-export", self.package(executable))
-        self.assertEqual(result["verifiedMachOFiles"], 2)
+        self.assertEqual(result["verifiedMachOFiles"], 3)
         ipa = self.package(compiled_executable(b"changed app code!"))
         self.assertIn(
             "compiled Mach-O", self.invoke("verify-export", ipa, success=False)
@@ -311,6 +389,7 @@ class ArchiveProofTests(unittest.TestCase):
                 "IOS_DISTRIBUTION_P12_PASSWORD": "not-a-password",
                 "IOS_PROVISIONING_PROFILE_BASE64": "not-a-profile",
                 "IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64": "not-an-extension-profile",
+                "IOS_WIDGETS_EXTENSION_PROFILE_BASE64": "not-a-widgets-profile",
             },
             capture_output=True,
             text=True,

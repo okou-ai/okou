@@ -12,6 +12,7 @@ import {
   type HostedSiteUrlResult,
 } from "../services/hosted-site-url.service";
 import { conflict, notFound } from "../../lib/error";
+import { artifactPaywallRequired } from "../services/artifact-paywall.service";
 import type { RouteEntry } from "../route-entry";
 
 function response(result: HostedSiteUrlResult) {
@@ -20,6 +21,9 @@ function response(result: HostedSiteUrlResult) {
   }
   if (result.status === "conflict") {
     return conflict(result.message);
+  }
+  if (result.status === "pro_required") {
+    return artifactPaywallRequired("Customizing the website URL");
   }
   return { status: 200 as const, body: result.body };
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-network-v0.6.0...runner-network-v0.6.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **runner:** allow bounded cold catalog initialization ([#46755](https://github.com/okou-ai/okou/issues/46755)) ([af7116e](https://github.com/okou-ai/okou/commit/af7116ed4d2917cab3d77b9d1ac967a060ca4c55))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-network-v0.5.8...runner-network-v0.6.0) (2026-11-11)
 
 

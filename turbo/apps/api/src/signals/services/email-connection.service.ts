@@ -33,16 +33,6 @@ import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { email } from "zod";
 
-export function signInEmailAddress(user: ClerkUser): string | null {
-  return (
-    user.emailAddresses
-      .find((address) => {
-        return address.id === user.primaryEmailAddressId;
-      })
-      ?.emailAddress.toLowerCase() ?? null
-  );
-}
-
 export const connectSignInEmail$ = command(
   async (
     { set },
@@ -66,9 +56,9 @@ export const connectSignInEmail$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (existing) {
-      return !existing.disconnectedAt &&
-        existing.userId === args.user.id &&
-        existing.orgId === args.orgId
+      return existing.userId === args.user.id &&
+        existing.orgId === args.orgId &&
+        !existing.disconnectedAt
         ? existing
         : null;
     }
