@@ -65,8 +65,10 @@ export const connectSignInEmail$ = command(
       .where(eq(emailUserLinks.emailAddress, emailAddress))
       .limit(1);
     signal.throwIfAborted();
-    if (existing && !existing.disconnectedAt) {
-      return existing.userId === args.user.id && existing.orgId === args.orgId
+    if (existing) {
+      return !existing.disconnectedAt &&
+        existing.userId === args.user.id &&
+        existing.orgId === args.orgId
         ? existing
         : null;
     }
@@ -76,7 +78,6 @@ export const connectSignInEmail$ = command(
         email: emailAddress,
         userId: args.user.id,
         orgId: args.orgId,
-        reconnect: true,
       },
       signal,
     );

@@ -243,7 +243,7 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (signInEmailAddress(user) === body.data.emailAddress.toLowerCase()) {
     return resourceUnavailable(
-      "Your login email is always connected and cannot be deleted.",
+      "Use okou email logout in an Email conversation to disconnect your login email.",
     );
   }
   await set(writeDb$)

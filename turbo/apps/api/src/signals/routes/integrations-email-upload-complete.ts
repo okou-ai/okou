@@ -16,10 +16,8 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { drainEmailOutboxBatch$ } from "../services/email-common.service";
-import {
-  emailFileDestination$,
-  enqueueEmailFile$,
-} from "../services/email-file-delivery.service";
+import { enqueueEmailFile$ } from "../services/email-file-delivery.service";
+import { emailRunSource$ } from "../services/email-run-source.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   uploadedArtifactObject$,
@@ -48,7 +46,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const destination = await set(emailFileDestination$, auth, signal);
+  const destination = await set(emailRunSource$, auth, signal);
   signal.throwIfAborted();
   if (!destination) {
     return resourceUnavailable(

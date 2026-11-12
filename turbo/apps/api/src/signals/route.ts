@@ -1,5 +1,6 @@
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
+import { integrationsEmailSessionRoutes } from "./routes/integrations-email-session";
 import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
@@ -372,6 +373,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailInboundRoutes,
   ...integrationsEmailRoutes,
   ...integrationsEmailUploadCompleteRoutes,
+  ...integrationsEmailSessionRoutes,
   ...featureSwitchesRoutes,
   ...featureGuidesRoutes,
   ...hostRoutes,
