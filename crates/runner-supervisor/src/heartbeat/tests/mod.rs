@@ -52,6 +52,66 @@ fn test_runner_identity() -> RunnerProcessIdentity {
     RunnerProcessIdentity::new(uuid::Uuid::from_u128(1), 7).unwrap()
 }
 
+#[tokio::test]
+async fn ingress_service_activity_preserves_running_draining_and_terminal_heartbeats() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let active = Arc::new(AtomicBool::new(false));
+    let probe: IngressServiceProbe = {
+        let active = active.clone();
+        Arc::new(move || {
+            let active = active.clone();
+            Box::pin(async move { active.load(Ordering::Acquire) })
+        })
+    };
+    let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+        max_idle: 0,
+    })));
+    let profiles = test_profiles();
+    let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+    let active_runs = test_active_runs();
+    let provider = Arc::new(RecordingProvider::default());
+    let hb = HeartbeatContext::new(HeartbeatContextInit {
+        ingress_service_probe: probe,
+        idle_pool: &idle_pool,
+        runner_hostname: None,
+        runner_identity: test_runner_identity(),
+        group: "vm0/test",
+        profiles: &profiles,
+        budget: &budget,
+        provider: provider.clone(),
+        active_runs: &active_runs,
+        home_cache_snapshot: HomeCacheStateSnapshot::new(),
+        sandbox_op_reporter: None,
+    });
+    for (index, mode) in [
+        RunnerMode::Running,
+        RunnerMode::Draining,
+        RunnerMode::Stopping,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        active.store(index > 0, Ordering::Release);
+        send_heartbeat(&hb, mode, index as u64 + 1, HeartbeatRequest::ordinary())
+            .await
+            .unwrap();
+    }
+    {
+        let sent = provider.heartbeats.lock().unwrap();
+        assert_eq!(
+            sent.iter().map(|s| s.mode.as_str()).collect::<Vec<_>>(),
+            ["running", "draining", "stopping"]
+        );
+        assert_eq!(
+            sent.iter()
+                .map(|state| state.ingress_service_active)
+                .collect::<Vec<_>>(),
+            [false, true, false]
+        );
+    }
+}
+
 fn test_profiles() -> BTreeMap<String, HeartbeatProfile> {
     let mut m = BTreeMap::new();
     m.insert(
@@ -113,6 +173,7 @@ async fn home_inventory_operations_distinguish_unloaded_empty_and_omitted_states
     let provider = Arc::new(RecordingProvider::default());
     let snapshot = HomeCacheStateSnapshot::new();
     let hb = HeartbeatContext::new(HeartbeatContextInit {
+        ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
         idle_pool: &idle_pool,
         runner_hostname: None,
         runner_identity: test_runner_identity(),
@@ -502,6 +563,7 @@ async fn send_heartbeat_logs_state_counts_without_raw_reuse_state() {
     let home_cache_snapshot = HomeCacheStateSnapshot::new();
     refresh_initial_home_cache_snapshot(&home_cache_snapshot, Some(&cache), &profiles).await;
     let hb = HeartbeatContext::new(HeartbeatContextInit {
+        ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
         idle_pool: &idle_pool,
         runner_hostname: None,
         sandbox_op_reporter: None,
@@ -621,6 +683,7 @@ async fn unused_release_heartbeat_revalidates_one_key_and_preserves_independent_
         let active_runs = test_active_runs();
         let provider = Arc::new(RecordingProvider::default());
         let hb = HeartbeatContext::new(HeartbeatContextInit {
+            ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
             idle_pool: &idle_pool,
             runner_hostname: None,
             sandbox_op_reporter: None,
@@ -695,6 +758,7 @@ async fn initial_home_cache_heartbeat_uses_loaded_snapshot() {
         .join("metadata.json");
     tokio::fs::remove_file(metadata).await.unwrap();
     let hb = HeartbeatContext::new(HeartbeatContextInit {
+        ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
         idle_pool: &idle_pool,
         runner_hostname: None,
         sandbox_op_reporter: None,
@@ -826,6 +890,7 @@ async fn heartbeat_advertises_live_producer_then_held_sandbox() {
     let profiles = test_profiles();
     let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
     let hb = HeartbeatContext::new(HeartbeatContextInit {
+        ingress_service_probe: std::sync::Arc::new(|| Box::pin(async { false })),
         idle_pool: &idle_pool,
         runner_hostname: None,
         sandbox_op_reporter: None,

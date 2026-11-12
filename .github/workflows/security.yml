@@ -292,6 +292,7 @@ jobs:
             .github/scripts/artifacts/build-okou-cli-artifact.sh \
             .github/scripts/artifacts/build-okou-desktop-artifact.sh \
             .github/scripts/artifacts/build-okou-android-apk.sh \
+            .github/scripts/artifacts/sign-okou-android-apk.sh \
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/checks/check-release-please-component-releases.sh \
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
@@ -360,6 +361,7 @@ jobs:
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \
+            .github/scripts/tests/provision-runner-caddy-test.sh \
             .github/scripts/tests/release-tool-downloads-test.sh \
             .github/scripts/tests/resolve-desktop-version-change-test.sh \
             .github/scripts/tests/runner-attribution-ansible-test.sh \

@@ -20,6 +20,7 @@ only_rules:
   - okou_resource_cancellation
   - okou_subscription_teardown
   - okou_import_boundaries
+  - okou_global_mutable_state
   - okou_storage_boundaries
   - okou_task_lifecycle
 
@@ -27,6 +28,7 @@ included:
   - Okou
   - OkouTests
   - Push
+  - Widgets
   - Packages
   - Tools/SwiftLint/Rules
 

@@ -63,7 +63,10 @@ import {
   type BrowserUserActionDescriptor,
 } from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
-import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
+import {
+  isOfficialTemplatePreviewUrl,
+  officialTemplatePreviewContentType,
+} from "./official-template-preview.ts";
 import {
   parseSubscriptionResetUrl,
   subscriptionResetResourceKey,
@@ -618,12 +621,16 @@ export function previewAttachmentFromUrl(
   url: string,
   title?: string,
 ): ChatAttachmentDescriptor {
+  const filename = filenameFromUrl(url);
+  const officialContentType = officialTemplatePreviewContentType(url);
+  if (officialContentType) {
+    return { filename, url, contentType: officialContentType };
+  }
   const hosted = hostedSiteAttachment(url, title);
   if (hosted) {
     return hosted;
   }
 
-  const filename = filenameFromUrl(url);
   const trimmedTitle = title?.trim();
   if (trimmedTitle && /\.(?:html|htm)$/i.test(filename)) {
     return { filename: trimmedTitle, url, contentType: "text/html" };

@@ -1,126 +1,23 @@
 import { command } from "ccstate";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  chatEmailContext,
-  emailChannelMessages,
-  emailChatThreadRoutes,
-  emailUserLinks,
-} from "@okouai/db/schema/email-integration";
+import { emailChannelMessages } from "@okouai/db/schema/email-integration";
 import { conflict } from "../../lib/error";
-import { db$, writeDb$ } from "../external/db";
-import { clerk$ } from "../external/clerk";
-import { findClerkUser } from "../external/clerk-users";
-import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { writeDb$ } from "../external/db";
 import { emailChannelOutboxValues } from "./email-channel-delivery.service";
 import { emailTemplateSchema } from "./email-common.service";
 
+import type { EmailRunSource } from "./email-run-source.service";
+
 const EMAIL_FILE_NAMESPACE = "e53641d0-d394-4fc5-858c-d5cfc557c60c";
-interface EmailFileDestination {
-  readonly chatThreadId: string;
-  readonly userLinkId: string;
-  readonly emailAddress: string;
-  readonly routeId: string;
-  readonly subject: string;
-  readonly messageId: string;
-  readonly references: readonly string[];
-}
-
-export const emailFileDestination$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly runId: string;
-      readonly userId: string;
-      readonly orgId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const [destination] = await get(db$)
-      .select({
-        chatThreadId: chatEmailContext.chatThreadId,
-        userLinkId: emailUserLinks.id,
-        emailAddress: emailUserLinks.emailAddress,
-        routeId: emailChatThreadRoutes.id,
-        subject: emailChannelMessages.subject,
-        messageId: emailChannelMessages.messageId,
-        references: emailChannelMessages.references,
-      })
-      .from(agentRuns)
-      .innerJoin(
-        chatEvents,
-        and(
-          eq(chatEvents.runId, agentRuns.id),
-          eq(chatEvents.contextType, "email"),
-        ),
-      )
-      .innerJoin(
-        chatEmailContext,
-        and(
-          eq(chatEmailContext.id, chatEvents.contextId),
-          eq(chatEmailContext.chatThreadId, agentRuns.chatThreadId),
-        ),
-      )
-      .innerJoin(
-        emailChannelMessages,
-        eq(emailChannelMessages.id, chatEmailContext.emailMessageId),
-      )
-      .innerJoin(
-        emailChatThreadRoutes,
-        and(
-          eq(emailChatThreadRoutes.id, emailChannelMessages.routeId),
-          eq(emailChatThreadRoutes.chatThreadId, agentRuns.chatThreadId),
-        ),
-      )
-      .innerJoin(
-        emailUserLinks,
-        and(
-          eq(emailUserLinks.id, chatEmailContext.userLinkId),
-          eq(emailUserLinks.id, emailChatThreadRoutes.userLinkId),
-        ),
-      )
-      .where(
-        and(
-          eq(agentRuns.id, args.runId),
-          eq(agentRuns.userId, args.userId),
-          eq(agentRuns.orgId, args.orgId),
-          eq(emailUserLinks.userId, args.userId),
-          eq(emailUserLinks.orgId, args.orgId),
-          isNull(emailUserLinks.disconnectedAt),
-        ),
-      )
-      .orderBy(desc(chatEvents.seqId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!destination) {
-      return null;
-    }
-    const user = await findClerkUser(get(clerk$), args.userId, signal);
-    signal.throwIfAborted();
-    if (!user || user.banned) {
-      return null;
-    }
-    const role = await set(
-      getMemberRoleAndUpdateCache$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return role.kind === "member" ? destination : null;
-  },
-);
-
 /** The receipt and outbox publish atomically. An expired outbox is never recreated. */
 export const enqueueEmailFile$ = command(
   async (
     { set },
     args: {
       readonly uploadId: string;
-      readonly destination: EmailFileDestination;
+      readonly destination: EmailRunSource;
       readonly file: {
         readonly filename: string;
         readonly contentType: string;

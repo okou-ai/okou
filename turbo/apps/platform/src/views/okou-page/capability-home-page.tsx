@@ -249,7 +249,13 @@ function ExploreLink() {
   );
 }
 
-function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
+function CapabilityCards({
+  signals,
+  entrance,
+}: {
+  readonly signals: ComposerSignals;
+  readonly entrance: boolean;
+}) {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -267,10 +273,15 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
   const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
   // Explore takes the top row in halves. Below it the row runs 5:4, which still
   // fits Create's five choices on one line and gives Workflow the width its
-  // wide flow drawing needs.
+  // wide flow drawing needs. On the first home of the session the rows rise in
+  // one 70ms step after the greeting: the top row at 140ms, the bottom at 210.
   return (
     <div
-      className="grid min-w-0 gap-3 @2xl:grid-cols-18"
+      className={cn(
+        "grid min-w-0 gap-3 @2xl:grid-cols-18",
+        entrance &&
+          "[&>*]:motion-safe:animate-capability-row-in [&>*:nth-child(-n+2)]:[--capability-row-delay:140ms] [&>*:nth-child(n+3)]:[--capability-row-delay:210ms]",
+      )}
       role="group"
       aria-label={copy.capabilities}
     >
@@ -913,13 +924,17 @@ function HomeWorkflowSuggestions({
 export function CapabilityHomeContent({
   signals,
   heading,
+  entrance = false,
 }: {
   readonly signals: ComposerSignals;
   readonly heading?: ReactNode;
+  /** Whether the cards rise in, as the greeting does on the session's first home. */
+  readonly entrance?: boolean;
 }) {
   const { t } = useTranslation();
   const selected = useGet(signals.taskChips.home.task$);
   const close = useSet(signals.taskChips.home.close$);
+  const focusEditor = useSet(signals.editor.focus$);
   const pageSignal = useGet(pageSignal$);
   const closeButton = (
     <Button
@@ -979,7 +994,13 @@ export function CapabilityHomeContent({
               // showing it never pushes the cards or the composer down.
               <div className="flex min-h-14 items-center">{heading}</div>
             )}
-            <CapabilityCards signals={signals} />
+            <CapabilityCards signals={signals} entrance={entrance} />
+            <CapabilityHomeCompliance
+              entrance={entrance}
+              // The block takes its focused hide control with it; the
+              // composer is where the page's focus starts, so it goes there.
+              onHidden={focusEditor}
+            />
           </div>
         ) : (
           <>
@@ -1010,9 +1031,11 @@ export function CapabilityHomeContent({
 export function CapabilityHomePage({
   signals,
   heading,
+  entrance,
 }: {
   readonly signals: ComposerSignals;
   readonly heading: ReactNode;
+  readonly entrance: boolean;
 }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1020,12 +1043,15 @@ export function CapabilityHomePage({
         <ExploreLink />
       </GrowthEntryHeader>
       <div className="isolate flex min-h-0 flex-1 flex-col">
-        <CapabilityHomeContent signals={signals} heading={heading} />
+        <CapabilityHomeContent
+          signals={signals}
+          heading={heading}
+          entrance={entrance}
+        />
         <footer data-chat-composer className="relative shrink-0">
           <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
             <div className="mx-auto max-w-[900px]">
               <ChatComposer signals={signals} layout="home" />
-              <CapabilityHomeCompliance />
               <SuggestionSaveErrors />
             </div>
           </div>

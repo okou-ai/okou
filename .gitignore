@@ -1,6 +1,12 @@
 # Dev container personal env
 .devcontainer/.env.run
 
+# Private Android signing containers belong in GitHub production Secrets.
+*.jks
+*.keystore
+*.p12
+*.pfx
+
 # Created by https://www.toptal.com/developers/gitignore/api/node
 # Edit at https://www.toptal.com/developers/gitignore?templates=node
 

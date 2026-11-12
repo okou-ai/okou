@@ -303,6 +303,8 @@ export interface ApiTestMocks {
         readonly create: AsyncMock;
         readonly retrieve: AsyncMock;
         readonly expire: AsyncMock;
+        readonly list: AsyncMock;
+        readonly update: AsyncMock;
       };
     };
     readonly billingPortal: {
@@ -534,6 +536,8 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
         create: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
         retrieve: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
         expire: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+        list: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+        update: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       },
     },
     billingPortal: {
@@ -1241,6 +1245,8 @@ vi.mock("stripe", async (importOriginal) => {
             create: apiTestMocks.stripe.checkout.sessions.create,
             retrieve: apiTestMocks.stripe.checkout.sessions.retrieve,
             expire: apiTestMocks.stripe.checkout.sessions.expire,
+            list: apiTestMocks.stripe.checkout.sessions.list,
+            update: apiTestMocks.stripe.checkout.sessions.update,
           },
         },
         billingPortal: {
@@ -1699,6 +1705,10 @@ export function resetApiTestMocks(): void {
   apiTestMocks.stripe.checkout.sessions.create.mockReset();
   apiTestMocks.stripe.checkout.sessions.retrieve.mockReset();
   apiTestMocks.stripe.checkout.sessions.expire.mockReset();
+  apiTestMocks.stripe.checkout.sessions.list
+    .mockReset()
+    .mockResolvedValue({ data: [], has_more: false });
+  apiTestMocks.stripe.checkout.sessions.update.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.list.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.create.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.update.mockReset();

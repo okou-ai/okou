@@ -11,7 +11,6 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -164,6 +163,8 @@ import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { billingSurveyEnabled$ } from "../../signals/billing-survey.ts";
+import { CreditsExhaustedSurvey } from "./components/billing-survey.tsx";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
@@ -3556,7 +3557,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           <ChatThreadBottomBar
             thread={thread}
             layout={showCapabilities ? "home" : "default"}
-            below={showCapabilities ? <CapabilityHomeCompliance /> : null}
           />
         </div>
       </div>
@@ -3610,13 +3610,10 @@ function SharedThreadCreatedLink({
 function ChatThreadBottomBar({
   thread,
   layout,
-  below = null,
 }: {
   readonly thread: ChatPanelSignals;
   /** `home` while an empty thread shows the capability home above it. */
   readonly layout: ComposerLayout;
-  /** Shown under the composer, such as compliance on an empty thread's home. */
-  readonly below?: ReactNode;
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
@@ -3630,7 +3627,7 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} layout={layout} below={below} />,
+      <ChatThreadComposer thread={thread} layout={layout} />,
     );
   }
 
@@ -3922,11 +3919,9 @@ function RecommendedFollowupList({
 function ChatThreadComposer({
   thread,
   layout,
-  below,
 }: {
   readonly thread: ChatPanelSignals;
   readonly layout: ComposerLayout;
-  readonly below: ReactNode;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
@@ -3949,7 +3944,6 @@ function ChatThreadComposer({
       >
         <div className="mx-auto max-w-[900px]">
           <ChatComposer signals={thread.composer} layout={layout} />
-          {below}
         </div>
       </div>
     </footer>
@@ -4588,7 +4582,15 @@ function PaidCreditCheckoutActions({
   );
 }
 
-function InsufficientCreditsCard() {
+function hasExhaustedCredits(error: string, credits: number | null): boolean {
+  return (
+    error.trim().toLowerCase() === "insufficient_credits" &&
+    credits !== null &&
+    credits <= 0
+  );
+}
+
+function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const { t } = useTranslation();
   const billingLoadable = useLoadable(billingStatusAsync$);
   const [checkoutLoadable, checkout] = useLoadableSet(startCheckout$);
@@ -4598,6 +4600,7 @@ function InsufficientCreditsCard() {
   const setSubPage = useSet(setBillingSubPage$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
+  const billingSurveyEnabled = useGet(billingSurveyEnabled$);
 
   const billingResolved = billingLoadable.state === "hasData";
   const credits = billingResolved ? billingLoadable.data.credits : null;
@@ -4657,47 +4660,60 @@ function InsufficientCreditsCard() {
     );
   };
 
+  // The upgrade question follows only the Pro upgrade action a billing manager
+  // can take, never the credit top-up or the ask-an-admin copy.
+  const showUpgradeSurvey =
+    hasExhaustedCredits(error, credits) &&
+    canShowBillingAction &&
+    shouldStartProCheckout &&
+    billingSurveyEnabled;
+
   return (
-    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-      <div className="min-w-0">
-        <p
-          className={cn(
-            "break-words text-[0.9375rem] font-medium",
-            hasAvailableCredits
-              ? "text-emerald-700 dark:text-emerald-300"
-              : "text-foreground",
-          )}
-        >
-          {headline}
-        </p>
-        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
-      </div>
-      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-        {!canShowBillingAction ? null : shouldStartProCheckout ? (
-          <Button
-            type="button"
-            onClick={handleUpgradeClick}
-            disabled={checkoutRedirecting}
-            variant="default"
-            size="sm"
-            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+    <>
+      <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-[0.9375rem] font-medium",
+              hasAvailableCredits
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-foreground",
+            )}
           >
-            {checkoutRedirecting
-              ? t(($) => {
-                  return $.chat.billing.redirecting;
-                })
-              : t(($) => {
-                  return $.chat.billing.upgradeToPro;
-                })}
-          </Button>
-        ) : (
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        )}
+            {headline}
+          </p>
+          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+            {helper}
+          </p>
+        </div>
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          {!canShowBillingAction ? null : shouldStartProCheckout ? (
+            <Button
+              type="button"
+              onClick={handleUpgradeClick}
+              disabled={checkoutRedirecting}
+              variant="default"
+              size="sm"
+              className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
+            >
+              {checkoutRedirecting
+                ? t(($) => {
+                    return $.chat.billing.redirecting;
+                  })
+                : t(($) => {
+                    return $.chat.billing.upgradeToPro;
+                  })}
+            </Button>
+          ) : (
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          )}
+        </div>
       </div>
-    </div>
+      {showUpgradeSurvey ? <CreditsExhaustedSurvey /> : null}
+    </>
   );
 }
 
@@ -5789,7 +5805,7 @@ function AssistantErrorState({
   const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
   const fallback = assistantErrorFallbackContent(error, failureReason, t);
   if (fallback === null) {
-    return <InsufficientCreditsCard />;
+    return <InsufficientCreditsCard error={error} />;
   }
   const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;

@@ -13,10 +13,10 @@ use guest_control_proto::{ExecTermination, GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_B
 use crate::contained_command::{
     CommandStdio, ContainedChild as Child, ContainedCommand as Command, ContainedCommandExt,
 };
-use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
+use crate::drain::{BoundedDrainHandle, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
-use crate::helper_output::{captured_or_empty, truncate_utf8};
+use crate::helper_output::{CapturedHelperOutput, captured_or_empty};
 use crate::helper_program::TestHelperProgram;
 use crate::log::log;
 use crate::process::kill_and_reap_child;
@@ -36,7 +36,6 @@ const THREAD_WORKER: &str = "gctl-store";
 const THREAD_STDIN: &str = "gctl-store-in";
 const THREAD_STDOUT: &str = "gctl-store-out";
 const THREAD_STDERR: &str = "gctl-store-err";
-const MAX_DIAGNOSTIC_BYTES: usize = u16::MAX as usize;
 
 #[derive(Clone)]
 pub(crate) enum GuestStorageManifestProgram {
@@ -212,14 +211,6 @@ pub(crate) struct GuestStorageManifestSubmission<'a> {
     pub(crate) manifest_json: &'a [u8],
 }
 
-struct GuestStorageManifestOutput {
-    termination: ExecTermination,
-    duration_ms: u32,
-    stdout: BoundedDrainResult,
-    stderr: BoundedDrainResult,
-    diagnostic: String,
-}
-
 fn handle_worker_request(
     request: GuestStorageManifestRequest,
     writer: &GuestWriter,
@@ -368,7 +359,7 @@ struct RunManifestInput<'a> {
     drain_deadline: Duration,
 }
 
-fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
+fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
     let RunManifestInput {
         instruction_operation,
         seq,
@@ -386,7 +377,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     let drain_cancel = match DrainCancellation::new() {
         Ok(cancel) => Arc::new(cancel),
         Err(error) => {
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to initialize storage output drain cancellation: {error}"),
@@ -401,7 +392,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     ) {
         Ok(process_containment) => process_containment,
         Err(error) => {
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to initialize storage helper process containment: {error}"),
@@ -436,7 +427,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         Err(error) => {
             let _ = process_containment
                 .cleanup_with_storage_resources(ProcessContainmentCleanupMode::Forced, resources);
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to start storage helper: {error}"),
@@ -490,7 +481,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             kill_and_reap_child(child);
             let cleanup = process_containment
                 .cleanup_with_storage_resources(ProcessContainmentCleanupMode::Forced, resources);
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::WaitFailed,
                 started,
                 append_cleanup_failure(
@@ -516,7 +507,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
                 .cleanup_with_storage_resources(ProcessContainmentCleanupMode::Forced, resources);
             drop(drain_done_tx);
             let _ = stdout_drain.join();
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::WaitFailed,
                 started,
                 append_cleanup_failure(
@@ -536,7 +527,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             drop(drain_done_tx);
             let _ = stdout_drain.join();
             let _ = stderr_drain.join();
-            return failed_output(
+            return CapturedHelperOutput::failed(
                 ExecTermination::WaitFailed,
                 started,
                 append_cleanup_failure(
@@ -592,13 +583,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         diagnostic = append_cleanup_failure(diagnostic, Some(&error));
     }
 
-    GuestStorageManifestOutput {
-        termination,
-        duration_ms: elapsed_ms(started),
-        stdout,
-        stderr,
-        diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
+    CapturedHelperOutput::new(termination, started, stdout, stderr, diagnostic)
 }
 
 fn abort_spawned(
@@ -607,11 +592,11 @@ fn abort_spawned(
     resources: &mut Option<StorageResourceUsage>,
     started: Instant,
     diagnostic: &str,
-) -> GuestStorageManifestOutput {
+) -> CapturedHelperOutput {
     kill_and_reap_child(child);
     let cleanup = process_containment
         .cleanup_with_storage_resources(ProcessContainmentCleanupMode::Forced, resources);
-    failed_output(
+    CapturedHelperOutput::failed(
         ExecTermination::WaitFailed,
         started,
         append_cleanup_failure(diagnostic.to_string(), cleanup.err().as_ref()),
@@ -627,30 +612,4 @@ fn append_cleanup_failure(diagnostic: String, error: Option<&ProcessContainmentE
     } else {
         format!("{diagnostic}; failed to clean storage helper process containment: {error}")
     }
-}
-
-fn failed_output(
-    termination: ExecTermination,
-    started: Instant,
-    diagnostic: String,
-) -> GuestStorageManifestOutput {
-    GuestStorageManifestOutput {
-        termination,
-        duration_ms: elapsed_ms(started),
-        stdout: BoundedDrainResult {
-            captured: Some(Vec::new()),
-            capture_truncated: false,
-            stream_truncated: false,
-        },
-        stderr: BoundedDrainResult {
-            captured: Some(Vec::new()),
-            capture_truncated: false,
-            stream_truncated: false,
-        },
-        diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
-}
-
-fn elapsed_ms(started: Instant) -> u32 {
-    u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
 }

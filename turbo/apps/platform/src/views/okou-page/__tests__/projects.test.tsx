@@ -2003,7 +2003,7 @@ test("Project deep links open the Project page with its composer", async () => {
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
 });
-test("A Project page shares the capability home and its compliance line under the composer", async () => {
+test("A Project page shares the capability home and its compliance block under the cards", async () => {
   const member = {
     ...continuityThread(95, 1, "Launch planning"),
     projectId: id,
@@ -2025,15 +2025,21 @@ test("A Project page shares the capability home and its compliance line under th
   await waitFor(() => {
     expect(projectChip("Launch")).toBeInTheDocument();
   });
-  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
   expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   const editor = await screen.findByRole("textbox", { name: "Message" });
   const compliance = screen.getByRole("region", {
     name: "Okou’s compliance, built for your trust",
   });
-  expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
+  expect(compliance.closest("[data-chat-composer]")).toBeNull();
   expect(
-    editor.compareDocumentPosition(compliance) &
+    cards.compareDocumentPosition(compliance) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(
+    compliance.compareDocumentPosition(editor) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 });

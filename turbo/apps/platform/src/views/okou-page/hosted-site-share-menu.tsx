@@ -22,10 +22,12 @@ import {
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
+import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
 import {
   getHostedSiteShareScope,
   type HostedSiteShareSession,
@@ -58,6 +60,7 @@ function HostedSiteBannerSetting({
   const signal = useGet(session.signal$);
   const features = useGet(featureSwitch$);
   const rows = features[FeatureSwitchKey.HostedSiteShareRows];
+  const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (
     !signal ||
     owner.state !== "hasData" ||
@@ -86,10 +89,15 @@ function HostedSiteBannerSetting({
         {rows && (
           <PanelTop size={16} className="shrink-0 text-muted-foreground" />
         )}
-        <span className={cn("text-sm", rows && "min-w-0 flex-1 truncate")}>
-          {t(($) => {
-            return $.artifacts.siteBanner.label;
-          })}
+        <span
+          className={cn("flex items-center gap-2", rows && "min-w-0 flex-1")}
+        >
+          <span className={cn("text-sm", rows && "min-w-0 truncate")}>
+            {t(($) => {
+              return $.artifacts.siteBanner.label;
+            })}
+          </span>
+          {paywallLocked && <ProBadge />}
         </span>
         {!current ? (
           <Skeleton className="h-5 w-9 rounded-full" />
@@ -380,10 +388,12 @@ function WebsiteUrlEditor({
 function CustomizeUrlRow({
   address,
   autoFocus,
+  paywallLocked,
   onEdit,
 }: {
   readonly address: string | null;
   readonly autoFocus: boolean;
+  readonly paywallLocked: boolean;
   readonly onEdit: () => void;
 }) {
   const { t } = useTranslation();
@@ -403,6 +413,7 @@ function CustomizeUrlRow({
       >
         <Pencil size={16} className="shrink-0 text-muted-foreground" />
         <span className="shrink-0">{label}</span>
+        {paywallLocked && <ProBadge />}
         <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">
           {address}
         </span>
@@ -435,6 +446,7 @@ function HostedSiteShareActions({
   const copy = useSet(session.copy$);
   const banner = useLoadable(session.banner$);
   const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
+  const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (!signal) {
     return null;
   }
@@ -467,6 +479,7 @@ function HostedSiteShareActions({
           <CustomizeUrlRow
             address={address}
             autoFocus={returnFocus}
+            paywallLocked={paywallLocked}
             onEdit={() => {
               detach(edit(signal), Reason.DomCallback);
             }}
@@ -502,6 +515,7 @@ function HostedSiteShareActions({
             {t(($) => {
               return $.artifacts.siteUrl.customize;
             })}
+            {paywallLocked && <ProBadge />}
           </Button>
         )}
         <ShareCopyButton

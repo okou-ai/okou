@@ -48,6 +48,9 @@ impl FakeGcOperations {
 }
 
 impl GcOperations for FakeGcOperations {
+    async fn gc_ingress(&mut self, _home: &HomePaths, _dry_run: bool) -> RunnerResult<GcReport> {
+        Ok(GcReport::default())
+    }
     async fn analyze_versions(
         &mut self,
         _home: &HomePaths,

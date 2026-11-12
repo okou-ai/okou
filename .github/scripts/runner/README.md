@@ -72,12 +72,17 @@ those locks. Exact owner association protects older CI generations; unresolved
 association fails closed instead of guessing from a reused branch. Proven live
 owners are reported as deferred, and reopened PRs are retained. Other batches
 continue after errors; failed/unknown cleanup and lock outcomes fail the job.
-Owner discovery also fails closed when a status search reaches GitHub's 1,000-run
-limit. A short distinct-run count triggers one status-list recheck, which must
-itself have complete coverage. Runs missing from that recheck are refreshed by
-exact ID, retaining still-active owners even if their status changed. Unexplained
-coverage or lookup failures remain unverified; a clipped list is not evidence
-that a namespace has no owner.
+Owner discovery fails closed when a status search reports or returns GitHub's
+1,000-run limit. Below that cap, `total_count` is not a coverage predicate: counts
+can drift even within one page. Paginated results are deduplicated by run ID, and
+selected PR owner ID sets must agree across consecutive sweeps (at most four).
+Previously observed selected owners missing from a later sweep are refreshed by
+exact ID regardless of count equality. Still-active runs remain owners across
+status changes and repeated omissions; only confirmed completed runs leave the
+set. These observations are not an atomic GitHub snapshot. Lookup, identity,
+association or stabilization failures remain unverified and retain resources.
+An unverified or failed result exits 1 because cleanup was not established;
+proven live-owner deferrals and reopened PR skips exit 0.
 
 The host executor reobserves runner and Stripe units/directories under the locks,
 verifies stopped execution before removing files, and verifies final state.

@@ -365,6 +365,7 @@ export interface StripeInvoice {
 
 export interface StripeCheckoutSession {
   readonly id: string;
+  readonly created?: number;
   readonly url?: string | null;
   readonly status?: string | null;
   readonly mode?: string | null;
@@ -673,6 +674,19 @@ export interface StripeCheckoutSessionCreateParams {
 }
 
 export interface StripeCheckoutSessionsApi {
+  list(params: {
+    readonly customer: string;
+    readonly created: { readonly gte: number };
+    readonly limit: number;
+    readonly starting_after?: string;
+  }): Promise<{
+    readonly data: readonly StripeCheckoutSession[];
+    readonly has_more: boolean;
+  }>;
+  update(
+    id: string,
+    params: { readonly metadata: StripeMetadataParam },
+  ): Promise<StripeCheckoutSession>;
   create(
     params: StripeCheckoutSessionCreateParams,
     options?: StripeRequestOptions,

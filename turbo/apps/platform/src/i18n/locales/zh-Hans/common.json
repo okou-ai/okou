@@ -1061,6 +1061,8 @@
       "invalid": "此权限链接无效或不可用。",
       "loadFailed": "无法验证全部请求的权限，暂时无法更改权限。",
       "loading": "正在加载权限",
+      "myOkouScopeNote": "适用于你在本工作区使用 Okou，不限于当前任务。",
+      "myOkouSharedScopeNote": "适用于你在本工作区所有聊天中使用此连接器。同事的授权各自独立。",
       "notNow": "暂不允许",
       "review": "查看并授权",
       "scopeNote": "适用于此智能体，而不仅限于当前任务。",
@@ -1312,6 +1314,40 @@
     "sidebar": {
       "description": "更多积分和并发运行",
       "getPlan": "获取{{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "只是看看价格",
+          "needs_approval": "需要其他人审批",
+          "not_ready_yet": "还没准备好付费",
+          "not_seeing_value": "还没看到它的价值",
+          "other": "其他原因",
+          "payment_issue": "付款时遇到问题",
+          "price_higher_than_expected": "价格比预期高",
+          "results_not_good_enough": "对产出结果不满意"
+        },
+        "description": "只有一个问题，你的回答会帮助我们改进。",
+        "question": "是什么让你没有完成购买？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "目前用不到更多",
+          "not_sure_worth_it": "还不确定是否值得",
+          "other": "其他原因",
+          "still_trying": "想再多试用一下",
+          "too_expensive": "价格太高"
+        },
+        "question": "是什么让你今天还没有升级？",
+        "reward": "此工作区首个符合条件的回答可获得 {{credits}} 奖励 credits，有效期 30 天。",
+        "thanksWithCredits": "感谢！已为你添加 {{credits}} credits，可以继续使用了。"
+      },
+      "error": "提交失败，请重试。",
+      "notNow": "暂不回答",
+      "otherLabel": "你的回答",
+      "otherPlaceholder": "补充说明（可选）",
+      "submit": "提交",
+      "thanks": "感谢你的反馈。"
     },
     "toasts": {
       "autoRechargeUpdated": "自动充值已更新",
@@ -3428,6 +3464,8 @@
         "unshared": "未共享给任何智能体"
       },
       "filterWith": "筛选：{{category}}",
+      "myOkouDescription": "连接第三方服务，供你的 Okou 使用。",
+      "myOkouDescriptionWithCount": "连接 {{value}} 项服务，供你的 Okou 使用。",
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
@@ -6222,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "隐藏合规信息",
       "link": "安全详情",
       "status": {
         "aligned": "已对标",
@@ -7407,12 +7446,11 @@
       "codeInstructions": "从待添加的邮箱给 Okou 发送此验证码，放在邮件主题或正文首行均可。",
       "connected": "邮箱已连接",
       "deleteAria": "删除 {{email}}",
-      "description": "给 Okou 发邮件，每个邮件会话对应一个独立对话",
+      "description": "通过邮件与 Okou 对话",
       "emailAddress": "邮箱地址",
       "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
       "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
       "loadError": "无法加载邮箱连接",
-      "loginNotice": "登录邮箱始终保持连接。",
       "manage": "管理",
       "manageDescription": "从要添加的邮箱发送验证码。",
       "manageTitle": "邮箱连接",

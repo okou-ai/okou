@@ -6,6 +6,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
+import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 
 export function createHostedSiteBannerSignals(
   site$: Computed<
@@ -41,6 +42,9 @@ export function createHostedSiteBannerSignals(
       const current = await get(banner$);
       signal.throwIfAborted();
       if (!current || current.showBanner === showBanner) {
+        return;
+      }
+      if (!showBanner && !(await set(passArtifactPaywall$, signal))) {
         return;
       }
       await accept(

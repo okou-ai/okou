@@ -239,6 +239,13 @@ function optionsResponse(request: Request): Response {
   return new Response(null, { headers, status: 204 });
 }
 
+function paidPlanRequiredResponse(): Response {
+  return new Response("Downloading this website requires a paid Okou plan.", {
+    status: 402,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
 function notFoundResponse(): Response {
   return new Response("Not found", {
     status: 404,
@@ -867,6 +874,10 @@ async function serveLegacyHostedSite(
 
   if (isSiteDownloadPath(pathname)) {
     if (!presentation) return privateResponse(notFoundResponse());
+    // Tolerate old API presentation during deployment/rollback. Require this
+    // field after APIs omitting it neither serve nor remain rollback targets (#46746).
+    if (presentation.downloadAllowed === false)
+      return privateResponse(paidPlanRequiredResponse());
     return withSiteAuthHeaders(
       await siteDownloadResponse(
         request,

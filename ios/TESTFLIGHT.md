@@ -30,12 +30,14 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    assigns each processed build to this group; automatic distribution may also
    be enabled in App Store Connect.
 3. Provision an **Apple Distribution** certificate and its private key, plus
-   separate **App Store Connect** distribution profiles for `ai.okou.ios` and
-   `ai.okou.ios.notifications`. Register the latter as an explicit iOS App ID.
-   Enable the App Group `group.ai.okou.ios` on both identifiers and profiles;
-   retain production Push Notifications on the main app. Both bundles request
-   the existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
-   sessions. The extension does not need a separate APNs key or push topic.
+   separate **App Store Connect** distribution profiles for `ai.okou.ios`,
+   `ai.okou.ios.notifications` and `ai.okou.ios.widgets`. Register both
+   extensions as explicit iOS App IDs. Enable the App Group `group.ai.okou.ios`
+   on all three identifiers and profiles; retain production Push Notifications
+   on the main app. The app and the notification extension request the
+   existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
+   sessions; the widget extension only reads the App Group and requests no
+   Keychain group. Neither extension needs a separate APNs key or push topic.
    The Desktop Developer ID Application certificate is not suitable for iOS.
    Store the following secrets in GitHub's existing `production` environment
    and retain recoverable copies in the Production vault:
@@ -46,6 +48,7 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | `IOS_DISTRIBUTION_P12_PASSWORD`             | Password protecting that export                                                   |
    | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app distribution profile with the shared App Group             |
    | `IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64` | Base64 of the notification extension distribution profile with the same App Group |
+   | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the same App Group       |
 
    Before storing the PKCS#12 export, verify it with macOS `security import`
    in a disposable keychain and confirm that it lists the Apple Distribution

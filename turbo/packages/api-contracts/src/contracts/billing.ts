@@ -17,9 +17,17 @@ import {
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { usagePackUsdSchema } from "../validators/billing";
+import {
+  BILLING_SURVEY_CHECKOUT_KINDS,
+  CHECKOUT_ABANDONED_SURVEY_ANSWERS,
+  CREDITS_EXHAUSTED_SURVEY_ANSWERS,
+  usagePackUsdSchema,
+} from "../validators/billing";
 
 export {
+  BILLING_SURVEY_CHECKOUT_KINDS,
+  CHECKOUT_ABANDONED_SURVEY_ANSWERS,
+  CREDITS_EXHAUSTED_SURVEY_ANSWERS,
   USAGE_PACKS_USD,
   type UsagePackUsd,
   usagePackUsdSchema,
@@ -587,6 +595,43 @@ const redeemRequestSchema = object({
 
 const redeemCodeRequestSchema = object({
   code: string().trim().min(1),
+});
+
+const billingSurveyDetailSchema = string().trim().min(1).max(500);
+
+const billingSurveyRequestSchema = discriminatedUnion("survey", [
+  object({
+    survey: literal("credits_exhausted"),
+    answer: zEnum(CREDITS_EXHAUSTED_SURVEY_ANSWERS),
+    detail: billingSurveyDetailSchema.optional(),
+  }),
+  object({
+    survey: literal("checkout_abandoned"),
+    answer: zEnum(CHECKOUT_ABANDONED_SURVEY_ANSWERS),
+    detail: billingSurveyDetailSchema.optional(),
+    checkoutKind: zEnum(BILLING_SURVEY_CHECKOUT_KINDS).optional(),
+    checkoutSessionId: string().min(1).max(255),
+  }),
+]);
+
+const billingSurveyKindSchema = zEnum([
+  "credits_exhausted",
+  "checkout_abandoned",
+]);
+
+const billingSurveyStatusResponseSchema = object({
+  answered: array(billingSurveyKindSchema),
+  /** Bonus credits a member receives for answering `credits_exhausted`. */
+  creditsExhaustedReward: number().int().nonnegative(),
+  abandonedCheckout: object({
+    checkoutSessionId: string().min(1).max(255),
+    checkoutKind: zEnum(BILLING_SURVEY_CHECKOUT_KINDS),
+  }).nullable(),
+});
+
+const billingSurveySubmitResponseSchema = object({
+  recorded: boolean(),
+  rewardCredits: number().int().nonnegative(),
 });
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1382,53 @@ export const billingRedeemCodeContract = c.router({
 
 export type BillingRedeemCodeContract = typeof billingRedeemCodeContract;
 
+export const billingSurveyContract = c.router({
+  status: {
+    method: "GET",
+    path: "/api/billing/survey",
+    headers: authHeadersSchema,
+    query: object({ checkoutReturn: literal("canceled").optional() }),
+    responses: {
+      200: billingSurveyStatusResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Find the current member's billing surveys and abandoned Checkout",
+  },
+  submit: {
+    method: "POST",
+    path: "/api/billing/survey",
+    headers: authHeadersSchema,
+    body: billingSurveyRequestSchema,
+    responses: {
+      200: billingSurveySubmitResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Record a one-question billing survey answer",
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/billing/survey/dismiss",
+    headers: authHeadersSchema,
+    body: object({ checkoutSessionId: string().min(1).max(255) }),
+    responses: {
+      200: object({ dismissed: boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Dismiss the abandoned-checkout question for this Checkout",
+  },
+});
+
+export type BillingSurveyContract = typeof billingSurveyContract;
+
 // Inferred types from Zod schemas
 export type BillingStatusResponse = zInfer<typeof billingStatusResponseSchema>;
 export type AutoRechargeConfig = zInfer<typeof autoRechargeSchema>;
@@ -1355,6 +1447,10 @@ export type BillingPurchaseConfirmResponse = zInfer<
   typeof billingPurchaseConfirmResponseSchema
 >;
 export type RedeemCodeResponse = zInfer<typeof redeemCodeResponseSchema>;
+export type BillingSurveyRequest = zInfer<typeof billingSurveyRequestSchema>;
+export type BillingSurveyKind = zInfer<typeof billingSurveyKindSchema>;
+export type BillingSurveyCheckoutKind =
+  (typeof BILLING_SURVEY_CHECKOUT_KINDS)[number];
 export type ConcurrencyCheckoutRequest = zInfer<
   typeof concurrencyCheckoutRequestSchema
 >;

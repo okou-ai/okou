@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.245.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.6...runner-rs-v0.245.7) (2026-11-12)
+
+
+### Bug Fixes
+
+* **runner:** allow bounded cold catalog initialization ([#46755](https://github.com/okou-ai/okou/issues/46755)) ([af7116e](https://github.com/okou-ai/okou/commit/af7116ed4d2917cab3d77b9d1ac967a060ca4c55))
+
+
+### Refactoring
+
+* **python:** centralize model response rejection policy ([#46747](https://github.com/okou-ai/okou/issues/46747)) ([e16a603](https://github.com/okou-ai/okou/commit/e16a60392b737c0287ee297b24c7e3bf42f8f894))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.245.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.5...runner-rs-v0.245.6) (2026-11-12)
+
+
+### Refactoring
+
+* **python:** centralize model json completion ownership ([#46732](https://github.com/okou-ai/okou/issues/46732)) ([9e9829a](https://github.com/okou-ai/okou/commit/9e9829a68ed0dff83a6a01031fdfb43df0823e46))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.245.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.4...runner-rs-v0.245.5) (2026-11-12)
 
 ### Release Dependencies

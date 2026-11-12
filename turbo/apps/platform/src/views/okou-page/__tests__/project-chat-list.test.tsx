@@ -115,13 +115,15 @@ function chatMenuButton(threadId: string) {
   return button("Open chat menu", [row]);
 }
 
-function installProjects() {
+function installProjects(
+  projects = [
+    { id: launchId, name: "Launch", createdAt: at, updatedAt: at },
+    { id: researchId, name: "Research", createdAt: at, updatedAt: at },
+  ],
+) {
   context.mocks.api(projectsContract.snapshot, ({ respond }) => {
     return respond(200, {
-      projects: [
-        { id: launchId, name: "Launch", createdAt: at, updatedAt: at },
-        { id: researchId, name: "Research", createdAt: at, updatedAt: at },
-      ],
+      projects,
       latestEventId: null,
       latestSeqId: 1,
     });
@@ -161,41 +163,91 @@ async function openChatList(
   });
 }
 
-test("The inbox says it is empty below its Projects and leads to the archived chats", async () => {
-  const member = {
-    ...continuityThread(301, 1, "Launch planning"),
-    projectId: launchId,
-  };
-  const archived = {
-    ...continuityThread(301, 2, "Archived notes"),
-    archived: true,
-  };
-  await openChatList(301, [member, archived], `/chats/${member.id}`);
+test.each([
+  { mobile: false, archivedOutside: true },
+  { mobile: false, archivedOutside: false },
+  { mobile: true, archivedOutside: true },
+  { mobile: true, archivedOutside: false },
+])(
+  "Projects populate the inbox without chats outside them (mobile: $mobile, archived outside: $archivedOutside)",
+  async ({ mobile, archivedOutside }) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(min-width: 48rem)" && !mobile;
+    });
+    const member = {
+      ...continuityThread(301, 1, "Launch planning"),
+      projectId: launchId,
+    };
+    const archived = {
+      ...continuityThread(301, 2, "Archived notes"),
+      archived: true,
+    };
+    await openChatList(
+      301,
+      archivedOutside ? [member, archived] : [member],
+      `/agents/${member.agentId}/chat`,
+    );
 
-  await expect(
-    screen.findByText("Your inbox is empty"),
-  ).resolves.toBeInTheDocument();
-  expect(threadLink(archived.id)).toBeNull();
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Start a conversation and it'll show up here"),
+    ).not.toBeInTheDocument();
+    expect(hasButton("Show archived chats", [document])).toBeFalsy();
 
-  await userEvent.setup({ delay: null }).click(button("Show archived chats"));
-  await waitFor(() => {
-    expect(threadLink(archived.id)).toBeInTheDocument();
-  });
-  expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
-});
+    click(projectToggle("Launch"));
+    await waitFor(() => {
+      expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    });
+    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Start a conversation and it'll show up here"),
+    ).not.toBeInTheDocument();
+    expect(hasButton("Show archived chats", [document])).toBeFalsy();
 
-test("An inbox without chats outside its Projects waits for the first one", async () => {
-  const member = {
-    ...continuityThread(302, 1, "Launch planning"),
-    projectId: launchId,
-  };
-  await openChatList(302, [member], `/chats/${member.id}`);
+    click(projectToggle("Research", researchId));
+    await waitFor(() => {
+      expect(projectText(researchId)).toContain("No chats here yet");
+    });
+    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Start a conversation and it'll show up here"),
+    ).not.toBeInTheDocument();
+    expect(hasButton("Show archived chats", [document])).toBeFalsy();
+  },
+);
 
-  await expect(
-    screen.findByText("Start a conversation and it'll show up here"),
-  ).resolves.toBeInTheDocument();
-  expect(hasButton("Show archived chats", [document])).toBeFalsy();
-});
+test.each([false, true])(
+  "An inbox without Projects or active chats leads to archived chats (mobile: %s)",
+  async (mobile) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(min-width: 48rem)" && !mobile;
+    });
+    const archived = {
+      ...continuityThread(302, 1, "Archived notes"),
+      archived: true,
+    };
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 302,
+      threads: [archived],
+    });
+    installProjects([]);
+    await setupPage({
+      context,
+      path: `/agents/${archived.agentId}/chat`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    });
+
+    await expect(
+      screen.findByText("Your inbox is empty"),
+    ).resolves.toBeInTheDocument();
+    click(button("Show archived chats"));
+    await waitFor(() => {
+      expect(threadLink(archived.id)).toBeInTheDocument();
+    });
+  },
+);
 
 test("An unfolded Project without chats offers the archived ones it holds", async () => {
   const ordinary = continuityThread(303, 1, "Ordinary chat");

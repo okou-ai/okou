@@ -1064,6 +1064,8 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
+      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
+      "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
@@ -1315,6 +1317,40 @@
     "sidebar": {
       "description": "More credits & concurrent runs",
       "getPlan": "Get {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "I was just checking the price",
+          "needs_approval": "I need approval from someone else",
+          "not_ready_yet": "I'm not ready to commit yet",
+          "not_seeing_value": "I didn't see the value yet",
+          "other": "Something else",
+          "payment_issue": "I had trouble paying",
+          "price_higher_than_expected": "The price was higher than I expected",
+          "results_not_good_enough": "I wasn't happy with the results"
+        },
+        "description": "One quick question. Your answer helps us improve.",
+        "question": "What stopped you from completing your purchase?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "I don't need more right now",
+          "not_sure_worth_it": "I'm not sure it's worth it yet",
+          "other": "Something else",
+          "still_trying": "I want to try it more first",
+          "too_expensive": "It's too expensive"
+        },
+        "question": "What's stopping you from upgrading today?",
+        "reward": "The first eligible answer in this workspace earns {{credits}} bonus credits, valid for 30 days.",
+        "thanksWithCredits": "Thanks! {{credits}} credits were added, so you can keep going."
+      },
+      "error": "Couldn't send your answer. Try again.",
+      "notNow": "Not now",
+      "otherLabel": "Your answer",
+      "otherPlaceholder": "Tell us more (optional)",
+      "submit": "Submit",
+      "thanks": "Thanks for telling us."
     },
     "toasts": {
       "autoRechargeUpdated": "Auto-recharge updated",
@@ -3441,6 +3477,8 @@
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Connect third-party services for your Okou to use.",
+      "myOkouDescriptionWithCount": "Connect {{value}} services for your Okou to use.",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
@@ -6239,6 +6277,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Hide compliance",
       "link": "Security details",
       "status": {
         "aligned": "Aligned",
@@ -7428,12 +7467,11 @@
       "codeInstructions": "Send this code to Okou from the email address you want to add. Use it as the subject or the first line of your message.",
       "connected": "Email connected",
       "deleteAria": "Delete {{email}}",
-      "description": "Email your Okou and keep each conversation in its own thread",
+      "description": "Chat with your Okou by email",
       "emailAddress": "Email address",
       "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
       "invalidLink": "This connection link is invalid. Send a new email to Okou.",
       "loadError": "Unable to load your email connection",
-      "loginNotice": "Your login email stays connected.",
       "manage": "Manage",
       "manageDescription": "Send the code from the email you want to add.",
       "manageTitle": "Email connections",

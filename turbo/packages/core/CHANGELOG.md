@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.831.0](https://github.com/okou-ai/okou/compare/core-v8.830.0...core-v8.831.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+
+## [8.830.0](https://github.com/okou-ai/okou/compare/core-v8.829.3...core-v8.830.0) (2026-11-12)
+
+
+### Features
+
+* **app:** draw every okou avatar with the animated design-system avatar ([#46728](https://github.com/okou-ai/okou/issues/46728)) ([2b40ec0](https://github.com/okou-ai/okou/commit/2b40ec0063dc9b4f64a0cbe17c88978eff8c88e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+
 ## [8.829.3](https://github.com/okou-ai/okou/compare/core-v8.829.2...core-v8.829.3) (2026-11-12)
 
 

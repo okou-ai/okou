@@ -196,6 +196,7 @@ export type UsagePackCheckoutAllocation =
 
 export interface CreateUsagePackCheckoutSessionArgs {
   readonly orgId: string;
+  readonly userId: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly planPriceId: string;
   readonly allocations: readonly UsagePackCheckoutAllocation[];
@@ -866,7 +867,7 @@ const createUsagePackCheckoutForSnapshot$ = command(
         allow_promotion_codes: true,
         success_url: args.purchase.successUrl,
         cancel_url: args.purchase.cancelUrl,
-        metadata,
+        metadata: { ...metadata, billingSurveyUserId: args.purchase.userId },
         subscription_data: { metadata },
       },
       {
@@ -1573,11 +1574,12 @@ async function admitClaimedUsagePackPurchase(
 const confirmUsagePackPurchaseSnapshot$ = command(
   async (
     { set },
-    orgId: string,
+    identity: { readonly orgId: string; readonly userId: string },
     preview: UsagePackPurchasePreviewToken,
     snapshot: UsagePackPurchaseSnapshot,
     providerSignal: AbortSignal,
   ): Promise<ConfirmUsagePackPurchaseResult> => {
+    const { orgId, userId } = identity;
     const existingResult = await existingUsagePackPurchaseResult(
       preview,
       snapshot,
@@ -1627,6 +1629,7 @@ const confirmUsagePackPurchaseSnapshot$ = command(
         set(createUsagePackCheckoutForSnapshot$, {
           purchase: {
             orgId,
+            userId,
             tier: preview.tier,
             planPriceId: preview.planPriceId,
             allocations: snapshot.allocations,
@@ -1725,6 +1728,7 @@ export const confirmUsagePackPurchase$ = command(
   async (
     { set },
     orgId: string,
+    userId: string,
     previewToken: string,
     signal: AbortSignal,
   ): Promise<ConfirmUsagePackPurchaseResult> => {
@@ -1788,7 +1792,7 @@ export const confirmUsagePackPurchase$ = command(
     }
     return await set(
       confirmUsagePackPurchaseSnapshot$,
-      orgId,
+      { orgId, userId },
       preview,
       snapshot,
       signal,
