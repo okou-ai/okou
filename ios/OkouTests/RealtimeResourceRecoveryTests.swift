@@ -9,6 +9,60 @@ import XCTest
 
 @MainActor
 final class RealtimeResourceRecoveryTests: XCTestCase {
+  func testCoordinatedStartupReadsOnceAfterSubscriptionsAndStillRecoversAContinuityGap()
+    async throws
+  {
+    let deadline = ModelResponseGate()
+    addTeardownBlock { deadline.open() }
+    let waiting = expectation(description: "Model consumers are waiting for initial subscriptions")
+    let bootstrap = WorkspaceModelBootstrap {
+      waiting.fulfill()
+      await deadline.wait()
+    }
+    let fixture = try await makeFixture(modelBootstrap: bootstrap)
+    let startup = fixture.beginRefresh([.startup])
+    await fulfillment(of: [waiting], timeout: 3)
+    let changedWhileWaiting = fixture.beginRefresh([.modelPreference])
+    fixture.metadata.remoteModel.withLock { $0 = "claude-model" }
+
+    try await attach(fixture)
+    await startup.value
+    await changedWhileWaiting.value
+    XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "claude-model")
+    XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 1))
+
+    fixture.metadata.remoteModel.withLock { $0 = "codex-model" }
+    let published = expectation(description: "A later continuity gap still revalidates models")
+    fixture.publication = ("codex-model", published)
+    try fixture.server.attached(fixture.workspaceChannel)
+    await fulfillment(of: [published], timeout: 3)
+    await fixture.drain()
+    XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "codex-model")
+    XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 2))
+  }
+
+  func testSubscriptionDeadlineAllowsHTTPAndLaterAttachmentReadsTheMissedChange() async throws {
+    let deadline = ModelResponseGate()
+    addTeardownBlock { deadline.open() }
+    let waiting = expectation(description: "The bounded subscription wait has started")
+    let bootstrap = WorkspaceModelBootstrap {
+      waiting.fulfill()
+      await deadline.wait()
+    }
+    let fixture = try await makeFixture(modelBootstrap: bootstrap)
+    let startup = fixture.beginRefresh([.startup])
+    await fulfillment(of: [waiting], timeout: 3)
+    deadline.open()
+    await startup.value
+    XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "codex-model")
+    XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 1))
+
+    fixture.metadata.remoteModel.withLock { $0 = "claude-model" }
+    try await attach(fixture)
+    XCTAssertEqual(fixture.models.configuration?.defaultSelection.model, "claude-model")
+    XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 2))
+  }
+
   func testInitialSubscriptionsCatchUpOnceAndReadChangesMissedBeforeAttachment() async throws {
     let fixture = try await makeFixture()
     await fixture.models.load()
@@ -112,8 +166,10 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     XCTAssertEqual(fixture.metadata.requests.withLock { $0 }, fixture.expectedRequests(rounds: 3))
   }
 
-  private func makeFixture() async throws -> RealtimeResourceHarness {
-    let fixture = try RealtimeResourceHarness(owner: self)
+  private func makeFixture(
+    modelBootstrap: WorkspaceModelBootstrap? = nil
+  ) async throws -> RealtimeResourceHarness {
+    let fixture = try RealtimeResourceHarness(owner: self, modelBootstrap: modelBootstrap)
     addTeardownBlock { @MainActor in
       await fixture.close()
       XCTAssertEqual(fixture.server.errors, [])
@@ -141,6 +197,8 @@ private final class RealtimeResourceHarness {
   let models: ChatModelStore
   let http: ChatHTTPFixture
   let metadata: RealtimeMetadataFixture
+  private let resources: WorkspaceResources
+  private let modelBootstrap: WorkspaceModelBootstrap?
   let userID: String
   let workspaceID: String
   var workspaceChannel: String { "user-org:\(userID):\(workspaceID)" }
@@ -178,10 +236,12 @@ private final class RealtimeResourceHarness {
     onConnection: { [weak self] status in
       guard let self else { return }
       if status == .connected {
+        _ = modelBootstrap?.subscriptionsReady()
         let expectation = connected
         connected = nil
         expectation?.fulfill()
       } else if status == .unavailable {
+        modelBootstrap?.allowHTTP()
         let expectation = unavailable
         unavailable = nil
         expectation?.fulfill()
@@ -201,7 +261,8 @@ private final class RealtimeResourceHarness {
       return realtime
     })
 
-  init(owner: XCTestCase) throws {
+  init(owner: XCTestCase, modelBootstrap: WorkspaceModelBootstrap?) throws {
+    self.modelBootstrap = modelBootstrap
     let userID = "realtime-user-\(UUID().uuidString)"
     self.userID = userID
     workspaceID = "realtime-workspace-\(UUID().uuidString)"
@@ -220,8 +281,12 @@ private final class RealtimeResourceHarness {
         }
         return result
       })
+    let resources = WorkspaceResources(
+      client: http.client, sleep: { try await Task.sleep(for: $0) }, modelBootstrap: modelBootstrap)
+    self.resources = resources
     models = ChatModelStore(
-      client: http.client, webURL: http.baseURL, didFail: { XCTFail("\($0)") })
+      client: http.client, webURL: http.baseURL, resources: resources,
+      didFail: { XCTFail("\($0)") })
     let attachRequests = owner.expectation(
       description: "Both SDK channel attach requests reach loopback")
     attachRequests.expectedFulfillmentCount = 2
@@ -239,6 +304,12 @@ private final class RealtimeResourceHarness {
 
   func prepare() async throws { port = try await server.start() }
 
+  func beginRefresh(_ changes: Set<ChatInvalidation>) -> Task<Void, Never> {
+    let task = Task.immediate { await models.refresh(changes) }
+    tasks.append(task)
+    return task
+  }
+
   func drain() async {
     while !tasks.isEmpty {
       let pending = tasks
@@ -250,6 +321,7 @@ private final class RealtimeResourceHarness {
   func close() async {
     service.stop()
     models.close()
+    resources.close()
     await drain()
     server.stop()
     sdk = nil

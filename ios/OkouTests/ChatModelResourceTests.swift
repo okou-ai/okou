@@ -7,6 +7,42 @@ import XCTest
 
 @MainActor
 final class ChatModelResourceTests: XCTestCase {
+  func testClosingWorkspaceBeforeAttachmentRetiresItsWaitingReads() async throws {
+    let deadline = ModelResponseGate()
+    let waiting = expectation(description: "The old workspace is waiting for subscriptions")
+    let requests = Mutex<[String: Int]>([:])
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      requests.withLock { $0[path, default: 0] += 1 }
+      return try XCTUnwrap(ModelHTTPFixtures.response(path))
+    }
+    let workspace = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      modelBootstrap: WorkspaceModelBootstrap {
+        waiting.fulfill()
+        await deadline.wait()
+      })
+    let pending = Task.immediate { await workspace.newModelSelection.open() }
+    addTeardownBlock { @MainActor in
+      workspace.close()
+      deadline.open()
+      pending.cancel()
+      await pending.value
+    }
+    await fulfillment(of: [waiting], timeout: 3)
+    workspace.close()
+    await pending.value
+    XCTAssertNil(workspace.modelStore.configuration)
+    XCTAssertEqual(requests.withLock { $0 }, [:])
+
+    let next = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { next.close() }
+    await next.newModelSelection.open()
+    XCTAssertEqual(next.newModelSelection.selection.model, "codex-model")
+    XCTAssertTrue(next.newModelSelection.canSend)
+    XCTAssertEqual(requests.withLock { $0 }, initialRequests)
+  }
+
   func testOverlappingComposersStartupAndUsageShareModelReads() async throws {
     for (reconnects, cancelsWaiter) in [(false, false), (true, false), (false, true)] {
       let gate = ModelResponseGate()

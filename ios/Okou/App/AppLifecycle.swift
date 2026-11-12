@@ -199,6 +199,7 @@ final class WorkspaceLifecycle {
       draftStorage: ChatDraftStorage(scope: cacheScope),
       projectDisclosure: ProjectDisclosureStorage(scope: cacheScope),
       measurementScope: cacheScope,
+      modelBootstrap: WorkspaceModelBootstrap(),
       didRefreshReadState: { notifications.requestNotificationStateRefresh() })
   }
 
