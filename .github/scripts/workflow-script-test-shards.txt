@@ -2,9 +2,11 @@
 # merge-group run 35555833634.
 # Rebalance the rollback resolver from shard 3 to shard 2 using main runs
 # 41737313806, 41749283984, 41751513317, 41753481232, 41754890091, 41757795041.
+# Rebalance Caddy from shard 2 to shard 4 using main runs 43209636681,
+# 43210025396, 43224400774 and PR runs 43217719975, 43221863911, 43227758650.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
 1 check-action-pins-test.sh
-2 provision-runner-caddy-test.sh
+4 provision-runner-caddy-test.sh
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
 1 check-packaged-addon-control-test.sh
