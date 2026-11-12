@@ -19,6 +19,7 @@ import {
 } from "./remote-editor-frame.tsx";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
+import { CloudflareConnectorReferences } from "./cloudflare-connector-references.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { RemoteFormFooter } from "./remote-form-footer.tsx";
@@ -96,9 +97,17 @@ export function CloudflareAccessLoadError() {
 export function AccessImpact({
   config,
 }: {
-  readonly config: Pick<CloudflareAccessConfig, "sshHosts" | "vncHosts">;
+  readonly config: Pick<
+    CloudflareAccessConfig,
+    "sshHosts" | "vncHosts" | "customConnectors"
+  >;
 }) {
-  return <PrivateNetworkHostReferences config={config} />;
+  return (
+    <div className="grid gap-3">
+      <PrivateNetworkHostReferences config={config} />
+      <CloudflareConnectorReferences config={config} />
+    </div>
+  );
 }
 
 interface AccessCredentials {
@@ -648,7 +657,17 @@ function CloudflareConfigCard({
             label={t(($) => {
               return $.cloudflareAccess.delete;
             })}
-            disabled={privateNetworkHostCount(config) > 0}
+            disabled={
+              privateNetworkHostCount(config) > 0 ||
+              !!config.customConnectors?.length
+            }
+            disabledReason={
+              config.customConnectors?.length
+                ? t(($) => {
+                    return $.cloudflareAccess.inUse;
+                  })
+                : undefined
+            }
             onClick={() => {
               return detach(
                 scope === "organization"

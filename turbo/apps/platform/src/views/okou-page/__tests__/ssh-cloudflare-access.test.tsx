@@ -115,7 +115,10 @@ test("A retained protected host requires explicit shared Access selection before
   const shared = { ...config, scope: "organization" as const };
   const requests: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
-    expect(query).toStrictEqual({ view: "scoped" });
+    expect(query).toStrictEqual({
+      view: "scoped",
+      includeCustomConnectors: "true",
+    });
     return respond(200, { configs: [shared] });
   });
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {

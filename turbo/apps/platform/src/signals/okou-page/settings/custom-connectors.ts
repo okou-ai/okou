@@ -54,6 +54,9 @@ import type {
   CustomConnectorAccountMutationOptions,
 } from "./connector-account-dialogs.ts";
 import { showCreatedDirectoryConnector$ } from "./connector-directory-route.ts";
+import { invalidateCloudflareAccess$ } from "../../cloudflare-access.ts";
+import { isOrgAdmin$ } from "../../org.ts";
+import { replaceSearchParams$, searchParams$ } from "../../route.ts";
 
 const internalReload$ = state(0);
 
@@ -310,6 +313,9 @@ export const createCustomConnector$ = command(
     signal.throwIfAborted();
     const connector = customConnectorResponseSchema.parse(result.body);
     set(bumpReload$);
+    if (connector.networkBinding) {
+      set(invalidateCloudflareAccess$);
+    }
     toast.success(
       i18n.t(
         ($) => {
@@ -351,6 +357,9 @@ export const updateCustomConnector$ = command(
     signal.throwIfAborted();
     const connector = customConnectorResponseSchema.parse(result.body);
     set(bumpReload$);
+    if (connector.networkBinding || args.body.networkBinding !== undefined) {
+      set(invalidateCloudflareAccess$);
+    }
     toast.success(
       i18n.t(
         ($) => {
@@ -380,6 +389,9 @@ export const deleteCustomConnector$ = command(
     );
     signal.throwIfAborted();
     set(bumpReload$);
+    if (dialog.kind === "delete" && dialog.connector.networkBinding) {
+      set(invalidateCloudflareAccess$);
+    }
     toast.success(
       i18n.t(($) => {
         return $.connectors.custom.toasts.deleted;
@@ -1046,10 +1058,52 @@ export const openCustomConnectorDeleteDialog$ = command(
     set(internalDialog$, { kind: "delete", connector });
   },
 );
-export const closeCustomConnectorDialog$ = command(({ set }) => {
+export const closeCustomConnectorDialog$ = command(({ get, set }) => {
   set(internalEditConfirmation$, null);
   set(internalDialog$, { kind: "none" });
+  const params = get(searchParams$);
+  if (params.has("editCustomConnector")) {
+    const next = new URLSearchParams(params);
+    next.delete("editCustomConnector");
+    set(replaceSearchParams$, next);
+  }
 });
+
+export const openLinkedCustomConnector$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const params = get(searchParams$);
+    const id = params.get("editCustomConnector");
+    if (!id || params.get("scope") !== "custom") {
+      return;
+    }
+    const dialog = get(internalDialog$);
+    const admin = await get(isOrgAdmin$);
+    signal.throwIfAborted();
+    if (!admin) {
+      return;
+    }
+    const connectors = await get(customConnectors$);
+    signal.throwIfAborted();
+    if (
+      get(internalDialog$) !== dialog ||
+      get(searchParams$).get("editCustomConnector") !== id
+    ) {
+      return;
+    }
+    const connector = connectors.find((item) => {
+      return item.id === id;
+    });
+    if (connector) {
+      set(openCustomConnectorEditDialog$, connector);
+    } else {
+      toast.error(
+        i18n.t(($) => {
+          return $.cloudflareAccess.connectorMissing;
+        }),
+      );
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Create form state
@@ -1060,6 +1114,7 @@ export interface CustomConnectorCreateForm {
   displayName: string;
   prefixesRaw: string;
   mcpEndpoint: string;
+  cloudflareConfigId: string;
   headerName: string;
   headerTemplate: string;
   authMethodTypes: readonly CustomConnectorAuthMethodType[];
@@ -1110,6 +1165,7 @@ const CREATE_FORM_DEFAULTS = {
   displayName: "",
   prefixesRaw: "",
   mcpEndpoint: "",
+  cloudflareConfigId: "",
   headerName: "Authorization",
   headerTemplate: "Bearer {{secret}}",
   authMethodTypes: [],
@@ -1149,6 +1205,7 @@ function createFormFromConnector(
     prefixesRaw:
       connector.kind === "http" ? connector.prefixTemplates.join("\n") : "",
     mcpEndpoint: connector.kind === "mcp" ? connector.endpoint : "",
+    cloudflareConfigId: connector.networkBinding?.configId ?? "",
     headerName: firstHeader?.name ?? CREATE_FORM_DEFAULTS.headerName,
     headerTemplate:
       firstHeader?.valueTemplate.replaceAll(

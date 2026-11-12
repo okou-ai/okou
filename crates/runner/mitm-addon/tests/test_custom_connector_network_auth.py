@@ -33,6 +33,63 @@ def _network_response(secret: str, generation: int) -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("application_auth", [False, True])
+async def test_network_admission_uses_trusted_authority_for_transparent_ip_destination(
+    tmp_path, real_flow, mitm_ctx, application_auth
+):
+    sandbox = _single_firewall_sandbox(
+        tmp_path,
+        custom_connector_id=_CUSTOM_ID,
+        firewall_name="custom_network",
+        include_encrypted_secrets=application_auth,
+        api_entry={
+            "id": "custom_network:0",
+            "base": "https://custom.example.test/api/",
+            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.APP }}"}}
+            if application_auth
+            else {},
+            "networkIntent": {"kind": "cloudflare_access", "configId": _CONFIG_ID, "generation": 1},
+        },
+        network_policy={"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"},
+    )
+    registry = _write_registry(tmp_path, sandbox_info=sandbox)
+    flow = real_flow(
+        with_response=False,
+        client_ip="10.200.0.5",
+        host="custom.example.test",
+        path="/api/items?include=metadata",
+    )
+    # Transparent interception preserves SO_ORIGINAL_DST as the request host.
+    # TLS SNI and the validated HTTP authority identify the custom connector.
+    flow.request.host = "8.8.8.8"
+    flow.request.headers["Host"] = "custom.example.test"
+    mark_connected_tls_upstream(
+        flow,
+        sni="custom.example.test",
+        server_address=("8.8.8.8", 443),
+        peername=("8.8.8.8", 443),
+    )
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(_network_response("network-pair", 1))
+    if application_auth:
+        endpoint.queue_json_response(
+            firewall_auth_success_response({"Authorization": "Bearer app"})
+        )
+    with endpoint.run(), mitm_ctx(registry_path=str(registry), api_url=endpoint.api_url):
+        continuation = mitm_addon.requestheaders(flow)
+        if continuation is not None:
+            await continuation
+        await mitm_addon.request(flow)
+    assert flow.response is None
+    assert flow.request.url == "https://8.8.8.8/api/items?include=metadata"
+    assert endpoint.requests[0].json_body()["networkRequest"] == {
+        "method": "GET",
+        "url": "https://custom.example.test/api/items?include=metadata",
+        "intent": {"kind": "cloudflare_access", "configId": _CONFIG_ID, "generation": 1},
+    }
+    assert flow.request.headers["CF-Access-Client-Secret"] == "network-pair"
+
+
 @pytest.mark.parametrize(
     ("application_auth", "upstream_status", "application_challenge"),
     [

@@ -22,6 +22,7 @@ type CustomConnectorCheckContext = {
   readonly id: string;
   readonly label: string;
   readonly definitionAvailable: boolean;
+  readonly networkBinding: CustomConnectorResponse["networkBinding"];
 } & (
   | { readonly kind: "run"; readonly account: RunConnectorAccountLookup }
   | {
@@ -44,6 +45,7 @@ export async function loadCustomConnectorCheckContext(
     id: customConnectorId,
     label: definition?.displayName ?? customConnectorId,
     definitionAvailable: definition !== null,
+    networkBinding: definition?.networkBinding,
   };
   if (accounts !== null) {
     const account = accounts[0];
@@ -157,11 +159,22 @@ export function printCustomConnectorCheckStatus(
   if (!context.definitionAvailable) {
     console.log("Current custom connector metadata is unavailable or deleted.");
   }
+  if (context.networkBinding) {
+    console.log(
+      context.networkBinding.status === "available"
+        ? `Cloudflare Access required: ${context.networkBinding.name} (${context.networkBinding.configId}).`
+        : `Required Cloudflare Access configuration is unavailable (${context.networkBinding.configId}). Ask an organization admin to rebind or remove the requirement.`,
+    );
+  }
   const needsReview =
     context.kind === "run"
       ? printRunCustomConnectorStatus(context)
       : printCurrentCustomConnectorStatus(context);
-  if (!context.definitionAvailable || needsReview) {
+  if (
+    !context.definitionAvailable ||
+    needsReview ||
+    context.networkBinding?.status === "unavailable"
+  ) {
     console.log(customConnectorSettingsGuidance(context.id, platformOrigin));
   }
   if (context.kind === "run") {

@@ -136,6 +136,47 @@ describe("okou connector custom create", () => {
     return path;
   }
 
+  it("creates a Cloudflare-bound definition from a nonsecret JSON reference", async () => {
+    const networkBinding = {
+      type: "cloudflare_access" as const,
+      configId: "a0000000-0000-4000-8000-000000000001",
+    };
+    const definition = { ...manualDefinition(), networkBinding };
+    const metadata = {
+      ...networkBinding,
+      status: "available" as const,
+      name: "Corporate gateway",
+      generation: 1,
+    };
+    let received: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/custom-connectors",
+        async ({ request }) => {
+          received = await request.json();
+          return HttpResponse.json(
+            customConnector({ id: CONNECTOR_ID, networkBinding: metadata }),
+            { status: 201 },
+          );
+        },
+      ),
+    );
+    await customConnectorCommand.parseAsync([
+      "node",
+      "okou",
+      "create",
+      "--file",
+      writeDefinition(definition),
+      "--json",
+    ]);
+    expect(received).toStrictEqual(definition);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      networkBinding: metadata,
+    });
+  });
+
   it("creates only the API connector definition with HTTP and HTTPS prefixes", async () => {
     const definition = {
       ...manualDefinition(),

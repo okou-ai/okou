@@ -265,6 +265,48 @@ describe("custom connector URL diagnostics", () => {
     });
   });
 
+  it.each(["available", "unavailable"] as const)(
+    "reports a required %s Cloudflare configuration separately from the account",
+    async (status) => {
+      const configId = "a0000000-0000-4000-8000-000000000001";
+      const networkBinding =
+        status === "available"
+          ? {
+              type: "cloudflare_access" as const,
+              configId,
+              status,
+              name: "Corporate gateway",
+              generation: 1,
+            }
+          : {
+              type: "cloudflare_access" as const,
+              configId,
+              status,
+              name: null,
+            };
+      server.use(
+        http.get(`${ORIGIN}/api/custom-connectors/${CUSTOM_ID}`, () => {
+          return HttpResponse.json(
+            customConnector({ id: CUSTOM_ID, networkBinding }),
+          );
+        }),
+      );
+      await check();
+      expect(output()).toContain(configId);
+      expect(output()).toContain(
+        status === "available"
+          ? "Cloudflare Access required: Corporate gateway"
+          : "Required Cloudflare Access configuration is unavailable",
+      );
+      if (status === "unavailable") {
+        expect(output()).toContain(
+          "Ask an organization admin to rebind or remove the requirement.",
+        );
+      }
+      expect(output()).toContain(ACCOUNT_ID);
+    },
+  );
+
   it("uses the canonical current-member account summary outside a run", async () => {
     server.use(
       stubConnectorAccounts([

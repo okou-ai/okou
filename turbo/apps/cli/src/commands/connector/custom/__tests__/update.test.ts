@@ -136,6 +136,61 @@ describe("okou connector custom update", () => {
     return path;
   }
 
+  it.each(["preserve", "remove", "replace"] as const)(
+    "updates a network requirement with explicit %s semantics",
+    async (operation) => {
+      const reference = {
+        type: "cloudflare_access" as const,
+        configId: "a0000000-0000-4000-8000-000000000001",
+      };
+      const definition = {
+        ...manualMcpDefinition(),
+        ...(operation === "preserve"
+          ? {}
+          : {
+              networkBinding: operation === "remove" ? null : reference,
+            }),
+      };
+      const metadata = {
+        ...reference,
+        status: "available" as const,
+        name: "Corporate gateway",
+        generation: 1,
+      };
+      let received: unknown;
+      server.use(
+        http.put(
+          `http://localhost:3000/api/custom-connectors/${CONNECTOR_ID}`,
+          async ({ request }) => {
+            received = await request.json();
+            return HttpResponse.json({
+              ...mcpResponse(manualMcpDefinition()),
+              ...(operation === "remove" ? {} : { networkBinding: metadata }),
+            });
+          },
+        ),
+      );
+      await customConnectorCommand.parseAsync([
+        "node",
+        "okou",
+        "update",
+        CONNECTOR_ID,
+        "--file",
+        writeDefinition(definition),
+        "--json",
+      ]);
+      expect(received).toStrictEqual(definition);
+      const result: unknown = JSON.parse(
+        mockConsoleLog.mock.calls.flat().join("\n"),
+      );
+      if (operation === "remove") {
+        expect(result).not.toHaveProperty("networkBinding");
+      } else {
+        expect(result).toMatchObject({ networkBinding: metadata });
+      }
+    },
+  );
+
   it.each([
     CONNECTOR_ID,
     `custom:${CONNECTOR_ID}`,
