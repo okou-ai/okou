@@ -4,7 +4,7 @@ import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 
-interface KotlinRouteBinding {
+export interface KotlinRouteBinding {
   readonly name: string;
   readonly response: string;
   readonly request?: string;
@@ -12,7 +12,7 @@ interface KotlinRouteBinding {
     readonly method: string;
     readonly path: string;
     readonly body?: ZodType;
-    readonly query?: unknown;
+    readonly query?: ZodType;
     readonly pathParams?: unknown;
     readonly responses: Readonly<Record<number, ZodType>>;
   };
@@ -40,11 +40,13 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   },
 ];
 
-export const kotlinTypeBindings: readonly {
+export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
-}[] = [
+}
+
+export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "Organization",
     schema: orgContract.get.responses[200],
