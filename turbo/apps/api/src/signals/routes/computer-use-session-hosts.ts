@@ -280,15 +280,6 @@ const connectionEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
     });
   span.end();
-  if (body.data.event === "unavailable") {
-    L.warn("Desktop notification connection unavailable", {
-      hostId: host.id,
-      connectionGeneration: host.connectionGeneration,
-      appVersion: host.appVersion,
-      mode: host.livenessMode,
-      reasonCode: body.data.reasonCode,
-    });
-  }
   L.debug("Desktop notification connection transition", {
     hostId: host.id,
     connectionGeneration: host.connectionGeneration,
