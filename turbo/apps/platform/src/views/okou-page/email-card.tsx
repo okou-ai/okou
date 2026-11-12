@@ -66,7 +66,6 @@ export function EmailCard() {
               {address ? (
                 <a
                   href={`mailto:${address}`}
-                  title={address}
                   className="max-w-full shrink-0 truncate underline underline-offset-4 hover:text-foreground"
                 >
                   {address}
