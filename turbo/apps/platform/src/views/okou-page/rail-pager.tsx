@@ -81,7 +81,15 @@ export function ComposerRailPager({
     <RailPager
       side={side}
       surfaceClassName="bg-background"
-      className={side === "back" ? "left-0" : "right-0"}
+      className={cn(
+        side === "back" ? "left-0" : "right-0",
+        // On the capability tray the covers carry no hairline, so neither does
+        // the control over them: a white disc raised like the covers. It
+        // centres on the art rather than on art and caption -- the caption is
+        // `RAIL_TILE_CAPTION`'s 8px gap and 16px line, so half of it is 12px.
+        "in-data-[slot=capability-tray]:top-[calc(50%-12px)] in-data-[slot=capability-tray]:size-8",
+        "in-data-[slot=capability-tray]:border-transparent in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:shadow-segment-selected",
+      )}
       label={t(($) => {
         return side === "back"
           ? $.chat.taskChips.shelf.previousPage
