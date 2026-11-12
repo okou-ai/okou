@@ -1652,13 +1652,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Tutto fatto",
-        "emptyTitle": "Nessun nuovo suggerimento",
         "feedback": "Azioni del suggerimento",
-        "loading": "Caricamento suggerimenti",
         "navigation": "Sfoglia suggerimenti",
-        "next": "Suggerimento successivo",
-        "previous": "Suggerimento precedente",
-        "retry": "Riprova"
+        "show": "Mostra il suggerimento {{index}} di {{total}}"
       },
       "label": "Suggerimenti",
       "lessLikeThis": "Less like this",

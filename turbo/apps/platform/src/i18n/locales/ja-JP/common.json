@@ -1625,13 +1625,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "すべて確認しました",
-        "emptyTitle": "新しい提案はありません",
         "feedback": "提案への操作",
-        "loading": "提案を読み込み中",
         "navigation": "提案を切り替える",
-        "next": "次の提案",
-        "previous": "前の提案",
-        "retry": "再試行"
+        "show": "提案 {{index}}/{{total}} を表示"
       },
       "label": "提案",
       "lessLikeThis": "Less like this",

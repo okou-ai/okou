@@ -305,6 +305,8 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   });
   expect(explore).toHaveAttribute("href", "https://www.okou.ai/en/blog");
   expect(explore).toHaveAttribute("target", "_blank");
+  // It rides in the corner header beside the growth entry, not below the cards.
+  expect(screen.getByRole("banner")).toContainElement(explore ?? null);
   click(button("Research", capabilities()));
   const research = await screen.findByRole("region", { name: "Research" });
   expect(screen.queryByRole("region", { name: "Find people" })).toBeNull();

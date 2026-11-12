@@ -321,20 +321,18 @@ export const homeSuggestionCard$ = computed(async (get) => {
       }) ?? -1,
   };
 });
-export const moveHomeSuggestion$ = command(
-  async ({ get, set }, step: -1 | 1, signal: AbortSignal) => {
+/**
+ * Show the waiting suggestion at `index` on home. The index wraps, so the
+ * greeting's rotation moves from the last suggestion back to the first.
+ */
+export const showHomeSuggestion$ = command(
+  async ({ get, set }, index: number, signal: AbortSignal) => {
     const session = get(session$);
     const items = (await get(session.listItems$)).filter(({ outcome }) => {
       return outcome === null;
     });
     signal.throwIfAborted();
-    const index = Math.max(
-      0,
-      items.findIndex(({ entry }) => {
-        return entry.item.id === get(session.previewId$);
-      }),
-    );
-    const next = items[index + step];
+    const next = items.at(index % items.length);
     if (next) {
       set(session.previewId$, next.entry.item.id);
     }

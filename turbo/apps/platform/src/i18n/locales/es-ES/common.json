@@ -1652,13 +1652,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Todo al día",
-        "emptyTitle": "No hay sugerencias nuevas",
         "feedback": "Acciones de sugerencia",
-        "loading": "Cargando sugerencias",
         "navigation": "Explorar sugerencias",
-        "next": "Siguiente sugerencia",
-        "previous": "Sugerencia anterior",
-        "retry": "Reintentar"
+        "show": "Mostrar sugerencia {{index}} de {{total}}"
       },
       "label": "Sugerencias",
       "lessLikeThis": "Less like this",
