@@ -44,9 +44,8 @@ def validate(directory):
             raise ValueError("native unpark changed original physical owner")
         ordered = [terminal[1], *events[:6], terminal[2], terminal[3], *events[6:9],
                    terminal[4], *events[9:], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("native unpark phase clocks lost ordering")
+        report.validate_witness_clock_order(
+            ordered, "native unpark phase clocks lost ordering")
         initial, captured, accepted, lost, progress, joined = [event["evidence"] for event in events[:6]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")

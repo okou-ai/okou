@@ -75,10 +75,8 @@ def validate(directory):
         if tuple(e["phase"] for e in events) != PHASES:
             raise ValueError("missing duplicate or unordered later parking phases")
         identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        for field in ("monotonic_ns", "unix_ns"):
-            clocks = [terminal[3][field], *(e[field] for e in events), terminal[-1][field]]
-            if any(a >= b for a, b in zip(clocks, clocks[1:])):
-                raise ValueError("later parking changed terminal phase ordering")
+        report.validate_witness_clock_order(
+            [terminal[3], *events, terminal[-1]], "later parking changed terminal phase ordering")
         if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
             raise ValueError("later parking changed original owner")
         blocked, pool, tail, waiting, complete, retired, joined = [e["evidence"] for e in events]
