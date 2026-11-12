@@ -49,6 +49,7 @@ import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-compose
 import {
   AgentAvatarImg,
   AvatarFromUrl,
+  defaultAgentAvatarTextureUrl,
   useAgentAvatarTexture,
 } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
@@ -361,11 +362,16 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const singleAgent = useGet(singleAgentEnabled$);
   const defaultId = useLastResolved(defaultAgentId$);
   return singleAgent && agentId === defaultId ? (
+    // My Okou always shows the organization default artwork, so it takes that
+    // artwork's texture directly, whatever the default agent's own avatar is.
+    // Not a link and no hairline: the texture is the frame's only edge, as it
+    // is on the textured profile link below.
     <div className={AGENT_AVATAR_FRAME}>
       <AvatarFromUrl
         avatarUrl={DEFAULT_AGENT_AVATAR_URL}
         alt=""
         className={AGENT_AVATAR_IMAGE}
+        textureUrl={defaultAgentAvatarTextureUrl()}
       />
     </div>
   ) : (
