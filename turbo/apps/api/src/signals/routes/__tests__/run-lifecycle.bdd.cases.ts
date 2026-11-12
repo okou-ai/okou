@@ -11000,8 +11000,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "Local dev servers are useful for agent-side verification",
           "read the mounted `office` skill's `SKILL.md` entry point when available; otherwise read https://github.com/okou-ai/okou-skills/blob/main/office/SKILL.md directly from the official repository",
           "Follow its task routing and load only the selected route and supporting files needed for the task",
-          "Resolve relative links within the same official `office/` directory and preserve their paths when downloading supporting files",
-          "The `office` skill is not an `okou resource pull` resource",
           "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`",
           "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime",
           "for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help`",
