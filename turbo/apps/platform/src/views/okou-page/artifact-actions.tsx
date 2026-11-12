@@ -531,7 +531,14 @@ type GoogleDriveCompletedAction =
 function googleDriveCompletedAction(
   syncTarget: ArtifactDownloadSyncTarget,
   target: GoogleWorkspaceTarget | undefined,
+  imported?: ReturnType<typeof useGoogleDriveAvailability>["googleImport"],
 ): GoogleDriveCompletedAction | null {
+  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
+    if (!imported.webViewLink) {
+      throw new Error("Converted Google file is missing its editor URL");
+    }
+    return { kind: "open", target, url: imported.webViewLink };
+  }
   if (!syncTarget.synced) {
     return null;
   }
@@ -542,6 +549,22 @@ function googleDriveCompletedAction(
       : null;
   }
   return syncTarget.originalUploaded === true ? { kind: "synced" } : null;
+}
+
+function primaryOwnsDriveRecovery(
+  syncTarget: ArtifactDownloadSyncTarget | undefined,
+  target: GoogleWorkspaceTarget | undefined,
+  availability: ReturnType<typeof useGoogleDriveAvailability>,
+): boolean {
+  return (
+    availability.scopeRequired &&
+    (!syncTarget ||
+      googleDriveCompletedAction(
+        syncTarget,
+        target,
+        availability.googleImport,
+      ) === null)
+  );
 }
 
 function GoogleDriveCompletedMenuItem({
@@ -663,18 +686,11 @@ function GoogleDriveMenuItem({
     );
   }
 
-  const imported = availability.googleImport;
-  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
-    if (!imported.webViewLink) {
-      throw new Error("Converted Google file is missing its editor URL");
-    }
-    return (
-      <GoogleDriveCompletedMenuItem
-        action={{ kind: "open", target, url: imported.webViewLink }}
-      />
-    );
-  }
-  const completed = googleDriveCompletedAction(syncTarget, target);
+  const completed = googleDriveCompletedAction(
+    syncTarget,
+    target,
+    availability.googleImport,
+  );
   if (completed) {
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
@@ -823,7 +839,7 @@ function useArtifactDriveMenu({
   const showOriginal =
     showGoogleDriveAction &&
     workspaceTarget &&
-    !availability.scopeRequired &&
+    !primaryOwnsDriveRecovery(syncTarget, workspaceTarget, availability) &&
     (!previewMenu ||
       (originalReady &&
         snapshot?.original &&

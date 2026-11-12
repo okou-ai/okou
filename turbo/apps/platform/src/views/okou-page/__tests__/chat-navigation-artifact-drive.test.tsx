@@ -95,6 +95,7 @@ interface DriveMockControl {
   readonly authorizationUpdates: readonly UserBuiltinConnectorUpdate[];
   readonly completeAuthorization: () => void;
   readonly requireNewConnection: () => void;
+  readonly requireScopeConsent: () => void;
   readonly oauthRequests: readonly OauthRequest[];
   readonly syncRequests: readonly {
     readonly artifactId: string;
@@ -420,6 +421,9 @@ function installDriveMocks(
       targetContext.mocks.ably.trigger("connector:changed", {
         connectorSlug: "google-drive",
       });
+    },
+    requireScopeConsent: () => {
+      uploadError = "scope";
     },
     requireNewConnection: () => {
       connectionState = "not-connected";
@@ -1144,6 +1148,88 @@ test.each([
           mode,
         };
       }),
+    );
+  },
+);
+
+test.each(["existing", "this page"] as const)(
+  "Keep one scope reconnect action beside a native import from %s",
+  async (source) => {
+    mockWideScreen();
+    const popup = installAuthorizationPopup();
+    const drive = installDriveMocks(context, "connected", {
+      filename: "report.txt",
+      contentType: "text/plain",
+      selectedAccountReady: true,
+      agentAuthorized: true,
+      ...(source === "existing"
+        ? { existingMimeType: GOOGLE_WORKSPACE_MIME_TYPES.document }
+        : {}),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    if (source === "this page") {
+      await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
+      click(roleItemNamed("menuitem", "Upload to Google Docs"));
+      await expectSyncCompletedPreview("Upload to Google Drive");
+    } else {
+      await openDriveArtifactMenu("Upload to Google Drive", "report.txt");
+    }
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      "https://drive.google.test/file/drive-file-1",
+    );
+    drive.requireScopeConsent();
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await expect(
+      screen.findByText(
+        "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+      ),
+    ).resolves.toBeInTheDocument();
+    click(buttonNamed("Download artifact", artifactPreview()));
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Reconnect Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      "https://drive.google.test/file/drive-file-1",
+    );
+    expect(
+      queryAllByRoleFast("menuitem").filter((item) => {
+        return item.textContent?.trim() === "Reconnect Google Drive";
+      }),
+    ).toHaveLength(1);
+    click(roleItemNamed("menuitem", "Reconnect Google Drive"));
+    await waitFor(() => {
+      expect(popup.location.href).toBe(AUTHORIZATION_URL);
+      expect(drive.oauthRequests[0]?.account).toStrictEqual({
+        intent: "reconnect",
+        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+      });
+    });
+    drive.completeAuthorization();
+    click(buttonNamed("Download artifact", artifactPreview()));
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Upload to Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(drive.syncRequests).toHaveLength(source === "existing" ? 1 : 2);
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      "https://drive.google.test/file/drive-file-1",
+    );
+    click(roleItemNamed("menuitem", "Upload to Google Drive"));
+    await expectSyncCompletedPreview();
+    expect(drive.syncRequests).toHaveLength(source === "existing" ? 2 : 3);
+    expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
+      "href",
+      "https://drive.google.test/file/drive-file-1",
     );
   },
 );
