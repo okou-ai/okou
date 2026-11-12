@@ -966,14 +966,13 @@ function requestedBrowserFieldsError(
 }
 
 interface BrowserUserActionLifetime {
-  readonly runId: string | null;
   readonly providerSessionId: string;
   readonly window: BrowserWindowContext;
 }
 const resolveBrowserUserActionLifetime$ = command(
   async (
     { get },
-    args: CreateBrowserUserActionArgs,
+    args: Pick<CreateBrowserUserActionArgs, "orgId" | "userId">,
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<ServiceResult<BrowserUserActionLifetime>> => {
@@ -1023,7 +1022,6 @@ const resolveBrowserUserActionLifetime$ = command(
       );
     }
     const live = {
-      runId: args.runId,
       providerSessionId: shared.providerSessionId,
       window: {
         instanceId: shared.instanceId,
@@ -1216,7 +1214,6 @@ function browserUserActionCreationPlan(args: {
   const browser = query.$with("action_browser").as(
     query
       .select({
-        runId: sql`${args.runId}`.mapWith(agentRuns.id).as("input_run_id"),
         providerSessionId: sql`${browserOwnerProfiles.providerSessionId}`
           .mapWith(browserUserActionRequests.providerSessionId)
           .as("input_provider_session_id"),
@@ -1245,7 +1242,6 @@ function browserUserActionCreationPlan(args: {
     query
       .select({
         at: nowDateSql().mapWith(browserChatSessions.updatedAt).as("at"),
-        runId: browser.runId,
         providerSessionId: browser.providerSessionId,
       })
       .from(browser),
@@ -1316,7 +1312,6 @@ const persistBrowserUserAction = command(
         .from(plan.leaseClock)
         .where(
           and(
-            eq(plan.leaseClock.runId, args.runId),
             eq(plan.leaseClock.providerSessionId, prepared.providerSessionId),
             eq(browserChatSessions.chatThreadId, prepared.chatThreadId),
             eq(browserChatSessions.instanceId, prepared.window.instanceId),
