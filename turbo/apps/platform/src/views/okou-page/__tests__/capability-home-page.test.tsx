@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -89,11 +89,13 @@ test("An empty conversation offers capabilities without an avatar and sends its 
   expect(capture.threadCreates).toStrictEqual([]);
 });
 
+const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
+
 test.each([
   ["home", `/agents/${AGENT_ID}/chat`],
   ["empty conversation", `/chats/${THREAD_ID}`],
 ])(
-  "The %s lists compliance statuses under the composer",
+  "The %s lists compliance statuses under the capability cards",
   async (_surface, path) => {
     mockTemplateChat();
     await setupPage({
@@ -102,21 +104,24 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
     });
     const editor = await findComposerEditor();
-    await screen.findByRole("group", { name: "Explore Okou capabilities" });
-    const compliance = screen.getByRole("region", {
-      name: "Okou’s compliance, built for your trust",
+    const cards = await screen.findByRole("group", {
+      name: "Explore Okou capabilities",
     });
+    const compliance = screen.getByRole("region", { name: COMPLIANCE_TITLE });
+    // The block closes the card grid, in the page above the composer, so the
+    // composer keeps the same place it has in a conversation.
     expect(
-      editor.compareDocumentPosition(compliance) &
+      cards.compareDocumentPosition(compliance) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
-    expect(compliance.closest("main")).toBeNull();
-    expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
-    // One quiet line names the frameworks; their statuses open from it.
-    click(queryAllByRoleFast("button", compliance)[0]!);
-    const details = await screen.findByRole("dialog");
     expect(
-      within(details)
+      compliance.compareDocumentPosition(editor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(compliance.closest("main")).not.toBeNull();
+    expect(compliance.closest("[data-chat-composer]")).toBeNull();
+    expect(
+      within(compliance)
         .getAllByRole("listitem")
         .map((item) => {
           return item.textContent;
@@ -130,6 +135,46 @@ test.each([
     ]);
   },
 );
+
+test("Hiding the compliance block keeps it hidden on this device", async () => {
+  mockTemplateChat();
+  await setupHome();
+  const compliance = await screen.findByRole("region", {
+    name: COMPLIANCE_TITLE,
+  });
+  click(button("Hide compliance", compliance));
+  // It leaves the accessibility tree at once and folds its height away; the
+  // fold's end unmounts it.
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: COMPLIANCE_TITLE })).toBeNull();
+  });
+  fireEvent.transitionEnd(compliance);
+  await waitFor(() => {
+    expect(compliance).not.toBeInTheDocument();
+  });
+  // Leaving home and coming back does not bring it back.
+  click(
+    link((element) => {
+      return element.getAttribute("href") === "/agents";
+    }),
+  );
+  await screen.findByRole("heading", { name: "Agents" });
+  click(
+    link((element) => {
+      return element.textContent?.trim() === "Chat";
+    }),
+  );
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  expect(screen.queryByRole("region", { name: COMPLIANCE_TITLE })).toBeNull();
+});
+
+function link(matches: (element: HTMLElement) => boolean) {
+  const found = queryAllByRoleFast("link").find(matches);
+  if (!found) {
+    throw new Error("Missing link");
+  }
+  return found;
+}
 
 test("An open tray switches capabilities and types without going back to the cards", async () => {
   mockTemplateChat();

@@ -508,14 +508,24 @@ export function AgentComposerPage() {
           <ChatAgentAvatar agentId={currentChatAgentId} />
         </span>
         {capabilityHome && showSuggestions ? (
-          <HomeSuggestionGreeting fallback={taglineHeading} />
+          <HomeSuggestionGreeting
+            fallback={taglineHeading}
+            entrance={animateGreeting}
+            onEntranceEnd={finishGreetingEntrance}
+          />
         ) : (
           taglineHeading
         )}
       </div>
     );
   if (capabilityHome) {
-    return <CapabilityHomePage signals={composerSignals} heading={heading} />;
+    return (
+      <CapabilityHomePage
+        signals={composerSignals}
+        heading={heading}
+        entrance={animateGreeting}
+      />
+    );
   }
 
   return (

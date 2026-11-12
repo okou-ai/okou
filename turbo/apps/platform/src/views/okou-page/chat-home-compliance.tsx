@@ -1,11 +1,17 @@
-import { ShieldCheck } from "lucide-react";
-import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
+import { useGet, useSet } from "ccstate-react";
+import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
 import {
   ComplianceBadges,
-  ComplianceFrameworkSummary,
-  SecurityDetailsLink,
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
+import {
+  finishHomeComplianceFold$,
+  hideHomeCompliance$,
+  homeComplianceFolding$,
+  homeComplianceHidden$,
+} from "../../signals/okou-page/home-compliance.ts";
 
 /**
  * The compliance badges at the foot of the chat home. The row sits outside the
@@ -32,47 +38,71 @@ export function ChatHomeCompliance() {
 }
 
 /**
- * The band under a bottom-anchored composer: a 6px step and one `xs` row. The
- * capability home fills it with compliance; conversations omit the band.
+ * Compliance at the foot of the capability cards: every framework and its
+ * status, in a block one tier quieter than the cards — their surface at 60%,
+ * no drawing, nothing to press but the hide control — so it closes the grid
+ * without competing with it. It sits 12px under the cards, the same step as
+ * between the card rows. A member can hide it for good on this device; the
+ * block then folds its own height away, so the cards settle instead of
+ * jumping. On the first home of the session it rises in after the cards.
  *
  * Desktop only, like the footer row on the plain chat home.
  */
-const COMPOSER_FOOTNOTE_BAND = "hidden min-w-0 justify-center pt-1.5 sm:flex";
-
-/**
- * Compliance under the composer on the capability home, as one quiet line of
- * framework names. Hovering or pressing it opens each framework's status and
- * the link to the public security page, so the claims stay one step away
- * without spreading five separate fragments around the page.
- */
-export function CapabilityHomeCompliance() {
+export function CapabilityHomeCompliance({
+  entrance,
+}: {
+  readonly entrance: boolean;
+}) {
+  const { t } = useTranslation();
   const title = useComplianceTitle();
-
+  const hidden = useGet(homeComplianceHidden$);
+  const folding = useGet(homeComplianceFolding$);
+  const hide = useSet(hideHomeCompliance$);
+  const finishFold = useSet(finishHomeComplianceFold$);
+  if (hidden && !folding) {
+    return null;
+  }
   return (
-    <section aria-label={title} className={COMPOSER_FOOTNOTE_BAND}>
-      <Popover>
-        <PopoverTrigger
-          openOnHover
-          delay={150}
-          render={
-            <Button
-              variant="quiet"
-              size="xs"
-              className="max-w-full gap-1.5 text-xs font-normal text-gray-700"
-            />
-          }
-        >
-          <ShieldCheck aria-hidden />
-          <span className="truncate">
-            <ComplianceFrameworkSummary />
-          </span>
-        </PopoverTrigger>
-        <PopoverContent side="top" className="flex flex-col gap-3">
-          <p className="text-sm font-medium leading-5">{title}</p>
-          <ComplianceBadges className="flex flex-col items-start gap-2" />
-          <SecurityDetailsLink className="text-xs text-brand-text hover:text-brand-text-hover" />
-        </PopoverContent>
-      </Popover>
+    <section
+      aria-label={title}
+      aria-hidden={folding || undefined}
+      inert={folding}
+      className={cn(
+        "-mt-2 hidden grid-rows-[1fr] transition-[grid-template-rows,opacity,margin-top] duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none sm:grid",
+        folding && "-mt-5 grid-rows-[0fr] opacity-0",
+        entrance &&
+          "motion-safe:animate-capability-row-in [--capability-row-delay:280ms]",
+      )}
+      onTransitionEnd={(event) => {
+        // Rows, opacity and margin fold on one timing; the first of them to
+        // end on the block itself, not a control inside it, ends the fold.
+        if (folding && event.target === event.currentTarget) {
+          finishFold();
+        }
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className="flex min-h-12 items-center gap-4 rounded-surface bg-muted/60 py-2.5 pr-3 pl-6">
+          <ComplianceBadges
+            quiet
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 [&_li>span]:text-xs [&_li>span]:leading-5 [&_svg]:size-3.5"
+          />
+          <Button
+            variant="quiet"
+            size="icon-sm"
+            aria-label={t(($) => {
+              return $.shared.compliance.hide;
+            })}
+            className="-mr-1.5 size-7 shrink-0 text-muted-foreground"
+            onClick={() => {
+              // Reduced motion has no fold to wait for, so the block goes at once.
+              hide(!matchMedia("(prefers-reduced-motion: reduce)").matches);
+            }}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      </div>
     </section>
   );
 }
