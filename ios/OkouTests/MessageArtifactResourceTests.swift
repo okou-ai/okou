@@ -116,15 +116,17 @@ final class MessageArtifactResourceTests: XCTestCase {
     let artifact = fixture.artifact()
     let card = try await fixture.viewer.card(artifact, thumbnail: true)
     fixture.viewer.open(card.artifact, thumbnail: card.thumbnail)
-    try await waitForBusinessResult { fixture.viewer.preview?.file != nil }
-    let originalFile = try XCTUnwrap(fixture.viewer.preview?.file)
+    let preview = try await artifactPreviewTask(fixture.viewer).value
+    let originalFile = try XCTUnwrap(preview.file)
     let references = fixture.state.value.withLock { $0.references }
     let transfers = fixture.state.value.withLock { $0.transfers }
 
     fixture.state.value.withLock { $0.name = "Updated details.png" }
-    await fixture.viewer.refreshDetails()
-    XCTAssertEqual(fixture.viewer.preview?.artifact.filename, "Updated details.png")
-    XCTAssertEqual(fixture.viewer.preview?.file?.url, originalFile.url)
+    fixture.viewer.refreshDetails()
+    _ = try await fixture.viewer.reads.store.get(fixture.viewer.reads.catalog).value
+    let retained = try await artifactPreviewTask(fixture.viewer).value
+    XCTAssertEqual(fixture.viewer.reads.metadata(retained.artifact).filename, "Updated details.png")
+    XCTAssertEqual(retained.file?.url, originalFile.url)
     let existing = try await fixture.viewer.card(artifact, thumbnail: true)
     XCTAssertEqual(existing.thumbnail, card.thumbnail)
     XCTAssertEqual(fixture.state.value.withLock { $0.references }, references)
@@ -263,6 +265,12 @@ final class MessageArtifactResourceTests: XCTestCase {
       XCTAssertEqual(reports.withLock { $0 }, [status])
       XCTAssertEqual(fixture.state.value.withLock { $0.references }, [])
       XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, 0)
+      fixture.viewer.open(fixture.artifact())
+      let preview = await (try artifactPreviewTask(fixture.viewer)).result
+      XCTAssertThrowsError(try preview.get()) { error in
+        XCTAssertEqual((error as? APIClientError)?.statusCode, status)
+      }
+      XCTAssertEqual(reports.withLock { $0 }, [status])
     }
   }
 
@@ -282,6 +290,132 @@ final class MessageArtifactResourceTests: XCTestCase {
     }
     XCTAssertEqual(reports.withLock { $0 }, [426])
     XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, 0)
+  }
+
+  func testCancelledPreviewWaiterLeavesTheSharedOriginalReadAvailable() async throws {
+    let entered = expectation(description: "Preview authorization started")
+    let cancelled = Mutex(false)
+    let (gate, release) = AsyncStream<Void>.makeStream()
+    let fixture = try await ArtifactReadFixture.make(
+      owner: self,
+      beforeResolve: { _ in
+        await withTaskCancellationHandler {
+          entered.fulfill()
+          for await _ in gate { break }
+        } onCancel: {
+          cancelled.withLock { $0 = true }
+        }
+      })
+    fixture.viewer.open(fixture.artifact())
+    let original = try artifactPreviewTask(fixture.viewer)
+    let abandoned = Task { try await original.value }
+    addTeardownBlock {
+      release.finish()
+      abandoned.cancel()
+      original.cancel()
+      _ = await abandoned.result
+      _ = await original.result
+    }
+    await fulfillment(of: [entered], timeout: 3)
+    abandoned.cancel()
+    release.finish()
+
+    let content = try await artifactPreviewTask(fixture.viewer).value
+    let file = try XCTUnwrap(content.file)
+    XCTAssertNotNil(UIImage(contentsOfFile: file.url.path))
+    XCTAssertEqual(content.artifact.filename, "From catalog.png")
+    XCTAssertFalse(cancelled.withLock { $0 })
+    _ = await abandoned.result
+  }
+
+  func testReplacingPreviewCancelsOriginalAuthorizationAndRejectsRetiredActions() async throws {
+    let entered = expectation(description: "Old preview authorization started")
+    let cancelled = expectation(description: "Old original HTTP was cancelled")
+    let (gate, release) = AsyncStream<Void>.makeStream()
+    let fixture = try await ArtifactReadFixture.make(
+      owner: self,
+      beforeResolve: { request in
+        guard request.url?.lastPathComponent == "image00001.png" else { return }
+        await withTaskCancellationHandler {
+          entered.fulfill()
+          for await _ in gate { break }
+        } onCancel: {
+          cancelled.fulfill()
+        }
+      })
+    fixture.viewer.open(fixture.artifact())
+    let old = try XCTUnwrap(fixture.viewer.preview)
+    let original = try artifactPreviewTask(fixture.viewer)
+    addTeardownBlock {
+      release.finish()
+      original.cancel()
+      _ = await original.result
+    }
+    await fulfillment(of: [entered], timeout: 3)
+    let replacement = fixture.artifact("image00002.png")
+    fixture.viewer.open(replacement)
+    await fulfillment(of: [cancelled], timeout: 3)
+    let content = try await artifactPreviewTask(fixture.viewer).value
+    release.finish()
+    let retired = await original.result
+    XCTAssertThrowsError(try retired.get())
+    XCTAssertEqual(content.artifact.source, replacement.source)
+    let file = try XCTUnwrap(content.file)
+    XCTAssertNotNil(UIImage(contentsOfFile: file.url.path))
+    fixture.viewer.share(file, previewID: old.id)
+    fixture.viewer.downloadForSharing(previewID: old.id)
+    XCTAssertNil(fixture.viewer.sharing)
+    XCTAssertThrowsError(try old.store.get(old.value))
+    XCTAssertEqual(fixture.viewer.preview?.artifact.source, replacement.source)
+  }
+
+  func testPresentationAndDetailRetirementCancelOriginalShareAuthorization() async throws {
+    for retirement in ["dismiss", "replace", "deactivate", "close"] {
+      let entered = expectation(description: "Share authorization started: \(retirement)")
+      let cancelled = expectation(description: "Original share HTTP cancelled: \(retirement)")
+      let (gate, release) = AsyncStream<Void>.makeStream()
+      let initial = Mutex(true)
+      let fixture = try await ArtifactReadFixture.make(
+        owner: self, contentType: "text/html",
+        beforeResolve: { request in
+          guard request.url?.lastPathComponent == "image00001.png" else { return }
+          let preview = initial.withLock { value in
+            let old = value
+            value = false
+            return old
+          }
+          if preview { return }
+          await withTaskCancellationHandler {
+            entered.fulfill()
+            for await _ in gate { break }
+          } onCancel: {
+            cancelled.fulfill()
+          }
+        })
+      fixture.viewer.open(fixture.artifact())
+      let content = try await artifactPreviewTask(fixture.viewer).value
+      XCTAssertNotNil(content.contentURL)
+      let presentation = try XCTUnwrap(fixture.viewer.preview)
+      fixture.viewer.downloadForSharing(previewID: presentation.id)
+      let download = try presentation.store.get(presentation.download)
+      addTeardownBlock {
+        release.finish()
+        download.cancel()
+        _ = await download.result
+      }
+      await fulfillment(of: [entered], timeout: 3)
+      switch retirement {
+      case "dismiss": fixture.viewer.dismiss()
+      case "replace": fixture.viewer.open(fixture.artifact("image00002.png"))
+      case "deactivate": fixture.viewer.deactivate()
+      default: fixture.viewer.close()
+      }
+      await fulfillment(of: [cancelled], timeout: 3)
+      release.finish()
+      let retired = await download.result
+      XCTAssertThrowsError(try retired.get())
+      XCTAssertThrowsError(try presentation.store.get(presentation.download))
+    }
   }
 }
 
