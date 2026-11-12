@@ -35,6 +35,10 @@ export function EmailCard() {
   const setTrigger = useSet(emailConnectionTriggerRef$);
   const emails = status.state === "hasData" ? status.data.emails : [];
   const email = emails[0];
+  const address =
+    status.state === "hasData" && status.data.configured
+      ? status.data.address
+      : null;
   return (
     <>
       <div
@@ -56,6 +60,17 @@ export function EmailCard() {
               {t(($) => {
                 return $.works.email.description;
               })}
+            </div>
+            <div className="h-5 truncate text-sm text-muted-foreground">
+              {address ? (
+                <a
+                  href={`mailto:${address}`}
+                  title={address}
+                  className="underline underline-offset-4 hover:text-foreground"
+                >
+                  {address}
+                </a>
+              ) : null}
             </div>
           </div>
           {email ? (
