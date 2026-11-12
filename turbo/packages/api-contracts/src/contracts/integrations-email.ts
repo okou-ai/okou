@@ -62,7 +62,45 @@ const errors = {
   403: apiErrorSchema,
   409: apiErrorSchema,
 };
+const emailWorkspaceSchema = object({ id: string(), name: string() });
 export const integrationsEmailContract = c.router({
+  getBinding: {
+    method: "GET",
+    path: "/api/integrations/email/session",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({
+        emailAddress: email(),
+        workspace: emailWorkspaceSchema,
+        workspaces: array(emailWorkspaceSchema),
+      }),
+      ...errors,
+    },
+    summary:
+      "Get the current Email sender's workspace and available workspaces",
+  },
+  switchWorkspace: {
+    method: "POST",
+    path: "/api/integrations/email/session/workspace",
+    headers: authHeadersSchema,
+    body: object({ workspaceId: string().min(1) }).strict(),
+    responses: {
+      200: object({ emailAddress: email(), workspace: emailWorkspaceSchema }),
+      ...errors,
+    },
+    summary: "Move the current Email sender to another workspace",
+  },
+  logout: {
+    method: "DELETE",
+    path: "/api/integrations/email/session",
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: {
+      200: object({ emailAddress: email() }),
+      ...errors,
+    },
+    summary: "Disconnect the current Email sender",
+  },
   createLinkCode: {
     method: "POST",
     path: "/api/integrations/email/link-code",

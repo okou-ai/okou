@@ -23,6 +23,7 @@ import { createDeferredPromise } from "../../utils";
 import { integrationsEmailRoutes } from "../integrations-email";
 import { emailInboundRoutes } from "../email-inbound";
 import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
+import { integrationsEmailSessionRoutes } from "../integrations-email-session";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
@@ -65,6 +66,12 @@ function emailClient() {
 function emailUploadClient() {
   return setupApp({ context, routes: integrationsEmailUploadCompleteRoutes })(
     integrationsEmailUploadContract,
+  );
+}
+
+function emailSessionClient() {
+  return setupApp({ context, routes: integrationsEmailSessionRoutes })(
+    integrationsEmailContract,
   );
 }
 
@@ -2671,6 +2678,227 @@ async function connectedEmails() {
     await accept(emailClient().getLinkStatus({ headers: authHeaders() }), [200])
   ).body.emails.sort();
 }
+
+function emailWorkspaces(
+  actor: ApiTestUser,
+  workspaces: readonly { readonly id: string; readonly name: string }[],
+) {
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: workspaces.map((organization) => {
+      return {
+        id: `membership_${organization.id}`,
+        role: "org:admin",
+        createdAt: now(),
+        organization,
+        publicUserData: { userId: actor.userId },
+      };
+    }),
+    totalCount: workspaces.length,
+  });
+}
+
+describe("Email workspace binding", () => {
+  it("reports the current run's code-verified sender, workspace and available workspaces", async () => {
+    const sender = `${randomUUID()}@example.com`;
+    const { actor, token, claim } = await claimEmailFileRun(sender);
+    const workspace = { id: actor.orgId!, name: "Email workspace" };
+    const other = {
+      id: createUniqueStaffOrgIdFixture(),
+      name: "Other workspace",
+    };
+    emailWorkspaces(actor, [workspace, other]);
+    const response = await accept(
+      emailSessionClient().getBinding({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({
+      emailAddress: sender,
+      workspace,
+      workspaces: [workspace, other],
+    });
+    expect(claim.appendSystemPrompt).toContain("okou email status --json");
+    expect(claim.appendSystemPrompt).toContain(
+      "okou email switch --workspace-id <id>",
+    );
+    expect(claim.appendSystemPrompt).toContain("okou email logout");
+  });
+
+  it("switches workspaces, confirms by email and starts a fresh conversation for old reply references", async () => {
+    const { actor, token, message } = await claimEmailFileRun();
+    const originalThreads = await createdThreads(actor);
+    const target = bdd.user({
+      userId: actor.userId,
+      email: actor.email,
+      orgId: createUniqueStaffOrgIdFixture(),
+    });
+    await runs.grantProEntitlement(target);
+    await runs.ensurePersonalSubscriptionModel(target);
+    verifiedDirectory(actor);
+    const workspaces = [
+      { id: actor.orgId!, name: "Original workspace" },
+      { id: target.orgId!, name: "Target workspace" },
+    ];
+    emailWorkspaces(actor, workspaces);
+    const switched = await accept(
+      emailSessionClient().switchWorkspace({
+        headers: { authorization: `Bearer ${token}` },
+        body: { workspaceId: target.orgId! },
+      }),
+      [200],
+    );
+    expect(switched.body).toStrictEqual({
+      emailAddress: actor.email,
+      workspace: workspaces[1],
+    });
+    await flushWaitUntilForTest();
+    expect(sentEmails()).toContainEqual(
+      expect.objectContaining({
+        to: actor.email,
+        text: expect.stringContaining(
+          'connected to workspace "Target workspace"',
+        ),
+      }),
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await accept(
+      emailSessionClient().logout({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [403],
+    );
+    verifiedDirectory(target);
+    emailWorkspaces(target, workspaces);
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    await message.send();
+    expect((await createdThreads(target)).chatThreads).toHaveLength(0);
+    await incoming({
+      sender: actor.email,
+      inReplyTo: message.messageId,
+    }).send();
+    const newThreads = await createdThreads(target);
+    expect(newThreads.chatThreads).toHaveLength(1);
+    expect(newThreads.chatThreads[0]?.id).not.toBe(
+      originalThreads.chatThreads[0]?.id,
+    );
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+  });
+
+  it("preserves the binding when switching to a workspace outside the user's membership", async () => {
+    const { actor, token } = await claimEmailFileRun();
+    await accept(
+      emailSessionClient().switchWorkspace({
+        headers: { authorization: `Bearer ${token}` },
+        body: { workspaceId: `org_${randomUUID()}` },
+      }),
+      [403],
+    );
+    const current = await accept(
+      emailSessionClient().getBinding({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    expect(current.body.workspace.id).toBe(actor.orgId);
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("logs out the login sender until explicit reconnection and rejects the stale run afterward", async () => {
+    const { actor, token, message } = await claimEmailFileRun();
+    const headers = { authorization: `Bearer ${token}` };
+    const result = await accept(
+      emailSessionClient().logout({ headers }),
+      [200],
+    );
+    expect(result.body).toStrictEqual({ emailAddress: actor.email });
+    await flushWaitUntilForTest();
+    expect(sentEmails()).toContainEqual(
+      expect.objectContaining({
+        to: actor.email,
+        text: expect.stringContaining("disconnected from Okou Email"),
+      }),
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await incoming({ sender: actor.email }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await accept(emailSessionClient().getBinding({ headers }), [403]);
+    await accept(
+      emailClient().connectAddress({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [200],
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    await message.send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    await accept(emailSessionClient().logout({ headers }), [403]);
+    await incoming({ sender: actor.email }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(2);
+  });
+
+  it("logs out only the current code-verified sender", async () => {
+    const sender = `${randomUUID()}@example.com`;
+    const { actor, token } = await claimEmailFileRun(sender);
+    await accept(
+      emailSessionClient().logout({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+  });
+
+  it("keeps an OAuth mailbox logged out while its connector stays connected", async () => {
+    const sender = `${randomUUID()}@example.com`;
+    const { actor, token } = await claimEmailFileRun(sender);
+    const mailbox = await connectEmailMailbox(actor, "gmail", sender);
+    verifiedDirectory(actor);
+    await accept(
+      emailSessionClient().logout({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    await incoming({ sender }).send();
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    const accounts = await connectorsApi.requestBuiltinConnectorAccounts(
+      actor,
+      "gmail",
+      [200],
+    );
+    expect(accounts.body.connections).toContainEqual(
+      expect.objectContaining({ id: mailbox.id, externalEmail: sender }),
+    );
+  });
+
+  it("does not use an account's binding for a Web run or a browser session", async () => {
+    const { actor } = await entitledActor();
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    const agent = await bdd.createAgent(actor, { displayName: "Web agent" });
+    const sent = await files.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Inspect my email workspace",
+    });
+    const claim = await runs.claimRunnerJob(sent.runId);
+    await accept(
+      emailSessionClient().getBinding({
+        headers: {
+          authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+        },
+      }),
+      [403],
+    );
+    await accept(
+      emailSessionClient().logout({ headers: authHeaders() }),
+      [403],
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+  });
+});
 
 describe("Email multi-account connections", () => {
   it("preserves an email's disconnection when it becomes the login email", async () => {
