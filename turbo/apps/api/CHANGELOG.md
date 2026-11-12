@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.65.0](https://github.com/okou-ai/okou/compare/api-v2.64.0...api-v2.65.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+* prepare readers for staff single agent workflow copies ([#46786](https://github.com/okou-ai/okou/issues/46786)) ([eddbe0f](https://github.com/okou-ai/okou/commit/eddbe0f4edae253b6a9240e0f312f25b36acad5b))
+
+
+### Refactoring
+
+* **api:** remove unused storage cache lookup bookkeeping ([#46820](https://github.com/okou-ai/okou/issues/46820)) ([59a53f7](https://github.com/okou-ai/okou/commit/59a53f7bb201a19d2031a5bb791c55ad947f60ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.54.0
+    * @okouai/connectors bumped to 3.23.0
+    * @okouai/core bumped to 8.832.0
+    * @okouai/db bumped to 2.32.0
+    * @okouai/pi-agent-runtime bumped to 1.51.109
+
 ## [2.64.0](https://github.com/okou-ai/okou/compare/api-v2.63.0...api-v2.64.0) (2026-11-12)
 
 

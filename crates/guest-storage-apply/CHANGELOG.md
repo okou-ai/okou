@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.6...guest-storage-apply-v0.32.0) (2026-11-12)
+
+
+### Features
+
+* prepare readers for staff single agent workflow copies ([#46786](https://github.com/okou-ai/okou/issues/46786)) ([eddbe0f](https://github.com/okou-ai/okou/commit/eddbe0f4edae253b6a9240e0f312f25b36acad5b))
+
 ## [0.31.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.5...guest-storage-apply-v0.31.6) (2026-11-11)
 
 ## [0.31.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.4...guest-storage-apply-v0.31.5) (2026-11-11)

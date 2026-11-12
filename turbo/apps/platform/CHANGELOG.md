@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1120.0](https://github.com/okou-ai/okou/compare/app-v0.1119.0...app-v0.1120.0) (2026-11-12)
+
+
+### Features
+
+* **app:** hang the capability tabs on a lighter home tray ([#46807](https://github.com/okou-ai/okou/issues/46807)) ([ffe9a03](https://github.com/okou-ai/okou/commit/ffe9a03074d4b3d6aa9e72797428464b21468d51))
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+
+
+### Bug Fixes
+
+* **app:** add remote control list loading skeleton ([#46830](https://github.com/okou-ai/okou/issues/46830)) ([f5c2a16](https://github.com/okou-ai/okou/commit/f5c2a166b39919a93893e06b6694c10a9dc0ec7e))
+* **app:** default chart output to report ([#46842](https://github.com/okou-ai/okou/issues/46842)) ([44fb1f8](https://github.com/okou-ai/okou/commit/44fb1f825ee43766380a083482b0ed9bf98020de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.54.0
+    * @okouai/connectors bumped to 3.23.0
+    * @okouai/core bumped to 8.832.0
+    * @okouai/ui bumped to 1.21.3
+
 ## [0.1119.0](https://github.com/okou-ai/okou/compare/app-v0.1118.0...app-v0.1119.0) (2026-11-12)
 
 

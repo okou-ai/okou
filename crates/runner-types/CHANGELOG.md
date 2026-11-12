@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-types-v0.15.0...runner-types-v0.16.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-types-v0.14.0...runner-types-v0.15.0) (2026-11-12)
 
 

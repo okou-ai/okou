@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.247.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.246.0...runner-rs-v0.247.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+
+
+### Refactoring
+
+* **python:** centralize subscript key prechecks ([#46812](https://github.com/okou-ai/okou/issues/46812)) ([9b2e3fa](https://github.com/okou-ai/okou/commit/9b2e3fa86b2148b0f198ee7d32e6d866f117b5a5))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.246.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.245.7...runner-rs-v0.246.0) (2026-11-12)
 
 

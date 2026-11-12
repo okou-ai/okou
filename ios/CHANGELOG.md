@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.36.7](https://github.com/okou-ai/okou/compare/ios-v0.36.6...ios-v0.36.7) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** autoplay video previews on open ([#46803](https://github.com/okou-ai/okou/issues/46803)) ([9c9bc36](https://github.com/okou-ai/okou/commit/9c9bc36c4140f8a05b0cadca66a165679474fad8))
+* **ios:** avoid refreshing agents when reopening the sidebar ([#46804](https://github.com/okou-ai/okou/issues/46804)) ([1da7df3](https://github.com/okou-ai/okou/commit/1da7df37a318f1eb00eef6e87f3272915784f859))
+* **ios:** detect swallowed resource cancellation branches ([#46811](https://github.com/okou-ai/okou/issues/46811)) ([3aa476e](https://github.com/okou-ai/okou/commit/3aa476ed7b889811f6a340984eae8aa6b371fe36))
+* **ios:** remove agent subtitle from chat search results ([#46805](https://github.com/okou-ai/okou/issues/46805)) ([20e7991](https://github.com/okou-ai/okou/commit/20e7991691308cb3b52189f1162b6ec6e5895a34))
+
+
+### Refactoring
+
+* **ios:** organize the design system into foundations, components and patterns ([#46132](https://github.com/okou-ai/okou/issues/46132)) ([018fd7a](https://github.com/okou-ai/okou/commit/018fd7a3d9732ec5ed2fc76f3a36454986a43c6d))
+* **ios:** own app lifecycle coordination by scope ([#46780](https://github.com/okou-ai/okou/issues/46780)) ([a34188d](https://github.com/okou-ai/okou/commit/a34188dc2049df0190c907aa91167985b4674171))
+
 ## [0.36.6](https://github.com/okou-ai/okou/compare/ios-v0.36.5...ios-v0.36.6) (2026-11-12)
 
 

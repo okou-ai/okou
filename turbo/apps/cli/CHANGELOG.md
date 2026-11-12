@@ -1,5 +1,23 @@
 # Changelog
 
+## [10.23.0](https://github.com/okou-ai/okou/compare/cli-v10.22.0...cli-v10.23.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** enforce cloudflare access for custom http and mcp ([#46635](https://github.com/okou-ai/okou/issues/46635)) ([e31b757](https://github.com/okou-ai/okou/commit/e31b757de380ca9e2a659dc5630872bd2d4e85c4))
+* **vnc:** support native 6k desktop capture ([#46838](https://github.com/okou-ai/okou/issues/46838)) ([6c78fc2](https://github.com/okou-ai/okou/commit/6c78fc2a92bc14210a4f27dd87afb173b2be5f54))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.54.0
+    * @okouai/connectors bumped to 3.23.0
+    * @okouai/core bumped to 8.832.0
+    * @okouai/pi-agent-runtime bumped to 1.51.109
+
 ## [10.22.0](https://github.com/okou-ai/okou/compare/cli-v10.21.5...cli-v10.22.0) (2026-11-12)
 
 
