@@ -45,6 +45,14 @@ class _HeaderWork:
     finished: asyncio.Future[None]
     upload: Upload | None = None
 
+    def mark_classified(self) -> None:
+        if not self.classified.done():
+            self.classified.set_result(None)
+
+    def mark_finished(self) -> None:
+        if not self.finished.done():
+            self.finished.set_result(None)
+
 
 class _ConnectionReaders:
     def __init__(self) -> None:
@@ -123,10 +131,8 @@ class Reader:
     def close(self) -> None:
         self.closed = True
         for work in self.headers.values():
-            if not work.classified.done():
-                work.classified.set_result(None)
-            if not work.finished.done():
-                work.finished.set_result(None)
+            work.mark_classified()
+            work.mark_finished()
         for upload in tuple(self.uploads):
             upload.close()
         self.group.readers.discard(self)
@@ -160,8 +166,8 @@ def headers_classified(flow: http.HTTPFlow) -> None:
     reader = _current_reader.get()
     if reader is not None:
         work = reader.headers.get(flow.id)
-        if work is not None and not work.classified.done():
-            work.classified.set_result(None)
+        if work is not None:
+            work.mark_classified()
 
 
 def header_upload(flow: http.HTTPFlow) -> Upload | None:
@@ -175,8 +181,8 @@ def header_finished(flow: http.HTTPFlow) -> None:
     reader = _current_reader.get()
     if reader is not None:
         work = reader.headers.pop(flow.id, None)
-        if work is not None and not work.finished.done():
-            work.finished.set_result(None)
+        if work is not None:
+            work.mark_finished()
 
 
 class _H2Capacity:
