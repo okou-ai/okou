@@ -548,6 +548,7 @@
       "openDocs": "Google Docs에서 열기",
       "openSheets": "Google Sheets에서 열기",
       "openSlides": "Google Slides에서 열기",
+      "reconnect": "Google Drive 다시 연결",
       "synced": "Google Drive에 동기화됨",
       "syncedFiles_one": "Google Drive에 동기화됨",
       "syncedFiles_other": "Google Drive에 {{count}}개 파일 동기화됨",

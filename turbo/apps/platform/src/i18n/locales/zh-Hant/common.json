@@ -548,6 +548,7 @@
       "openDocs": "在 Google 文件中開啟",
       "openSheets": "在 Google 試算表中開啟",
       "openSlides": "在 Google 簡報中開啟",
+      "reconnect": "重新連線 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已將 {{count}} 個檔案同步到 Google Drive",

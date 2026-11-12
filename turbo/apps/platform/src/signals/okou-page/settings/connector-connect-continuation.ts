@@ -8,7 +8,10 @@ import {
   routeChatActionCallback$,
   type ChatActionCallback,
 } from "../../chat-page/action-callback.ts";
-import { syncArtifactAndRefresh$ } from "../../chat-page/artifact-google-drive-sync.ts";
+import {
+  finishArtifactDriveReconnect$,
+  syncArtifactAndRefresh$,
+} from "../../chat-page/artifact-google-drive-sync.ts";
 import type { GoogleDriveUploadMode } from "@okouai/core/google-workspace-conversion";
 import {
   activeChatConnectorAction$,
@@ -88,7 +91,16 @@ export type ConnectorConnectOrigin =
   /** The composer registered under this key. */
   | { readonly kind: "composer"; readonly hostKey: string }
   /** Syncing this artifact to Google Drive, which needed a connection. */
-  | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget);
+  | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
+  /** Restore Drive consent for this artifact without resuming an upload. */
+  | ({
+      readonly kind: "artifact-drive-reconnect";
+    } & ArtifactDriveReconnectTarget);
+
+interface ArtifactDriveReconnectTarget {
+  readonly agentId: string;
+  readonly artifactId: string;
+}
 
 interface ArtifactDriveSyncTarget {
   readonly agentId: string;
@@ -147,6 +159,9 @@ type ConnectorConnectPlan =
       readonly callback: ChatActionCallback;
     }
   | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
+  | ({
+      readonly kind: "artifact-drive-reconnect";
+    } & ArtifactDriveReconnectTarget)
   | {
       readonly kind: "composer";
       readonly host: ComposerConnectHost;
@@ -206,7 +221,8 @@ const resolveConnectorConnectPlan$ = command(
           callback: get(routeChatActionCallback$),
         };
       }
-      case "artifact-drive-sync": {
+      case "artifact-drive-sync":
+      case "artifact-drive-reconnect": {
         return origin;
       }
       case "composer": {
@@ -348,6 +364,10 @@ const continueConnectorConnectPlan$ = command(
         await set(finishComposerConnectorAddition$, plan, signal);
         return;
       }
+      case "artifact-drive-reconnect": {
+        set(finishArtifactDriveReconnect$, { ...plan, connectionId }, signal);
+        return;
+      }
       case "artifact-drive-sync": {
         await set(
           syncArtifactAndRefresh$,
@@ -407,7 +427,8 @@ const closeConnectorConnectModal$ = command(
         });
         return;
       }
-      case "artifact-drive-sync": {
+      case "artifact-drive-sync":
+      case "artifact-drive-reconnect": {
         return;
       }
     }

@@ -250,9 +250,15 @@ function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
-  const catalogItem$ = enabled
-    ? artifactGoogleDriveCatalogItem$
-    : inactiveArtifactGoogleDriveCatalogItem$;
+  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const recovery = completedOperation?.recovery ?? syncTarget?.recovery;
+  const accountReady = completedOperation?.recovery
+    ? false
+    : completedOperation?.ready === true || syncTarget?.accountReady === true;
+  const catalogItem$ =
+    enabled && needsArtifactGoogleDriveCatalog({ accountReady, recovery })
+      ? artifactGoogleDriveCatalogItem$
+      : inactiveArtifactGoogleDriveCatalogItem$;
   const catalogItemLoadable = useLoadable(catalogItem$);
   const lastCatalogItem = useLastResolved(catalogItem$);
   const catalogItem =
@@ -266,21 +272,15 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
-  const selectedAccount = completedOperation?.ready
-    ? completedOperation
-    : undefined;
-  const accountReady =
-    selectedAccount !== undefined || syncTarget?.accountReady === true;
-
   return {
     googleDriveAuthMethod,
     googleDriveConnector,
     googleDriveReady: accountReady,
-    pendingAction: resolveGoogleDrivePendingAction(syncTarget?.recovery),
+    pendingAction: resolveGoogleDrivePendingAction(recovery),
+    scopeRequired: completedOperation?.recovery !== undefined,
     googleImport: completedOperation?.googleImport,
-    googleDriveConnectionId: selectedAccount
-      ? selectedAccount.connectionId
+    googleDriveConnectionId: completedOperation
+      ? completedOperation.connectionId
       : syncTarget?.connectionId,
   };
 }
@@ -487,13 +487,19 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          origin: {
-            kind: "artifact-drive-sync",
-            agentId,
-            artifactId: syncTarget.artifactId,
-            filename: syncTarget.filename,
-            mode,
-          },
+          origin: availability.scopeRequired
+            ? {
+                kind: "artifact-drive-reconnect",
+                agentId,
+                artifactId: syncTarget.artifactId,
+              }
+            : {
+                kind: "artifact-drive-sync",
+                agentId,
+                artifactId: syncTarget.artifactId,
+                filename: syncTarget.filename,
+                mode,
+              },
           options: {
             account: action.account,
             agentId,
@@ -595,10 +601,14 @@ function GoogleDriveConnectMenuItem({
               onClick={onClick}
             >
               <GoogleDriveMenuIcon target={target} />
-              {uploadLabel ??
-                t(($) => {
-                  return $.artifacts.googleDrive.connect;
-                })}
+              {availability.scopeRequired
+                ? t(($) => {
+                    return $.artifacts.googleDrive.reconnect;
+                  })
+                : (uploadLabel ??
+                  t(($) => {
+                    return $.artifacts.googleDrive.connect;
+                  }))}
             </DropdownMenuItem>
           }
         />
@@ -792,7 +802,7 @@ function useArtifactDriveMenu({
   // Keep capabilities subscribed while the popup is closed.
   const availability = useGoogleDriveAvailability(
     syncTarget,
-    showGoogleDriveAction && needsArtifactGoogleDriveCatalog(syncTarget),
+    showGoogleDriveAction,
   );
   const primaryReady = googleDriveActionReady(
     syncTarget,
@@ -813,6 +823,7 @@ function useArtifactDriveMenu({
   const showOriginal =
     showGoogleDriveAction &&
     workspaceTarget &&
+    !availability.scopeRequired &&
     (!previewMenu ||
       (originalReady &&
         snapshot?.original &&

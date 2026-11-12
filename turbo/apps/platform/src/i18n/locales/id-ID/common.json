@@ -548,6 +548,7 @@
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
       "openSlides": "Buka di Google Slides",
+      "reconnect": "Hubungkan ulang Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",

@@ -550,6 +550,7 @@
       "openDocs": "Google Docs में खोलें",
       "openSheets": "Google Sheets में खोलें",
       "openSlides": "Google Slides में खोलें",
+      "reconnect": "Google Drive फिर से कनेक्ट करें",
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",

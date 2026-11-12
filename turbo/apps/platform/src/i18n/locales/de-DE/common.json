@@ -550,6 +550,7 @@
       "openDocs": "In Google Docs öffnen",
       "openSheets": "In Google Sheets öffnen",
       "openSlides": "In Google Slides öffnen",
+      "reconnect": "Google Drive erneut verbinden",
       "synced": "Mit Google Drive synchronisiert",
       "syncedFiles_one": "Mit Google Drive synchronisiert",
       "syncedFiles_other": "{{count}} Dateien mit Google Drive synchronisiert",

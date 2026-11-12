@@ -114,6 +114,7 @@ interface DriveMockOptions {
   readonly agentAuthorized?: boolean;
   readonly waitForSync?: (mode: GoogleDriveUploadMode) => Promise<void>;
   readonly failingMode?: GoogleDriveUploadMode;
+  readonly uploadError?: "scope" | "forbidden";
   readonly uploadedWebViewLink?: string | null;
 }
 
@@ -127,6 +128,7 @@ function installDriveMocks(
   let oauthConnectionId = SELECTED_DRIVE_CONNECTION_ID;
   let connectionState = initialConnectionState;
   let artifactConnectionState = initialConnectionState;
+  let uploadError = options.uploadError;
   let selectedAccountReady = options.selectedAccountReady ?? false;
   let agentAuthorized = options.agentAuthorized ?? false;
   let artifactSynced = options.existingMimeType !== undefined;
@@ -357,6 +359,24 @@ function installDriveMocks(
     async ({ params, body, respond }) => {
       syncRequests.push({ artifactId: params.artifactId, ...body });
       await options.waitForSync?.(body.mode);
+      if (uploadError === "scope") {
+        return respond(403, {
+          error: {
+            code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+            message:
+              "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+          },
+          recovery: {
+            action: "reconnect",
+            connectionId: SELECTED_DRIVE_CONNECTION_ID,
+          },
+        });
+      }
+      if (uploadError === "forbidden") {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Drive access is unavailable" },
+        });
+      }
       if (body.mode === options.failingMode) {
         return respond(400, {
           error: { code: "BAD_REQUEST", message: "Drive upload failed" },
@@ -393,6 +413,7 @@ function installDriveMocks(
   return {
     authorizationUpdates,
     completeAuthorization: () => {
+      uploadError = undefined;
       completedAttempts.set(oauthAttemptId, oauthConnectionId);
       connectionState = "connected";
       agentAuthorized = true;
@@ -1034,6 +1055,169 @@ test("Reconnect the Google Drive account selected for the artifact", async () =>
     ]);
   });
   await expectSyncCompletedPreview();
+});
+
+test.each([
+  {
+    filename: "Drive report.pdf",
+    upload: "Upload to Google Drive",
+    mode: "original",
+  },
+  { filename: "report.txt", upload: "Upload to Google Docs", mode: "google" },
+] as const)(
+  "Recover missing Drive scope for $mode only after explicit exact-account consent",
+  async ({ filename, upload, mode }) => {
+    mockWideScreen();
+    const popup = installAuthorizationPopup();
+    const drive = installDriveMocks(context, "connected", {
+      selectedAccountReady: true,
+      agentAuthorized: true,
+      uploadError: "scope",
+      ...(mode === "google" ? { filename, contentType: "text/plain" } : {}),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    await openDriveArtifactMenu(upload, filename);
+    click(roleItemNamed("menuitem", upload));
+    await expect(
+      screen.findByText(
+        "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(drive.syncRequests).toHaveLength(1);
+    expect(drive.oauthRequests).toHaveLength(0);
+    expect(popup.open.calls).toHaveLength(0);
+
+    // Even though the catalog still says connected, the failed operation owns
+    // the recovery and must not resubmit with unchanged permissions.
+    click(buttonNamed("Download artifact", artifactPreview()));
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Reconnect Google Drive"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(
+      queryAllByRoleFast("menuitem").filter((item) => {
+        return item.textContent?.trim() === "Reconnect Google Drive";
+      }),
+    ).toHaveLength(1);
+    click(roleItemNamed("menuitem", "Reconnect Google Drive"));
+    await waitFor(() => {
+      expect(popup.location.href).toBe(AUTHORIZATION_URL);
+      expect(drive.oauthRequests).toStrictEqual([
+        {
+          account: {
+            intent: "reconnect",
+            connectionId: SELECTED_DRIVE_CONNECTION_ID,
+          },
+          authMethod: "oauth",
+          agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+          authorizeAgent: true,
+          callbackTarget: "app",
+        },
+      ]);
+    });
+    expect(drive.syncRequests).toHaveLength(1);
+    drive.completeAuthorization();
+    click(buttonNamed("Download artifact", artifactPreview()));
+    await waitFor(() => {
+      expect(roleItemNamed("menuitem", upload)).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+    expect(drive.syncRequests).toHaveLength(1);
+    expect(screen.queryByText("Synced to Google Drive")).toBeNull();
+    click(roleItemNamed("menuitem", upload));
+    await expectSyncCompletedPreview(
+      mode === "google" ? "Upload to Google Drive" : undefined,
+    );
+    expect(drive.syncRequests).toStrictEqual(
+      Array.from({ length: 2 }, () => {
+        return {
+          artifactId: DRIVE_ARTIFACT_ID,
+          agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+          connectionId: SELECTED_DRIVE_CONNECTION_ID,
+          mode,
+        };
+      }),
+    );
+  },
+);
+
+test("Dismissed Drive scope recovery never resumes an upload", async () => {
+  mockWideScreen();
+  const popup = installAuthorizationPopup();
+  const drive = installDriveMocks(context, "connected", {
+    selectedAccountReady: true,
+    agentAuthorized: true,
+    uploadError: "scope",
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  const { preview, downloadButton } = await openDriveMessageMenu(
+    "Upload to Google Drive",
+  );
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
+  await expect(
+    screen.findByText(
+      "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+    ),
+  ).resolves.toBeInTheDocument();
+  click(downloadButton());
+  await waitFor(() => {
+    expect(
+      roleItemNamed("menuitem", "Reconnect Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(roleItemNamed("menuitem", "Reconnect Google Drive"));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(AUTHORIZATION_URL);
+  });
+  click(buttonNamed("Close", preview));
+  await waitFor(() => {
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
+  });
+  expect(popup.window.closed).toBeTruthy();
+  drive.completeAuthorization();
+  await openDriveMessageMenu("Reconnect Google Drive");
+  expect(drive.syncRequests).toHaveLength(1);
+  expect(screen.queryByText("Synced to Google Drive")).toBeNull();
+});
+
+test("Do not offer scope recovery or replay for a generic Drive 403 response", async () => {
+  mockWideScreen();
+  const popup = installAuthorizationPopup();
+  const drive = installDriveMocks(context, "connected", {
+    selectedAccountReady: true,
+    agentAuthorized: true,
+    uploadError: "forbidden",
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await openDriveArtifactMenu("Upload to Google Drive");
+  click(roleItemNamed("menuitem", "Upload to Google Drive"));
+  await expect(
+    screen.findByText("Drive access is unavailable"),
+  ).resolves.toBeInTheDocument();
+  click(buttonNamed("Download artifact", artifactPreview()));
+  await waitFor(() => {
+    expect(
+      roleItemNamed("menuitem", "Upload to Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(drive.syncRequests).toHaveLength(1);
+  expect(drive.oauthRequests).toHaveLength(0);
+  expect(popup.open.calls).toHaveLength(0);
 });
 
 test("Sync with the artifact's ready Drive account when the default needs attention", async () => {
