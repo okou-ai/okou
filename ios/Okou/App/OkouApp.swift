@@ -7,6 +7,7 @@ import SwiftUI
 struct OkouApp: App {
   @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var delegate
   @State private var authentication: AuthenticationService?
+  @State private var lifecycle: AppLifecycle?
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
@@ -60,6 +61,10 @@ struct OkouApp: App {
     _authentication = State(initialValue: authentication)
     if let authentication, case .success(let configuration) = configuration {
       delegate.notifications.configure(authentication: authentication, configuration: configuration)
+      _lifecycle = State(
+        initialValue: AppLifecycle(
+          authentication: authentication, configuration: configuration,
+          notifications: delegate.notifications))
     }
   }
 
@@ -83,19 +88,23 @@ struct OkouApp: App {
         #endif
       }
       .modifier(OkouAppearance())
-      .task { await authentication?.start() }
+      .task {
+        if let lifecycle {
+          await lifecycle.run()
+        } else {
+          await authentication?.start()
+        }
+      }
       .onOpenURL { url in Task { await authentication?.handleURL(url) } }
     }
   }
 
   private var productRoot: some View {
     Group {
-      if let authentication {
+      if authentication != nil {
         switch configuration {
-        case .success(let configuration):
-          AppRootView(
-            authentication: authentication, configuration: configuration,
-            notifications: delegate.notifications)
+        case .success:
+          if let lifecycle { AppRootView(lifecycle: lifecycle) }
         case .failure(let error):
           OkouEmptyState(
             "Unable to start Okou", icon: "triangle-alert",
@@ -109,28 +118,13 @@ struct OkouApp: App {
 }
 
 struct AppRootView: View {
-  let authentication: AuthenticationService
-  let configuration: AppConfiguration
-  let session: URLSession
-  let notifications: NotificationService
-  @State private var workspaceData: NotificationWorkspace?
-  @State private var presentedScopeID: String?
+  let lifecycle: AppLifecycle
   @State private var accountError: String?
-  @State private var foregroundRefresh: Task<Void, Never>?
   @Environment(\.scenePhase) private var scenePhase
 
-  init(
-    authentication: AuthenticationService, configuration: AppConfiguration,
-    session: URLSession = .shared, notifications: NotificationService
-  ) {
-    self.authentication = authentication
-    self.configuration = configuration
-    self.session = session
-    self.notifications = notifications
-    let data = notifications.data(
-      authentication: authentication, configuration: configuration, session: session)
-    _workspaceData = State(initialValue: data)
-  }
+  private var authentication: AuthenticationService { lifecycle.authentication }
+  private var configuration: AppConfiguration { lifecycle.configuration }
+  private var notifications: NotificationService { lifecycle.notifications }
 
   var body: some View {
     Group {
@@ -138,13 +132,13 @@ struct AppRootView: View {
         let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
-        if let workspaceData, workspaceData.scopeID == scopeID,
-          scenePhase != .background || presentedScopeID == scopeID
+        if let workspace = lifecycle.workspace, workspace.data.scopeID == scopeID,
+          scenePhase != .background || lifecycle.presentedScopeID == scopeID
         {
           WorkspaceRootView(
-            authentication: authentication, configuration: configuration,
-            workspaceID: workspaceID, userID: userID, scopeID: scopeID,
-            accountError: $accountError, data: workspaceData, notifications: notifications
+            authentication: authentication,
+            workspaceID: workspaceID, userID: userID,
+            accountError: $accountError, lifecycle: workspace, notifications: notifications
           )
           .id(scopeID)
         } else {
@@ -154,46 +148,14 @@ struct AppRootView: View {
         SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
-    .task(id: authentication.presentationScopeID) {
-      await authentication.preparePresentation()
+    .task(id: authentication.presentationScopeID) { await lifecycle.updateScope() }
+    .task(id: lifecycle.notificationIdentity) { await lifecycle.updateNotificationDemand() }
+    .onChange(of: scenePhase, initial: true) { _, phase in lifecycle.setPhase(phase) }
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+    ) { _ in
+      Task { await lifecycle.reduceMemory() }
     }
-    .task(id: authentication.presentationScopeID) {
-      let data = notifications.data(
-        authentication: authentication, configuration: configuration, session: session)
-      workspaceData = data
-      if scenePhase == .active { presentedScopeID = data?.scopeID }
-      await notifications.update(workspace: data)
-      if !authentication.isLoading {
-        await notifications.refreshNotificationState(userID: authentication.userID)
-      }
-      if scenePhase == .active { await notifications.flushPrefetchReports() }
-    }
-    .task(
-      id: NotificationNavigationIdentity(
-        userID: authentication.userID, isLoading: authentication.isLoading,
-        destination: notifications.pendingDestination)
-    ) {
-      notifications.preparePending(authentication: authentication)
-      if !authentication.isLoading {
-        await notifications.refreshNotificationState(userID: authentication.userID)
-      }
-    }
-    .onChange(of: scenePhase, initial: true) { _, phase in
-      notifications.setForeground(phase == .active)
-      if phase == .active { presentedScopeID = authentication.presentationScopeID }
-      foregroundRefresh?.cancel()
-      foregroundRefresh =
-        phase == .active
-        ? Task {
-          await authentication.refresh()
-          await notifications.refreshRegistration()
-          if !authentication.isLoading {
-            await notifications.refreshNotificationState(userID: authentication.userID)
-          }
-          await notifications.flushPrefetchReports()
-        } : nil
-    }
-    .onDisappear { foregroundRefresh?.cancel() }
     .onChange(of: notifications.error) { _, error in accountError = error }
     .alert(
       "Unable to update account",
@@ -213,34 +175,27 @@ private struct WorkspaceRootView: View {
   let workspaceID: String
   let userID: String
   let notifications: NotificationService
-  @State private var store: WorkspaceStore
+  let lifecycle: WorkspaceLifecycle
+  private var store: WorkspaceStore { lifecycle.store }
   @State private var sidebar = SidebarInteraction()
   @State private var topContentHeight: CGFloat = 0
   @State private var taglineIndex = Int.random(in: 0..<64)
   @Binding private var accountError: String?
-  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let headerHeight: CGFloat = 44
 
   init(
-    authentication: AuthenticationService, configuration: AppConfiguration,
-    workspaceID: String, userID: String, scopeID: String,
-    accountError: Binding<String?>, data: NotificationWorkspace, notifications: NotificationService
+    authentication: AuthenticationService,
+    workspaceID: String, userID: String,
+    accountError: Binding<String?>, lifecycle: WorkspaceLifecycle,
+    notifications: NotificationService
   ) {
     self.authentication = authentication
     self.workspaceID = workspaceID
     self.userID = userID
     _accountError = accountError
     self.notifications = notifications
-    let cacheScope = ChatCacheScope(
-      apiBaseURL: configuration.apiURL, userID: userID, workspaceID: workspaceID)
-    _store = State(
-      initialValue: WorkspaceStore(
-        client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
-        draftStorage: ChatDraftStorage(scope: cacheScope),
-        projectDisclosure: ProjectDisclosureStorage(scope: cacheScope),
-        measurementScope: cacheScope,
-        didRefreshReadState: { notifications.requestNotificationStateRefresh() }))
+    self.lifecycle = lifecycle
   }
 
   var body: some View {
@@ -278,13 +233,8 @@ private struct WorkspaceRootView: View {
     .modifier(ChatLinkNavigation(store: store, didOpen: closeSidebar))
     .background { ChatThreadRenameDialog(list: store.list).frame(width: 0, height: 0) }
     .task {
-      let target = store
-      notifications.didSynchronize = { [weak target] in
-        target?.requestRefresh(.history(threadID: $0))
-      }
-      store.setForeground(scenePhase == .active)
-      await store.start(userID: userID, workspaceID: workspaceID)
-      await openPendingNotification()
+      await lifecycle.start()
+      if !Task.isCancelled { await openPendingNotification() }
     }
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
@@ -294,18 +244,6 @@ private struct WorkspaceRootView: View {
         workspace: store, isAuthenticated: !authentication.isLoading,
         didOpen: closeSidebar)
     )
-    .onDisappear {
-      store.close()
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
-    ) { _ in
-      Task { await store.reduceMemory() }
-    }
-    .onChange(of: scenePhase) { _, phase in
-      store.setForeground(phase == .active)
-      if phase == .active { store.requestRefresh() }
-    }
     .alert(
       "Unable to update chats",
       isPresented: Binding(
@@ -457,7 +395,7 @@ private struct WorkspaceRootView: View {
   }
 
   private func openPendingNotification() async {
-    if await notifications.openPending(authentication: authentication, store: store) {
+    if await lifecycle.openPendingNotification(), !Task.isCancelled {
       closeSidebar()
     }
   }
@@ -478,10 +416,4 @@ private struct WorkspaceRootView: View {
     store.startNewChat()
     closeSidebar()
   }
-}
-
-private struct NotificationNavigationIdentity: Hashable {
-  let userID: String?
-  let isLoading: Bool
-  let destination: NotificationDestination?
 }
