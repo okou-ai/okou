@@ -133,7 +133,7 @@ describe("okou browser command", () => {
       "An explicit user request to view the Browser is not a takeover",
     );
     expect(help).toContain(
-      "Chats sharing a Browser profile share cookies and localStorage",
+      "Chats use a shared Browser profile: cookies and localStorage",
     );
     expect(help).toContain("keep new pages in this chat automatically");
     expect(help).toContain(
@@ -156,7 +156,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
-  it("creates a fresh browser and passes its CDP URL directly to agent-browser", async () => {
+  it("opens a named browser and passes its CDP URL directly to agent-browser", async () => {
     let requestBody: unknown;
     let authorization: string | null = null;
     server.use(

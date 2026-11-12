@@ -480,15 +480,15 @@ const leaseCommand = new Command()
 
 const newCommand = new Command()
   .name("new")
-  .description(
-    "Create another thread browser with an isolated profile and attach it to agent-browser",
-  )
+  .description("Open this chat's named Browser and attach it to agent-browser")
   .addOption(new Option("--name <name>", "Browser name").default("browser"))
   .addOption(
     new Option(
       "--country <code>",
-      "Residential proxy country; omitted uses lower-cost proxyless egress",
-    ).argParser(parseCountry),
+      "Legacy option; shared Browser sessions use proxyless egress",
+    )
+      .hideHelp()
+      .argParser(parseCountry),
   )
   .addOption(
     new Option(
@@ -667,7 +667,7 @@ export const browserCommand = new Command()
 Examples:
   Open this thread's browser: okou browser use
   Keep it alive:              okou browser lease
-  Create another browser:     okou browser new --name booking --country us
+  Open a named browser:       okou browser new --name booking
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
   Inspect existing tabs:      okou browser tab list
   Select an existing tab:    okou browser tab select t2
@@ -691,7 +691,7 @@ Notes:
   - Shared Browser tools show this chat's tabs and keep new pages in this chat automatically
   - Use safe tab list/select to choose an existing page and confirm the intended page before acting
   - Tab list shows safe origins without full URLs or titles
-  - Chats sharing a Browser profile share cookies and localStorage, including login/logout changes; separate windows do not provide separate website accounts
+  - Chats use a shared Browser profile: cookies and localStorage include login/logout changes; each chat has its own window and tabs
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
   - input-request failures identify a safe error code, affected --field position when known, and next action
