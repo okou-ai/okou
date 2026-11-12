@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.831.1](https://github.com/okou-ai/okou/compare/core-v8.831.0...core-v8.831.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+
 ## [8.831.0](https://github.com/okou-ai/okou/compare/core-v8.830.0...core-v8.831.0) (2026-11-12)
 
 

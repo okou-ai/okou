@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.6](https://github.com/okou-ai/okou/compare/ios-v0.36.5...ios-v0.36.6) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** remove sidebar left-swipe navigation ([#46763](https://github.com/okou-ai/okou/issues/46763)) ([7ed3520](https://github.com/okou-ai/okou/commit/7ed35209d876c6425672c52ec44c934ce88d821d))
+
 ## [0.36.5](https://github.com/okou-ai/okou/compare/ios-v0.36.4...ios-v0.36.5) (2026-11-12)
 
 

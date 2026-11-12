@@ -13,6 +13,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1119.0](https://github.com/okou-ai/okou/compare/app-v0.1118.0...app-v0.1119.0) (2026-11-12)
+
+
+### Features
+
+* **app:** move home compliance under the cards and settle the first home in ([#46782](https://github.com/okou-ai/okou/issues/46782)) ([20d176e](https://github.com/okou-ai/okou/commit/20d176eb7552739897d55330f334087963258803))
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+* allow unlinking the login email integration ([#46749](https://github.com/okou-ai/okou/issues/46749)) ([d6f52fc](https://github.com/okou-ai/okou/commit/d6f52fcb2b01ba376fd83e41b4f2494a264f2567))
+* **app:** hide unavailable credits in personal account status ([#46790](https://github.com/okou-ai/okou/issues/46790)) ([66d49b3](https://github.com/okou-ai/okou/commit/66d49b38e827b356691c49b56f4bd33e2162e0dd))
+* **platform:** count projects when deciding inbox empty state ([#46764](https://github.com/okou-ai/okou/issues/46764)) ([00f749c](https://github.com/okou-ai/okou/commit/00f749c3f70e845e17eb142429bd49842499750c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/ui bumped to 1.21.2
+
 ## [0.1118.0](https://github.com/okou-ai/okou/compare/app-v0.1117.0...app-v0.1118.0) (2026-11-12)
 
 

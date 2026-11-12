@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-host-v0.10.49...runner-host-v0.11.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
 ## [0.10.49](https://github.com/okou-ai/okou/compare/runner-host-v0.10.48...runner-host-v0.10.49) (2026-11-11)
 
 ## [0.10.48](https://github.com/okou-ai/okou/compare/runner-host-v0.10.47...runner-host-v0.10.48) (2026-11-11)

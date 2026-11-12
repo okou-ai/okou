@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/okou-ai/okou/compare/android-v0.2.0...android-v0.2.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **android:** preserve signing identity across releases ([#46768](https://github.com/okou-ai/okou/issues/46768)) ([4f7e733](https://github.com/okou-ai/okou/commit/4f7e733e7e672614ca18a6065f580a38c4d47c11))
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/android-v0.1.0...android-v0.2.0) (2026-11-12)
 
 
