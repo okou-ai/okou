@@ -15,7 +15,10 @@ final class SSHAuthorizationTests: XCTestCase {
     defer { card.close() }
     await card.decide(.approve)
     await card.decide(.approve)
+    fixture.state.withLock { $0.expired = true }
+    await card.refresh()
     let approved = try await card.read()
+    XCTAssertEqual(approved.effectiveStatus(at: .now), .approved)
     XCTAssertEqual(approved.status, .approved)
     XCTAssertFalse(approved.continuationPending)
     XCTAssertEqual(approved.target, "staging@mac.example.com:22")

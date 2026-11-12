@@ -96,14 +96,15 @@
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-      guard let url = request.url, let host = url.host(),
-        url.path.hasPrefix("/api/ssh/authorizations/")
+      guard let url = request.url, let host = url.host()
       else {
         client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
         return
       }
       let parts = url.path.split(separator: "/")
-      guard parts.count == 4 || parts.count == 5, UUID(uuidString: String(parts[3])) != nil else {
+      guard parts.count == 4 || parts.count == 5, parts[0] == "api", parts[1] == "ssh",
+        parts[2] == "authorizations", UUID(uuidString: String(parts[3])) != nil
+      else {
         client?.urlProtocol(self, didFailWithError: APIClientError.invalidURL)
         return
       }
