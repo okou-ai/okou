@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.63.0](https://github.com/okou-ai/okou/compare/api-v2.62.0...api-v2.63.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Bug Fixes
+
+* **api:** resolve email senders through connected mailbox workspaces ([#46753](https://github.com/okou-ai/okou/issues/46753)) ([ee21036](https://github.com/okou-ai/okou/commit/ee210363a32e1e5e2ff5a5d2d40800b2f4925a6a))
+* **email:** align thread context formatting with slack ([#46748](https://github.com/okou-ai/okou/issues/46748)) ([d37ea27](https://github.com/okou-ai/okou/commit/d37ea27b50055c2575051cd51d1abc041ecbb8e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+    * @okouai/core bumped to 8.831.0
+    * @okouai/db bumped to 2.30.0
+    * @okouai/pi-agent-runtime bumped to 1.51.107
+
 ## [2.62.0](https://github.com/okou-ai/okou/compare/api-v2.61.2...api-v2.62.0) (2026-11-12)
 
 
