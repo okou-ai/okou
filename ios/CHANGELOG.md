@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.4](https://github.com/okou-ai/okou/compare/ios-v0.36.3...ios-v0.36.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ios:** use native navigation gestures without custom interaction locks ([#46681](https://github.com/okou-ai/okou/issues/46681)) ([80482b8](https://github.com/okou-ai/okou/commit/80482b8e402082c5f77338058ed9e0785da57be6))
+
+
+### Refactoring
+
+* **ios:** own workspace memberships at account scope ([#46709](https://github.com/okou-ai/okou/issues/46709)) ([20a7704](https://github.com/okou-ai/okou/commit/20a77046ac2ee0caaf1c63cbe60a56f0fce4106c))
+
 ## [0.36.3](https://github.com/okou-ai/okou/compare/ios-v0.36.2...ios-v0.36.3) (2026-11-12)
 
 

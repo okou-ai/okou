@@ -1313,6 +1313,40 @@
       "description": "更多積分和併發執行",
       "getPlan": "獲取{{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "只是看看價格",
+          "needs_approval": "需要其他人核准",
+          "not_ready_yet": "還沒準備好付費",
+          "not_seeing_value": "還沒看到它的價值",
+          "other": "其他原因",
+          "payment_issue": "付款時遇到問題",
+          "price_higher_than_expected": "價格比預期高",
+          "results_not_good_enough": "對產出結果不滿意"
+        },
+        "description": "只有一個問題，你的回答會幫助我們改進。",
+        "question": "是什麼讓你沒有完成購買？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "目前用不到更多",
+          "not_sure_worth_it": "還不確定是否值得",
+          "other": "其他原因",
+          "still_trying": "想再多試用一下",
+          "too_expensive": "價格太高"
+        },
+        "question": "是什麼讓你今天還沒有升級？",
+        "reward": "此工作區首個符合條件的回答可獲得 {{credits}} 獎勵 credits，有效期 30 天。",
+        "thanksWithCredits": "感謝！已為你新增 {{credits}} credits，可以繼續使用了。"
+      },
+      "error": "送出失敗，請再試一次。",
+      "notNow": "暫不回答",
+      "otherLabel": "你的回答",
+      "otherPlaceholder": "補充說明（選填）",
+      "submit": "送出",
+      "thanks": "感謝你的回饋。"
+    },
     "toasts": {
       "autoRechargeUpdated": "自動充值已更新",
       "cancellationScheduledDate": "已安排取消。你當前的套餐在{{date}}前仍然有效。",
@@ -7407,7 +7441,7 @@
       "codeInstructions": "從要新增的信箱將此驗證碼寄給 Okou，放在郵件主旨或內文第一行皆可。",
       "connected": "信箱已連線",
       "deleteAria": "刪除 {{email}}",
-      "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "description": "透過郵件與 Okou 對話",
       "emailAddress": "電子郵件地址",
       "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
       "invalidLink": "連線連結無效，請重新寄信給 Okou。",

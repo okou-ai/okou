@@ -333,8 +333,6 @@ import {
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import {
-  type AdditionalVolumeSources,
-  type AgentRunCreateAdditionalVolume,
   prepareRunOutputMetadata,
   type ResolvedAgentExecution,
   type ResolvedRunExecution,
@@ -5112,25 +5110,10 @@ interface BuildRunnerJobPayloadInput {
   readonly body: CreateRunBody;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly apiStartTime: number | undefined;
-  readonly additionalVolumes:
-    readonly AgentRunCreateAdditionalVolume[] | undefined;
-  readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly chatThreadId: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
-}
-
-function protectedWorkflowMountPaths(
-  volumes: readonly AgentRunCreateAdditionalVolume[] | undefined,
-  sources: AdditionalVolumeSources,
-) {
-  return (volumes ?? []).flatMap((volume, index) => {
-    const source = sources?.[index];
-    return source === "request_additional_volume" || source === "unknown"
-      ? [volume.mountPath]
-      : [];
-  });
 }
 
 /** Capture selectors and request receipts only; Claim owns runtime assembly. */
@@ -5157,15 +5140,9 @@ function prepareRunnerLaunchInput(input: {
             ...(args.workflowAutomationId === null
               ? {}
               : { automationId: args.workflowAutomationId }),
-            protectedMountPaths: [
-              ...protectedWorkflowMountPaths(
-                args.additionalVolumes,
-                args.additionalVolumeSources,
-              ),
-              ...(args.templateGuidanceBundles ?? []).map(
-                templateGuidanceMountPath,
-              ),
-            ],
+            protectedMountPaths: (args.templateGuidanceBundles ?? []).map(
+              templateGuidanceMountPath,
+            ),
           },
         }
       : {}),

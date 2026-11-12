@@ -1316,6 +1316,40 @@
       "description": "Mehr Credits und gleichzeitige Ausführungen",
       "getPlan": "Holen Sie sich {{plan}}"
     },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Ich wollte nur den Preis sehen",
+          "needs_approval": "Ich brauche eine Freigabe von jemand anderem",
+          "not_ready_yet": "Ich bin noch nicht bereit, mich festzulegen",
+          "not_seeing_value": "Ich habe den Nutzen noch nicht gesehen",
+          "other": "Etwas anderes",
+          "payment_issue": "Ich hatte Probleme beim Bezahlen",
+          "price_higher_than_expected": "Der Preis war höher als erwartet",
+          "results_not_good_enough": "Ich war mit den Ergebnissen nicht zufrieden"
+        },
+        "description": "Nur eine kurze Frage. Deine Antwort hilft uns, besser zu werden.",
+        "question": "Was hat dich davon abgehalten, den Kauf abzuschließen?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Ich brauche gerade nicht mehr",
+          "not_sure_worth_it": "Ich bin noch nicht sicher, ob es sich lohnt",
+          "other": "Etwas anderes",
+          "still_trying": "Ich möchte es erst noch weiter testen",
+          "too_expensive": "Es ist zu teuer"
+        },
+        "question": "Was hält dich heute vom Upgrade ab?",
+        "reward": "Die erste berechtigte Antwort in diesem Workspace erhält {{credits}} Bonus-Credits, gültig für 30 Tage.",
+        "thanksWithCredits": "Danke! {{credits}} Credits wurden hinzugefügt, du kannst direkt weitermachen."
+      },
+      "error": "Deine Antwort konnte nicht gesendet werden. Versuche es erneut.",
+      "notNow": "Nicht jetzt",
+      "otherLabel": "Deine Antwort",
+      "otherPlaceholder": "Erzähl uns mehr (optional)",
+      "submit": "Senden",
+      "thanks": "Danke für dein Feedback."
+    },
     "toasts": {
       "autoRechargeUpdated": "Automatisches Aufladen aktualisiert",
       "cancellationScheduledDate": "Stornierung geplant. Ihr aktueller Plan bleibt bis {{date}} aktiv.",
@@ -7430,7 +7464,7 @@
       "codeInstructions": "Sende diesen Code von der E-Mail-Adresse, die du hinzufügen möchtest, an Okou. Verwende ihn als Betreff oder erste Zeile deiner Nachricht.",
       "connected": "E-Mail verbunden",
       "deleteAria": "{{email}} löschen",
-      "description": "Sende Okou eine E-Mail und führe jede Unterhaltung in einem eigenen Chat",
+      "description": "Chatte per E-Mail mit deinem Okou",
       "emailAddress": "E-Mail-Adresse",
       "healthNotice": "Verwende diese Integration nicht für Patientendaten, die unter HIPAA fallen.",
       "invalidLink": "Dieser Verbindungslink ist ungültig. Sende Okou eine neue E-Mail.",
