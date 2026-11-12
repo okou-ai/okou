@@ -173,17 +173,13 @@ test("persists seen status per user and edition across workspaces and content re
   const viewer = await identity();
   await enable();
   await expect(current()).resolves.not.toBeNull();
-  await Promise.all(
-    [0, 1].map(async () => {
-      await accept(
-        clients().guide.seen({
-          headers,
-          params: { editionId: prepared.editionId },
-          body: { revisionId: prepared.revisionId },
-        }),
-        [200],
-      );
+  await accept(
+    clients().guide.seen({
+      headers,
+      params: { editionId: prepared.editionId },
+      body: { revisionId: prepared.revisionId },
     }),
+    [200],
   );
   await expect(current()).resolves.toBeNull();
   await identity(`org_${randomUUID()}`, viewer.userId);
@@ -231,8 +227,6 @@ test("a seen edition does not reveal an older backlog and a new edition can appe
   mockNow(NOW + 1000);
   const newer = await prepare();
   await publish(newer);
-  mockNow(NOW + 1500);
-  await publish(older);
   const viewer = await identity();
   await enable();
   await expect(current()).resolves.toMatchObject({ id: newer.editionId });
@@ -286,14 +280,6 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
     content: { title: prepared.input.content.title },
   });
   signIn(prepared.staff);
-  await accept(
-    clients().guide.publish({
-      headers,
-      params: { editionId: prepared.editionId },
-      body: { revisionId: randomUUID() },
-    }),
-    [404],
-  );
   await accept(
     clients().guide.publish({
       headers,

@@ -19,7 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "en-rUS")
+@Config(sdk = [35], qualifiers = "en-rUS", application = TestOkouApplication::class)
 class MainActivityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 

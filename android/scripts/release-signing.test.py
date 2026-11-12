@@ -16,7 +16,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SIGN = ROOT / ".github/scripts/artifacts/sign-okou-android-apk.sh"
 SDK = Path(os.environ.get("ANDROID_HOME", Path.home() / ".local/share/android-sdk"))
-TOOLS = SDK / "build-tools/35.0.0"
+TOOLS = SDK / "build-tools/36.0.0"
 PASSWORD = "test-only-release-signing-password"
 
 
@@ -58,7 +58,7 @@ class ReleaseSigningTest(unittest.TestCase):
         raw = self.work / f"raw-{version}.apk"
         aligned = self.work / f"unsigned-{version}.apk"
         subprocess.run([str(TOOLS / "aapt"), "package", "-f", "-M", str(manifest),
-                        "-I", str(SDK / "platforms/android-35/android.jar"), "-F", str(raw)],
+                        "-I", str(SDK / "platforms/android-36/android.jar"), "-F", str(raw)],
                        check=True, capture_output=True)
         subprocess.run([str(TOOLS / "zipalign"), "-P", "16", "4", str(raw), str(aligned)],
                        check=True, capture_output=True)
@@ -108,7 +108,7 @@ class ReleaseSigningTest(unittest.TestCase):
         self.assertFalse(output.exists())
 
     def wrapped_sdk(self, mode):
-        tools = self.work / "sdk/build-tools/35.0.0"
+        tools = self.work / "sdk/build-tools/36.0.0"
         tools.mkdir(parents=True)
         for tool in ["aapt", "zipalign"]:
             (tools / tool).symlink_to(TOOLS / tool)

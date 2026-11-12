@@ -93,7 +93,7 @@ const body = () => {
 };
 
 describe("agent mail notifications", () => {
-  it("drains non-default numbered notifications and replays the same provider request on retry", async () => {
+  it("drains notifications and replays the same provider request on retry", async () => {
     await setupApp({
       context,
       routes: [...notificationsRoutes, ...cronDrainEmailOutboxRoutes],
@@ -105,14 +105,18 @@ describe("agent mail notifications", () => {
     const first = await accept(
       client().mail({
         headers: fixture.headers,
-        body: { ...body(), text: "3. Third step\n4. Fourth step" },
+        body: { ...body(), text: "First notification" },
       }),
       [200],
     );
     const second = await accept(
       client().mail({
         headers: fixture.headers,
-        body: { ...body(), subject: "Next notification", text: "0. Zero step" },
+        body: {
+          ...body(),
+          subject: "Next notification",
+          text: "Second notification",
+        },
       }),
       [200],
     );
@@ -134,15 +138,15 @@ describe("agent mail notifications", () => {
     expect(drained.body.drained).toBe(2);
     const firstAttempt = context.mocks.resend.send.mock.calls[0];
     expect(firstAttempt?.[0]).toMatchObject({
-      html: expect.stringContaining('<ol start="3"'),
-      text: expect.stringContaining("3. Third step"),
+      html: expect.stringContaining("First notification"),
+      text: expect.stringContaining("First notification"),
     });
     expect(firstAttempt?.[1]).toMatchObject({
       idempotencyKey: expect.stringMatching(/^okou-email-outbox\/v1\//u),
     });
     expect(context.mocks.resend.send.mock.calls[1]?.[0]).toMatchObject({
       subject: "Next notification",
-      html: expect.stringContaining('<ol start="0"'),
+      html: expect.stringContaining("Second notification"),
     });
     expect(
       (

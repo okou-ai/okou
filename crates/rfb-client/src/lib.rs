@@ -651,7 +651,7 @@ pub enum Error {
     InvalidInput,
     #[error("screenshot geometry belongs to another session or has changed")]
     StaleGeometry,
-    #[error("PNG exceeds the 16 MiB image limit")]
+    #[error("PNG exceeds the 96 MiB image limit")]
     ImageTooLarge,
     #[error("PNG encoding failed")]
     ImageEncoding,

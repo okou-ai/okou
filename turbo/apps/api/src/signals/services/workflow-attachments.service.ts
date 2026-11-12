@@ -1,10 +1,18 @@
 import { publishContentBundle$ } from "./content-bundle.service";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
+import {
+  contentBundleKey,
+  type ContentBundleFile,
+} from "@okouai/core/content-bundle";
+import {
+  isStaffCopiedAttachment,
+  readStaffCopiedAttachments,
+} from "@okouai/core/staff-single-agent-migration";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { command, computed } from "ccstate";
 import {
   prepareWorkflowAttachmentBundle,
   normalizeWorkflowAttachmentFiles,
-  type WorkflowAttachmentFile,
   workflowAttachmentMetadata,
   verifyWorkflowAttachmentBundle,
 } from "@okouai/core/workflow-attachment-bundle";
@@ -52,6 +60,7 @@ export function workflowAttachmentFiles(input: {
   readonly orgId: string;
   readonly workflowId: string;
   readonly attachments: WorkflowAttachments | null;
+  readonly contentBundle?: ContentBundle | null;
 }) {
   return computed(async (get) => {
     if (input.attachments === null) {
@@ -60,6 +69,31 @@ export function workflowAttachmentFiles(input: {
     const descriptor = workflowAttachmentsSchema.parse(input.attachments);
     if (descriptor.kind === "empty") {
       return [];
+    }
+    if (
+      isStaffCopiedAttachment({ ...input, objectKey: descriptor.objectKey })
+    ) {
+      if (!input.contentBundle) {
+        throw new Error("Copied Workflow has no immutable content");
+      }
+      const archive = await get(
+        downloadS3Buffer(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          contentBundleKey(input.contentBundle.sha256),
+        ),
+      );
+      const files = readStaffCopiedAttachments(
+        archive,
+        input.contentBundle,
+        descriptor,
+      );
+      return files.map((file) => {
+        return {
+          path: file.path,
+          content: file.content.toString("utf8"),
+          size: file.content.length,
+        };
+      });
     }
     assertWorkflowAttachmentOwner(
       input.orgId,
@@ -234,6 +268,7 @@ export const publishWorkflowContentBundle$ = command(
       readonly description: string | null;
       readonly instruction: string | null;
       readonly attachments: WorkflowAttachments;
+      readonly contentBundle?: ContentBundle | null;
       readonly files?: readonly {
         readonly path: string;
         readonly content: string;
@@ -241,7 +276,7 @@ export const publishWorkflowContentBundle$ = command(
     },
     signal: AbortSignal,
   ) => {
-    let files: readonly WorkflowAttachmentFile[];
+    let files: readonly ContentBundleFile[];
     if (input.files !== undefined) {
       files = normalizeWorkflowAttachmentFiles(
         input.files.map((file) => {
@@ -253,6 +288,29 @@ export const publishWorkflowContentBundle$ = command(
       );
     } else if (input.attachments.kind === "empty") {
       files = [];
+    } else if (
+      isStaffCopiedAttachment({
+        ...input,
+        objectKey: input.attachments.objectKey,
+      })
+    ) {
+      if (!input.contentBundle) {
+        throw new Error("Copied Workflow has no immutable content");
+      }
+      const archive = await set(
+        downloadS3BufferWithMaxBytes$,
+        {
+          bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+          key: contentBundleKey(input.contentBundle.sha256),
+          maxBytes: input.contentBundle.archiveBytes,
+        },
+        signal,
+      );
+      files = readStaffCopiedAttachments(
+        archive,
+        input.contentBundle,
+        input.attachments,
+      );
     } else {
       assertWorkflowAttachmentOwner(
         input.orgId,

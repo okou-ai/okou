@@ -12,7 +12,8 @@ pub(crate) struct Wire {
 impl Wire {
     pub(crate) fn new() -> Self {
         Self {
-            remaining: 64 * 1024 * 1024,
+            // A complete 6K Raw update is 81 MiB before protocol headers.
+            remaining: 128 * 1024 * 1024,
         }
     }
 

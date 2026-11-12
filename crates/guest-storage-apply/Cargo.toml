@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.31.6"
+version = "0.32.0"
 edition.workspace = true
 
 [dependencies]
@@ -11,6 +11,7 @@ linux-mountinfo.workspace = true
 roxmltree = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+serde_yaml_ng.workspace = true
 tar = { workspace = true, features = ["xattr"] }
 ureq = { workspace = true, features = ["gzip", "platform-verifier", "rustls"] }
 uuid = { workspace = true, features = ["std", "v4"] }

@@ -62,7 +62,7 @@ export function createVncHostCommand(): Command {
                 outputManagement(
                   await listConfiguredVncHosts(),
                   options,
-                  "Use okou vnc host show <id>; create configuration with okou vnc host create --input <file|->. Configuration does not grant execution access.",
+                  "Use okou vnc host show <id>; create configuration with okou vnc host create --input <file|->. Configuration does not grant execution access. Use okou vnc request-access <connection-id> --reason <purpose> to request current-chat access.",
                 );
                 return;
               }
@@ -128,7 +128,7 @@ export function createVncHostCommand(): Command {
               }
               if (result.body.hosts.length === 0) {
                 console.log(
-                  "No VNC hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
+                  "No VNC hosts available to this Run. Inspect configured hosts with okou vnc host list --scope configured --json, then use okou vnc request-access <connection-id> --reason <purpose>. Approve required SSH tunnel and KDC hosts first.",
                 );
                 return;
               }

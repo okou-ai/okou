@@ -205,6 +205,25 @@ test("Chart preferences are interactive and are sent as agent-only context", asy
   });
 });
 
+test("Chart defaults to report when no output format is selected", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  await fill(editor, "Summarize the quarterly results in a chart");
+  click(button("Chart", screen.getByRole("group", { name: "Choose a task" })));
+  await screen.findByRole("region", { name: "Visualization options" });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const additionalInfo = capture.sentMessages[0]?.parts.find((part) => {
+    return part.type === "additional_info";
+  });
+  expect(additionalInfo).toMatchObject({
+    type: "additional_info",
+    text: expect.stringContaining("- Preferred output format: report"),
+  });
+});
+
 test("Image enters and submits the create mode", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();

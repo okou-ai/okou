@@ -33,6 +33,7 @@ export interface WorkflowRow {
   readonly visibility: "public" | "private";
   readonly instruction: string | null;
   readonly attachments: WorkflowAttachments | null;
+  readonly contentBundle: (typeof workflows.$inferSelect)["contentBundle"];
   readonly ownerUserId: string;
   readonly displayName: string | null;
   readonly description: string | null;

@@ -24,4 +24,18 @@
     <plurals name="draft_lines">
         <item quantity="other">%1$d줄</item>
     </plurals>
+    <string name="auth_welcome">Okou에 오신 것을 환영합니다</string>
+    <string name="auth_restoring">로그인 상태 복원 중…</string>
+    <string name="auth_preparing_workspace">워크스페이스 준비 중…</string>
+    <string name="auth_choose_workspace">워크스페이스 선택</string>
+    <string name="auth_no_workspace">아직 접근할 수 있는 워크스페이스가 없습니다.</string>
+    <string name="auth_workspace_setup">웹에서 워크스페이스 설정</string>
+    <string name="auth_access_removed">로그인 상태 또는 접근 권한이 변경되었습니다. 다시 로그인하거나 권한을 새로고침하세요.</string>
+    <string name="auth_update_required">계속하려면 Okou를 업데이트하세요.</string>
+    <string name="auth_unavailable">로그인 상태 또는 워크스페이스를 불러오지 못했습니다. 다시 시도하세요.</string>
+    <string name="auth_sign_out">로그아웃</string>
+    <string name="auth_signing_out">로그아웃 중…</string>
+    <string name="auth_workspace">워크스페이스</string>
+    <string name="auth_switch_workspace">워크스페이스 전환</string>
+    <string name="auth_browser_unavailable">워크스페이스 설정을 열려면 브라우저를 설치하세요.</string>
 </resources>

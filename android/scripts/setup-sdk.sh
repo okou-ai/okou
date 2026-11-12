@@ -53,5 +53,5 @@ if [[ "$accept" == true ]]; then
   python3 -c 'print("y\n" * 100)' > "$answers"
   "$manager" --sdk_root="$sdk_root" --licenses < "$answers"
 fi
-"$manager" --sdk_root="$sdk_root" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+"$manager" --sdk_root="$sdk_root" 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
 printf '\nAndroid SDK ready at %s\nExport ANDROID_HOME to this directory before building.\n' "$sdk_root"

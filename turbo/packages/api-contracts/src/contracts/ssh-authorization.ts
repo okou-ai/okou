@@ -1,52 +1,12 @@
-import {
-  array,
-  boolean,
-  int,
-  iso,
-  object,
-  string,
-  url,
-  uuid,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { object, string, uuid, type infer as zInfer } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { userPermissionGrantBatchItemSchema } from "../validators/user-permission-grants";
-
-export const sshAuthorizationPermissionsSchema = array(
-  userPermissionGrantBatchItemSchema,
-).max(20);
-export const sshAuthorizationSchema = object({
-  id: uuid(),
-  chatThreadId: uuid(),
-  connectionId: uuid(),
-  requestedByRunId: uuid(),
-  displayName: string(),
-  host: string(),
-  port: int(),
+import {
+  hostAuthorizationSchema,
+  hostAuthorizationPermissionsSchema,
+} from "./host-authorization";
+export const sshAuthorizationSchema = hostAuthorizationSchema.extend({
   username: string(),
-  reason: string(),
-  status: zEnum([
-    "pending",
-    "approved",
-    "denied",
-    "expired",
-    "revoked",
-    "stale",
-  ]),
-  requestExpiresAt: iso.datetime(),
-  enabled: boolean(),
-  continuationPending: boolean(),
-  approvalBlockedReason: zEnum([
-    "run_active",
-    "run_unavailable",
-    "chat_busy",
-    "host_changed",
-    "permissions_required",
-  ]).nullable(),
-  requiredPermissions: sshAuthorizationPermissionsSchema,
-  authorizationUrl: url(),
 });
 export type SshAuthorization = zInfer<typeof sshAuthorizationSchema>;
 
@@ -77,7 +37,7 @@ export const sshAuthorizationContract = c.router({
       connectionId: uuid(),
       reason: string().trim().min(1).max(500),
       callbackPrompt: string().trim().min(1).max(200),
-      requiredPermissions: sshAuthorizationPermissionsSchema.default([]),
+      requiredPermissions: hostAuthorizationPermissionsSchema.default([]),
     }).strict(),
     responses,
     summary: "Request access to one SSH host in the current Web Chat",

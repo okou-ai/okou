@@ -706,6 +706,8 @@ import { userTemplatesContract as OriginalUserTemplatesContract } from "../contr
 import { userTemplatesContract } from "./user-templates";
 import { vncHostsContract as OriginalVncHostsContract } from "../contracts/vnc-access";
 import { vncHostsContract } from "./vnc-access";
+import { vncAuthorizationContract as OriginalVncAuthorizationContract } from "../contracts/vnc-authorization";
+import { vncAuthorizationContract } from "./vnc-authorization";
 import { vncConnectionsContract as OriginalVncConnectionsContract } from "../contracts/vnc-connections";
 import { vncConnectionsContract } from "./vnc-connections";
 import { vncCredentialsContract as OriginalVncCredentialsContract } from "../contracts/vnc-credentials";
@@ -1319,6 +1321,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
   [vncHostsContract, OriginalVncHostsContract],
+  [vncAuthorizationContract, OriginalVncAuthorizationContract],
   [vncConnectionsContract, OriginalVncConnectionsContract],
   [vncCredentialsContract, OriginalVncCredentialsContract],
   [voiceIoPolishSegmentsContract, OriginalVoiceIoPolishSegmentsContract],

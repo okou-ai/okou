@@ -137,7 +137,7 @@ async fn normalizes_native_true_color_formats_with_unused_channels() {
 
 #[tokio::test]
 async fn rejects_initialization_bounds_and_invalid_pixel_formats() {
-    for (width, height) in [(0, 1), (1, 0), (8193, 1), (4096, 4096)] {
+    for (width, height) in [(0, 1), (1, 0), (8193, 1), (6144, 3457), (3457, 6144)] {
         let result = rejected_init(&server_init(width, height, RGBX, b"desktop")).await;
         assert!(matches!(
             result,
@@ -157,6 +157,29 @@ async fn rejects_initialization_bounds_and_invalid_pixel_formats() {
             rejected_init(&server_init(1, 1, format, b"desktop")).await,
             Error::InvalidPixelFormat
         ));
+    }
+}
+
+#[tokio::test]
+async fn initializes_5k_and_6k_desktops_and_resizes_to_portrait() {
+    for (width, height) in [(5120, 2880), (6016, 3384), (6144, 3456)] {
+        let (client, mut peer) = initialized(width, height).await;
+        assert_eq!((client.width(), client.height()), (width, height));
+        let epoch = client.geometry_epoch();
+        let client = apply(
+            client,
+            &mut peer,
+            false,
+            &[rectangle(0, 0, height, width, -223, &[])],
+        )
+        .await;
+        assert_eq!((client.width(), client.height()), (height, width));
+        assert_eq!(client.geometry_epoch(), epoch + 1);
+        assert!(client.needs_full_update());
+        assert!(client.pixels().is_none());
+        assert!(client.memory_usage().1 <= 256 * 1024 * 1024);
+        drop(client);
+        disconnected(&mut peer).await;
     }
 }
 
@@ -530,13 +553,17 @@ async fn rejects_unknown_messages_encodings_and_out_of_bounds_rectangles() {
             "rectangle",
         ),
         (
+            update_message(&[rectangle(0, 0, 6144, 3457, -223, &[])]),
+            "rectangle",
+        ),
+        (
             update_message(&[rectangle(0, 0, 257, 1, -239, &[])]),
             "resource",
         ),
         (vec![0, 0, 0x10, 1], "resource"),
         (vec![3, 0, 0, 0, 0, 0, 0x10, 1], "resource"),
         (
-            update_message(&[rectangle(0, 0, 1, 1, 16, &41_943_041_u32.to_be_bytes())]),
+            update_message(&[rectangle(0, 0, 1, 1, 16, &92_274_689_u32.to_be_bytes())]),
             "resource",
         ),
     ];
@@ -706,14 +733,14 @@ async fn a_ready_update_cannot_escape_the_deadline_when_polling_resumes_late() {
 }
 
 #[tokio::test]
-async fn maximum_geometry_decodes_within_the_retained_memory_budget() {
+async fn ultrawide_zrle_retains_the_previous_memory_bound() {
     let (client, mut peer) = initialized(8192, 1024).await;
     let (initial, initial_peak) = client.memory_usage();
     assert!(initial >= 8_388_608 * 4);
     assert!(initial <= initial_peak);
     assert!(initial_peak <= 128 * 1024 * 1024);
-    // 128 by 16 solid tiles cover the largest allowed framebuffer using a small
-    // wire payload while still requiring every decoded pixel and coverage bit.
+    // Preserve the original 8192-wide profile and its 128 MiB peak guarantee,
+    // including every decoded pixel and coverage bit.
     let mut tiles = Vec::new();
     for _ in 0..128 * 16 {
         tiles.extend([1, 255, 0, 0]);
@@ -740,7 +767,7 @@ async fn maximum_geometry_decodes_within_the_retained_memory_budget() {
     assert!(current <= peak);
     assert!(peak <= 128 * 1024 * 1024);
     eprintln!(
-        "maximum framebuffer: retained={current}, peak={peak}, budget={}",
+        "8192-wide framebuffer: retained={current}, peak={peak}, budget={}",
         128 * 1024 * 1024
     );
     drop(client);
@@ -749,17 +776,17 @@ async fn maximum_geometry_decodes_within_the_retained_memory_budget() {
 
 #[tokio::test]
 async fn rejects_cumulative_wire_bytes_before_reading_the_next_raw_payload() {
-    let (client, mut peer) = initialized(8192, 1024).await;
+    let (client, mut peer) = initialized(8192, 2048).await;
     let caller = client.update(false, deadline());
     let server = async {
-        read_request(&mut peer, false, 8192, 1024).await;
+        read_request(&mut peer, false, 8192, 2048).await;
         peer.write_all(&[0, 0, 0, 2]).await.unwrap();
-        let header = rectangle(0, 0, 8192, 1024, 0, &[]);
+        let header = rectangle(0, 0, 8192, 2048, 0, &[]);
         peer.write_all(&header).await.unwrap();
-        // Reuse one heap-backed row instead of building a 32 MiB fixture. Two
-        // full Raw payloads plus update/rectangle headers exceed the 64 MiB cap.
+        // Reuse one heap-backed row instead of building a 64 MiB fixture. Two
+        // full Raw payloads plus update/rectangle headers exceed the 128 MiB cap.
         let row = [255, 0, 0, 0].repeat(8192);
-        for _ in 0..1024 {
+        for _ in 0..2048 {
             peer.write_all(&row).await.unwrap();
         }
         peer.write_all(&header).await.unwrap();
@@ -782,6 +809,15 @@ async fn bounds_bell_chatter_without_waiting_for_another_server_message() {
 
 #[tokio::test]
 async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
+    decode_high_entropy_zrle(3840, 2160, 128 * 1024 * 1024).await;
+}
+
+#[tokio::test]
+async fn decodes_high_entropy_6k_zrle_within_the_framebuffer_memory_budget() {
+    decode_high_entropy_zrle(6144, 3456, 256 * 1024 * 1024).await;
+}
+
+async fn decode_high_entropy_zrle(width: usize, height: usize, memory_limit: usize) {
     fn color(index: usize) -> [u8; 3] {
         // Deterministic avalanche mixing produces incompressible fixture pixels
         // without random seeds or reliance on any production pixel conversion.
@@ -792,22 +828,20 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
         [value as u8, (value >> 8) as u8, (value >> 16) as u8]
     }
 
-    const WIDTH: usize = 3840;
-    const HEIGHT: usize = 2160;
     let mut tiles =
-        Vec::with_capacity(WIDTH * HEIGHT * 3 + WIDTH.div_ceil(64) * HEIGHT.div_ceil(64));
-    for tile_y in (0..HEIGHT).step_by(64) {
-        for tile_x in (0..WIDTH).step_by(64) {
+        Vec::with_capacity(width * height * 3 + width.div_ceil(64) * height.div_ceil(64));
+    for tile_y in (0..height).step_by(64) {
+        for tile_x in (0..width).step_by(64) {
             tiles.push(0); // Raw ZRLE tile, with three-byte RGB CPIXEL values.
-            let tile_width = (WIDTH - tile_x).min(64);
-            let tile_height = (HEIGHT - tile_y).min(64);
+            let tile_width = (width - tile_x).min(64);
+            let tile_height = (height - tile_y).min(64);
             let pixel_start = tiles.len();
             tiles.resize(pixel_start + tile_width * tile_height * 3, 0);
             for (y, row) in tiles[pixel_start..]
                 .chunks_exact_mut(tile_width * 3)
                 .enumerate()
             {
-                let row_start = (tile_y + y) * WIDTH + tile_x;
+                let row_start = (tile_y + y) * width + tile_x;
                 for (x, pixel) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     *pixel = color(row_start + x);
                 }
@@ -821,13 +855,13 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     assert!(compressed.len() > 16 * 1024 * 1024);
 
     // Fixture generation and compression precede the operation's real deadline.
-    let (client, mut peer) = initialized(WIDTH as u16, HEIGHT as u16).await;
+    let (client, mut peer) = initialized(width as u16, height as u16).await;
     let caller = client.update(false, deadline());
     let server = async {
-        read_request(&mut peer, false, WIDTH as u16, HEIGHT as u16).await;
+        read_request(&mut peer, false, width as u16, height as u16).await;
         peer.write_all(&[0, 0, 0, 1]).await?;
         let length = u32::try_from(compressed.len()).unwrap().to_be_bytes();
-        let header = rectangle(0, 0, WIDTH as u16, HEIGHT as u16, 16, &length);
+        let header = rectangle(0, 0, width as u16, height as u16, 16, &length);
         peer.write_all(&header).await?;
         // Stream the existing compressed allocation directly; zrle() and
         // update_message() would each copy this large fixture into another Vec.
@@ -839,11 +873,11 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     let client = result.unwrap();
     sent.unwrap();
     let output = client.pixels().unwrap();
-    assert_eq!(output.len(), WIDTH * HEIGHT * 4);
+    assert_eq!(output.len(), width * height * 4);
     // Compare every independent RGBA value with one reusable expected row.
-    let mut expected_row = vec![0; WIDTH * 4];
-    for (y, row) in output.as_chunks::<{ WIDTH * 4 }>().0.iter().enumerate() {
-        let row_start = y * WIDTH;
+    let mut expected_row = vec![0; width * 4];
+    for (y, row) in output.chunks_exact(width * 4).enumerate() {
+        let row_start = y * width;
         for (x, pixel) in expected_row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let rgb = color(row_start + x);
             *pixel = [rgb[0], rgb[1], rgb[2], 255];
@@ -856,9 +890,9 @@ async fn decodes_high_entropy_4k_zrle_within_the_framebuffer_memory_budget() {
     drop(expected_row);
     let (current, peak) = client.memory_usage();
     assert!(current <= peak);
-    assert!(peak <= 128 * 1024 * 1024);
+    assert!(peak <= memory_limit);
     eprintln!(
-        "high-entropy 4K ZRLE: compressed={}, retained={current}, peak={peak}",
+        "high-entropy {width}x{height} ZRLE: compressed={}, retained={current}, peak={peak}",
         compressed.len()
     );
     drop(client);

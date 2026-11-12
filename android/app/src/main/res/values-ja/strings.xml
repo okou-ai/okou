@@ -24,4 +24,18 @@
     <plurals name="draft_lines">
         <item quantity="other">%1$d 行</item>
     </plurals>
+    <string name="auth_welcome">Okou へようこそ</string>
+    <string name="auth_restoring">ログイン状態を復元しています…</string>
+    <string name="auth_preparing_workspace">ワークスペースを準備しています…</string>
+    <string name="auth_choose_workspace">ワークスペースを選択</string>
+    <string name="auth_no_workspace">アクセスできるワークスペースがまだありません。</string>
+    <string name="auth_workspace_setup">ウェブでワークスペースを設定</string>
+    <string name="auth_access_removed">ログイン状態またはアクセス権が変更されました。再ログインするかアクセス権を更新してください。</string>
+    <string name="auth_update_required">続行するには Okou を更新してください。</string>
+    <string name="auth_unavailable">ログイン状態またはワークスペースを読み込めませんでした。もう一度お試しください。</string>
+    <string name="auth_sign_out">ログアウト</string>
+    <string name="auth_signing_out">ログアウトしています…</string>
+    <string name="auth_workspace">ワークスペース</string>
+    <string name="auth_switch_workspace">ワークスペースを切り替え</string>
+    <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
 </resources>

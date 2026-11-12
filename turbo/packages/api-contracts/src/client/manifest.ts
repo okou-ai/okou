@@ -785,6 +785,10 @@ export const clientDescriptorManifest = [
     contracts: ["vncHostsContract"],
   },
   {
+    module: "vnc-authorization",
+    contracts: ["vncAuthorizationContract"],
+  },
+  {
     module: "vnc-connections",
     contracts: ["vncConnectionsContract"],
   },

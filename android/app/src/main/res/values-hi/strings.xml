@@ -25,4 +25,18 @@
         <item quantity="one">%1$d पंक्ति</item>
         <item quantity="other">%1$d पंक्तियाँ</item>
     </plurals>
+    <string name="auth_welcome">Okou में आपका स्वागत है</string>
+    <string name="auth_restoring">आपका सत्र बहाल हो रहा है…</string>
+    <string name="auth_preparing_workspace">आपका कार्यक्षेत्र तैयार हो रहा है…</string>
+    <string name="auth_choose_workspace">अपना कार्यक्षेत्र चुनें</string>
+    <string name="auth_no_workspace">आपको अभी किसी कार्यक्षेत्र का ऐक्सेस नहीं है।</string>
+    <string name="auth_workspace_setup">वेब पर कार्यक्षेत्र सेट अप करें</string>
+    <string name="auth_access_removed">आपका सत्र या ऐक्सेस बदल गया है। फिर से साइन इन करें या ऐक्सेस रीफ़्रेश करें।</string>
+    <string name="auth_update_required">जारी रखने के लिए Okou अपडेट करें।</string>
+    <string name="auth_unavailable">सत्र या कार्यक्षेत्र लोड नहीं हो सका। फिर से कोशिश करें।</string>
+    <string name="auth_sign_out">साइन आउट करें</string>
+    <string name="auth_signing_out">साइन आउट हो रहा है…</string>
+    <string name="auth_workspace">कार्यक्षेत्र</string>
+    <string name="auth_switch_workspace">कार्यक्षेत्र बदलें</string>
+    <string name="auth_browser_unavailable">कार्यक्षेत्र सेट अप करने के लिए ब्राउज़र इंस्टॉल करें।</string>
 </resources>

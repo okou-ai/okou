@@ -6414,7 +6414,8 @@
       "host_changed": "主機設定已變更，請重新申請。",
       "permissions_required": "請先核准配套的連接器權限。",
       "run_active": "發起申請的執行尚未結束，結束後即可核准。",
-      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。"
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。",
+      "ssh_access_required": "請先批准所需的 SSH 主機。"
     },
     "continue": "繼續任務",
     "details": "存取詳細資訊",
@@ -6766,6 +6767,34 @@
       "via": "SSH 主機："
     },
     "unavailable": "當前工作區不支援 VNC。"
+  },
+  "vncAuthorization": {
+    "allow": "允許目前聊天存取",
+    "blocked": {
+      "chat_busy": "目前聊天正在執行，結束後即可核准。",
+      "host_changed": "主機設定已變更，請重新申請。",
+      "permissions_required": "請先核准配套的連接器權限。",
+      "run_active": "發起申請的執行尚未結束，結束後即可核准。",
+      "run_unavailable": "發起申請的執行已無法使用，請在聊天中重新申請。",
+      "ssh_access_required": "請先批准所需的 SSH 主機。"
+    },
+    "continue": "繼續任務",
+    "dependencies": "依賴的 SSH 主機（需單獨批准）",
+    "details": "存取詳細資訊",
+    "effect": "允許檢視和控制此桌面，直到存取權限被關閉。依賴的 SSH 主機需單獨批准。",
+    "failed": "操作未完成，請重試以檢查權限並繼續。",
+    "retry": "重試",
+    "scope": "僅此主機 · 僅目前聊天",
+    "status": {
+      "approved": "已允許 VNC 存取",
+      "denied": "已拒絕 VNC 存取",
+      "expired": "VNC 申請已過期",
+      "pending": "VNC 存取",
+      "revoked": "已撤銷 VNC 存取",
+      "stale": "VNC 申請已變更"
+    },
+    "title": "VNC 存取",
+    "unavailable": "此申請無法使用，請重新申請。"
   },
   "workflows": {
     "automations": {

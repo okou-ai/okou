@@ -48,8 +48,9 @@ export interface FeatureSwitchContext {
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
-    displayName: "SSH chat approval",
-    description: "Review SSH host access in chat and continue after approval.",
+    displayName: "Remote host chat approval",
+    description:
+      "Review SSH and VNC host access in chat and continue after approval.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -166,6 +167,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactPreviewToolbar]: {
     maintainer: "bingjie@okou.ai",

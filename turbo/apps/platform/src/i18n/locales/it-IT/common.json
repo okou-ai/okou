@@ -6502,7 +6502,8 @@
       "host_changed": "La configurazione dell’host è cambiata. Richiedi una nuova approvazione.",
       "permissions_required": "Approva prima le autorizzazioni del connettore associate.",
       "run_active": "Attendi la fine del Run che ha inviato la richiesta prima di approvare.",
-      "run_unavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat."
+      "run_unavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat.",
+      "ssh_access_required": "Approva prima gli host SSH richiesti."
     },
     "continue": "Continua attività",
     "details": "Dettagli di accesso",
@@ -6863,6 +6864,34 @@
       "via": "Host SSH:"
     },
     "unavailable": "VNC non è disponibile in questo spazio di lavoro."
+  },
+  "vncAuthorization": {
+    "allow": "Consenti in questa chat",
+    "blocked": {
+      "chat_busy": "Attendi la fine del Run in corso in questa chat prima di approvare.",
+      "host_changed": "La configurazione dell’host è cambiata. Richiedi una nuova approvazione.",
+      "permissions_required": "Approva prima le autorizzazioni del connettore associate.",
+      "run_active": "Attendi la fine del Run che ha inviato la richiesta prima di approvare.",
+      "run_unavailable": "Il Run che ha inviato la richiesta non è disponibile. Chiedi una nuova richiesta in questa chat.",
+      "ssh_access_required": "Approva prima gli host SSH richiesti."
+    },
+    "continue": "Continua attività",
+    "dependencies": "Host SSH richiesti (approvazione separata)",
+    "details": "Dettagli di accesso",
+    "effect": "Consente di visualizzare e controllare questo desktop finché l’accesso non viene disabilitato. Gli host SSH richiedono un’approvazione separata.",
+    "failed": "Impossibile completare l’azione. Riprova per verificare l’accesso e continuare.",
+    "retry": "Riprova",
+    "scope": "Questo host · Solo questa chat",
+    "status": {
+      "approved": "Accesso VNC consentito",
+      "denied": "Accesso VNC negato",
+      "expired": "Richiesta VNC scaduta",
+      "pending": "Accesso VNC",
+      "revoked": "Accesso VNC revocato",
+      "stale": "Richiesta VNC modificata"
+    },
+    "title": "Accesso VNC",
+    "unavailable": "Questa richiesta non è disponibile. Richiedine una nuova."
   },
   "workflows": {
     "automations": {

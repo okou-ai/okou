@@ -26,4 +26,18 @@
         <item quantity="many">%1$d lignes</item>
         <item quantity="other">%1$d lignes</item>
     </plurals>
+    <string name="auth_welcome">Bienvenue sur Okou</string>
+    <string name="auth_restoring">Restauration de votre session…</string>
+    <string name="auth_preparing_workspace">Préparation de votre espace de travail…</string>
+    <string name="auth_choose_workspace">Choisissez votre espace de travail</string>
+    <string name="auth_no_workspace">Vous n’avez pas encore accès à un espace de travail.</string>
+    <string name="auth_workspace_setup">Configurer un espace de travail sur le web</string>
+    <string name="auth_access_removed">Votre session ou votre accès a changé. Reconnectez-vous ou actualisez votre accès.</string>
+    <string name="auth_update_required">Mettez Okou à jour pour continuer.</string>
+    <string name="auth_unavailable">Impossible de charger votre session ou votre espace de travail. Réessayez.</string>
+    <string name="auth_sign_out">Se déconnecter</string>
+    <string name="auth_signing_out">Déconnexion…</string>
+    <string name="auth_workspace">Espace de travail</string>
+    <string name="auth_switch_workspace">Changer d’espace de travail</string>
+    <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
 </resources>

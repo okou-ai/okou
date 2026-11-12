@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { uuid } from "zod";
 import { timeout } from "signal-timers";
+import { vncAuthorizationContract } from "@okouai/api-contracts/client/vnc-authorization";
 import { sshAuthorizationContract } from "@okouai/api-contracts/client/ssh-authorization";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
@@ -10,15 +11,20 @@ import { detach, Reason, resetSignal } from "../utils.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
-export interface SshAuthorizationDescriptor {
+export interface HostAuthorizationDescriptor {
   readonly id: string;
   readonly originalUrl: string;
 }
-export function parseSshAuthorizationUrl(
+export function parseHostAuthorizationUrl(
+  protocol: "ssh" | "vnc",
   value: string,
-): SshAuthorizationDescriptor | null {
+): HostAuthorizationDescriptor | null {
   const url = parseTrustedPlatformActionUrl(value);
-  const match = url?.pathname.match(/^\/ssh\/authorize\/([^/]+)$/u);
+  const pattern =
+    protocol === "ssh"
+      ? /^\/ssh\/authorize\/([^/]+)$/u
+      : /^\/vnc\/authorize\/([^/]+)$/u;
+  const match = url?.pathname.match(pattern);
   const id = uuid().safeParse(match?.[1]);
   return id.success &&
     url?.search === "" &&
@@ -28,19 +34,28 @@ export function parseSshAuthorizationUrl(
     ? { id: id.data, originalUrl: value }
     : null;
 }
-export function createSshAuthorizationSignals(
-  descriptor: SshAuthorizationDescriptor,
+export function createHostAuthorizationSignals(
+  protocol: "ssh" | "vnc",
+  descriptor: HostAuthorizationDescriptor,
   threadId?: string,
 ) {
   const revision$ = state(0);
   const request$ = computed(async (get) => {
     get(revision$);
-    const result = await accept(
-      get(apiClient$)(sshAuthorizationContract).get({
-        params: { id: descriptor.id },
-      }),
-      [200, 403, 404],
-    );
+    const result =
+      protocol === "ssh"
+        ? await accept(
+            get(apiClient$)(sshAuthorizationContract).get({
+              params: { id: descriptor.id },
+            }),
+            [200, 403, 404],
+          )
+        : await accept(
+            get(apiClient$)(vncAuthorizationContract).get({
+              params: { id: descriptor.id },
+            }),
+            [200, 403, 404],
+          );
     return result.status === 200 &&
       (threadId === undefined || result.body.chatThreadId === threadId)
       ? result.body
@@ -60,17 +75,31 @@ export function createSshAuthorizationSignals(
       const request = await get(request$);
       signal.throwIfAborted();
       if (!request) {
-        throw new Error("SSH authorization is unavailable in this chat");
+        throw new Error(
+          `${protocol.toUpperCase()} authorization is unavailable in this chat`,
+        );
       }
-      await accept(
-        get(apiClient$)(sshAuthorizationContract)[action]({
-          params: { id: descriptor.id },
-          body: {},
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
+      if (protocol === "ssh") {
+        await accept(
+          get(apiClient$)(sshAuthorizationContract)[action]({
+            params: { id: descriptor.id },
+            body: {},
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+      } else {
+        await accept(
+          get(apiClient$)(vncAuthorizationContract)[action]({
+            params: { id: descriptor.id },
+            body: {},
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+      }
       set(refresh$);
     },
   );
@@ -103,25 +132,32 @@ export function createSshAuthorizationSignals(
     for (const topic of [
       "desktopShellAuthorizationChanged",
       "sshAuthorizationChanged",
+      "vncAuthorizationChanged",
       "ssh:changed",
+      ...(protocol === "vnc"
+        ? ["cloudflare-access:changed", "tailscale:changed"]
+        : []),
       "connectorPermissionUpdated",
       "connector:changed",
     ]) {
       set(setAblyLoop$, { topic, loopCommand$: invalidate$ }, signal);
     }
   });
-  return { ...descriptor, request$, act$, refresh$, subscribe$ };
+  return { ...descriptor, protocol, request$, act$, refresh$, subscribe$ };
 }
-export type SshAuthorizationSignals = ReturnType<
-  typeof createSshAuthorizationSignals
+export type HostAuthorizationSignals = ReturnType<
+  typeof createHostAuthorizationSignals
 >;
-export function createSshAuthorizationCardSignalsRegistry(threadId: string) {
+export function createHostAuthorizationCardSignalsRegistry(
+  protocol: "ssh" | "vnc",
+  threadId: string,
+) {
   return createCardSignalsRegistry(
-    (descriptor: SshAuthorizationDescriptor) => {
+    (descriptor: HostAuthorizationDescriptor) => {
       return descriptor.id;
     },
     (descriptor) => {
-      return createSshAuthorizationSignals(descriptor, threadId);
+      return createHostAuthorizationSignals(protocol, descriptor, threadId);
     },
     (signals) => {
       return signals.subscribe$;

@@ -74,6 +74,7 @@ mod source;
 mod tar_metadata;
 mod telemetry;
 mod template_guidance;
+mod workflow_document;
 
 use guest_contracts::storage_manifest::Manifest;
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
@@ -347,7 +348,16 @@ fn run_manifest_with_files_in_runtime(
     if !success {
         return false;
     }
-    success
+    // Temporary migration reader: shared immutable packages retain their source
+    // names/layout. Normalize only the materialized Workflow, never the cache.
+    // Retire after copied Workflows have canonical packages and old readers drain.
+    match workflow_document::apply(&manifest.storages) {
+        Ok(()) => true,
+        Err(error) => {
+            log_error!(LOG_TAG, "Workflow document materialization failed: {error}");
+            false
+        }
+    }
 }
 
 fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {

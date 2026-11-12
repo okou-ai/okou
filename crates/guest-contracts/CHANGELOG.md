@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.4...guest-contracts-v0.32.5) (2026-11-12)
+
+
+### Refactoring
+
+* **guest-contracts:** centralize final history identity validation ([#46825](https://github.com/okou-ai/okou/issues/46825)) ([7efa2a0](https://github.com/okou-ai/okou/commit/7efa2a080a57b022099099497ff83a38b9c68bed))
+
 ## [0.32.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.3...guest-contracts-v0.32.4) (2026-11-11)
 
 ## [0.32.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.2...guest-contracts-v0.32.3) (2026-11-11)

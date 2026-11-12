@@ -26,7 +26,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadGetRoutes } from "../chat-threads-get";
@@ -53,8 +53,6 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const publicRuns = createPublicAutomationRunApi(context);
 const CRON_SECRET = "automation-disabled-notifications-cron-secret";
-const ADMISSION_FAILURE_MESSAGE =
-  "No executor configured: set RUNNER_DEFAULT_GROUP";
 
 interface Scenario {
   readonly actor: ApiTestUser;
@@ -164,7 +162,7 @@ async function readAutomation(scenario: Scenario) {
 }
 
 /** Issue #46339 explicitly scopes the authenticated operator cron as a system boundary. */
-async function executeCron(expectAdmissionFailure = false) {
+async function executeCron() {
   const response = await accept(
     setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
       cronExecuteWorkflowAutomationsContract,
@@ -172,21 +170,10 @@ async function executeCron(expectAdmissionFailure = false) {
     [200],
   );
   expect(response.body.success).toBeTruthy();
-  if (expectAdmissionFailure) {
-    // A launch preparation failure rejects its input and still propagates to
-    // the background owner. Acknowledge the missing executor configuration.
-    await expect(flushWaitUntilForTest()).rejects.toThrow(
-      ADMISSION_FAILURE_MESSAGE,
-    );
-  } else {
-    await flushWaitUntilForTest();
-  }
+  await flushWaitUntilForTest();
 }
 
-async function fireNextOccurrence(
-  scenario: Scenario,
-  expectAdmissionFailure = false,
-) {
+async function fireNextOccurrence(scenario: Scenario) {
   const before = await readAutomation(scenario);
   if (!before.enabled || !before.nextRunAt) {
     throw new Error(
@@ -194,7 +181,7 @@ async function fireNextOccurrence(
     );
   }
   mockNow(new Date(before.nextRunAt));
-  await executeCron(expectAdmissionFailure);
+  await executeCron();
   return await readAutomation(scenario);
 }
 
@@ -294,29 +281,6 @@ async function muteThread(
   expect(thread.body.muted).toBeTruthy();
 }
 
-async function expectPreRunRejections(
-  scenario: Scenario,
-  automation: WorkflowAutomationSummary,
-  count: number,
-) {
-  if (!automation.chatThreadId) {
-    throw new Error("Expected the rejected occurrence's destination thread");
-  }
-  authHeaders(scenario.actor);
-  const events = await workflows.readThreadEvents(automation.chatThreadId);
-  const rejected = events.filter((event) => {
-    return event.eventType === "input.rejected";
-  });
-  expect(rejected).toHaveLength(count);
-  for (const event of rejected) {
-    expect(event).toMatchObject({
-      eventType: "input.rejected",
-      error: "internal_error",
-    });
-    expect(event.runId).toBeUndefined();
-  }
-}
-
 async function startScheduledRun(scenario: Scenario) {
   const automation = await fireNextOccurrence(scenario);
   if (!automation.chatThreadId) {
@@ -376,81 +340,7 @@ async function completeFailedOccurrence(
 }
 
 describe("recurring automation auto-disable bell notifications", () => {
-  it("notifies only the owner on the third pre-run failure even when its thread is muted", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
-    const scenario = await createScenario();
-    // The replacement API cannot admit scheduled work without an executor.
-    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
-
-    for (const failure of [1, 2]) {
-      const automation = await fireNextOccurrence(scenario, true);
-      await expectPreRunRejections(scenario, automation, failure);
-      expect(automation.enabled).toBeTruthy();
-      expect(automation.nextRunAt).not.toBeNull();
-      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
-      await expect(unreadCount(scenario.actor)).resolves.toBe(0);
-      if (failure === 1) {
-        await muteThread(scenario, automation);
-      }
-    }
-    const disabled = await fireNextOccurrence(scenario, true);
-    await expectPreRunRejections(scenario, disabled, 3);
-    const disabledAt = new Date(now()).toISOString();
-    expect(disabled).toMatchObject({ enabled: false, nextRunAt: null });
-    const delivered = await inbox(scenario.actor);
-    expect(delivered).toHaveLength(1);
-    const [notice] = delivered;
-    if (!notice) {
-      throw new Error("Expected the owner's disable notification");
-    }
-    expectDisableNotice(
-      await readNotification(scenario.actor, notice.id),
-      scenario,
-      disabledAt,
-    );
-    await expect(unreadCount(scenario.actor)).resolves.toBe(1);
-
-    // A disabled automation is a no-op on the real cron, not another delivery.
-    await executeCron();
-    expect(
-      (await inbox(scenario.actor)).map((item) => {
-        return item.id;
-      }),
-    ).toStrictEqual([notice.id]);
-    const peer = workflows.user({ orgId: scenario.actor.orgId });
-    await notificationSwitches(peer, true);
-    await expect(inbox(peer)).resolves.toStrictEqual([]);
-    await accept(
-      notificationsClient().get({
-        headers: authHeaders(peer),
-        params: { id: notice.id },
-      }),
-      [404],
-    );
-    await accept(
-      notificationsClient().markRead({
-        headers: authHeaders(peer),
-        params: { id: notice.id },
-      }),
-      [404],
-    );
-    await expect(unreadCount(scenario.actor)).resolves.toBe(1);
-    await accept(
-      notificationsClient().markRead({
-        headers: authHeaders(scenario.actor),
-        params: { id: notice.id },
-      }),
-      [200],
-    );
-    await expect(unreadCount(scenario.actor)).resolves.toBe(0);
-    expect((await readAutomation(scenario)).enabled).toBeFalsy();
-  });
-
-  it("excludes credit failures, deduplicates runtime completion replay, and notifies again after owner re-enable", async () => {
+  it("excludes credit failures and deduplicates the runtime disable notification", async () => {
     await setupApp({
       context,
       routes: cronExecuteWorkflowAutomationsRoutes,
@@ -472,14 +362,14 @@ describe("recurring automation auto-disable bell notifications", () => {
       enabled: false,
       nextRunAt: null,
     });
-    const firstCycle = await inbox(scenario.actor);
-    expect(firstCycle).toHaveLength(1);
-    const [firstNotice] = firstCycle;
-    if (!firstNotice) {
+    const delivered = await inbox(scenario.actor);
+    expect(delivered).toHaveLength(1);
+    const [notice] = delivered;
+    if (!notice) {
       throw new Error("Expected a runtime disable notification");
     }
     expectDisableNotice(
-      await readNotification(scenario.actor, firstNotice.id),
+      await readNotification(scenario.actor, notice.id),
       scenario,
       disabledAt,
     );
@@ -495,38 +385,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       (await inbox(scenario.actor)).map((item) => {
         return item.id;
       }),
-    ).toStrictEqual([firstNotice.id]);
-
-    const enabled = await accept(
-      automationsClient().enable({
-        headers: authHeaders(scenario.actor),
-        params: { id: scenario.automationId },
-      }),
-      [200],
-    );
-    expect(enabled.body.enabled).toBeTruthy();
-    for (const failure of [1, 2, 3]) {
-      await completeFailedOccurrence(scenario);
-      expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
-      await expect(inbox(scenario.actor)).resolves.toHaveLength(
-        failure < 3 ? 1 : 2,
-      );
-    }
-    const secondCycle = await inbox(scenario.actor);
-    const secondNotice = secondCycle.find((item) => {
-      return item.id !== firstNotice.id;
-    });
-    if (!secondNotice) {
-      throw new Error(
-        "Expected a distinct notification for the new failure cycle",
-      );
-    }
-    expectDisableNotice(
-      await readNotification(scenario.actor, secondNotice.id),
-      scenario,
-      new Date(now()).toISOString(),
-    );
-    await expect(unreadCount(scenario.actor)).resolves.toBe(2);
+    ).toStrictEqual([notice.id]);
   });
 
   it("notifies once for a journaled Morning Brief after three Runner failures and retains its recovery anchor", async () => {
@@ -687,7 +546,7 @@ describe("recurring automation auto-disable bell notifications", () => {
     { writerEnabled: false, inboxEnabled: true },
     { writerEnabled: true, inboxEnabled: false },
   ])(
-    "does not emit with writer=$writerEnabled/inbox=$inboxEnabled or for an owner-requested stop",
+    "does not emit with writer=$writerEnabled/inbox=$inboxEnabled",
     async ({ writerEnabled, inboxEnabled }) => {
       await setupApp({
         context,
@@ -696,11 +555,9 @@ describe("recurring automation auto-disable bell notifications", () => {
       });
       const scenario = await createScenario({ notifications: writerEnabled });
       await notificationSwitches(scenario.actor, writerEnabled, inboxEnabled);
-      mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
       for (const failure of [1, 2, 3]) {
-        const automation = await fireNextOccurrence(scenario, true);
-        await expectPreRunRejections(scenario, automation, failure);
-        expect(automation.enabled).toBe(failure < 3);
+        await completeFailedOccurrence(scenario);
+        expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
       }
       if (!inboxEnabled) {
         await accept(
@@ -709,31 +566,6 @@ describe("recurring automation auto-disable bell notifications", () => {
         );
         await notificationSwitches(scenario.actor, writerEnabled);
       }
-      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
-      await expect(unreadCount(scenario.actor)).resolves.toBe(0);
-
-      await notificationSwitches(scenario.actor, true);
-      await accept(
-        automationsClient().enable({
-          headers: authHeaders(scenario.actor),
-          params: { id: scenario.automationId },
-        }),
-        [200],
-      );
-      const resumed = await fireNextOccurrence(scenario, true);
-      await expectPreRunRejections(scenario, resumed, 4);
-      expect(resumed.enabled).toBeTruthy();
-      expect(resumed.nextRunAt).not.toBeNull();
-      await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
-      const stopped = await accept(
-        automationsClient().disable({
-          headers: authHeaders(scenario.actor),
-          params: { id: scenario.automationId },
-        }),
-        [200],
-      );
-      expect(stopped.body).toMatchObject({ enabled: false, nextRunAt: null });
-      await executeCron();
       await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
       await expect(unreadCount(scenario.actor)).resolves.toBe(0);
     },

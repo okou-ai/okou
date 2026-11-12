@@ -13,7 +13,9 @@ use tokio::{
     time::Instant,
 };
 
-const MAX_COMPRESSED: usize = 40 * 1024 * 1024;
+// Cover worst-case 6K ZRLE while leaving room for the framebuffer and
+// inflated output together within the shared 256 MiB budget.
+const MAX_COMPRESSED: usize = 88 * 1024 * 1024;
 const INFLATE_CHUNK: usize = 64 * 1024;
 // Conservatively reserve inflater state, fixed decoder tile/palette scratch and
 // protocol buffers in addition to all capacity-accounted heap buffers.
@@ -298,7 +300,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> FramebufferConnection<S> {
         let limit = count * 4 + width.div_ceil(64) * height.div_ceil(64) * 382;
         let (decoded, len) = inflate(&mut self.inflater, &compressed, limit, &self.budget).await?;
         // Retain only the decoded chunk before allocating its RGBA counterpart.
-        // This permits high-entropy 4K rectangles within the same total budget.
+        // This permits high-entropy 6K rectangles within the same total budget.
         drop(compressed);
         let mut rgba = self.budget.buffer(count * 4)?;
         // Keep tile storage out of nested async future layouts. A stack array

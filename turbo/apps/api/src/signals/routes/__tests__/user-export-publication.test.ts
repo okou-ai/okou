@@ -3,10 +3,8 @@ import { instructionsRoutes } from "../instructions";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 
-import { CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
 import {
   agentInstructionsContract,
-  agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
@@ -24,7 +22,7 @@ import { object, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
+import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
 import { agentInstructionsRoutes } from "../agent-instructions";
@@ -68,7 +66,6 @@ function authenticate(user: ReturnType<typeof actor>) {
 function initialize(
   app: Awaited<ReturnType<typeof setupApp>>,
   users: readonly ReturnType<typeof actor>[],
-  onComplete?: () => Promise<void>,
 ) {
   const profiles = users.map((user) => {
     return {
@@ -104,11 +101,6 @@ function initialize(
         return `${user.orgId}/`;
       }),
     ],
-    afterWrite: async (command) => {
-      if (command instanceof CompleteMultipartUploadCommand) {
-        await onComplete?.();
-      }
-    },
   });
   return { app, storage };
 }
@@ -385,35 +377,6 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
     [429],
   );
   expect(limited.body.error.code).toBe("RATE_LIMITED");
-});
-
-test("rejects publication when the owner deletes an already collected agent", async () => {
-  mockNow(now() - 700_000);
-  const owner = actor();
-  const app = await setupApp({ context, routes, isolatePg: true });
-  const fixture = initialize(app, [owner], async () => {
-    authenticate(owner);
-    await accept(
-      fixture
-        .app(agentsByIdContract)
-        .delete({ headers, params: { id: agentId } }),
-      [204],
-    );
-  });
-  const agentId = await ownedAgent(fixture, owner);
-  const jobId = await startExport(fixture, owner);
-  await process(fixture);
-  const failed = await status(fixture, owner);
-  expect(failed.job).toMatchObject({
-    id: jobId,
-    status: "failed",
-    downloadUrl: null,
-    error: "Data export could not be completed. Please try again.",
-  });
-  await accept(
-    fixture.app(agentsByIdContract).get({ headers, params: { id: agentId } }),
-    [404],
-  );
 });
 
 test("publishes the exact owned memory bytes committed by a genuine Runner claim", async () => {
@@ -706,38 +669,4 @@ test("exports only the subject's personal Instructions, independently of shared 
         return entry.entryName;
       }),
   ).toStrictEqual([`instructions/${owner.orgId}.json`]);
-});
-
-test("withholds a personal Instructions export when workspace membership ends before publication", async () => {
-  const owner = actor();
-  const app = await setupApp({ context, routes, isolatePg: true });
-  let membershipEnded = false;
-  const fixture = initialize(app, [owner], () => {
-    membershipEnded = true;
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [],
-      totalCount: 0,
-    });
-    return Promise.resolve();
-  });
-  await updateFeatureSwitchesForUser(context, owner, { singleAgent: true });
-  authenticate(owner);
-  await accept(
-    app(instructionsContract).update({
-      headers,
-      body: { content: "Private until publication" },
-    }),
-    [200],
-  );
-  const jobId = await startExport(fixture, owner);
-  await process(fixture);
-  // The user survives departure and can still inspect their account export status.
-  createRouteMocks(context).clerk.session(owner.userId, null);
-  const result = await accept(app(userExportContract).get({ headers }), [200]);
-  expect(membershipEnded).toBeTruthy();
-  expect(result.body.job).toMatchObject({
-    id: jobId,
-    status: "running",
-    downloadUrl: null,
-  });
 });

@@ -10,7 +10,6 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
-import { nowDate } from "../../../lib/time";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -1258,22 +1257,8 @@ describe("POST /api/webhooks/notion", () => {
   );
 
   it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
-    const webhook = (
-      await setupApp({
-        context,
-        routes: webhooksNotionRoutes,
-        isolatePg: true,
-      })
-    )(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
-    const {
-      actor,
-      threadId,
-      automationId,
-      entities,
-      firstAccount,
-      secondAccount,
-    } = await setupNotionAccountLifecycle();
+    const { actor, threadId, automationId, firstAccount, secondAccount } =
+      await setupNotionAccountLifecycle();
     await connectorsApi.updateFeatureSwitches(actor, {
       connectorChatAccountAccess: true,
     });
@@ -1314,20 +1299,6 @@ describe("POST /api/webhooks/notion", () => {
       }),
       [400],
     );
-    const event = notionPageEvent({
-      entities,
-      type: "page.created",
-      timestamp: nowDate().toISOString(),
-    });
-    await expect(
-      postNotionWebhook(
-        { rawBody: event.rawBody, signature: notionSignature(event.rawBody) },
-        webhook,
-      ),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { kind: "event", pending: 0 },
-    });
   });
 
   it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {

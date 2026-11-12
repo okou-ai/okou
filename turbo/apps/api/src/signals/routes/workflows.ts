@@ -1454,6 +1454,7 @@ const copyWorkflowInner$ = command(
               orgId: auth.orgId,
               workflowId: sourceWorkflow.id,
               attachments: sourceWorkflow.attachments,
+              contentBundle: sourceWorkflow.contentBundle,
             }),
           )
         : null;

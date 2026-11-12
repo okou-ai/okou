@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.832.0](https://github.com/okou-ai/okou/compare/core-v8.831.1...core-v8.832.0) (2026-11-12)
+
+
+### Features
+
+* **core:** enable artifact sidebar preview for staff orgs ([#46837](https://github.com/okou-ai/okou/issues/46837)) ([a62af2b](https://github.com/okou-ai/okou/commit/a62af2b7a0fe3c27750b60ccbeadc479a595c441))
+* prepare readers for staff single agent workflow copies ([#46786](https://github.com/okou-ai/okou/issues/46786)) ([eddbe0f](https://github.com/okou-ai/okou/commit/eddbe0f4edae253b6a9240e0f312f25b36acad5b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.54.0
+
 ## [8.831.1](https://github.com/okou-ai/okou/compare/core-v8.831.0...core-v8.831.1) (2026-11-12)
 
 
