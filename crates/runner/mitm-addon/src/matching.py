@@ -13,7 +13,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal, NamedTuple, cast
+from typing import Literal, NamedTuple
 from urllib.parse import parse_qsl, urlsplit
 
 import aws_sigv4
@@ -1099,7 +1099,7 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
         auth_malformed = not firewall_auth_config.firewall_api_auth_config_is_valid(api_entry)
         injects_ordinary_upstream_credentials = (
             not auth_malformed
-            and auth_config_injects_ordinary_upstream_credentials(api_entry.get("auth"))
+            and firewall_auth_config.api_injects_ordinary_upstream_credentials(api_entry)
         )
         routing_identity = _api_routing_identity(api_entry)
 
@@ -1444,7 +1444,6 @@ class _FirewallInterpretation(NamedTuple):
 
     decision: FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None
     authorization_routes: frozenset[_AuthorizationRoute]
-    form_action_result: _AwsFormActionResult | None = None
 
 
 class _BaseMatch(NamedTuple):
@@ -2296,7 +2295,6 @@ def _reduce_selected_owner(
 
 def _match_compiled_firewall_request_with_api_candidates(
     *,
-    url: str,
     url_parts: _BaseUrlParts,
     url_has_backslash: bool,
     upper_method: str,
@@ -2307,50 +2305,15 @@ def _match_compiled_firewall_request_with_api_candidates(
     is_asterisk_form: bool,
     request_context: FirewallRequestContext | None,
     track_authorization_routes: bool,
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> _FirewallInterpretation:
     collection = _FirewallMatchCollection()
     applicable_routes: dict[str, set[_AuthorizationRoute]] | None = (
         {} if track_authorization_routes else None
     )
     base_matches: list[_MatchedApi] = []
-    parsed_query_pairs: list[tuple[str, str]] | None = None
-    sigv4_service_unset = object()
-    sigv4_service: str | object | None = sigv4_service_unset
-    form_action_result_unset = object()
-    form_action_result: _AwsFormActionResult | object = form_action_result_unset
-
-    def get_query_pairs() -> list[tuple[str, str]]:
-        nonlocal parsed_query_pairs
-        if parsed_query_pairs is None:
-            parsed_query_pairs = parse_qsl(split_runtime_url(url).query, keep_blank_values=True)
-        return parsed_query_pairs
-
-    def get_sigv4_service() -> str | None:
-        nonlocal sigv4_service
-        if sigv4_service is sigv4_service_unset:
-            if request_context is not None and not request_context.aws_inspection_available:
-                sigv4_service = None
-            else:
-                sigv4_service = aws_sigv4.inspect_sigv4_service(
-                    url=url,
-                    headers=_headers_for_sigv4(
-                        request_context.headers if request_context is not None else None
-                    ),
-                )
-        return sigv4_service if isinstance(sigv4_service, str) else None
-
-    def get_form_action_result() -> _AwsFormActionResult:
-        nonlocal form_action_result
-        if form_action_result is form_action_result_unset:
-            result = _form_action_values(
-                request_context.headers if request_context is not None else None,
-                request_context.body if request_context is not None else None,
-            )
-            form_action_result = result
-            return result
-        if isinstance(form_action_result, _AwsFormActionResult):
-            return form_action_result
-        return cast(_AwsFormActionResult, form_action_result)
 
     unsafe_path: bool | None = False if is_asterisk_form else (True if url_has_backslash else None)
     decision_path = "*" if is_asterisk_form else (url_parts.path or "/")
@@ -2486,7 +2449,6 @@ def _match_compiled_firewall_request_with_api_candidates(
         frozenset(applicable_routes.get(selected_name, ()))
         if applicable_routes is not None and selected_name is not None
         else frozenset(),
-        form_action_result if isinstance(form_action_result, _AwsFormActionResult) else None,
     )
 
 
@@ -2622,29 +2584,18 @@ def _certify_raw_firewall_allow(
     *,
     authority_candidates: tuple[_CompiledApiCandidate, ...],
     analysis: PathAnalysis,
-    url: str,
     upper_method: str,
     policies: CompiledNetworkPolicies,
     intent: connector_intent.ConnectorIntent,
     request_context: FirewallRequestContext | None,
-    form_result: _AwsFormActionResult | None = None,
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> bool:
     facts: dict[str, SelectionCandidate] = {}
     api_proofs: dict[int, Applicability] = {}
     selected: str | None = None
     source_order = 0
-    query_pairs: list[tuple[str, str]] = []
-    service: str | None = None
-    aws_context_loaded = False
-
-    def get_form_result() -> _AwsFormActionResult:
-        nonlocal form_result
-        if form_result is None:
-            form_result = _form_action_values(
-                request_context.headers if request_context else None,
-                request_context.body if request_context else None,
-            )
-        return form_result
 
     for candidate in authority_candidates:
         analysis.graph.budget.charge()
@@ -2729,26 +2680,15 @@ def _certify_raw_firewall_allow(
             if rule.method not in ("ANY", upper_method):
                 continue
             if rule.aws_predicates is not None:
-                if not aws_context_loaded:
-                    query_pairs = parse_qsl(split_runtime_url(url).query, keep_blank_values=True)
-                    service = (
-                        None
-                        if request_context is not None
-                        and not request_context.aws_inspection_available
-                        else aws_sigv4.inspect_sigv4_service(
-                            url=url,
-                            headers=_headers_for_sigv4(
-                                request_context.headers if request_context else None
-                            ),
-                        )
-                    )
-                    aws_context_loaded = True
+                service = get_sigv4_service()
+                if service != rule.aws_predicates["sigv4"]:
+                    continue
                 if not _aws_predicates_match(
                     rule,
-                    query_pairs=query_pairs,
+                    query_pairs=get_query_pairs(),
                     context=request_context,
                     sigv4_service=service,
-                    get_form_action_result=get_form_result,
+                    get_form_action_result=get_form_action_result,
                 ):
                     continue
             identity = repr(("rule", candidate.order, entry.order))
@@ -2825,10 +2765,46 @@ def _match_request_interpretations(
         return invalid
     if any(c.firewall.core.path_analysis_incomplete for c in authorities):
         return invalid
+
+    # Raw matching and the URI certificate share one lazy AWS inspection.
+    # Inapplicable AWS rules must not materialize selector query pairs.
+    parsed_query_pairs: list[tuple[str, str]] | None = None
+    sigv4_service_unset = object()
+    sigv4_service: str | object | None = sigv4_service_unset
+    form_action_result: _AwsFormActionResult | None = None
+
+    def get_query_pairs() -> list[tuple[str, str]]:
+        nonlocal parsed_query_pairs
+        if parsed_query_pairs is None:
+            parsed_query_pairs = parse_qsl(split_runtime_url(url).query, keep_blank_values=True)
+        return parsed_query_pairs
+
+    def get_sigv4_service() -> str | None:
+        nonlocal sigv4_service
+        if sigv4_service is sigv4_service_unset:
+            if request_context is not None and not request_context.aws_inspection_available:
+                sigv4_service = None
+            else:
+                sigv4_service = aws_sigv4.inspect_sigv4_service(
+                    url=url,
+                    headers=_headers_for_sigv4(
+                        request_context.headers if request_context is not None else None
+                    ),
+                )
+        return sigv4_service if isinstance(sigv4_service, str) else None
+
+    def get_form_action_result() -> _AwsFormActionResult:
+        nonlocal form_action_result
+        if form_action_result is None:
+            form_action_result = _form_action_values(
+                request_context.headers if request_context is not None else None,
+                request_context.body if request_context is not None else None,
+            )
+        return form_action_result
+
     try:
         analysis = None if is_asterisk_form else PathAnalysis(request_language(path))
         original_match = _match_compiled_firewall_request_with_api_candidates(
-            url=url,
             url_parts=url_parts,
             url_has_backslash=url_has_backslash,
             upper_method=upper_method,
@@ -2843,6 +2819,9 @@ def _match_request_interpretations(
             is_asterisk_form=is_asterisk_form,
             request_context=request_context,
             track_authorization_routes=not is_asterisk_form,
+            get_query_pairs=get_query_pairs,
+            get_sigv4_service=get_sigv4_service,
+            get_form_action_result=get_form_action_result,
         )
         original = original_match.decision
         if analysis is None or isinstance(
@@ -2862,12 +2841,13 @@ def _match_request_interpretations(
             original_match.authorization_routes,
             authority_candidates=authorities,
             analysis=analysis,
-            url=url,
             upper_method=upper_method,
             policies=policies,
             intent=resolved_intent,
             request_context=request_context,
-            form_result=original_match.form_action_result,
+            get_query_pairs=get_query_pairs,
+            get_sigv4_service=get_sigv4_service,
+            get_form_action_result=get_form_action_result,
         ):
             return FirewallBlock(
                 original.api_entry["base"],

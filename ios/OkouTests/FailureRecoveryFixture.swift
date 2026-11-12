@@ -287,7 +287,8 @@ final class FailureRecoveryFixture: Sendable {
     cache: ChatCache? = nil, draftStorage: ChatDraftStorage? = nil,
     isVisible: @escaping @MainActor () -> Bool = { false }
   ) async -> (ConversationStore, ChatModelStore) {
-    let resource = ChatModelStore(client: http.client, webURL: http.baseURL, didFail: { _ in })
+    let resource = ChatModelStore(
+      client: http.client, webURL: http.baseURL, readRetrySleep: { _ in }, didFail: { _ in })
     let thread = ChatThread(
       id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
       title: "Failure recovery", selectedModel: "codex-model", createdAt: .now, updatedAt: .now,

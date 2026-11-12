@@ -30,6 +30,14 @@ import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
+import {
+  prepareCustomConnectorNetworkBinding$,
+  customConnectorNetworkBindingUpdateCte,
+  publishedCustomConnectorNetworkBinding,
+  type PreparedCustomConnectorNetworkBinding,
+} from "./custom-connector-network-publication";
 import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -57,6 +65,7 @@ import {
   lt,
   sql,
   type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { WithSubquery } from "drizzle-orm/subquery";
@@ -1850,6 +1859,7 @@ function randomShortId(): string {
 }
 
 type PersistCustomConnectorCreateArgs = {
+  readonly networkBindingChange?: PreparedCustomConnectorNetworkBinding;
   readonly connectorId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -2040,6 +2050,35 @@ const persistCustomConnectorCreate$ = command(
     const created = db
       .$with("created_connector")
       .as(db.insert(orgCustomConnectors).select(values).returning());
+    const createdCtes: WithSubquery[] = [created];
+    if (args.networkBindingChange?.kind === "bind") {
+      const change = args.networkBindingChange;
+      createdCtes.push(
+        db.$with("created_connector_network_binding").as(
+          db
+            .insert(orgCustomConnectorCloudflareBindings)
+            .select(
+              db
+                .select({
+                  connectorId: created.id,
+                  orgId: sql`${args.orgId}`
+                    .mapWith(orgCustomConnectorCloudflareBindings.orgId)
+                    .as("org_id"),
+                  configId: sql`${change.configId}`
+                    .mapWith(orgCustomConnectorCloudflareBindings.configId)
+                    .as("config_id"),
+                  configScope: sql`'organization'`
+                    .mapWith(orgCustomConnectorCloudflareBindings.configScope)
+                    .as("config_scope"),
+                })
+                .from(created),
+            )
+            .returning({
+              id: orgCustomConnectorCloudflareBindings.connectorId,
+            }),
+        ),
+      );
+    }
     signal.throwIfAborted();
     if (oauth) {
       const config = db.$with("created_oauth_config").as(
@@ -2062,7 +2101,7 @@ const persistCustomConnectorCreate$ = command(
           .returning(),
       );
       const [result] = await db
-        .with(created, config)
+        .with(...createdCtes, config)
         .select()
         .from(created)
         .innerJoin(config, eq(config.connectorId, created.id));
@@ -2071,16 +2110,34 @@ const persistCustomConnectorCreate$ = command(
         throw new Error("Expected insert to return a row");
       }
       return {
-        row: result.created_connector,
+        row: {
+          ...result.created_connector,
+          networkBinding: publishedCustomConnectorNetworkBinding(
+            args.networkBindingChange,
+            undefined,
+          ),
+        },
         oauthConfig: result.created_oauth_config,
       };
     }
-    const [row] = await db.with(created).select().from(created);
+    const [row] = await db
+      .with(...createdCtes)
+      .select()
+      .from(created);
     signal.throwIfAborted();
     if (!row) {
       throw new Error("Expected insert to return a row");
     }
-    return { row, oauthConfig: null };
+    return {
+      row: {
+        ...row,
+        networkBinding: publishedCustomConnectorNetworkBinding(
+          args.networkBindingChange,
+          undefined,
+        ),
+      },
+      oauthConfig: null,
+    };
   },
 );
 
@@ -2094,10 +2151,24 @@ export const createCustomConnector$ = command(
     },
     signal: AbortSignal,
   ): Promise<CustomConnectorRow | BadRequestResponse> => {
-    const canonicalInput = definitionFromCreateInput(args.input);
-    const v = validateDefinition(canonicalInput);
+    const v = validateDefinition(definitionFromCreateInput(args.input));
     if (isBadRequest(v)) {
       return v;
+    }
+    const networkBindingChange = await set(
+      prepareCustomConnectorNetworkBinding$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        requested: args.input.networkBinding,
+        headers: v.headerInjections,
+        targets: v.kind === "http" ? v.prefixTemplates : [v.endpoint],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (isBadRequest(networkBindingChange)) {
+      return networkBindingChange;
     }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
@@ -2153,24 +2224,42 @@ export const createCustomConnector$ = command(
     signal.throwIfAborted();
 
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-    const created = await set(
-      persistCustomConnectorCreate$,
-      {
-        connectorId,
-        orgId: args.orgId,
-        userId: args.userId,
-        slug,
-        definition: v,
-        storageVersion: args.input.storageVersion ?? 1,
-        oauthConfigUpdate,
-        encryptedClientSecret,
-        preparedSkill,
-      },
-      signal,
+    const creation = await settle(
+      set(
+        persistCustomConnectorCreate$,
+        {
+          connectorId,
+          orgId: args.orgId,
+          userId: args.userId,
+          slug,
+          definition: v,
+          networkBindingChange,
+          storageVersion: args.input.storageVersion ?? 1,
+          oauthConfigUpdate,
+          encryptedClientSecret,
+          preparedSkill,
+        },
+        signal,
+      ),
     );
     if (signal.aborted) {
       postCommitAbort = { reason: signal.reason };
     }
+    if (!creation.ok) {
+      signal.throwIfAborted();
+      if (
+        isForeignKeyViolation(
+          creation.error,
+          "fk_custom_connector_cloudflare_config",
+        )
+      ) {
+        return badRequestMessage(
+          "Cloudflare Access changed while the connector was being saved; choose an available organization configuration",
+        );
+      }
+      throw creation.error;
+    }
+    const created = creation.value;
     if (isBadRequest(created)) {
       signal.throwIfAborted();
       return created;
@@ -2251,6 +2340,7 @@ function nextOAuthConfigForUpdate(args: {
 }
 
 interface PersistCustomConnectorUpdateArgs {
+  readonly networkBindingChange?: PreparedCustomConnectorNetworkBinding;
   readonly orgId: string;
   readonly id: string;
   readonly definition: ValidatedDefinition;
@@ -2324,6 +2414,7 @@ function customConnectorUpdatePublicationPlan(
           eq(orgCustomConnectors.id, args.id),
           eq(orgCustomConnectors.orgId, args.orgId),
           eq(orgCustomConnectors.storageVersion, args.existing.storageVersion),
+          eq(orgCustomConnectors.enabled, true),
           gte(orgCustomConnectors.updatedAt, args.existing.updatedAt),
           lt(
             orgCustomConnectors.updatedAt,
@@ -2342,6 +2433,11 @@ function customConnectorUpdatePublicationPlan(
     locked,
     ctes: [locked],
     ready,
+    definition: and(
+      eq(orgCustomConnectors.id, args.id),
+      eq(orgCustomConnectors.orgId, args.orgId),
+      ready,
+    ),
     bindings: and(
       eq(customConnectorAccountOauthBindings.customConnectorId, args.id),
       ready,
@@ -2408,12 +2504,22 @@ const failedCustomConnectorUpdate$ = command(
 function publishedCustomConnectorUpdate(
   row: CustomConnectorDefinitionRow | null,
   oauthConfig: CustomConnectorOAuthConfigRow | null,
+  networkBindingChange: PreparedCustomConnectorNetworkBinding | undefined,
 ) {
   if (!row) {
     throw new Error("Expected locked custom connector to be updated");
   }
   requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
-  return { row, oauthConfig };
+  return {
+    row: {
+      ...row,
+      networkBinding: publishedCustomConnectorNetworkBinding(
+        networkBindingChange,
+        row.networkBinding,
+      ),
+    },
+    oauthConfig,
+  };
 }
 
 function customConnectorOAuthUpdateValues(
@@ -2444,6 +2550,22 @@ function customConnectorSnapshotOAuthPlan(
           args.oauthConfigUpdate.kind === "preserve" ? undefined : sql`false`,
         ),
       ),
+  );
+}
+
+function customConnectorOAuthUpdateCreateSource(
+  args: PersistCustomConnectorUpdateArgs,
+  connectorId: SQLWrapper,
+) {
+  const oauth = args.oauthConfigUpdate;
+  if (oauth.kind !== "upsert" || !args.encryptedClientSecret) {
+    throw new Error("Expected a prepared OAuth client configuration");
+  }
+  return customConnectorOAuthCreateSource(
+    sql`${connectorId}`.mapWith(orgCustomConnectorOauthConfigs.connectorId),
+    args.orgId,
+    oauth.config,
+    args.encryptedClientSecret,
   );
 }
 
@@ -2498,21 +2620,26 @@ const persistCustomConnectorUpdate$ = command(
         0,
       );
     }
-    const updated = db.$with("updated_custom_connector").as(
-      db
-        .update(orgCustomConnectors)
-        .set(customConnectorDefinitionUpdateValues(args, nowDate()))
-        .where(
-          and(
-            eq(orgCustomConnectors.id, args.id),
-            eq(orgCustomConnectors.orgId, args.orgId),
-            plan.ready,
-            cleanupCompleted,
-          ),
-        )
-        .returning(customConnectorDefinitionSelection()),
-    );
+    const updated = db
+      .$with("updated_custom_connector")
+      .as(
+        db
+          .update(orgCustomConnectors)
+          .set(customConnectorDefinitionUpdateValues(args, nowDate()))
+          .where(and(plan.definition, cleanupCompleted))
+          .returning(customConnectorDefinitionSelection()),
+      );
     ctes.push(updated);
+    const networkBinding = customConnectorNetworkBindingUpdateCte({
+      orgId: args.orgId,
+      connectorId: args.id,
+      change: args.networkBindingChange,
+      updatedConnector: updated,
+      updatedConnectorId: updated.id,
+    });
+    if (networkBinding) {
+      ctes.push(networkBinding);
+    }
     const config =
       oauth.kind === "upsert" && args.encryptedClientSecret
         ? db.$with("custom_connector_oauth_result").as(
@@ -2521,14 +2648,7 @@ const persistCustomConnectorUpdate$ = command(
               .select(
                 db
                   .select(
-                    customConnectorOAuthCreateSource(
-                      sql`${updated.id}`.mapWith(
-                        orgCustomConnectorOauthConfigs.connectorId,
-                      ),
-                      args.orgId,
-                      oauth.config,
-                      args.encryptedClientSecret,
-                    ),
+                    customConnectorOAuthUpdateCreateSource(args, updated.id),
                   )
                   .from(updated),
               )
@@ -2572,6 +2692,7 @@ const persistCustomConnectorUpdate$ = command(
       ? publishedCustomConnectorUpdate(
           result.updated_custom_connector,
           result.custom_connector_oauth_result,
+          args.networkBindingChange,
         )
       : await set(failedCustomConnectorUpdate$, args, signal);
   },
@@ -2586,7 +2707,32 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
     readonly result: CustomConnectorRow | BadRequestResponse | null;
     readonly postCommitAbort?: CapturedConnectorClientInvalidationAbort;
   }> => {
-    const result = await set(persistCustomConnectorUpdate$, args, signal);
+    const publication = await settle(
+      set(persistCustomConnectorUpdate$, args, signal),
+    );
+    if (signal.aborted) {
+      // A successful publication still completes its runtime wakeup below.
+      if (!publication.ok) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!publication.ok) {
+      signal.throwIfAborted();
+      if (
+        isForeignKeyViolation(
+          publication.error,
+          "fk_custom_connector_cloudflare_config",
+        )
+      ) {
+        return {
+          result: badRequestMessage(
+            "Cloudflare Access changed while the connector was being saved; choose an available organization configuration",
+          ),
+        };
+      }
+      throw publication.error;
+    }
+    const result = publication.value;
     if (isBadRequest(result) || !result) {
       return {
         result,
@@ -2601,6 +2747,8 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
     );
     if (
       args.grantConfigurationChanged ||
+      (args.networkBindingChange !== undefined &&
+        args.networkBindingChange.kind !== "preserve") ||
       connector.storageVersion !== args.existing.storageVersion
     ) {
       // eslint-disable-next-line api/signal-check-await -- Preserve the committed wakeup outcome for the caller to propagate cancellation.
@@ -2734,6 +2882,25 @@ export const updateCustomConnectorDefinition$ = command(
     if (isBadRequest(prepared)) {
       return prepared;
     }
+    const networkBindingChange = await set(
+      prepareCustomConnectorNetworkBinding$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        requested: args.input.networkBinding,
+        current: existingConnector.networkBinding,
+        headers: prepared.definition.headerInjections,
+        targets:
+          prepared.definition.kind === "http"
+            ? prepared.definition.prefixTemplates
+            : [prepared.definition.endpoint],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (isBadRequest(networkBindingChange)) {
+      return networkBindingChange;
+    }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
       prepared.definition.permissionBundleRef,
@@ -2793,6 +2960,7 @@ export const updateCustomConnectorDefinition$ = command(
         id: args.id,
         definition: prepared.definition,
         existing: existingConnector,
+        networkBindingChange,
         oauthConfigUpdate: prepared.oauthConfigUpdate,
         encryptedClientSecret,
         grantConfigurationChanged: resolved.grantConfigurationChanged,
@@ -4027,6 +4195,9 @@ function proposalUpdateInput(
   proposal: CustomConnectorProposal,
 ): UpdateCustomConnectorBody {
   return {
+    ...(proposal.networkBinding === undefined
+      ? {}
+      : { networkBinding: proposal.networkBinding }),
     displayName: proposal.displayName,
     prefixTemplates: proposal.prefixTemplates,
     fields: proposal.fields,

@@ -75,14 +75,6 @@
                 .accessibilityLabel(icon)
               }
             }
-            // The header's model control: name in the text colour, effort in grey.
-            HStack(spacing: OkouSpace.six) {
-              Text(verbatim: "GPT 6.1 Sol").font(.okou(.callout).weight(.medium))
-              Text(verbatim: "High").font(.okou(.callout))
-                .foregroundStyle(OkouColor.mutedForeground)
-            }
-            .padding(.horizontal, OkouSpace.lg)
-            .modifier(OkouGlassControl(shape: .capsule))
             // The sidebar's bottom bar: account, search capsule, prominent new chat.
             HStack(spacing: OkouSpace.md) {
               OkouProfileAvatar(
@@ -124,6 +116,33 @@
               .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
               .contentShape(Circle())
             }
+            // Open, the composer shows the chat's model beside the mic: name in the text
+            // colour, effort in grey.
+            OkouComposerSurface(isExpanded: true) {
+              Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } leading: {
+              Button {
+              } label: {
+                OkouToolbarIcon("plus")
+                  .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+              }
+              .buttonStyle(.plain).accessibilityLabel("Add attachments and tools")
+            } trailing: {
+              HStack(spacing: OkouSpace.xs) {
+                Button {
+                } label: {
+                  OkouComposerValueLabel(title: "GPT 6.1 Sol", detail: "High")
+                }
+                .buttonStyle(.plain).accessibilityLabel("Model settings")
+                Button {
+                } label: {
+                  OkouToolbarIcon("mic")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Voice input")
+              }
+            }
           }
           .id("composer-preview")
           section("Composer suggestions") {
@@ -161,8 +180,21 @@
           section("Chat rows") {
             // Chat rows, as the sidebar draws them: status emoji, the quiet glyph and the
             // trailing states in their order (unread, draft, pinned). A working chat's title
-            // shimmers, so it keeps its trailing state.
+            // shimmers, so it keeps its trailing state. A folded project with an unread chat
+            // leads: the badge on its folder, its chevron in line with the chats' dots.
             VStack(alignment: .leading, spacing: 0) {
+              HStack(spacing: OkouSpace.ten) {
+                OkouIcon("folder", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.mutedForeground)
+                  .modifier(OkouUnreadBadge(isVisible: true))
+                  .frame(width: OkouControl.statusColumn, alignment: .leading)
+                Text(verbatim: "Mobile").font(.okou(.body)).lineLimit(1)
+                Spacer(minLength: 0)
+                OkouIcon("chevron-down", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.quietMark)
+                  .rotationEffect(.degrees(-90))
+              }
+              .frame(minHeight: OkouControl.listRow)
               OkouChatRowLabel("Launch checklist", trailing: .pinned) {
                 OkouChatStatusMark(emoji: nil)
               }
@@ -373,12 +405,12 @@
             }
           }
           section("Search bar") {
-            // The sidebar's button; the search page's system field takes the same glyphs.
+            // The same capsule wraps the search page's native input.
             OkouSearchBar(prompt: "Search chats")
           }
           section("Search sheet") {
-            // `OkouSearchPage`: the system field (no clear button, the app's ✕), filters and
-            // results that move with the field, and an empty state centred above the keyboard.
+            // A fixed native field, one-action close, pinned filters, and an empty state
+            // centred above the keyboard.
             Button("Open search sheet") { showsSearchPage = true }
               .buttonStyle(.bordered)
           }
@@ -408,9 +440,10 @@
             ResultStylesGallery()
           }
           section("Workspace menu") {
-            // The sidebar's switcher: the workspace's logo as a glass button, its name beside
-            // it with no arrow; the menu lists each workspace's logo beside its name, a check
-            // on the current one.
+            // The sidebar's header: the switcher, the workspace's logo as a glass button with
+            // its name beside it and no arrow (the menu lists each workspace's logo beside its
+            // name, a check on the current one), then the chat list menu and back to the chat
+            // grouped in one glass capsule.
             let name = Self.sampleWorkspaces.first { $0.id == catalogWorkspace }?.name ?? ""
             HStack(spacing: OkouSpace.md) {
               Menu {
@@ -432,6 +465,23 @@
               }
               .buttonStyle(.plain)
               Text(verbatim: name).font(.okou(.headline))
+                .frame(maxWidth: .infinity, alignment: .leading)
+              HStack(spacing: 0) {
+                Button {
+                } label: {
+                  OkouToolbarIcon("list-filter")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .accessibilityLabel("Chat list")
+                Button {
+                } label: {
+                  OkouToolbarIcon("arrow-right")
+                    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                }
+                .accessibilityLabel("Close sidebar")
+              }
+              .buttonStyle(.plain)
+              .modifier(OkouGlassControl(shape: .capsule))
             }
           }
           section("Agent identities") {
@@ -539,7 +589,7 @@
       .sheet(isPresented: $showsSearchPage) {
         NavigationStack {
           OkouSearchPage(
-            "Search", text: $catalogQuery, prompt: "Search",
+            text: $catalogQuery, prompt: "Search",
             close: {
               showsSearchPage = false
               catalogQuery = ""

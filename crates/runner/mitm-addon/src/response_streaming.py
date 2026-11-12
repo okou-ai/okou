@@ -237,8 +237,7 @@ def _configure_model_sse_inspection(
     response: http.Response,
     *,
     model_protocol: usage.ModelUsageProtocol,
-    is_billable_flow: bool,
-    is_billable_model_provider: bool,
+    reject_uninspectable: bool,
 ) -> _ResponseStreamSetup:
     openai_recoverable_usage: dict = {}
     observed_terminal = False
@@ -301,11 +300,7 @@ def _configure_model_sse_inspection(
         return _ResponseStreamSetup(
             None,
             False,
-            reject_uninspectable=(
-                is_billable_flow
-                and is_billable_model_provider
-                and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
-            ),
+            reject_uninspectable=reject_uninspectable,
         )
 
     finished = False
@@ -374,8 +369,7 @@ def _configure_model_json_inspection(
     response: http.Response,
     *,
     model_protocol: usage.ModelUsageProtocol,
-    is_billable_flow: bool,
-    is_billable_model_provider: bool,
+    reject_uninspectable: bool,
     websocket_header_work_limit: int,
 ) -> _ResponseStreamSetup:
     extractor = usage.create_model_json_response_inspector(model_protocol)
@@ -397,11 +391,7 @@ def _configure_model_json_inspection(
             return _ResponseStreamSetup(
                 None,
                 False,
-                reject_uninspectable=(
-                    is_billable_flow
-                    and is_billable_model_provider
-                    and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
-                ),
+                reject_uninspectable=reject_uninspectable,
             )
 
     inspection: usage.ModelJsonResponseInspection | None = None
@@ -586,20 +576,23 @@ def _configure_response_inspection_stream(
     if not http_response_classification.can_have_body(flow, response):
         return _ResponseStreamSetup(None, False)
     if model_protocol is not None:
+        reject_uninspectable = (
+            is_billable_flow
+            and is_billable_model_provider
+            and _HTTP_STATUS_OK_MIN <= response.status_code < _HTTP_STATUS_REDIRECT_MIN
+        )
         if http_response_classification.has_event_stream_media_type(response):
             return _configure_model_sse_inspection(
                 flow,
                 response,
                 model_protocol=model_protocol,
-                is_billable_flow=is_billable_flow,
-                is_billable_model_provider=is_billable_model_provider,
+                reject_uninspectable=reject_uninspectable,
             )
         return _configure_model_json_inspection(
             flow,
             response,
             model_protocol=model_protocol,
-            is_billable_flow=is_billable_flow,
-            is_billable_model_provider=is_billable_model_provider,
+            reject_uninspectable=reject_uninspectable,
             websocket_header_work_limit=websocket_header_work_limit,
         )
     return _configure_connector_response_inspection(
@@ -820,9 +813,7 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     if isinstance(inspection, response_inspection.CooperativeResponseInspection):
         inspection.close()
     stream_callback = flow.metadata.pop(_RESPONSE_STREAM_CALLBACK, None)
-    flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER, None)
-    flow.metadata.pop(metadata_keys.STREAM_BUFFER_STATE, None)
+    stream_capture.clear_response_capture_state(flow)
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINISH, None)

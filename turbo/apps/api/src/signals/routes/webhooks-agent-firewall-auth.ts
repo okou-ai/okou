@@ -6,6 +6,7 @@ import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { isSandboxToken, verifySandboxToken } from "../auth/tokens";
+import { admitCustomConnectorNetworkRequest$ } from "../services/custom-connector-network-auth.service";
 import {
   resolveBillableFirewallCacheExpiry$,
   prepareFirewallAuthResponse$,
@@ -76,6 +77,34 @@ const firewallAuthRoute$ = command(
         "Network admission requires a matched custom connector",
       );
     }
+    if (bodyResult.data.networkAdmission) {
+      const matched = bodyResult.data.matchedFirewall;
+      const request = bodyResult.data.networkRequest;
+      if (
+        !matched?.customConnectorId ||
+        !request ||
+        Object.keys(bodyResult.data.authHeaders).length !== 0 ||
+        bodyResult.data.authBase !== undefined ||
+        bodyResult.data.authQuery !== undefined ||
+        bodyResult.data.authAwsSigv4 !== undefined
+      ) {
+        return badRequestMessage(
+          "Network-only admission requires a target, intent and empty application auth",
+        );
+      }
+      return await set(
+        admitCustomConnectorNetworkRequest$,
+        {
+          auth,
+          request,
+          matched: { ...matched, customConnectorId: matched.customConnectorId },
+        },
+        signal,
+      );
+    }
+    if (!bodyResult.data.encryptedSecrets) {
+      return invalidBodyResponse;
+    }
     const billableCacheExpiry = await set(
       resolveBillableFirewallCacheExpiry$,
       { auth, firewallBillable: bodyResult.data.firewallBillable },
@@ -84,7 +113,10 @@ const firewallAuthRoute$ = command(
     const prepared = await set(
       prepareFirewallAuthResponse$,
       auth,
-      bodyResult.data,
+      {
+        ...bodyResult.data,
+        encryptedSecrets: bodyResult.data.encryptedSecrets,
+      },
       billableCacheExpiry,
       signal,
     );
@@ -94,9 +126,6 @@ const firewallAuthRoute$ = command(
       {
         auth,
         response: prepared,
-        networkAdmissionConnectorId: bodyResult.data.networkAdmission
-          ? bodyResult.data.matchedFirewall?.customConnectorId
-          : undefined,
       },
       signal,
     );

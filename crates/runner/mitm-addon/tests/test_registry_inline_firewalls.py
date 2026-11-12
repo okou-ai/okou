@@ -16,27 +16,29 @@ from tests.registry_helpers import inline_sandbox, write_multi_sandbox_registry
 
 class TestRegistryInlineFirewalls:
     @pytest.mark.parametrize("kind", ["direct", "cloudflare_access", "unknown"])
-    def test_prepared_custom_network_intent_cannot_enable_unimplemented_execution(
-        self, tmp_path, mitm_ctx, kind
-    ):
+    def test_custom_network_intent_is_validated_before_execution(self, tmp_path, mitm_ctx, kind):
         path = tmp_path / "registry.json"
         sandbox = inline_sandbox("run-custom-network")
         custom_id = "550e8400-e29b-41d4-a716-446655440000"
         entry = sandbox["firewalls"][0]
         entry["customConnectorId"] = custom_id
         sandbox["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
-        entry["firewall"]["apis"][0]["networkIntent"] = {"kind": kind}
+        intent = {"kind": kind}
+        if kind == "cloudflare_access":
+            intent["configId"] = custom_id
+            intent["generation"] = 1
+        entry["firewall"]["apis"][0]["networkIntent"] = intent
         write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
         with mitm_ctx():
             context = registry.get_sandbox_context("10.200.0.1", str(path))
-        if kind == "direct":
+        if kind in ("direct", "cloudflare_access"):
             assert context is not None
             _, compiled, policies = context
             result = matching.match_compiled_firewall_request(
                 "https://api.example.com/items", "GET", compiled, policies
             )
             assert isinstance(result, matching.FirewallAllow)
-            assert result.api_entry["networkIntent"] == {"kind": "direct"}
+            assert result.api_entry["networkIntent"] == intent
         else:
             assert context is None
 

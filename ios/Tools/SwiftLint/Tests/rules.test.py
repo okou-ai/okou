@@ -9,9 +9,14 @@ import unittest
 from pathlib import Path
 
 from cancellation_cases import CANCELLATION_CASES
+from global_state_cases import GLOBAL_STATE_CASES
 from import_cases import IMPORT_CASES
+from resource_failure_cases import RESOURCE_FAILURE_CASES
 from storage_cases import STORAGE_CASES
 from subscription_cases import SUBSCRIPTION_CASES
+from subscription_replacement_cases import SUBSCRIPTION_REPLACEMENT_CASES
+from task_dictionary_cases import TASK_DICTIONARY_CASES
+from task_lifecycle_cases import TASK_LIFECYCLE_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -24,7 +29,11 @@ BINARY = (
 
 CASES = [
     *CANCELLATION_CASES,
+    *RESOURCE_FAILURE_CASES,
     *SUBSCRIPTION_CASES,
+    *SUBSCRIPTION_REPLACEMENT_CASES,
+    *TASK_LIFECYCLE_CASES,
+    *TASK_DICTIONARY_CASES,
     (
         "typed cancellation cannot become resource data",
         "okou_resource_failures",
@@ -781,6 +790,29 @@ class NativeRuleTests(unittest.TestCase):
         rule = "okou_storage_boundaries"
         with tempfile.TemporaryDirectory(prefix="native storage cases ") as directory:
             for index, (name, filename, source) in enumerate(STORAGE_CASES):
+                with self.subTest(name=name):
+                    source = textwrap.dedent(source).lstrip()
+                    expected = [
+                        i
+                        for i, line in enumerate(source.splitlines(), 1)
+                        if "// violation" in line
+                    ]
+                    root = Path(directory) / str(index)
+                    root.mkdir()
+                    result, diagnostics = self.lint(root, source, rule, filename)
+                    self.assertEqual(
+                        result.returncode, 2 if expected else 0, result.stderr
+                    )
+                    self.assertEqual(
+                        sorted((d["rule_id"], d["line"]) for d in diagnostics),
+                        [(rule, line) for line in expected],
+                        result.stdout,
+                    )
+
+    def test_global_mutable_state(self):
+        rule = "okou_global_mutable_state"
+        with tempfile.TemporaryDirectory(prefix="native global state cases ") as directory:
+            for index, (name, filename, source) in enumerate(GLOBAL_STATE_CASES):
                 with self.subTest(name=name):
                     source = textwrap.dedent(source).lstrip()
                     expected = [

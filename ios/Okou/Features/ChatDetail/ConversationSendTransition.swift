@@ -79,6 +79,7 @@ final class ConversationSendTransition {
       flight != nil
       ? .timingCurve(0.2, 0.4, 0.4, 1, duration: Self.flightDuration)
       : .easeInOut(duration: 0.22)
+    if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
     keyboardObserver = NotificationCenter.default.addObserver(
       forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
     ) { [weak self] notification in

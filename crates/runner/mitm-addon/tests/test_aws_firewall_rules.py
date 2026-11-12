@@ -1,6 +1,7 @@
 """Focused AWS-aware rules for the standard compiled firewall matcher."""
 
 from collections.abc import Iterable
+from unittest.mock import patch
 
 import pytest
 
@@ -94,25 +95,60 @@ def _assert_unknown(result: object) -> None:
 
 
 @pytest.mark.parametrize("indexed", [True, False])
-@pytest.mark.parametrize(("service", "expected"), [("s3", "unsafe_path"), ("ec2", "allow")])
+@pytest.mark.parametrize(
+    ("service", "available", "expected"),
+    [("s3", True, "unsafe_path"), ("ec2", True, "allow"), ("s3", False, "allow")],
+)
 def test_uri_alias_compares_applicable_conditional_routes(
-    indexed: bool, service: str, expected: str
+    indexed: bool, service: str, available: bool, expected: str
 ) -> None:
-    result = _match(
-        base="https://s3.example.com",
-        permissions=[
-            firewall_permission("ordinary", "GET /files/a"),
-            firewall_permission("restricted", "GET /files/%61 AWS sigv4=s3"),
-        ],
-        url="https://s3.example.com/files/a",
-        method="GET",
-        headers=_headers(host="s3.example.com", service=service),
-        allow=("ordinary",),
-        deny=("restricted",),
-        indexed=indexed,
-    )
+    with patch.object(matching, "parse_qsl", wraps=matching.parse_qsl) as selector_parse:
+        result = _match(
+            base="https://s3.example.com",
+            permissions=[
+                firewall_permission("ordinary", "GET /files/a"),
+                firewall_permission("restricted", "GET /files/%61 AWS sigv4=s3"),
+            ],
+            url="https://s3.example.com/files/a",
+            method="GET",
+            headers=_headers(host="s3.example.com", service=service),
+            allow=("ordinary",),
+            deny=("restricted",),
+            indexed=indexed,
+            aws_inspection_available=available,
+        )
+    assert selector_parse.call_count == (1 if service == "s3" and available else 0)
     if expected == "allow":
         _assert_allowed(result, "ordinary")
+    else:
+        assert isinstance(result, matching.FirewallBlock)
+        assert result.reason == "unsafe_path"
+
+
+@pytest.mark.parametrize("indexed", [True, False])
+@pytest.mark.parametrize("version", ["readable", "restricted"])
+def test_uri_alias_reuses_query_selectors_without_losing_denied_routes(
+    indexed: bool, version: str
+) -> None:
+    with patch.object(matching, "parse_qsl", wraps=matching.parse_qsl) as selector_parse:
+        result = _match(
+            base="https://s3.example.com",
+            permissions=[
+                firewall_permission("read", "GET /files/a?versionId=* AWS sigv4=s3"),
+                firewall_permission(
+                    "restricted", "GET /files/%61?versionId=restricted AWS sigv4=s3"
+                ),
+            ],
+            url=f"https://s3.example.com/files/a?versionId={version}",
+            method="GET",
+            headers=_headers(host="s3.example.com", service="s3"),
+            allow=("read",),
+            deny=("restricted",),
+            indexed=indexed,
+        )
+    assert selector_parse.call_count == 1
+    if version == "readable":
+        _assert_allowed(result, "read")
     else:
         assert isinstance(result, matching.FirewallBlock)
         assert result.reason == "unsafe_path"

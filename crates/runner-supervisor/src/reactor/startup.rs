@@ -22,6 +22,7 @@ use crate::SharedFactory;
 use crate::executor::ExecutorConfig;
 use crate::heartbeat::{HeartbeatContext, HeartbeatController, HeartbeatProfile};
 use crate::idle_prune_control::PruneIdleListener;
+use crate::ingress::{IngressConfig, IngressRuntime};
 use crate::lifecycle::RunnerMode;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_storage::SandboxOpReporter;
@@ -32,6 +33,7 @@ const INITIAL_HOME_CACHE_READINESS_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) struct StartupResources {
     // Drop dependent services before runtime even on an abandoned startup.
     // Their existing wrappers initiate cleanup; Drop is not a completed join.
+    pub ingress: Option<IngressRuntime>,
     pub shutdown: ShutdownHandles,
     pub proxy: ProxyState,
     pub sandbox_runtime: SandboxRuntimeConfig,
@@ -118,6 +120,7 @@ impl StartupOwner {
             cache.drain_pressure_reclamation().await;
         }
         let StartupResources {
+            ingress,
             sandbox_runtime: SandboxRuntimeConfig { mut runtime },
             proxy:
                 ProxyState {
@@ -130,6 +133,9 @@ impl StartupOwner {
                     dns_handle,
                 },
         } = self.resources;
+        if let Some(ingress) = ingress {
+            ingress.shutdown().await;
+        }
         ctx.provider.provider.shutdown().await;
         if let Err(error) = dns_handle.stop().await {
             warn!(%error, "failed to clean up network-log helper after startup failure");
@@ -153,6 +159,7 @@ impl StartupOwner {
 /// None means readiness was cancelled, after rollback.
 pub(super) async fn start(
     resources: StartupResources,
+    ingress: Option<IngressConfig>,
     ctx: StartupContext<'_>,
     signals: SignalState,
     inventory: StartupInventory<'_>,
@@ -200,6 +207,25 @@ pub(super) async fn start(
     };
     let prune_admission = Arc::new(Semaphore::new(1));
 
+    if let Some(config) = ingress {
+        match IngressRuntime::start(
+            config.directory,
+            ctx.runner.identity,
+            config.hostname,
+            &config.token,
+        )
+        .await
+        {
+            Ok(ingress) => startup.resources.ingress = Some(ingress),
+            Err(error) => {
+                startup.rollback(&ctx, "ingress_startup_failure").await;
+                return Err(RunnerError::Internal(format!(
+                    "start Runner ingress: {error}"
+                )));
+            }
+        }
+    }
+
     startup.initial_inventory = Some(HomeCacheObservation::begin_initialization(
         ctx.exec_config.home_cache.as_ref(),
         inventory.snapshot,
@@ -246,6 +272,33 @@ pub(super) async fn start(
             return Err(error);
         }
     };
+    // Initial inventory publishes a Running heartbeat, so public reachability
+    // must be established before that report as well as ready status below.
+    if let Some(ingress) = &startup.resources.ingress {
+        let health = async {
+            #[cfg(test)]
+            if let Some(client) = &inventory.test_hooks.ingress_client {
+                return ingress.check_public_health_with_client(client).await;
+            }
+            ingress.check_public_health().await
+        };
+        let readiness = tokio::select! {
+            biased;
+            () = ctx.provider.cancel.cancelled() => Err(std::io::Error::other("Runner ingress readiness cancelled")),
+            result = health => result,
+        };
+        if let Err(error) = readiness {
+            let cancelled = ctx.provider.cancel.is_cancelled();
+            startup.rollback(&ctx, "ingress_readiness_failure").await;
+            return if cancelled {
+                Ok(None)
+            } else {
+                Err(RunnerError::Internal(format!(
+                    "verify public Runner ingress: {error}"
+                )))
+            };
+        }
+    }
     let readiness = {
         let cache_readiness = finish_initial_inventory(
             &mut startup.initial_inventory,

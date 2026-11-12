@@ -31,6 +31,7 @@ import { plan } from "./plan";
 import { parseAgentPrefixes } from "./plan-names";
 import { parseSnapshot, PlanningError, type Snapshot } from "./snapshot";
 import { validateExecutionImage } from "./execution-validation";
+import type { ProductionBinding } from "./production-model";
 
 const agentContent = object({
   instructions: string(),
@@ -53,6 +54,7 @@ export async function prepareExecution(args: {
   inventoryFile: string;
   planFile: string;
   expectedPlanSha256: string;
+  production?: ProductionBinding;
 }) {
   const inventoryBytes = await readPrivate(args.inventoryFile);
   const planBytes = await readPrivate(args.planFile);
@@ -341,8 +343,16 @@ export async function prepareExecution(args: {
   );
   const configuration = bundleConfiguration();
   const image = executionImageSchema.parse({
-    format: "single-agent-execution-v1",
-    purpose: "isolated-copy-rehearsal",
+    ...(args.production
+      ? {
+          format: "single-agent-production-execution-v1",
+          purpose: "production-cutover",
+          production: args.production,
+        }
+      : {
+          format: "single-agent-execution-v1",
+          purpose: "isolated-copy-rehearsal",
+        }),
     scope: {
       orgId: args.orgId,
       target: args.target,

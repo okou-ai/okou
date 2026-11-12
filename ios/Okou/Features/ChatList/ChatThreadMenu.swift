@@ -29,6 +29,8 @@ struct ChatThreadMenu {
     workspace.list.threads.first { $0.id == threadID }
   }
 
+  var title: String { thread?.displayTitle ?? "" }
+
   var items: [Item] {
     guard let thread else { return [] }
     let list = workspace.list
@@ -128,7 +130,7 @@ struct ChatThreadMenu {
   }
 
   func uiMenu() -> UIMenu {
-    UIMenu(title: thread?.displayTitle ?? "", children: uiElements(items))
+    UIMenu(title: title, children: uiElements(items))
   }
 
   private func uiElements(_ items: [Item]) -> [UIMenuElement] {
@@ -154,19 +156,23 @@ struct ChatThreadMenuContent: View {
   let menu: ChatThreadMenu
 
   var body: some View {
-    ForEach(menu.items) { item in
-      if item.separated { Divider() }
-      if item.action == .status, let icon = item.icon {
-        Menu(item.title, image: .init(name: OkouIcon.assetName(for: icon), bundle: .main)) {
-          ForEach(menu.statusItems) { status in
-            if status.separated { Divider() }
-            action(status)
+    Section {
+      ForEach(menu.items) { item in
+        if item.separated { Divider() }
+        if item.action == .status, let icon = item.icon {
+          Menu(item.title, image: .init(name: OkouIcon.assetName(for: icon), bundle: .main)) {
+            ForEach(menu.statusItems) { status in
+              if status.separated { Divider() }
+              action(status)
+            }
           }
+          .disabled(!item.enabled)
+        } else {
+          action(item)
         }
-        .disabled(!item.enabled)
-      } else {
-        action(item)
       }
+    } header: {
+      Text(verbatim: menu.title)
     }
   }
 

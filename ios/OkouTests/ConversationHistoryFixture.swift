@@ -19,13 +19,15 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
     detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
-      beforeEventRows: beforeEventRows, detail: detail, additional: additional,
+      beforeEventRows: beforeEventRows, eventRowsStatus: eventRowsStatus,
+      detail: detail, additional: additional,
       indicators: indicators)
   }
 
@@ -36,6 +38,7 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
     detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -105,12 +108,21 @@ final class ConversationHistoryFixture: Sendable {
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case path + "/event-rows":
         try await beforeEventRows?(request)
+        let status = eventRowsStatus()
+        if status != 200 {
+          return ChatHTTPResponse(
+            status: status, body: #"{"error":{"message":"History unavailable"}}"#)
+        }
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        return rows.values.withLock { values in
+        return try rows.values.withLock { values in
           let last = min(values.count, after + 50)
-          let cursorID = last == 0 ? "null" : "\"\(Self.id(last))\""
+          let identity =
+            last == 0
+            ? nil
+            : try JSONDecoder().decode(EventIdentity.self, from: Data(values[last - 1].utf8)).id
+          let cursorID = identity.map { "\"\($0)\"" } ?? "null"
           return ChatHTTPResponse(
             body: """
               {"rows":[\(values[after..<last].joined(separator: ","))],"cursor":{"lastEventId":\(cursorID),"lastSeqId":\(last)},"hasMore":\(last < values.count)}
@@ -199,6 +211,7 @@ final class ConversationHistoryFixture: Sendable {
       """
   }
 
+  private struct EventIdentity: Decodable { let id: String }
   private struct UserPayload: Encodable { let userMessage: Document }
   private struct Document: Encodable {
     let version = 1

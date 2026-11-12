@@ -48,7 +48,7 @@ struct MessageFilePreview: View {
       if kind == .image {
         MessageImagePreview(file: file, thumbnail: thumbnail)
       } else if kind == .video || kind == .audio {
-        MessageFileMediaPlayer(file: file)
+        MessageFileMediaPlayer(file: file, autoplays: kind == .video)
       } else if QLPreviewController.canPreview(file.url as NSURL) {
         MessageFileQuickLook(file: file)
       } else {
@@ -135,10 +135,15 @@ struct MessageFileQuickLook: UIViewControllerRepresentable {
 
 private struct MessageFileMediaPlayer: View {
   let file: ChatAttachmentFile
+  let autoplays: Bool
   @State private var player: AVPlayer?
   var body: some View {
     VideoPlayer(player: player)
-      .task(id: file.url) { player = AVPlayer(url: file.url) }
+      .task(id: file.url) {
+        let player = AVPlayer(url: file.url)
+        self.player = player
+        if autoplays { player.play() }
+      }
       .onDisappear {
         player?.pause()
         player = nil

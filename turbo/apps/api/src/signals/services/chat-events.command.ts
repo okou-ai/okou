@@ -37,7 +37,7 @@ import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   asc,
@@ -68,7 +68,8 @@ import { buildGenerationTemplatePrompt } from "../../lib/generation-template-pro
 import { now, nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { apiStartTime$ } from "../context/hono";
+import { apiStartTime$, route$ } from "../context/hono";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -102,6 +103,10 @@ import {
   type PublishedChatThreadLease,
 } from "./queued-chat-thread.service";
 import { mcpClientDisplayName } from "./mcp-client-display-name.service";
+import {
+  measureChatEnqueue,
+  ChatEnqueueTimingCollector,
+} from "./chat-enqueue-timing.service";
 
 import {
   cancelRun$,
@@ -179,6 +184,12 @@ import {
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
+export const chatEnqueueTiming$ = computed((get) => {
+  return get(route$) === chatEventsContract.send
+    ? new ChatEnqueueTimingCollector(get(apiStartTime$))
+    : undefined;
+});
+
 type SendBody =
   import("@okouai/api-contracts/contracts/chat-event-send").ChatEventSendBody;
 interface NormalSendBody {
@@ -224,6 +235,7 @@ type OrganizationAuthContext = AuthContext & {
   readonly orgId: string;
 };
 interface NormalSendArgs {
+  readonly enqueueTiming?: ChatEnqueueTimingCollector;
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
@@ -933,6 +945,9 @@ function normalSendRequestFacts(
       ...(args.requestReceivedAt === undefined
         ? {}
         : { requestReceivedAt: args.requestReceivedAt }),
+      ...(args.enqueueTiming
+        ? { enqueueObservationId: args.enqueueTiming.observationId }
+        : {}),
     },
   };
 }
@@ -2370,30 +2385,44 @@ const prepareNormalSendInput$ = command(
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ) => {
-    const attachFileMetadata = await set(
-      resolveIncomingAttachFileMetadata$,
-      {
-        userId: args.userId,
-        orgId: args.orgId,
-        userMessage: args.body.userMessage,
+    const attachFileMetadata = await measureChatEnqueue(
+      args.enqueueTiming,
+      "attachments",
+      async () => {
+        return await set(
+          resolveIncomingAttachFileMetadata$,
+          {
+            userId: args.userId,
+            orgId: args.orgId,
+            userMessage: args.body.userMessage,
+          },
+          signal,
+        );
       },
-      signal,
     );
-    const modelSelection = await set(
-      resolveChatInputModelSelection$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        ...args.thread.runSettings,
-        reasoningEffort: args.body.runOptions?.reasoningEffort,
-        orgPlanCapabilities: args.orgPlanCapabilities,
-        catalog: args.catalog,
-        modelBootstrap: args.modelBootstrap,
+    signal.throwIfAborted();
+    const modelSelection = await measureChatEnqueue(
+      args.enqueueTiming,
+      "model_capture",
+      async () => {
+        return await set(
+          resolveChatInputModelSelection$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            ...args.thread.runSettings,
+            reasoningEffort: args.body.runOptions?.reasoningEffort,
+            orgPlanCapabilities: args.orgPlanCapabilities,
+            catalog: args.catalog,
+            modelBootstrap: args.modelBootstrap,
+          },
+          signal,
+        );
       },
-      signal,
     );
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -2550,6 +2579,60 @@ const prepareNormalSendContext$ = command(
   },
 );
 
+const publishPreparedNormalSend$ = command(
+  async (
+    { set },
+    args: NormalSendArgs,
+    publication: {
+      readonly input: NormalSendInput;
+      readonly context: AgentRunContextSignals;
+      readonly previousBinding: Parameters<typeof normalSendRequestFacts>[2];
+    },
+    signal: AbortSignal,
+  ) => {
+    const { thread, event } = publication.input;
+    const { context } = publication;
+    const committed = await set(
+      appendNormalSendInput$,
+      args,
+      normalSendInputPlan(args, publication.input),
+      signal,
+    );
+    if (committed === null) {
+      return null;
+    }
+    const {
+      inserted: { createdAt },
+      enqueueCommit,
+      publishedLease,
+    } = committed;
+    args.enqueueTiming?.committed(enqueueCommit.committedAt);
+    // Schedule before observing abort; touch, realtime and the running-run
+    // notice follow this pick's outcome.
+    waitUntil(
+      set(
+        publishEnqueuedNormalSend$,
+        {
+          args,
+          thread,
+          touchedAt: createdAt,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+          ...(publishedLease ? { publishedLease } : {}),
+          context,
+          requestFacts: normalSendRequestFacts(
+            args,
+            thread,
+            publication.previousBinding,
+            event,
+          ),
+        },
+        signal,
+      ),
+    );
+    return createdAt;
+  },
+);
+
 export const sendNormalEvent$ = command(
   async (
     { set },
@@ -2557,36 +2640,55 @@ export const sendNormalEvent$ = command(
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
     signal.throwIfAborted();
-    const prepared = await set(prepareNormalSendContext$, args, signal);
+    const prepared = await measureChatEnqueue(
+      args.enqueueTiming,
+      "context_ready",
+      async () => {
+        return await set(prepareNormalSendContext$, args, signal);
+      },
+    );
+    signal.throwIfAborted();
     if ("status" in prepared) {
       return prepared;
     }
     const { authorized, catalog, orgModels, modelBootstrap, context } =
       prepared;
-    const resolvedThread = await set(
-      resolveSendThread$,
-      {
-        ...args,
-        orgPlanCapabilities: orgModels.capabilities,
-        catalog,
-        modelBootstrap,
-        context,
-        existing:
-          "thread" in authorized
-            ? { thread: authorized.thread, agentId: authorized.agent.id }
-            : undefined,
+    const resolvedThread = await measureChatEnqueue(
+      args.enqueueTiming,
+      "thread_selection",
+      async () => {
+        return await set(
+          resolveSendThread$,
+          {
+            ...args,
+            orgPlanCapabilities: orgModels.capabilities,
+            catalog,
+            modelBootstrap,
+            context,
+            existing:
+              "thread" in authorized
+                ? { thread: authorized.thread, agentId: authorized.agent.id }
+                : undefined,
+          },
+          signal,
+        );
       },
-      signal,
     );
     signal.throwIfAborted();
     if ("status" in resolvedThread) {
       return resolvedThread;
     }
-    const revocation = await set(
-      validateSendThreadRevocation$,
-      args,
-      resolvedThread,
-      signal,
+    const revocation = await measureChatEnqueue(
+      args.enqueueTiming,
+      "followup_validation",
+      async () => {
+        return await set(
+          validateSendThreadRevocation$,
+          args,
+          resolvedThread,
+          signal,
+        );
+      },
     );
     signal.throwIfAborted();
     if (revocation && "status" in revocation) {
@@ -2614,51 +2716,25 @@ export const sendNormalEvent$ = command(
       prepared.agentRunSource,
     );
     const enqueued = await settle(
-      (async () => {
-        const committed = await set(
-          appendNormalSendInput$,
+      measureChatEnqueue(args.enqueueTiming, "publication", async () => {
+        return await set(
+          publishPreparedNormalSend$,
           args,
-          normalSendInputPlan(args, {
-            thread,
-            event,
-            attachFileMetadata,
-            agentRunSource: prepared.agentRunSource,
-            replacementTarget: revocation?.replacementTarget,
-          }),
+          {
+            input: {
+              thread,
+              event,
+              attachFileMetadata,
+              agentRunSource: prepared.agentRunSource,
+              replacementTarget: revocation?.replacementTarget,
+            },
+            context,
+            previousBinding:
+              "thread" in authorized ? authorized.thread : undefined,
+          },
           signal,
         );
-        if (committed === null) {
-          return null;
-        }
-        const {
-          inserted: { createdAt },
-          enqueueCommit,
-          publishedLease,
-        } = committed;
-        // Schedule before observing abort; touch, realtime and the running-run
-        // notice follow this pick's outcome.
-        waitUntil(
-          set(
-            publishEnqueuedNormalSend$,
-            {
-              args,
-              thread,
-              touchedAt: createdAt,
-              ...(enqueueCommit ? { enqueueCommit } : {}),
-              ...(publishedLease ? { publishedLease } : {}),
-              context,
-              requestFacts: normalSendRequestFacts(
-                args,
-                thread,
-                "thread" in authorized ? authorized.thread : undefined,
-                event,
-              ),
-            },
-            signal,
-          ),
-        );
-        return createdAt;
-      })(),
+      }),
       signal,
     );
     if (!enqueued.ok) {
@@ -3211,12 +3287,20 @@ export const handleSendChatEvent$ = command(
     }
     const clientName =
       auth.tokenType === "oauth"
-        ? await mcpClientDisplayName(auth.clientId, signal)
+        ? await measureChatEnqueue(
+            get(chatEnqueueTiming$),
+            "mcp_attribution",
+            () => {
+              return mcpClientDisplayName(auth.clientId, signal);
+            },
+          )
         : undefined;
     signal.throwIfAborted();
-    return await set(
+    const timing = get(chatEnqueueTiming$);
+    const result = await set(
       sendNormalEvent$,
       {
+        enqueueTiming: timing,
         body,
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,
@@ -3225,5 +3309,9 @@ export const handleSendChatEvent$ = command(
       },
       signal,
     );
+    timing?.setOutcome(
+      result.status === 201 && result.replayed ? "replayed" : "accepted",
+    );
+    return result;
   },
 );

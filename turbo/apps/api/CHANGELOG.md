@@ -10,6 +10,146 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.64.0](https://github.com/okou-ai/okou/compare/api-v2.63.0...api-v2.64.0) (2026-11-12)
+
+
+### Features
+
+* add email workspace binding commands ([#46756](https://github.com/okou-ai/okou/issues/46756)) ([79b09c6](https://github.com/okou-ai/okou/commit/79b09c6f37978f2124b39912b743384cfc16fdb4))
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+* allow unlinking the login email integration ([#46749](https://github.com/okou-ai/okou/issues/46749)) ([d6f52fc](https://github.com/okou-ai/okou/commit/d6f52fcb2b01ba376fd83e41b4f2494a264f2567))
+* **api:** provide the official office skill source ([#46765](https://github.com/okou-ai/okou/issues/46765)) ([180d511](https://github.com/okou-ai/okou/commit/180d511e6658aa4971ccbd926e6b20efd9ee3d44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/db bumped to 2.31.0
+    * @okouai/pi-agent-runtime bumped to 1.51.108
+
+## [2.63.0](https://github.com/okou-ai/okou/compare/api-v2.62.0...api-v2.63.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Bug Fixes
+
+* **api:** resolve email senders through connected mailbox workspaces ([#46753](https://github.com/okou-ai/okou/issues/46753)) ([ee21036](https://github.com/okou-ai/okou/commit/ee210363a32e1e5e2ff5a5d2d40800b2f4925a6a))
+* **email:** align thread context formatting with slack ([#46748](https://github.com/okou-ai/okou/issues/46748)) ([d37ea27](https://github.com/okou-ai/okou/commit/d37ea27b50055c2575051cd51d1abc041ecbb8e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+    * @okouai/core bumped to 8.831.0
+    * @okouai/db bumped to 2.30.0
+    * @okouai/pi-agent-runtime bumped to 1.51.107
+
+## [2.62.0](https://github.com/okou-ai/okou/compare/api-v2.61.2...api-v2.62.0) (2026-11-12)
+
+
+### Features
+
+* **android:** add generated api transport and release compatibility ([#46666](https://github.com/okou-ai/okou/issues/46666)) ([2898887](https://github.com/okou-ai/okou/commit/2898887d268ba4efdec8b7bbffdf6a93a9de7490))
+
+
+### Bug Fixes
+
+* **api:** remove desktop notification disconnect warning ([#46737](https://github.com/okou-ai/okou/issues/46737)) ([e27cfc3](https://github.com/okou-ai/okou/commit/e27cfc30dd86da43ec791718f1cb061e2d65bc68))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+    * @okouai/core bumped to 8.830.0
+    * @okouai/db bumped to 2.29.3
+    * @okouai/pi-agent-runtime bumped to 1.51.106
+
+## [2.61.2](https://github.com/okou-ai/okou/compare/api-v2.61.1...api-v2.61.2) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.829.3
+    * @okouai/db bumped to 2.29.2
+    * @okouai/pi-agent-runtime bumped to 1.51.105
+
+## [2.61.1](https://github.com/okou-ai/okou/compare/api-v2.61.0...api-v2.61.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **api:** restrict suggestion feedback to morning brief and suggestions ([#46716](https://github.com/okou-ai/okou/issues/46716)) ([b2811f1](https://github.com/okou-ai/okou/commit/b2811f1d0f3bf75fc1d8f1f37f75b6fbefd92411))
+* **email:** include prior mailbox thread context ([#46715](https://github.com/okou-ai/okou/issues/46715)) ([2795388](https://github.com/okou-ai/okou/commit/2795388ea2500176bfb42af138e5fe791889c758))
+* normalize skill attachment paths and skip failed uploads ([#46689](https://github.com/okou-ai/okou/issues/46689)) ([bb76f65](https://github.com/okou-ai/okou/commit/bb76f65a44e7ec385eef81e1201f46bf4c91e419))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.2
+    * @okouai/core bumped to 8.829.2
+    * @okouai/db bumped to 2.29.1
+    * @okouai/pi-agent-runtime bumped to 1.51.104
+
+## [2.61.0](https://github.com/okou-ai/okou/compare/api-v2.60.0...api-v2.61.0) (2026-11-11)
+
+
+### Features
+
+* **api:** add correlated chat enqueue phase timings ([#46625](https://github.com/okou-ai/okou/issues/46625)) ([896077c](https://github.com/okou-ai/okou/commit/896077c837a2fda2c157533946a2ab300a500593))
+
+
+### Refactoring
+
+* **api:** remove unused run volume override inputs ([#46627](https://github.com/okou-ai/okou/issues/46627)) ([d6e2b91](https://github.com/okou-ai/okou/commit/d6e2b918d7b052620e365fd90651c5a6ae46e188))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.1
+    * @okouai/core bumped to 8.829.1
+    * @okouai/db bumped to 2.29.0
+    * @okouai/pi-agent-runtime bumped to 1.51.103
+
+## [2.60.0](https://github.com/okou-ai/okou/compare/api-v2.59.2...api-v2.60.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+    * @okouai/connectors bumped to 3.22.0
+    * @okouai/core bumped to 8.829.0
+    * @okouai/db bumped to 2.28.0
+    * @okouai/pi-agent-runtime bumped to 1.51.102
+
 ## [2.59.2](https://github.com/okou-ai/okou/compare/api-v2.59.1...api-v2.59.2) (2026-11-11)
 
 

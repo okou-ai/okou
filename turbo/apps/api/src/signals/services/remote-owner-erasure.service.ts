@@ -7,6 +7,7 @@ import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, exists } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
@@ -14,6 +15,26 @@ type RemoteErasureScope =
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
+
+function boundCustomConnectorErasureCondition(orgId: string) {
+  return and(
+    eq(orgCustomConnectors.orgId, orgId),
+    exists(
+      new QueryBuilder()
+        .select({ id: orgCustomConnectorCloudflareBindings.connectorId })
+        .from(orgCustomConnectorCloudflareBindings)
+        .where(
+          and(
+            eq(
+              orgCustomConnectorCloudflareBindings.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorCloudflareBindings.orgId, orgId),
+          ),
+        ),
+    ),
+  );
+}
 
 /** Commit dependency removal before deleting its parents; no remote work or replay. */
 export const eraseRemoteOwnerData$ = command(
@@ -24,39 +45,36 @@ export const eraseRemoteOwnerData$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     if (scope.kind === "organization") {
-      // Organization teardown must not turn retained definitions into Direct
-      // connectors if cleanup stops between removing the edge and its network.
+      // Consume only disabled parent IDs. A concurrent new edge not visible in
+      // this snapshot remains protected by its restrictive configuration FK.
+      const disabled = db
+        .$with("disabled_erased_custom_connectors")
+        .as(
+          db
+            .update(orgCustomConnectors)
+            .set({ enabled: false })
+            .where(boundCustomConnectorErasureCondition(scope.orgId))
+            .returning({ id: orgCustomConnectors.id }),
+        );
       await db
-        .update(orgCustomConnectors)
-        .set({ enabled: false })
+        .with(disabled)
+        .delete(orgCustomConnectorCloudflareBindings)
         .where(
           and(
-            eq(orgCustomConnectors.orgId, scope.orgId),
+            eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId),
             exists(
               db
-                .select({
-                  id: orgCustomConnectorCloudflareBindings.connectorId,
-                })
-                .from(orgCustomConnectorCloudflareBindings)
+                .select({ id: disabled.id })
+                .from(disabled)
                 .where(
-                  and(
-                    eq(
-                      orgCustomConnectorCloudflareBindings.connectorId,
-                      orgCustomConnectors.id,
-                    ),
-                    eq(
-                      orgCustomConnectorCloudflareBindings.orgId,
-                      orgCustomConnectors.orgId,
-                    ),
+                  eq(
+                    disabled.id,
+                    orgCustomConnectorCloudflareBindings.connectorId,
                   ),
                 ),
             ),
           ),
         );
-      signal.throwIfAborted();
-      await db
-        .delete(orgCustomConnectorCloudflareBindings)
-        .where(eq(orgCustomConnectorCloudflareBindings.orgId, scope.orgId));
       signal.throwIfAborted();
     }
     await db

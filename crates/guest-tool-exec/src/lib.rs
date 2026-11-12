@@ -3,7 +3,7 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::AsFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path};
 use std::process::{Command, ExitCode};
@@ -214,29 +214,10 @@ fn place_current_process(endpoint: &str) -> io::Result<()> {
     stream.set_read_timeout(Some(PLACEMENT_TIMEOUT))?;
     stream.set_write_timeout(Some(PLACEMENT_TIMEOUT))?;
     let placement = process_control_ipc::receive_tool_placement(&stream)?;
-    write_self_to_cgroup(&placement)?;
+    process_control_ipc::write_self_to_cgroup(placement.as_fd())?;
     drop(placement);
     process_control_ipc::write_tool_placement_confirmation(&stream)?;
     process_control_ipc::read_tool_placement_ack(&stream)
-}
-
-fn write_self_to_cgroup(placement: &OwnedFd) -> io::Result<()> {
-    loop {
-        // SAFETY: `placement` is open for writing and the one-byte buffer is
-        // valid for the duration of the call.
-        let written = unsafe { libc::write(placement.as_raw_fd(), b"0".as_ptr().cast(), 1) };
-        if written == 1 {
-            return Ok(());
-        }
-        if written < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error);
-        }
-        return Err(io::Error::from_raw_os_error(libc::EIO));
-    }
 }
 
 fn exec_shell() -> io::Error {

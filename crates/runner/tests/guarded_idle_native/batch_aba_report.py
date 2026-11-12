@@ -66,9 +66,8 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             raise ValueError("batch ABA changed its original physical owner")
         ordered = [terminal[1], *events[:5], terminal[2], terminal[3], events[5], terminal[4],
                    events[6], events[7], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("old refusal and new physical recovery ordering changed")
+        report.validate_witness_clock_order(
+            ordered, "old refusal and new physical recovery ordering changed")
         blocked, pool, admission, waiting, refused, tail, complete, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
         if not failure.valid_status_path(path) or path in paths:

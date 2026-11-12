@@ -1,24 +1,25 @@
 import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   customConnectorByIdContract,
   customConnectorProposalContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { createStore } from "ccstate";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const store = createStore();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ view: "scoped" as const });
@@ -38,22 +39,187 @@ const connectorById = () => {
   );
 };
 
-async function actor() {
-  const identity = {
-    orgId: `org_binding_${randomUUID()}`,
-    userId: `user_${randomUUID()}`,
-  };
-  await store.set(
-    seedOrgMembership$,
-    { ...identity, role: "admin" },
-    context.signal,
+async function enableNetworkBinding(enabled: boolean) {
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers,
+      body: {
+        switches: {
+          [FeatureSwitchKey.CustomConnectorCloudflareAccess]: enabled,
+        },
+      },
+    }),
+    [200],
   );
+}
+
+async function actor() {
+  const bdd = createBddApi(context);
+  const identity = bdd.user({ orgRole: "org:admin" });
+  await bdd.readMe(identity);
   mocks.clerk.session(identity.userId, identity.orgId, "org:admin");
   mocks.s3.listObjects([]);
 }
 
 test.each(["http", "mcp"] as const)(
-  "%s preparation keeps Direct behavior and negotiates the strict Cloudflare reader",
+  "%s binds atomically and requires explicit dependency removal",
+  async (kind) => {
+    useSecretKmsProbe();
+    await actor();
+    await enableNetworkBinding(true);
+    const config = (
+      await accept(
+        configs().create({
+          headers,
+          query,
+          body: {
+            id: randomUUID(),
+            scope: "organization",
+            name: "Shared gateway",
+            credentials: {
+              clientId: "synthetic-id",
+              clientSecret: "synthetic-secret",
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const definition = {
+      displayName: "Protected connector",
+      authMode: "none" as const,
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      ...(kind === "http"
+        ? {
+            kind: "http" as const,
+            prefixTemplates: ["https://api.example.com/"],
+          }
+        : {
+            kind: "mcp" as const,
+            endpoint: "https://api.example.com/mcp",
+            transport: "streamable-http" as const,
+          }),
+    };
+    const created = (
+      await accept(
+        connectors().create({
+          headers,
+          body: {
+            ...definition,
+            networkBinding: { type: "cloudflare_access", configId: config.id },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    expect(created.networkBinding).toMatchObject({
+      configId: config.id,
+      status: "available",
+    });
+    const retained = (
+      await accept(
+        connectorById().update({
+          headers,
+          params: { id: created.id },
+          body: {
+            ...definition,
+            displayName: "Renamed protected connector",
+            storageVersion: created.storageVersion,
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(retained.networkBinding?.configId).toBe(config.id);
+    expect(retained.storageVersion).toBe(created.storageVersion);
+    for (const operation of ["delete", "convert"] as const) {
+      const preview = (
+        await accept(
+          configs().impactPreview({
+            headers,
+            params: { configId: config.id },
+            query: { operation, includeCustomConnectors: "true" },
+          }),
+          [200],
+        )
+      ).body;
+      expect(preview.customConnectors).toStrictEqual([
+        expect.objectContaining({ id: created.id }),
+      ]);
+      const body = {
+        expectedRevision: preview.expectedRevision,
+        impactSnapshot: preview.impactSnapshot,
+      };
+      const denied =
+        operation === "delete"
+          ? await accept(
+              configs().delete({
+                headers,
+                query,
+                params: { configId: config.id },
+                body,
+              }),
+              [409],
+            )
+          : await accept(
+              configs().convertToPersonal({
+                headers,
+                params: { configId: config.id },
+                body,
+              }),
+              [409],
+            );
+      expect(denied.body.error.message.toLowerCase()).toContain("connector");
+    }
+    await enableNetworkBinding(false);
+    const cleared = (
+      await accept(
+        connectorById().update({
+          headers,
+          params: { id: created.id },
+          body: {
+            ...definition,
+            storageVersion: created.storageVersion,
+            networkBinding: null,
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(cleared.networkBinding).toBeUndefined();
+    expect(cleared.storageVersion).toBe(created.storageVersion);
+    const preview = (
+      await accept(
+        configs().impactPreview({
+          headers,
+          params: { configId: config.id },
+          query: { operation: "delete", includeCustomConnectors: "true" },
+        }),
+        [200],
+      )
+    ).body;
+    expect(preview.customConnectors).toStrictEqual([]);
+    await accept(
+      configs().delete({
+        headers,
+        query,
+        params: { configId: config.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
+      }),
+      [204],
+    );
+  },
+);
+
+test.each(["http", "mcp"] as const)(
+  "%s unbound connectors preserve legacy Direct behavior and safe Cloudflare metadata",
   async (kind) => {
     useSecretKmsProbe();
     await actor();
@@ -164,13 +330,12 @@ test.each(["http", "mcp"] as const)(
 );
 
 test.each([
-  null,
   {
     type: "cloudflare_access" as const,
     configId: randomUUID(),
   },
 ])(
-  "preparation rejects an explicit binding mutation instead of silently dropping it: %j",
+  "a disabled feature rejects a new binding without dropping it: %j",
   async (networkBinding) => {
     await actor();
     const definition = {

@@ -274,9 +274,7 @@ test("Review personal subscription identity and usage", async () => {
   expect(
     within(rowB).getByText("Connected · 0 ChatGPT credits"),
   ).toBeInTheDocument();
-  expect(
-    within(rowC).getByText("Connected · — ChatGPT credits"),
-  ).toBeInTheDocument();
+  expect(within(rowC).getByText("Connected")).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
   expect(within(rowC).getByText("Resets —")).toBeVisible();
   expect(
@@ -296,6 +294,38 @@ test("Review personal subscription identity and usage", async () => {
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
+});
+
+test.each<{
+  name: string;
+  credits: ModelProviderResponse["subscriptionCredits"];
+  expected: string;
+}>([
+  {
+    name: "connection status without a credit snapshot",
+    credits: undefined,
+    expected: "Connected",
+  },
+  {
+    name: "connection status when the credit balance is unavailable",
+    credits: { balance: null, unlimited: false },
+    expected: "Connected",
+  },
+  {
+    name: "unlimited credits without a numeric balance",
+    credits: { balance: null, unlimited: true },
+    expected: "Connected · Unlimited ChatGPT credits",
+  },
+])("Show $name in the personal account row", async ({ credits, expected }) => {
+  const account = connectedPersonalCodexProvider({
+    subscriptionCredits: credits,
+  });
+  context.mocks.data.personalModelProviders([account]);
+  await setupPage({ context, path: "/?settings=model" });
+
+  const row = await screen.findByTestId(`oauth-account-${account.id}`);
+  expect(within(row).getByText("codex.user@example.com")).toBeInTheDocument();
+  expect(within(row).getByText(expected)).toBeInTheDocument();
 });
 
 test("Show no 5h availability when the weekly allowance is exhausted", async () => {

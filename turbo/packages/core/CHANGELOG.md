@@ -1,5 +1,93 @@
 # Changelog
 
+## [8.831.1](https://github.com/okou-ai/okou/compare/core-v8.831.0...core-v8.831.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* adapt welcome and connector copy to my okou ([#46760](https://github.com/okou-ai/okou/issues/46760)) ([369db8a](https://github.com/okou-ai/okou/commit/369db8a0df2e4546bc35a03cf9ec1ba701e4dc55))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.53.0
+
+## [8.831.0](https://github.com/okou-ai/okou/compare/core-v8.830.0...core-v8.831.0) (2026-11-12)
+
+
+### Features
+
+* **billing:** ask one-question surveys at the paywall and abandoned checkout ([#46373](https://github.com/okou-ai/okou/issues/46373)) ([dba1a1b](https://github.com/okou-ai/okou/commit/dba1a1be581f3310df718f62f1b4813a96a3e780))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.52.0
+
+## [8.830.0](https://github.com/okou-ai/okou/compare/core-v8.829.3...core-v8.830.0) (2026-11-12)
+
+
+### Features
+
+* **app:** draw every okou avatar with the animated design-system avatar ([#46728](https://github.com/okou-ai/okou/issues/46728)) ([2b40ec0](https://github.com/okou-ai/okou/commit/2b40ec0063dc9b4f64a0cbe17c88978eff8c88e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.51.0
+
+## [8.829.3](https://github.com/okou-ai/okou/compare/core-v8.829.2...core-v8.829.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* **email:** allow dedicated signup qa sender ([#46718](https://github.com/okou-ai/okou/issues/46718)) ([a2c0719](https://github.com/okou-ai/okou/commit/a2c07195198058be0fdd089e9bd5abe222975fb3))
+
+## [8.829.2](https://github.com/okou-ai/okou/compare/core-v8.829.1...core-v8.829.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* normalize skill attachment paths and skip failed uploads ([#46689](https://github.com/okou-ai/okou/issues/46689)) ([bb76f65](https://github.com/okou-ai/okou/commit/bb76f65a44e7ec385eef81e1201f46bf4c91e419))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.2
+
+## [8.829.1](https://github.com/okou-ai/okou/compare/core-v8.829.0...core-v8.829.1) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.1
+
+## [8.829.0](https://github.com/okou-ai/okou/compare/core-v8.828.1...core-v8.829.0) (2026-11-11)
+
+
+### Features
+
+* **app:** add help submenu to the account menu ([#46575](https://github.com/okou-ai/okou/issues/46575)) ([1363c14](https://github.com/okou-ai/okou/commit/1363c145ffbf8507f72e13f628c7d1fe2f4bc567))
+* **app:** graduate the account help menu to general availability ([#46594](https://github.com/okou-ai/okou/issues/46594)) ([3f65aed](https://github.com/okou-ai/okou/commit/3f65aed5ceb7682d657950e002bb2e6bec27f46e))
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.50.0
+
 ## [8.828.1](https://github.com/okou-ai/okou/compare/core-v8.828.0...core-v8.828.1) (2026-11-11)
 
 

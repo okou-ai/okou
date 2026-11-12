@@ -1,5 +1,92 @@
 # Changelog
 
+## [10.22.0](https://github.com/okou-ai/okou/compare/cli-v10.21.5...cli-v10.22.0) (2026-11-12)
+
+
+### Features
+
+* add email workspace binding commands ([#46756](https://github.com/okou-ai/okou/issues/46756)) ([79b09c6](https://github.com/okou-ai/okou/commit/79b09c6f37978f2124b39912b743384cfc16fdb4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.53.0
+    * @okouai/core bumped to 8.831.1
+    * @okouai/pi-agent-runtime bumped to 1.51.108
+
+## [10.21.5](https://github.com/okou-ai/okou/compare/cli-v10.21.4...cli-v10.21.5) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.52.0
+    * @okouai/core bumped to 8.831.0
+    * @okouai/pi-agent-runtime bumped to 1.51.107
+
+## [10.21.4](https://github.com/okou-ai/okou/compare/cli-v10.21.3...cli-v10.21.4) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.51.0
+    * @okouai/core bumped to 8.830.0
+    * @okouai/pi-agent-runtime bumped to 1.51.106
+
+## [10.21.3](https://github.com/okou-ai/okou/compare/cli-v10.21.2...cli-v10.21.3) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.829.3
+    * @okouai/pi-agent-runtime bumped to 1.51.105
+
+## [10.21.2](https://github.com/okou-ai/okou/compare/cli-v10.21.1...cli-v10.21.2) (2026-11-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.50.2
+    * @okouai/core bumped to 8.829.2
+    * @okouai/pi-agent-runtime bumped to 1.51.104
+
+## [10.21.1](https://github.com/okou-ai/okou/compare/cli-v10.21.0...cli-v10.21.1) (2026-11-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.50.1
+    * @okouai/core bumped to 8.829.1
+    * @okouai/pi-agent-runtime bumped to 1.51.103
+
+## [10.21.0](https://github.com/okou-ai/okou/compare/cli-v10.20.1...cli-v10.21.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.50.0
+    * @okouai/connectors bumped to 3.22.0
+    * @okouai/core bumped to 8.829.0
+    * @okouai/pi-agent-runtime bumped to 1.51.102
+
 ## [10.20.1](https://github.com/okou-ai/okou/compare/cli-v10.20.0...cli-v10.20.1) (2026-11-11)
 
 

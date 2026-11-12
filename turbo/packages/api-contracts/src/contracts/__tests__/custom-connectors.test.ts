@@ -55,6 +55,7 @@ describe("Custom connector network metadata protocol", () => {
     configId: "44444444-4444-4444-8444-444444444444",
     status: "available",
     name: "Corporate gateway",
+    generation: 1,
   };
   it("preserves readable available and unavailable bindings without network credentials", () => {
     expect(
@@ -63,7 +64,12 @@ describe("Custom connector network metadata protocol", () => {
         networkBinding: network,
       }).networkBinding,
     ).toStrictEqual(network);
-    const unavailable = { ...network, status: "unavailable", name: null };
+    const unavailable = {
+      type: network.type,
+      configId: network.configId,
+      status: "unavailable",
+      name: null,
+    };
     expect(
       customConnectorHttpResponseSchema.parse({
         ...response,

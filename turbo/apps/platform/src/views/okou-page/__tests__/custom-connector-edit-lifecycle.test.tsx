@@ -23,6 +23,7 @@ test("A custom connector displays its Cloudflare Access dependency without an ac
       status: "available",
       name: "Corporate gateway",
       configId: "5e7fd365-c432-41b2-a780-cfa467655b44",
+      generation: 1,
     },
   });
   mockCustomConnectorStory(context, [{ connector }]);

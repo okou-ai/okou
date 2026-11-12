@@ -566,6 +566,7 @@
       "openDocs": "Abrir no Google Docs",
       "openSheets": "Abrir no Google Sheets",
       "openSlides": "Abrir no Google Slides",
+      "reconnect": "Reconectar o Google Drive",
       "synced": "Sincronizado com o Google Drive",
       "syncedFiles_one": "Sincronizado com o Google Drive",
       "syncedFiles_many": "{{count}} arquivos sincronizados com o Google Drive",
@@ -1084,6 +1085,8 @@
       "invalid": "Este link de permissão é inválido ou está indisponível.",
       "loadFailed": "Não foi possível verificar todas as permissões solicitadas. Nenhuma permissão pode ser alterada.",
       "loading": "Carregando permissões",
+      "myOkouScopeNote": "Aplica-se ao seu uso do Okou neste espaço de trabalho, não apenas à tarefa atual.",
+      "myOkouSharedScopeNote": "Aplica-se a este conector nos seus chats deste espaço de trabalho. Seus colegas têm suas próprias permissões.",
       "notNow": "Agora não",
       "review": "Revisar permissões",
       "scopeNote": "Aplica-se a este agente, não apenas à tarefa atual.",
@@ -1337,6 +1340,40 @@
     "sidebar": {
       "description": "Mais créditos e execuções simultâneas",
       "getPlan": "Obter {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Só estava conferindo o preço",
+          "needs_approval": "Preciso da aprovação de outra pessoa",
+          "not_ready_yet": "Ainda não estou pronto para assinar",
+          "not_seeing_value": "Ainda não vi o valor",
+          "other": "Outro motivo",
+          "payment_issue": "Tive problemas com o pagamento",
+          "price_higher_than_expected": "O preço foi maior do que eu esperava",
+          "results_not_good_enough": "Não fiquei satisfeito com os resultados"
+        },
+        "description": "É só uma pergunta. Sua resposta nos ajuda a melhorar.",
+        "question": "O que impediu você de concluir a compra?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "No momento não preciso de mais",
+          "not_sure_worth_it": "Ainda não sei se vale a pena",
+          "other": "Outro motivo",
+          "still_trying": "Quero testar mais antes",
+          "too_expensive": "É caro demais"
+        },
+        "question": "O que impede você de fazer o upgrade hoje?",
+        "reward": "A primeira resposta elegível neste espaço de trabalho recebe {{credits}} créditos de bônus, válidos por 30 dias.",
+        "thanksWithCredits": "Obrigado! Adicionamos {{credits}} créditos para você continuar."
+      },
+      "error": "Não foi possível enviar sua resposta. Tente novamente.",
+      "notNow": "Agora não",
+      "otherLabel": "Sua resposta",
+      "otherPlaceholder": "Conte mais (opcional)",
+      "submit": "Enviar",
+      "thanks": "Obrigado por nos contar."
     },
     "toasts": {
       "autoRechargeUpdated": "Recarga automática atualizada",
@@ -1651,13 +1688,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Tudo em dia",
-        "emptyTitle": "Nenhuma sugestão nova",
         "feedback": "Ações da sugestão",
-        "loading": "Carregando sugestões",
         "navigation": "Explorar sugestões",
-        "next": "Próxima sugestão",
-        "previous": "Sugestão anterior",
-        "retry": "Tentar novamente"
+        "show": "Mostrar sugestão {{index}} de {{total}}"
       },
       "label": "Sugestões",
       "lessLikeThis": "Less like this",
@@ -3496,6 +3529,8 @@
         "unshared": "Não compartilhado com nenhum agente"
       },
       "filterWith": "Filtro: {{category}}",
+      "myOkouDescription": "Conecte serviços externos para o seu Okou usar.",
+      "myOkouDescriptionWithCount": "Conecte {{value}} serviços para o seu Okou usar.",
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
@@ -6309,6 +6344,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Ocultar conformidade",
       "link": "Detalhes de segurança",
       "status": {
         "aligned": "Alinhado",
@@ -7511,12 +7547,11 @@
       "codeInstructions": "Envie este código ao Okou pelo e-mail que deseja adicionar. Use-o como assunto ou na primeira linha da mensagem.",
       "connected": "E-mail conectado",
       "deleteAria": "Excluir {{email}}",
-      "description": "Envie um e-mail ao Okou e mantenha cada conversa em seu próprio chat",
+      "description": "Converse com seu Okou por e-mail",
       "emailAddress": "Endereço de e-mail",
       "healthNotice": "Não use esta integração para informações de pacientes reguladas pela HIPAA.",
       "invalidLink": "Este link de conexão é inválido. Envie um novo e-mail ao Okou.",
       "loadError": "Não foi possível carregar sua conexão de e-mail",
-      "loginNotice": "Seu e-mail de login permanece conectado.",
       "manage": "Gerenciar",
       "manageDescription": "Envie o código pelo e-mail que deseja adicionar.",
       "manageTitle": "Conexões de e-mail",

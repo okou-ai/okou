@@ -58,7 +58,50 @@ Keep formatter/lint evidence separate from behavior checks. Do not weaken a
 valid assertion, hide diagnostics or manufacture new production abstractions
 just to preserve tests for an obsolete API.
 
+## First Display With Pending API Requests
+
+For new startup API consumers, verify the
+[first-display contract](android-development.md#first-display-and-api-loading)
+through the real native route and its owners. Hold the external transport/SDK
+response incomplete while asserting that the initial native UI is visible with
+the appropriate loading or identity-checking state. Release or fail that response
+only after the UI assertion, then verify the resulting content or recovery state.
+This proves the rendering dependency without arbitrary sleeps or timing thresholds.
+
+Include slow/failing responses and owner replacement where relevant. A visible
+first screen must not expose another account's cached content or enable protected
+actions before their actual prerequisites are satisfied. Verify that late results
+from retired owners cannot replace the current screen's state.
+
+Add this coverage with the real API integration, rather than inventing a network
+path for an offline scaffold. Keep first-display independence distinct from data
+readiness and any separately justified physical-device latency measurement.
+
 ## Native Acceptance
+
+Use a small instrumented suite for boundaries that need the Android framework,
+such as native Activity ownership, window/IME insets, system Back and platform
+configuration/system bars. Drive real application consumers through platform
+interaction APIs; do not replace their owners or input services to claim native
+coverage. Keep cheap state/error matrices on the JVM instead of replaying every
+case on a device. A supported emulator cohort establishes functional behavior for
+that configuration; OEM input methods and physical-device latency need their own
+evidence.
+
+Prefer build-managed device provisioning/execution/teardown over a second custom
+emulator lifecycle. Isolate test-device state, snapshot and restore every changed
+setting/store, close Activity owners and release adopted test permissions on
+success and failure. Wait for observable UI/window/configuration conditions with
+bounded framework APIs; arbitrary stabilization sleeps are not synchronization.
+
+Capture failure diagnostics before device/Activity cleanup and preserve the
+original error if capture or restoration also fails. Use Test Storage for
+additional files retrieved by the managed runner; an `adb pull` after emulator
+teardown cannot recover them. Retain native reports/logcat and useful revision,
+device/API and failure-image context without turning diagnostics into golden
+tests. Selected device-test failures, cancellations and unexpected skips must
+reach the existing CI gate. Setup, commands and output paths live in the
+[Android README](../../android/README.md#instrumented-android-tests).
 
 For appearance or OS interaction, record source revision, device/emulator,
 Android version/API, density/font scale, theme, locale and actual evidence.

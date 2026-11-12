@@ -620,6 +620,7 @@ fn event_field<'a>(event: &'a CapturedEvent, field: &str) -> &'a str {
 
 fn heartbeat_state_for_test() -> HeartbeatState {
     HeartbeatState {
+        ingress_service_active: false,
         runner_id: "runner-heartbeat-test".to_string(),
         runner_hostname: None,
         group: "vm0/test".to_string(),

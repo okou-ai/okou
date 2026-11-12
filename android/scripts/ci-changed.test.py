@@ -54,6 +54,14 @@ class ChangeSelectionTest(unittest.TestCase):
             write("turbo/packages/ui/src/styles/globals.css")
             commit()
             self.assertEqual(detect(current).stdout.strip(), "true")
+            for path in ["turbo/packages/api-contracts/src/contracts/user-preferences.ts",
+                         "turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts",
+                         "turbo/packages/api-contracts/src/validators/user-preferences.ts",
+                         ".github/scripts/artifacts/sign-okou-android-apk.sh"]:
+                current = git("rev-parse", "HEAD")
+                write(path)
+                commit()
+                self.assertEqual(detect(current).stdout.strip(), "true")
             current = git("rev-parse", "HEAD")
             write(".github/scripts/checks/android_launcher.py")
             commit()

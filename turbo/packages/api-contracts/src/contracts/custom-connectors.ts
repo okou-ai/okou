@@ -149,16 +149,12 @@ export function isHttpCustomConnectorResponse(
   return connector.kind === "http";
 }
 
-// Reader preparation only. No definition writer may silently drop this intent.
-const preparedNetworkBindingWriteSchema = customConnectorCloudflareBindingSchema
+const networkBindingWriteSchema = customConnectorCloudflareBindingSchema
   .nullable()
-  .optional()
-  .refine((value) => {
-    return value === undefined;
-  }, "Cloudflare Access binding changes are not available yet");
+  .optional();
 
 const customConnectorDefinitionWriteBaseSchema = object({
-  networkBinding: preparedNetworkBindingWriteSchema,
+  networkBinding: networkBindingWriteSchema,
   displayName: string().min(1).max(128),
   fields: array(customConnectorFieldSchema),
   headerInjections: array(customConnectorHeaderInjectionSchema),
@@ -391,7 +387,7 @@ export type SetCustomConnectorValuesBody = zInfer<
 >;
 
 export const customConnectorProposalSchema = object({
-  networkBinding: preparedNetworkBindingWriteSchema,
+  networkBinding: networkBindingWriteSchema,
   operation: zEnum(["create", "update"]),
   connectorId: uuid().optional(),
   displayName: string().min(1).max(128),

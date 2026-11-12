@@ -3272,7 +3272,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     return {
       upload: (
         mode: GoogleDriveUploadMode,
-        statuses: readonly (200 | 400)[] = [200],
+        statuses: readonly (200 | 400 | 403)[] = [200],
       ) => {
         return owned.run(() => {
           return accept(
@@ -3285,7 +3285,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           );
         });
       },
-      uploadLegacy: (statuses: readonly (200 | 400)[] = [200]) => {
+      driveAccount: () => {
+        return owned.run(() => {
+          return connectorsApi.readDefaultBuiltinAccount(actor, "google-drive");
+        });
+      },
+      uploadLegacy: (statuses: readonly (200 | 400 | 403)[] = [200]) => {
         return owned.run(() => {
           return chat.requestUploadArtifactToGoogleDrive(
             actor,
@@ -4237,6 +4242,112 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     10_000,
   );
 
+  it.each([
+    { scenario: "scope 403", endpoint: "legacy" },
+    { scenario: "scope 403", endpoint: "explicit mode" },
+    { scenario: "other 403", endpoint: "explicit mode" },
+    { scenario: "401", endpoint: "explicit mode" },
+    { scenario: "success", endpoint: "explicit mode" },
+  ] as const)(
+    "folder lookup recovery fixture: $scenario ($endpoint)",
+    async ({ scenario, endpoint }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const account = await fixture.driveAccount();
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: { type: "ok", accessToken: "folder-fixture-refreshed" },
+      });
+      const file = { id: "folder-fixture-upload", name: "fixture.docx" };
+      const upload = mockGoogleDriveArtifactUpload(file);
+      const lookup = mockGoogleDriveFilesList((request) => {
+        if (scenario === "scope 403") {
+          return {
+            status: 403,
+            body: JSON.stringify({
+              error:
+                endpoint === "legacy"
+                  ? { errors: [{ reason: "insufficientPermissions" }] }
+                  : {
+                      details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }],
+                    },
+            }),
+          };
+        }
+        if (scenario === "other 403") {
+          return {
+            status: 403,
+            body: JSON.stringify({
+              error: {
+                errors: [
+                  { reason: "insufficientFilePermissions" },
+                  { reason: "domainPolicy" },
+                  { reason: "rateLimitExceeded" },
+                ],
+              },
+            }),
+          };
+        }
+        if (
+          scenario === "401" &&
+          request.headers.get("authorization") !==
+            "Bearer folder-fixture-refreshed"
+        ) {
+          return { status: 401 };
+        }
+        return {
+          status: 200,
+          files: [{ id: "fixture-folder", name: "folder" }],
+        };
+      });
+      const response =
+        endpoint === "legacy"
+          ? await fixture.uploadLegacy([200, 400, 403])
+          : await fixture.upload("original", [200, 400, 403]);
+      if (scenario === "scope 403") {
+        expect(response).toMatchObject({
+          status: 403,
+          body: {
+            error: {
+              code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+              message:
+                "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+            },
+            recovery: { action: "reconnect", connectionId: account.id },
+          },
+        });
+      } else if (scenario === "other 403") {
+        expect(response).toMatchObject({
+          status: 400,
+          body: {
+            error: {
+              code: "BAD_REQUEST",
+              message: "Google Drive folder lookup failed with HTTP 403",
+            },
+          },
+        });
+      } else {
+        expect(response).toMatchObject({
+          status: 200,
+          body: { ...file, webViewLink: null },
+        });
+      }
+      const rejected = scenario === "scope 403" || scenario === "other 403";
+      expect(lookup.queries).toHaveLength(
+        rejected ? 1 : scenario === "401" ? 3 : 2,
+      );
+      expect(oauth.refreshBodies).toHaveLength(scenario === "401" ? 1 : 0);
+      expect(upload.metadata).toHaveLength(rejected ? 0 : 1);
+      expect(upload.bodies).toHaveLength(rejected ? 0 : 1);
+      await expect(fixture.driveAccount()).resolves.toMatchObject({
+        id: account.id,
+        connectionStatus: "connected",
+      });
+    },
+    10_000,
+  );
+
   it("drive folder creation returns a controlled error before opening an upload session", async () => {
     const fixture = await publicOfficeConversionSource(
       docsImportFixture(),
@@ -4500,14 +4611,36 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         return { status: scenario.status, body: scenario.body };
       });
       const before = output.mock.calls.length;
-      const response = await fixture.upload("original", [400]);
-      expect(response.status, scenario.name).toBe(400);
-      expect(response.body, scenario.name).toStrictEqual({
-        error: {
-          code: "BAD_REQUEST",
-          message: `Google Drive folder lookup failed with HTTP ${String(scenario.status)}`,
-        },
-      });
+      const response = await fixture.upload("original", [400, 403]);
+      const scopeRequired =
+        scenario.status === 403 &&
+        scenario.reasons.some((reason) => {
+          return (
+            reason === "insufficientPermissions" ||
+            reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
+          );
+        });
+      expect(response.status, scenario.name).toBe(scopeRequired ? 403 : 400);
+      expect(response.body, scenario.name).toStrictEqual(
+        scopeRequired
+          ? {
+              error: {
+                code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+                message:
+                  "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+              },
+              recovery: {
+                action: "reconnect",
+                connectionId: expect.any(String),
+              },
+            }
+          : {
+              error: {
+                code: "BAD_REQUEST",
+                message: `Google Drive folder lookup failed with HTTP ${String(scenario.status)}`,
+              },
+            },
+      );
       const calls = output.mock.calls.slice(before);
       const records = calls.filter(([message]) => {
         return (
@@ -4526,7 +4659,15 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           },
         ],
       ]);
-      expect(JSON.stringify(calls), scenario.name).not.toContain(secret);
+      const serialized = JSON.stringify(calls);
+      for (const privateValue of [
+        secret,
+        "bilingual.docx",
+        "drive-access-drive-picture-crop",
+        "drive-folder-refreshed",
+      ]) {
+        expect(serialized, scenario.name).not.toContain(privateValue);
+      }
       expect(oauth.refreshBodies, scenario.name).toHaveLength(
         afterRefresh ? 1 : 0,
       );
@@ -5183,6 +5324,30 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     expect(uploadRecorder.authorizationHeaders).toStrictEqual([
       "Bearer drive-access-drive-selected",
     ]);
+
+    const scopeLookup = mockGoogleDriveFilesList(() => {
+      return {
+        status: 403,
+        body: JSON.stringify({
+          error: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+        }),
+      };
+    });
+    const scopeRejected = await chat.requestUploadArtifactToGoogleDrive(
+      actor,
+      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
+      { agentId, connectionId: selectedAccount.id },
+      [403],
+    );
+    expect(scopeRejected.body).toMatchObject({
+      error: { code: "GOOGLE_DRIVE_SCOPE_REQUIRED" },
+      recovery: { action: "reconnect", connectionId: selectedAccount.id },
+    });
+    expect(scopeLookup.authorizationHeaders).toStrictEqual([
+      "Bearer drive-access-drive-selected",
+    ]);
+    expect(uploadRecorder.metadata).toHaveLength(1);
+    expect(uploadRecorder.bodies).toHaveLength(1);
 
     mockGoogleDriveConnectorOAuth({
       userInfo: {

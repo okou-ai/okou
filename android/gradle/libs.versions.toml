@@ -4,10 +4,20 @@ kotlin = "2.1.20"
 compose-bom = "2025.04.01"
 activity = "1.10.1"
 lifecycle = "2.9.0"
+navigation = "2.8.9"
+datastore = "1.1.4"
 coroutines = "1.10.2"
 junit = "4.13.2"
 robolectric = "4.14.1"
 spotless = "7.0.2"
+test-core = "1.6.1"
+test-junit = "1.2.1"
+test-runner = "1.6.2"
+uiautomator = "2.3.0"
+test-services = "1.5.0"
+retrofit = "2.11.0"
+okhttp = "4.12.0"
+serialization = "1.8.1"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -20,13 +30,27 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-runtime-testing = { module = "androidx.lifecycle:lifecycle-runtime-testing", version.ref = "lifecycle" }
+navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+test-core-ktx = { module = "androidx.test:core-ktx", version.ref = "test-core" }
+test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "test-junit" }
+test-runner = { module = "androidx.test:runner", version.ref = "test-runner" }
+test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
+test-storage = { module = "androidx.test.services:storage", version.ref = "test-services" }
+test-services = { module = "androidx.test.services:test-services", version.ref = "test-services" }
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-serialization", version.ref = "retrofit" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

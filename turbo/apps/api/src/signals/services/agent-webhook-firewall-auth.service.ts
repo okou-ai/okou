@@ -79,7 +79,6 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { customConnectorDirectNetworkAdmission } from "./custom-connector-network-binding";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -94,16 +93,13 @@ import { variables as variablesTable } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
-import {
-  pgBooleanDecoder,
-  pgNullDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
+import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
+import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
@@ -164,6 +160,7 @@ const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 
 interface FirewallAuthBody {
+  readonly networkIntent?: CustomConnectorNetworkIntent;
   readonly encryptedSecrets: string;
   readonly authHeaders: Record<string, string>;
   readonly authBase?: string;
@@ -369,7 +366,6 @@ type FirewallAuthMaterialResolution =
 interface ResolveResult {
   readonly status: 200;
   readonly body: {
-    readonly networkAdmission?: { readonly kind: "direct" };
     readonly headers: Record<string, string>;
     readonly base?: string;
     readonly query?: Record<string, string>;
@@ -4375,7 +4371,6 @@ export const admitPreparedFirewallAuthResponse$ = command(
     args: {
       readonly auth: SandboxAuth;
       readonly response: ResolveFirewallAuthResult;
-      readonly networkAdmissionConnectorId?: string;
     },
     signal: AbortSignal,
   ): Promise<ResolveFirewallAuthResult> => {
@@ -4392,13 +4387,6 @@ export const admitPreparedFirewallAuthResponse$ = command(
       const [run] = await db
         .select({
           status: agentRuns.status,
-          networkAllowed:
-            args.networkAdmissionConnectorId === undefined
-              ? sql`true`.mapWith(pgBooleanDecoder)
-              : customConnectorDirectNetworkAdmission(
-                  args.auth.orgId,
-                  args.networkAdmissionConnectorId,
-                ),
         })
         .from(agentRuns)
         .where(
@@ -4415,19 +4403,7 @@ export const admitPreparedFirewallAuthResponse$ = command(
       if (!run || !success) {
         return forbiddenTerminalRun();
       }
-      if (!run.networkAllowed) {
-        success = false;
-        return connectorNotConfigured();
-      }
-      return args.networkAdmissionConnectorId === undefined
-        ? response
-        : {
-            ...response,
-            body: {
-              ...response.body,
-              networkAdmission: { kind: "direct" as const },
-            },
-          };
+      return response;
     })().finally(() => {
       recordFirewallAuthTimings(args.auth.runId, [
         {
@@ -5161,6 +5137,7 @@ const prepareCurrentCustomConnectorFirewallAuth$ = command(
       userId: args.auth.userId,
       customConnectorId: args.customConnectorId,
       sourceId: args.sourceId,
+      networkIntent: args.body.networkIntent,
     });
     if (authRefsResolution.kind === "unavailable") {
       return { ok: false, response: connectorNotConfigured() };

@@ -11,6 +11,7 @@ import { openProjectEditor$ } from "../../signals/projects/project-ui.ts";
 import { projects$ } from "../../signals/projects/projects.ts";
 import type { ComposerAddMenuItem } from "../okou-page/composer-add-menu.tsx";
 import { ComposerChoiceChip } from "../okou-page/composer-create.tsx";
+import { ProjectFolderIcon, projectNameParts } from "./project-icon.tsx";
 
 function useComposerProjectAvailable(
   project: ComposerProjectSignals | undefined,
@@ -54,8 +55,13 @@ function ComposerProjectMenuItems({
               select(item.id);
             }}
           >
-            <Folder className="text-muted-foreground" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            <ProjectFolderIcon
+              name={item.name}
+              folderClassName="text-muted-foreground"
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {projectNameParts(item.name).text}
+            </span>
             {current && <Check aria-hidden="true" />}
           </DropdownMenuItem>
         );
@@ -117,8 +123,8 @@ function ComposerProjectChip({
     <>
       <div className="h-5 w-px shrink-0 bg-divider/60" aria-hidden />
       <ComposerChoiceChip
-        Icon={Folder}
-        label={current.name}
+        icon={<ProjectFolderIcon name={current.name} />}
+        label={projectNameParts(current.name).text}
         labelClassName="max-w-40 truncate"
         removeLabel={t(
           ($) => {

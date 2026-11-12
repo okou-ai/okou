@@ -260,6 +260,20 @@
   --animate-capability-tray-in: capability-tray-in 360ms
     cubic-bezier(0.23, 1, 0.32, 1) both;
 
+  /* Home suggestions rotate in the greeting row. The current suggestion's
+     progress segment fills over 8s, and its `animationend` shows the next
+     suggestion. The fill animates `--okou-suggestion-progress` rather than a
+     width or scale: the segment is 16px, so it moves 2px a second, and a width
+     or scale edge snaps to whole pixels and ticks every half second. A gradient
+     edge with a 1px ramp carries the sub-pixel position instead. Pausing is
+     `animation-play-state`. Consumers reach it through `motion-safe:`, so
+     reduced motion never advances on its own and the property resolves to its
+     registered initial value of 1, a full segment. A new title rises into
+     place once. Keyframes and the registration stay below. */
+  --animate-suggestion-progress: okou-suggestion-progress 8s linear both;
+  --animate-suggestion-title-in: okou-suggestion-title-in 240ms
+    cubic-bezier(0, 0, 0.2, 1);
+
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
      and its shared hairline rather than a competing value for it: an
@@ -283,6 +297,21 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
+  /* On the session's first home, the capability rows and the compliance block
+     under them settle in after the greeting: an 8px rise and a fade on the
+     greeting's own curve, one 70ms step apart through
+     `--capability-row-delay`. It lives in this inline block so the utility
+     carries the value itself: a theme variable is a custom property on
+     `:root`, where its own `var(--capability-row-delay)` would resolve before
+     any card could set one, leaving every row at 0ms. `animate-*` compiles to
+     the `animation` shorthand, so the delay rides inside it rather than in a
+     separate `animation-delay` rule it would reset. `backwards` holds the start
+     through the delay and then lets go, so nothing the element does later —
+     such as the compliance block folding away — fights a held end state.
+     Consumers reach it through `motion-safe:`. Keyframes stay below. */
+  --animate-capability-row-in: capability-row-in 560ms
+    cubic-bezier(0.22, 1, 0.36, 1) var(--capability-row-delay, 0ms) backwards;
+
   --color-palette-anchor: var(--okou-color-theme-anchor);
   --background-image-palette-gradient: linear-gradient(
     135deg,
@@ -657,6 +686,26 @@ body {
   }
 }
 
+@keyframes okou-suggestion-progress {
+  from {
+    --okou-suggestion-progress: 0;
+  }
+  to {
+    --okou-suggestion-progress: 1;
+  }
+}
+
+@keyframes okou-suggestion-title-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes avatar-option-appear {
   from {
     opacity: 0;
@@ -735,6 +784,13 @@ body {
    drawing, so a finished or interrupted run leaves nothing out of place.
    Shapes animate `transform` from the origin the consumer pins with
    `transform-fill`. */
+@keyframes capability-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
 @keyframes capability-art-in {
   from {
     opacity: 0;
@@ -1115,6 +1171,15 @@ body {
   syntax: "<number>";
   inherits: true;
   initial-value: 0;
+}
+
+/* The home suggestion progress segment draws its edge at this fraction. It is
+   registered so the keyframes interpolate a number; the initial value of 1 is
+   what a segment shows when reduced motion drops the animation. */
+@property --okou-suggestion-progress {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
 }
 
 /* Resolve container units to lengths before atan2 converts them into scale

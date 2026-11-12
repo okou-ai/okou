@@ -15,6 +15,11 @@
   ],
   "commit-batch-size": 100,
   "packages": {
+    "android": {
+      "release-type": "simple",
+      "version-file": "version.txt",
+      "component": "android"
+    },
     "ios": {
       "release-type": "simple",
       "component": "ios",

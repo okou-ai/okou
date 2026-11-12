@@ -2,3 +2,30 @@ flow.metadata["sandbox_run_id"]: str
 
 metadata = flow.metadata
 metadata["firewall_name"]: str
+
+
+def annotation_only_subscript_does_not_invoke_getitem(flow, manager, target):
+    metadata = flow.metadata
+    with manager:
+        target["external"]: object
+        metadata = {}
+    return metadata["firewall_name"]
+
+
+def annotation_only_container_call_is_eager(flow, manager, container):
+    metadata = flow.metadata
+    with manager:
+        container()["external"]: object
+        metadata = {}
+    return metadata["firewall_name"]
+
+
+def annotation_only_index_call_is_eager(flow, manager, target, index):
+    metadata = flow.metadata
+    with manager:
+        target[index()]: object
+        metadata = {}
+    return metadata["firewall_name"]
+
+
+flow.metadata["sandbox_run_id"][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0]

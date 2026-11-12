@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.19...runner-supervisor-v0.23.0) (2026-11-12)
+
+
+### Features
+
+* **runner:** restore caddy ingress with startup health validation ([#46655](https://github.com/okou-ai/okou/issues/46655)) ([d2c31a2](https://github.com/okou-ai/okou/commit/d2c31a2eed677380c6f3ecc6b3c15df490d5031b))
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** select overflowing home inventory incrementally ([#46758](https://github.com/okou-ai/okou/issues/46758)) ([f795567](https://github.com/okou-ai/okou/commit/f795567e99f0873e118904647772f3936d62fbfd))
+
+## [0.22.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.18...runner-supervisor-v0.22.19) (2026-11-12)
+
+## [0.22.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.17...runner-supervisor-v0.22.18) (2026-11-12)
+
+## [0.22.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.16...runner-supervisor-v0.22.17) (2026-11-11)
+
+## [0.22.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.15...runner-supervisor-v0.22.16) (2026-11-11)
+
 ## [0.22.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.14...runner-supervisor-v0.22.15) (2026-11-11)
 
 

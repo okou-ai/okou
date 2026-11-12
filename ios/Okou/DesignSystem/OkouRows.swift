@@ -40,7 +40,7 @@ struct OkouChatRowLabel<Status: View>: View {
   }
 }
 
-/// Shared trailing status for a chat or its Project's summary row. Every mark is centred in
+/// Shared trailing status for a sidebar chat. Every mark is centred in
 /// one `standard`-wide column, so dots, pencils and pins line up down the list.
 struct OkouChatTrailingMark: View {
   let trailing: OkouChatTrailing

@@ -255,7 +255,7 @@ fn firewall_auth_base_omitted_when_none() {
 }
 
 #[test]
-fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
+fn custom_network_intent_is_valid_only_for_custom_execution() {
     let value = serde_json::json!({
         "name": "custom-fixture",
         "apis": [{"id": "custom-api", "base": "https://api.example.com/",
@@ -268,10 +268,11 @@ fn custom_network_intent_is_prepared_but_cannot_enable_cloudflare_execution() {
 
     let mut bound = value.clone();
     bound["apis"][0]["networkIntent"] = serde_json::json!({
-        "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44"
+        "kind": "cloudflare_access", "configId": "5e7fd365-c432-41b2-a780-cfa467655b44", "generation": 1
     });
     let prepared: Firewall = serde_json::from_value(bound).unwrap();
-    assert!(prepared.validate_for_connector_runtime().is_err());
+    prepared.validate_for_connector_runtime().unwrap();
+    assert!(prepared.validate_for_cache().is_err());
 
     let mut unknown = value;
     unknown["apis"][0]["networkIntent"]["kind"] = "unknown".into();
@@ -782,6 +783,7 @@ fn execution_context_rejects_invalid_canonical_storage_mount_behavior() {
 #[test]
 fn heartbeat_state_serializes_camel_case() {
     let state = HeartbeatState {
+        ingress_service_active: true,
         runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
         runner_hostname: Some("prod-wire.example.test".into()),
         group: "vm0/production".into(),
@@ -824,6 +826,7 @@ fn heartbeat_state_serializes_camel_case() {
         json!({
             "runnerId": "550e8400-e29b-41d4-a716-446655440000",
             "runnerHostname": "prod-wire.example.test",
+            "ingressServiceActive": true,
             "group": "vm0/production",
             "snapshotGeneration": 7,
             "snapshotSequence": 42,
@@ -864,6 +867,7 @@ fn heartbeat_state_serializes_camel_case() {
 #[test]
 fn heartbeat_state_serializes_empty_held_state_arrays() {
     let state = HeartbeatState {
+        ingress_service_active: false,
         runner_id: "550e8400-e29b-41d4-a716-446655440000".into(),
         runner_hostname: None,
         group: "vm0/production".into(),

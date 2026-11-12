@@ -24,6 +24,8 @@
 		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
 		000000000000000000000082 /* CCState in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000081 /* CCState */; };
 		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
+		0000000000000000000000A1 /* OkouWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000A5 /* OkouWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0000000000000000000000A2 /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +43,13 @@
 			remoteGlobalIDString = 000000000000000000000040;
 			remoteInfo = OkouNotificationService;
 		};
+		0000000000000000000000A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0000000000000000000000AB;
+			remoteInfo = OkouWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -51,6 +60,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				000000000000000000000053 /* OkouNotificationService.appex in Embed App Extensions */,
+				0000000000000000000000A1 /* OkouWidgets.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -61,6 +71,7 @@
 		000000000000000000000009 /* Okou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Okou.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		00000000000000000000000A /* OkouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OkouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000049 /* OkouNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0000000000000000000000A5 /* OkouWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -78,6 +89,21 @@
 			);
 			target = 000000000000000000000040 /* OkouNotificationService */;
 		};
+		0000000000000000000000A6 /* Exceptions for "Widgets" folder in "OkouWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0000000000000000000000AB /* OkouWidgets */;
+		};
+		0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				DesignSystem/OkouColor.generated.swift,
+				DesignSystem/OkouPlatformColor.swift,
+			);
+			target = 0000000000000000000000AB /* OkouWidgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -90,6 +116,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				00000000000000000000000B /* Exceptions for "Okou" folder in "Okou" target */,
+				0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */,
 			);
 			path = Okou;
 			sourceTree = "<group>";
@@ -110,6 +137,14 @@
 		000000000000000000000055 /* Push */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Push;
+			sourceTree = "<group>";
+		};
+		0000000000000000000000A7 /* Widgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0000000000000000000000A6 /* Exceptions for "Widgets" folder in "OkouWidgets" target */,
+			);
+			path = Widgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -152,6 +187,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0000000000000000000000A8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0000000000000000000000A2 /* ChatData in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -161,6 +204,7 @@
 				000000000000000000000009 /* Okou.app */,
 				00000000000000000000000A /* OkouTests.xctest */,
 				000000000000000000000049 /* OkouNotificationService.appex */,
+				0000000000000000000000A5 /* OkouWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -173,6 +217,7 @@
 				000000000000000000000004 /* Config */,
 				000000000000000000000044 /* NotificationExtension */,
 				000000000000000000000055 /* Push */,
+				0000000000000000000000A7 /* Widgets */,
 				000000000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -193,6 +238,7 @@
 			);
 			dependencies = (
 				00000000000000000000005B /* PBXTargetDependency */,
+				0000000000000000000000A4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000005 /* Okou */,
@@ -267,6 +313,29 @@
 			productReference = 000000000000000000000049 /* OkouNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		0000000000000000000000AB /* OkouWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0000000000000000000000AC /* Build configuration list for PBXNativeTarget "OkouWidgets" */;
+			buildPhases = (
+				0000000000000000000000AA /* Sources */,
+				0000000000000000000000A8 /* Frameworks */,
+				0000000000000000000000A9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0000000000000000000000A7 /* Widgets */,
+			);
+			name = OkouWidgets;
+			packageProductDependencies = (
+				00000000000000000000002D /* ChatData */,
+			);
+			productName = OkouWidgets;
+			productReference = 0000000000000000000000A5 /* OkouWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -324,6 +393,7 @@
 				000000000000000000000002 /* Okou */,
 				000000000000000000000003 /* OkouTests */,
 				000000000000000000000040 /* OkouNotificationService */,
+				0000000000000000000000AB /* OkouWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -344,6 +414,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		000000000000000000000048 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0000000000000000000000A9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -374,6 +451,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0000000000000000000000AA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -386,6 +470,11 @@
 			isa = PBXTargetDependency;
 			target = 000000000000000000000040 /* OkouNotificationService */;
 			targetProxy = 00000000000000000000005A /* PBXContainerItemProxy */;
+		};
+		0000000000000000000000A4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0000000000000000000000AB /* OkouWidgets */;
+			targetProxy = 0000000000000000000000A3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -583,6 +672,63 @@
 			};
 			name = Staging;
 		};
+		0000000000000000000000AD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Widgets/OkouWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		0000000000000000000000AE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Widgets/OkouWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+		0000000000000000000000AF /* Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Widgets/OkouWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.okou.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Staging;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -622,6 +768,16 @@
 				000000000000000000000041 /* Debug */,
 				000000000000000000000042 /* Release */,
 				1D60285739ED4A74995EBE85 /* Staging */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0000000000000000000000AC /* Build configuration list for PBXNativeTarget "OkouWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0000000000000000000000AD /* Debug */,
+				0000000000000000000000AE /* Release */,
+				0000000000000000000000AF /* Staging */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

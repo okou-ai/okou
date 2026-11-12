@@ -586,9 +586,13 @@ function OAuthAccountIdentity({
     : t(($) => {
         return $.settings.models.personal.status.connected;
       });
-  const creditBalance = account.needsReconnect
-    ? null
-    : formatSubscriptionCredits(account);
+  const credits = account.subscriptionCredits;
+  const creditBalance =
+    !account.needsReconnect &&
+    credits &&
+    (credits.unlimited || credits.balance !== null)
+      ? formatSubscriptionCredits(account)
+      : null;
 
   return (
     <div className="min-w-0">

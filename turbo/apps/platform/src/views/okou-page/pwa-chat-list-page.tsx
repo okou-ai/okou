@@ -29,11 +29,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
-import {
-  ChatThreadListRows,
-  ChatThreadsListMenu,
-  InboxEmptyState,
-} from "./sidebar-threads.tsx";
+import { ChatThreadListRows, ChatThreadsListMenu } from "./sidebar-threads.tsx";
 
 function useSelectFilter() {
   const selectFilter = useSet(selectChatThreadFilter$);
@@ -207,9 +203,6 @@ function PwaChatThreads({
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
-  const inboxEmptyOutsideProjects = useGet(
-    listSignals.inboxEmptyOutsideProjects$,
-  );
 
   if (count === 0) {
     return (
@@ -245,9 +238,6 @@ function PwaChatThreads({
           </div>
         ) : null}
       </ChatThreadListRows>
-      {inboxEmptyOutsideProjects ? (
-        <InboxEmptyState listSignals={listSignals} />
-      ) : null}
     </OverlayScrollArea>
   );
 }

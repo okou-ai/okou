@@ -548,6 +548,7 @@
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
       "openSlides": "Buka di Google Slides",
+      "reconnect": "Hubungkan ulang Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
@@ -1060,6 +1061,8 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
+      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
+      "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "Lebih banyak kredit & eksekusi bersamaan",
       "getPlan": "Dapatkan {{plan}}"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "Hanya ingin melihat harga",
+          "needs_approval": "Perlu persetujuan orang lain",
+          "not_ready_yet": "Belum siap berlangganan",
+          "not_seeing_value": "Belum melihat manfaatnya",
+          "other": "Lainnya",
+          "payment_issue": "Ada masalah saat membayar",
+          "price_higher_than_expected": "Harganya lebih tinggi dari perkiraan",
+          "results_not_good_enough": "Tidak puas dengan hasilnya"
+        },
+        "description": "Hanya satu pertanyaan. Jawaban Anda membantu kami menjadi lebih baik.",
+        "question": "Apa yang membuat Anda tidak menyelesaikan pembelian?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "Saat ini belum butuh lebih",
+          "not_sure_worth_it": "Belum yakin sepadan",
+          "other": "Lainnya",
+          "still_trying": "Ingin mencoba lebih lama dulu",
+          "too_expensive": "Terlalu mahal"
+        },
+        "question": "Apa yang membuat Anda belum upgrade hari ini?",
+        "reward": "Jawaban pertama yang memenuhi syarat di ruang kerja ini mendapat {{credits}} kredit bonus, berlaku selama 30 hari.",
+        "thanksWithCredits": "Terima kasih! {{credits}} kredit telah ditambahkan, Anda bisa melanjutkan."
+      },
+      "error": "Jawaban Anda gagal dikirim. Coba lagi.",
+      "notNow": "Nanti saja",
+      "otherLabel": "Jawaban Anda",
+      "otherPlaceholder": "Ceritakan lebih lanjut (opsional)",
+      "submit": "Kirim",
+      "thanks": "Terima kasih atas masukan Anda."
     },
     "toasts": {
       "autoRechargeUpdated": "Isi ulang otomatis diperbarui",
@@ -1624,13 +1661,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "Semua beres",
-        "emptyTitle": "Belum ada saran baru",
         "feedback": "Tindakan saran",
-        "loading": "Memuat saran",
         "navigation": "Jelajahi saran",
-        "next": "Saran berikutnya",
-        "previous": "Saran sebelumnya",
-        "retry": "Coba lagi"
+        "show": "Tampilkan saran {{index}} dari {{total}}"
       },
       "label": "Saran",
       "lessLikeThis": "Less like this",
@@ -3431,6 +3464,8 @@
         "unshared": "Tidak dibagikan ke agen mana pun"
       },
       "filterWith": "Filter: {{category}}",
+      "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
+      "myOkouDescriptionWithCount": "Hubungkan {{value}} layanan untuk digunakan Okou Anda.",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",
@@ -6225,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "Sembunyikan kepatuhan",
       "link": "Detail keamanan",
       "status": {
         "aligned": "Selaras",
@@ -7410,12 +7446,11 @@
       "codeInstructions": "Kirim kode ini ke Okou dari alamat email yang ingin ditambahkan. Gunakan sebagai subjek atau baris pertama pesan.",
       "connected": "Email terhubung",
       "deleteAria": "Hapus {{email}}",
-      "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "description": "Mengobrol dengan Okou lewat email",
       "emailAddress": "Alamat email",
       "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
       "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
       "loadError": "Tidak dapat memuat koneksi email Anda",
-      "loginNotice": "Email login Anda tetap terhubung.",
       "manage": "Kelola",
       "manageDescription": "Kirim kode dari alamat email yang ingin ditambahkan.",
       "manageTitle": "Koneksi email",

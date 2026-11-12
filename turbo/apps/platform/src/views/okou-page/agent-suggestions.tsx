@@ -6,6 +6,8 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { ReactNode } from "react";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -18,8 +20,6 @@ import {
   CircleCheck,
   CircleMinus,
   SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight,
   Ellipsis,
   Sparkles,
 } from "lucide-react";
@@ -41,7 +41,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  surfaceVariants,
+  RadioGroup,
   Textarea,
 } from "@okouai/ui";
 import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
@@ -59,9 +59,8 @@ import {
   retryAgentSuggestion$,
   type SuggestionOutcome,
   homeSuggestionCard$,
-  moveHomeSuggestion$,
+  showHomeSuggestion$,
   setHomeSuggestionDetailsOpen$,
-  enterHomeSuggestions$,
   submitHomeSuggestionFeedback$,
   focusSuggestionTitleOnRef$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
@@ -718,82 +717,170 @@ function HomeSuggestionFeedback({ item }: { readonly item: Suggestion }) {
   );
 }
 
+/**
+ * One segment per waiting suggestion, as a radio group: the shared group owns
+ * the single tab stop, arrow keys and selection. The current segment fills over
+ * the suggestion's turn and then shows the next, wrapping to the first. It
+ * pauses while the pointer or focus is on the greeting and while the review is
+ * open. Choosing a segment shows its suggestion and starts its turn.
+ */
+function HomeSuggestionProgress({
+  itemId,
+  index,
+  count,
+}: {
+  readonly itemId: string;
+  readonly index: number;
+  readonly count: number;
+}) {
+  const { t } = useTranslation();
+  const show = useSet(showHomeSuggestion$);
+  const signal = useGet(pageSignal$);
+  const select = (position: number) => {
+    detach(show(position, signal), Reason.DomCallback);
+  };
+  return (
+    <RadioGroup
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.homeCard.navigation;
+      })}
+      value={index}
+      onValueChange={(position: number) => {
+        select(position);
+      }}
+      className="pointer-events-auto flex min-w-0 items-center gap-1"
+    >
+      {Array.from({ length: count }, (_, position) => {
+        return (
+          <RadioPrimitive.Root
+            key={position}
+            value={position}
+            nativeButton
+            render={<button type="button" />}
+            aria-label={t(
+              ($) => {
+                return $.chat.agentSuggestions.homeCard.show;
+              },
+              { index: position + 1, total: count },
+            )}
+            className="flex h-6 shrink-0 items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="block h-[3px] w-4 overflow-hidden rounded-full bg-foreground/12">
+              {position === index && (
+                <span
+                  key={itemId}
+                  data-testid="suggestion-progress"
+                  // Every pause is a group variant. A bare play-state utility
+                  // would lose to the `animation` shorthand that
+                  // `motion-safe:animate-*` emits later at the same
+                  // specificity; the group variants outrank it.
+                  className="block size-full bg-[linear-gradient(to_right,color-mix(in_srgb,var(--color-foreground)_55%,transparent)_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)_-_1px),transparent_calc(var(--okou-suggestion-progress)_*_(100%_+_1px)))] motion-safe:animate-suggestion-progress group-hover/suggestion:[animation-play-state:paused] group-focus-within/suggestion:[animation-play-state:paused] group-data-[paused]/suggestion:[animation-play-state:paused]"
+                  onAnimationEnd={() => {
+                    select(index + 1);
+                  }}
+                />
+              )}
+            </span>
+          </RadioPrimitive.Root>
+        );
+      })}
+    </RadioGroup>
+  );
+}
+
+/**
+ * The greeting's line while suggestions wait. The whole line opens the review;
+ * the progress segments and the feedback menu sit above that trigger. The
+ * trigger reaches 8px past the line on each side, so its focus ring clears the
+ * text instead of cutting into its first glyph.
+ *
+ * On the session's first home the line takes the greeting's own entrance,
+ * one 70ms step after the avatar: the eyebrow at 70ms, the title at 140ms. Its
+ * end completes the greeting entrance, because the tagline that would
+ * otherwise complete it is not on the page. Later titles rise in briefly as
+ * the rotation reaches them.
+ */
 function HomeSuggestionPreview({
   item,
   index,
   count,
-  label,
+  paused,
+  entrance,
+  onEntranceEnd,
 }: {
   readonly item: Suggestion;
   readonly index: number;
   readonly count: number;
-  readonly label: string;
+  readonly paused: boolean;
+  readonly entrance: boolean;
+  readonly onEntranceEnd: () => void;
 }) {
   const { t } = useTranslation();
-  const move = useSet(moveHomeSuggestion$);
-  const signal = useGet(pageSignal$);
-  const copy = t(
-    ($) => {
-      return $.chat.agentSuggestions.homeCard;
-    },
-    { returnObjects: true },
-  );
+  const label = t(($) => {
+    return $.chat.agentSuggestions.label;
+  });
   return (
-    <>
+    <section
+      aria-label={label}
+      data-paused={paused || undefined}
+      className="group/suggestion relative isolate flex min-h-14 min-w-0 flex-1 items-center gap-4"
+    >
       <DialogTrigger
         render={
           <Button
             variant="quiet"
             aria-label={item.title}
-            className="absolute inset-0 z-0 size-full rounded-[inherit] p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
+            className="absolute -inset-x-2 inset-y-0 z-0 h-auto w-auto rounded-surface-compact p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
           />
         }
       />
-      <span className="pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col">
-        <span className="text-xs leading-4 text-muted-foreground">{label}</span>
-        <h3 className="truncate text-sm font-medium leading-5 text-foreground">
+      <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 flex-col gap-1">
+        <div
+          className={cn(
+            "flex h-4 min-w-0 items-center gap-2.5",
+            entrance && "motion-safe:animate-chat-greeting-token",
+          )}
+          style={entrance ? { animationDelay: "70ms" } : undefined}
+        >
+          <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium leading-4 text-muted-foreground">
+            <Sparkles
+              aria-hidden
+              className="size-3.5 shrink-0 text-brand-text"
+            />
+            {label}
+          </span>
+          {count > 1 && (
+            <HomeSuggestionProgress
+              itemId={item.id}
+              index={index}
+              count={count}
+            />
+          )}
+        </div>
+        <h2
+          key={item.id}
+          className={cn(
+            "truncate text-xl font-medium leading-7 text-foreground",
+            entrance
+              ? "motion-safe:animate-chat-greeting-token"
+              : "motion-safe:animate-suggestion-title-in",
+          )}
+          style={entrance ? { animationDelay: "140ms" } : undefined}
+          onAnimationEnd={(event) => {
+            if (entrance && event.animationName === "chat-greeting-token") {
+              onEntranceEnd();
+            }
+          }}
+        >
           {item.title}
-        </h3>
-      </span>
-      <div
-        role="group"
-        aria-label={copy.navigation}
-        className="pointer-events-none relative z-20 flex shrink-0 items-center gap-1"
-      >
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="pointer-events-auto size-7 text-muted-foreground pointer-coarse:size-11"
-          aria-label={copy.previous}
-          disabled={index === 0}
-          onClick={() => {
-            detach(move(-1, signal), Reason.DomCallback);
-          }}
-        >
-          <ChevronLeft aria-hidden />
-        </Button>
-        <span
-          aria-live="polite"
-          className="text-xs whitespace-nowrap tabular-nums text-muted-foreground"
-        >
-          {index + 1} / {count}
-        </span>
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="pointer-events-auto size-7 text-muted-foreground pointer-coarse:size-11"
-          aria-label={copy.next}
-          disabled={index === count - 1}
-          onClick={() => {
-            detach(move(1, signal), Reason.DomCallback);
-          }}
-        >
-          <ChevronRight aria-hidden />
-        </Button>
+        </h2>
       </div>
-    </>
+      {/* The menu stays out of the line until the pointer or focus reaches it,
+          and while its own popup is open. Touch has no hover, so it stays. */}
+      <div className="relative z-20 shrink-0 opacity-0 transition-opacity duration-150 group-hover/suggestion:opacity-100 group-focus-within/suggestion:opacity-100 has-[[data-popup-open]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
+        <HomeSuggestionFeedback item={item} />
+      </div>
+    </section>
   );
 }
 
@@ -847,26 +934,25 @@ function HomeSuggestionDetails() {
   );
 }
 
-/** A bounded preview opens the complete review flow. */
-export function HomeSuggestionsCard() {
-  const { t } = useTranslation();
+/**
+ * While suggestions wait, the greeting's line is the current suggestion, so it
+ * takes the page's most prominent place without adding height. Otherwise, and
+ * until they load, the greeting keeps its own line. The review dialog stays
+ * mounted either way, so it can finish on "All caught up" after the last card.
+ */
+export function HomeSuggestionGreeting({
+  fallback,
+  entrance,
+  onEntranceEnd,
+}: {
+  readonly fallback: ReactNode;
+  readonly entrance: boolean;
+  readonly onEntranceEnd: () => void;
+}) {
   const result = useLastLoadable(homeSuggestionCard$);
   const setDetailsOpen = useSet(setHomeSuggestionDetailsOpen$);
-  const reload = useSet(enterHomeSuggestions$);
   const signal = useGet(pageSignal$);
   const card = result.state === "hasData" ? result.data : undefined;
-  const item = card?.item;
-  const copy = t(
-    ($) => {
-      return $.chat.agentSuggestions.homeCard;
-    },
-    {
-      returnObjects: true,
-    },
-  );
-  const label = t(($) => {
-    return $.chat.agentSuggestions.label;
-  });
   return (
     <Dialog
       open={card?.detailsOpen ?? false}
@@ -874,84 +960,18 @@ export function HomeSuggestionsCard() {
         detach(setDetailsOpen(open, signal), Reason.DomCallback);
       }}
     >
-      <section
-        aria-label={label}
-        className={surfaceVariants({
-          radius: "compact",
-          interactive: Boolean(item),
-          className:
-            "relative isolate flex h-14 min-w-0 items-center gap-3 pr-2 pl-2.5 motion-reduce:transition-none pointer-coarse:h-16",
-        })}
-      >
-        {/* The mark sits on a 36px tile, the height of the two lines beside
-            it, so it reads as the row's icon rather than a glyph floating
-            beside the text. The 10px inset matches the space above and below
-            the tile in the 56px row. The strip takes a hover state once it
-            holds a suggestion, so the tile is a nested fill: an opaque
-            `bg-muted` is what the hovered card composites to, and the tile
-            would vanish into the row. */}
-        <span
-          aria-hidden
-          className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-brand-text"
-        >
-          <Sparkles className="size-4" />
-        </span>
-        {result.state === "hasError" ? (
-          <>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-xs leading-4 text-muted-foreground">
-                {label}
-              </span>
-              <p
-                role="alert"
-                className="truncate text-sm leading-5 text-muted-foreground"
-              >
-                {t(($) => {
-                  return $.global.errors.requestFailed;
-                })}
-              </p>
-            </span>
-            <Button
-              variant="quiet"
-              size="xs"
-              onClick={() => {
-                detach(reload(signal), Reason.DomCallback);
-              }}
-            >
-              {copy.retry}
-            </Button>
-          </>
-        ) : !card ? (
-          <div
-            role="status"
-            aria-label={copy.loading}
-            className="flex flex-1 items-center text-muted-foreground"
-          >
-            <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
-          </div>
-        ) : item ? (
-          <HomeSuggestionPreview
-            item={item}
-            index={card.index}
-            count={card.count}
-            label={label}
-          />
-        ) : (
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-xs leading-4 text-muted-foreground">
-              {label}
-            </span>
-            <p className="truncate text-sm leading-5 text-muted-foreground">
-              {copy.emptyTitle}
-            </p>
-          </span>
-        )}
-        {item && (
-          <div className="relative z-20 shrink-0">
-            <HomeSuggestionFeedback item={item} />
-          </div>
-        )}
-      </section>
+      {card?.item ? (
+        <HomeSuggestionPreview
+          item={card.item}
+          index={card.index}
+          count={card.count}
+          paused={card.detailsOpen}
+          entrance={entrance}
+          onEntranceEnd={onEntranceEnd}
+        />
+      ) : (
+        fallback
+      )}
       <HomeSuggestionDetails />
     </Dialog>
   );

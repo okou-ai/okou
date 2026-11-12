@@ -548,6 +548,7 @@
       "openDocs": "Google ドキュメントで開く",
       "openSheets": "Google スプレッドシートで開く",
       "openSlides": "Google スライドで開く",
+      "reconnect": "Google Drive に再接続",
       "synced": "Google Drive に同期されました",
       "syncedFiles_one": "Google Drive に同期されました",
       "syncedFiles_other": "{{count}} ファイルを Google Drive に同期しました",
@@ -1060,6 +1061,8 @@
       "invalid": "この権限リンクは無効か、利用できません。",
       "loadFailed": "リクエストされたすべての権限を確認できませんでした。権限は変更できません。",
       "loading": "権限を読み込み中",
+      "myOkouScopeNote": "現在のタスクだけでなく、このワークスペースでのあなたのOkouの利用に適用されます。",
+      "myOkouSharedScopeNote": "このワークスペース内のあなたのチャット全体で、このコネクタに適用されます。チームメンバーの権限はそれぞれ独立しています。",
       "notNow": "今はしない",
       "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
@@ -1311,6 +1314,40 @@
     "sidebar": {
       "description": "より多くのクレジットと同時実行",
       "getPlan": "{{plan}} を取得"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "価格を確認したかっただけ",
+          "needs_approval": "他の人の承認が必要",
+          "not_ready_yet": "まだ決めきれていない",
+          "not_seeing_value": "まだ価値を感じられなかった",
+          "other": "その他",
+          "payment_issue": "支払いで問題があった",
+          "price_higher_than_expected": "思っていたより価格が高かった",
+          "results_not_good_enough": "結果に満足できなかった"
+        },
+        "description": "質問は 1 つだけです。今後の改善に役立てます。",
+        "question": "購入を完了しなかった理由は何ですか？"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "今はこれ以上必要ない",
+          "not_sure_worth_it": "価値があるかまだわからない",
+          "other": "その他",
+          "still_trying": "もう少し試してみたい",
+          "too_expensive": "価格が高すぎる"
+        },
+        "question": "今日アップグレードしない理由は何ですか？",
+        "reward": "このワークスペースで最初の対象となる回答に、30日間有効な {{credits}} ボーナスクレジットを付与します。",
+        "thanksWithCredits": "ありがとうございます！{{credits}} クレジットを追加しました。このまま続けられます。"
+      },
+      "error": "回答を送信できませんでした。もう一度お試しください。",
+      "notNow": "今はしない",
+      "otherLabel": "回答",
+      "otherPlaceholder": "詳しく教えてください（任意）",
+      "submit": "送信",
+      "thanks": "ご回答ありがとうございます。"
     },
     "toasts": {
       "autoRechargeUpdated": "オートリチャージが更新されました",
@@ -1624,13 +1661,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "すべて確認しました",
-        "emptyTitle": "新しい提案はありません",
         "feedback": "提案への操作",
-        "loading": "提案を読み込み中",
         "navigation": "提案を切り替える",
-        "next": "次の提案",
-        "previous": "前の提案",
-        "retry": "再試行"
+        "show": "提案 {{index}}/{{total}} を表示"
       },
       "label": "提案",
       "lessLikeThis": "Less like this",
@@ -3431,6 +3464,8 @@
         "unshared": "どのエージェントとも共有されていません"
       },
       "filterWith": "フィルタ: {{category}}",
+      "myOkouDescription": "あなたのOkouが使う外部サービスを接続します。",
+      "myOkouDescriptionWithCount": "あなたのOkouが使う{{value}}件のサービスを接続します。",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
@@ -6225,6 +6260,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "コンプライアンスを非表示",
       "link": "セキュリティの詳細",
       "status": {
         "aligned": "整合",
@@ -7410,12 +7446,11 @@
       "codeInstructions": "追加するメールアドレスから、このコードを件名または本文の最初の行に入れて Okou に送信してください。",
       "connected": "メールを接続しました",
       "deleteAria": "{{email}} を削除",
-      "description": "Okou にメールを送り、会話ごとに個別のチャットでやり取りできます",
+      "description": "メールで Okou と会話",
       "emailAddress": "メールアドレス",
       "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
       "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",
       "loadError": "メール接続を読み込めませんでした",
-      "loginNotice": "ログイン用メールは常に接続されます。",
       "manage": "管理",
       "manageDescription": "追加するメールアドレスからコードを送信してください。",
       "manageTitle": "メールの接続",

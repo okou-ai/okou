@@ -11,6 +11,7 @@ import { closeDbPool } from "../lib/db";
 import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
 import iosClientCompatibilityConfig from "../lib/ios-client-compatibility.json";
+import androidClientCompatibilityConfig from "../lib/android-client-compatibility.json";
 import { updateMaxAutonomyBudgetForTest$ } from "../signals/autonomy-budget-limit";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached, settleIncludingAbort } from "../signals/utils";
@@ -33,6 +34,11 @@ export const iosClientCompatibility: {
   minimumSupportedVersion: string | null;
 } = iosClientCompatibilityConfig;
 const shippedIosMinimumVersion = iosClientCompatibility.minimumSupportedVersion;
+export const androidClientCompatibility: {
+  minimumSupportedVersion: string | null;
+} = androidClientCompatibilityConfig;
+const shippedAndroidMinimumVersion =
+  androidClientCompatibility.minimumSupportedVersion;
 
 function formatBody(body: unknown): string {
   if (typeof body === "string") {
@@ -112,6 +118,8 @@ export function testContext(): TestContext {
     clearMockListStripeInvoices();
     desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
     iosClientCompatibility.minimumSupportedVersion = shippedIosMinimumVersion;
+    androidClientCompatibility.minimumSupportedVersion =
+      shippedAndroidMinimumVersion;
   });
 
   afterAll(async () => {

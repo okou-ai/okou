@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home">Accueil</string>
+    <string name="settings">Paramètres</string>
+    <string name="back">Retour</string>
+    <string name="home_title">Place à votre prochaine idée</string>
+    <string name="home_description">Rédigez un brouillon et prévisualisez-le sur cet appareil.</string>
+    <string name="draft_label">Brouillon</string>
+    <string name="draft_hint">À quoi pensez-vous ?</string>
+    <string name="local_preview">Voir le brouillon</string>
+    <string name="preview_title">Aperçu</string>
+    <string name="appearance">Apparence</string>
+    <string name="appearance_description">Choisissez l’apparence d’Okou sur cet appareil.</string>
+    <string name="appearance_system">Suivre le système</string>
+    <string name="appearance_light">Clair</string>
+    <string name="appearance_dark">Sombre</string>
+    <string name="on_this_device">Sur cet appareil</string>
+    <string name="appearance_local">L’apparence est enregistrée uniquement sur cet appareil.</string>
+    <string name="appearance_loading">Chargement de l’apparence…</string>
+    <string name="appearance_saving">Enregistrement de l’apparence…</string>
+    <string name="appearance_read_failed">Impossible de charger l’apparence. Réessayez.</string>
+    <string name="appearance_write_failed">Impossible d’enregistrer l’apparence. Réessayez.</string>
+    <string name="retry">Réessayer</string>
+    <plurals name="draft_lines">
+        <item quantity="one">%1$d ligne</item>
+        <item quantity="many">%1$d lignes</item>
+        <item quantity="other">%1$d lignes</item>
+    </plurals>
+</resources>

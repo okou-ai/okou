@@ -26,6 +26,7 @@ import {
 } from "../../lib/hosted-site-pointer";
 import { storedObject } from "./hosted-site-publication-migration.service";
 import { settle } from "../utils";
+import { artifactPaywallApplies$ } from "./artifact-paywall.service";
 
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
@@ -41,7 +42,8 @@ export type HostedSiteUrlResult =
       readonly body: zInfer<typeof hostedSiteUrlSchema>;
     }
   | { readonly status: "not_found"; readonly message: string }
-  | { readonly status: "conflict"; readonly message: string };
+  | { readonly status: "conflict"; readonly message: string }
+  | { readonly status: "pro_required" };
 
 function ownedSiteCondition(owner: Owner) {
   return and(
@@ -240,6 +242,9 @@ export const updateHostedSiteUrl$ = command(
     }
     if (site.publicSlug === args.publicSlug) {
       return { status: "ok", body: siteUrl(site) };
+    }
+    if (await set(artifactPaywallApplies$, args, signal)) {
+      return { status: "pro_required" };
     }
     if (site.publicSlug !== args.expectedPublicSlug) {
       return {

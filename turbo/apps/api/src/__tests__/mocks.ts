@@ -118,6 +118,10 @@ export interface SlackFixtureIdentity {
 }
 
 export interface ApiTestMocks {
+  readonly dns: {
+    readonly resolve4: Mock<(hostname: string) => Promise<string[]>>;
+    readonly resolve6: Mock<(hostname: string) => Promise<string[]>>;
+  };
   readonly clerkRetryJitter: (value: number) => () => void;
   readonly abortSignal: {
     readonly timeout: AbortSignalTimeoutMock;
@@ -303,6 +307,8 @@ export interface ApiTestMocks {
         readonly create: AsyncMock;
         readonly retrieve: AsyncMock;
         readonly expire: AsyncMock;
+        readonly list: AsyncMock;
+        readonly update: AsyncMock;
       };
     };
     readonly billingPortal: {
@@ -534,6 +540,8 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
         create: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
         retrieve: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
         expire: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+        list: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+        update: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       },
     },
     billingPortal: {
@@ -622,6 +630,10 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     browserUseCdp: {
       connect: vi.fn<(url: string) => void>(),
       command: vi.fn<(command: BrowserUseCdpCommand) => unknown>(),
+    },
+    dns: {
+      resolve4: vi.fn<(hostname: string) => Promise<string[]>>(),
+      resolve6: vi.fn<(hostname: string) => Promise<string[]>>(),
     },
     clerk,
     s3: {
@@ -1032,6 +1044,13 @@ vi.mock("node:https", async (importOriginal) => {
   );
 });
 
+vi.mock("node:dns/promises", () => {
+  return {
+    resolve4: apiTestMocks.dns.resolve4,
+    resolve6: apiTestMocks.dns.resolve6,
+  };
+});
+
 vi.mock("node:http", async (importOriginal) => {
   return await mockBoundedRequestModule(
     importOriginal as () => Promise<typeof import("node:http")>,
@@ -1241,6 +1260,8 @@ vi.mock("stripe", async (importOriginal) => {
             create: apiTestMocks.stripe.checkout.sessions.create,
             retrieve: apiTestMocks.stripe.checkout.sessions.retrieve,
             expire: apiTestMocks.stripe.checkout.sessions.expire,
+            list: apiTestMocks.stripe.checkout.sessions.list,
+            update: apiTestMocks.stripe.checkout.sessions.update,
           },
         },
         billingPortal: {
@@ -1488,6 +1509,7 @@ type AxiomSdkTelemetryFailure =
       readonly mode: "ingest";
       readonly datasets?: readonly string[];
       readonly eventTypes?: readonly string[];
+      readonly operationTypes?: readonly string[];
       readonly error?: Error;
     }
   // The SDK flushes a client, not a dataset, so this mode takes no filter.
@@ -1503,18 +1525,27 @@ export function mockAxiomSdkTelemetryFailure(
     );
     return;
   }
-  const { datasets, eventTypes, error } = failure;
+  const { datasets, eventTypes, operationTypes, error } = failure;
   apiTestMocks.axiom.sdkIngest.mockImplementation(
     (dataset: unknown, events: unknown) => {
       const matchesDataset =
         datasets === undefined ||
         (typeof dataset === "string" && datasets.includes(dataset));
       const matchesEvent =
-        eventTypes === undefined ||
-        array(object({ type: string().optional() }))
+        (eventTypes === undefined && operationTypes === undefined) ||
+        array(
+          object({ type: string().optional(), op_type: string().optional() }),
+        )
           .parse(events)
           .some((entry) => {
-            return entry.type !== undefined && eventTypes.includes(entry.type);
+            return (
+              (eventTypes === undefined ||
+                (entry.type !== undefined &&
+                  eventTypes.includes(entry.type))) &&
+              (operationTypes === undefined ||
+                (entry.op_type !== undefined &&
+                  operationTypes.includes(entry.op_type)))
+            );
           });
       if (matchesDataset && matchesEvent) {
         throw error ?? new Error("Axiom SDK ingest failed");
@@ -1548,6 +1579,8 @@ export function apiTestS3PresignedUrl(command: unknown): string {
 }
 
 export function resetApiTestMocks(): void {
+  apiTestMocks.dns.resolve4.mockReset();
+  apiTestMocks.dns.resolve6.mockReset();
   apiTestMocks.abortSignal.timeout.mockReset();
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
@@ -1689,6 +1722,10 @@ export function resetApiTestMocks(): void {
   apiTestMocks.stripe.checkout.sessions.create.mockReset();
   apiTestMocks.stripe.checkout.sessions.retrieve.mockReset();
   apiTestMocks.stripe.checkout.sessions.expire.mockReset();
+  apiTestMocks.stripe.checkout.sessions.list
+    .mockReset()
+    .mockResolvedValue({ data: [], has_more: false });
+  apiTestMocks.stripe.checkout.sessions.update.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.list.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.create.mockReset();
   apiTestMocks.stripe.billingPortal.configurations.update.mockReset();

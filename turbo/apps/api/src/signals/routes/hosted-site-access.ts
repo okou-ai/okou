@@ -13,6 +13,10 @@ import {
 } from "../services/hosted-site-access.service";
 import { authorizeHostedSiteDownload$ } from "../services/hosted-site-download.service";
 import {
+  artifactPaywallApplies$,
+  artifactPaywallRequired,
+} from "../services/artifact-paywall.service";
+import {
   getHostedSiteBanner$,
   updateHostedSiteBanner$,
 } from "../services/hosted-site-banner.service";
@@ -108,17 +112,18 @@ const access$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const readBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  const body = await set(
-    getHostedSiteBanner$,
-    {
-      ...get(organizationAuthContext$),
-      ...get(pathParamsOf(hostContract.siteBanner)),
-    },
-    signal,
-  );
-  return body
-    ? { status: 200 as const, body }
-    : notFound("Published website not found");
+  const owner = {
+    ...get(organizationAuthContext$),
+    ...get(pathParamsOf(hostContract.siteBanner)),
+  };
+  const body = await set(getHostedSiteBanner$, owner, signal);
+  if (!body) {
+    return notFound("Published website not found");
+  }
+  // Report what visitors see: a free plan always shows the banner.
+  const showBanner =
+    body.showBanner || (await set(artifactPaywallApplies$, owner, signal));
+  return { status: 200 as const, body: { ...body, showBanner } };
 });
 
 const updateBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -142,6 +147,9 @@ const updateBanner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (result.status === "conflict") {
     return conflict("Website banner changed; reload before editing");
+  }
+  if (result.status === "pro_required") {
+    return artifactPaywallRequired("Hiding the Okou banner");
   }
   return { status: 200 as const, body: result.body };
 });

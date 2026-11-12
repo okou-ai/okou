@@ -45,9 +45,8 @@ def validate(directory):
             raise ValueError("native physical pause changed original physical owner")
         ordered = [terminal[1], *events[:7], terminal[2], terminal[3], *events[7:10],
                    terminal[4], *events[10:], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("native physical pause phase clocks lost ordering")
+        report.validate_witness_clock_order(
+            ordered, "native physical pause phase clocks lost ordering")
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")

@@ -74,15 +74,7 @@ impl DeliveryFixture {
                     .warm_from_archive(&name, &version)
                     .await
                     .unwrap();
-                assert!(
-                    config
-                        .decoded_cache
-                        .get_ready(&name, &version)
-                        .await
-                        .unwrap()
-                        .is_some()
-                );
-                // A selected ready hit must work after use-driven archive retirement.
+                // Real delivery below validates readiness after archive retirement.
                 std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
             }
             storages.push(api_storage(&name, mount.to_str().unwrap(), &version, &url));

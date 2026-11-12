@@ -247,6 +247,7 @@ import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 import {
   ComposerRail,
   RAIL_TILE,
+  RAIL_TILE_ART,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import {
@@ -3206,6 +3207,12 @@ export function TemplateImportCard({
         className={cn(
           TEMPLATE_TILE_MEDIA,
           "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          // On the capability tray it is a white slot among the covers; the
+          // lift, not a darker fill, answers the pointer there.
+          compact && [
+            RAIL_TILE_ART,
+            "in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:group-hover/tile:bg-card in-data-[slot=capability-tray]:group-active/tile:bg-card",
+          ],
           kind === "illustration"
             ? "aspect-[4/5]"
             : kind === "document"
@@ -3308,7 +3315,8 @@ function ComposerPresentationSuggestion({
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          "block aspect-video group-hover/tile:opacity-90",
+          RAIL_TILE_ART,
+          "block aspect-video group-hover/tile:opacity-90 in-data-[slot=capability-tray]:group-hover/tile:opacity-100",
         )}
       >
         {children}
@@ -3321,9 +3329,12 @@ function ComposerPresentationSuggestion({
 export function ComposerPresentationRecommendations({
   signals,
   headerAction,
+  headerless = false,
 }: {
   readonly signals: ComposerSignals;
   readonly headerAction?: ReactNode;
+  /** The host draws the title and "View all" in its own header. */
+  readonly headerless?: boolean;
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
@@ -3342,17 +3353,19 @@ export function ComposerPresentationRecommendations({
       role="group"
       aria-label={label}
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <div className="flex shrink-0 items-center gap-2">
-          <ComposerTemplatePickerButton
-            onClick={() => {
-              openTemplates({ kind: "insert", category: "slides" });
-            }}
-          />
-          {headerAction}
+      {!headerless && (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-base font-medium">{label}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <ComposerTemplatePickerButton
+              onClick={() => {
+                openTemplates({ kind: "insert", category: "slides" });
+              }}
+            />
+            {headerAction}
+          </div>
         </div>
-      </div>
+      )}
       <ComposerRail
         rail="templates:presentation"
         itemWidth={200}
@@ -6424,7 +6437,7 @@ function ComposerTemporaryModelNoticeSlot({
   );
 }
 
-/** The one tray below the card, and the notice that currently owns it. */
+/** The one tray above the card, and the notice that currently owns it. */
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
   const imageMode = useGet(signals.create.mode$) === "image";
@@ -7069,9 +7082,9 @@ export function ChatComposer({
         ref={setImageAnnotationLifecycleRef}
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
+        <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} layout={layout} />
-        <ComposerNoticeSlot signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

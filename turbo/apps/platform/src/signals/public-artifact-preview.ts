@@ -69,7 +69,12 @@ const downloadStoredArtifact$ = command(
   ) => {
     // A user action resolves a fresh signature; the card may have been open
     // longer than the preview grant. Never use this credential for copying.
-    const source = await set(attachmentDownloadSource$, preview.url, signal);
+    const source = await set(
+      attachmentDownloadSource$,
+      preview.url,
+      "public",
+      signal,
+    );
     await downloadAttachmentUrl(
       source.kind === "managed" ? source.downloadUrl : source.resourceUrl,
       signal,

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.94](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.93...runner-lifecycle-v0.17.94) (2026-11-12)
+
+
+### Performance Improvements
+
+* **runner-lifecycle:** select overflowing home inventory incrementally ([#46758](https://github.com/okou-ai/okou/issues/46758)) ([f795567](https://github.com/okou-ai/okou/commit/f795567e99f0873e118904647772f3936d62fbfd))
+
+## [0.17.93](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.92...runner-lifecycle-v0.17.93) (2026-11-11)
+
 ## [0.17.92](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.91...runner-lifecycle-v0.17.92) (2026-11-11)
 
 ## [0.17.91](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.90...runner-lifecycle-v0.17.91) (2026-11-11)

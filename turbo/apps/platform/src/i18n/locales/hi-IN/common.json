@@ -550,6 +550,7 @@
       "openDocs": "Google Docs में खोलें",
       "openSheets": "Google Sheets में खोलें",
       "openSlides": "Google Slides में खोलें",
+      "reconnect": "Google Drive फिर से कनेक्ट करें",
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",
@@ -1063,6 +1064,8 @@
       "invalid": "अनुमति का यह लिंक अमान्य या अनुपलब्ध है।",
       "loadFailed": "सभी अनुरोधित अनुमतियों की पुष्टि नहीं हो सकी। किसी भी अनुमति में बदलाव नहीं किया जा सकता।",
       "loading": "अनुमतियाँ लोड हो रही हैं",
+      "myOkouScopeNote": "इस कार्यक्षेत्र में आपके Okou के इस्तेमाल पर लागू है, केवल मौजूदा काम पर नहीं।",
+      "myOkouSharedScopeNote": "इस कार्यक्षेत्र में आपकी सभी चैट में इस कनेक्टर पर लागू है। आपके साथियों की अनुमतियाँ अलग हैं।",
       "notNow": "अभी नहीं",
       "review": "अनुमतियों की समीक्षा करें",
       "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
@@ -1314,6 +1317,40 @@
     "sidebar": {
       "description": "अधिक क्रेडिट और समवर्ती रन",
       "getPlan": "{{plan}} प्राप्त करें"
+    },
+    "survey": {
+      "checkoutAbandoned": {
+        "answers": {
+          "just_checking_price": "बस कीमत देख रहा था",
+          "needs_approval": "किसी और की मंज़ूरी चाहिए",
+          "not_ready_yet": "अभी तय करने के लिए तैयार नहीं हूँ",
+          "not_seeing_value": "अभी तक इसकी उपयोगिता नहीं दिखी",
+          "other": "कुछ और",
+          "payment_issue": "भुगतान में समस्या आई",
+          "price_higher_than_expected": "कीमत उम्मीद से ज़्यादा थी",
+          "results_not_good_enough": "नतीजों से संतुष्ट नहीं था"
+        },
+        "description": "बस एक सवाल। आपका जवाब हमें बेहतर बनने में मदद करता है।",
+        "question": "आपको खरीदारी पूरी करने से किस बात ने रोका?"
+      },
+      "creditsExhausted": {
+        "answers": {
+          "no_need_now": "अभी और की ज़रूरत नहीं है",
+          "not_sure_worth_it": "अभी पक्का नहीं कि यह इसके लायक है",
+          "other": "कुछ और",
+          "still_trying": "पहले इसे और आज़माना चाहता हूँ",
+          "too_expensive": "यह बहुत महंगा है"
+        },
+        "question": "आज अपग्रेड करने से आपको क्या रोक रहा है?",
+        "reward": "इस कार्यक्षेत्र में पहले पात्र उत्तर पर {{credits}} बोनस क्रेडिट मिलते हैं, जो 30 दिनों तक मान्य हैं।",
+        "thanksWithCredits": "धन्यवाद! {{credits}} क्रेडिट जोड़ दिए गए हैं, आप जारी रख सकते हैं।"
+      },
+      "error": "आपका जवाब नहीं भेजा जा सका। फिर से कोशिश करें।",
+      "notNow": "अभी नहीं",
+      "otherLabel": "आपका जवाब",
+      "otherPlaceholder": "और बताएँ (वैकल्पिक)",
+      "submit": "भेजें",
+      "thanks": "बताने के लिए धन्यवाद।"
     },
     "toasts": {
       "autoRechargeUpdated": "स्वतः-रिचार्ज अद्यतन किया गया",
@@ -1627,13 +1664,9 @@
       "editReason": "Edit reason",
       "homeCard": {
         "completeTitle": "सब पूरा हो गया",
-        "emptyTitle": "कोई नया सुझाव नहीं",
         "feedback": "सुझाव के विकल्प",
-        "loading": "सुझाव लोड हो रहे हैं",
         "navigation": "सुझाव देखें",
-        "next": "अगला सुझाव",
-        "previous": "पिछला सुझाव",
-        "retry": "फिर कोशिश करें"
+        "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
       },
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
@@ -3446,6 +3479,8 @@
         "unshared": "किसी एजेंट के साथ साझा नहीं"
       },
       "filterWith": "फ़िल्टर: {{category}}",
+      "myOkouDescription": "अपने Okou के इस्तेमाल के लिए बाहरी सेवाएँ जोड़ें।",
+      "myOkouDescriptionWithCount": "अपने Okou के इस्तेमाल के लिए {{value}} सेवाएँ जोड़ें।",
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
@@ -6244,6 +6279,7 @@
         "iso27001": "ISO/IEC 27001",
         "soc2": "SOC 2 Type II"
       },
+      "hide": "अनुपालन छिपाएँ",
       "link": "सुरक्षा विवरण",
       "status": {
         "aligned": "संरेखित",
@@ -7434,12 +7470,11 @@
       "codeInstructions": "जिस ईमेल पते को जोड़ना है, उससे यह कोड Okou को भेजें। इसे विषय या संदेश की पहली पंक्ति में लिखें।",
       "connected": "ईमेल कनेक्ट हो गया",
       "deleteAria": "{{email}} हटाएँ",
-      "description": "Okou को ईमेल करें और हर बातचीत अलग चैट में रखें",
+      "description": "ईमेल पर अपने Okou से बात करें",
       "emailAddress": "ईमेल पता",
       "healthNotice": "HIPAA के तहत आने वाली मरीज़ों की जानकारी के लिए इस इंटीग्रेशन का उपयोग न करें।",
       "invalidLink": "यह कनेक्शन लिंक अमान्य है। Okou को नया ईमेल भेजें।",
       "loadError": "आपका ईमेल कनेक्शन लोड नहीं हो सका",
-      "loginNotice": "आपका लॉगिन ईमेल हमेशा कनेक्ट रहता है।",
       "manage": "प्रबंधित करें",
       "manageDescription": "जिस ईमेल को जोड़ना है, उससे यह कोड भेजें।",
       "manageTitle": "ईमेल कनेक्शन",

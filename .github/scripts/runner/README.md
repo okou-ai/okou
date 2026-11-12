@@ -14,7 +14,7 @@ Native behavior scenarios and their fixtures belong to the
 | Guest inventory and architecture selection                       | `runner-guest-binaries.sh`, `runner-image-target.sh`, `runner-host-architecture-groups.sh`                                                                              |
 | Image planning, preparation, manifests and readiness             | `runner-image-context.sh`, `runner-image-architecture.sh`, `prepare-runner-image.sh`, `runner-image-manifest.sh`, `wait-runner-image.sh`, `wait-runner-image-groups.sh` |
 | Group reconciliation and startup                                 | `reconcile-runner-binary-groups.sh`, `reconcile-and-start-runner-groups.sh`                                                                                             |
-| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-pr-runner-namespace.sh`, `discover-runner-pr-namespaces.sh`, `prune-runner-idle.sh`                                           |
+| Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-metal-runners.py`, `cleanup-metal-resources.py`, `start-stripe-listener.sh`, `prune-runner-idle.sh`                           |
 | Native test binary build and artifact transport                  | `runner-native-test-artifact.sh`                                                                                                                                        |
 | Cloudflare SSH setup, probes, guarded operations and diagnostics | `cloudflare-ssh-proxy.sh`, `cloudflare-ssh-preconnect.sh`, `cloudflare-ssh-command.sh`, `cloudflare-ssh-diagnostics.sh`                                                 |
 
@@ -55,3 +55,56 @@ Run the retained affected suites in `../tests/` through their shell entry points
 The shard manifest registers those suites; native/image execution remains in the
 PR pipeline. Follow the [GitHub scripts standard](../../../docs/github-scripts.md)
 when changing callers, copied tools, hashed inputs, selectors or command contracts.
+
+## Closed PR resource reconciliation
+
+`python3 .github/scripts/runner/cleanup-metal-runners.py` is shared by scheduled
+and PR-close cleanup. It requires `GH_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_RUN_ID`,
+`METAL_HOSTS` and `METAL_USER`, plus the established SSH tunnel configuration.
+`RUNNER_PR_NUMBERS=42,43` restricts selection; `DRY_RUN=true` observes and selects
+without acquiring lifecycle locks or mutating resources. An incomplete host
+inventory fails even in dry-run mode.
+
+The controller starts one ephemeral worker per host for small sorted batches.
+Each worker holds the established namespace flock files itself; all configured
+hosts must report readiness before fresh GitHub authorization. PR state and stabilized owner discovery are fresh under
+those locks. Exact owner association protects older CI generations; unresolved
+association fails closed instead of guessing from a reused branch. Proven live
+owners are reported as deferred, and reopened PRs are retained. Other batches
+continue after errors; failed/unknown cleanup and lock outcomes fail the job.
+Owner discovery fails closed when a status search reports or returns GitHub's
+1,000-run limit. Below that cap, `total_count` is not a coverage predicate: counts
+can drift even within one page. Paginated results are deduplicated by run ID, and
+selected PR owner ID sets must agree across consecutive sweeps (at most four).
+Previously observed selected owners missing from a later sweep are refreshed by
+exact ID regardless of count equality. Still-active runs remain owners across
+status changes and repeated omissions; only confirmed completed runs leave the
+set. These observations are not an atomic GitHub snapshot. Lookup, identity,
+association or stabilization failures remain unverified and retain resources.
+An unverified or failed result exits 1 because cleanup was not established;
+proven live-owner deferrals and reopened PR skips exit 0.
+
+The host executor reobserves runner and Stripe units/directories under the locks,
+verifies stopped execution before removing files, and verifies final state.
+It submits all selected stops before polling with one shared 330s stop budget
+(Runner units allow 300s). Inactive/failed state, no main PID, no queued/running
+job and an unpopulated cgroup are all required before deletion. A stop deadline
+retains that namespace's files and reports failure; stopped siblings can still
+be cleaned. The host operation has a 480s hard limit, inside the controller's
+510s response and 720s batch limits. Heartbeats continue during the wait, and
+cancellation still interrupts the worker before releasing its namespace locks.
+Absent resources are counted separately from actual cleanup. Persistent and
+transient files, directory-only and Stripe-only leftovers participate in discovery;
+inactive manager records with no execution, queued job or files do not repeatedly
+enter it.
+Unresolved results retain nonzero systemctl action diagnostics. If reload or
+final inventory fails, `operation_result` retains completed steps; the overall
+outcome remains `unverified` rather than claiming verified cleanup.
+SSH response loss is not permission to replay a destructive command. Response
+deadlines cover a complete JSON frame, including replies stalled mid-line. EOF or
+heartbeat lease expiry stops the remote mutation before its own lock descriptors
+close. The worker source is paired with the controller and requires no persistent
+host installation.
+
+Stripe replacement uses the same lifecycle exclusion. Its Ansible playbooks
+remain deployment adapters; closed-PR teardown does not start Ansible per PR.

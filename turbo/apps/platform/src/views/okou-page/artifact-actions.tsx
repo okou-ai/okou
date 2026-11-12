@@ -55,6 +55,8 @@ import { captureArtifactAction } from "../../lib/posthog.ts";
 import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
+import { artifactPaywallLocked$ } from "../../signals/okou-page/artifact-paywall.ts";
+import { ProBadge } from "./components/model-provider-picker.tsx";
 import {
   artifactGoogleDriveCatalogItem$,
   inactiveArtifactGoogleDriveCatalogItem$,
@@ -246,13 +248,19 @@ function useGoogleDriveCompletedOperation(
     : undefined;
 }
 
-function useGoogleDriveAvailability(
+export function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   enabled: boolean,
 ) {
-  const catalogItem$ = enabled
-    ? artifactGoogleDriveCatalogItem$
-    : inactiveArtifactGoogleDriveCatalogItem$;
+  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
+  const recovery = completedOperation?.recovery ?? syncTarget?.recovery;
+  const accountReady = completedOperation?.recovery
+    ? false
+    : completedOperation?.ready === true || syncTarget?.accountReady === true;
+  const catalogItem$ =
+    enabled && needsArtifactGoogleDriveCatalog({ accountReady, recovery })
+      ? artifactGoogleDriveCatalogItem$
+      : inactiveArtifactGoogleDriveCatalogItem$;
   const catalogItemLoadable = useLoadable(catalogItem$);
   const lastCatalogItem = useLastResolved(catalogItem$);
   const catalogItem =
@@ -266,21 +274,16 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const completedOperation = useGoogleDriveCompletedOperation(syncTarget);
-  const selectedAccount = completedOperation?.ready
-    ? completedOperation
-    : undefined;
-  const accountReady =
-    selectedAccount !== undefined || syncTarget?.accountReady === true;
-
   return {
     googleDriveAuthMethod,
     googleDriveConnector,
+    googleDriveCatalogFailed: catalogItemLoadable.state === "hasError",
     googleDriveReady: accountReady,
-    pendingAction: resolveGoogleDrivePendingAction(syncTarget?.recovery),
+    pendingAction: resolveGoogleDrivePendingAction(recovery),
+    scopeRequired: completedOperation?.recovery !== undefined,
     googleImport: completedOperation?.googleImport,
-    googleDriveConnectionId: selectedAccount
-      ? selectedAccount.connectionId
+    googleDriveConnectionId: completedOperation
+      ? completedOperation.connectionId
       : syncTarget?.connectionId,
   };
 }
@@ -487,13 +490,19 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          origin: {
-            kind: "artifact-drive-sync",
-            agentId,
-            artifactId: syncTarget.artifactId,
-            filename: syncTarget.filename,
-            mode,
-          },
+          origin: availability.scopeRequired
+            ? {
+                kind: "artifact-drive-reconnect",
+                agentId,
+                artifactId: syncTarget.artifactId,
+              }
+            : {
+                kind: "artifact-drive-sync",
+                agentId,
+                artifactId: syncTarget.artifactId,
+                filename: syncTarget.filename,
+                mode,
+              },
           options: {
             account: action.account,
             agentId,
@@ -525,7 +534,14 @@ type GoogleDriveCompletedAction =
 function googleDriveCompletedAction(
   syncTarget: ArtifactDownloadSyncTarget,
   target: GoogleWorkspaceTarget | undefined,
+  imported?: ReturnType<typeof useGoogleDriveAvailability>["googleImport"],
 ): GoogleDriveCompletedAction | null {
+  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
+    if (!imported.webViewLink) {
+      throw new Error("Converted Google file is missing its editor URL");
+    }
+    return { kind: "open", target, url: imported.webViewLink };
+  }
   if (!syncTarget.synced) {
     return null;
   }
@@ -536,6 +552,22 @@ function googleDriveCompletedAction(
       : null;
   }
   return syncTarget.originalUploaded === true ? { kind: "synced" } : null;
+}
+
+function primaryOwnsDriveRecovery(
+  syncTarget: ArtifactDownloadSyncTarget | undefined,
+  target: GoogleWorkspaceTarget | undefined,
+  availability: ReturnType<typeof useGoogleDriveAvailability>,
+): boolean {
+  return (
+    availability.scopeRequired &&
+    (!syncTarget ||
+      googleDriveCompletedAction(
+        syncTarget,
+        target,
+        availability.googleImport,
+      ) === null)
+  );
 }
 
 function GoogleDriveCompletedMenuItem({
@@ -595,10 +627,14 @@ function GoogleDriveConnectMenuItem({
               onClick={onClick}
             >
               <GoogleDriveMenuIcon target={target} />
-              {uploadLabel ??
-                t(($) => {
-                  return $.artifacts.googleDrive.connect;
-                })}
+              {availability.scopeRequired
+                ? t(($) => {
+                    return $.artifacts.googleDrive.reconnect;
+                  })
+                : (uploadLabel ??
+                  t(($) => {
+                    return $.artifacts.googleDrive.connect;
+                  }))}
             </DropdownMenuItem>
           }
         />
@@ -653,18 +689,11 @@ function GoogleDriveMenuItem({
     );
   }
 
-  const imported = availability.googleImport;
-  if (target && imported?.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[target]) {
-    if (!imported.webViewLink) {
-      throw new Error("Converted Google file is missing its editor URL");
-    }
-    return (
-      <GoogleDriveCompletedMenuItem
-        action={{ kind: "open", target, url: imported.webViewLink }}
-      />
-    );
-  }
-  const completed = googleDriveCompletedAction(syncTarget, target);
+  const completed = googleDriveCompletedAction(
+    syncTarget,
+    target,
+    availability.googleImport,
+  );
   if (completed) {
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
@@ -792,7 +821,7 @@ function useArtifactDriveMenu({
   // Keep capabilities subscribed while the popup is closed.
   const availability = useGoogleDriveAvailability(
     syncTarget,
-    showGoogleDriveAction && needsArtifactGoogleDriveCatalog(syncTarget),
+    showGoogleDriveAction,
   );
   const primaryReady = googleDriveActionReady(
     syncTarget,
@@ -813,6 +842,7 @@ function useArtifactDriveMenu({
   const showOriginal =
     showGoogleDriveAction &&
     workspaceTarget &&
+    !primaryOwnsDriveRecovery(syncTarget, workspaceTarget, availability) &&
     (!previewMenu ||
       (originalReady &&
         snapshot?.original &&
@@ -890,6 +920,7 @@ export function ArtifactDownloadMenu({
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
+  const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   const downloadPending = downloadLoadable.state === "loading";
   const downloadName = artifactDownloadFilename(artifactKind, filename, url);
   const drive = useArtifactDriveMenu({
@@ -965,6 +996,11 @@ export function ArtifactDownloadMenu({
           {t(($) => {
             return $.artifacts.actions.download;
           })}
+          {paywallLocked && (
+            <span className="ml-auto">
+              <ProBadge />
+            </span>
+          )}
         </DropdownMenuItem>
         {drive.items}
         {children}

@@ -283,6 +283,7 @@ pub enum CustomConnectorNetworkIntent {
     CloudflareAccess {
         #[serde(rename = "configId")]
         config_id: String,
+        generation: u32,
     },
 }
 
@@ -323,15 +324,6 @@ impl FirewallApi {
     }
 
     fn validate_for_connector_runtime(&self) -> Result<(), String> {
-        if matches!(
-            self.network_intent,
-            Some(CustomConnectorNetworkIntent::CloudflareAccess { .. })
-        ) {
-            return Err(
-                "Cloudflare Access execution is not available in this preparation release"
-                    .to_string(),
-            );
-        }
         if self.id.is_empty() {
             return Err("id must be non-empty".to_string());
         }
@@ -1796,6 +1788,8 @@ pub struct ActiveReuseProducer {
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatState {
     pub runner_id: String,
+    /// Host-local ingress service activity, not public reachability or admission.
+    pub ingress_service_active: bool,
     /// Configured advisory host identity, independent of cache contents.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_hostname: Option<String>,

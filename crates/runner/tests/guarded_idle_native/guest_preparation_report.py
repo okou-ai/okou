@@ -133,9 +133,9 @@ def validate(directory, contract):
     for event in ordered:
         if not report.valid_witness_envelope(event, lambda value: value == case):
             raise ValueError("malformed fixed original event")
-    if (any(tuple(e[k] for k in ("sandbox_id", "backing_generation")) != identity for e in ordered[1:])
-            or any(a["monotonic_ns"] >= b["monotonic_ns"] or a["unix_ns"] >= b["unix_ns"] for a,b in zip(ordered,ordered[1:]))):
+    if any(tuple(e[k] for k in ("sandbox_id", "backing_generation")) != identity for e in ordered[1:]):
         raise ValueError("fixed original identity or clocks changed")
+    report.validate_witness_clock_order(ordered, "fixed original identity or clocks changed")
     exact(terminals[0]["evidence"], {"artifacts": artifacts}, "fixed source/artifact binding changed")
     exact(terminals[1]["evidence"], {}, "fixed terminal start changed")
     session, durable, captured, waiting, lost, progress, joined, refused, owners = [e["evidence"] for e in events]

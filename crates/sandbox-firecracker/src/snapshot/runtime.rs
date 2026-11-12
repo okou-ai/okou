@@ -8,7 +8,7 @@ use tracing::info;
 use crate::api::ApiClient;
 use crate::boot_config::{BootConfigInput, FirecrackerBootConfig};
 use crate::config::SnapshotConfig;
-use crate::exec_operation_result::{captured_exec_output_bytes, reject_stream_overflow};
+use crate::exec_operation_result::captured_exec_result;
 use crate::factory::InvariantConfig;
 use crate::paths::{SandboxPaths, SnapshotOutputPaths, SockPaths};
 use crate::runtime_dirs::{prepare_runtime_socket_dir, set_private_runtime_socket_mode};
@@ -216,19 +216,8 @@ fn validate_prewarm_exec_result(
 fn prewarm_exec_result_parts(
     result: guest_control_client::ExecOperationResult,
 ) -> io::Result<(ExecTermination, Vec<u8>, String)> {
-    reject_stream_overflow(&result)?;
-
-    let guest_control_client::ExecOperationResult {
-        termination,
-        stdout,
-        stderr,
-        diagnostic,
-        ..
-    } = result;
-
-    let _ = captured_exec_output_bytes("stdout", stdout)?;
-    let (stderr, _) = captured_exec_output_bytes("stderr", stderr)?;
-    Ok((termination, stderr, diagnostic))
+    let result = captured_exec_result(result)?;
+    Ok((result.termination, result.stderr, result.diagnostic))
 }
 
 fn prewarm_failure_detail(stderr: &str, diagnostic: &str) -> String {

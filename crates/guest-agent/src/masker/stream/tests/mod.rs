@@ -119,7 +119,7 @@ fn long_secrets_scan_and_relocate_only_linear_input_bytes() {
             let expected = masker.mask_string(&text);
             for delta_len in [16, 256, 4096] {
                 let mut stream = masker.stream();
-                let mut actual = String::new();
+                let mut actual = String::with_capacity(expected.len());
                 for delta in text.as_bytes().chunks(delta_len) {
                     actual.push_str(&stream.push(std::str::from_utf8(delta).unwrap()));
                     assert!(stream.pending.len() <= stream.holdback + 3);

@@ -582,6 +582,10 @@ async fn read_http_request(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> 
     request.truncate(body_end);
     request.drain(..body_start);
     if request.len() < content_length {
+        // Reserve only bounded fixture bodies; oversized declarations keep incremental reads.
+        if content_length <= NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES {
+            request.reserve_exact(content_length - request.len());
+        }
         stream
             .take((content_length - request.len()) as u64)
             .read_to_end(&mut request)

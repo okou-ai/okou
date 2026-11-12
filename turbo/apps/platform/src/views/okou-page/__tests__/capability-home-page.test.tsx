@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -13,7 +13,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   composerInlineTemplates,
   findComposerEditor,
-  tabByText,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -47,6 +46,27 @@ async function setupHome() {
 }
 function capabilities() {
   return screen.getByRole("group", { name: "Explore Okou capabilities" });
+}
+function dialogTab(dialog: HTMLElement, label: string): HTMLElement {
+  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
+    return item.textContent?.replace(/\s+/g, " ").trim() === label;
+  });
+  if (!tab) {
+    throw new Error(`Expected ${label} tab in the dialog`);
+  }
+  return tab;
+}
+function capabilityTab(label: string): HTMLElement {
+  const list = screen.getByRole("tablist", {
+    name: "Explore Okou capabilities",
+  });
+  const tab = queryAllByRoleFast("tab", list).find((item) => {
+    return item.textContent?.trim() === label;
+  });
+  if (!tab) {
+    throw new Error(`Expected capability tab ${label}`);
+  }
+  return tab;
 }
 
 test("An empty conversation offers capabilities without an avatar and sends its first message in the same conversation", async () => {
@@ -89,11 +109,13 @@ test("An empty conversation offers capabilities without an avatar and sends its 
   expect(capture.threadCreates).toStrictEqual([]);
 });
 
+const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
+
 test.each([
   ["home", `/agents/${AGENT_ID}/chat`],
   ["empty conversation", `/chats/${THREAD_ID}`],
 ])(
-  "The %s lists compliance statuses under the composer",
+  "The %s lists compliance statuses under the capability cards",
   async (_surface, path) => {
     mockTemplateChat();
     await setupPage({
@@ -102,21 +124,24 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
     });
     const editor = await findComposerEditor();
-    await screen.findByRole("group", { name: "Explore Okou capabilities" });
-    const compliance = screen.getByRole("region", {
-      name: "Okou’s compliance, built for your trust",
+    const cards = await screen.findByRole("group", {
+      name: "Explore Okou capabilities",
     });
+    const compliance = screen.getByRole("region", { name: COMPLIANCE_TITLE });
+    // The block closes the card grid, in the page above the composer, so the
+    // composer keeps the same place it has in a conversation.
     expect(
-      editor.compareDocumentPosition(compliance) &
+      cards.compareDocumentPosition(compliance) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
-    expect(compliance.closest("main")).toBeNull();
-    expect(compliance.closest("[data-chat-composer]")).not.toBeNull();
-    // One quiet line names the frameworks; their statuses open from it.
-    click(queryAllByRoleFast("button", compliance)[0]!);
-    const details = await screen.findByRole("dialog");
     expect(
-      within(details)
+      compliance.compareDocumentPosition(editor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(compliance.closest("main")).not.toBeNull();
+    expect(compliance.closest("[data-chat-composer]")).toBeNull();
+    expect(
+      within(compliance)
         .getAllByRole("listitem")
         .map((item) => {
           return item.textContent;
@@ -131,16 +156,57 @@ test.each([
   },
 );
 
+test("Hiding the compliance block keeps it hidden on this device", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  const compliance = await screen.findByRole("region", {
+    name: COMPLIANCE_TITLE,
+  });
+  const hide = button("Hide compliance", compliance);
+  hide.focus();
+  await userEvent.keyboard("{Enter}");
+  // The control leaves with the block, so focus goes to the composer.
+  expect(editor).toHaveFocus();
+  // It leaves the accessibility tree at once and folds its height away; the
+  // fold's end unmounts it.
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: COMPLIANCE_TITLE })).toBeNull();
+  });
+  fireEvent.transitionEnd(compliance);
+  await waitFor(() => {
+    expect(compliance).not.toBeInTheDocument();
+  });
+  // Leaving home and coming back does not bring it back.
+  click(
+    link((element) => {
+      return element.getAttribute("href") === "/agents";
+    }),
+  );
+  await screen.findByRole("heading", { name: "Agents" });
+  click(
+    link((element) => {
+      return element.textContent?.trim() === "Chat";
+    }),
+  );
+  await screen.findByRole("group", { name: "Explore Okou capabilities" });
+  expect(screen.queryByRole("region", { name: COMPLIANCE_TITLE })).toBeNull();
+});
+
+function link(matches: (element: HTMLElement) => boolean) {
+  const found = queryAllByRoleFast("link").find(matches);
+  if (!found) {
+    throw new Error("Missing link");
+  }
+  return found;
+}
+
 test("An open tray switches capabilities and types without going back to the cards", async () => {
   mockTemplateChat();
   const editor = await setupHome();
   await fill(editor, "Keep my launch brief");
   click(button("Presentation", capabilities()));
   await screen.findByRole("group", { name: "Presentation templates" });
-  const row = screen.getByRole("navigation", {
-    name: "Explore Okou capabilities",
-  });
-  expect(button("Create", row)).toHaveAttribute("aria-current", "true");
+  expect(capabilityTab("Create")).toHaveAttribute("aria-selected", "true");
   const types = screen.getByRole("radiogroup", { name: "Create" });
   const image = queryAllByRoleFast("radio", types).find((item) => {
     return item.textContent?.trim() === "Image";
@@ -150,14 +216,70 @@ test("An open tray switches capabilities and types without going back to the car
   expect(
     screen.queryByRole("group", { name: "Presentation templates" }),
   ).toBeNull();
-  click(button("Find people", row));
-  await screen.findByRole("region", { name: "Find people" });
-  expect(button("Find people", row)).toHaveAttribute("aria-current", "true");
+  click(capabilityTab("Find people"));
+  const people = await screen.findByRole("region", { name: "Find people" });
+  expect(capabilityTab("Find people")).toHaveAttribute("aria-selected", "true");
+  // The tray is the open tab's panel.
+  expect(screen.getByRole("tabpanel")).toContainElement(people);
   expect(screen.queryByRole("group", { name: "Image styles" })).toBeNull();
   // Create reopens on the type chosen last.
-  click(button("Create", row));
+  click(capabilityTab("Create"));
   await screen.findByRole("group", { name: "Image styles" });
   expect(editor).toHaveTextContent("Keep my launch brief");
+});
+
+test("The capability tabs move with the arrow keys and open on Enter", async () => {
+  mockTemplateChat();
+  await setupHome();
+  click(button("Presentation", capabilities()));
+  await screen.findByRole("group", { name: "Presentation templates" });
+  const user = userEvent.setup();
+  capabilityTab("Create").focus();
+  await user.keyboard("{ArrowRight}");
+  expect(capabilityTab("Workflow")).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("radiogroup", { name: "Workflow" });
+  expect(capabilityTab("Workflow")).toHaveAttribute("aria-selected", "true");
+});
+
+test("The tray names a type once and browses its catalog from the header line", async () => {
+  mockTemplateChat();
+  await setupHome();
+  click(button("Presentation", capabilities()));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  // The type's tab names the shelf; the shelf itself carries only covers.
+  expect(within(shelf).queryByText("Presentation templates")).toBeNull();
+  const tray = screen.getByRole("tabpanel");
+  click(button("View all", tray));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialogTab(dialog, "Presentation")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  click(button("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  // Chart has no catalog to browse.
+  const chart = queryAllByRoleFast(
+    "radio",
+    screen.getByRole("radiogroup", { name: "Create" }),
+  ).find((item) => {
+    return item.textContent?.trim() === "Chart";
+  });
+  click(chart!);
+  await screen.findByRole("region", { name: "Visualization options" });
+  expect(
+    queryAllByRoleFast("button", tray).find((item) => {
+      return item.textContent?.trim() === "View all";
+    }),
+  ).toBeUndefined();
+  // Find people says what it finds rather than naming itself again.
+  click(capabilityTab("Find people"));
+  const people = await screen.findByRole("region", { name: "Find people" });
+  expect(people).toHaveTextContent("Customers, creators, decision-makers");
 });
 
 test("Capability discovery and templates replace each other while the composer keeps the draft and template", async () => {
@@ -211,9 +333,14 @@ test("Workflow suggestions preserve the draft and open the real workflow picker"
   expect(
     button("Keep important emails moving", suggestions),
   ).toBeInTheDocument();
-  click(button("View all", suggestions));
+  // "View all" sits beside the kinds in the tray's header line.
+  click(button("View all", screen.getByRole("tabpanel")));
   const dialog = await screen.findByRole("dialog");
-  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
+  // Scoped to the picker: the open capability tab is also named Workflow.
+  expect(dialogTab(dialog, "Workflow")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(
     button("Select workflow template Morning brief", dialog),
   ).toBeInTheDocument();
@@ -305,6 +432,8 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   });
   expect(explore).toHaveAttribute("href", "https://www.okou.ai/en/blog");
   expect(explore).toHaveAttribute("target", "_blank");
+  // It rides in the corner header beside the growth entry, not below the cards.
+  expect(screen.getByRole("banner")).toContainElement(explore ?? null);
   click(button("Research", capabilities()));
   const research = await screen.findByRole("region", { name: "Research" });
   expect(screen.queryByRole("region", { name: "Find people" })).toBeNull();

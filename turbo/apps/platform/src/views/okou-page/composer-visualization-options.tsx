@@ -16,6 +16,16 @@ import {
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
+/**
+ * The two groups' labels. On the capability tray the tab above already names
+ * the type, so they step down to secondary labels rather than read as a second
+ * and third title.
+ */
+const VISUALIZATION_SECTION_LABEL = cn(
+  "min-w-0 truncate text-base font-medium",
+  "in-data-[slot=capability-tray]:text-[13px] in-data-[slot=capability-tray]:leading-5 in-data-[slot=capability-tray]:text-muted-foreground",
+);
+
 function VisualizationOutputButton({
   output,
   signals,
@@ -46,7 +56,13 @@ function VisualizationOutputButton({
       // the one control on the surface drawn to its own scale.
       className={cn(
         "h-9 shrink-0 px-3 py-0",
-        !selected && "border-control-border bg-transparent",
+        !selected && [
+          "border-control-border bg-transparent",
+          // On the capability tray's tint an outlined chip is one more line;
+          // the chip is raised like the covers under it instead. The border
+          // width stays, so selecting one never moves its neighbours.
+          "in-data-[slot=capability-tray]:border-transparent in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:shadow-segment-selected",
+        ],
       )}
       onClick={() => {
         setOutput(output);
@@ -81,9 +97,7 @@ function VisualizationOutputPicker({
       aria-label={copy.outputFormat}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-base font-medium">
-          {copy.outputFormat}
-        </p>
+        <p className={VISUALIZATION_SECTION_LABEL}>{copy.outputFormat}</p>
         {headerAction}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -164,7 +178,7 @@ function VisualizationChartButton({
           "border-(length:--border-width-emphasis)",
           selected
             ? "border-primary bg-primary/10 text-foreground"
-            : "border-transparent bg-muted text-foreground/45 group-hover/tile:text-foreground/70",
+            : "border-transparent bg-muted text-foreground/45 group-hover/tile:text-foreground/70 in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:shadow-segment-selected",
         )}
       >
         <VisualizationChartPreview chart={chart} />
@@ -199,9 +213,7 @@ function VisualizationChartPicker({
       role="group"
       aria-label={copy.preferredCharts}
     >
-      <p className="min-w-0 truncate text-base font-medium">
-        {copy.preferredCharts}
-      </p>
+      <p className={VISUALIZATION_SECTION_LABEL}>{copy.preferredCharts}</p>
       <ComposerRail
         rail="charts"
         // The shelf labels its own wrapper, so the rail inside stays unnamed:
@@ -241,7 +253,7 @@ export function ComposerVisualizationOptions({
       // two: a shelf's `gap-3` is what a title keeps from its row, not what one
       // group keeps from the next. Tracks the panel gap in `composer-task-chips`
       // — the two modes have to read as the same surface.
-      className="flex min-w-0 flex-col gap-10"
+      className="flex min-w-0 flex-col gap-10 in-data-[slot=capability-tray]:gap-6"
       role="region"
       aria-label={copy.panelLabel}
     >

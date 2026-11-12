@@ -89,7 +89,7 @@ private struct ChatSearchContent: View {
     let titles = search.titleResults(in: titleThreads)
     NavigationStack {
       OkouSearchPage(
-        "Search", text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
+        text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
         prompt: "Search", close: { search.dismiss() }
       ) {
         // On the search field's and the rows' leading edge.
@@ -134,11 +134,7 @@ private struct ChatSearchContent: View {
         }
         ForEach(titles) { thread in
           resultButton(threadID: thread.id) {
-            VStack(alignment: .leading, spacing: OkouSpace.xs) {
-              Text(thread.displayTitle).lineLimit(1)
-              Text(agentName(thread.agentID)).font(.okou(.caption)).foregroundStyle(
-                OkouColor.mutedForeground)
-            }
+            Text(thread.displayTitle).lineLimit(1)
           }
         }
       }

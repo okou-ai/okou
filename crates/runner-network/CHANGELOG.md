@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.2](https://github.com/okou-ai/okou/compare/runner-network-v0.6.1...runner-network-v0.6.2) (2026-11-12)
+
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-network-v0.6.0...runner-network-v0.6.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **runner:** allow bounded cold catalog initialization ([#46755](https://github.com/okou-ai/okou/issues/46755)) ([af7116e](https://github.com/okou-ai/okou/commit/af7116ed4d2917cab3d77b9d1ac967a060ca4c55))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-network-v0.5.8...runner-network-v0.6.0) (2026-11-11)
+
+
+### Features
+
+* **connectors:** prepare organization cloudflare access bindings ([#46562](https://github.com/okou-ai/okou/issues/46562)) ([25ec802](https://github.com/okou-ai/okou/commit/25ec8029d50d1392c508fa4355fcbbbce439ad27))
+
 ## [0.5.8](https://github.com/okou-ai/okou/compare/runner-network-v0.5.7...runner-network-v0.5.8) (2026-11-11)
 
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-network-v0.5.6...runner-network-v0.5.7) (2026-11-11)

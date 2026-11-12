@@ -248,7 +248,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "email",
-    description: "Attach files to the current Email conversation",
+    description: "Manage the Email workspace binding and attach files",
     load: async () => {
       return (await import("./commands/email")).createEmailCommand();
     },

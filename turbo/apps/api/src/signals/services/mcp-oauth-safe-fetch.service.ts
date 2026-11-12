@@ -1,9 +1,11 @@
 import { Buffer } from "node:buffer";
+import { resolve4, resolve6 } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 
 import type { FetchLike } from "@modelcontextprotocol/client";
+import { validateBaseUrlHostPolicy } from "@okouai/connectors/firewall-types";
 
-import { createDeferredPromise } from "../utils";
+import { createDeferredPromise, settle } from "../utils";
 
 const MCP_OAUTH_MAX_HEADER_BYTES = 16 * 1024;
 const MCP_OAUTH_MAX_RESPONSE_BYTES = 64 * 1024;
@@ -44,6 +46,15 @@ export class McpOAuthUnsafeUrlError extends Error {
   constructor() {
     super("MCP OAuth URL is not allowed");
     this.name = "McpOAuthUnsafeUrlError";
+  }
+}
+
+export class McpOAuthUnattributedResponseError extends Error {
+  constructor(readonly response: Response) {
+    super(
+      "The Access-protected request failed; its source is unknown. Check network access and application authentication, then retry explicitly",
+    );
+    this.name = "McpOAuthUnattributedResponseError";
   }
 }
 
@@ -153,6 +164,55 @@ function outgoingRequestHeaders(headers: Headers): Record<string, string> {
   return Object.fromEntries(headers);
 }
 
+async function validateObservedPublicDestination(
+  url: URL,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const validate = (base: string) => {
+    return validateBaseUrlHostPolicy({
+      base,
+      serviceName: "Custom connector network request",
+      hostPolicy: { kind: "publicDestination" },
+    });
+  };
+  validate(url.origin);
+  if (
+    url.hostname.startsWith("[") ||
+    /^\d+\.\d+\.\d+\.\d+$/u.test(url.hostname)
+  ) {
+    return;
+  }
+  const lookup = await settle(
+    Promise.allSettled([resolve4(url.hostname), resolve6(url.hostname)]),
+    signal,
+  );
+  if (!lookup.ok) {
+    throw lookup.error;
+  }
+  const addresses: string[] = [];
+  for (const answer of lookup.value) {
+    if (answer.status === "fulfilled") {
+      addresses.push(...answer.value);
+    } else if (
+      !(answer.reason instanceof Error) ||
+      !("code" in answer.reason) ||
+      (answer.reason.code !== "ENODATA" && answer.reason.code !== "ENOTFOUND")
+    ) {
+      throw new McpOAuthUnsafeUrlError();
+    }
+  }
+  if (addresses.length === 0) {
+    throw new McpOAuthUnsafeUrlError();
+  }
+  for (const address of addresses) {
+    validate(`https://${address.includes(":") ? `[${address}]` : address}`);
+  }
+  signal.throwIfAborted();
+  // Workers performs its own DNS resolution for HTTPS. This validates observed
+  // answers; it does not pin the eventual connection to one of those answers.
+}
+
 async function boundedRequest(
   url: URL,
   requestData: SerializedRequest,
@@ -186,6 +246,25 @@ async function boundedRequest(
         signal,
       },
       (response) => {
+        const headerBytes = Object.entries(response.headers).reduce(
+          (total, [name, value]) => {
+            return (
+              total +
+              Buffer.byteLength(name) +
+              Buffer.byteLength(
+                Array.isArray(value) ? value.join(", ") : (value ?? ""),
+              ) +
+              4
+            );
+          },
+          0,
+        );
+        if (headerBytes > MCP_OAUTH_MAX_HEADER_BYTES) {
+          const error = new Error("MCP OAuth response headers are too large");
+          deferred.resolve({ ok: false, error });
+          response.destroy(error);
+          return;
+        }
         const chunks: Buffer[] = [];
         let responseBytes = 0;
         response.on("data", (chunk: Buffer) => {
@@ -270,28 +349,70 @@ function redirectLocation(response: Response): string | null {
     : null;
 }
 
-export const mcpOAuthSafeFetch: FetchLike = async (input, init) => {
-  const signal = new Request(input, init).signal;
-  const requestData = serializedRequest(init);
-  let url = allowedUrl(input);
-  let redirectCount = 0;
+export type McpOAuthNetworkAdmission = (
+  request: { readonly url: URL; readonly method: string },
+  signal: AbortSignal,
+) => Promise<Readonly<Record<string, string>>>;
 
-  while (true) {
-    const response = await boundedRequest(url, requestData, signal);
-    const location = redirectLocation(response);
-    if (location === null) {
-      return response;
+export function createMcpOAuthSafeFetch(
+  admitNetwork?: McpOAuthNetworkAdmission,
+): FetchLike {
+  return async (input, init) => {
+    const signal = new Request(input, init).signal;
+    const requestData = serializedRequest(init);
+    let url = allowedUrl(input);
+    let redirectCount = 0;
+
+    while (true) {
+      if (admitNetwork) {
+        requestData.headers.delete("CF-Access-Client-Id");
+        requestData.headers.delete("CF-Access-Client-Secret");
+        await validateObservedPublicDestination(url, signal);
+        const headers = await admitNetwork(
+          { url, method: requestData.method },
+          signal,
+        );
+        signal.throwIfAborted();
+        for (const [name, value] of Object.entries(headers)) {
+          requestData.headers.set(name, value);
+        }
+      }
+      const response = await boundedRequest(url, requestData, signal);
+      // Read-only metadata lookup may legitimately try another well-known URL
+      // after 404. This response never reaches a token-error parser; token and
+      // registration POST failures remain guarded regardless of status/body.
+      const readOnlyNotFound =
+        requestData.method !== "POST" && response.status === 404;
+      if (
+        admitNetwork &&
+        requestData.headers.has("CF-Access-Client-Id") &&
+        !response.ok &&
+        !readOnlyNotFound
+      ) {
+        // A challenge or OAuth JSON describes an error, not which reverse-proxied
+        // layer produced it. Do not let a token parser turn it into app revocation.
+        // GET/HEAD redirects retain their ordinary per-hop admission below.
+        if (redirectLocation(response) === null) {
+          throw new McpOAuthUnattributedResponseError(response);
+        }
+      }
+      const location = redirectLocation(response);
+      if (location === null) {
+        return response;
+      }
+      if (requestData.method === "POST") {
+        throw new Error("MCP OAuth POST redirects are not allowed");
+      }
+      if (redirectCount === MCP_OAUTH_MAX_REDIRECTS) {
+        throw new Error("MCP OAuth response has too many redirects");
+      }
+      for (const name of REDIRECT_SENSITIVE_HEADERS) {
+        requestData.headers.delete(name);
+      }
+      url = allowedUrl(new URL(location, url));
+      redirectCount += 1;
     }
-    if (requestData.method === "POST") {
-      throw new Error("MCP OAuth POST redirects are not allowed");
-    }
-    if (redirectCount === MCP_OAUTH_MAX_REDIRECTS) {
-      throw new Error("MCP OAuth response has too many redirects");
-    }
-    for (const name of REDIRECT_SENSITIVE_HEADERS) {
-      requestData.headers.delete(name);
-    }
-    url = allowedUrl(new URL(location, url));
-    redirectCount += 1;
-  }
-};
+  };
+}
+
+export const mcpOAuthSafeFetch = createMcpOAuthSafeFetch();

@@ -18,6 +18,8 @@ import {
   isHostedSiteUrl,
 } from "./chat-page/parse-body-blocks.ts";
 import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
+import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
+import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 
@@ -224,7 +226,19 @@ export const downloadAttachment$ = command(
     attachment: AttachmentDownload,
     signal: AbortSignal,
   ): Promise<void> => {
-    const source = await set(attachmentDownloadSource$, attachment.url, signal);
+    if (!(await set(passArtifactPaywall$, signal))) {
+      return;
+    }
+    const source = await set(
+      attachmentDownloadSource$,
+      attachment.url,
+      "app",
+      signal,
+    );
+    if (source.kind === "paywalled") {
+      await set(openSettingsBillingPlansDialog$, signal);
+      return;
+    }
     const { resourceUrl, hosted } = source;
     const siteUrl =
       hostedPublicationUrl(attachment.url) ?? hostedPublicationUrl(resourceUrl);

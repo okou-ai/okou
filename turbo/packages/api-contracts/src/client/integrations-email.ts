@@ -10,6 +10,39 @@ import type { ClientDescriptor } from "./types";
 export const integrationsEmailContract: ClientDescriptor<
   typeof OriginalIntegrationsEmailContract
 > = {
+  getBinding: {
+    method: "GET",
+    path: "/api/integrations/email/session",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      409: true,
+    },
+  },
+  switchWorkspace: {
+    method: "POST",
+    path: "/api/integrations/email/session/workspace",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      409: true,
+    },
+  },
+  logout: {
+    method: "DELETE",
+    path: "/api/integrations/email/session",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      409: true,
+    },
+  },
   createLinkCode: {
     method: "POST",
     path: "/api/integrations/email/link-code",

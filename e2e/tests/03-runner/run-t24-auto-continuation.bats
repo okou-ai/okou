@@ -57,9 +57,10 @@ assert_auto_route() {
     assert_success
 
     # No explicit model on continuation: the thread keeps Auto and its session.
+    local successor_expected="${expected}_NEXT"
     run runner_chat_send_after_completion \
         "$AGENT_ID" "$THREAD_ID" "$RUN_ID" \
-        "Repeat your previous response exactly." "$expected" 180
+        "Now reply with a different token: append _NEXT to your previous token." "$successor_expected" 180
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"

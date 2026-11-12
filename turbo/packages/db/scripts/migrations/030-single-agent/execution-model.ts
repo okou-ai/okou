@@ -4,6 +4,7 @@ import { open, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   array,
+  discriminatedUnion,
   literal,
   object,
   string,
@@ -12,6 +13,7 @@ import {
 } from "zod";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import { PlanningError } from "./snapshot";
+import { productionBindingSchema } from "./production-model";
 
 // This is a closed migration surface, not an arbitrary table restore facility.
 export const executionTables = [
@@ -63,9 +65,7 @@ export const tableImageSchema = object({
   rows: array(rowImageSchema),
 }).strict();
 export type TableImage = zInfer<typeof tableImageSchema>;
-export const executionImageSchema = object({
-  format: literal("single-agent-execution-v1"),
-  purpose: literal("isolated-copy-rehearsal"),
+const executionDataSchema = object({
   scope: object({
     orgId: string().min(1),
     target: string().min(1),
@@ -84,6 +84,17 @@ export const executionImageSchema = object({
   tables: array(tableImageSchema),
   bundles: array(contentBundleSchema),
 }).strict();
+export const executionImageSchema = discriminatedUnion("purpose", [
+  executionDataSchema.extend({
+    format: literal("single-agent-execution-v1"),
+    purpose: literal("isolated-copy-rehearsal"),
+  }),
+  executionDataSchema.extend({
+    format: literal("single-agent-production-execution-v1"),
+    purpose: literal("production-cutover"),
+    production: productionBindingSchema,
+  }),
+]);
 export type ExecutionImage = zInfer<typeof executionImageSchema>;
 
 export function sha256(bytes: string | Uint8Array) {

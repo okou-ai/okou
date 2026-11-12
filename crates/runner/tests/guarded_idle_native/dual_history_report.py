@@ -72,9 +72,8 @@ def validate(directory):
         # producers finish before the unchanged C6 final ownership joins.
         ordered = [terminal[0], events[0], terminal[1], events[1], core[0], core[6],
                    *events[2:5], core[7], *events[5:7], core[8], events[7], terminal[5]]
-        for field in ("monotonic_ns", "unix_ns"):
-            if any(a[field] >= b[field] for a, b in zip(ordered, ordered[1:])):
-                raise ValueError("dual-history generation restoration or saving order changed")
+        report.validate_witness_clock_order(
+            ordered, "dual-history generation restoration or saving order changed")
         original, incoming, restored, original_joined, continued, saved, incoming_joined, joined = (
             e["evidence"] for e in events)
         if not prep["grant_finished_ns"] < events[1]["monotonic_ns"] < prep["prepared_ns"]:

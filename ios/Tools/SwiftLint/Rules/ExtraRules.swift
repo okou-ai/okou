@@ -8,6 +8,7 @@ public func extraRules() -> [any Rule.Type] {
     CheckAfterAwaitRule.self, ResourceCancellationRule.self,
     SubscriptionTeardownRule.self,
     ImportBoundariesRule.self,
-    StorageBoundariesRule.self,
+    StorageBoundariesRule.self, GlobalMutableStateRule.self,
+    TaskLifecycleRule.self,
   ]
 }
