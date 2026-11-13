@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -249,6 +249,44 @@ describe("Dialog", () => {
     expect(
       screen.getByRole("dialog", { name: "Default dialog" }),
     ).toHaveAttribute("data-open");
+  });
+
+  it("dismisses when an outside click targets the document", async () => {
+    render(
+      <Dialog defaultOpen>
+        <DialogContent>
+          <DialogTitle>Document target dialog</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    fireEvent.click(document);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  it("suppresses the click after a press inside ends on the document", () => {
+    render(
+      <Dialog defaultOpen>
+        <DialogContent>
+          <DialogTitle>Document target dialog</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Document target dialog",
+    });
+
+    fireEvent.pointerDown(dialog, { pointerType: "mouse", button: 0 });
+    fireEvent.mouseDown(dialog, { button: 0 });
+    fireEvent.pointerUp(document, { pointerType: "mouse", button: 0 });
+    fireEvent.mouseUp(document, { button: 0 });
+    fireEvent.click(document);
+
+    expect(dialog).toBeInTheDocument();
   });
 
   it("renders an overlay for nested dialogs", () => {

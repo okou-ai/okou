@@ -79,3 +79,49 @@ index be0ccd08b5497825cc09330b45b227c032378cf0..df38e5cf857016501060c7b8e997d081
        return;
      }
      hasSetDefaultIndexRef.current = true;
+diff --git a/dialog/root/useDialogRoot.js b/dialog/root/useDialogRoot.js
+index eec1af0..4ea7e7e 100644
+--- a/dialog/root/useDialogRoot.js
++++ b/dialog/root/useDialogRoot.js
+@@ -7,6 +7,7 @@ Object.defineProperty(exports, {
+ });
+ exports.DialogInteractions = DialogInteractions;
+ var React = _interopRequireWildcard(require("react"));
++var _dom = require("@floating-ui/utils/dom");
+ var _useIsoLayoutEffect = require("@base-ui/utils/useIsoLayoutEffect");
+ var _useScrollLock = require("@base-ui/utils/useScrollLock");
+ var _floatingUiReact = require("../../floating-ui-react");
+@@ -68,9 +69,10 @@ function DialogInteractions({
+         if (modal) {
+           const internalBackdrop = store.context.internalBackdropRef.current;
+           const backdrop = store.context.backdropRef.current;
++          // A document contains the popup but is not an element.
+-          return internalBackdrop || backdrop ? internalBackdrop === target || backdrop === target || (0, _utils.contains)(target, popupElement) && !target?.hasAttribute('data-base-ui-portal') : true;
++          return internalBackdrop || backdrop ? internalBackdrop === target || backdrop === target || (0, _utils.contains)(target, popupElement) && !((0, _dom.isElement)(target) && target.hasAttribute('data-base-ui-portal')) : true;
+         }
+         return true;
+       }
+       return false;
+     },
+diff --git a/dialog/root/useDialogRoot.mjs b/dialog/root/useDialogRoot.mjs
+index 8396659..bf4f08f 100644
+--- a/dialog/root/useDialogRoot.mjs
++++ b/dialog/root/useDialogRoot.mjs
+@@ -3,4 +3,5 @@
+ import * as React from 'react';
++import { isElement } from '@floating-ui/utils/dom';
+ import { useIsoLayoutEffect } from '@base-ui/utils/useIsoLayoutEffect';
+ import { useScrollLock } from '@base-ui/utils/useScrollLock';
+ import { useDismiss } from "../../floating-ui-react/index.mjs";
+@@ -62,9 +63,10 @@ export function DialogInteractions({
+         if (modal) {
+           const internalBackdrop = store.context.internalBackdropRef.current;
+           const backdrop = store.context.backdropRef.current;
++          // A document contains the popup but is not an element.
+-          return internalBackdrop || backdrop ? internalBackdrop === target || backdrop === target || contains(target, popupElement) && !target?.hasAttribute('data-base-ui-portal') : true;
++          return internalBackdrop || backdrop ? internalBackdrop === target || backdrop === target || contains(target, popupElement) && !(isElement(target) && target.hasAttribute('data-base-ui-portal')) : true;
+         }
+         return true;
+       }
+       return false;
+     },
