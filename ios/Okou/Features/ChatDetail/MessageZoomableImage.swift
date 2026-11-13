@@ -18,6 +18,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
   private let imageSize: CGSize
   private var viewport: CGSize = .zero
   private var zoomStep = 0
+  var zoomChanged: ((Bool) -> Void)?
 
   init(image: UIImage, accessibilityLabel: String) {
     imageView = UIImageView(image: image)
@@ -51,10 +52,29 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
     maximumZoomScale = max(4, fit * 8)
     setZoomScale(minimumZoomScale, animated: false)
     centerImage()
+    updatePagingInteraction()
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-  func scrollViewDidZoom(_ scrollView: UIScrollView) { centerImage() }
+  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    updatePagingInteraction(zooming: true)
+  }
+  func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    centerImage()
+    updatePagingInteraction(zooming: isZooming)
+  }
+  func scrollViewDidEndZooming(
+    _ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat
+  ) {
+    updatePagingInteraction()
+  }
+
+  private func updatePagingInteraction(zooming: Bool = false) {
+    guard let zoomChanged else { return }
+    let ownsPan = zooming || zoomScale > minimumZoomScale * 1.01
+    panGestureRecognizer.isEnabled = ownsPan
+    zoomChanged(ownsPan)
+  }
 
   func adjustZoom(to step: Int) {
     guard step != zoomStep else { return }
