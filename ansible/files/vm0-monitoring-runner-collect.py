@@ -272,14 +272,18 @@ def read_file(directory: int, name: str, *, private: bool = False) -> str:
     return content.decode("utf-8")
 
 
-def identity(directory: int) -> tuple[str, int]:
+def read_runner_id(directory: int) -> str:
     runner_id = read_file(directory, "runner_id").strip()
     if str(uuid.UUID(runner_id)) != runner_id:
         raise ValueError("invalid runner identity")
+    return runner_id
+
+
+def read_generation(directory: int) -> int:
     generation = int(read_file(directory, "heartbeat_generation").strip())
     if not 0 < generation <= 9_007_199_254_740_991:
         raise ValueError("invalid runner generation")
-    return runner_id, generation
+    return generation
 
 
 def active(directory: int) -> bool:
@@ -369,8 +373,7 @@ def probe_runner(
         directory = open_directory(path)
         if not active(directory):
             return None
-        original = identity(directory)
-        runner_id = original[0]
+        runner_id = read_runner_id(directory)
         config = yaml.safe_load(read_file(directory, "runner.yaml", private=True))
         if not isinstance(config, dict):
             raise ValueError("invalid configuration")
@@ -389,13 +392,14 @@ def probe_runner(
             or config.get("base_dir") != str(path)
         ):
             raise ValueError("invalid managed ingress configuration")
+        original = runner_id, read_generation(directory)
         with identity_lock:
             if runner_id in seen:
                 return runner_id, 0
             seen.add(runner_id)
         reachable = request_health(hostname, runner_id, token, deadline)
         # A restart while the request is in flight cannot inherit its success.
-        unchanged = original == identity(directory)
+        unchanged = original == (read_runner_id(directory), read_generation(directory))
         if not active(directory):
             return None
         return runner_id, int(reachable and unchanged)

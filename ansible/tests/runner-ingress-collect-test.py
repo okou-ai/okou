@@ -210,7 +210,8 @@ class CollectorTest(unittest.TestCase):
         second, _ = self.runner("draining", mode="draining")
         self.runner("dead-but-status-remains")
         self.runner("stopped", mode="stopped")
-        self.runner("personal", token="vm0_pat_example")
+        _, personal = self.runner("personal", token="vm0_pat_example")
+        (personal / "heartbeat_generation").unlink()
         (self.runners / "prepared").mkdir()
         self.peer.responses = {first: (200, b"ok"), second: (200, b"ok")}
         content = self.run_collector()
@@ -311,6 +312,22 @@ class CollectorTest(unittest.TestCase):
         content = self.run_collector()
         self.assert_counts(content, 0, 1)
         self.assertEqual(len(self.peer.requests), 1)
+
+    def test_known_target_with_missing_generation_is_failed_until_repaired(self):
+        first, _ = self.runner("one")
+        second, path = self.runner("two")
+        self.peer.responses = {first: (200, b"ok"), second: (200, b"ok")}
+        self.assert_counts(self.run_collector(), 2, 0)
+
+        generation = path / "heartbeat_generation"
+        generation.unlink()
+        self.assert_counts(self.run_collector(), 1, 1)
+        self.assertEqual(len(self.peer.requests), 3)
+
+        generation.write_text("2")
+        generation.chmod(0o600)
+        self.assert_counts(self.run_collector(), 2, 0)
+        self.assertEqual(len(self.peer.requests), 5)
 
     def test_bad_configuration_never_sends_credentials_or_retains_success(self):
         runner_id, path = self.runner("serving")
