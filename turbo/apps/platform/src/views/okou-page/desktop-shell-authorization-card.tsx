@@ -308,19 +308,12 @@ function AuthorizationActions({
 function AuthorizationSummarySkeleton() {
   const { t } = useTranslation();
   return (
-    <ChatCard
-      data-testid="desktop-shell-authorization-card"
-      aria-busy="true"
-      className="flex h-[224px] w-full items-center px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px]"
-    >
-      <LoadingSkeleton
-        count={2}
-        className="w-full"
-        label={t(($) => {
-          return $.desktopShellAuthorization.loading;
-        })}
-      />
-    </ChatCard>
+    <LoadingSkeleton
+      count={2}
+      label={t(($) => {
+        return $.desktopShellAuthorization.loading;
+      })}
+    />
   );
 }
 
@@ -338,9 +331,6 @@ function AuthorizationSummary({
   onAction: (action: ShellAction) => void;
 }) {
   const { t } = useTranslation();
-  if (loading && !data) {
-    return <AuthorizationSummarySkeleton />;
-  }
   const blocker = approvalBlocker(data);
   const summary = failed
     ? t(($) => {
@@ -364,81 +354,92 @@ function AuthorizationSummary({
     <ChatCard
       data-testid="desktop-shell-authorization-card"
       aria-busy={loading || busy}
-      className="flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px] @[640px]:flex-row @[640px]:items-center"
+      className={cn(
+        "flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px] @[640px]:flex-row @[640px]:items-center",
+        loading && !data && "justify-center",
+      )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <AuthorizationIcon data={data} loading={loading} />
-        <div className="min-w-0 flex-1">
-          <div
-            className="truncate text-[0.9375rem] font-medium leading-5"
-            aria-live="polite"
-          >
-            {authorizationTitle(data, loading)}
-          </div>
-          <p
-            className={cn(
-              "mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground",
-              failed && "text-destructive",
-            )}
-            role={failed ? "alert" : undefined}
-          >
-            {summary}
-          </p>
-          {data && (
-            <div
-              role="region"
-              aria-label={t(($) => {
-                return $.desktopShellAuthorization.reasonTitle;
-              })}
-              tabIndex={0}
-              className="mt-1 h-15 overflow-y-auto overscroll-contain text-sm leading-5 text-muted-foreground @[640px]:h-12"
-            >
-              {blocker && (
-                <p
-                  className="mb-1 break-words text-amber-700 dark:text-amber-400"
-                  aria-live="polite"
+      {loading && !data ? (
+        <AuthorizationSummarySkeleton />
+      ) : (
+        <>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <AuthorizationIcon data={data} loading={loading} />
+            <div className="min-w-0 flex-1">
+              <div
+                className="truncate text-[0.9375rem] font-medium leading-5"
+                aria-live="polite"
+              >
+                {authorizationTitle(data, loading)}
+              </div>
+              <p
+                className={cn(
+                  "mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground",
+                  failed && "text-destructive",
+                )}
+                role={failed ? "alert" : undefined}
+              >
+                {summary}
+              </p>
+              {data && (
+                <div
+                  role="region"
+                  aria-label={t(($) => {
+                    return $.desktopShellAuthorization.reasonTitle;
+                  })}
+                  tabIndex={0}
+                  className="mt-1 h-15 overflow-y-auto overscroll-contain text-sm leading-5 text-muted-foreground @[640px]:h-12"
                 >
-                  {blocker}
-                </p>
+                  {blocker && (
+                    <p
+                      className="mb-1 break-words text-amber-700 dark:text-amber-400"
+                      aria-live="polite"
+                    >
+                      {blocker}
+                    </p>
+                  )}
+                  <p className="break-words whitespace-pre-wrap">
+                    {data.reason}
+                  </p>
+                </div>
               )}
-              <p className="break-words whitespace-pre-wrap">{data.reason}</p>
             </div>
-          )}
-        </div>
-      </div>
-      <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
-        {data?.status === "approved" && (
-          <Button
-            variant="quiet"
-            size="sm"
-            pending={busy}
-            disabled={failed}
-            onClick={() => {
-              return onAction("revoke");
-            }}
-          >
-            {t(($) => {
-              return $.desktopShellAuthorization.revoke;
-            })}
-          </Button>
-        )}
-        {!data && (
-          <Button variant="neutral" size="sm" disabled>
-            {t(($) => {
-              return $.desktopShellAuthorization.unavailable;
-            })}
-          </Button>
-        )}
-        {(data?.status === "pending" ||
-          (data?.status === "approved" && failed)) && (
-          <AuthorizationActions
-            data={data}
-            busy={busy}
-            failed={failed}
-            onAction={onAction}
-          />
-        )}
-      </div>
+          </div>
+          <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+            {data?.status === "approved" && (
+              <Button
+                variant="quiet"
+                size="sm"
+                pending={busy}
+                disabled={failed}
+                onClick={() => {
+                  return onAction("revoke");
+                }}
+              >
+                {t(($) => {
+                  return $.desktopShellAuthorization.revoke;
+                })}
+              </Button>
+            )}
+            {!data && (
+              <Button variant="neutral" size="sm" disabled>
+                {t(($) => {
+                  return $.desktopShellAuthorization.unavailable;
+                })}
+              </Button>
+            )}
+            {(data?.status === "pending" ||
+              (data?.status === "approved" && failed)) && (
+              <AuthorizationActions
+                data={data}
+                busy={busy}
+                failed={failed}
+                onAction={onAction}
+              />
+            )}
+          </div>
+        </>
+      )}
     </ChatCard>
   );
 }

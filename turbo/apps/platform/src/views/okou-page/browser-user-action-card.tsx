@@ -1838,9 +1838,11 @@ function BrowserUserActionCardContent({
   } else if (requestLoadable.state === "loading") {
     content = (
       <LoadingSkeleton
-        variant="fields"
-        count={2}
-        className="w-full p-4"
+        variant={variant === "inline" ? "rows" : "fields"}
+        count={variant === "inline" ? 1 : 2}
+        className={
+          variant === "inline" ? "grid h-full content-center" : "w-full p-4"
+        }
         label={t(($) => {
           return $.chat.browserAction.loading;
         })}
