@@ -4442,10 +4442,15 @@ describe("okou workflow automations", () => {
   });
 
   it("lazily binds a chat thread when a one-time automation runs now", async () => {
+    await setupApp({
+      context,
+      routes: workflowAutomationsRoutes,
+      isolatePg: true,
+    });
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56);
     mockNow(requestedAt);
     const { workflowId } = await setupFixture();
-    const runnerGroup = await runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -4469,7 +4474,6 @@ describe("okou workflow automations", () => {
       throw new Error("Expected an idle manual automation run to start");
     }
 
-    await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.executionInput(run.runId);
     const requestedAtIso = new Date(requestedAt).toISOString();
     expect(claim.prompt).toContain(
