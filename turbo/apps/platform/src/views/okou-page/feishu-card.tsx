@@ -1137,7 +1137,7 @@ function FeishuSetupWizard({
       <FeishuSetupProgress step={step} />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[minmax(0,1.18fr)_minmax(0,1fr)] md:overflow-hidden">
         <FeishuSetupGuide step={step} />
-        <div className="contents md:flex md:min-h-0 md:flex-col md:border-l md:border-border">
+        <div className="contents md:order-2 md:flex md:min-h-0 md:flex-col md:border-l md:border-border">
           <div
             id="feishu-setup-fields"
             className="order-1 px-5 py-7 md:min-h-0 md:flex-1 md:overflow-y-auto md:px-8 md:py-9 lg:px-12"
