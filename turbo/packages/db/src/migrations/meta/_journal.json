@@ -3305,6 +3305,13 @@
       "when": 1794570812345,
       "tag": "1550_retire_custom_plan_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 1551,
+      "version": "7",
+      "when": 1794573848177,
+      "tag": "1551_retire_legacy_browser_storage",
+      "breakpoints": true
     }
   ]
 }
