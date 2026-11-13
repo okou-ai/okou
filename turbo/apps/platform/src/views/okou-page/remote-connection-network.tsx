@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { SshConnectionMode } from "@okouai/api-contracts/contracts/ssh-connections";
@@ -202,11 +203,13 @@ export function RemoteConnectionNetwork({
         <NetworkOptions direct={direct} groups={groups} isEmpty={isEmpty} />
       </Select>
       {networks.state === "loading" && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.remoteControlSetup.loading;
           })}
-        </p>
+          variant="fields"
+          count={2}
+        />
       )}
       {networks.state === "hasError" && (
         <LoadErrorRow

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   BROWSER_USER_ACTION_MAX_FILE_BYTES,
@@ -1534,15 +1535,12 @@ function PendingFormPreflight({
   const { t } = useTranslation();
   if (entry.state === "loading") {
     return (
-      <p
-        role="status"
-        className="flex items-center gap-2 text-sm text-muted-foreground"
-      >
-        <Loader2 size={16} className="animate-spin" />
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.chat.browserInput.loadingDescription;
         })}
-      </p>
+        variant="rows"
+      />
     );
   }
   if (entry.state === "hasError" || entry.data.kind !== "ready") {
@@ -1839,12 +1837,13 @@ function BrowserUserActionCardContent({
     content = <ApplyingState variant={variant} />;
   } else if (requestLoadable.state === "loading") {
     content = (
-      <ActionState
-        icon={<Loader2 size={20} className="animate-spin" />}
-        title={t(($) => {
+      <LoadingSkeleton
+        variant="fields"
+        count={2}
+        className="w-full p-4"
+        label={t(($) => {
           return $.chat.browserAction.loading;
         })}
-        variant={variant}
       />
     );
   } else if (requestLoadable.state === "hasError") {

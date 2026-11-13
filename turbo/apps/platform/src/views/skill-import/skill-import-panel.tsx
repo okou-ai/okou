@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
 import type { Command } from "ccstate";
@@ -280,11 +281,12 @@ function SkillImportResultsContent({
   }
   if (result.state === "loading") {
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.onboarding.sourcesFirst.skills.loadingResults;
         })}
-      </p>
+        variant="rows"
+      />
     );
   }
   return (

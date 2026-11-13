@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { Info } from "lucide-react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { RemoteCredentialReplacement } from "./remote-credential-card.tsx";
@@ -1036,11 +1037,13 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           </p>
         </div>
       ) : connections.state === "loading" ? (
-        <p role="status" className="text-sm">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.vnc.transport.loading;
           })}
-        </p>
+          variant="fields"
+          count={2}
+        />
       ) : connections.data === null ? (
         <p role="alert" className="text-sm">
           {t(($) => {
@@ -1869,11 +1872,13 @@ function VncCredentialStatus() {
   }
   if (credentials.state === "loading") {
     return (
-      <p role="status" className="text-sm">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.vnc.loading;
         })}
-      </p>
+        variant="fields"
+        count={2}
+      />
     );
   }
   if (credentials.data === null) {

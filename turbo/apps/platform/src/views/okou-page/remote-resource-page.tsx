@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { remoteNetworkInitialization$ } from "../../signals/remote-network-page-setup.ts";
 import {
@@ -140,11 +141,13 @@ function RemoteResourceDetails() {
       return <RemoteResourceLoadError />;
     }
     return (
-      <p role="status">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.remoteControlSetup.loading;
         })}
-      </p>
+        variant="fields"
+        count={2}
+      />
     );
   }
   const { sshHost, vncHost, ts, cf } = records;
@@ -276,13 +279,21 @@ export function RemoteNetworkPage() {
           })}
         </Button>
         {initialization.state !== "hasData" ? (
-          <p role={initialization.state === "hasError" ? "alert" : "status"}>
-            {t(($) => {
-              return initialization.state === "hasError"
-                ? $.remoteControlSetup.failedLoad
-                : $.remoteControlSetup.loading;
-            })}
-          </p>
+          initialization.state === "hasError" ? (
+            <p role="alert">
+              {t(($) => {
+                return $.remoteControlSetup.failedLoad;
+              })}
+            </p>
+          ) : (
+            <LoadingSkeleton
+              variant="fields"
+              count={2}
+              label={t(($) => {
+                return $.remoteControlSetup.loading;
+              })}
+            />
+          )
         ) : page === "provider" ? (
           <NetworkProviderPicker inline />
         ) : page === "tailscale" ? (

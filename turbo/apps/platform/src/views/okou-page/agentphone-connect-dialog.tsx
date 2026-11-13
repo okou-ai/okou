@@ -11,9 +11,9 @@
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { cn, buttonVariants } from "@okouai/ui";
+import { cn, buttonVariants, Skeleton } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Dialog,
@@ -271,15 +271,23 @@ export function AgentPhoneConnectionCodeLoading() {
   const { t } = useTranslation();
   return (
     <div
-      className="flex min-h-40 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
+      className="min-h-40"
       role="status"
+      aria-busy="true"
+      aria-label={t(($) => {
+        return $.connectors.providerSettings.agentphone.creatingCode;
+      })}
     >
-      <Loader2 className="size-5 animate-spin" aria-hidden="true" />
-      <span>
-        {t(($) => {
-          return $.connectors.providerSettings.agentphone.creatingCode;
-        })}
-      </span>
+      <div aria-hidden="true" className="flex items-center gap-5">
+        <Skeleton className="hidden size-40 shrink-0 sm:block" />
+        <div className="min-w-0 flex-1 space-y-3">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-5 w-40 max-w-full" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      </div>
     </div>
   );
 }

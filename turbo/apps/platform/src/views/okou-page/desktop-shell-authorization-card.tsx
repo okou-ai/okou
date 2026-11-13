@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -212,11 +213,12 @@ function AuthorizationDetails({
         </p>
       </div>
       {loading ? (
-        <p role="status" className="text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.desktopShellAuthorization.loading;
           })}
-        </p>
+          variant="text"
+        />
       ) : (
         status && (
           <p role="status" className="text-muted-foreground">
@@ -303,6 +305,25 @@ function AuthorizationActions({
   );
 }
 
+function AuthorizationSummarySkeleton() {
+  const { t } = useTranslation();
+  return (
+    <ChatCard
+      data-testid="desktop-shell-authorization-card"
+      aria-busy="true"
+      className="flex h-[224px] w-full items-center px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px]"
+    >
+      <LoadingSkeleton
+        count={2}
+        className="w-full"
+        label={t(($) => {
+          return $.desktopShellAuthorization.loading;
+        })}
+      />
+    </ChatCard>
+  );
+}
+
 function AuthorizationSummary({
   data,
   loading,
@@ -317,6 +338,9 @@ function AuthorizationSummary({
   onAction: (action: ShellAction) => void;
 }) {
   const { t } = useTranslation();
+  if (loading && !data) {
+    return <AuthorizationSummarySkeleton />;
+  }
   const blocker = approvalBlocker(data);
   const summary = failed
     ? t(($) => {
@@ -333,13 +357,9 @@ function AuthorizationSummary({
           },
           { computer: data.computerName },
         )
-      : loading
-        ? t(($) => {
-            return $.desktopShellAuthorization.loading;
-          })
-        : t(($) => {
-            return $.desktopShellAuthorization.checkFailed;
-          });
+      : t(($) => {
+          return $.desktopShellAuthorization.checkFailed;
+        });
   return (
     <ChatCard
       data-testid="desktop-shell-authorization-card"
@@ -404,13 +424,9 @@ function AuthorizationSummary({
         )}
         {!data && (
           <Button variant="neutral" size="sm" disabled>
-            {loading
-              ? t(($) => {
-                  return $.desktopShellAuthorization.loading;
-                })
-              : t(($) => {
-                  return $.desktopShellAuthorization.unavailable;
-                })}
+            {t(($) => {
+              return $.desktopShellAuthorization.unavailable;
+            })}
           </Button>
         )}
         {(data?.status === "pending" ||

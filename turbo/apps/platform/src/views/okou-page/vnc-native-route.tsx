@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useTranslation } from "react-i18next";
 import { useLoadable } from "ccstate-react";
 import type { infer as zInfer } from "zod";
@@ -41,14 +42,21 @@ export function VncNativeRoute({
       </span>
       {"configId" in transport && (
         <span className="break-words">
-          {networkName ??
+          {networks.state === "loading" ? (
+            <LoadingSkeleton
+              variant="text"
+              label={t(($) => {
+                return $.remoteControlSetup.loading;
+              })}
+            />
+          ) : (
+            (networkName ??
             t(($) => {
-              return networks.state === "loading"
-                ? $.remoteControlSetup.loading
-                : networks.state === "hasError"
-                  ? $.remoteControlSetup.failedLoad
-                  : $.remoteControlSetup.resourceUnavailable;
-            })}
+              return networks.state === "hasError"
+                ? $.remoteControlSetup.failedLoad
+                : $.remoteControlSetup.resourceUnavailable;
+            }))
+          )}
         </span>
       )}
       {"needsRebind" in transport && (

@@ -1013,7 +1013,9 @@ test("The standalone form accepts input and submission while its background chec
     name: "Sign in to download invoices",
   });
   await checkStarted.promise;
-  expect(screen.getByText("Checking this request…")).toBeVisible();
+  expect(
+    screen.getByRole("status", { name: "Checking this request…" }),
+  ).toHaveAttribute("aria-busy", "true");
   expect(button("Add to browser")).toBeEnabled();
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import {
   RemoteCredentialCard,
@@ -853,11 +854,13 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         {credentials.state === "hasError" ? (
           <SshLoadError />
         ) : credentials.state === "loading" ? (
-          <p role="status">
-            {t(($) => {
+          <LoadingSkeleton
+            label={t(($) => {
               return $.ssh.credential.loading;
             })}
-          </p>
+            variant="fields"
+            count={2}
+          />
         ) : !credentials.data ? (
           <p>
             {t(($) => {
@@ -1740,11 +1743,13 @@ function OwnerSshCredentials() {
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {
     return (
-      <p role="status">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.ssh.credential.loading;
         })}
-      </p>
+        variant="fields"
+        count={2}
+      />
     );
   }
   if (credentials.state === "hasError") {

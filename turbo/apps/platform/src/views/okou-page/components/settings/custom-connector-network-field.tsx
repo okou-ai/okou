@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   Select,
@@ -102,7 +103,11 @@ function ConnectorNetworkSummary({
             {" · "}
           </>
         )}
-        {label}
+        {selection.state === "loading" ? (
+          <LoadingSkeleton variant="text" label={label} />
+        ) : (
+          label
+        )}
       </span>
     </span>
   );
@@ -143,12 +148,10 @@ function ConnectorNetworkLabel({ enabled }: { readonly enabled: boolean }) {
 function ConnectorNetworkDescription({
   enabled,
   unavailable,
-  loading,
   loadFailed,
 }: {
   readonly enabled: boolean;
   readonly unavailable: boolean;
-  readonly loading: boolean;
   readonly loadFailed: boolean;
 }) {
   const { t } = useTranslation();
@@ -167,13 +170,6 @@ function ConnectorNetworkDescription({
               : $.cloudflareAccess.connectorHint;
         })}
       </p>
-      {enabled && loading && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.loading;
-          })}
-        </p>
-      )}
       {enabled && loadFailed && (
         <p role="alert" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -320,17 +316,24 @@ export function CustomConnectorNetworkField({
       </summary>
       <div className="mt-2 grid gap-2">
         <ConnectorNetworkLabel enabled={enabled} />
-        <ConnectorNetworkSelect
-          items={items}
-          configId={configId}
-          onChange={onChange}
-          disabled={disabled}
-          retryOnOpen={loadFailed}
-        />
+        {enabled && loading ? (
+          <LoadingSkeleton
+            variant="text"
+            className="h-9 w-full"
+            label={missingLabel}
+          />
+        ) : (
+          <ConnectorNetworkSelect
+            items={items}
+            configId={configId}
+            onChange={onChange}
+            disabled={disabled}
+            retryOnOpen={loadFailed}
+          />
+        )}
         <ConnectorNetworkDescription
           enabled={enabled}
           unavailable={selection.state === "unavailable"}
-          loading={loading}
           loadFailed={loadFailed}
         />
       </div>

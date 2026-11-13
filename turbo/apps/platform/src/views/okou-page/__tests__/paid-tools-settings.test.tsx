@@ -430,7 +430,9 @@ test.each([
     await within(dialog).findByRole("heading", { name: "Preference" });
     click(button("Tools", dialog));
     await readySwitch("Web search");
-    await within(dialog).findByText("Loading your tool settings…");
+    await within(dialog).findByRole("status", {
+      name: "Loading your tool settings…",
+    });
     await requested.promise;
     catalog = "Reopened research";
 

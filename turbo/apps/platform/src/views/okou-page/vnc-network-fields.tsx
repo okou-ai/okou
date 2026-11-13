@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -114,11 +115,13 @@ function VncNetworkConfig({
   const configs = type === "cloudflare_access" ? access : tailscale;
   if (configs.state === "loading") {
     return (
-      <p role="status">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.vnc.native.loading;
         })}
-      </p>
+        variant="fields"
+        count={2}
+      />
     );
   }
   if (configs.state === "hasError") {
