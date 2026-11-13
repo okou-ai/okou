@@ -1591,6 +1591,12 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
       canRetryImage: authorized && controls.canRetryImage,
     };
   });
+  const recovering$ = computed((get) => {
+    return get(controls$).recovery;
+  });
+  const streaming$ = computed((get) => {
+    return get(controls$).streaming;
+  });
   const presentation$ = computed((get) => {
     if (get(context.paused$)) {
       return {
@@ -1649,6 +1655,8 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   return {
     display$,
     controls$,
+    recovering$,
+    streaming$,
     presentation$,
     navigation$,
     history$,

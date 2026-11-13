@@ -1473,7 +1473,7 @@ export function Browser({
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
   const presentation = useGet(signals.presentation$);
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const pageSignal = useGet(pageSignal$);
   const imageRecovery = useGet(signals.imageRecovery$);
   const rootRef = useSet(signals.refs.root$);
@@ -1527,7 +1527,7 @@ export function Browser({
                 operation.state === "hasError" &&
                 isBrowserOperationFailure(
                   operation.error,
-                  imageRecovery !== null || controls.streaming,
+                  imageRecovery !== null || streaming,
                 )
               );
             },

@@ -123,6 +123,8 @@ export interface BrowserSignals {
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
+  readonly recovering$: Computed<boolean>;
+  readonly streaming$: Computed<boolean>;
   readonly proxyType$: Computed<"text" | "password">;
   readonly capture$: Computed<ViewerCaptureOptions>;
   readonly quality: CaptureQualitySignals;
