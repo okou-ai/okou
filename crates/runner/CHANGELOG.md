@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.248.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.1...runner-rs-v0.248.2) (2026-11-13)
+
+
+### Refactoring
+
+* **python:** centralize auth-base terminal resource abort ([#46891](https://github.com/okou-ai/okou/issues/46891)) ([108d829](https://github.com/okou-ai/okou/commit/108d829388d33850c52ef21d5e2154446fafc196))
+* **python:** centralize managed header phase completion ([#46920](https://github.com/okou-ai/okou/issues/46920)) ([62b7342](https://github.com/okou-ai/okou/commit/62b734219ef619fdd795854d2670b9548d119836))
+* **python:** centralize native history operation admission ([#46928](https://github.com/okou-ai/okou/issues/46928)) ([52a9c2d](https://github.com/okou-ai/okou/commit/52a9c2d676a6a27cf401496e3a648d4e08f77bbb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.248.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.0...runner-rs-v0.248.1) (2026-11-12)
 
 ### Release Dependencies

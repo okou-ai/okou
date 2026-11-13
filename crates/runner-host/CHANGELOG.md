@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/okou-ai/okou/compare/runner-host-v0.11.2...runner-host-v0.11.3) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use safe pidfd acquisition across remaining owners ([#46912](https://github.com/okou-ai/okou/issues/46912)) ([eb43993](https://github.com/okou-ai/okou/commit/eb43993f436261b2850e87ebf5e87e1a6ebc6947))
+
 ## [0.11.2](https://github.com/okou-ai/okou/compare/runner-host-v0.11.1...runner-host-v0.11.2) (2026-11-12)
 
 ## [0.11.1](https://github.com/okou-ai/okou/compare/runner-host-v0.11.0...runner-host-v0.11.1) (2026-11-12)

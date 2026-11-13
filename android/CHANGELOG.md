@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/android-v0.4.0...android-v0.5.0) (2026-11-13)
+
+
+### Features
+
+* **android:** support canonical chat list read bindings ([#46899](https://github.com/okou-ai/okou/issues/46899)) ([86010cf](https://github.com/okou-ai/okou/commit/86010cfa9689050362ac487304f027bbe4b4c2e0))
+
 ## [0.4.0](https://github.com/okou-ai/okou/compare/android-v0.3.0...android-v0.4.0) (2026-11-12)
 
 
