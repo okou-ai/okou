@@ -4635,13 +4635,22 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   // action inside the element below, rather than swapping the element itself:
   // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
-  const { headline, helper } = hasAvailableCredits
-    ? creditsAvailableCopy()
-    : insufficientCreditsCopy({
-        canBuyCredits,
-        roleResolved: billingResolved && roleResolved,
-        canManageBilling: billingResolved && canManageBilling,
-      });
+  const { headline, helper, icon } = hasAvailableCredits
+    ? { ...creditsAvailableCopy(), icon: null }
+    : {
+        ...insufficientCreditsCopy({
+          canBuyCredits,
+          roleResolved: billingResolved && roleResolved,
+          canManageBilling: billingResolved && canManageBilling,
+        }),
+        icon: (
+          <Coins
+            aria-hidden="true"
+            size={16}
+            className="mt-1 shrink-0 text-brand-text"
+          />
+        ),
+      };
 
   const openBilling = () => {
     setSubPage(false);
@@ -4681,20 +4690,23 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   return (
     <>
       <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-        <div className="min-w-0">
-          <p
-            className={cn(
-              "break-words text-[0.9375rem] font-medium",
-              hasAvailableCredits
-                ? "text-emerald-700 dark:text-emerald-300"
-                : "text-foreground",
-            )}
-          >
-            {headline}
-          </p>
-          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
-            {helper}
-          </p>
+        <div className="flex min-w-0 items-start gap-2.5">
+          {icon}
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "break-words text-[0.9375rem] font-medium",
+                hasAvailableCredits
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : "text-foreground",
+              )}
+            >
+              {headline}
+            </p>
+            <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+              {helper}
+            </p>
+          </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
           {!canShowBillingAction ? null : shouldStartProCheckout ? (

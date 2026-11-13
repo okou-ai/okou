@@ -44,6 +44,19 @@ test("An invalid unsubscribe token shows an error", async () => {
   ).resolves.toBeVisible();
 });
 
+test("A missing unsubscribe token cannot submit an unsubscribe request", async () => {
+  await setupPage({
+    context,
+    path: "/email/unsubscribe",
+    auth: null,
+  });
+
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("Something went wrong");
+  expect(screen.getByRole("img", { name: "Okou" })).toBeInTheDocument();
+  expect(queryAllByRoleFast("button")).toHaveLength(0);
+});
+
 test("A user can confirm email unsubscribe", async () => {
   context.mocks.api(emailUnsubscribeContract.unsubscribe, ({ respond }) => {
     return respond(200, { unsubscribed: true });
