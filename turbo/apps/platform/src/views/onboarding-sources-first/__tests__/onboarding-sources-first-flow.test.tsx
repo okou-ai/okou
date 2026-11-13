@@ -7,7 +7,6 @@ import {
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -1117,7 +1116,7 @@ test("A prompt link's template carries into the first request", async () => {
   });
 });
 
-test("A prompt link's redeem code is redeemed before completion and left out of the chat", async () => {
+test("Prompt handoffs complete onboarding and open the requested chat", async () => {
   mockOnboardingNeeded();
   let runPrompt: string | undefined;
   mockChatLifecycle(context, {
@@ -1126,10 +1125,6 @@ test("A prompt link's redeem code is redeemed before completion and left out of 
     },
   });
   const requests: string[] = [];
-  context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-    requests.push(`redeem:${body.code}`);
-    return respond(200, { redeemed: true });
-  });
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
     requests.push("complete");
     context.mocks.data.onboardingStatus({
@@ -1157,7 +1152,7 @@ test("A prompt link's redeem code is redeemed before completion and left out of 
     expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
-  expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);
+  expect(requests).toStrictEqual(["complete"]);
   expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
 });
 

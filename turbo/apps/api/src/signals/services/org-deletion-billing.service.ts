@@ -21,10 +21,10 @@ import {
 import { settle } from "../utils";
 import {
   archivedSubscriptionHasSurvivingComponents,
-  isArchivedUsageAllowanceMetadata,
+  isArchivedBillingMetadata,
   isExcludedStripeBillingPrice,
   survivingStripeBillingInvoiceLines,
-} from "./archived-allowance";
+} from "./archived-billing-components";
 import { isConcurrencyPriceId } from "./org-concurrency-entitlements.service";
 
 const ORG_DELETE_ORG_METADATA_KEY = "vm0_org_delete_org_id";
@@ -178,14 +178,14 @@ async function subscriptionHasLiveBillingItems(
     return false;
   }
   if (subscription.items.data.length === 0) {
-    return !isArchivedUsageAllowanceMetadata(subscription.metadata);
+    return !isArchivedBillingMetadata(subscription.metadata);
   }
   for (const item of subscription.items.data) {
     if (subscription.metadata?.allowancePriceId === item.price.id) {
       continue;
     }
     if (
-      isArchivedUsageAllowanceMetadata(subscription.metadata) &&
+      isArchivedBillingMetadata(subscription.metadata) &&
       !isConcurrencyPriceId(item.price.id)
     ) {
       continue;
@@ -314,7 +314,7 @@ function proratedLineAmount(
 ): number {
   if (
     line.parent?.type !== "subscription_item_details" ||
-    isArchivedUsageAllowanceMetadata(line.metadata)
+    isArchivedBillingMetadata(line.metadata)
   ) {
     return 0;
   }

@@ -27,7 +27,6 @@ const {
   APP_ORIGIN,
   TEST_PRICE_PRO,
   TEST_PRICE_TEAM,
-  TEST_PRICE_CUSTOM,
   TEST_PRICE_USAGE_ALLOWANCE,
   TEST_PRICE_CONCURRENCY,
   setTierPrices,
@@ -37,7 +36,6 @@ const {
   createSubscriptionOrg,
   createOwnedBillingOrg,
   createPublicBillingOrg,
-  createUsagePackAtomGrantOrg,
   createConcurrencySubscriptionOrg,
   createMergedConcurrencySubscriptionOrg,
   seedMemberRole,
@@ -89,209 +87,6 @@ describe("POST /api/billing/concurrency-checkout", () => {
     );
   }
 
-  async function createArchivedSharedConcurrency(fixture: {
-    readonly customerId: string;
-    readonly orgId: string;
-  }) {
-    const periodEnd = Math.floor(
-      new Date("2099-05-20T00:00:00Z").getTime() / 1000,
-    );
-    const metadata = {
-      type: "usage_allowance",
-      purpose: "usage_allowance",
-      source: "atom_usage_allowance",
-      orgId: fixture.orgId,
-    };
-    const subscription = {
-      id: `sub_shared_archive_${randomUUID()}`,
-      customer: fixture.customerId,
-      status: "active",
-      metadata,
-      cancel_at_period_end: false,
-      schedule: null,
-      items: {
-        data: [
-          { price: { id: TEST_PRICE_USAGE_ALLOWANCE }, quantity: 1 },
-          {
-            price: { id: TEST_PRICE_CONCURRENCY },
-            quantity: 3,
-            current_period_end: periodEnd,
-          },
-        ],
-      },
-    };
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      metadata: { orgId: fixture.orgId },
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
-    const invoice = {
-      id: `in_shared_archive_${randomUUID()}`,
-      customer: fixture.customerId,
-      amount_paid: 0,
-      metadata,
-      parent: {
-        subscription_details: { subscription: subscription.id, metadata },
-      },
-      lines: {
-        has_more: false,
-        data: [
-          {
-            price: { id: TEST_PRICE_USAGE_ALLOWANCE },
-            quantity: 1,
-            period: { start: currentSecond(), end: periodEnd },
-            parent: { type: "subscription_item_details" },
-          },
-          {
-            price: { id: TEST_PRICE_CONCURRENCY },
-            quantity: 3,
-            period: { start: currentSecond(), end: periodEnd },
-            parent: { type: "subscription_item_details" },
-          },
-        ],
-      },
-    };
-    await postArchivedSharedEvent("invoice.paid", invoice);
-    return { subscription, invoice, periodEnd };
-  }
-
-  it("activates and renews genuine concurrency on an archived shared subscription without changing the Custom plan", async () => {
-    const owned = createOwnedBillingOrg({ foreverCustom: true });
-    await owned.run(async () => {
-      await owned.initialize();
-      const before = await readBillingStatus(owned);
-      const { subscription, invoice, periodEnd } =
-        await createArchivedSharedConcurrency(owned);
-      const active = await readBillingStatus(owned);
-      expect(active.tier).toBe("custom");
-      expect(active.credits).toBe(before.credits);
-      expect(active.concurrencySubscriptions).toStrictEqual([
-        expect.objectContaining({
-          id: subscription.id,
-          quantity: 3,
-          currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
-        }),
-      ]);
-      const renewedEnd = periodEnd + 30 * 86_400;
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-        ...subscription,
-        items: {
-          data: [
-            subscription.items.data[0],
-            { ...subscription.items.data[1], current_period_end: renewedEnd },
-          ],
-        },
-      });
-      const renewed = {
-        ...invoice,
-        id: `in_shared_renewal_${randomUUID()}`,
-        lines: {
-          data: invoice.lines.data.map((line) => {
-            return {
-              ...line,
-              period: { start: periodEnd, end: renewedEnd },
-            };
-          }),
-        },
-      };
-      await postArchivedSharedEvent("invoice.paid", renewed);
-      const after = await readBillingStatus(owned);
-      expect(after.credits).toBe(before.credits);
-      expect(after.concurrencySubscriptions[0]?.currentPeriodEnd).toBe(
-        new Date(renewedEnd * 1000).toISOString(),
-      );
-    });
-  });
-
-  it("updates genuine concurrency from an archive-root shared event without changing the Custom plan", async () => {
-    const owned = createOwnedBillingOrg({ foreverCustom: true });
-    await owned.run(async () => {
-      await owned.initialize();
-      const before = await readBillingStatus(owned);
-      const { subscription, periodEnd } =
-        await createArchivedSharedConcurrency(owned);
-      const updated = {
-        ...subscription,
-        status: "past_due",
-        cancel_at_period_end: true,
-        items: {
-          data: [
-            subscription.items.data[0],
-            { ...subscription.items.data[1], quantity: 5 },
-          ],
-        },
-      };
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(updated);
-      await postArchivedSharedEvent("customer.subscription.updated", updated);
-      const after = await readBillingStatus(owned);
-      expect(after.tier).toBe(before.tier);
-      expect(after.credits).toBe(before.credits);
-      expect(after.subscriptionStatus).toBe(before.subscriptionStatus);
-      expect(after.concurrencySubscriptions[0]).toStrictEqual(
-        expect.objectContaining({
-          id: subscription.id,
-          quantity: 5,
-          cancelAtPeriodEnd: true,
-          currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
-        }),
-      );
-    });
-  });
-
-  it("ends genuine shared concurrency from a thin archived deletion without ending the Custom plan", async () => {
-    const owned = createOwnedBillingOrg({ foreverCustom: true });
-    await owned.run(async () => {
-      await owned.initialize();
-      const before = await readBillingStatus(owned);
-      const { subscription } = await createArchivedSharedConcurrency(owned);
-      await postArchivedSharedEvent("customer.subscription.deleted", {
-        id: subscription.id,
-        metadata: subscription.metadata,
-      });
-      const after = await readBillingStatus(owned);
-      expect(after.tier).toBe(before.tier);
-      expect(after.credits).toBe(before.credits);
-      expect(after.subscriptionStatus).toBe(before.subscriptionStatus);
-      expect(after.hasSubscription).toBeFalsy();
-      expect(after.concurrencySubscriptions).toStrictEqual([]);
-    });
-  });
-
-  it("requires an active Plan subscription for a concurrency purchase", async () => {
-    const fixture = await createUsagePackAtomGrantOrg("team");
-    await fixture.run(async () => {
-      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-      const response = await fixture.run(() => {
-        return accept(
-          setupApp({
-            context,
-            routes: billingConcurrencyCheckoutRoutes,
-          })(billingConcurrencyCheckoutContract).create({
-            body: {
-              quantity: 3,
-              successUrl: `${APP_ORIGIN}/billing?concurrency=success`,
-              cancelUrl: `${APP_ORIGIN}/billing?concurrency=canceled`,
-            },
-            headers: { authorization: "Bearer clerk-session" },
-          }),
-          [400],
-        );
-      });
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message: "An active Plan subscription is required to buy concurrency",
-          code: "BAD_REQUEST",
-        },
-      });
-      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).not.toHaveBeenCalled();
-    });
-  });
-
   it("preserves unrelated archived items, discounts and phase metadata when adding concurrency", async () => {
     const fixture = createOwnedBillingOrg();
     await fixture.run(async () => {
@@ -311,7 +106,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
       });
       await postSubscriptionInvoicePaid(context.signal, {
         ...fixture,
-        tier: "custom",
+        tier: "team",
         customerId,
         subscriptionId,
         currentPeriodEnd: customEnd,
@@ -322,8 +117,8 @@ describe("POST /api/billing/concurrency-checkout", () => {
       const allowanceEndUnix = Math.floor(allowanceEnd.getTime() / 1000);
       const customEndUnix = Math.floor(customEnd.getTime() / 1000);
       const customItem = {
-        id: `si_${TEST_PRICE_CUSTOM}`,
-        price: { id: TEST_PRICE_CUSTOM },
+        id: `si_${TEST_PRICE_TEAM}`,
+        price: { id: TEST_PRICE_TEAM },
         quantity: 1,
         metadata: {},
       };
@@ -539,7 +334,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
           },
           items: [
             {
-              price: TEST_PRICE_CUSTOM,
+              price: TEST_PRICE_TEAM,
               quantity: 1,
               metadata: {},
             },
@@ -559,7 +354,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
           currency: "usd",
           items: [
             {
-              price: TEST_PRICE_CUSTOM,
+              price: TEST_PRICE_TEAM,
               quantity: 1,
               metadata: {},
             },
@@ -654,7 +449,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
       });
       await postSubscriptionInvoicePaid(context.signal, {
         ...fixture,
-        tier: "custom",
+        tier: "team",
         customerId,
         subscriptionId,
         currentPeriodEnd: customEnd,
@@ -704,7 +499,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
         cancel_at_period_end: false,
         items: {
           data: [
-            { price: { id: TEST_PRICE_CUSTOM }, quantity: 1 },
+            { price: { id: TEST_PRICE_TEAM }, quantity: 1 },
             {
               id: concurrencyItemId,
               price: { id: TEST_PRICE_CONCURRENCY },
@@ -729,8 +524,8 @@ describe("POST /api/billing/concurrency-checkout", () => {
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
       const customItem = {
-        id: `si_${TEST_PRICE_CUSTOM}`,
-        price: { id: TEST_PRICE_CUSTOM },
+        id: `si_${TEST_PRICE_TEAM}`,
+        price: { id: TEST_PRICE_TEAM },
         quantity: 1,
       };
       const allowanceMetadata = {
@@ -840,7 +635,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
             allowanceCancelAt: legacyAllowanceCancelAt,
           },
           items: [
-            { price: TEST_PRICE_CUSTOM, quantity: 1 },
+            { price: TEST_PRICE_TEAM, quantity: 1 },
             {
               price: TEST_PRICE_USAGE_ALLOWANCE,
               quantity: 1,
@@ -859,7 +654,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
             allowanceCancelAt: legacyAllowanceCancelAt,
           },
           items: [
-            { price: TEST_PRICE_CUSTOM, quantity: 1 },
+            { price: TEST_PRICE_TEAM, quantity: 1 },
             {
               price: TEST_PRICE_USAGE_ALLOWANCE,
               quantity: 1,
@@ -874,7 +669,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
           end_date: customEndUnix,
           currency: "usd",
           items: [
-            { price: TEST_PRICE_CUSTOM, quantity: 1 },
+            { price: TEST_PRICE_TEAM, quantity: 1 },
             { price: TEST_PRICE_CONCURRENCY, quantity: 5 },
           ],
           metadata: {
@@ -937,14 +732,14 @@ describe("POST /api/billing/concurrency-checkout", () => {
         data: [],
         has_more: false,
       });
-      const fixture = await createSubscriptionOrg({ tier: "custom" });
+      const fixture = await createSubscriptionOrg({ tier: "team" });
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
       const scheduleId = `sub_sched_${randomUUID()}`;
       const periodStart = currentSecond() - 86_400;
       const periodEnd = currentSecond() + 29 * 86_400;
       const planItem = {
-        id: `si_${TEST_PRICE_CUSTOM}`,
-        price: { id: TEST_PRICE_CUSTOM },
+        id: `si_${TEST_PRICE_TEAM}`,
+        price: { id: TEST_PRICE_TEAM },
         quantity: 1,
         current_period_start: periodStart,
         current_period_end: periodEnd,
@@ -965,12 +760,12 @@ describe("POST /api/billing/concurrency-checkout", () => {
             {
               start_date: periodStart,
               end_date: periodEnd,
-              items: [{ price: TEST_PRICE_CUSTOM, quantity: 1 }],
+              items: [{ price: TEST_PRICE_TEAM, quantity: 1 }],
             },
             {
               start_date: periodEnd,
               end_date: periodEnd + 30 * 86_400,
-              items: [{ price: TEST_PRICE_CUSTOM, quantity: 1 }],
+              items: [{ price: TEST_PRICE_TEAM, quantity: 1 }],
             },
           ],
         });
@@ -1088,7 +883,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
                 start_date: periodStart,
                 end_date: periodEnd,
                 items: [
-                  { price: TEST_PRICE_CUSTOM, quantity: 1 },
+                  { price: TEST_PRICE_TEAM, quantity: 1 },
                   { price: TEST_PRICE_CONCURRENCY, quantity: 3 },
                 ],
                 proration_behavior: "none",
@@ -1097,7 +892,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
                 start_date: periodEnd,
                 end_date: periodEnd + 30 * 86_400,
                 items: [
-                  { price: TEST_PRICE_CUSTOM, quantity: 1 },
+                  { price: TEST_PRICE_TEAM, quantity: 1 },
                   { price: TEST_PRICE_CONCURRENCY, quantity: 3 },
                 ],
                 proration_behavior: "none",
@@ -2145,85 +1940,6 @@ describe("POST /api/billing/concurrency-checkout", () => {
       expect.objectContaining({
         id: fixture.subscriptionId,
         quantity: 3,
-        cancelAtPeriodEnd: false,
-      }),
-    );
-  });
-
-  it("keeps shared concurrency active when a Custom plan has an explicit end", async () => {
-    const concurrencyPeriodEnd = new Date("2099-05-20T00:00:00Z");
-    const customExpiresAt = new Date("2100-05-20T00:00:00Z");
-    const fixture = await createMergedConcurrencySubscriptionOrg({
-      slots: 3,
-      periodEnd: concurrencyPeriodEnd,
-    });
-    mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
-    const event = {
-      type: "customer.subscription.updated",
-      data: {
-        object: {
-          id: fixture.subscriptionId,
-          customer: fixture.customerId,
-          status: "active",
-          cancel_at_period_end: false,
-          cancel_at: Math.floor(customExpiresAt.getTime() / 1000),
-          schedule: null,
-          metadata: {
-            orgId: fixture.orgId,
-            purpose: "custom_plan_subscription",
-            tier: "custom",
-            atomGrantExpiresAt: customExpiresAt.toISOString(),
-          },
-          items: {
-            data: [
-              {
-                id: `si_${TEST_PRICE_CUSTOM}`,
-                price: { id: TEST_PRICE_CUSTOM },
-                quantity: 1,
-                current_period_end: Math.floor(
-                  concurrencyPeriodEnd.getTime() / 1000,
-                ),
-              },
-              {
-                id: fixture.concurrencyItemId,
-                price: { id: TEST_PRICE_CONCURRENCY },
-                quantity: 3,
-                current_period_end: Math.floor(
-                  concurrencyPeriodEnd.getTime() / 1000,
-                ),
-              },
-            ],
-          },
-        },
-        previous_attributes: { cancel_at: null },
-      },
-    };
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      event.data.object,
-    );
-    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
-      event,
-    );
-
-    await accept(
-      setupApp({ context, routes: webhooksStripeRoutes })(
-        webhookStripeContract,
-      ).post({
-        body: JSON.stringify(event),
-        extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
-      }),
-      [200],
-    );
-
-    const status = await readBillingStatus(fixture);
-    expect(status.tier).toBe("custom");
-    expect(status.cancelAtPeriodEnd).toBeTruthy();
-    expect(status.currentPeriodEnd).toBe(customExpiresAt.toISOString());
-    expect(status.concurrencySubscriptions[0]).toStrictEqual(
-      expect.objectContaining({
-        id: fixture.subscriptionId,
-        quantity: 3,
-        currentPeriodEnd: concurrencyPeriodEnd.toISOString(),
         cancelAtPeriodEnd: false,
       }),
     );
@@ -4311,7 +4027,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
       data: [],
       has_more: false,
     });
-    const fixture = await createSubscriptionOrg({ tier: "custom" });
+    const fixture = await createSubscriptionOrg({ tier: "team" });
     await seedMemberRole({
       orgId: fixture.orgId,
       userId: fixture.userId,
@@ -4325,9 +4041,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
       items: {
         data: [
           {
-            id: `si_${TEST_PRICE_CUSTOM}`,
+            id: `si_${TEST_PRICE_TEAM}`,
             price: {
-              id: TEST_PRICE_CUSTOM,
+              id: TEST_PRICE_TEAM,
             },
             quantity: 1,
           },
@@ -4344,9 +4060,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
       items: {
         data: [
           {
-            id: `si_${TEST_PRICE_CUSTOM}`,
+            id: `si_${TEST_PRICE_TEAM}`,
             price: {
-              id: TEST_PRICE_CUSTOM,
+              id: TEST_PRICE_TEAM,
             },
             quantity: 1,
             current_period_end: 4_102_444_800,

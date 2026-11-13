@@ -22,7 +22,6 @@ import {
   seedBillingStatusOrg$,
   type BillingStatusFixture,
 } from "./helpers/billing-status";
-import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
@@ -260,36 +259,6 @@ describe("GET /api/billing/status", () => {
         status: "suspended",
         showUsagePack: false,
       });
-    });
-  });
-
-  it("returns custom tier status without subscription plan credits", async () => {
-    const fixture = createBddApi(context).user();
-    const owner = createPublicBillingZeroFixture(context, fixture, {
-      foreverCustom: {
-        priceId: "price_status_atom_forever",
-        webhookSecret: "whsec_status_atom_forever",
-      },
-    });
-    await owner.run(async () => {
-      await owner.initialize();
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-
-      const client = setupApp({ context, routes: billingStatusRoutes })(
-        billingStatusContract,
-      );
-
-      const response = await accept(
-        client.get({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-
-      expect(response.body.tier).toBe("custom");
-      expect(response.body.status).toBe("active");
-      expect(response.body.hasSubscription).toBeFalsy();
-      expect(response.body.currentPeriodEnd).toBeNull();
-      expect(response.body.concurrencyLimit).toBe(10);
-      expect(response.body.creditBreakdown).toStrictEqual([]);
     });
   });
 

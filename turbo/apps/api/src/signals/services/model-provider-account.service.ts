@@ -679,13 +679,7 @@ function personalAccountMutationPublicationPlan(
   providerId: SQL,
 ) {
   const id = mutation.selected?.id ?? crypto.randomUUID();
-  const values = {
-    ...mutation.values,
-    atomGrantId:
-      args.authSession?.source === "atom-subscription-grant"
-        ? args.authSession.id
-        : null,
-  };
+  const values = mutation.values;
   return {
     id,
     values,

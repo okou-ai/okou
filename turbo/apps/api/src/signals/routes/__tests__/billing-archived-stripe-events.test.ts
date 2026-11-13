@@ -29,18 +29,48 @@ async function paidPlan() {
 }
 
 describe("Stripe billing purpose isolation", () => {
-  it.each(["invoice purpose", "subscription purpose", "archived source"])(
+  it.each([
+    "invoice purpose",
+    "subscription purpose",
+    "archived source",
+    "Atom purpose",
+    "Atom type",
+    "Custom purpose",
+    "Atom entitlement",
+    "Atom code",
+    "Atom organization credits",
+    "Atom member credits",
+    "Custom type",
+  ])(
     "keeps paid Plan benefits unchanged when replaying an invoice identified by %s",
     async (identity) => {
       const { actor, plan, before } = await paidPlan();
       const metadata = {
         orgId: actor.orgId,
-        type: "atom_grant",
-        purpose: "atom_grant",
+        type: "credit_purchase",
+        purpose: "credit_purchase",
         grantType: "credits",
         creditsAmount: "900000",
         ...(identity === "invoice purpose"
           ? { purpose: "usage_allowance" }
+          : {}),
+        ...(identity === "Atom purpose" ? { purpose: "atom_grant" } : {}),
+        ...(identity === "Atom entitlement"
+          ? { source: "atom_entitlement" }
+          : {}),
+        ...(identity === "Atom code" ? { source: "atom_redeem_code" } : {}),
+        ...(identity === "Atom organization credits"
+          ? { source: "atom_custom_credits" }
+          : {}),
+        ...(identity === "Atom member credits"
+          ? { source: "atom_usage_pack_credits" }
+          : {}),
+        ...(identity === "Custom type"
+          ? { type: "custom_plan_subscription" }
+          : {}),
+        ...(identity === "Atom type" ? { type: "atom_grant" } : {}),
+        ...(identity === "Custom purpose"
+          ? { purpose: "custom_plan_subscription" }
           : {}),
         ...(identity === "archived source"
           ? { source: "atom_usage_allowance" }
@@ -183,7 +213,8 @@ describe("Stripe billing purpose isolation", () => {
         amount_paid: 0,
         metadata: {
           orgId: actor.orgId,
-          purpose: "atom_grant",
+          type: "credit_purchase",
+          purpose: "credit_purchase",
           grantType: "credits",
           creditsAmount: "900000",
         },

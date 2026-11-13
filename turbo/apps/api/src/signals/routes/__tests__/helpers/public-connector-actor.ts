@@ -41,7 +41,6 @@ export function captureConnectorExternalState(
     "OKOU_WEB_URL",
     "R2_USER_STORAGES_BUCKET_NAME",
     "SECRETS_KMS_KEY_ID",
-    "ATOM_GRANT_PRICE",
   ] as const;
   const values = names.map((name) => {
     return [name, env(name)] as const;
