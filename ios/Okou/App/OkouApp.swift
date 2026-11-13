@@ -12,6 +12,9 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
+    #if DEBUG || STAGING
+      if ProcessInfo.processInfo.arguments.contains("--navigation-gesture-lab") { return true }
+    #endif
     if isSSHAuthorizationPreview { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
@@ -86,7 +89,9 @@ struct OkouApp: App {
     WindowGroup {
       Group {
         #if DEBUG || STAGING
-          if Self.isSSHAuthorizationPreview {
+          if ProcessInfo.processInfo.arguments.contains("--navigation-gesture-lab") {
+            NavigationGestureLab()
+          } else if Self.isSSHAuthorizationPreview {
             NavigationStack { SSHAuthorizationGallery() }
           } else {
             #if DEBUG

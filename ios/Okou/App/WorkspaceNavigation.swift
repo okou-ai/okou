@@ -6,8 +6,17 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   let sidebar: SidebarInteraction
   @ViewBuilder let list: () -> Sidebar
   @ViewBuilder let chat: () -> Chat
+  #if DEBUG || STAGING
+    var gestureLab: NavigationGestureLabProbe?
+  #endif
 
-  func makeCoordinator() -> Coordinator { Coordinator(sidebar: sidebar) }
+  func makeCoordinator() -> Coordinator {
+    let coordinator = Coordinator(sidebar: sidebar)
+    #if DEBUG || STAGING
+      coordinator.gestureLab = gestureLab ?? NavigationGestureLabProbe.fromEnvironment()
+    #endif
+    return coordinator
+  }
 
   func makeUIViewController(context: Context) -> WorkspaceNavigationController {
     let coordinator = context.coordinator
@@ -47,6 +56,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
     private var transitionTarget: Bool?
+    #if DEBUG || STAGING
+      var gestureLab: NavigationGestureLabProbe?
+    #endif
 
     init(sidebar: SidebarInteraction) {
       self.sidebar = sidebar
@@ -57,8 +69,17 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       self.navigation = navigation
       navigation.loadViewIfNeeded()
       // Keep native return gestures available while the navigation bar is hidden.
-      navigation.interactivePopGestureRecognizer?.delegate = nil
-      navigation.interactiveContentPopGestureRecognizer?.delegate = nil
+      #if DEBUG || STAGING
+        if let gestureLab {
+          gestureLab.install(on: navigation)
+        } else {
+          navigation.interactivePopGestureRecognizer?.delegate = nil
+          navigation.interactiveContentPopGestureRecognizer?.delegate = nil
+        }
+      #else
+        navigation.interactivePopGestureRecognizer?.delegate = nil
+        navigation.interactiveContentPopGestureRecognizer?.delegate = nil
+      #endif
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
     }
