@@ -171,6 +171,7 @@ it("decorates authorized standalone HTML with a shared banner and a credential-f
           showBanner: true,
           title: 'Weekly <report> "Q4"',
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
@@ -259,6 +260,7 @@ it("requires the trusted App origin when authorized HTML requests an enabled ban
           showBanner: true,
           title: "Report",
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
@@ -290,6 +292,7 @@ it.each([
             showBanner,
             title: "Report",
             siteUrl: "https://demo.okou.app/",
+            downloadAllowed: true,
           },
         });
       }),
@@ -355,6 +358,7 @@ function allowSiteDownloads(restricted = false) {
           showBanner: true,
           title: "Report",
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
@@ -512,6 +516,7 @@ it("fetches the latest banner preference on refresh without republishing", async
           showBanner,
           title: "Report",
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
@@ -542,6 +547,7 @@ it("preserves publisher inline scripts and styles already permitted by CSP", asy
           showBanner: true,
           title: "Report",
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
@@ -574,6 +580,7 @@ it("keeps an unsupported compressed document readable without rewriting its byte
           showBanner: true,
           title: "Report",
           siteUrl: "https://demo.okou.app/",
+          downloadAllowed: true,
         },
       });
     }),
