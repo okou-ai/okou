@@ -13,6 +13,7 @@ final class WorkspaceStore {
   private let sync: ChatSync
   private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
+  private let modelBootstrap: WorkspaceModelBootstrap?
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -152,6 +153,7 @@ final class WorkspaceStore {
     historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
+    modelBootstrap: WorkspaceModelBootstrap? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     let lifecycleTasks = LifecycleTasks()
@@ -162,8 +164,10 @@ final class WorkspaceStore {
       try context.set(selectedThread, value)
     }
     self.client = client
+    self.modelBootstrap = modelBootstrap
     resources = WorkspaceResources(
-      client: client, sleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
+      client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
@@ -210,12 +214,19 @@ final class WorkspaceStore {
           try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
         },
         onChange: { [weak self] in self?.requestRefresh($0) },
-        onConnection: { [weak self] in self?.connectionStatus = $0 },
+        onConnection: { [weak self] status in
+          self?.connectionStatus = status
+          if status == .connected {
+            _ = self?.modelBootstrap?.subscriptionsReady()
+          } else if status == .unavailable || status == .disconnected {
+            self?.modelBootstrap?.allowHTTP()
+          }
+        },
         lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
       realtime.setForeground(isForeground)
       realtime.start()
-      await refresh()
+      await refresh([.startup])
       await navigation
     } onCancel: {
       Task { @MainActor [weak self] in
@@ -416,7 +427,7 @@ final class WorkspaceStore {
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
     guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled else { return }
     let generation = refreshGeneration
-    let full = batch.contains(.reconnected)
+    let full = batch.contains(where: \.requiresFullRefresh)
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
@@ -457,7 +468,7 @@ final class WorkspaceStore {
 
   private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
     guard let conversation = selectedConversation else { return }
-    if batch.contains(.computerAccess) || batch.contains(.reconnected)
+    if batch.contains(.computerAccess) || batch.contains(where: \.requiresFullRefresh)
       || batch.contains(.detail(threadID: conversation.thread.id))
       || batch.contains(.history(threadID: conversation.thread.id))
     {
@@ -466,7 +477,7 @@ final class WorkspaceStore {
   }
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
-    let full = batch.contains(.reconnected)
+    let full = batch.contains(where: \.requiresFullRefresh)
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {
       await modelStore.refresh(batch)
@@ -476,7 +487,9 @@ final class WorkspaceStore {
   }
 
   private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
-    if projects.active && (batch.contains(.reconnected) || batch.contains(.threadList)) {
+    if projects.active
+      && (batch.contains(where: \.requiresFullRefresh) || batch.contains(.threadList))
+    {
       await projects.refresh()
     }
   }
@@ -489,7 +502,9 @@ final class WorkspaceStore {
       default: break
       }
     }
-    if batch.contains(.reconnected) || batch.contains(.readCursor), let selectedThreadID {
+    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.readCursor),
+      let selectedThreadID
+    {
       ids.insert(selectedThreadID)
     }
     let ordered = ids.sorted { lhs, rhs in

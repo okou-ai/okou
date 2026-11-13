@@ -29,6 +29,7 @@ final class RealtimeService {
   private var connectionAvailability = Availability.connecting
   private var channelAvailability: [String: Availability] = [:]
   private var catchUpPending = false
+  private var initialSubscriptionsReported = false
 
   private enum Availability {
     case connecting, connected, unavailable, disconnected
@@ -178,7 +179,12 @@ final class RealtimeService {
     // indefinitely delay catch-up for the other channel; its restoration reads again.
     if catchUpPending, connectionAvailability == .connected, attached || unavailable {
       catchUpPending = false
-      onChange(.reconnected)
+      if attached, !initialSubscriptionsReported {
+        initialSubscriptionsReported = true
+        onChange(.initialSubscriptions)
+      } else {
+        onChange(.reconnected)
+      }
     }
   }
 
@@ -239,6 +245,7 @@ final class RealtimeService {
     generation = UUID()
     for task in tokenRequests.values { task.cancel() }
     catchUpPending = false
+    initialSubscriptionsReported = false
     realtime?.close()
     realtime = nil
   }

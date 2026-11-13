@@ -7,6 +7,37 @@ import XCTest
 
 @MainActor
 final class WorkspaceStartupModelTests: XCTestCase {
+  func testUnavailableRealtimeDoesNotBlockHTTPAndRestartRevalidatesTheWorkspace() async throws {
+    let deadline = ModelResponseGate()
+    let fixture = WorkspaceStartupFixture()
+    let workspace = fixture.workspace(
+      modelBootstrap: WorkspaceModelBootstrap {
+        await deadline.wait()
+      })
+    let models = Task.immediate { await workspace.newModelSelection.open() }
+    let startup = Task.immediate {
+      await workspace.start(userID: "startup-user", workspaceID: "startup-workspace")
+    }
+    addTeardownBlock { @MainActor in
+      workspace.close()
+      deadline.open()
+      models.cancel()
+      startup.cancel()
+      await models.value
+      await startup.value
+    }
+    await startup.value
+    await models.value
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
+    XCTAssertTrue(workspace.newModelSelection.canSend)
+    XCTAssertEqual(fixture.modelRequests, fixture.expectedModelRequests(rounds: 1))
+
+    fixture.setRemoteModel("claude-model")
+    await workspace.start(userID: "startup-user", workspaceID: "startup-workspace")
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
+    XCTAssertEqual(fixture.modelRequests, fixture.expectedModelRequests(rounds: 2))
+  }
+
   func testStartupReadsSettingsChangedWhileNavigationWasPending() async throws {
     let release = ModelResponseGate()
     defer { release.open() }
@@ -40,10 +71,10 @@ final class WorkspaceStartupModelTests: XCTestCase {
     XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
   }
 
-  func testStartupPresentsMessagesWhileModelCatchUpIsPending() async throws {
+  func testStartupPresentsMessagesWhileInitialModelReadIsPending() async throws {
     let release = ModelResponseGate()
     defer { release.open() }
-    let began = expectation(description: "Model catch-up is pending")
+    let began = expectation(description: "The initial model read is pending")
     let modelReads = Mutex(0)
     let fixture = WorkspaceStartupFixture(beforeModelRead: { path in
       guard path == "/api/model-catalog" else { return }
@@ -51,14 +82,14 @@ final class WorkspaceStartupModelTests: XCTestCase {
         value += 1
         return value
       }
-      if count == 2 {
+      if count == 1 {
         began.fulfill()
         await release.wait()
       }
     })
-    let workspace = fixture.workspace()
+    let workspace = fixture.workspace(modelBootstrap: WorkspaceModelBootstrap())
     workspace.selectedThreadID = ConversationHistoryFixture.threadID
-    await workspace.newModelSelection.open()
+    let models = Task.immediate { await workspace.newModelSelection.open() }
     let startup = Task {
       await workspace.start(userID: "startup-user", workspaceID: "startup-workspace")
     }
@@ -66,7 +97,9 @@ final class WorkspaceStartupModelTests: XCTestCase {
       release.open()
       startup.cancel()
       workspace.close()
+      models.cancel()
       await startup.value
+      await models.value
     }
     await fulfillment(of: [began], timeout: 3)
     try await waitForBusinessResult {
@@ -75,6 +108,7 @@ final class WorkspaceStartupModelTests: XCTestCase {
     XCTAssertEqual(workspace.list.threads.map(\.id), [ConversationHistoryFixture.threadID])
     release.open()
     await startup.value
+    await models.value
     XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
   }
 
@@ -153,8 +187,9 @@ final class WorkspaceStartupFixture: Sendable {
   }
 
   @MainActor
-  func workspace() -> WorkspaceStore {
-    WorkspaceStore(client: history.http.client, webURL: history.http.baseURL)
+  func workspace(modelBootstrap: WorkspaceModelBootstrap? = nil) -> WorkspaceStore {
+    WorkspaceStore(
+      client: history.http.client, webURL: history.http.baseURL, modelBootstrap: modelBootstrap)
   }
 
   var modelRequests: [String: Int] { state.requests.withLock { $0 } }

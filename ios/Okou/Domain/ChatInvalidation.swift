@@ -2,6 +2,8 @@ import Foundation
 
 /// Realtime signals select durable reads; their payloads are never chat state.
 enum ChatInvalidation: Hashable, Sendable {
+  case startup
+  case initialSubscriptions
   case computerAccess
   case runModels
   case modelPreference
@@ -10,6 +12,10 @@ enum ChatInvalidation: Hashable, Sendable {
   case detail(threadID: String)
   case readCursor
   case reconnected
+
+  var requiresFullRefresh: Bool {
+    self == .startup || self == .initialSubscriptions || self == .reconnected
+  }
 
   init?(notification: String) {
     switch notification {
