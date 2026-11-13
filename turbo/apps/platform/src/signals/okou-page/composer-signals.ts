@@ -289,6 +289,11 @@ export interface ComposerSignals {
     void,
     [ChatAttachment, AnnotationImage]
   >;
+  /** Produces a draft image's annotated copy again after it failed. */
+  readonly retryAnnotatedCopy$: Command<
+    Promise<void>,
+    [ChatAttachment, AbortSignal]
+  >;
   readonly setImageAnnotationLifecycleRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -588,8 +593,7 @@ export function createComposerSignals(
     options.connector ??
     createComposerConnectorSignals(options.agentId, options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
-  const { imageAnnotation, openAttachmentPreview$ } =
-    createComposerAttachmentAnnotation(draft, draftSignals);
+  const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
   /**
    * Teardown owner for the annotation session and its in-flight derivative
    * uploads. The element itself is not part of the work, but its committed
@@ -608,7 +612,7 @@ export function createComposerSignals(
       signal.addEventListener(
         "abort",
         () => {
-          set(imageAnnotation.closeAnnotationEditor$);
+          set(annotation.imageAnnotation.closeAnnotationEditor$);
           for (const attachment of get(draft.attachments$)) {
             set(attachment.cancelAnnotationUpload$);
           }
@@ -683,8 +687,7 @@ export function createComposerSignals(
       generationTemplate$: draft.generationTemplate$,
       setGenerationTemplate$: draft.setGenerationTemplate$,
     },
-    imageAnnotation,
-    openAttachmentPreview$,
+    ...annotation,
     setImageAnnotationLifecycleRef$,
   };
 }
@@ -756,7 +759,22 @@ function createComposerAttachmentAnnotation(
       });
     },
   );
-  return { imageAnnotation, openAttachmentPreview$ };
+  /**
+   * Produces the copy again for the marks already on the attachment. Attaching
+   * no longer waits for the copy, so a failed one is retried from the chip
+   * rather than by pressing "Attach marks" again in an editor still open.
+   */
+  const retryAnnotatedCopy$ = command(
+    ({ get, set }, attachment: ChatAttachment, signal: AbortSignal) => {
+      return set(
+        actions.confirmAttachmentAnnotations$,
+        attachment,
+        get(attachment.annotations$),
+        signal,
+      );
+    },
+  );
+  return { imageAnnotation, openAttachmentPreview$, retryAnnotatedCopy$ };
 }
 
 /**

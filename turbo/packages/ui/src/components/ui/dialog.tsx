@@ -128,6 +128,18 @@ interface DialogContentProps extends Omit<
   readonly showCloseButton?: boolean;
   /** Stops painting this popup while a dialog opened from it is on top. */
   readonly hideWhenNestedOpen?: boolean;
+  /**
+   * Plays the entrance. Turn it off only for a dialog that takes over from
+   * another one already on screen at the same size behind the same backdrop:
+   * that surface is already there, so fading it in from nothing reads as the
+   * modal blinking out and back. Closing still animates. Defaults to `true`.
+   */
+  readonly animateOpen?: boolean;
+}
+
+/** Drops the entrance animation only; the exit still plays on close. */
+function skippedEntrance(animateOpen: boolean | undefined): string | undefined {
+  return animateOpen === false ? "data-open:animate-none" : undefined;
 }
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
@@ -147,6 +159,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       overlayClassName,
       showCloseButton = true,
       hideWhenNestedOpen = false,
+      animateOpen,
       ...props
     },
     ref,
@@ -158,7 +171,10 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         // inside this context, above their owning dialog.
         className="relative z-50"
       >
-        <DialogOverlay className={overlayClassName} forceRender />
+        <DialogOverlay
+          className={cn(overlayClassName, skippedEntrance(animateOpen))}
+          forceRender
+        />
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
           className={cn(
@@ -178,6 +194,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
             render={undefined}
             className={cn(
               dialogPopupAnimationClassName,
+              skippedEntrance(animateOpen),
               "relative flex min-h-0 min-w-0 w-full max-h-full max-w-full flex-col overflow-hidden outline-none contain-layout",
               surface === "card" && "bg-card",
               surface === "canvas" && "bg-background",

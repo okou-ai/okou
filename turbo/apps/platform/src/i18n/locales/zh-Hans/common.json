@@ -478,8 +478,10 @@
       "inkLabel": "{{color}}墨迹",
       "notePlaceholder": "想改哪里？",
       "open": "标注",
+      "preparingCopy": "正在生成 {{filename}} 的标注副本",
       "redo": "重做",
       "removeMark": "删除标注",
+      "retryCopy": "重新生成 {{filename}} 的标注副本",
       "subtitle_other": "{{count}} 处标注",
       "textPlaceholder": "在这里输入",
       "tools": {
