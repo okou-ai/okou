@@ -143,10 +143,16 @@
         record("install \(index) original=\(originalName)")
         if policy == "baseline" {
           recognizer.delegate = nil
-        } else if ["proxy", "proxy-simultaneous", "minimal-simultaneous"].contains(policy) {
+        } else if [
+          "proxy", "proxy-simultaneous", "minimal-simultaneous", "direction-simultaneous",
+          "direction-priority",
+        ].contains(policy) {
           let proxy = NavigationGestureLabDelegate(
             navigation: navigation, original: policy == "minimal-simultaneous" ? nil : original,
-            probe: self, simultaneous: policy != "proxy")
+            probe: self,
+            simultaneous: ["proxy-simultaneous", "minimal-simultaneous", "direction-simultaneous"]
+              .contains(policy),
+            direction: policy.hasPrefix("direction-"), priority: policy == "direction-priority")
           proxies.append(proxy)
           recognizer.delegate = proxy
         }
@@ -179,22 +185,32 @@
     private let original: (any UIGestureRecognizerDelegate)?
     private weak var probe: NavigationGestureLabProbe?
     private let simultaneous: Bool
+    private let direction: Bool
+    private let priority: Bool
 
     init(
       navigation: UINavigationController, original: (any UIGestureRecognizerDelegate)?,
-      probe: NavigationGestureLabProbe, simultaneous: Bool
+      probe: NavigationGestureLabProbe, simultaneous: Bool, direction: Bool, priority: Bool
     ) {
       self.navigation = navigation
       self.original = original
       self.probe = probe
       self.simultaneous = simultaneous
+      self.direction = direction
+      self.priority = priority
       super.init()
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      let allowed =
+      var allowed =
         (navigation?.viewControllers.count ?? 0) > 1
         && navigation?.transitionCoordinator == nil
+      if direction, let pan = gestureRecognizer as? UIPanGestureRecognizer {
+        let velocity = pan.velocity(in: navigation?.view)
+        let x = navigation?.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+          ? -velocity.x : velocity.x
+        allowed = allowed && x > abs(velocity.y)
+      }
       probe?.record("shouldBegin=\(allowed) \(probe?.scrollStatus() ?? "")")
       return allowed
     }
@@ -244,7 +260,14 @@
       _ gestureRecognizer: UIGestureRecognizer,
       shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-      original?.gestureRecognizer?(
+      if priority, let scroll = otherGestureRecognizer.view as? UIScrollView,
+        otherGestureRecognizer === scroll.panGestureRecognizer,
+        scroll.contentSize.width <= scroll.bounds.width + 1
+      {
+        probe?.record("navigation priority \(probe?.scrollStatus() ?? "")")
+        return true
+      }
+      return original?.gestureRecognizer?(
         gestureRecognizer, shouldBeRequiredToFailBy: otherGestureRecognizer) ?? false
     }
   }
