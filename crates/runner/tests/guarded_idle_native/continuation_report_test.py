@@ -17,9 +17,7 @@ import report_test
 
 class ContinuationReportTests(unittest.TestCase):
     def setUp(self):
-        report_test.NativeReportTests.setUp(self)
-        self.events = self.events[:60]
-        self.samples = self.samples[:60]
+        report_test.NativeReportTests.setUp(self, cases=continuation.CASES)
         gib = 1024**3
         policy = {
             "host_total_bytes":64*gib,"operating_floor_bytes":gib,"cleanup_reserve_bytes":256*1024**2,

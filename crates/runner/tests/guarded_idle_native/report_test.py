@@ -42,7 +42,7 @@ def prepare_snapshot_record(root, artifacts):
 
 
 class NativeReportTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, cases=None):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = pathlib.Path(self.temporary.name)
@@ -69,7 +69,7 @@ class NativeReportTests(unittest.TestCase):
             self.collector[field] = False
         self.events, self.samples = [], []
         clock = 10
-        for case in sorted(report.CASES):
+        for case in sorted(report.CASES if cases is None else cases):
             sandbox, backing = str(uuid.uuid4()), str(uuid.uuid4())
             evidence = [
                 {"artifacts": self.artifacts}, {}, {"positive_owned_wait": True},
