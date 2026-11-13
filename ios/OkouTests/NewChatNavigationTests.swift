@@ -11,7 +11,7 @@ final class NewChatNavigationTests: XCTestCase {
     let fixture = MentionNavigationFixture()
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.newChatDraft = "Keep the next chat's draft"
     workspace.selectChat(MentionNavigationFixture.thread(31))
     let conversation = try XCTUnwrap(workspace.selectedConversation)
@@ -60,7 +60,7 @@ final class NewChatNavigationTests: XCTestCase {
     // The request arrives before an active workspace or its Agent is available.
     XCTAssertFalse(requests.open(in: workspace))
     await workspace.refreshNavigation()
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     let saved = "保留草稿 🌷"
     workspace.newChatDraft = saved
     await workspace.newComposer.synchronize()

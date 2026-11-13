@@ -98,7 +98,7 @@ final class AppLifecycle {
           authentication: authentication, notifications: notifications)
       }
     }
-    workspace?.setForeground(phase == .active)
+    workspace?.setPhase(phase)
     if phase == .active { presentedScopeID = scopeID }
     presentationTask = Task {
       guard !closed, !Task.isCancelled else { return }
@@ -136,15 +136,16 @@ final class AppLifecycle {
     await task.value
   }
 
-  func setPhase(_ phase: ScenePhase) {
-    guard !closed, self.phase != phase else { return }
+  @discardableResult
+  func setPhase(_ phase: ScenePhase) -> Task<Void, Never>? {
+    guard !closed, self.phase != phase else { return foregroundTask }
     self.phase = phase
     notifications.setForeground(phase == .active)
-    workspace?.setForeground(phase == .active)
+    let refresh = workspace?.setPhase(phase)
     if phase == .active { presentedScopeID = authentication.presentationScopeID }
     foregroundTask?.cancel()
     foregroundTask = nil
-    guard phase == .active else { return }
+    guard phase == .active else { return nil }
     let scopeID = authentication.presentationScopeID
     foregroundTask = Task {
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
@@ -157,8 +158,10 @@ final class AppLifecycle {
       }
       guard ownsScope(scopeID), !Task.isCancelled, self.phase == .active else { return }
       await notifications.flushPrefetchReports()
+      await refresh?.value
     }
     if let foregroundTask { lifecycleTasks.track(foregroundTask) }
+    return foregroundTask
   }
 
   func reduceMemory() async {
@@ -197,7 +200,7 @@ final class WorkspaceLifecycle {
   let store: WorkspaceStore
   private let authentication: AuthenticationService
   private let notifications: NotificationService
-  private var foreground = false
+  private var phase = ScenePhase.inactive
   private var closed = false
   private var startupTask: Task<Void, Never>?
   private var navigation: (id: UUID, destination: NotificationDestination, task: Task<Bool, Never>)?
@@ -228,7 +231,7 @@ final class WorkspaceLifecycle {
       notifications.didSynchronize = { [weak store] in
         store?.requestRefresh(.history(threadID: $0))
       }
-      store.setForeground(foreground)
+      store.setPhase(phase)
       startupTask = Task { await store.start(userID: data.userID, workspaceID: data.workspaceID) }
       if let startupTask { lifecycleTasks.track(startupTask) }
     }
@@ -254,11 +257,13 @@ final class WorkspaceLifecycle {
     return await task.value
   }
 
-  func setForeground(_ active: Bool) {
-    guard !closed, foreground != active else { return }
-    foreground = active
-    store.setForeground(active)
-    if active, startupTask != nil { store.requestRefresh() }
+  @discardableResult
+  func setPhase(_ phase: ScenePhase) -> Task<Void, Never>? {
+    guard !closed else { return nil }
+    self.phase = phase
+    store.setPhase(phase)
+    guard phase == .active, startupTask != nil else { return nil }
+    return store.resumePendingRefresh()
   }
 
   func reduceMemory() async {

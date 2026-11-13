@@ -113,7 +113,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
         store.close()
         response.open()
       }
-      store.setForeground(true)
+      store.setPhase(.active)
       await store.refresh([.threadList])
       store.selectChat(SyncRecoveryFixture.threadID)
       let conversation = try XCTUnwrap(store.selectedConversation)
@@ -137,7 +137,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
       let reading = Task { await store.refresh([invalidation]) }
       defer { reading.cancel() }
       await fulfillment(of: [started], timeout: 3)
-      store.setForeground(false)
+      store.setPhase(.background)
       await fulfillment(of: [cancelled], timeout: 3)
       await reading.value
       store.requestRefresh(.threadList)
@@ -153,7 +153,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
         $0.messages.append("New answer")
       }
       response.open()
-      store.setForeground(true)
+      store.setPhase(.active)
       store.requestRefresh()
       try await waitForBusinessResult {
         store.list.threads.first?.title == "After foreground"
@@ -182,16 +182,16 @@ final class ChatSyncRecoveryTests: XCTestCase {
       store.close()
       retry.open()
     }
-    store.setForeground(true)
+    store.setPhase(.active)
     await store.refresh([.threadList])
     fixture.state.value.withLock { $0.listFailures = 1 }
     let reading = Task { await store.refresh([.threadList]) }
     defer { reading.cancel() }
     await fulfillment(of: [waiting], timeout: 3)
-    store.setForeground(false)
+    store.setPhase(.background)
     await fulfillment(of: [cancelled], timeout: 3)
     fixture.state.value.withLock { $0.title = "Fresh foreground read" }
-    store.setForeground(true)
+    store.setPhase(.active)
     await store.refresh([.threadList])
     retry.open()
     await reading.value

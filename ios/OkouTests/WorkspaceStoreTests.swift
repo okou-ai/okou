@@ -52,7 +52,7 @@ final class WorkspaceStoreTests: XCTestCase {
     }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { store.close() }
-    store.setForeground(true)
+    store.setPhase(.active)
     await store.list.refresh()
     store.selectedThreadID = storeThreadID
     let conversation = try XCTUnwrap(store.selectedConversation)
@@ -119,7 +119,7 @@ final class WorkspaceStoreTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
     defer { store.close() }
-    store.setForeground(true)
+    store.setPhase(.active)
     await store.refresh()
     store.selectChat(storeThreadID)
     let conversation = try XCTUnwrap(store.selectedConversation)
@@ -132,8 +132,8 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(conversation.messages.map(\.text), ["Answer"])
     XCTAssertEqual(conversation.draft, "First device draft")
 
-    store.setForeground(false)
-    store.setForeground(true)
+    store.setPhase(.background)
+    store.setPhase(.active)
     await conversation.composer.synchronize()
     XCTAssertEqual(conversation.draft, "Changed on the other device")
     XCTAssertNil(conversation.composer.error)
@@ -173,7 +173,7 @@ final class WorkspaceStoreTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
     defer { store.close() }
-    store.setForeground(true)
+    store.setPhase(.active)
     await store.refresh()
     XCTAssertTrue(store.hasDraft(storeThreadID))
     XCTAssertTrue(store.hasDraft(otherID))
@@ -961,14 +961,14 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.refresh()
 
     store.selectedThreadID = storeThreadID
-    store.setForeground(false)
+    store.setPhase(.background)
     await store.conversation(for: storeThreadID)?.refresh()
     XCTAssertEqual(
       (store.conversation(for: storeThreadID)?.messages ?? []).map(\.text), ["Unread answer"])
     XCTAssertEqual(store.list.threads.first?.indicator, .unread)
     XCTAssertTrue(unread.withLock { $0 })
 
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectedThreadID = "40000000-0000-4000-8000-000000000004"
     await store.conversation(for: storeThreadID)?.refresh()
     XCTAssertEqual(store.list.threads.first?.indicator, .unread)
@@ -1028,7 +1028,7 @@ final class WorkspaceStoreTests: XCTestCase {
     let oldStore = WorkspaceStore(client: oldFixture.client, webURL: oldFixture.baseURL)
     defer { oldStore.close() }
     await oldStore.refresh()
-    oldStore.setForeground(true)
+    oldStore.setPhase(.active)
     oldStore.selectedThreadID = storeThreadID
     let oldConversation = try XCTUnwrap(oldStore.conversation(for: storeThreadID))
     let oldRead = Task { await oldConversation.refresh() }
@@ -1068,7 +1068,7 @@ final class WorkspaceStoreTests: XCTestCase {
     // The same thread identity deliberately verifies that history caches belong to each store.
     let freshStore = WorkspaceStore(client: freshFixture.client, webURL: freshFixture.baseURL)
     defer { freshStore.close() }
-    freshStore.setForeground(true)
+    freshStore.setPhase(.active)
     freshStore.selectedThreadID = storeThreadID
     await freshStore.refresh()
     XCTAssertEqual(
