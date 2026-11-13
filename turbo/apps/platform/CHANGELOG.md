@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1123.0](https://github.com/okou-ai/okou/compare/app-v0.1122.3...app-v0.1123.0) (2026-11-13)
+
+
+### Features
+
+* **app:** echo selected visualization preferences in chat ([#46849](https://github.com/okou-ai/okou/issues/46849)) ([a63f6b8](https://github.com/okou-ai/okou/commit/a63f6b83f1965d746f6de1f20993dbcd298094f6))
+
+
+### Performance Improvements
+
+* **browser:** narrow viewer control subscriptions ([#46966](https://github.com/okou-ai/okou/issues/46966)) ([80aea5b](https://github.com/okou-ai/okou/commit/80aea5bd21d7c42985ca82a6376d2fd94e92b93f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.835.0
+    * @okouai/ui bumped to 1.21.8
+
 ## [0.1122.3](https://github.com/okou-ai/okou/compare/app-v0.1122.2...app-v0.1122.3) (2026-11-13)
 
 

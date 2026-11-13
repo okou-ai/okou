@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.41.0](https://github.com/okou-ai/okou/compare/ios-v0.40.0...ios-v0.41.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** give every widget state one header and fill rows to the foot ([#46973](https://github.com/okou-ai/okou/issues/46973)) ([37da565](https://github.com/okou-ai/okou/commit/37da56509445dfb7b6905aa6efd48d75db80137a))
+* **ios:** put unread widget chats first with one new-chat button ([#46960](https://github.com/okou-ai/okou/issues/46960)) ([f37af98](https://github.com/okou-ai/okou/commit/f37af98d68eea19d1ec38234fae680285a459ccc))
+
+
+### Bug Fixes
+
+* **ios:** add interactive paging to image previews ([#46944](https://github.com/okou-ai/okou/issues/46944)) ([958faaf](https://github.com/okou-ai/okou/commit/958faaf46aa5df1439bba1607141f5bbfa007adf))
+* **ios:** open the project picker at half height ([#46965](https://github.com/okou-ai/okou/issues/46965)) ([03b8c57](https://github.com/okou-ai/okou/commit/03b8c573bf5a7e8b1a09929c0fd23cfe9383992e))
+
+
+### Refactoring
+
+* **ios:** share thread list reads ([#46949](https://github.com/okou-ai/okou/issues/46949)) ([31100e0](https://github.com/okou-ai/okou/commit/31100e02c26c5e7c75d4d88bbb5009ff604b2a1f))
+
 ## [0.40.0](https://github.com/okou-ai/okou/compare/ios-v0.39.0...ios-v0.40.0) (2026-11-13)
 
 
