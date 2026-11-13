@@ -9,7 +9,7 @@ guest-contracts.workspace = true
 process-control-ipc.workspace = true
 process-launch.workspace = true
 libc = { workspace = true, features = ["std"] }
-rustix = { workspace = true, features = ["process", "std"] }
+rustix = { workspace = true, features = ["pipe", "process", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v4"] }

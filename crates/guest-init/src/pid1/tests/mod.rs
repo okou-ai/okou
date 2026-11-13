@@ -1,5 +1,5 @@
 use super::*;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::Command;
 use std::sync::{Mutex, mpsc};
 use std::thread;
@@ -65,27 +65,17 @@ fn fork_exiting_child(exit_code: libc::c_int) -> ChildGuard {
 }
 
 fn fork_paused_child(child_mask: &SigSet, ignore_sigterm: bool) -> ChildGuard {
-    let mut fds = [0; 2];
-    // SAFETY: fds points to two valid integers for pipe to initialize.
-    let pipe_result = unsafe { libc::pipe(fds.as_mut_ptr()) };
-    assert_eq!(pipe_result, 0, "pipe failed with errno {}", Errno::last());
+    let (read_fd, write_fd) = nix::unistd::pipe().expect("create child readiness pipe");
 
     // SAFETY: the child uses only async-signal-safe libc calls before _exit.
     let pid = unsafe { libc::fork() };
-    if pid < 0 {
-        // SAFETY: both fds were initialized by pipe above.
-        unsafe {
-            libc::close(fds[0]);
-            libc::close(fds[1]);
-        }
-        panic!("fork failed with errno {}", Errno::last());
-    }
+    assert!(pid >= 0, "fork failed with errno {}", Errno::last());
 
     if pid == 0 {
         // SAFETY: this is the forked child path. It uses raw libc calls and
         // exits through _exit to avoid running Rust destructors.
         unsafe {
-            libc::close(fds[0]);
+            libc::close(read_fd.as_raw_fd());
             if libc::sigprocmask(libc::SIG_SETMASK, child_mask.as_ref(), std::ptr::null_mut()) != 0
             {
                 libc::_exit(124);
@@ -99,8 +89,8 @@ fn fork_paused_child(child_mask: &SigSet, ignore_sigterm: bool) -> ChildGuard {
                 libc::_exit(125);
             }
             let ready = [1_u8];
-            let written = libc::write(fds[1], ready.as_ptr().cast(), ready.len());
-            libc::close(fds[1]);
+            let written = libc::write(write_fd.as_raw_fd(), ready.as_ptr().cast(), ready.len());
+            libc::close(write_fd.as_raw_fd());
             if written != 1 {
                 libc::_exit(126);
             }
@@ -110,12 +100,7 @@ fn fork_paused_child(child_mask: &SigSet, ignore_sigterm: bool) -> ChildGuard {
         }
     }
 
-    // SAFETY: parent owns both raw fds after fork; close the unused write end.
-    unsafe {
-        libc::close(fds[1]);
-    }
-    // SAFETY: parent still owns the read fd and transfers it to OwnedFd.
-    let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+    drop(write_fd);
     let child = ChildGuard::new(pid);
     wait_for_child_ready(&read_fd);
     child
@@ -244,13 +229,7 @@ fn wait_for_child_event(read_fd: &OwnedFd, expected: u8, timeout: Duration) -> R
 }
 
 fn fork_sigterm_observing_child(child_mask: &SigSet) -> (ChildGuard, OwnedFd) {
-    let mut fds = [0; 2];
-    // SAFETY: fds points to two integers for pipe to initialize.
-    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-    // SAFETY: pipe initialized these descriptors; each is owned exactly once.
-    let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: the write end is distinct from the owned read end above.
-    let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+    let (read_fd, write_fd) = nix::unistd::pipe().expect("create child acknowledgement pipe");
     let mut mask = *child_mask;
     mask.add(Signal::SIGTERM);
     let mut sigterm = SigSet::empty();
