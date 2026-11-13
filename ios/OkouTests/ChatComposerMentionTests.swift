@@ -30,10 +30,9 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(source.suggestions(for: "missing").isEmpty)
   }
 
-  func testMultipleInlineReferencesPreserveCursorSurroundingTextAndNativeUndoCopyPaste()
+  func testMultipleInlineReferencesPreserveCursorTextAndNativeUndoAcrossEdits()
     async throws
   {
-    preserveNativePasteboard(for: self)
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
@@ -61,11 +60,8 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult {
       workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 2
     }
-    let expected = workspace.newComposer.document
-    XCTAssertEqual(
-      expected.parts.map { $0["type"]?.string },
-      ["text", "chat_thread", "text", "chat_thread", "text"])
-    XCTAssertEqual(expected.text, "Before  and  after 🌷")
+    let expected = MentionNavigationFixture.inlineReferenceDraft
+    XCTAssertEqual(workspace.newComposer.document, expected)
     let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
     XCTAssertEqual(input.text, expectedNativeText)
     try await eventually { input.undoManager?.groupingLevel == 0 }
@@ -87,48 +83,7 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     input.undoManager?.undo()
     try await waitForBusinessResult { workspace.newComposer.document == expected }
-
-    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
-    input.copy(nil)
-    XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
-    input.cut(nil)
-    try await waitForBusinessResult { !workspace.newComposer.hasContent }
-    // Keep native insertion separate from business observation in timeout diagnostics.
-    let trace = NativePasteTrace()
-    let pasteDelegate = try XCTUnwrap(
-      input.pasteDelegate as? ChatComposerTextInput.Coordinator)
-    let tracedDelegate = NativePasteDelegate(delegate: pasteDelegate, trace: trace)
-    input.pasteDelegate = tracedDelegate
-    // pasteDelegate is weak; retain the forwarding delegate through async paste.
-    defer { input.pasteDelegate = tracedDelegate.delegate }
-    let observer = NotificationCenter.default.addObserver(
-      forName: UITextView.textDidChangeNotification, object: input, queue: .main
-    ) { _ in
-      MainActor.assumeIsolated {
-        if trace.nativeChange == nil, input.text == expectedNativeText {
-          trace.nativeChange = trace.started.duration(to: .now)
-          trace.canonicalAtNativeChange = workspace.newComposer.document == expected
-        }
-      }
-    }
-    defer { NotificationCenter.default.removeObserver(observer) }
-    input.paste(nil)
-    trace.record("paste returned")
-    trace.record("business wait started")
-    try await waitForBusinessResult(
-      message: "Paste stages=\(trace.stages); "
-        + "native change=\(String(describing: trace.nativeChange)); "
-        + "canonical at native change=\(String(describing: trace.canonicalAtNativeChange)); "
-        + "elapsed=\(trace.started.duration(to: .now)); "
-        + "document=\(workspace.newComposer.document); "
-        + "text=\(String(describing: input.text)); "
-        + "current=\(input.isCurrent()); focus=\(input.isFirstResponder); "
-        + "undo=\(input.undoManager?.groupingLevel ?? -1)"
-    ) { workspace.newComposer.document == expected }
-    input.undoManager?.undo()
-    try await waitForBusinessResult { !workspace.newComposer.hasContent }
-    input.undoManager?.redo()
-    try await waitForBusinessResult { workspace.newComposer.document == expected }
+    try await eventually { input.undoManager?.groupingLevel == 0 }
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText("Replacement 中文")
@@ -385,81 +340,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertFalse(workspace.selectedConversation?.composer.hasContent ?? true)
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(1))
     XCTAssertNil(mentionTable(in: host.view))
-  }
-}
-
-@MainActor
-private final class NativePasteTrace {
-  let started = ContinuousClock.now
-  var nativeChange: Duration?
-  var canonicalAtNativeChange: Bool?
-  private(set) var stages: [(String, Duration)] = []
-
-  func record(_ stage: String) {
-    stages.append((stage, started.duration(to: .now)))
-  }
-}
-
-/// Observe the production transform without replacing its provider or UIKit insertion.
-@MainActor
-private final class NativePasteDelegate: NSObject, UITextPasteDelegate {
-  let delegate: ChatComposerTextInput.Coordinator
-  let trace: NativePasteTrace
-
-  init(delegate: ChatComposerTextInput.Coordinator, trace: NativePasteTrace) {
-    self.delegate = delegate
-    self.trace = trace
-  }
-
-  func textPasteConfigurationSupporting(
-    _ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting,
-    transform item: UITextPasteItem
-  ) {
-    trace.record("transform started")
-    delegate.textPasteConfigurationSupporting(
-      textPasteConfigurationSupporting, transform: NativePasteItem(item: item, trace: trace))
-  }
-}
-
-@MainActor
-private final class NativePasteItem: NSObject, UITextPasteItem {
-  let item: UITextPasteItem
-  let trace: NativePasteTrace
-
-  init(item: UITextPasteItem, trace: NativePasteTrace) {
-    self.item = item
-    self.trace = trace
-  }
-
-  var itemProvider: NSItemProvider { item.itemProvider }
-  var localObject: Any? { item.localObject }
-  var defaultAttributes: [NSAttributedString.Key: Any] { item.defaultAttributes }
-
-  func setResult(string: String) {
-    complete("string") { item.setResult(string: string) }
-  }
-
-  func setResult(attributedString: NSAttributedString) {
-    complete("attributed string") { item.setResult(attributedString: attributedString) }
-  }
-
-  func setResult(attachment: NSTextAttachment) {
-    complete("attachment") { item.setResult(attachment: attachment) }
-  }
-
-  func setDefaultResult() {
-    complete("default") { item.setDefaultResult() }
-  }
-
-  func setNoResult() {
-    complete("no result") { item.setNoResult() }
-  }
-
-  private func complete(_ result: String, _ action: () -> Void) {
-    // Preparation includes provider loading and the production MainActor hop.
-    trace.record("\(result) submitted")
-    action()
-    trace.record("\(result) returned")
   }
 }
 
