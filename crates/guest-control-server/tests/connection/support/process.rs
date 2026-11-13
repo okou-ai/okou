@@ -1,5 +1,6 @@
+use rustix::fs::inotify::{self, CreateFlags};
 use std::ffi::CString;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -219,15 +220,7 @@ struct DirectoryWatcher {
 
 impl DirectoryWatcher {
     fn new(dir: &Path) -> std::io::Result<Self> {
-        // SAFETY: `inotify_init1` does not dereference user pointers and
-        // returns a fresh file descriptor on success.
-        let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
-        if fd < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        // SAFETY: `fd` is a fresh descriptor returned by `inotify_init1`.
-        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        let fd = inotify::init(CreateFlags::NONBLOCK | CreateFlags::CLOEXEC)?;
         let dir = CString::new(dir.as_os_str().as_bytes()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,

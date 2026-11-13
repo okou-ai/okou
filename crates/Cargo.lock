@@ -2235,6 +2235,7 @@ dependencies = [
  "linux-mountinfo",
  "proptest",
  "roxmltree 0.21.2",
+ "rustix",
  "serde",
  "serde_json",
  "serde_yaml_ng",
