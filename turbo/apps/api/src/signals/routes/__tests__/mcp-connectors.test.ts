@@ -627,7 +627,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         prompt: "Use the MCP connector with incremental scope",
       });
       owned.runId = run.runId;
-      expect(run.status).toBe("pending");
+      expect(run.status).toBe("running");
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.executionInput(run.runId);
       owned.sandboxToken = claim.sandboxToken;
@@ -878,7 +878,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
     });
-    expect(run.status).toBe("pending");
+    expect(run.status).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.executionInput(run.runId);
     const okouToken = claim.platformEnvironment.OKOU_TOKEN;

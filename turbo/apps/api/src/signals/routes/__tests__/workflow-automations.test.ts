@@ -2661,9 +2661,13 @@ describe("okou workflow automations", () => {
       duplicates: 0,
     });
     await flushWaitUntilForTest();
-    await runs.heartbeatRunner(runnerGroup);
-    const job = await runs.pollRunner(runnerGroup);
-    expect(job.body.job?.runId).toStrictEqual(expect.any(String));
+    expect(runs.receivedDispatches(runnerGroup)).toStrictEqual([
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          runId: expect.any(String),
+        }),
+      }),
+    ]);
   });
 
   it("does not create provider watches for disabled Gmail or Calendar automations", async () => {
@@ -4440,8 +4444,8 @@ describe("okou workflow automations", () => {
   it("lazily binds a chat thread when a one-time automation runs now", async () => {
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56);
     mockNow(requestedAt);
-    const runnerGroup = await runs.configureRunnerGroup();
     const { workflowId } = await setupFixture();
+    const runnerGroup = await runs.configureRunnerGroup();
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),

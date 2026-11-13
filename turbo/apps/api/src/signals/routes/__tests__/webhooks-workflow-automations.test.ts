@@ -190,8 +190,9 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       body: { success: true, duplicate: false },
     });
 
-    await runsApi.heartbeatRunner(runnerGroup);
-    const job = (await runsApi.pollRunner(runnerGroup)).body.job;
+    const job = runsApi
+      .receivedDispatches(runnerGroup)
+      .at(-1)?.executionContext;
     if (!job) {
       throw new Error("Expected the accepted delivery to launch a run");
     }
@@ -212,9 +213,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       success: true,
       duplicate: true,
     });
-    // The duplicate retry does not enqueue a second runner job.
-    const idleAfterDuplicate = await runsApi.pollRunner(runnerGroup);
-    expect(idleAfterDuplicate.body.job).toBeNull();
+    expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
 
     const concurrentRawBody = JSON.stringify({
       event: "concurrent-dedupe",
@@ -276,8 +275,9 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       status: 200,
       body: { success: true, duplicate: false },
     });
-    await runsApi.heartbeatRunner(runnerGroup);
-    const job = (await runsApi.pollRunner(runnerGroup)).body.job;
+    const job = runsApi
+      .receivedDispatches(runnerGroup)
+      .at(-1)?.executionContext;
     if (!job) {
       throw new Error("Expected the first delivery to occupy its thread");
     }
@@ -316,6 +316,11 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       [204],
     );
     await runsApi.requestCancelRun(actor, job.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: job.runId, exitCode: 1, error: "Run cancelled" },
+      { authorization: `Bearer ${job.sandboxToken}` },
+      [200],
+    );
     await flushWaitUntilForTest();
     // The pick rejects the recorded model after it becomes unavailable.
     const rejectedEvents = await wf.readThreadEvents(webhook.threadId);
