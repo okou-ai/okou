@@ -51,6 +51,8 @@ internal fun renderHistoryMarkdown(source: String): AnnotatedString = buildAnnot
         .parse(source)
         .accept(
             object : AbstractVisitor() {
+                private val listNumbers = mutableMapOf<OrderedList, Int>()
+
                 override fun visit(node: MarkdownText) {
                     append(node.literal)
                 }
@@ -145,12 +147,8 @@ internal fun renderHistoryMarkdown(source: String): AnnotatedString = buildAnnot
                 override fun visit(node: ListItem) {
                     val parent = node.parent
                     if (parent is OrderedList) {
-                        var number = checkNotNull(parent.markerStartNumber)
-                        var previous = node.previous
-                        while (previous != null) {
-                            number++
-                            previous = previous.previous
-                        }
+                        val number = listNumbers[parent] ?: checkNotNull(parent.markerStartNumber)
+                        listNumbers[parent] = number + 1
                         append("$number. ")
                     } else append("• ")
                     visitChildren(node)

@@ -458,5 +458,9 @@ class ConversationHistoryTest {
         assertTrue(rendered.text.contains("val x = 1"))
         assertTrue(rendered.text.contains("<script>literal</script>"))
         assertTrue(rendered.spanStyles.isNotEmpty())
+        val numbered = renderHistoryMarkdown("3. first\n    7. nested\n4. second\n")
+        assertTrue(numbered.text.contains("3. first"))
+        assertTrue(numbered.text.contains("7. nested"))
+        assertTrue(numbered.text.contains("4. second"))
     }
 }
