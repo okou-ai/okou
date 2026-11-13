@@ -93,6 +93,7 @@ async function setupSplitViewer() {
   });
   await setupPage({ context, path: `/browsers/${threadId}` });
   await inputReady();
+  const sharedSession = browser.pageSession("example-page");
   click(screen.getByLabelText("Browser settings"));
   const settings = await screen.findByRole("menu", {
     name: "Browser settings",
@@ -100,6 +101,12 @@ async function setupSplitViewer() {
   click(within(settings).getByText("Connection mode"));
   const mode = await screen.findByRole("menu", { name: "Connection mode" });
   click(within(mode).getByText("Separate image connection"));
+  // The old input can still look ready before the async transport rebuild.
+  // Observe the replacement transport before injecting any capture failure.
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(browser.pageSession("example-page")).not.toBe(sharedSession);
+  });
   await inputReady();
   return Object.assign(browser, { advanceRecovery });
 }
