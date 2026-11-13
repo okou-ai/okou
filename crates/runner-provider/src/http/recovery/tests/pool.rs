@@ -37,6 +37,28 @@ fn assert_reset(error: ProviderError) {
         if error.failure_cause == ApiTransportCause::ConnectionReset));
 }
 
+async fn read_reused(listener: &TcpListener, socket: &mut TcpStream) -> String {
+    // Hyper may finish a speculative connect after a pool checkout wins. Only
+    // actual HTTP dispatch on another socket would violate reuse. Keep this
+    // read future alive across accepts so cancellation cannot discard bytes.
+    let request = read_http_request(socket);
+    tokio::pin!(request);
+    loop {
+        tokio::select! {
+            request = &mut request => return request.unwrap(),
+            accepted = listener.accept() => {
+                let (mut speculative, _) = accepted.unwrap();
+                tokio::select! {
+                    request = &mut request => return request.unwrap(),
+                    request = read_http_request(&mut speculative) => {
+                        assert!(request.is_err(), "request did not reuse the healthy connection");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn recovery_leaves_the_failed_idle_pool_and_later_sends_reuse_its_replacement() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -77,10 +99,7 @@ async fn recovery_leaves_the_failed_idle_pool_and_later_sends_reuse_its_replacem
         assert!(replay.starts_with("GET /reset HTTP/1.1"));
         respond(&mut replacement, "recovered", false).await;
         for path in ["/prepared", "/again"] {
-            let request = tokio::select! {
-                request = read_http_request(&mut replacement) => request.unwrap(),
-                _ = listener.accept() => panic!("healthy replacement was not reused"),
-            };
+            let request = read_reused(&listener, &mut replacement).await;
             assert!(request.starts_with(&format!("GET {path} HTTP/1.1")));
             respond(&mut replacement, path, path == "/again").await;
         }
@@ -167,10 +186,7 @@ async fn replacement_preserves_active_headers_and_bodies_and_ignores_late_old_re
                 respond(&mut healthy, "abcdef", true).await;
             }
 
-            let request = tokio::select! {
-                request = read_http_request(&mut replacement) => request.unwrap(),
-                _ = listener.accept() => panic!("late old reset retired the healthy pool"),
-            };
+            let request = read_reused(&listener, &mut replacement).await;
             assert!(request.starts_with("GET /after HTTP/1.1"));
             respond(&mut replacement, "after", true).await;
         }));
