@@ -11,7 +11,8 @@ final class SidebarDraftStore {
   private let resources: WorkspaceResources
   private let lifecycleTasks: LifecycleTasks
   private let didFail: @MainActor (Error) -> Void
-  private var localRevision = 0
+  // Only changes made during the current publication need to overlay that response.
+  private var releasedDuringRead: [String: Bool] = [:]
   private var readID = UUID()
   private var closed = false
   @ObservationIgnored private var subscription: Subscription?
@@ -55,29 +56,35 @@ final class SidebarDraftStore {
   }
 
   func noteReleased(_ id: String, hasDraft: Bool) {
-    localRevision &+= 1
+    if publication != nil { releasedDuringRead[id] = hasDraft }
     if hasDraft { threadIDs.insert(id) } else { threadIDs.remove(id) }
   }
 
   /// This confirmed snapshot combines with resident composers. Request phases remain
-  /// exclusively on the original resource Task; local changes fence an older response.
+  /// exclusively on the original resource Task; local changes overlay an older response.
   private func confirm() {
     guard !closed else { return }
     publication?.cancel()
     let id = UUID()
     readID = id
-    let revision = localRevision
+    releasedDuringRead.removeAll()
     do {
       let read = try resources.store.get(resources.sidebarDraftThreadIDs)
       let task = Task { [weak self] in
         guard let self else { return }
         defer {
-          if readID == id { publication = nil }
+          if readID == id {
+            publication = nil
+            releasedDuringRead.removeAll()
+          }
         }
         do {
-          let ids = try await read.value
+          var ids = try await read.value
           try Task.checkCancellation()
-          guard !closed, readID == id, revision == localRevision else { return }
+          guard !closed, readID == id else { return }
+          for (threadID, hasDraft) in releasedDuringRead {
+            if hasDraft { ids.insert(threadID) } else { ids.remove(threadID) }
+          }
           threadIDs = ids
         } catch is CancellationError {
         } catch {
@@ -92,6 +99,7 @@ final class SidebarDraftStore {
 
   func close() {
     closed = true
+    releasedDuringRead.removeAll()
     publication?.cancel()
     do { try subscription?.cancel() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatDrafts")

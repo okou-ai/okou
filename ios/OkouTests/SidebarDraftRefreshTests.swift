@@ -19,7 +19,8 @@ final class SidebarDraftRefreshTests: XCTestCase {
     XCTAssertTrue(workspace.hasDraft(fixture.threadID))
     fixture.state.values.withLock { $0.title = "Renamed remotely" }
     await workspace.refresh([.threadList])
-    XCTAssertEqual(workspace.list.threads.first?.title, "Renamed remotely")
+    XCTAssertEqual(
+      workspace.list.threads.first(where: { $0.id == fixture.threadID })?.title, "Renamed remotely")
 
     workspace.setPhase(.background)
     workspace.setPhase(.active)
@@ -83,7 +84,8 @@ final class SidebarDraftRefreshTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     await workspace.refresh([.threadList])
-    XCTAssertEqual(workspace.list.threads.first?.title, "Draft fixture")
+    XCTAssertEqual(
+      workspace.list.threads.first(where: { $0.id == fixture.threadID })?.title, "Draft fixture")
     let closing = workspace.close()
     gate.open()
     await closing.value
@@ -98,6 +100,35 @@ final class SidebarDraftRefreshTests: XCTestCase {
     XCTAssertTrue(workspace.needsUpgrade)
     await workspace.activateDrafts()
     await workspace.refresh()
+    XCTAssertEqual(fixture.draftReads, 1)
+  }
+
+  func testReleasingALocalComposerDuringTheReadKeepsOtherRemoteDraftMarks() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "The initial draft membership is held")
+    let fixture = SidebarDraftFixture(
+      draft: "Remote draft",
+      beforeDraftRead: {
+        started.fulfill()
+        await gate.wait()
+      })
+    let workspace = makeWorkspace(fixture)
+    await workspace.refresh()
+    workspace.selectChat(fixture.threadID)
+    workspace.startNewChat()
+    let read = Task { await workspace.activateDrafts() }
+    addTeardownBlock {
+      gate.open()
+      read.cancel()
+      await workspace.close().value
+      await read.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    await workspace.reduceMemory()
+    gate.open()
+    await read.value
+    XCTAssertFalse(workspace.hasDraft(fixture.threadID))
+    XCTAssertTrue(workspace.hasDraft(fixture.otherID))
     XCTAssertEqual(fixture.draftReads, 1)
   }
 
@@ -128,6 +159,7 @@ private final class SidebarDraftFixture: Sendable {
   }
   let state = State()
   let threadID = UUID().uuidString.lowercased()
+  let otherID = UUID().uuidString.lowercased()
   let agentID = UUID().uuidString.lowercased()
   let http: ChatHTTPFixture
 
@@ -139,6 +171,7 @@ private final class SidebarDraftFixture: Sendable {
   ) {
     let state = state
     let threadID = threadID
+    let otherID = otherID
     let agentID = agentID
     if let draft {
       state.values.withLock {
@@ -155,7 +188,10 @@ private final class SidebarDraftFixture: Sendable {
           body: """
             {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
             "title":"\(title)","createdAt":"2026-11-13T00:00:00Z",\
-            "updatedAt":"2026-11-13T00:00:00Z","sortAt":"2026-11-13T00:00:00Z"}],\
+            "updatedAt":"2026-11-13T00:00:00Z","sortAt":"2026-11-13T00:00:00Z"},\
+            {"id":"\(otherID)","agentId":"\(agentID)","title":"Other draft",\
+            "createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z",\
+            "sortAt":"2026-11-13T00:00:00Z"}],\
             "latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
@@ -173,7 +209,7 @@ private final class SidebarDraftFixture: Sendable {
             status: draftStatus, body: #"{"error":{"message":"Upgrade required"}}"#)
         }
         return ChatHTTPResponse(
-          body: "{\"draftThreadIds\":\(present ? "[\"\(threadID)\"]" : "[]")}")
+          body: "{\"draftThreadIds\":\(present ? "[\"\(threadID)\",\"\(otherID)\"]" : "[]")}")
       case "/api/chat-threads/\(threadID)/draft":
         let draft = state.values.withLock { $0.draft }
         return ChatHTTPResponse(
