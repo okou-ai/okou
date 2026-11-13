@@ -54,8 +54,9 @@ extension ComposerTextView {
     else { return }
     returnKeyPreference = preference
     returnKeyType = preference == .send ? .send : .default
+    let restartsInputSession = enablesReturnKeyAutomatically && !automaticallyEnables
     enablesReturnKeyAutomatically = automaticallyEnables
-    requestReturnKeyReload()
+    requestReturnKeyReload(restartInputSession: restartsInputSession)
   }
 
   var canInsertNewline: Bool {
