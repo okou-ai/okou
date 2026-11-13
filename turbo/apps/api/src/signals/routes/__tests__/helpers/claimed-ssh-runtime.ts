@@ -34,7 +34,10 @@ export function createClaimedSshRuntimeApi(
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const paidOrganizations = new Set<string>();
-  const active = new Map<string, Owner>();
+  const active = new Map<
+    string,
+    { readonly owner: Owner; readonly sandboxToken: string | null }
+  >();
 
   async function runtime(owner: Owner, runtimeOptions: RuntimeOptions = {}) {
     bdd.acceptAgentStorageWrites();
@@ -78,8 +81,9 @@ export function createClaimedSshRuntimeApi(
       prompt: "Use my configured SSH hosts",
       model: "claude-sonnet-5-5",
     });
-    active.set(runId, owner);
+    active.set(runId, { owner, sandboxToken: null });
     const input = await runs.executionInput(runId);
+    active.set(runId, { owner, sandboxToken: input.sandboxToken });
     const selected = runs.dispatchedRun(runId);
     const runnerIdentity = {
       runnerId: selected.runnerId,
@@ -150,23 +154,29 @@ export function createClaimedSshRuntimeApi(
 
   // Register in the owning describe so cancellation finishes before context teardown.
   async function cleanup() {
-    for (const [runId, owner] of active) {
+    for (const [runId, { owner, sandboxToken }] of active) {
       options.authenticate(owner);
       useSecretKmsProbe();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      await runs.requestCancelRun(
-        bdd.user({ ...owner, orgRole: "org:member" }),
-        runId,
-        [200],
-      );
-      active.delete(runId);
-      const input = await runs.executionInput(runId);
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId, exitCode: 137 },
-        { authorization: `Bearer ${input.sandboxToken}` },
-        [200],
-      );
+      const actor = bdd.user({ ...owner, orgRole: "org:member" });
+      const current = await runs.readRun(actor, runId);
+      if (!["completed", "failed", "timeout"].includes(current.status)) {
+        await runs.requestCancelRun(actor, runId, [200]);
+        if (sandboxToken === null) {
+          await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+            status: "cancelled",
+            startedAt: null,
+          });
+        } else {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            { runId, exitCode: 137 },
+            { authorization: `Bearer ${sandboxToken}` },
+            [200],
+          );
+        }
+      }
       await flushWaitUntilForTest();
+      active.delete(runId);
     }
     paidOrganizations.clear();
   }
