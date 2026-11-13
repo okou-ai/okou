@@ -187,7 +187,7 @@ final class ThreadListStore {
       }
       return updated
     }
-    didRefresh(threads)
+    if hasLoadedThreads { didRefresh(threads) }
   }
 
   var stateStore: CCState.Store { resources.store }
@@ -489,7 +489,8 @@ final class ThreadListStore {
             return updated
           }
           indicatorsError = nil
-          didRefresh(threads)
+          // Indicators cannot establish list membership before metadata arrives.
+          if hasLoadedThreads { didRefresh(threads) }
         } catch is CancellationError {
           return
         } catch {

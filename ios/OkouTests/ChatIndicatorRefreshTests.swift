@@ -112,6 +112,7 @@ private final class IndicatorListFixture: Sendable {
           body: """
             {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
             "title":"\(current.0)","createdAt":"2026-11-13T00:00:00Z",\
+            "updatedAt":"2026-11-13T00:00:00Z",\
             "sortAt":"2026-11-13T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
