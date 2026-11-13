@@ -818,6 +818,8 @@ feature; the catalog shows each one.
   UIKit owns the interactive pop and its recognition policy.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
   reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
+  Continuing either gesture to a full swipe executes that action; a shorter swipe leaves
+  the button available to tap.
 
 ### Sign-in and account
 
