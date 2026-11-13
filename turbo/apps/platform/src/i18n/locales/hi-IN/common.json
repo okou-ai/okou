@@ -2880,6 +2880,7 @@
         },
         "libraryHint": "No chart is selected until you choose it.",
         "libraryResult": "{{visible}} / {{total}} चार्ट प्रकार दिखाए जा रहे हैं · ये पसंद हैं, अनिवार्य नहीं",
+        "messageCharts": "चार्ट",
         "methodHint": "Choose at least one · Combine as needed",
         "methods": {
           "data-charts": "Data charts",

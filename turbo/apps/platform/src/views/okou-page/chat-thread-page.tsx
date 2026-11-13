@@ -13,6 +13,7 @@ import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
+import { UserMessageVisualizationPreferences } from "./user-message-visualization-preferences.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -7202,10 +7203,12 @@ function UserMessageView({
   threadId,
   document,
   elevatedFileIds,
+  showVisualizationPreferences,
 }: {
   threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
+  showVisualizationPreferences: boolean;
 }) {
   const partOccurrences = new Map<string, number>();
   const agentRunSourceTitle = document.parts.find((renderPart) => {
@@ -7219,7 +7222,10 @@ function UserMessageView({
       );
     },
   );
-  if (bodyParts.length === 0) {
+  if (
+    bodyParts.length === 0 &&
+    !(showVisualizationPreferences && document.visualizationPreferences)
+  ) {
     return null;
   }
   const renderedParts: ReactNode[] = [];
@@ -7268,6 +7274,13 @@ function UserMessageView({
   return (
     <div data-structured-user-message="" className="whitespace-pre-wrap">
       {renderedParts}
+      {showVisualizationPreferences && document.visualizationPreferences ? (
+        <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
+          <UserMessageVisualizationPreferences
+            preferences={document.visualizationPreferences}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -7295,6 +7308,8 @@ function UserMessageContent({
   /** Sits directly left of the bubble, for example the pending spinner. */
   leading?: ReactNode;
 }) {
+  const showVisualizationPreferences =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatMessageVisualizationSummary];
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
   // without an id cannot be matched to a document part, so they stay inline.
@@ -7306,12 +7321,15 @@ function UserMessageContent({
       return attachment.id ? [attachment.id] : [];
     }),
   );
-  const hasBody = document.parts.some((renderPart) => {
-    return (
-      !isUserMessageHiddenPart(renderPart.part) &&
-      !isElevatedUserMessagePart(renderPart, elevatedFileIds)
-    );
-  });
+  const hasBody =
+    (showVisualizationPreferences &&
+      document.visualizationPreferences !== undefined) ||
+    document.parts.some((renderPart) => {
+      return (
+        !isUserMessageHiddenPart(renderPart.part) &&
+        !isElevatedUserMessagePart(renderPart, elevatedFileIds)
+      );
+    });
 
   return (
     <>
@@ -7332,6 +7350,7 @@ function UserMessageContent({
                 threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
+                showVisualizationPreferences={showVisualizationPreferences}
               />
             </div>
           </ChatUserMessageBubble>

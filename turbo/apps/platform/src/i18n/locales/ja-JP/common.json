@@ -2868,6 +2868,7 @@
         },
         "libraryHint": "No chart is selected until you choose it.",
         "libraryResult": "{{visible}} / {{total}} 種類のグラフを表示 · 選択は優先設定であり必須ではありません",
+        "messageCharts": "チャート",
         "methodHint": "Choose at least one · Combine as needed",
         "methods": {
           "data-charts": "Data charts",

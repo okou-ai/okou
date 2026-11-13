@@ -131,6 +131,7 @@ import {
   messageDocumentToPrompt,
   textToMessageDocument,
 } from "../okou-page/user-message-document-codec.ts";
+import { parseComposerVisualizationPreferences } from "../okou-page/composer-additional-info.ts";
 import {
   createAgentReferenceSignalsRegistry,
   type AgentReferenceSignalsRegistry,
@@ -1164,6 +1165,15 @@ const registerUserMessageRenderDocument$ = command(
     contextType: ChatEvent["contextType"],
   ): UserMessageRenderDocument => {
     const readableDocument = userMessageDocumentSchema.parse(document);
+    const visualizationPreferences = readableDocument.parts
+      .map((part) => {
+        return part.type === "additional_info"
+          ? parseComposerVisualizationPreferences(part.text)
+          : undefined;
+      })
+      .find((preferences) => {
+        return preferences !== undefined;
+      });
     const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
       (part, index) => {
         if (part.type === "additional_info") {
@@ -1191,6 +1201,7 @@ const registerUserMessageRenderDocument$ = command(
       // Registration uses the raw document identity across window updates.
       document,
       parts,
+      ...(visualizationPreferences ? { visualizationPreferences } : {}),
     };
   },
 );
