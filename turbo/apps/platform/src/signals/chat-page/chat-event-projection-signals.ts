@@ -9,6 +9,8 @@ import type { ChatEvent } from "./chat-event-types.ts";
 import {
   chatRunEventContextFromChatEvents,
   deriveRunIndicatorStateFromChatEvents,
+} from "@okouai/api-contracts/contracts/chat-run-state";
+import {
   lastAssistantCancelledFromGroups,
   liveRunIdsFromChatEvents,
   modelSelectionForChatRun,

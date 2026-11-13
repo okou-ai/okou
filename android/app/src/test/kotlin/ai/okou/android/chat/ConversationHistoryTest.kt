@@ -286,17 +286,16 @@ class ConversationHistoryTest {
         model.uiState.first { it.phase == HistoryPhase.Ready }
         assertEquals(0, service.markCount)
         assertEquals("agent-original", model.uiState.value.thread!!.agentId)
-        model.setVisible(CHAT_PERSONAL, true)
+        val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
         model.uiState.first { it.phase == HistoryPhase.Ready }
-        model.setVisible(CHAT_PERSONAL, true)
         runCurrent()
         assertEquals(0, service.markCount)
-        model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+        visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
         service.marked.await()
         runCurrent()
         assertEquals(1, service.markCount)
         assertEquals(1, indicators)
-        model.setVisible(CHAT_PERSONAL, false)
+        visit.close()
         service.detailStatus = 404
         model.refresh()
         model.uiState.first { it.phase == HistoryPhase.Missing }
@@ -332,26 +331,27 @@ class ConversationHistoryTest {
             )
         try {
             model.open(thread())
-            model.setVisible(CHAT_PERSONAL, true)
+            var visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             service.marked.await()
             runCurrent()
             assertEquals(CHAT_DATE, serverReadAt)
             val previousTranscript = model.uiState.value.transcript
 
-            model.setVisible(CHAT_PERSONAL, false)
+            visit.close()
             // The canonical mark-unread endpoint clears this without changing history rows.
             serverReadAt = null
-            model.setVisible(CHAT_PERSONAL, true)
+            visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
             assertEquals(previousTranscript, model.uiState.value.transcript)
             assertNull(serverReadAt)
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             runCurrent()
             assertEquals(CHAT_DATE, serverReadAt)
             assertEquals(2, service.markCount)
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             runCurrent()
             assertEquals(2, service.markCount)
         } finally {
@@ -389,9 +389,10 @@ class ConversationHistoryTest {
             )
         try {
             model.open(thread())
-            model.setVisible(CHAT_PERSONAL, true)
+            val visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             firstRead.await()
             val nextId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             service.rowsRead = { id, _ ->
@@ -407,7 +408,7 @@ class ConversationHistoryTest {
                 "New reply",
                 model.uiState.value.transcript!!.messages.last().blocks.single().text,
             )
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             assertEquals(1, service.markCount)
             releaseRead.complete(Unit)
             firstConfirmed.await()
@@ -446,9 +447,10 @@ class ConversationHistoryTest {
             )
         try {
             model.open(thread())
-            model.setVisible(CHAT_PERSONAL, true)
+            val visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            val previous = model.uiState.value.confirmation
+            val previous = checkNotNull(model.uiState.value.confirmation)
             val nextId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             service.rowsRead = { id, cursor ->
                 if (cursor.seqId < 53)
@@ -461,22 +463,25 @@ class ConversationHistoryTest {
             }
             model.refresh()
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            model.confirmDisplayed(CHAT_PERSONAL, previous)
+            visit.confirmDisplayed(previous)
             runCurrent()
             assertEquals(0, service.markCount)
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
-            model.uiState.first { it.readFailed }
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            visit.readState.first { it == HistoryReadState.Failed }
+            runCurrent()
+            assertEquals(1, service.markCount)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             runCurrent()
             assertEquals(1, service.markCount)
             assertTrue(failures.isEmpty())
             failRead = false
             model.refresh()
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             service.marked.await()
             runCurrent()
             assertEquals(2, service.markCount)
-            assertFalse(model.uiState.value.readFailed)
+            assertEquals(HistoryReadState.Confirmed, visit.readState.value)
         } finally {
             model.close()
             lease.close()
@@ -499,21 +504,82 @@ class ConversationHistoryTest {
             )
         try {
             model.open(thread())
-            model.setVisible(CHAT_PERSONAL, true)
+            var visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            val previous = model.uiState.value.confirmation
+            val previous = checkNotNull(model.uiState.value.confirmation)
+            val earlierVisit = visit
             model.open(thread(CHAT_IN_PROJECT))
             model.open(thread())
-            model.setVisible(CHAT_PERSONAL, true)
+            visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.phase == HistoryPhase.Ready }
-            model.confirmDisplayed(CHAT_PERSONAL, previous)
+            earlierVisit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            visit.confirmDisplayed(previous)
             runCurrent()
             assertEquals(0, service.markCount)
-            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             service.marked.await()
             runCurrent()
             assertEquals(1, service.markCount)
         } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun aClosedVisitCannotAcknowledgeOrPublishIntoAReopenedVisit() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var publications = 0
+        val service =
+            object : Service() {
+                override suspend fun markRead(threadId: String): ReadState {
+                    markCount++
+                    if (markCount == 1)
+                        withContext(NonCancellable) {
+                            started.complete(Unit)
+                            release.await()
+                        }
+                    return ReadState(CHAT_DATE)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                { publications++ },
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            val old = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            val transcript = model.uiState.value.transcript
+            old.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            started.await()
+            old.close()
+            val next = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(transcript, model.uiState.value.transcript)
+            val displayed = checkNotNull(model.uiState.value.confirmation)
+            old.confirmDisplayed(displayed)
+            runCurrent()
+            assertEquals(1, service.markCount)
+            next.confirmDisplayed(displayed)
+            next.readState.first { it == HistoryReadState.Confirmed }
+            assertEquals(2, service.markCount)
+            assertEquals(1, publications)
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(1, publications)
+            assertEquals(HistoryReadState.Confirmed, next.readState.value)
+        } finally {
+            release.complete(Unit)
             model.close()
             lease.close()
         }

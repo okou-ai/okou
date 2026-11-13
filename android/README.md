@@ -80,6 +80,13 @@ An authorized, resumed, visible conversation marks read only after successful
 network confirmation and display. This calls the existing server mark-read POST
 and refreshes independent indicators; cached display, hidden navigation and held
 requests do not mark read. Local caches never establish server freshness.
+The workspace retains synchronization and confirmed content. Each visible visit
+owns a separate read session, including request cancellation, read errors and
+within-visit deduplication. Hiding the reader, backgrounding or changing selection
+ends that session; reopening creates a fresh one even when event rows are unchanged.
+Display acknowledgments identify a captured network confirmation, not whatever
+state is newest when an effect runs. The existing server API selects its current
+run-finish watermark; it does not accept a displayed event cursor.
 
 ## Prerequisites and Setup
 
@@ -440,6 +447,15 @@ fields, path escaping and query validation. The production `historySnapshot`,
 `historyRows`, `threadDetail` and `markRead` bindings are installed consumers used
 by the native reader. Their canonical raw event model and event schema version
 are generated alongside the existing list bindings.
+
+`HistoryProjectionContractTest` also consumes generated semantic histories.
+Their expected visibility, ordering, queue flags and run state are computed by
+the canonical functions Web actually uses, including its shared run-state helper.
+Every history prefix is checked by the native projector; `check:kotlin` detects
+changes to those expected outcomes, and adding an event type requires a scenario.
+Native opaque usage references and preserved cancellation details remain explicit
+presentation differences. These cases establish executable conformance coverage,
+not an exhaustive proof over every possible history.
 
 These test-only fixtures prove compilation/decoding and do not register installed
 consumers. The native chat list uses the production bindings and route inventory

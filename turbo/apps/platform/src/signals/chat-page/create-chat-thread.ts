@@ -163,7 +163,7 @@ import {
   type SendChatEventInput,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import type { RunIndicatorState } from "./chat-event-state.ts";
+import type { RunIndicatorState } from "@okouai/api-contracts/contracts/chat-run-state";
 import type {
   ChatEventGroup,
   EnrichedChatEvent,

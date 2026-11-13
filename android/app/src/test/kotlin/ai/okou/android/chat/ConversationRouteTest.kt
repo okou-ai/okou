@@ -5,6 +5,7 @@ import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.OkouTheme
+import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
@@ -15,11 +16,16 @@ import ai.okou.android.historyEventWire
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +39,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -67,7 +74,8 @@ class ConversationRouteTest {
     }
 
     @Test
-    fun visibleRouteTracksLateBindingAndAReopenedThreadBeforeTheNextFrame() {
+    fun visibleVisitsTrackSelectionLifecycleAndReadRecovery() {
+        val visible = mutableStateOf(true)
         val model =
             compose.runOnIdle {
                 val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
@@ -93,7 +101,9 @@ class ConversationRouteTest {
             }
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
-            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+            OkouTheme {
+                ConversationRoute(model.history, CHAT_IN_PROJECT, list, visible = visible.value)
+            }
         }
         compose.onNodeWithText("Loading conversation…").assertExists()
         compose.waitUntil(10_000) {
@@ -122,6 +132,40 @@ class ConversationRouteTest {
         compose.onNodeWithText("Native history", substring = true).assertExists()
         compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 2 } }
         assertEquals(2, fixture.readRequests.get())
+        compose.runOnIdle { visible.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { model.history.refresh() }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+        }
+        compose.waitForIdle()
+        assertEquals(2, fixture.readRequests.get())
+        compose.runOnIdle { visible.value = true }
+        compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 3 } }
+        assertEquals(3, fixture.readRequests.get())
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 4 } }
+        assertEquals(4, fixture.readRequests.get())
+        compose.onNodeWithTag("conversation").performScrollToIndex(0)
+        compose.runOnIdle { visible.value = false }
+        compose.waitForIdle()
+        val successfulRead = fixture.historyMarkRead
+        fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
+        compose.runOnIdle { visible.value = true }
+        val readFailed = compose.activity.getString(R.string.history_read_failed)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(readFailed).assertExists()
+        compose.waitForIdle()
+        assertEquals(5, fixture.readRequests.get())
+        fixture.historyMarkRead = successfulRead
+        compose.onNodeWithText(compose.activity.getString(R.string.retry)).performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isEmpty()
+        }
+        assertEquals(6, fixture.readRequests.get())
     }
 
     @Test

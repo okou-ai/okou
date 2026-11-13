@@ -31,6 +31,7 @@ import {
   kotlinHistoryFixtureTypes,
 } from "./history-fixtures";
 import { kotlinTokens } from "./source-tokens";
+import { kotlinHistorySemanticsFixtureJson } from "./history-semantics-fixtures";
 import {
   kotlinFixtureJson,
   kotlinFixtureRoutes,
@@ -215,6 +216,10 @@ export function renderKotlinTestFiles(): ReadonlyMap<string, string> {
   files.set(
     "android/app/src/test/resources/api-bindings/chat-history.json",
     kotlinHistoryFixtureJson(),
+  );
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-history-semantics.json",
+    kotlinHistorySemanticsFixtureJson(),
   );
   return files;
 }

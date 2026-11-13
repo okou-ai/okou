@@ -58,8 +58,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         checkpoint.rows.filter { it.type == "input.automation" }.mapTo(hashSetOf()) { it.id }
     val rows = checkpoint.rows.filter { it.id !in revoked }
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
-    val cancellations =
-        rows.filter { it.type == "run.cancelled" }.mapNotNullTo(hashSetOf()) { it.runId }
+    val cancellations = rows.filter { it.type == "run.cancelled" }.associateBy { it.runId }
     val interrupted =
         rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
     val pending =
@@ -76,6 +75,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         rows.filterNot {
             it.type == "control.revoke" ||
                 it.type == "input.budget" ||
+                (it.type == "run.cancelled" && it.runId in interrupted) ||
                 (it.type == "input.rejected" && it.revokesId in automationInputs)
         }
     // Like Web, place an older run's late event with its run; queued inputs come last.
@@ -93,7 +93,11 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             visible.filter { it.id in queued }
     val messages =
         ordered.mapNotNull { row ->
-            val payload = row.payload
+            // Keep Web's stable interruption identity/position while preserving the real
+            // cancellation's content when its terminal row eventually arrives.
+            val payload =
+                (if (row.type == "control.interrupt") cancellations[row.runId] ?: row else row)
+                    .payload
             val blocks = mutableListOf<HistoryBlock>()
             val role =
                 when (row.type) {
@@ -135,19 +139,16 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         HistoryRole.System
                     }
                     "run.cancelled",
-                    "run.completed" -> {
+                    "run.completed",
+                    "control.interrupt" -> {
+                        if (row.type == "control.interrupt" && row.runId == null)
+                            return@mapNotNull null
                         payload?.text("content")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
                         }
                         payload?.text("error")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
                         }
-                        HistoryRole.Assistant
-                    }
-                    "control.interrupt" -> {
-                        // Web projects interruption as a stopped assistant outcome immediately.
-                        // A matching cancellation keeps its original content without a duplicate.
-                        if (row.runId == null || row.runId in cancellations) return@mapNotNull null
                         HistoryRole.Assistant
                     }
                     "usage.recorded" -> {

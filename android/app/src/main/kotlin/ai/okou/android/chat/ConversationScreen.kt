@@ -19,7 +19,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -44,25 +48,34 @@ fun ConversationRoute(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val actionColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    var visit by
+        remember(model, threadId, state.generation) {
+            mutableStateOf<ConversationReadSession?>(null)
+        }
     // Restored navigation can mount this route before the history resource selects its thread.
     DisposableEffect(model, threadId, state.generation, lifecycle, visible) {
-        fun update() =
-            model.setVisible(
-                threadId,
-                visible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
-            )
+        fun update() {
+            if (visible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                if (visit == null) visit = model.beginVisit(threadId, state.generation)
+            } else {
+                visit?.close()
+                visit = null
+            }
+        }
         val observer = LifecycleEventObserver { _, _ -> update() }
         lifecycle.addObserver(observer)
         update()
         onDispose {
             lifecycle.removeObserver(observer)
-            model.setVisible(threadId, false)
+            visit?.close()
+            visit = null
         }
     }
-    LaunchedEffect(model, state.generation, state.phase, state.confirmation, threadId, visible) {
-        if (visible && state.thread?.id == threadId && state.phase == HistoryPhase.Ready)
-            model.confirmDisplayed(threadId, state.confirmation)
+    val displayedVisit = visit
+    LaunchedEffect(displayedVisit, state.confirmation) {
+        state.confirmation?.let { displayedVisit?.confirmDisplayed(it) }
     }
+    val readState = visit?.readState?.collectAsStateWithLifecycle()?.value
     key(threadId) {
         val position = rememberLazyListState()
         LazyColumn(
@@ -110,7 +123,7 @@ fun ConversationRoute(
                 }
                 if (state.cacheUnavailable)
                     item { Text(stringResource(R.string.chat_cache_unavailable)) }
-                if (state.readFailed)
+                if (readState == HistoryReadState.Failed)
                     item {
                         Text(stringResource(R.string.history_read_failed))
                         TextButton(onClick = model::refresh, colors = actionColors) {

@@ -49,6 +49,8 @@ class ChatListApiFixture : Closeable {
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     val readRequests = java.util.concurrent.atomic.AtomicInteger()
     @Volatile
+    var historyMarkRead: () -> MockResponse = { jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""") }
+    @Volatile
     var historyDetail: () -> MockResponse = {
         jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":false}""")
     }
@@ -139,7 +141,7 @@ class ChatListApiFixture : Closeable {
                             "event-rows" -> historyRows(request)
                             "mark-read" -> {
                                 readRequests.incrementAndGet()
-                                jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                                historyMarkRead()
                             }
                             null -> historyDetail()
                             else -> MockResponse().setResponseCode(404)
