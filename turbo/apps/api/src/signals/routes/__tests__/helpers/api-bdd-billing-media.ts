@@ -9,7 +9,6 @@ import {
   billingDowngradeContract,
   billingInvoicesContract,
   billingPortalContract,
-  billingRedeemCodeContract,
   billingRedeemContract,
   billingRestoreContract,
   billingStatusContract,
@@ -17,7 +16,6 @@ import {
   type BillingInvoicesResponse,
   type BillingStatusResponse,
   type CreditCheckoutRequest,
-  type RedeemCodeRequest,
   type RedeemRequest,
 } from "@okouai/api-contracts/contracts/billing";
 import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
@@ -48,7 +46,6 @@ import { billingDowngradeRoutes } from "../../billing-downgrade";
 import { billingInvoicesRoutes } from "../../billing-invoices";
 import { billingPortalRoutes } from "../../billing-portal";
 import { billingRedeemRoutes } from "../../billing-redeem";
-import { billingRedeemCodeRoutes } from "../../billing-redeem-code";
 import { billingRestoreRoutes } from "../../billing-restore";
 import { billingStatusRoutes } from "../../billing-status";
 import { builtInGenerationRoutes } from "../../built-in-generation";
@@ -421,20 +418,6 @@ export function createBillingMediaApi(context: TestContext) {
           body,
         }),
         [200],
-      );
-    },
-
-    async redeemCode(
-      actor: ApiTestUser,
-      body: RedeemCodeRequest,
-      statuses: readonly (200 | 400 | 401 | 403 | 500 | 503)[],
-    ) {
-      const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
-        billingRedeemCodeContract,
-      );
-      return await accept(
-        client.create({ headers: authenticate(actor), body }),
-        statuses,
       );
     },
 
