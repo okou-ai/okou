@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../components/loading-skeleton.tsx";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
@@ -97,16 +98,23 @@ function ComposerModelPanelBody({
   });
   if (modelsResponse === undefined || catalog === undefined) {
     return (
-      <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
+      <>
         {modelsLoadable.state === "loading" ||
-        catalogLoadable.state === "loading"
-          ? t(($) => {
+        catalogLoadable.state === "loading" ? (
+          <LoadingSkeleton
+            className="px-2 py-3"
+            label={t(($) => {
               return $.settings.models.picker.loading;
-            })
-          : t(($) => {
+            })}
+          />
+        ) : (
+          <p role="alert" className="px-2 py-3 text-sm text-muted-foreground">
+            {t(($) => {
               return $.settings.models.picker.loadError;
             })}
-      </p>
+          </p>
+        )}
+      </>
     );
   }
   const state = resolveModelFirstModelPickerState({

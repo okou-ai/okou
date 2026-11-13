@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { useLoadable, useSet, type LoadableState } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -647,11 +648,13 @@ function DirectorySourceStatus({
   return state === "hasError" ? (
     <LoadErrorRow message={message} />
   ) : (
-    <p role="status" className="py-4 text-sm text-muted-foreground">
-      {t(($) => {
+    <LoadingSkeleton
+      label={t(($) => {
         return $.connectors.catalog.directory.loading;
       })}
-    </p>
+      variant="cards"
+      className="py-4"
+    />
   );
 }
 
@@ -815,11 +818,13 @@ function useDirectorySshDiscovery(search: string, category: string | null) {
   const sshStatus = !matchesSsh ? null : sshSummary.state === "hasError" ? (
     <SshLoadError />
   ) : sshSummary.state === "loading" ? (
-    <p role="status" className="text-sm text-muted-foreground">
-      {t(($) => {
+    <LoadingSkeleton
+      label={t(($) => {
         return $.ssh.loading;
       })}
-    </p>
+      variant="cards"
+      count={1}
+    />
   ) : null;
   return {
     showSsh: sshAvailable && matchesSsh,
@@ -845,11 +850,13 @@ function useDirectoryVncDiscovery(search: string, category: string | null) {
   const vncStatus = !matchesVnc ? null : vncSummary.state === "hasError" ? (
     <VncLoadError />
   ) : vncSummary.state === "loading" ? (
-    <p role="status" className="text-sm text-muted-foreground">
-      {t(($) => {
+    <LoadingSkeleton
+      label={t(($) => {
         return $.vnc.loading;
       })}
-    </p>
+      variant="cards"
+      count={1}
+    />
   ) : null;
   return {
     showVnc: vncAvailable && matchesVnc,

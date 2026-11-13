@@ -483,8 +483,12 @@ test("A collapsed requirement distinguishes pending, failed and unavailable look
     name: "Edit custom connector",
   });
   const settings = networkAdvancedSettings(dialog);
-  await within(settings.summary).findByText("Loading Cloudflare Access…");
-  expect(settings.field).toHaveTextContent("Loading Cloudflare Access…");
+  await within(settings.summary).findByRole("status", {
+    name: "Loading Cloudflare Access…",
+  });
+  expect(
+    within(settings.field).getByLabelText("Loading Cloudflare Access…"),
+  ).toBeInTheDocument();
   await fill(within(dialog).getByLabelText("Display name"), "Draft kept");
   response.resolve();
   await within(settings.summary).findByText(
@@ -561,7 +565,9 @@ test("A configuration load failure and rejected save preserve the connector draf
     name: "New custom connector",
   });
   expandNetworkSettings(dialog);
-  await within(dialog).findByText("Loading Cloudflare Access…");
+  await within(dialog).findAllByRole("status", {
+    name: "Loading Cloudflare Access…",
+  });
   await fill(within(dialog).getByLabelText("Display name"), "Draft survives");
   await fill(
     within(dialog).getByLabelText(/Prefixes/u),

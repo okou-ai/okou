@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui";
+import { Button, Skeleton, surfaceVariants } from "@okouai/ui";
 import {
   myOkouSignals$,
   myOkouSectionRef$,
@@ -28,8 +28,32 @@ export function MyOkouSection() {
 }
 
 function LoadingInstructions() {
+  const { t } = useTranslation();
   return (
-    <div className="mx-auto h-64 w-full max-w-[900px] animate-pulse rounded-lg bg-muted/30" />
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={t(($) => {
+        return $.settings.shared.loading;
+      })}
+    >
+      <div
+        aria-hidden="true"
+        className={surfaceVariants({
+          className: "overflow-hidden",
+        })}
+      >
+        <div className="min-h-[200px] space-y-4 px-4 py-5">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-5/6" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+        <div className="mx-4 border-t border-t-gray-400 pt-2 pb-3">
+          <Skeleton className="h-4 w-28" />
+        </div>
+      </div>
+    </div>
   );
 }
 

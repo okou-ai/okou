@@ -36,7 +36,7 @@ export interface BrowserUserActionInputField {
 }
 
 export interface BrowserUserActionInputTarget {
-  readonly window?: BrowserWindowContext;
+  readonly window: BrowserWindowContext;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly siteOrigin: string;
@@ -283,7 +283,7 @@ function httpOrigin(value: unknown): value is string {
   }
 }
 
-function validInputWindow(value: unknown): boolean {
+function validInputWindow(value: unknown): value is BrowserWindowContext {
   const window = objectValue(value);
   return (
     !!window &&
@@ -327,8 +327,8 @@ function decodeInputTarget(
   ) {
     return null;
   }
-  const window = objectValue(target.window);
-  if (target.window !== undefined && !validInputWindow(target.window)) {
+  const window = target.window;
+  if (!validInputWindow(window)) {
     return null;
   }
   const fields = target.fields.map(decodeField);
@@ -360,14 +360,10 @@ function decodeInputTarget(
   }
   return {
     pageTargetId: target.pageTargetId,
-    ...(window
-      ? {
-          window: {
-            instanceId: String(window.instanceId),
-            primaryWindowId: Number(window.primaryWindowId),
-          },
-        }
-      : {}),
+    window: {
+      instanceId: window.instanceId,
+      primaryWindowId: window.primaryWindowId,
+    },
     documentLoaderId: target.documentLoaderId,
     siteOrigin: target.siteOrigin,
     pageUrlHash: target.pageUrlHash,

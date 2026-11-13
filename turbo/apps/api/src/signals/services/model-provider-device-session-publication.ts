@@ -5,8 +5,7 @@ import { sql, type SQL } from "drizzle-orm";
 export interface DeviceAuthSessionPublication {
   readonly id: string;
   readonly userId: string;
-  readonly source:
-    "claude-code-device-auth" | "codex-device-auth" | "atom-subscription-grant";
+  readonly source: "claude-code-device-auth" | "codex-device-auth";
 }
 
 /** Pure SQL; the credential-owning command executes this before committing. */

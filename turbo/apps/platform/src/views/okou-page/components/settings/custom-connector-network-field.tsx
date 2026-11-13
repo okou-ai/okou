@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   Select,
@@ -102,7 +103,11 @@ function ConnectorNetworkSummary({
             {" · "}
           </>
         )}
-        {label}
+        {selection.state === "loading" ? (
+          <LoadingSkeleton variant="text" label={label} />
+        ) : (
+          label
+        )}
       </span>
     </span>
   );
@@ -143,12 +148,10 @@ function ConnectorNetworkLabel({ enabled }: { readonly enabled: boolean }) {
 function ConnectorNetworkDescription({
   enabled,
   unavailable,
-  loading,
   loadFailed,
 }: {
   readonly enabled: boolean;
   readonly unavailable: boolean;
-  readonly loading: boolean;
   readonly loadFailed: boolean;
 }) {
   const { t } = useTranslation();
@@ -167,13 +170,6 @@ function ConnectorNetworkDescription({
               : $.cloudflareAccess.connectorHint;
         })}
       </p>
-      {enabled && loading && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.loading;
-          })}
-        </p>
-      )}
       {enabled && loadFailed && (
         <p role="alert" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -191,12 +187,16 @@ function ConnectorNetworkSelect({
   onChange,
   disabled,
   retryOnOpen,
+  loading,
+  loadingLabel,
 }: {
   readonly items: readonly { readonly value: string; readonly label: string }[];
   readonly configId: string;
   readonly onChange: (id: string) => void;
   readonly disabled: boolean;
   readonly retryOnOpen: boolean;
+  readonly loading: boolean;
+  readonly loadingLabel: string;
 }) {
   const reload = useSet(invalidateCloudflareAccess$);
   return (
@@ -221,13 +221,21 @@ function ConnectorNetworkSelect({
         className="w-full"
         aria-describedby="custom-connector-cloudflare-description"
       >
-        <SelectValue />
+        <SelectValue>
+          {loading ? (
+            <LoadingSkeleton variant="text" label={loadingLabel} />
+          ) : undefined}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {items.map((item) => {
           return (
             <SelectItem key={item.value} value={item.value}>
-              {item.label}
+              {loading && item.label === loadingLabel ? (
+                <LoadingSkeleton variant="text" label={loadingLabel} />
+              ) : (
+                item.label
+              )}
             </SelectItem>
           );
         })}
@@ -326,11 +334,12 @@ export function CustomConnectorNetworkField({
           onChange={onChange}
           disabled={disabled}
           retryOnOpen={loadFailed}
+          loading={enabled && loading}
+          loadingLabel={missingLabel}
         />
         <ConnectorNetworkDescription
           enabled={enabled}
           unavailable={selection.state === "unavailable"}
-          loading={loading}
           loadFailed={loadFailed}
         />
       </div>

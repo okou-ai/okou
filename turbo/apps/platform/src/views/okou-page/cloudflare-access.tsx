@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import type { ReactNode, ClipboardEvent } from "react";
 import {
@@ -486,11 +487,12 @@ function CloudflareAccessDeletionReview() {
   return (
     <>
       {preview.state === "loading" && (
-        <p role="status">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.cloudflareAccess.loading;
           })}
-        </p>
+          variant="text"
+        />
       )}
       {preview.state === "hasError" && (
         <p role="alert">

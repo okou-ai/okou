@@ -4,7 +4,7 @@ import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 //   pricing. Full provider matrices still stay out of this BDD slice.
 // - Billing settlement needs Stripe webhooks or checkout completion that grants
 //   entitlements. This file asserts the route-visible checkout, portal, invoice,
-//   redeem, status, and usage surfaces without direct database fixtures.
+//   campaign redemption, status, and usage surfaces without direct database fixtures.
 // - Banking success needs a current Okou run, banking connection, account grant,
 //   and provider account state. This file covers the public credential gate and
 //   records the success-chain gap instead of seeding banking tables.
@@ -75,7 +75,7 @@ function checkoutUrls() {
 }
 
 describe("BILL-01: billing status and Stripe-backed actions through public API", () => {
-  it("chains status, checkout, portal, invoices, redeem, and admin errors without hidden DB state", async () => {
+  it("chains status, checkout, portal, invoices, campaigns, and admin errors without hidden DB state", async () => {
     const { api, admin, member } = testActors();
     await completeVisibleOnboarding(admin);
 
@@ -263,22 +263,6 @@ describe("BILL-01: billing status and Stripe-backed actions through public API",
       status: "ready",
       checkoutUrl: "https://checkout.stripe.test/campaign",
     });
-
-    context.mocks.clerk.m2m.createToken.mockResolvedValue({
-      token: "m2m_bdd_token",
-    });
-    server.use(
-      http.post("https://atom.example.test/api/redeem-codes/consume", () => {
-        return HttpResponse.json({ code: "invalid" }, { status: 404 });
-      }),
-    );
-    const invalidCode = await api.redeemCode(
-      admin,
-      { code: "BAD-CODE" },
-      [400],
-    );
-    expectApiError(invalidCode.body);
-    expect(invalidCode.body.error.message).toBe("Invalid redeem code");
 
     const finalStatus = await api.readBillingStatus(admin);
     expect(finalStatus.credits).toBe(0);

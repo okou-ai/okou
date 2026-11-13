@@ -123,6 +123,9 @@ MAX_AUTH_BASE_REQUEST_TARGET_BYTES = 64 * 1024
 # resolved keys, rather than only the smaller merged output.
 MAX_QUERY_AUTH_REQUEST_TARGET_BYTES = 64 * 1024
 MAX_QUERY_AUTH_QUERY_PAIRS = 8 * 1024
+# Match customConnectorNetworkRequestSchema.url: JavaScript counts UTF-16 units,
+# including the complete trusted authority, rather than raw target bytes.
+MAX_NETWORK_ADMISSION_URL_UTF16_UNITS = 65_536
 _FIREWALL_AUTH_IDENTITY_CACHE_KEY = "_firewallAuthIdentityCache"
 
 
@@ -132,6 +135,10 @@ class _QueryAuthRequestTargetTooLargeError(ValueError):
 
 class _QueryAuthQueryTooManyPairsError(ValueError):
     """The incoming segments and resolved keys exceed query injection's budget."""
+
+
+class _NetworkAdmissionUrlTooLargeError(ValueError):
+    """The trusted URL cannot fit the network-admission API contract."""
 
 
 @dataclass(frozen=True)
@@ -209,9 +216,18 @@ async def _resolve_network_admission(
     intent = context.allow.api_entry.get("networkIntent")
     if intent is None:
         return {}
+    # UTF-8/surrogateescape decoding consumes at most three raw bytes per
+    # UTF-16 unit (astral code points use two units). Bound additional admission
+    # decoding/allocation first, then measure the full URL exactly. General
+    # firewall classification and native HTTP-head buffering precede this check.
+    if len(flow.request.data.path) > 3 * MAX_NETWORK_ADMISSION_URL_UTF16_UNITS:
+        raise _NetworkAdmissionUrlTooLargeError
     # Transparent requests retain the original IP; admission matches the
     # validated authority used by the custom connector's firewall.
-    identity = (flow.request.method, get_trusted_authority(flow).url, context.allow.api_entry["id"])
+    url = get_trusted_authority(flow).url
+    if len(url.encode("utf-16-le", "surrogatepass")) > 2 * MAX_NETWORK_ADMISSION_URL_UTF16_UNITS:
+        raise _NetworkAdmissionUrlTooLargeError
+    identity = (flow.request.method, url, context.allow.api_entry["id"])
     retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
     if isinstance(retained, _NetworkAdmission):
         if retained.identity != identity:
@@ -1268,6 +1284,17 @@ def _set_firewall_auth_resolution_failure(
     exc: Exception,
 ) -> FirewallAuthHandlingResult:
     """Map auth-resolution exceptions to local responses and metadata."""
+    if isinstance(exc, _NetworkAdmissionUrlTooLargeError):
+        _set_matched_firewall_failure_response(
+            flow,
+            status=414,
+            action="ALLOW",
+            error_code="network_admission_url_too_large",
+            message="Network admission URL is too large",
+            permission=context.allow.name,
+        )
+        return FirewallAuthHandlingResult.LOCAL_RESPONSE
+
     if isinstance(exc, FirewallAuthFetchSaturatedError):
         flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
         log_proxy_entry(

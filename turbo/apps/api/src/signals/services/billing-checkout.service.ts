@@ -370,7 +370,7 @@ export function tierForKnownPlanPrice(
   if (checkoutTier) {
     return checkoutTier;
   }
-  return env("OKOU_PRICE_CUSTOM")?.includes(price.id) ? "custom" : null;
+  return null;
 }
 
 export function knownBillingPlanPriceItem<

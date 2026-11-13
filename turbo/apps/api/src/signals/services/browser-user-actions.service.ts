@@ -27,10 +27,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  browserSessionInstances,
-  browserUserActionRequests,
-} from "@okouai/db/schema/browser-session";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import {
   and,
   type SQLWrapper,
@@ -40,11 +37,9 @@ import {
   gt,
   inArray,
   isNotNull,
-  isNull,
   lt,
   lte,
   not,
-  or,
   sql,
 } from "drizzle-orm";
 import { command } from "ccstate";
@@ -467,26 +462,10 @@ const requestHasLiveBrowser$ = command(
     if (!payload) {
       return false;
     }
-    if (payload.target.window) {
-      const [live] = await db
-        .select({ id: browserChatSessions.chatThreadId })
-        .from(browserChatSessions)
-        .where(sharedInputWindowCondition(row, payload.target.window, now));
-      return live !== undefined;
-    }
     const [live] = await db
-      .select({ providerSessionId: browserSessionInstances.providerSessionId })
-      .from(browserSessionInstances)
-      .where(
-        and(
-          eq(browserSessionInstances.providerSessionId, row.providerSessionId),
-          eq(browserSessionInstances.chatThreadId, row.chatThreadId),
-          eq(browserSessionInstances.status, "active"),
-          gt(browserSessionInstances.timeoutAt, now),
-          gt(browserSessionInstances.idleExpiresAt, now),
-        ),
-      )
-      .limit(1);
+      .select({ id: browserChatSessions.chatThreadId })
+      .from(browserChatSessions)
+      .where(sharedInputWindowCondition(row, payload.target.window, now));
     return live !== undefined;
   },
 );
@@ -494,45 +473,19 @@ const requestHasLiveBrowser$ = command(
 const touchExactProvider$ = command(
   async ({ set }, row: RequestRow, signal: AbortSignal): Promise<boolean> => {
     const db = set(writeDb$);
-    const now = nowDate();
     const payload = decodePayload(row);
     if (!payload) {
       return false;
     }
-    if (payload.target.window) {
-      const leaseTime = nowDate();
-      const [touched] = await db
-        .update(browserChatSessions)
-        .set({
-          expiresAt: sql`least(greatest(${browserChatSessions.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserChatSessions.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
-          updatedAt: leaseTime,
-        })
-        .where(
-          sharedInputWindowCondition(row, payload.target.window, leaseTime),
-        )
-        .returning({ id: browserChatSessions.chatThreadId });
-      signal.throwIfAborted();
-      return touched !== undefined;
-    }
+    const leaseTime = nowDate();
     const [touched] = await db
-      .update(browserSessionInstances)
+      .update(browserChatSessions)
       .set({
-        lastTouchedAt: now,
-        idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-        updatedAt: now,
+        expiresAt: sql`least(greatest(${browserChatSessions.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserChatSessions.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
+        updatedAt: leaseTime,
       })
-      .where(
-        and(
-          eq(browserSessionInstances.providerSessionId, row.providerSessionId),
-          eq(browserSessionInstances.chatThreadId, row.chatThreadId),
-          eq(browserSessionInstances.status, "active"),
-          gt(browserSessionInstances.timeoutAt, now),
-          gt(browserSessionInstances.idleExpiresAt, now),
-        ),
-      )
-      .returning({
-        providerSessionId: browserSessionInstances.providerSessionId,
-      });
+      .where(sharedInputWindowCondition(row, payload.target.window, leaseTime))
+      .returning({ id: browserChatSessions.chatThreadId });
     signal.throwIfAborted();
     return touched !== undefined;
   },
@@ -620,33 +573,12 @@ const convertClosedBrowserUserActions$ = command(
         payload: browserUserActionRequests.payload,
         providerSessionId: browserUserActionRequests.providerSessionId,
         status: browserUserActionRequests.status,
-        finishedAt:
-          sql`CASE WHEN ${browserSessionInstances.status} = 'stopped' AND ${browserSessionInstances.finishedAt} IS NOT NULL THEN ${browserSessionInstances.finishedAt} ELSE ${sql.param(now, browserSessionInstances.finishedAt)}::timestamp END`
-            .mapWith(browserSessionInstances.finishedAt)
-            .as("finished_at"),
       })
       .from(browserUserActionRequests)
-      .leftJoin(
-        browserSessionInstances,
-        eq(
-          browserSessionInstances.providerSessionId,
-          browserUserActionRequests.providerSessionId,
-        ),
-      )
       .where(
         and(
           inArray(browserUserActionRequests.status, ["pending", "applying"]),
-          or(
-            and(
-              isNotNull(storedInputWindow),
-              not(storedSharedInputIsLive(now)),
-            ),
-            and(
-              isNull(storedInputWindow),
-              eq(browserSessionInstances.status, "stopped"),
-              isNotNull(browserSessionInstances.finishedAt),
-            ),
-          ),
+          not(storedSharedInputIsLive(now)),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -654,10 +586,7 @@ const convertClosedBrowserUserActions$ = command(
     maintenanceSignal.throwIfAborted();
 
     for (const candidate of candidates) {
-      if (
-        candidate.finishedAt === null ||
-        (candidate.status !== "pending" && candidate.status !== "applying")
-      ) {
+      if (candidate.status !== "pending" && candidate.status !== "applying") {
         throw new Error("Expected a closed Browser user-action candidate");
       }
       const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
@@ -665,7 +594,7 @@ const convertClosedBrowserUserActions$ = command(
         .update(browserUserActionRequests)
         .set({
           status: nextStatus,
-          completedAt: candidate.finishedAt,
+          completedAt: now,
         })
         .where(
           and(
@@ -691,11 +620,7 @@ const convertClosedBrowserUserActions$ = command(
         );
         maintenanceSignal.throwIfAborted();
       }
-      if (
-        updated &&
-        candidate.payload.kind === "input" &&
-        candidate.payload.target.fields[0]?.fieldKind === "file"
-      ) {
+      if (updated && candidate.payload.target.fields[0]?.fieldKind === "file") {
         const cleanup = await settle(
           set(
             deleteTemporaryBrowserUserActionFiles$,
@@ -710,27 +635,6 @@ const convertClosedBrowserUserActions$ = command(
       maintenanceSignal.throwIfAborted();
     }
     return candidates.length;
-  },
-);
-
-const deleteRetiredDirectBrowserUserActions$ = command(
-  async ({ set }, limit: number, signal: AbortSignal): Promise<number> => {
-    const db = set(writeDb$);
-    const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
-    const candidates = db
-      .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
-      .from(browserUserActionRequests)
-      .where(retiredKind)
-      .orderBy(asc(browserUserActionRequests.requestTokenHash))
-      .limit(limit);
-    const removed = await db
-      .delete(browserUserActionRequests)
-      .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
-      .returning({
-        requestTokenHash: browserUserActionRequests.requestTokenHash,
-      });
-    signal.throwIfAborted();
-    return removed.length;
   },
 );
 
@@ -753,30 +657,12 @@ const deleteExpiredBrowserUserActions$ = command(
         completedAt: browserUserActionRequests.completedAt,
       })
       .from(browserUserActionRequests)
-      .leftJoin(
-        browserSessionInstances,
-        eq(
-          browserSessionInstances.providerSessionId,
-          browserUserActionRequests.providerSessionId,
-        ),
-      )
       .where(
         and(
           inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
           isNotNull(browserUserActionRequests.completedAt),
           lte(browserUserActionRequests.completedAt, cutoff),
-          or(
-            and(
-              isNotNull(storedInputWindow),
-              not(storedSharedInputIsLive(nowDate())),
-            ),
-            and(
-              isNull(storedInputWindow),
-              eq(browserSessionInstances.status, "stopped"),
-              isNotNull(browserSessionInstances.finishedAt),
-              lte(browserSessionInstances.finishedAt, cutoff),
-            ),
-          ),
+          not(storedSharedInputIsLive(nowDate())),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -790,10 +676,7 @@ const deleteExpiredBrowserUserActions$ = command(
       ) {
         throw new Error("Expected a retained Browser user-action candidate");
       }
-      if (
-        candidate.payload.kind === "input" &&
-        candidate.payload.target.fields[0]?.fieldKind === "file"
-      ) {
+      if (candidate.payload.target.fields[0]?.fieldKind === "file") {
         const cleanup = await settle(
           set(
             deleteTemporaryBrowserUserActionFiles$,
@@ -830,11 +713,6 @@ const deleteExpiredBrowserUserActions$ = command(
 
 export const reconcileBrowserUserActions$ = command(
   async ({ set }, limit: number, signal: AbortSignal): Promise<number> => {
-    const retired = await set(
-      deleteRetiredDirectBrowserUserActions$,
-      limit,
-      signal,
-    );
     const checkedForConversion = await set(
       convertClosedBrowserUserActions$,
       limit,
@@ -845,7 +723,7 @@ export const reconcileBrowserUserActions$ = command(
       limit,
       signal,
     );
-    return retired + checkedForConversion + checkedForCleanup;
+    return checkedForConversion + checkedForCleanup;
   },
 );
 
@@ -1646,7 +1524,7 @@ function submittedValueMatchesField(
 }
 
 function submittedValues(
-  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  payload: BrowserUserActionPayload,
   input: BrowserUserActionApplyRequest,
 ): ServiceResult<Map<string, SubmittedBrowserValue>> {
   const allowed = new Map(
@@ -1715,14 +1593,14 @@ function submittedValues(
   };
 }
 
-function exactInputTarget(
-  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
-): {
+function exactInputTarget(payload: BrowserUserActionPayload): {
+  readonly primaryWindowId: number;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrlHash: string;
 } {
   return {
+    primaryWindowId: payload.target.window.primaryWindowId,
     pageTargetId: payload.target.pageTargetId,
     documentLoaderId: payload.target.documentLoaderId,
     pageUrlHash: payload.target.pageUrlHash,
@@ -1738,7 +1616,7 @@ type BrowserInputInspection =
 
 async function inspectPendingBrowserUserAction(
   row: RequestRow,
-  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  payload: BrowserUserActionPayload,
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserInputInspection>> {
   const attemptId = randomUUID();
@@ -1760,9 +1638,6 @@ async function inspectPendingBrowserUserAction(
       provider.value.cdpUrl,
       {
         ...exactInputTarget(payload),
-        ...(payload.target.window
-          ? { primaryWindowId: payload.target.window.primaryWindowId }
-          : {}),
         fields: payload.target.fields.map((field) => {
           return {
             backendNodeId: field.backendNodeId,
@@ -1806,9 +1681,6 @@ export const preflightBrowserUserAction$ = command(
         "Browser user-action request payload is unavailable",
         "BROWSER_USER_ACTION_UNAVAILABLE",
       );
-    }
-    if (payload.kind !== "input") {
-      return conflict("This Browser request does not accept input values");
     }
     if (located.status !== "pending") {
       return conflict("Browser input is no longer pending");
@@ -1946,7 +1818,7 @@ const applyClaimedBrowserUserAction$ = command(
   async (
     { set },
     claimed: RequestRow,
-    payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+    payload: BrowserUserActionPayload,
     submission: {
       readonly values: ReadonlyMap<string, SubmittedBrowserValue>;
       readonly fileContents:
@@ -1984,10 +1856,7 @@ const applyClaimedBrowserUserAction$ = command(
       await set(restorePending$, claimed.requestTokenHash);
       return providerFailure(new Error("Browser provider is not active"));
     }
-    if (
-      payload.target.window &&
-      !(await set(requestHasLiveBrowser$, claimed))
-    ) {
+    if (!(await set(requestHasLiveBrowser$, claimed))) {
       const terminal = await set(finalize$, claimed.requestTokenHash, "stale");
       return terminal
         ? { kind: "ok", value: terminal }
@@ -1998,9 +1867,6 @@ const applyClaimedBrowserUserAction$ = command(
         provider.value.cdpUrl,
         {
           ...target,
-          ...(payload.target.window
-            ? { primaryWindowId: payload.target.window.primaryWindowId }
-            : {}),
           fields: payload.target.fields.map((field) => {
             return browserApplyField(
               field,
@@ -2040,7 +1906,6 @@ const applyClaimedBrowserUserAction$ = command(
       finalize$,
       claimed.requestTokenHash,
       operation.value === "succeeded" &&
-        payload.target.window &&
         !(await set(requestHasLiveBrowser$, claimed))
         ? "uncertain"
         : operation.value,
@@ -2075,9 +1940,6 @@ export const applyBrowserUserAction$ = command(
         "Browser user-action request payload is unavailable",
         "BROWSER_USER_ACTION_UNAVAILABLE",
       );
-    }
-    if (payload.kind !== "input") {
-      return conflict("This Browser request does not accept input values");
     }
     if (located.status !== "pending") {
       return conflict("Browser input has already been claimed");

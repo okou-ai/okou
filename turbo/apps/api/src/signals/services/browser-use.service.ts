@@ -806,12 +806,11 @@ async function browserUseInputWindowMatches(
   socket: WebSocket,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
   return (
-    target.primaryWindowId === undefined ||
     (await nativeWindowForTarget(
       socket,
       target.pageTargetId,
@@ -2393,7 +2392,7 @@ async function validateBrowserUseUserActionOnSocket(
   socket: WebSocket,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
@@ -2522,7 +2521,7 @@ export async function validateBrowserUseUserAction(
   cdpUrl: string,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
@@ -2581,7 +2580,7 @@ export interface BrowserUseUserActionApplyField {
 }
 
 export interface BrowserUseUserActionExactTarget {
-  readonly primaryWindowId?: number;
+  readonly primaryWindowId: number;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrlHash: string;

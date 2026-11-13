@@ -5,7 +5,6 @@ import {
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  ChevronDown,
   ChevronRight,
   Ellipsis,
   Folder,
@@ -282,7 +281,6 @@ function ProjectTrigger({
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
   const stateId = `project-state-${layout}-${project.id}`;
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -321,9 +319,12 @@ function ProjectTrigger({
           className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
           folderClassName="opacity-70"
         />
-        <Chevron
+        <ChevronRight
           size={16}
-          className="hidden opacity-70 md:group-hover/project:block group-focus-visible/project-fold:block"
+          className={cn(
+            "hidden opacity-70 md:group-hover/project:block group-focus-visible/project-fold:block motion-safe:transition-transform motion-safe:duration-[180ms] motion-safe:ease-out",
+            expanded && "rotate-90",
+          )}
         />
       </span>
       <span className="truncate">{projectNameParts(project.name).text}</span>

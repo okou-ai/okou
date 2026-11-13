@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { ArrowRight } from "lucide-react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -276,11 +277,12 @@ function ScopeImpactContent({ busy }: { readonly busy: boolean }) {
       </p>
       <PrivateNetworkHostReferences config={pending.config} />
       {impact.state === "loading" && (
-        <p role="status">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.remoteNetworkScope.reviewLoading;
           })}
-        </p>
+          variant="text"
+        />
       )}
       {impact.state !== "loading" && !preview && (
         <p role="alert">

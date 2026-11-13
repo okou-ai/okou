@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2, Plus } from "lucide-react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -225,15 +226,22 @@ export function QuestConnectorPicker({
   // empty window with a rule under it.
   if (connectors.length === 0) {
     return (
-      <p className="rounded-xl bg-state-hover px-4 py-6 text-center text-[13px] text-muted-foreground">
-        {catalogLoadable.state === "hasError"
-          ? t(($) => {
-              return $.chat.agentPage.getStarted.intro.connector.pickerFailed;
-            })
-          : t(($) => {
+      <>
+        {catalogLoadable.state !== "hasError" ? (
+          <LoadingSkeleton
+            className="px-4 py-6"
+            label={t(($) => {
               return $.chat.agentPage.getStarted.intro.connector.pickerLoading;
             })}
-      </p>
+          />
+        ) : (
+          <p role="alert" className="px-4 py-6 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.intro.connector.pickerFailed;
+            })}
+          </p>
+        )}
+      </>
     );
   }
 

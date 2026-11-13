@@ -3,17 +3,37 @@ import {
   type StripeClient,
   type StripeProductRef,
 } from "../external/stripe-client";
-import { isConcurrencyPriceId } from "./org-concurrency-entitlements.service";
 import { settle } from "../utils";
+import { isConcurrencyPriceId } from "./org-concurrency-entitlements.service";
 
 /** Historical Stripe objects remain replayable, but cannot grant live billing benefits. */
-export function isArchivedUsageAllowanceMetadata(
+export function isArchivedBillingMetadata(
   metadata: Readonly<Record<string, string>> | null | undefined,
 ): boolean {
   return (
     metadata?.purpose === "usage_allowance" ||
     metadata?.type === "usage_allowance" ||
-    metadata?.source === "atom_usage_allowance"
+    metadata?.source === "atom_usage_allowance" ||
+    metadata?.purpose === "atom_grant" ||
+    metadata?.type === "atom_grant" ||
+    metadata?.purpose === "custom_plan_subscription" ||
+    metadata?.type === "custom_plan_subscription" ||
+    metadata?.tier === "custom" ||
+    metadata?.planId === "custom"
+  );
+}
+
+/** Retired grant issuers cannot deliver new plans or credits. Existing bound
+ * subscriptions still use the normal update/deletion lifecycle. */
+export function isRetiredBillingIssuanceMetadata(
+  metadata: Readonly<Record<string, string>> | null | undefined,
+): boolean {
+  return (
+    isArchivedBillingMetadata(metadata) ||
+    metadata?.source === "atom_entitlement" ||
+    metadata?.source === "atom_redeem_code" ||
+    metadata?.source === "atom_custom_credits" ||
+    metadata?.source === "atom_usage_pack_credits"
   );
 }
 
@@ -28,13 +48,13 @@ interface ArchivedSubscriptionIdentity {
 export function archivedSubscriptionHasSurvivingPlan(
   subscription: ArchivedSubscriptionIdentity,
 ): boolean {
-  return !isArchivedUsageAllowanceMetadata(subscription.metadata);
+  return !isArchivedBillingMetadata(subscription.metadata);
 }
 
 export function archivedSubscriptionHasSurvivingComponents(
   subscription: ArchivedSubscriptionIdentity,
 ): boolean {
-  if (!isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+  if (!isArchivedBillingMetadata(subscription.metadata)) {
     return true;
   }
   // The historical shared add-on had an independent configured concurrency item.
@@ -87,7 +107,7 @@ export async function survivingStripeBillingInvoiceLines<
   signal: AbortSignal,
 ): Promise<T[]> {
   const archivalHeader = metadataCandidates.some(
-    isArchivedUsageAllowanceMetadata,
+    isRetiredBillingIssuanceMetadata,
   );
   const allowancePrices = new Set(
     metadataCandidates.flatMap((metadata) => {
@@ -98,7 +118,7 @@ export async function survivingStripeBillingInvoiceLines<
   for (const line of lines) {
     const price = billingInvoiceLinePrice(line);
     if (
-      isArchivedUsageAllowanceMetadata(line.metadata) ||
+      isRetiredBillingIssuanceMetadata(line.metadata) ||
       (price && allowancePrices.has(price.id)) ||
       (archivalHeader && (!price || !isConcurrencyPriceId(price.id)))
     ) {
@@ -145,7 +165,7 @@ export async function isExcludedStripeBillingPrice(
   return (
     product === null ||
     "deleted" in product ||
-    isArchivedUsageAllowanceMetadata(product.metadata)
+    isRetiredBillingIssuanceMetadata(product.metadata)
   );
 }
 
