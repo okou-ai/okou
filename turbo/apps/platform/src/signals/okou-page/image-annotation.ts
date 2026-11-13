@@ -175,7 +175,13 @@ export interface AnnotationTarget {
   readonly annotations: ImageAnnotation | null;
 }
 
-/** Stores the marks the editor attaches to the target with this key. */
+/**
+ * Stores the marks the editor attaches to the target with this key.
+ *
+ * The marks must be stored by the time the call returns; the promise covers
+ * only the work that finishes them, such as producing and persisting the copy
+ * the agent reads. The editor closes on the call rather than on that promise.
+ */
 export type CommitAnnotationTarget = Command<
   Promise<void>,
   [key: string, annotations: ImageAnnotation | null, signal: AbortSignal]
@@ -1100,11 +1106,18 @@ function createCommitAnnotationSignal(
     const annotations = isAnnotationMeaningful(current.present)
       ? current.present
       : null;
-    await set(commitTarget$, current.target.key, annotations, signal);
-    signal.throwIfAborted();
-    if (get(session.internal.session$) === current) {
-      set(session.signals.closeAnnotationEditor$);
-    }
+    const finishing = set(
+      commitTarget$,
+      current.target.key,
+      annotations,
+      signal,
+    );
+    // The marks are on the target now. Flattening and uploading the copy goes
+    // on without the editor: holding the window open across a full-resolution
+    // re-encode and an upload made attaching look frozen, and the send path
+    // already waits for the copy.
+    set(session.signals.closeAnnotationEditor$);
+    await finishing;
   });
 }
 

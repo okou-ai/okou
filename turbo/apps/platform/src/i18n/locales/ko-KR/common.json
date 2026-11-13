@@ -478,8 +478,10 @@
       "inkLabel": "색상 {{color}}",
       "notePlaceholder": "무엇을 바꿀까요?",
       "open": "주석",
+      "preparingCopy": "{{filename}}의 표시된 사본을 준비하는 중",
       "redo": "다시 실행",
       "removeMark": "표시 삭제",
+      "retryCopy": "{{filename}}의 표시된 사본 다시 시도",
       "subtitle_other": "표시 {{count}}개",
       "textPlaceholder": "여기에 입력",
       "tools": {

@@ -478,8 +478,10 @@
       "inkLabel": "Warna {{color}}",
       "notePlaceholder": "Apa yang harus diubah?",
       "open": "Anotasi",
+      "preparingCopy": "Menyiapkan salinan bertanda {{filename}}",
       "redo": "Ulangi",
       "removeMark": "Hapus tanda",
+      "retryCopy": "Coba lagi salinan bertanda {{filename}}",
       "subtitle_other": "{{count}} tanda",
       "textPlaceholder": "Ketik di sini",
       "tools": {

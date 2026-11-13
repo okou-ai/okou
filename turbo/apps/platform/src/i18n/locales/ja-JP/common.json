@@ -478,8 +478,10 @@
       "inkLabel": "色 {{color}}",
       "notePlaceholder": "何を変えますか？",
       "open": "注釈",
+      "preparingCopy": "{{filename}} のマーク付きコピーを準備しています",
       "redo": "やり直す",
       "removeMark": "マークを削除",
+      "retryCopy": "{{filename}} のマーク付きコピーを再試行",
       "subtitle_other": "{{count}} 件のマーク",
       "textPlaceholder": "ここに入力",
       "tools": {
