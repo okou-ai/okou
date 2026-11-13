@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/okou-ai/okou/compare/runner-host-v0.11.3...runner-host-v0.11.4) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use typed safe pidfd signaling across remaining owners ([#46923](https://github.com/okou-ai/okou/issues/46923)) ([61626b9](https://github.com/okou-ai/okou/commit/61626b96421ba142b3eb9738157fba20b1ad2256))
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-host-v0.11.2...runner-host-v0.11.3) (2026-11-13)
 
 

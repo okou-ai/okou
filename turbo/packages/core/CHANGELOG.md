@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.835.0](https://github.com/okou-ai/okou/compare/core-v8.834.2...core-v8.835.0) (2026-11-13)
+
+
+### Features
+
+* **app:** echo selected visualization preferences in chat ([#46849](https://github.com/okou-ai/okou/issues/46849)) ([a63f6b8](https://github.com/okou-ai/okou/commit/a63f6b83f1965d746f6de1f20993dbcd298094f6))
+
 ## [8.834.2](https://github.com/okou-ai/okou/compare/core-v8.834.1...core-v8.834.2) (2026-11-13)
 
 

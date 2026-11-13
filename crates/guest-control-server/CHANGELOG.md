@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.100](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.99...guest-control-server-v0.24.100) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use typed safe pidfd signaling across remaining owners ([#46923](https://github.com/okou-ai/okou/issues/46923)) ([61626b9](https://github.com/okou-ai/okou/commit/61626b96421ba142b3eb9738157fba20b1ad2256))
+
 ## [0.24.99](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.98...guest-control-server-v0.24.99) (2026-11-13)
 
 
