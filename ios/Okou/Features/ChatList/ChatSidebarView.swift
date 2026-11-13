@@ -72,6 +72,13 @@ struct ChatSidebarView: View {
     listRead.error?.localizedDescription ?? store.list.error
   }
 
+  /// Animate membership changes from the same presentation the list renders, without
+  /// animating title or live indicator updates.
+  private var threadRowIDs: [[String]] {
+    guard case .hasData(let contents) = presentation else { return [] }
+    return contents.projects.map { $0.section.rows.map(\.id) } + [contents.chats.rows.map(\.id)]
+  }
+
   var body: some View {
     List {
       if listRead.state == .loading && !store.list.hasLoadedThreads {
@@ -110,6 +117,7 @@ struct ChatSidebarView: View {
         }
       }
     }
+    .animation(reduceMotion ? nil : OkouMotion.transition, value: threadRowIDs)
     .foregroundStyle(OkouColor.sidebarForeground)
     .listStyle(.plain)
     .listSectionSpacing(.compact)
