@@ -41,8 +41,8 @@ tests through the locked uv environment. Ordinary addon tests verify the actual
 test interpreter and Python tool targets against `.python-version`; the packaged
 suite independently compares that pin with the real frozen mitmproxy runtime.
 Python upgrades must follow that embedded interpreter, including its patch
-version. uv is pinned by `[tool.uv].required-version`, currently 0.13.7; upgrading
-it does not require upgrading the locked runtime dependencies.
+version. uv is pinned by `[tool.uv].required-version`; upgrading it does not
+require upgrading the locked runtime dependencies.
 
 Keep the template uv pin aligned with the addon requirement; ordinary tests
 reject drift. Sandbox Python remains managed by Ubuntu packages independently
