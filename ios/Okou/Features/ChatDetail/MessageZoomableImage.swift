@@ -4,54 +4,12 @@ struct MessageZoomableImage: UIViewRepresentable {
   let image: UIImage
   var zoomStep = 0
   var accessibilityLabel = String(localized: "Image. Pinch to zoom, or double tap.")
-  var navigateImage: ((Int) -> Void)?
 
-  func makeCoordinator() -> Coordinator { Coordinator() }
   func makeUIView(context: Context) -> MessageImageScrollView {
-    let view = MessageImageScrollView(image: image, accessibilityLabel: accessibilityLabel)
-    context.coordinator.navigateImage = navigateImage
-    context.coordinator.install(on: view)
-    return view
+    MessageImageScrollView(image: image, accessibilityLabel: accessibilityLabel)
   }
   func updateUIView(_ view: MessageImageScrollView, context: Context) {
-    context.coordinator.navigateImage = navigateImage
     view.adjustZoom(to: zoomStep)
-  }
-
-  final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-    var navigateImage: ((Int) -> Void)?
-    private weak var view: MessageImageScrollView?
-
-    func install(on view: MessageImageScrollView) {
-      self.view = view
-      for direction: UISwipeGestureRecognizer.Direction in [.left, .right] {
-        let swipe = UISwipeGestureRecognizer(target: self, action: #selector(navigate(_:)))
-        swipe.direction = direction
-        swipe.delegate = self
-        view.addGestureRecognizer(swipe)
-        view.panGestureRecognizer.require(toFail: swipe)
-        if let pinch = view.pinchGestureRecognizer { swipe.require(toFail: pinch) }
-      }
-    }
-
-    private var canNavigate: Bool {
-      guard let view, navigateImage != nil else { return false }
-      return !view.isZooming && view.zoomScale <= view.minimumZoomScale * 1.01
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
-      -> Bool
-    {
-      canNavigate
-    }
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      canNavigate
-    }
-
-    @objc private func navigate(_ gesture: UISwipeGestureRecognizer) {
-      navigateImage?(gesture.direction == .left ? 1 : -1)
-    }
   }
 }
 
@@ -60,6 +18,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
   private let imageSize: CGSize
   private var viewport: CGSize = .zero
   private var zoomStep = 0
+  var zoomChanged: ((Bool) -> Void)?
 
   init(image: UIImage, accessibilityLabel: String) {
     imageView = UIImageView(image: image)
@@ -93,10 +52,29 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
     maximumZoomScale = max(4, fit * 8)
     setZoomScale(minimumZoomScale, animated: false)
     centerImage()
+    updatePagingInteraction()
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-  func scrollViewDidZoom(_ scrollView: UIScrollView) { centerImage() }
+  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    updatePagingInteraction(zooming: true)
+  }
+  func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    centerImage()
+    updatePagingInteraction(zooming: isZooming)
+  }
+  func scrollViewDidEndZooming(
+    _ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat
+  ) {
+    updatePagingInteraction()
+  }
+
+  private func updatePagingInteraction(zooming: Bool = false) {
+    guard let zoomChanged else { return }
+    let ownsPan = zooming || zoomScale > minimumZoomScale * 1.01
+    panGestureRecognizer.isEnabled = ownsPan
+    zoomChanged(ownsPan)
+  }
 
   func adjustZoom(to step: Int) {
     guard step != zoomStep else { return }

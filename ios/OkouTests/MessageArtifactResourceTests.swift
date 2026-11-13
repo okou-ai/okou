@@ -11,6 +11,34 @@ import XCTest
 
 @MainActor
 final class MessageArtifactResourceTests: XCTestCase {
+  func testImageNavigationKeepsItsCoverAndRejectsRetiredOrOutOfRangeSelections() async throws {
+    let fixture = try await ArtifactReadFixture.make(owner: self)
+    let first = fixture.artifact()
+    let second = fixture.artifact("image00002.png")
+    let cover = try await fixture.viewer.card(second, thumbnail: true)
+    fixture.viewer.open(first, images: [first, second])
+    let original = try XCTUnwrap(fixture.viewer.preview)
+    let firstContent = try await original.store.get(original.value).value
+
+    fixture.viewer.navigateImage(
+      1, content: firstContent, previewID: original.id, thumbnail: cover.thumbnail)
+    let selected = try XCTUnwrap(fixture.viewer.preview)
+    let secondContent = try await selected.store.get(selected.value).value
+    XCTAssertEqual(secondContent.artifact.id, second.id)
+    XCTAssertNotNil(secondContent.file)
+    XCTAssertEqual(selected.thumbnail, cover.thumbnail)
+
+    fixture.viewer.navigateImage(-1, content: secondContent, previewID: original.id)
+    XCTAssertEqual(fixture.viewer.preview?.artifact.id, second.id)
+    fixture.viewer.navigateImage(1, content: secondContent, previewID: selected.id)
+    XCTAssertEqual(fixture.viewer.preview?.artifact.id, second.id)
+
+    fixture.viewer.navigateImage(-1, content: secondContent, previewID: selected.id)
+    let returned = try await artifactPreviewTask(fixture.viewer).value
+    XCTAssertEqual(returned.artifact.id, first.id)
+    XCTAssertNotNil(returned.file)
+  }
+
   func testConcurrentCardsShareTheirCoverAndCancellingOneWaiterKeepsTheOtherAlive() async throws {
     let entered = expectation(description: "Shared cover authorization started")
     let (gate, release) = AsyncStream<Void>.makeStream()
