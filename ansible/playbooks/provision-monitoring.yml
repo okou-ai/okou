@@ -114,70 +114,6 @@
         mode: "0755"
       become: true
 
-    - name: Install Okou monitoring Runner ingress collector service
-      copy:
-        content: |
-          [Unit]
-          Description=Probe Okou Runner public HTTPS ingress
-          Wants=network-online.target
-          After=network-online.target
-
-          [Service]
-          Type=oneshot
-          Environment=PATH=/usr/bin:/bin
-          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-runner-ingress-collect --hostname={{ inventory_hostname }}
-          TimeoutStartSec=45s
-          KillMode=control-group
-          UMask=0077
-          NoNewPrivileges=true
-          PrivateTmp=true
-          ProtectSystem=strict
-          ProtectHome=true
-          ReadWritePaths=/var/lib/vm0-monitoring/textfile-collector
-          RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-        dest: /etc/systemd/system/vm0-monitoring-runner-ingress-collect.service
-        owner: root
-        group: root
-        mode: "0644"
-      become: true
-
-    - name: Install Okou monitoring Runner ingress collector timer
-      copy:
-        content: |
-          [Unit]
-          Description=Probe Okou Runner ingress once per minute
-
-          [Timer]
-          OnActiveSec=60s
-          OnUnitInactiveSec=60s
-          RandomizedDelaySec=10s
-          AccuracySec=1s
-          Unit=vm0-monitoring-runner-ingress-collect.service
-
-          [Install]
-          WantedBy=timers.target
-        dest: /etc/systemd/system/vm0-monitoring-runner-ingress-collect.timer
-        owner: root
-        group: root
-        mode: "0644"
-      become: true
-
-    - name: Generate initial Okou Runner ingress metrics
-      systemd:
-        name: vm0-monitoring-runner-ingress-collect.service
-        state: started
-        daemon_reload: true
-      become: true
-      changed_when: false
-
-    - name: Enable Okou monitoring Runner ingress collector timer
-      systemd:
-        name: vm0-monitoring-runner-ingress-collect.timer
-        state: started
-        enabled: true
-        daemon_reload: true
-      become: true
-
     - name: Install Okou monitoring home image cache collector service
       copy:
         content: |
@@ -198,11 +134,22 @@
       copy:
         content: |
           [Unit]
-          Description=Collect Okou runner lifecycle metrics
+          Description=Collect Okou runner lifecycle and ingress metrics
 
           [Service]
           Type=oneshot
           ExecStart=/usr/local/bin/vm0-monitoring-runner-status-collect
+          ExecStartPost=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-runner-ingress-collect --hostname={{ inventory_hostname }}
+          Environment=PATH=/usr/bin:/bin
+          TimeoutStartSec=45s
+          KillMode=control-group
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/vm0-monitoring/textfile-collector
+          RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
         dest: /etc/systemd/system/vm0-monitoring-runner-status-collect.service
         owner: root
         group: root

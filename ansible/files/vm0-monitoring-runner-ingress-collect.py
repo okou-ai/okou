@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import fcntl
 import json
+import math
 import os
 import re
 import selectors
@@ -27,6 +29,8 @@ MAX_FILE_BYTES = 1024 * 1024
 MAX_RUNNERS = 128
 PROBE_TIMEOUT = 10
 COLLECTION_TIMEOUT = 30
+PROBE_PERIOD = 60
+ATTEMPT_FILE = ".runner-ingress-attempt"
 ACTIVE_MODES = ("running", "draining")
 
 
@@ -210,8 +214,7 @@ def probe_runner(
             os.close(directory)
 
 
-def collect(runners_dir: Path, hostname: str) -> dict[str, int]:
-    deadline = time.monotonic() + COLLECTION_TIMEOUT
+def collect(runners_dir: Path, hostname: str, deadline: float) -> dict[str, int]:
     try:
         directory = open_directory(runners_dir)
     except FileNotFoundError:
@@ -285,6 +288,66 @@ def publish(directory_path: Path, results: dict[str, int]) -> None:
         os.close(directory)
 
 
+def write_schedule(descriptor: int, boot_id: str, not_before: float) -> None:
+    content = json.dumps([boot_id, not_before]).encode("ascii")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    os.ftruncate(descriptor, 0)
+    if os.write(descriptor, content) != len(content):
+        raise OSError("incomplete ingress schedule write")
+    os.fsync(descriptor)
+
+
+def begin_round(directory_path: Path) -> tuple[int, str, float] | None:
+    directory = open_directory(directory_path)
+    try:
+        descriptor = os.open(
+            ATTEMPT_FILE,
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            0o600,
+            dir_fd=directory,
+        )
+    finally:
+        os.close(directory)
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_mode & 0o077
+        ):
+            raise ValueError("unsafe ingress schedule")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(descriptor)
+            return None
+        content = os.read(descriptor, 129)
+        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        now = time.monotonic()
+        if content:
+            saved = json.loads(content)
+            if (
+                len(content) > 128
+                or not isinstance(saved, list)
+                or len(saved) != 2
+                or not isinstance(saved[0], str)
+                or type(saved[1]) not in (int, float)
+                or not math.isfinite(saved[1])
+            ):
+                raise ValueError("invalid ingress schedule")
+            if saved[0] == boot_id and now < saved[1]:
+                os.close(descriptor)
+                return None
+        # Reserve before network I/O. Even a killed round cannot immediately
+        # retry: all requests have this round's 30-second deadline.
+        deadline = now + COLLECTION_TIMEOUT
+        write_schedule(descriptor, boot_id, deadline + PROBE_PERIOD)
+        return descriptor, boot_id, deadline
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hostname", required=True)
@@ -302,11 +365,26 @@ def main() -> None:
     runners_dir = Path(os.environ.get("OKOU_RUNNERS_DIR") or RUNNERS_DIR)
     textfile_dir = Path(os.environ.get("OKOU_MONITORING_TEXTFILE_DIR") or TEXTFILE_DIR)
     try:
-        results = collect(runners_dir, args.hostname)
+        slot = begin_round(textfile_dir)
     except (OSError, ValueError):
-        print("Runner ingress discovery unavailable", file=sys.stderr)
-        results = {}
-    publish(textfile_dir, results)
+        print("Runner ingress schedule unavailable", file=sys.stderr)
+        raise SystemExit(1) from None
+    if slot is None:
+        return
+    descriptor, boot_id, deadline = slot
+    try:
+        try:
+            results = collect(runners_dir, args.hostname, deadline)
+        except (OSError, ValueError):
+            print("Runner ingress discovery unavailable", file=sys.stderr)
+            results = {}
+        publish(textfile_dir, results)
+    finally:
+        try:
+            # Publication failure still waits a full period before more probes.
+            write_schedule(descriptor, boot_id, time.monotonic() + PROBE_PERIOD)
+        finally:
+            os.close(descriptor)
 
 
 if __name__ == "__main__":

@@ -156,7 +156,17 @@ class CollectorTest(unittest.TestCase):
             file.chmod(0o600)
         return runner_id, path
 
-    def run_collector(self, *, env=None, command=None):
+    def due(self):
+        # Expire the scheduler's persisted reservation without sleeping a minute.
+        attempt = self.output / ".runner-ingress-attempt"
+        if attempt.exists():
+            saved = json.loads(attempt.read_text())
+            saved[1] = 0
+            attempt.write_text(json.dumps(saved))
+
+    def run_collector(self, *, env=None, command=None, force_due=True):
+        if force_due:
+            self.due()
         result = subprocess.run(
             command or self.command,
             env=env or self.env,
@@ -170,9 +180,10 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(
             (self.output / "runner-ingress.prom").stat().st_mode & 0o777, 0o644
         )
-        self.assertEqual(
-            sorted(path.name for path in self.output.iterdir()), ["runner-ingress.prom"]
-        )
+        expected_files = {".runner-ingress-attempt", "runner-ingress.prom"}
+        if (self.output / "runner-status.prom").exists():
+            expected_files.add("runner-status.prom")
+        self.assertEqual({path.name for path in self.output.iterdir()}, expected_files)
         for line in (
             self.arguments.read_text().splitlines() if self.arguments.exists() else []
         ):
@@ -242,6 +253,64 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(len(self.peer.requests), 1)
         self.peer.release.set()
         self.assertIn(self.sample(runner_id, 1), self.run_collector())
+
+    def test_fast_invocations_preserve_the_file_without_repeating_probes(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        first = self.run_collector()
+        before = (self.output / "runner-ingress.prom").stat().st_mtime_ns
+        self.assertEqual(self.run_collector(force_due=False), first)
+        self.assertEqual(
+            (self.output / "runner-ingress.prom").stat().st_mtime_ns, before
+        )
+        self.assertEqual(len(self.peer.requests), 1)
+
+    def test_publication_failure_does_not_bypass_the_probe_period(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.run_collector()
+        self.due()
+        output = self.output / "runner-ingress.prom"
+        output.unlink()
+        output.mkdir()
+        failed = subprocess.run(
+            self.command, env=self.env, capture_output=True, timeout=15
+        )
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn(TOKEN.encode(), failed.stdout + failed.stderr)
+        skipped = subprocess.run(
+            self.command, env=self.env, capture_output=True, timeout=15
+        )
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        self.assertEqual(len(self.peer.requests), 2)
+
+    def test_overlapping_invocation_does_not_start_another_probe(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        original = self.run_collector()
+        self.due()
+        self.peer.received.clear()
+        self.peer.release.clear()
+        with subprocess.Popen(
+            self.command, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ) as process:
+            try:
+                self.assertTrue(self.peer.received.wait(5))
+                skipped = subprocess.run(
+                    self.command, env=self.env, capture_output=True, timeout=5
+                )
+                self.assertEqual(skipped.returncode, 0, skipped.stderr)
+                self.assertEqual(
+                    (self.output / "runner-ingress.prom").read_text(), original
+                )
+                self.assertEqual(len(self.peer.requests), 2)
+                self.peer.release.set()
+                stdout, stderr = process.communicate(timeout=15)
+                self.assertEqual(process.returncode, 0, stderr)
+                self.assertNotIn(TOKEN.encode(), stdout + stderr)
+            finally:
+                if process.poll() is None:
+                    process.kill()
 
     def test_restart_during_request_cannot_inherit_success(self):
         runner_id, path = self.runner("serving")
@@ -320,29 +389,31 @@ class CollectorTest(unittest.TestCase):
         timer = configparser.ConfigParser(interpolation=None)
         service.optionxform = str
         timer.optionxform = str
-        prefix = "/etc/systemd/system/vm0-monitoring-runner-ingress-collect"
+        prefix = "/etc/systemd/system/vm0-monitoring-runner-status-collect"
         service.read_string(
             copies[prefix + ".service"]["content"].replace(
                 "{{ inventory_hostname }}", HOST
             )
         )
         timer.read_string(copies[prefix + ".timer"]["content"])
-        self.assertEqual(timer["Timer"]["OnUnitInactiveSec"], "60s")
-        self.assertEqual(timer["Timer"]["OnActiveSec"], "60s")
-        self.assertEqual(
-            timer["Timer"]["Unit"], "vm0-monitoring-runner-ingress-collect.service"
-        )
+        self.assertEqual(timer["Timer"]["OnUnitActiveSec"], "15s")
         self.assertEqual(service["Service"]["KillMode"], "control-group")
         self.assertEqual(service["Service"]["TimeoutStartSec"], "45s")
         installed = self.binary / "vm0-monitoring-runner-ingress-collect"
         shutil.copyfile(SCRIPT, installed)
-        command = shlex.split(service["Service"]["ExecStart"])
+        command = shlex.split(service["Service"]["ExecStartPost"])
         command[3] = str(installed)
-        unit_file = self.work / "vm0-monitoring-runner-ingress-collect.service"
-        service["Service"]["ExecStart"] = shlex.join(command)
+        unit_file = self.work / "vm0-monitoring-runner-status-collect.service"
+        service["Service"]["ExecStartPost"] = shlex.join(command)
+        lifecycle = self.binary / "vm0-monitoring-runner-status-collect"
+        shutil.copyfile(
+            ROOT / "ansible/files/vm0-monitoring-runner-status-collect.py", lifecycle
+        )
+        lifecycle.chmod(0o755)
+        service["Service"]["ExecStart"] = str(lifecycle)
         with unit_file.open("w") as output:
             service.write(output)
-        timer_file = self.work / "vm0-monitoring-runner-ingress-collect.timer"
+        timer_file = self.work / "vm0-monitoring-runner-status-collect.timer"
         with timer_file.open("w") as output:
             timer.write(output)
         verified = subprocess.run(
@@ -353,6 +424,14 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(verified.returncode, 0, verified.stderr)
         runner_id, _ = self.runner("serving")
         self.peer.responses[runner_id] = (200, b"ok")
+        collected = subprocess.run(
+            [str(lifecycle)], env=self.env, capture_output=True, text=True, timeout=5
+        )
+        self.assertEqual(collected.returncode, 0, collected.stderr)
+        self.assertIn(
+            'vm0_runner_instances{mode="running"} 1',
+            (self.output / "runner-status.prom").read_text(),
+        )
         self.assertIn(self.sample(runner_id, 1), self.run_collector(command=command))
 
 

@@ -87,8 +87,8 @@ ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
 
 ## Ingress monitoring
 
-`provision-monitoring.yml` installs an independent root oneshot collector for
-authenticated public HTTPS health. It reads the existing private managed
+`provision-monitoring.yml` runs authenticated public HTTPS health after the
+existing Runner status collector, in the same service and timer. It reads the existing private managed
 `runner.yaml`, `runner_id`, `heartbeat_generation` and lifecycle status in each
 version directory; it does not require changes to the Runner executable or
 status format. Running and draining official targets are checked separately.
@@ -99,10 +99,12 @@ the collector does not read live-process credentials.
 
 Each target receives one request per collection, with a ten-second timeout and
 no retries or redirects. Up to four requests run concurrently within a
-30-second collection budget. The timer waits 60 seconds after the collector
-finishes, plus up to ten seconds of randomized delay, so failures never cause
-overlapping or catch-up probes. The existing 15-second Alloy scrape only reads
-the result; it does not issue health requests.
+30-second collection budget. The existing timer retains its 15-second cadence;
+a private attempt stamp/lock permits an ingress round only at least 60 seconds
+after the previous round finishes, including publication failures. It prevents
+overlap and catch-up probes without another service or timer. Lifecycle metrics
+publish before probing; a slow health round can extend that service invocation.
+The existing 15-second Alloy scrape only reads the result.
 
 The collector atomically replaces `runner-ingress.prom` with the single gauge
 `vm0_runner_ingress_up{runner_id="..."}`. A value of 1 requires ordinary TLS
