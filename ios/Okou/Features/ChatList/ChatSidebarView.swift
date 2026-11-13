@@ -525,12 +525,12 @@ struct ChatSidebarView: View {
       ChatThreadPreview(thread: thread, workspace: store)
     }
     .menuOrder(.fixed)
-    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+    .swipeActions(edge: .leading, allowsFullSwipe: true) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
       }
     }
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
       Button {
         Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
       } label: {
