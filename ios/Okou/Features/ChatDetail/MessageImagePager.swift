@@ -74,7 +74,8 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
     let height = bounds.height
     previousCover?.frame = CGRect(x: 0, y: 0, width: width, height: height)
     current.frame = CGRect(x: CGFloat(currentIndex) * width, y: 0, width: width, height: height)
-    nextCover?.frame = CGRect(x: CGFloat(currentIndex + 1) * width, y: 0, width: width, height: height)
+    nextCover?.frame = CGRect(
+      x: CGFloat(currentIndex + 1) * width, y: 0, width: width, height: height)
     let count = currentIndex + 1 + (nextCover == nil ? 0 : 1)
     contentSize = CGSize(width: CGFloat(count) * width, height: height)
     setContentOffset(CGPoint(x: CGFloat(currentIndex) * width, y: 0), animated: false)
