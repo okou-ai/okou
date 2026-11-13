@@ -220,7 +220,8 @@ struct ChatComposerView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add attachments and tools")
             .accessibilityValue(
-              connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
+              connectorSelection?.uncertain == true
+                ? "Confirm connector settings before sending" : ""
             )
             .disabled(isBusy || needsUpgrade)
           }
