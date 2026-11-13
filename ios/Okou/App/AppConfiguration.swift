@@ -17,7 +17,7 @@ struct AppConfiguration {
         number.wholeMatch(of: #/[1-9][0-9]*/#) != nil
       {
         apiOrigin = "https://pr-\(number)-api.vm6.ai"
-        webOrigin = "https://pr-\(number)-app.omby.ai"
+        webOrigin = "https://pr-\(number)-app-okou-app-preview.vm0.workers.dev"
       }
     #endif
     guard let api = apiOrigin,
