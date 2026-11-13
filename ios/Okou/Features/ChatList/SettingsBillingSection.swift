@@ -21,10 +21,12 @@ struct SettingsBillingSection: View {
 private struct SettingsBillingContent: View {
   let workspace: WorkspaceStore
   @LoadableValue private var billing: Loadable<WorkspaceBilling>
+  @LoadableStatus<WorkspaceBilling> private var billingStatus: LoadableState
 
   init(workspace: WorkspaceStore) {
     self.workspace = workspace
-    _billing = LoadableValue(task: workspace.settingsResources.billingValue)
+    _billing = LoadableValue(task: workspace.settingsResources.billingValue, keepLast: true)
+    _billingStatus = LoadableStatus(task: workspace.settingsResources.billingValue)
   }
 
   var body: some View {
@@ -32,8 +34,13 @@ private struct SettingsBillingContent: View {
       Group {
         switch billing {
         case .hasData(let status):
-          OkouValueRow(value: planName(status.tier)) {
-            OkouRowLabel("Current plan", okouSymbol: "layers")
+          HStack(spacing: OkouSpace.sm) {
+            OkouValueRow(value: planName(status.tier)) {
+              OkouRowLabel("Current plan", okouSymbol: "layers")
+            }
+            if billingStatus == .loading {
+              ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+            }
           }
         case .loading:
           HStack {
@@ -44,7 +51,9 @@ private struct SettingsBillingContent: View {
               .accessibilityLabel("Loading plan")
           }
         case .hasError(let error):
-          OkouLoadErrorRow(message: ChatRequestFailure.message(for: error)) {
+          OkouLoadErrorRow(
+            message: ChatRequestFailure.message(for: error), isRetrying: billingStatus == .loading
+          ) {
             await workspace.refreshSettingsBilling()
           }
         }
