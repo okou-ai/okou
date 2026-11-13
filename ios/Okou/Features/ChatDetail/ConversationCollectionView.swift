@@ -1,4 +1,5 @@
 import ChatDomain
+import OSLog
 import SwiftUI
 import Textual
 
@@ -196,6 +197,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var refreshTask: Task<Void, Never>?
   private var stopped = false
   private var animatesScroll = false
+  #if STAGING
+    private var perfDisplayLink: CADisplayLink?
+    private var perfPreviousTimestamp: CFTimeInterval?
+  #endif
   /// The web's chat skeleton while the first messages load, not a spinner in an empty page.
   private let loading = UIHostingController(rootView: OkouChatSkeleton())
   private var loadingTask: Task<Void, Never>?
@@ -520,6 +525,42 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     clearPrefetchedContent()
   }
 
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    #if STAGING
+      guard ProcessInfo.processInfo.environment["OKOU_PERF_FRAMES"] == "1" else { return }
+      stopPerfFrames()
+      let link = CADisplayLink(target: self, selector: #selector(perfFrame(_:)))
+      perfDisplayLink = link
+      link.add(to: .main, forMode: .common)
+    #endif
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    #if STAGING
+      stopPerfFrames()
+    #endif
+  }
+
+  #if STAGING
+    private func stopPerfFrames() {
+      perfDisplayLink?.invalidate()
+      perfDisplayLink = nil
+      perfPreviousTimestamp = nil
+    }
+
+    @objc private func perfFrame(_ link: CADisplayLink) {
+      defer { perfPreviousTimestamp = link.timestamp }
+      guard let previous = perfPreviousTimestamp else { return }
+      let gap = link.timestamp - previous
+      // This records callback gaps, not GPU frame times or exclusive CPU time.
+      if gap >= 0.1 {
+        Logger(subsystem: "ai.okou.ios", category: "IOSPerf").notice("frame_gap ms=\(gap * 1_000)")
+      }
+    }
+  #endif
+
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     let inset = ConversationCollectionRow.messageHorizontalInset
@@ -578,6 +619,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   func stop() {
+    #if STAGING
+      stopPerfFrames()
+    #endif
     stopped = true
     clearPrefetchedContent()
     markdownLookahead?.cancel()
