@@ -61,6 +61,7 @@ struct ChatComposerView: View {
       && !voiceActive && draftState?.canSend != false
       && (showsStop || modelSelection?.canSend != false)
   }
+  private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
@@ -169,7 +170,8 @@ struct ChatComposerView: View {
             ChatFeedbackComposer(
               state: state, inputID: inputID, isFocused: $isFocused,
               acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
-              returnKeyPreference: returnKeyPreference, submitFromKeyboard: sendFromKeyboard
+              returnKeyPreference: returnKeyPreference,
+              canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
             )
             .id(inputID)
             .transition(.identity)
@@ -181,7 +183,8 @@ struct ChatComposerView: View {
               isCurrent: { attachments.inputID == inputID },
               pasteImages: attachments.importPastedImages,
               placeholder: resolvedPlaceholder,
-              returnKeyPreference: returnKeyPreference, submitFromKeyboard: sendFromKeyboard
+              returnKeyPreference: returnKeyPreference,
+              canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
             )
             .id(inputID)
             .transition(.identity)
@@ -379,7 +382,7 @@ struct ChatComposerView: View {
 
   private func sendFromKeyboard() {
     // An empty Send key must never become the active run's Stop action.
-    guard hasContent, !showsStop else { return }
+    guard canSendFromKeyboard else { return }
     performPrimaryAction()
   }
 

@@ -10,6 +10,7 @@ struct ChatFeedbackComposer: View {
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
   var returnKeyPreference = ComposerReturnKeyPreference.newline
+  var canSendFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)? = nil
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
@@ -87,6 +88,7 @@ struct ChatFeedbackComposer: View {
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: state.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
+                  canSendFromKeyboard: canSendFromKeyboard,
                   submitFromKeyboard: submitFromKeyboard
                 )
               }
