@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.24.3...runner-supervisor-v0.25.0) (2026-11-13)
+
+
+### Features
+
+* **api:** dispatch complete run inputs without queue persistence ([#46910](https://github.com/okou-ai/okou/issues/46910)) ([4862caf](https://github.com/okou-ai/okou/commit/4862caf28ec28fa86c88f0f66d8634a1598c6a06))
+
 ## [0.24.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.24.2...runner-supervisor-v0.24.3) (2026-11-13)
 
 ## [0.24.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.24.1...runner-supervisor-v0.24.2) (2026-11-13)
