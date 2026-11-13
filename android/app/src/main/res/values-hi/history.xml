@@ -18,5 +18,4 @@
     <string name="history_run_failed">विफल</string>
     <string name="history_idle">इतिहास</string>
     <string name="history_running">चल रहा है</string>
-    <string name="history_stopping">रोका जा रहा है</string>
 </resources>

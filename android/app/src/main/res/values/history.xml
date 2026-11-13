@@ -18,5 +18,4 @@
     <string name="history_run_failed">Failed</string>
     <string name="history_idle">History</string>
     <string name="history_running">Running</string>
-    <string name="history_stopping">Stopping</string>
 </resources>

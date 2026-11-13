@@ -18,5 +18,4 @@
     <string name="history_run_failed">Gagal</string>
     <string name="history_idle">Riwayat</string>
     <string name="history_running">Berjalan</string>
-    <string name="history_stopping">Menghentikan</string>
 </resources>

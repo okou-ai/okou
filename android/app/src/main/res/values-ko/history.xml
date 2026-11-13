@@ -18,5 +18,4 @@
     <string name="history_run_failed">실패</string>
     <string name="history_idle">기록</string>
     <string name="history_running">실행 중</string>
-    <string name="history_stopping">중지 중</string>
 </resources>

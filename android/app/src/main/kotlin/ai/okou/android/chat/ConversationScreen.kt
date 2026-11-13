@@ -177,7 +177,6 @@ private fun HistoryExecution.label() =
         HistoryExecution.Idle -> R.string.history_idle
         HistoryExecution.Queued -> R.string.history_queued
         HistoryExecution.Running -> R.string.history_running
-        HistoryExecution.Stopping -> R.string.history_stopping
         HistoryExecution.Completed -> R.string.history_completed
         HistoryExecution.Failed -> R.string.history_run_failed
         HistoryExecution.Cancelled -> R.string.history_cancelled

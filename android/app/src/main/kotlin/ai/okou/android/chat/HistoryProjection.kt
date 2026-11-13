@@ -25,7 +25,6 @@ enum class HistoryExecution {
     Idle,
     Queued,
     Running,
-    Stopping,
     Completed,
     Failed,
     Cancelled,
@@ -57,15 +56,18 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
     val rows = checkpoint.rows.filter { it.id !in revoked }
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
-    val active =
-        rows
-            .filter { it.type !in setOf("control.interrupt", "control.revoke", "usage.recorded") }
-            .mapNotNullTo(hashSetOf()) { it.runId } - terminals
+    val cancellations =
+        rows.filter { it.type == "run.cancelled" }.mapNotNullTo(hashSetOf()) { it.runId }
     val interrupted =
         rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
-    val queued =
+    val pending =
         rows
             .filter { it.runId == null && it.type in setOf("input.prompt", "input.automation") }
+            .mapTo(hashSetOf()) { it.id }
+    // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
+    val queued =
+        rows
+            .filter { it.type == "input.automation" && it.id in pending }
             .mapTo(hashSetOf()) { it.id }
     // Like Web, place an older run's late event with its run; queued inputs come last.
     val turns = linkedMapOf<String, MutableList<HistoryEvent>>()
@@ -140,6 +142,12 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         }
                         HistoryRole.Assistant
                     }
+                    "control.interrupt" -> {
+                        // Web projects interruption as a stopped assistant outcome immediately.
+                        // A matching cancellation keeps its original content without a duplicate.
+                        if (row.runId == null || row.runId in cancellations) return@mapNotNull null
+                        HistoryRole.Assistant
+                    }
                     "usage.recorded" -> {
                         payload?.get("usage")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Reference, it.toString()))
@@ -163,16 +171,25 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 blocks,
                 row.id in queued,
                 row.type == "input.rejected",
-                row.type.takeIf { row.terminal || it == "output.error" },
+                if (row.type == "control.interrupt") "run.cancelled"
+                else row.type.takeIf { row.terminal || it == "output.error" },
             )
         }
     val execution =
         when {
-            active.any { it in interrupted } -> HistoryExecution.Stopping
-            active.isNotEmpty() -> HistoryExecution.Running
-            queued.isNotEmpty() -> HistoryExecution.Queued
+            historyIsRunning(rows, terminals + interrupted) -> HistoryExecution.Running
+            pending.isNotEmpty() -> HistoryExecution.Queued
             else ->
-                when (rows.lastOrNull { it.terminal }?.type) {
+                // A late event from an older run stays with that turn, including in this summary.
+                when (
+                    messages
+                        .lastOrNull {
+                            it.status == "run.completed" ||
+                                it.status == "run.failed" ||
+                                it.status == "run.cancelled"
+                        }
+                        ?.status
+                ) {
                     "run.completed" -> HistoryExecution.Completed
                     "run.failed" -> HistoryExecution.Failed
                     "run.cancelled" -> HistoryExecution.Cancelled
@@ -180,6 +197,30 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 }
         }
     return HistoryTranscript(messages, execution, rows.count { it.type == "output.message" })
+}
+
+/** Match Web's run indicator: old activity cannot revive a newer terminal's settled state. */
+private fun historyIsRunning(rows: List<HistoryEvent>, endedRuns: Set<String>): Boolean {
+    val starts = mutableMapOf<String, Int>()
+    var newestLiveStart: Int? = null
+    for ((index, row) in rows.withIndex()) {
+        if (row.type != "input.prompt" && row.type != "input.rejected") continue
+        val run = row.runId ?: continue
+        val start = starts.getOrPut(run) { index }
+        if (run !in endedRuns) newestLiveStart = maxOf(newestLiveStart ?: start, start)
+    }
+    for (row in rows.asReversed()) {
+        // An interrupt's raw runId is its target, not ownership of new activity.
+        if (row.type == "usage.recorded" || row.type == "control.interrupt") continue
+        if (row.terminal) {
+            val start = starts[row.runId] ?: return false
+            return newestLiveStart?.let { it > start } == true
+        }
+        if (row.runId != null && row.runId !in endedRuns) return true
+        if (row.runId == null && (row.type == "output.message" || row.type == "output.error"))
+            return false
+    }
+    return false
 }
 
 private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
