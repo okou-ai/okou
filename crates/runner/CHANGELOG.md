@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.8...runner-rs-v0.249.0) (2026-11-13)
+
+
+### Features
+
+* **api:** dispatch complete run inputs without queue persistence ([#46910](https://github.com/okou-ai/okou/issues/46910)) ([4862caf](https://github.com/okou-ai/okou/commit/4862caf28ec28fa86c88f0f66d8634a1598c6a06))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.248.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.7...runner-rs-v0.248.8) (2026-11-13)
 
 ### Release Dependencies
