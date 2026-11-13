@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  chooseConnectorAuthentication,
   customConnector,
   getConnectorAction,
   mockCustomConnectorStory,
@@ -52,9 +53,7 @@ test("A completed creation preserves a newer connector draft and directory searc
     within(create).getByLabelText(/Prefixes/u),
     "http://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  const menu = await screen.findByRole("menu");
-  click(getConnectorAction("menuitem", "API authentication", menu));
+  await chooseConnectorAuthentication(create, "API authentication");
   click(getConnectorAction("button", "Create", create));
   await started.promise;
   click(getConnectorAction("button", "Close", create));
@@ -109,9 +108,7 @@ test("Reveal and focus a newly created connector in the directory", async () => 
     within(create).getByLabelText(/Prefixes/u),
     "http://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Add authentication", create));
-  const menu = await screen.findByRole("menu");
-  click(getConnectorAction("menuitem", "API authentication", menu));
+  await chooseConnectorAuthentication(create, "API authentication");
   click(getConnectorAction("button", "Create", create));
 
   await waitFor(() => {

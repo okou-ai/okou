@@ -1252,7 +1252,7 @@ export const setCustomConnectorCreateKind$ = command(
     set(internalCreateForm$, { ...form, kind, authMethodTypes });
   },
 );
-export const addCustomConnectorAuthMethod$ = command(
+export const selectCustomConnectorAuthMethod$ = command(
   ({ get, set }, type: CustomConnectorAuthMethodType) => {
     const form = get(internalCreateForm$);
     if (form.authMethodTypes.includes(type)) {
@@ -1261,17 +1261,6 @@ export const addCustomConnectorAuthMethod$ = command(
     set(internalCreateForm$, {
       ...form,
       authMethodTypes: [type],
-    });
-  },
-);
-export const removeCustomConnectorAuthMethod$ = command(
-  ({ get, set }, type: CustomConnectorAuthMethodType) => {
-    const form = get(internalCreateForm$);
-    set(internalCreateForm$, {
-      ...form,
-      authMethodTypes: form.authMethodTypes.filter((value) => {
-        return value !== type;
-      }),
     });
   },
 );
