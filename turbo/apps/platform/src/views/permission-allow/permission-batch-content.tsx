@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -521,7 +522,11 @@ function BatchCardDescription({
         failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      {description}
+      {!ready && !failed ? (
+        <LoadingSkeleton variant="text" label={description} />
+      ) : (
+        description
+      )}
     </p>
   );
 }

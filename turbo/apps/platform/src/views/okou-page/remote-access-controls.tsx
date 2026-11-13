@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import {
   useGet,
   useLastResolved,
@@ -608,22 +609,29 @@ function OwnerThreadRemoteAccessSection({
       </span>
       <span className="min-w-0 flex-1 truncate">{title}</span>
       <span className="shrink-0 text-xs text-muted-foreground">
-        {enabledCount === null
-          ? defaults.state === "hasError" ||
-            (threadId &&
-              (access.state === "hasError" || access.state === "hasData"))
-            ? t(($) => {
-                return $.chat.remoteAccess.loadFailed;
-              })
-            : t(($) => {
+        {enabledCount === null ? (
+          defaults.state === "hasError" ||
+          (threadId &&
+            (access.state === "hasError" || access.state === "hasData")) ? (
+            t(($) => {
+              return $.chat.remoteAccess.loadFailed;
+            })
+          ) : (
+            <LoadingSkeleton
+              variant="text"
+              label={t(($) => {
                 return $.chat.remoteAccess.loading;
-              })
-          : t(
-              ($) => {
-                return $.chat.remoteAccess.enabledCount;
-              },
-              { count: enabledCount },
-            )}
+              })}
+            />
+          )
+        ) : (
+          t(
+            ($) => {
+              return $.chat.remoteAccess.enabledCount;
+            },
+            { count: enabledCount },
+          )
+        )}
       </span>
       <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
     </button>
@@ -839,13 +847,18 @@ function RemoteAccessNotices({
           className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-gray-50 p-3 text-xs text-muted-foreground"
         >
           <span className="min-w-0 flex-1">
-            {vncFailed
-              ? t(($) => {
-                  return $.vnc.loadFailed;
-                })
-              : t(($) => {
+            {vncFailed ? (
+              t(($) => {
+                return $.vnc.loadFailed;
+              })
+            ) : (
+              <LoadingSkeleton
+                variant="text"
+                label={t(($) => {
                   return $.vnc.loading;
                 })}
+              />
+            )}
           </span>
           {vncFailed && (
             <Button variant="outline" size="sm" onClick={reloadVnc}>
@@ -1095,14 +1108,14 @@ function RemoteAccessFooter({
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 text-xs text-muted-foreground">
       <span role="status" className="flex min-w-0 flex-1 items-center gap-2">
-        {(refreshing || operation.state === "loading") && (
+        {!refreshing && operation.state === "loading" && (
           <Loader2
             size={14}
             className="shrink-0 animate-spin"
             aria-hidden="true"
           />
         )}
-        {text}
+        {refreshing ? <LoadingSkeleton variant="text" label={text} /> : text}
       </span>
       <Link
         pathname={ROUTES.connectors}

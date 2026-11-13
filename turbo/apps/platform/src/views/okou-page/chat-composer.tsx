@@ -4764,18 +4764,15 @@ function ComposerConnectorAccountMenuContent({
               variant="outline"
               size="sm"
               className="w-full"
+              pending={loadMoreLoadable.state === "loading"}
               disabled={saving || loadMoreLoadable.state === "loading"}
               onClick={() => {
                 return detach(loadMore(signal), Reason.DomCallback);
               }}
             >
-              {loadMoreLoadable.state === "loading"
-                ? t(($) => {
-                    return $.connectors.accounts.loadingMore;
-                  })
-                : t(($) => {
-                    return $.connectors.accounts.loadMore;
-                  })}
+              {t(($) => {
+                return $.connectors.accounts.loadMore;
+              })}
             </Button>
           </div>
         ) : null}

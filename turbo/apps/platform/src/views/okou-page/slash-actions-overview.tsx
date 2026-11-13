@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // The slash overview when the slash-actions switch is on: chat actions first,
 // then Workflows and Templates as single rows whose lists open as the second
 // level in the menu's right half, where template covers already appear.
@@ -509,11 +510,13 @@ function WorkflowListBody({
     >
       {children}
       {loading ? (
-        <div className="px-2 py-1.5 text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.chat.composer.workflows.loading;
           })}
-        </div>
+          variant="rows"
+          className="px-2 py-1.5"
+        />
       ) : workflows.length === 0 ? (
         <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
           {t(($) => {

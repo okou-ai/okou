@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { useTranslation } from "react-i18next";
 import type { CustomConnectorPermissionBundleResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
@@ -231,12 +231,12 @@ export function CustomConnectorPermissionsDrawer({
           <>
             <div className="flex flex-1 items-center justify-center">
               {loading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 size={16} className="animate-spin" />
-                  {t(($) => {
+                <LoadingSkeleton
+                  label={t(($) => {
                     return $.connectors.permissions.loading;
                   })}
-                </div>
+                  variant="rows"
+                />
               ) : (
                 <p className="text-sm text-destructive">
                   {loadError

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -43,11 +44,13 @@ function ComputerNetworkSelection() {
   return (
     <div className="grid gap-5">
       {networks.state === "loading" && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.remoteControlSetup.loading;
           })}
-        </p>
+          variant="fields"
+          count={1}
+        />
       )}
       {networks.state === "hasError" && (
         <LoadErrorRow
@@ -196,11 +199,12 @@ export function ComputerNetworkSummary() {
   }
   if (networks.state === "loading") {
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.remoteControlSetup.loading;
         })}
-      </p>
+        variant="text"
+      />
     );
   }
   if (!selected) {

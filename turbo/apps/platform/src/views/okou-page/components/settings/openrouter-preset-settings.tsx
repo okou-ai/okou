@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import {
   ORG_OPENROUTER_PRESETS,
   orgOpenrouterPresetSchema,
@@ -54,18 +55,23 @@ function PresetSelect() {
     return $.settings.preferences.debug.openrouterPreset.title;
   });
   const placeholder =
-    preset.state === "loading"
-      ? t(($) => {
+    preset.state === "loading" ? (
+      <LoadingSkeleton
+        variant="text"
+        label={t(($) => {
           return $.settings.preferences.debug.openrouterPreset.loading;
-        })
-      : preset.state === "hasError"
-        ? t(($) => {
-            return $.settings.preferences.debug.openrouterPreset.unavailable;
-          })
-        : (current ??
-          t(($) => {
-            return $.settings.preferences.debug.openrouterPreset.systemDefault;
-          }));
+        })}
+      />
+    ) : preset.state === "hasError" ? (
+      t(($) => {
+        return $.settings.preferences.debug.openrouterPreset.unavailable;
+      })
+    ) : (
+      (current ??
+      t(($) => {
+        return $.settings.preferences.debug.openrouterPreset.systemDefault;
+      }))
+    );
 
   return (
     <PreferenceCardRow

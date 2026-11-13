@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../../components/loading-skeleton.tsx";
 import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -304,18 +305,19 @@ function PaidToolsLoadStatus({
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-3">
-      <p
-        role={failed ? "alert" : "status"}
-        className={
-          failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"
-        }
-      >
-        {t(($) => {
-          return failed
-            ? $.settings.paidTools.loadError
-            : $.settings.paidTools.loading;
-        })}
-      </p>
+      {failed ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return $.settings.paidTools.loadError;
+          })}
+        </p>
+      ) : (
+        <LoadingSkeleton
+          label={t(($) => {
+            return $.settings.paidTools.loading;
+          })}
+        />
+      )}
     </div>
   );
 }

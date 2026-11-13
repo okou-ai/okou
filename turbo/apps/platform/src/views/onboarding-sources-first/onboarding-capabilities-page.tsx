@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -142,21 +143,18 @@ function OnboardingCapabilitiesContent() {
             );
           })}
         </ul>
-      ) : (
-        <p
-          role={failed ? "alert" : "status"}
-          className={
-            failed
-              ? "text-sm text-destructive"
-              : "text-sm text-muted-foreground"
-          }
-        >
+      ) : failed ? (
+        <p role="alert" className="text-sm text-destructive">
           {t(($) => {
-            return failed
-              ? $.settings.paidTools.loadError
-              : $.settings.paidTools.loading;
+            return $.settings.paidTools.loadError;
           })}
         </p>
+      ) : (
+        <LoadingSkeleton
+          label={t(($) => {
+            return $.settings.paidTools.loading;
+          })}
+        />
       )}
       {save.state === "hasError" && (
         <p role="alert" className="mt-3 text-sm text-destructive">

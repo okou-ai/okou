@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { ReactNode } from "react";
 import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -170,11 +171,13 @@ function ChatAccountChoices({
         })}
       </div>
       {list.state === "loading" && !page && (
-        <p className="px-3 py-2 text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.connectors.accounts.loading;
           })}
-        </p>
+          variant="rows"
+          className="px-3 py-2"
+        />
       )}
       {(list.state === "hasError" || current.state === "hasError") && (
         <p className="px-3 py-2 text-sm text-muted-foreground">
@@ -399,16 +402,19 @@ function ChatConnectorAccountPanel({
       </div>
       {entry ? (
         <ChatAccountChoices signals={signals} entry={entry} />
-      ) : (
+      ) : unavailable ? (
         <p className="px-3 py-2 text-sm text-muted-foreground">
-          {unavailable
-            ? t(($) => {
-                return $.connectors.accounts.accountsUnavailable;
-              })
-            : t(($) => {
-                return $.connectors.accounts.loading;
-              })}
+          {t(($) => {
+            return $.connectors.accounts.accountsUnavailable;
+          })}
         </p>
+      ) : (
+        <LoadingSkeleton
+          className="px-3 py-2"
+          label={t(($) => {
+            return $.connectors.accounts.loading;
+          })}
+        />
       )}
       <AccountPanelFooter
         signals={signals}
