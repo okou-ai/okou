@@ -24,13 +24,13 @@ struct ChatSharingFooter: View {
           Button("People in this workspace", okouSymbol: "users") {
             sharing.audience = .organization
           }
+          if sharing.audience == .private {
+            Button("Only me", okouSymbol: "lock") { sharing.audience = .private }
+          }
         } label: {
-          Label(
-            sharing.audience == .public ? "Anyone with the link" : "Workspace members",
-            okouSymbol: sharing.audience == .public ? "globe" : "users"
-          )
-          .font(.okou(.callout))
-          .frame(minHeight: OkouControl.minimumTarget)
+          Label(audienceLabel, okouSymbol: audienceSymbol)
+            .font(.okou(.callout))
+            .frame(minHeight: OkouControl.minimumTarget)
         }
         .disabled(sharing.isBusy)
         .accessibilityIdentifier("chat-sharing-audience")
@@ -48,6 +48,22 @@ struct ChatSharingFooter: View {
     .padding(.horizontal, OkouSpace.lg)
     .padding(.vertical, OkouSpace.sm)
     .background(OkouColor.background)
+  }
+
+  private var audienceLabel: String {
+    switch sharing.audience {
+    case .public: String(localized: "Anyone with the link")
+    case .organization: String(localized: "Workspace members")
+    case .private: String(localized: "Only me")
+    }
+  }
+
+  private var audienceSymbol: String {
+    switch sharing.audience {
+    case .public: "globe"
+    case .organization: "users"
+    case .private: "lock"
+    }
   }
 }
 
