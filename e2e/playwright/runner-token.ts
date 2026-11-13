@@ -229,7 +229,7 @@ async function preparePaidRunner(
     });
     await page.goto(checkoutUrl, { waitUntil: "domcontentloaded" });
     const formLocation = await fillStripeCheckout(page);
-    console.log("Runner Checkout submit click returned", {
+    console.log("Runner Checkout activation returned", {
       target: target.fileName,
       formLocation,
     });

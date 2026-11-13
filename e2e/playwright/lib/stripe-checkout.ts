@@ -698,6 +698,12 @@ export async function fillStripeCheckout(
   // Email edits can re-enable Link and its required phone field after the
   // earlier opt-out. Reassert the intended checkout form state before payment.
   await disableLinkSaveInfo(formFrame);
-  await checkoutSubmitLocator(formFrame).click({ timeout: 30_000 });
+  const submit = checkoutSubmitLocator(formFrame);
+  const deadline = Date.now() + 30_000;
+  await expect(submit).toBeVisible({ timeout: remainingTimeout(deadline) });
+  await expect(submit).toBeEnabled({ timeout: remainingTimeout(deadline) });
+  // Email commit can reflow the form between pointerdown and pointerup. Native
+  // keyboard activation focuses this button without depending on its position.
+  await submit.press("Enter", { timeout: remainingTimeout(deadline) });
   return formFrame === page.mainFrame() ? "main" : "descendant";
 }

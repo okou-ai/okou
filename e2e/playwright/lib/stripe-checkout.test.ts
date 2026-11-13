@@ -74,6 +74,72 @@ test("card checkout stays opted out of Link after email updates", async (context
   );
 });
 
+for (const location of ["main", "descendant"] as const) {
+  test(`checkout completes once when email commit reflows the ${location} form`, async (context) => {
+    const browser = await chromium.launch();
+    context.after(() => browser.close());
+    const page = await browser.newPage();
+    const body = `<!doctype html>
+      <form>
+        <label>Email<input name="email" type="email" required></label>
+        <label>Card number<input name="cardNumber" required></label>
+        <label>Expiry<input name="cardExpiry" required></label>
+        <label>CVC<input name="cardCvc" required></label>
+        <label>Cardholder name<input name="billingName"></label>
+        <label>ZIP<input name="billingPostalCode"></label>
+        <label><input type="checkbox">Save my information with Link</label>
+        <section aria-label="Invoice summary"></section>
+        <button type="submit">Subscribe</button>
+      </form>
+      <output></output>
+      <script>
+        let activations = 0;
+        let submissions = 0;
+        document.querySelector('[name=email]').addEventListener('change', () => {
+          const summary = document.querySelector('section');
+          summary.textContent = 'Billing details updated';
+          summary.style.height = '200px';
+        });
+        document.querySelector('button').addEventListener('click', event => {
+          if (event.isTrusted) activations++;
+        });
+        document.querySelector('form').addEventListener('submit', event => {
+          event.preventDefault();
+          submissions++;
+          document.querySelector('output').textContent =
+            'Checkout completed with ' + activations + ' activation and ' + submissions + ' submission';
+        });
+      </script>`;
+    await page.route("https://checkout.stripe.com/fixture", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body:
+          location === "main"
+            ? body
+            : '<iframe style="width:900px;height:700px" src="https://js.stripe.com/form"></iframe>',
+      }),
+    );
+    await page.route("https://js.stripe.com/form", (route) =>
+      route.fulfill({ contentType: "text/html", body }),
+    );
+    await page.goto("https://checkout.stripe.com/fixture");
+
+    assert.equal(await fillStripeCheckout(page), location);
+
+    const form =
+      location === "main"
+        ? page.mainFrame()
+        : page.frame({ url: "https://js.stripe.com/form" });
+    assert.ok(form);
+    await expect(
+      form.getByRole("region", { name: "Invoice summary" }),
+    ).toHaveText("Billing details updated");
+    await expect(form.getByRole("status")).toHaveText(
+      "Checkout completed with 1 activation and 1 submission",
+    );
+  });
+}
+
 test("checkout completes in a late nested Stripe form with collapsed Card controls", async (context) => {
   const browser = await chromium.launch();
   context.after(() => browser.close());
