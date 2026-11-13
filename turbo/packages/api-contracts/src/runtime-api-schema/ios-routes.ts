@@ -56,6 +56,7 @@ import {
 import { desktopShellAuthorizationContract } from "../contracts/desktop-shell-authorization";
 import { mailContract } from "../contracts/mail";
 import { sharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
+import { sshAuthorizationContract } from "../contracts/ssh-authorization";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
@@ -507,6 +508,18 @@ const iosContracts: readonly {
     route: workflowsCollectionContract.composer,
   },
   { id: "ios.workflowsDetailContract.get", route: workflowsDetailContract.get },
+  {
+    id: "ios.sshAuthorizationContract.get",
+    route: sshAuthorizationContract.get,
+  },
+  {
+    id: "ios.sshAuthorizationContract.approve",
+    route: sshAuthorizationContract.approve,
+  },
+  {
+    id: "ios.sshAuthorizationContract.revoke",
+    route: sshAuthorizationContract.revoke,
+  },
   {
     id: "ios.desktopShellAuthorizationContract.get",
     route: desktopShellAuthorizationContract.get,

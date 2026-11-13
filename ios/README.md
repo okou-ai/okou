@@ -93,6 +93,11 @@ choices are saved before the first message; a failed initialization retains the
 draft for ordinary retry. An uncertain settings write requires fresh
 readback before another message can be sent.
 
+Debug and Staging builds accept `--ssh-access-cards` for on-demand native
+acceptance. This catalog renders the production transcript, SSH cards and detail
+sheet against an isolated `.invalid` HTTP fixture; it grants no real host access
+and bypasses authentication. The entry point is excluded from Release builds.
+
 ## Local setup
 
 Use Xcode 27.1 (build `27A9275`, iOS 27.1 SDK) on macOS 26.6 or later, with an

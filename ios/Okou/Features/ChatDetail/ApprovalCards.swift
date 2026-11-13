@@ -48,6 +48,18 @@ final class ApprovalCardRegistry {
   private var liveComputers: [ChatComputerAuthorizationAction: WeakComputer] = [:]
   private var computerInteractions: [ChatComputerAuthorizationAction: ComputerAuthorizationStore] =
     [:]
+  private final class WeakSSH {
+    weak var value: SSHAuthorizationStore?
+    init(_ value: SSHAuthorizationStore) { self.value = value }
+  }
+
+  private let sshCards: NSCache<NSString, SSHAuthorizationStore> = {
+    let cache = NSCache<NSString, SSHAuthorizationStore>()
+    cache.countLimit = 64
+    return cache
+  }()
+  private var liveSSH: [String: WeakSSH] = [:]
+  private var sshInteractions: [String: SSHAuthorizationStore] = [:]
   private var active = false
   private var closed = false
 
@@ -107,6 +119,28 @@ final class ApprovalCardRegistry {
     return store
   }
 
+  func ssh(_ action: ChatSSHAuthorizationAction) -> SSHAuthorizationStore {
+    let id = action.id
+    if let existing = sshInteractions[id] ?? sshCards.object(forKey: id as NSString)
+      ?? liveSSH[id]?.value
+    {
+      return existing
+    }
+    liveSSH = liveSSH.filter { $0.value.value != nil }
+    let store = SSHAuthorizationStore(
+      action: action, threadID: thread.id, client: client, didFail: didFail,
+      didContinue: didContinue,
+      didRetainInteraction: { [weak self] card in self?.sshInteractions[id] = card })
+    if closed {
+      store.close()
+    } else {
+      liveSSH[id] = WeakSSH(store)
+      sshCards.setObject(store, forKey: id as NSString)
+      if active { store.activate() }
+    }
+    return store
+  }
+
   func activate() {
     guard !closed else { return }
     active = true
@@ -114,6 +148,8 @@ final class ApprovalCardRegistry {
     for card in liveMailDrafts.values.compactMap(\.value) { card.activate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
     for card in liveComputers.values.compactMap(\.value) { card.activate() }
+    liveSSH = liveSSH.filter { $0.value.value != nil }
+    for card in liveSSH.values.compactMap(\.value) { card.activate() }
   }
 
   func deactivate() {
@@ -122,12 +158,16 @@ final class ApprovalCardRegistry {
     for card in liveMailDrafts.values.compactMap(\.value) { card.deactivate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
     for card in liveComputers.values.compactMap(\.value) { card.deactivate() }
+    liveSSH = liveSSH.filter { $0.value.value != nil }
+    for card in liveSSH.values.compactMap(\.value) { card.deactivate() }
   }
 
   func refreshComputers() async {
     guard !closed else { return }
     liveComputers = liveComputers.filter { $0.value.value != nil }
     for card in liveComputers.values.compactMap(\.value) { await card.refresh() }
+    liveSSH = liveSSH.filter { $0.value.value != nil }
+    for card in liveSSH.values.compactMap(\.value) { await card.refresh() }
   }
 
   func close() {
@@ -141,6 +181,10 @@ final class ApprovalCardRegistry {
     computers.removeAllObjects()
     liveComputers = [:]
     computerInteractions = [:]
+    for card in liveSSH.values.compactMap(\.value) { card.close() }
+    sshCards.removeAllObjects()
+    liveSSH = [:]
+    sshInteractions = [:]
   }
 
 }

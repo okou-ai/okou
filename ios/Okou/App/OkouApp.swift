@@ -12,11 +12,12 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
+    if isSSHAuthorizationPreview { return true }
     #if DEBUG
-      ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
+      return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
         || isChatSyncStatus || isComputerAuthorizationPreview
     #else
-      false
+      return false
     #endif
   }
 
@@ -40,6 +41,14 @@ struct OkouApp: App {
   private static var isComputerAuthorizationPreview: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--computer-access-cards")
+    #else
+      false
+    #endif
+  }
+
+  private static var isSSHAuthorizationPreview: Bool {
+    #if DEBUG || STAGING
+      ProcessInfo.processInfo.arguments.contains("--ssh-access-cards")
     #else
       false
     #endif
@@ -76,17 +85,25 @@ struct OkouApp: App {
   var body: some Scene {
     WindowGroup {
       Group {
-        #if DEBUG
-          if Self.isComputerAuthorizationPreview {
-            NavigationStack { ComputerAuthorizationGallery() }
-          } else if Self.isChatSyncStatus {
-            NavigationStack { ChatSyncStatusGallery() }
-          } else if Self.isResultStyles {
-            NavigationStack { ResultStylesPage() }
-          } else if Self.isDesignPreview {
-            NavigationStack { OkouDesignSystemCatalog() }
+        #if DEBUG || STAGING
+          if Self.isSSHAuthorizationPreview {
+            NavigationStack { SSHAuthorizationGallery() }
           } else {
-            productRoot
+            #if DEBUG
+              if Self.isComputerAuthorizationPreview {
+                NavigationStack { ComputerAuthorizationGallery() }
+              } else if Self.isChatSyncStatus {
+                NavigationStack { ChatSyncStatusGallery() }
+              } else if Self.isResultStyles {
+                NavigationStack { ResultStylesPage() }
+              } else if Self.isDesignPreview {
+                NavigationStack { OkouDesignSystemCatalog() }
+              } else {
+                productRoot
+              }
+            #else
+              productRoot
+            #endif
           }
         #else
           productRoot

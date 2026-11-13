@@ -13,7 +13,9 @@ enum ChatInvalidation: Hashable, Sendable {
 
   init?(notification: String) {
     switch notification {
-    case "computerUseHostsChanged", "desktopShellAuthorizationChanged": self = .computerAccess
+    case "computerUseHostsChanged", "desktopShellAuthorizationChanged", "sshAuthorizationChanged",
+      "ssh:changed", "connectorPermissionUpdated", "connector:changed":
+      self = .computerAccess
     case "runModelsChanged": self = .runModels
     case "userPreferenceChanged": self = .modelPreference
     case "threadListChanged": self = .threadList

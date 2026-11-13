@@ -40,6 +40,7 @@ struct MessageRenderPlan: Sendable {
     case unavailablePermission
     case mailDraft(String)
     case computerAuthorization(ChatComputerAuthorizationAction)
+    case sshAuthorization(ChatSSHAuthorizationAction)
     case artifact(ChatArtifact, label: String, destination: URL?)
     case diagram(code: String, original: AttributedString)
 
@@ -52,7 +53,7 @@ struct MessageRenderPlan: Sendable {
         // Artifact cards reserve the preview and information sizes before loading metadata.
         true
       case .connector, .permission, .permissionBatch, .unavailablePermission, .mailDraft,
-        .computerAuthorization, .diagram:
+        .computerAuthorization, .sshAuthorization, .diagram:
         false
       }
     }
@@ -103,6 +104,7 @@ struct MessageRenderPlan: Sendable {
         case .unavailablePermission: return .unavailablePermission
         case .mailDraft(let id): return .mailDraft(id)
         case .computerAuthorization(let action): return .computerAuthorization(action)
+        case .sshAuthorization(let action): return .sshAuthorization(action)
         }
       }
       root = .group(units, spacing: 12)

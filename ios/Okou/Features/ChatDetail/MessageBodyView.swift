@@ -184,6 +184,10 @@ private struct MessageRenderUnitView: View {
         ComputerAuthorizationCard(
           store: approvals.computer(action), loadsState: message.loadsActions)
       }
+    case .sshAuthorization(let action):
+      if let approvals = message.approvals {
+        SSHAuthorizationCard(store: approvals.ssh(action), loadsState: message.loadsActions)
+      }
     case .artifact(let resource, let label, let destination):
       if let viewer = message.artifacts {
         MessageArtifactCard(
