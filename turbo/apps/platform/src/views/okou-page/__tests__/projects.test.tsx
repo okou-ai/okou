@@ -827,8 +827,9 @@ function runningIndicatorPhase(indicator: HTMLElement | null): number {
   return Number(phase);
 }
 
-test("A folded Project rests on the running or unread state of the chats it hides, and an unfolded one leaves it to them", async () => {
+test("A folded Project prioritizes unread over running chats, and an unfolded one leaves each state to its chats", async () => {
   const researchId = "30000000-0000-4000-8000-000000000072";
+  const buildId = "30000000-0000-4000-8000-000000000073";
   const quietId = "30000000-0000-4000-8000-000000000074";
   const ordinary = continuityThread(225, 1, "Ordinary chat");
   // Research lists an unread chat on each side of its running one.
@@ -858,6 +859,10 @@ test("A folded Project rests on the running or unread state of the chats it hide
     projectId: quietId,
     archived: true,
   };
+  const buildRunning = {
+    ...continuityThread(225, 8, "Build progress"),
+    projectId: buildId,
+  };
   const workspace = installContinuityWorkspace(context, {
     caseId: 225,
     threads: [
@@ -868,9 +873,11 @@ test("A folded Project rests on the running or unread state of the chats it hide
       launchUnread,
       quiet,
       quietArchivedRunning,
+      buildRunning,
     ],
   });
   metadata([
+    { id: buildId, name: "Build" },
     { id: researchId, name: "Research" },
     { id: quietId, name: "Quiet" },
   ]);
@@ -883,6 +890,7 @@ test("A folded Project rests on the running or unread state of the chats it hide
         [researchUnread.id]: "unread",
         [launchUnread.id]: "unread",
         [quietArchivedRunning.id]: "active",
+        [buildRunning.id]: "active",
       },
       unreadAt: {
         [researchOlderUnread.id]: at,
@@ -898,19 +906,21 @@ test("A folded Project rests on the running or unread state of the chats it hide
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
 
-  // A running chat outranks an unread one, as it does on a chat's own row.
+  // A Project reports unread chats before running ones, regardless of their order.
   await waitFor(() => {
-    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
   });
+  expect(projectTrigger(buildId)).toHaveAccessibleName("Build Running");
+  expect(projectStateIndicator("Research", researchId)).toBeInTheDocument();
   expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
   expect(projectTrigger(quietId)).toHaveAccessibleName("Quiet");
   // The state rests where the menu dots would, in step with the list's wave:
-  // Research is the second row.
+  // Build is the third row.
   expect(projectStateIndicator("Launch")).toBeInTheDocument();
   expect(projectStateIndicator("Quiet", quietId)).toBeNull();
   expect(
-    runningIndicatorPhase(projectStateIndicator("Research", researchId)),
-  ).toBeCloseTo(-11 / 12, 10);
+    runningIndicatorPhase(projectStateIndicator("Build", buildId)),
+  ).toBeCloseTo(-10 / 12, 10);
 
   click(projectToggle("Research", researchId));
   await waitFor(() => {
@@ -925,15 +935,18 @@ test("A folded Project rests on the running or unread state of the chats it hide
   expect(projectStateIndicator("Research", researchId)).toBeNull();
 
   click(projectToggle("Research", researchId));
-  expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
 
   // The Unread list leaves the running chat out, so Research hides only
   // unread chats there.
   openChatListMenu();
   click(menuItemByText("Unread"));
   await waitFor(() => {
-    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
+    expect(
+      document.querySelector(`[data-project-row-id="${buildId}"]`),
+    ).toBeNull();
   });
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
   expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
 });
 
