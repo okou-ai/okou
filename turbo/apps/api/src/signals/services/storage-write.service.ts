@@ -27,6 +27,10 @@ import {
 } from "../external/s3";
 import { storageCommitLineageCondition } from "./storage-write-conditions";
 import {
+  memberMemoryMergeVersions,
+  memberMemorySnapshotSource,
+} from "./member-memory";
+import {
   sandboxStorageRunIsActive,
   storageCommitPublicationStatement,
   storageCommitPublicationRow,
@@ -283,43 +287,39 @@ const prepareMemoryMergeContext$ = command(
     args: { readonly storage: StorageRow; readonly baseVersionId: string },
     signal: AbortSignal,
   ): Promise<MemoryMergeContext> => {
-    const headVersionId = args.storage.headVersionId;
-    if (!headVersionId) {
-      throw new Error("Memory has no HEAD version");
-    }
+    const versions = memberMemoryMergeVersions(
+      args.baseVersionId,
+      args.storage.headVersionId,
+    );
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const snapshots = await Promise.all(
-      [args.baseVersionId, headVersionId].map(async (versionId) => {
+      versions.map(async (versionId) => {
         const version = await set(
           findStorageVersion$,
           { storageId: args.storage.id, versionId },
           signal,
         );
-        if (
-          !version ||
-          version.s3Key !== `${args.storage.s3Prefix}/${versionId}`
-        ) {
-          throw new Error("Memory merge version is unavailable");
-        }
-        if (version.fileCount === 0) {
-          return { versionId, empty: true };
+        const source = memberMemorySnapshotSource({
+          objectPrefix: args.storage.s3Prefix,
+          versionId,
+          revision: version
+            ? { objectPrefix: version.s3Key, fileCount: version.fileCount }
+            : undefined,
+        });
+        if (source.empty) {
+          return source;
         }
         const [manifestUrl, archiveUrl] = await Promise.all([
           get(
             generatePresignedGetUrl(
               bucket,
-              `${version.s3Key}/manifest.json`,
+              source.manifestKey,
               undefined,
               true,
             ),
           ),
           get(
-            generatePresignedGetUrl(
-              bucket,
-              `${version.s3Key}/archive.tar.gz`,
-              undefined,
-              true,
-            ),
+            generatePresignedGetUrl(bucket, source.archiveKey, undefined, true),
           ),
         ]);
         signal.throwIfAborted();
@@ -570,7 +570,7 @@ const commitVerifiedStorageVersion$ = command(
   },
 );
 
-export const prepareStorageUploadForStorage$ = command(
+const prepareStorageUploadForStorage$ = command(
   async (
     { set },
     args: PrepareStorageForStorageInput,
@@ -625,7 +625,7 @@ export const prepareStorageUploadForStorage$ = command(
   },
 );
 
-export const commitStorageUploadForStorage$ = command(
+const commitStorageUploadForStorage$ = command(
   async (
     { set },
     args: CommitStorageForStorageInput,
@@ -680,7 +680,8 @@ export const commitStorageUploadForStorage$ = command(
   },
 );
 
-export const prepareStorageUploadForAuth$ = command(
+/** The legacy wire also retains authorization for accepted historical mounts. */
+export const prepareMemberMemoryWriteback$ = command(
   async (
     { set },
     args: PrepareStorageInput,
@@ -781,7 +782,7 @@ const readSandboxLineage$ = command(
   },
 );
 
-export const commitSandboxStorageUpload$ = command(
+export const commitMemberMemoryWriteback$ = command(
   async (
     { set },
     args: CommitStorageInput,

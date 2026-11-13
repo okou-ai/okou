@@ -173,7 +173,7 @@ function createStorageBaseIndexSignal(
       requests: selection.requests,
       timing: selection.args.timing,
     };
-    const prefetched = await get(bootstrap.storage$);
+    const prefetched = await get(bootstrap.memory$);
     const ownedRequests = input.requests.filter((request) => {
       return !prefetched.lookupKeys.has(
         storageIndexKey(

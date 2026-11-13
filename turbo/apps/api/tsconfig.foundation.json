@@ -148,6 +148,7 @@
     "src/signals/services/run-execution-defaults.ts",
     "src/signals/services/agent-run-contracts.ts",
     "src/signals/services/agent-storage-context.service.ts",
+    "src/signals/services/member-memory.ts",
     "src/signals/services/authorized-connectors.service.ts",
     "src/signals/services/connectors-context.service.ts",
     "src/signals/services/run-prompt-and-skills.ts",
