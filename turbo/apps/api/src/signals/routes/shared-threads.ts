@@ -202,8 +202,16 @@ const createSelectedShare$ = command(
       signal,
     );
     if (!selection) return notFound("Chat thread not found");
-    const valid = new Set(selection.messages.map((message) => {return message.eventId}));
-    if (parsed.data.eventIds.some((id) => {return !valid.has(id)})) {
+    const valid = new Set(
+      selection.messages.map((message) => {
+        return message.eventId;
+      }),
+    );
+    if (
+      parsed.data.eventIds.some((id) => {
+        return !valid.has(id);
+      })
+    ) {
       return conflict(
         "Selected messages changed. Review your selection and try again.",
       );

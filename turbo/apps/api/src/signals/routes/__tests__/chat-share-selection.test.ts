@@ -13,7 +13,9 @@ import {
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
-const app = () => {return setupApp({ context, routes: sharedThreadRoutes })};
+const app = () => {
+  return setupApp({ context, routes: sharedThreadRoutes });
+};
 
 it("resolves the final answer with its prompt and shares exactly the selected records", async () => {
   const { actor, agentId, runnerGroup } =
@@ -41,13 +43,16 @@ it("resolves the final answer with its prompt and shares exactly the selected re
     }),
     [200],
   );
-  expect(selected.body.messages.map((message) => {return message.role})).toEqual([
-    "user",
-    "assistant",
-  ]);
+  expect(
+    selected.body.messages.map((message) => {
+      return message.role;
+    }),
+  ).toEqual(["user", "assistant"]);
   const answer = selected.body.messages[1]!;
   expect(answer.turnEventIds).toEqual(
-    selected.body.messages.map((message) => {return message.eventId}),
+    selected.body.messages.map((message) => {
+      return message.eventId;
+    }),
   );
   const created = await accept(
     app()(chatShareSelectionContract).create({
@@ -66,10 +71,12 @@ it("resolves the final answer with its prompt and shares exactly the selected re
     [200],
   );
   expect(
-    shared.body.messages.map((message) => {return {
-      role: message.role,
-      content: message.content,
-    }}),
+    shared.body.messages.map((message) => {
+      return {
+        role: message.role,
+        content: message.content,
+      };
+    }),
   ).toEqual([{ role: "assistant", content: "The final itinerary" }]);
   await accept(
     app()(chatShareSelectionContract).create({
