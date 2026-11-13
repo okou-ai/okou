@@ -4,7 +4,6 @@ import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
@@ -397,7 +396,6 @@ function ChatWorkspace({
   const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
-      layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
       sidebar={active ? <ChatThreadSidebarPane /> : null}

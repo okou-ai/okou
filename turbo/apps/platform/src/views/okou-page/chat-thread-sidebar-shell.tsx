@@ -1,4 +1,3 @@
-import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { cn } from "@okouai/ui";
@@ -117,7 +116,6 @@ function sidebarPanelClassName({
 
 interface ChatThreadSidebarShellProps {
   readonly children: ReactNode;
-  readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly open: boolean;
   readonly sidebar: ReactNode;
@@ -134,14 +132,12 @@ interface ChatThreadSidebarShellProps {
 
 export function ChatThreadSidebarShell({
   children,
-  layout,
   animateEntry,
   open,
   sidebar,
   widthKey = "default",
   workspace,
 }: ChatThreadSidebarShellProps) {
-  const transitionRef = useSet(layout.transitionOnRef$);
   // The remembered panel width; each panel kind keeps its own.
   const width = useGet(chatThreadSidebarWidths$)[widthKey] ?? null;
   const resizing = useGet(chatThreadSidebarResizing$);
@@ -190,7 +186,6 @@ export function ChatThreadSidebarShell({
 
   const frame = (
     <div
-      ref={transitionRef}
       // The shell frame must not establish a stacking context or containing
       // block: its sidebar's fixed surface needs to compete inside #root.
       className={workspaceFrameClassName(workspace?.beside)}

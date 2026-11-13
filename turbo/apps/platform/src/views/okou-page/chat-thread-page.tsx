@@ -3481,7 +3481,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(
-          "absolute inset-0 focus:outline-none [overflow-anchor:none]",
+          "absolute inset-0 focus:outline-none",
           SCROLL_FADE_Y_END,
           standalonePwa && "overscroll-contain",
         )}

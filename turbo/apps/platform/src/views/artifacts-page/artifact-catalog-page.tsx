@@ -35,7 +35,6 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -727,7 +726,6 @@ export function ArtifactCatalogPage({
 
   return (
     <ChatThreadSidebarShell
-      layout={chatLayout}
       animateEntry
       open={sidebarOpen}
       sidebar={<ArtifactCatalogSidebar />}
