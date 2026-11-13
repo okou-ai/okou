@@ -12,7 +12,6 @@ import {
   string,
   tuple,
   union,
-  unknown as zUnknown,
   enum as zEnum,
 } from "zod";
 import { chatThreadsContract } from "../../contracts/chat-threads";
@@ -95,7 +94,7 @@ describe("selected Kotlin chat readers", () => {
       object({ kind: zEnum(["a", "b"]) }),
       object({ kind: literal("b") }),
     ]),
-    object({ value: record(string(), zUnknown()) }),
+    object({ value: record(string(), union([string(), number()])) }),
     object({ value: tuple([string(), number()]) }),
     object({ value: zEnum(["a-b", "a_b"]) }),
   ])(
@@ -163,7 +162,7 @@ describe("selected Kotlin chat readers", () => {
   it("rejects unsupported queries, route/DTO mismatches and unsafe packages before output", () => {
     for (const query of [
       object({ values: array(string()) }),
-      union([object({ first: string() }), object({ second: number() })]),
+      union([object({ value: string() }), object({ value: number() })]),
       object({ cursor: string(), Cursor: string() }),
     ]) {
       const response = object({ value: string() });
