@@ -9,8 +9,56 @@ import XCTest
 
 @MainActor
 final class ChatComposerPasteTests: XCTestCase {
-  func testSystemPasteUploadsMixedImagesAndReplacesSelectedTextOnce() async throws {
+  func testStructuredCopyCutPastePreservesInlineReferencesAndNativeUndo() async throws {
     preserveNativePasteboard(for: self)
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let expected = MentionNavigationFixture.inlineReferenceDraft
+    let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
+    conversation.composer.editBlock(block.id, document: expected)
+    let host = UIHostingController(rootView: MentionComposerHarness(state: conversation.composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
+    XCTAssertEqual(input.text, expectedNativeText)
+
+    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+    input.copy(nil)
+    let data = try XCTUnwrap(
+      UIPasteboard.general.data(forPasteboardType: ComposerAttributedDocument.pasteboardType))
+    XCTAssertEqual(try JSONDecoder().decode(ChatDraftDocument.self, from: data), expected)
+    XCTAssertEqual(
+      UIPasteboard.general.string,
+      "Before [Cross Agent archived plan](/chats/\(MentionNavigationFixture.thread(31)))"
+        + " and [Project 30](/chats/\(MentionNavigationFixture.thread(30))) after 🌷")
+    input.cut(nil)
+    try await waitForBusinessResult { !conversation.composer.hasContent }
+    try await eventually { input.undoManager?.groupingLevel == 0 }
+
+    // Own external delivery while keeping the exported payload and native paste bridge real.
+    let provider = NSItemProvider()
+    provider.registerDataRepresentation(
+      forTypeIdentifier: ComposerAttributedDocument.pasteboardType, visibility: .all
+    ) { completion in
+      completion(data, nil)
+      return nil
+    }
+    input.paste(itemProviders: [provider])
+    try await waitForBusinessResult { conversation.composer.document == expected }
+    XCTAssertEqual(input.text, expectedNativeText)
+    XCTAssertTrue(input.isFirstResponder)
+    try await eventually { input.undoManager?.groupingLevel == 0 }
+    input.undoManager?.undo()
+    try await waitForBusinessResult { !conversation.composer.hasContent }
+    input.undoManager?.redo()
+    try await waitForBusinessResult { conversation.composer.document == expected }
+    XCTAssertEqual(input.text, expectedNativeText)
+  }
+
+  func testMixedDataProvidersUploadImagesAndReplaceSelectedTextOnce() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
@@ -22,13 +70,24 @@ final class ChatComposerPasteTests: XCTestCase {
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 7, length: 3)
     let png = imageData()
-    // This is the test device's pasteboard; no host clipboard or logged-in device is used.
-    UIPasteboard.general.setItems(
-      [
-        [UTType.utf8PlainText.identifier: Data("pasted".utf8), UTType.png.identifier: png],
-        [UTType.png.identifier: png],
-      ], options: [.localOnly: true])
-    input.paste(nil)
+    // Keep PNG byte representations so the production importer must materialize each image.
+    let providers = (0..<2).map { _ in
+      let provider = NSItemProvider()
+      provider.registerDataRepresentation(
+        forTypeIdentifier: UTType.png.identifier, visibility: .all
+      ) { completion in
+        completion(png, nil)
+        return nil
+      }
+      return provider
+    }
+    providers[0].registerDataRepresentation(
+      forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all
+    ) { completion in
+      completion(Data("pasted".utf8), nil)
+      return nil
+    }
+    input.paste(itemProviders: providers)
     try await waitForBusinessResult(
       message: "Mixed paste not ready: draft=\(conversation.draft), "
         + "items=\(conversation.attachmentDraft.items.count), "
