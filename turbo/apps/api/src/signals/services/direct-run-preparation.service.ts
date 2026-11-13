@@ -42,9 +42,7 @@ export interface AdmittedRunLaunch {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
-  readonly cliAgentSessionId: string | null;
   readonly createdAt: Date;
-  readonly apiStartTime: number;
   readonly reusePreparation: RunnerReusePreparation | undefined;
 }
 

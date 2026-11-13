@@ -3324,16 +3324,6 @@ export function createThreadClaimRunObjects(
       }
     },
   );
-  const piSessionId$ = computed(async (get): Promise<string | undefined> => {
-    const args = await get(runnerArgs$);
-    if (!args || isRouteError(args) || args.launchSnapshot.framework !== "pi") {
-      return undefined;
-    }
-    const officialTarget = await get(threadContext.automationTarget$);
-    return officialTarget?.workflow.officialDefinitionName
-      ? args.run.id
-      : (args.chatThreadId ?? args.run.id);
-  });
   const runIdentity$ = computed(async (get) => {
     const ids = get(runIds$);
     if (!(await get(selectionInput$))) {
@@ -3572,10 +3562,9 @@ export function createThreadClaimRunObjects(
       bodyOverride: BuildRunnerLaunchInputInput["body"] | undefined,
       signal: AbortSignal,
     ) => {
-      const [input, preparedStorage, piSessionId] = await Promise.all([
+      const [input, preparedStorage] = await Promise.all([
         set(prepareRunnerInput$, bodyOverride, signal),
         get(preparedStorage$),
-        get(piSessionId$),
       ]);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
@@ -3587,7 +3576,6 @@ export function createThreadClaimRunObjects(
       return {
         input,
         runStorageMounts: preparedStorage.metadata.persistedStorageMounts,
-        piSessionId,
       };
     },
   );
@@ -4429,9 +4417,7 @@ type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
       readonly run: RunRecord;
-      readonly runnerInput: RunnerLaunchInput;
       readonly admittedLaunch: AdmittedRunLaunch;
-      readonly reusePreparation?: RunnerReusePreparation;
       readonly publicationReturnedAt: number;
     }
   | QueueFirstRunClaimLost;
@@ -4937,11 +4923,10 @@ function recordAtomicLaunchTiming(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  const dispatchedProfile = args.committed.runnerInput.profile;
   args.timing.flush({
     runId: args.committed.run.id,
-    runnerGroup: args.committed.runnerInput.runnerGroup,
-    profile: dispatchedProfile,
+    runnerGroup: args.committed.admittedLaunch.runnerGroup,
+    profile: args.committed.admittedLaunch.profile,
     dispatchPath: "direct",
     dimensions: timingDimensionsForCreateArgs(args.createArgs),
     ...(args.createArgs.body.triggerSource
@@ -5187,7 +5172,6 @@ function preparedRunnerGroup(): string {
 interface PreparedRunnerLaunchInput {
   readonly input: ReturnType<typeof prepareRunnerLaunchInput>;
   readonly runStorageMounts: readonly PersistedStorageMount[];
-  readonly piSessionId: string | undefined;
 }
 
 function finalizeRunnerLaunch(
@@ -5198,8 +5182,6 @@ function finalizeRunnerLaunch(
     runnerInput: {
       runnerGroup: group,
       profile: args.launchSnapshot.runnerProfile,
-      cliAgentSessionId:
-        storage.piSessionId ?? context.nativeContinuation.sessionId,
       reuseKey: runnerReuseKey(args.chatThreadId),
       executionContext: context,
     },
@@ -5588,7 +5570,6 @@ type CreateRunBody = Omit<
 interface RunnerLaunchInput {
   readonly runnerGroup: string;
   readonly profile: string;
-  readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
   readonly executionContext: StoredExecutionContext;
 }
@@ -5694,14 +5675,12 @@ function pendingLaunchCommitResult(
         };
   return {
     ...persisted,
-    runnerInput: args.persistence.payload,
     admittedLaunch: admittedRunLaunch(
       args,
       admission,
       persisted.run.createdAt,
       reusePreparation,
     ),
-    reusePreparation,
     publicationReturnedAt,
   };
 }
@@ -5746,9 +5725,7 @@ function admittedRunLaunch(
     runnerGroup: payload.runnerGroup,
     profile: payload.profile,
     reuseKey: payload.reuseKey,
-    cliAgentSessionId: payload.cliAgentSessionId,
     createdAt,
-    apiStartTime: args.createArgs.apiStartTime,
     reusePreparation,
   };
 }
