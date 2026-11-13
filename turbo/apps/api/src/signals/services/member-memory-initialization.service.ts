@@ -10,12 +10,13 @@ import { piResourceProjectionValues } from "./pi-resource-version-index.service"
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
+import type { MemberMemoryOwner } from "./member-memory";
 
 /** Establish the member's memory before any run can require its mount. */
 export const initializeMemberMemory$ = command(
   async (
     { set },
-    identity: { readonly orgId: string; readonly userId: string },
+    identity: MemberMemoryOwner,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();

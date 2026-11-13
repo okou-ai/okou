@@ -29,10 +29,10 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  agentStorageReadPlan,
-  captureAgentStorageContext,
-  type AgentStorageContext,
+  captureMemberMemoryContext,
+  type MemberMemoryContext,
 } from "./agent-storage-context.service";
+import { memberMemoryReadPlan } from "./member-memory";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   connectorSourceSnapshotsFromRows,
@@ -170,7 +170,7 @@ export interface AgentRunContextSignals {
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
   >["seedSkills$"];
-  readonly storage$: Computed<Promise<AgentStorageContext>>;
+  readonly memory$: Computed<Promise<MemberMemoryContext>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
   readonly environment$: Computed<Promise<BootstrapEnvironment>>;
@@ -546,10 +546,10 @@ function createIdentityContext(
     agentId,
     featureSwitchContext$,
   );
-  const storage$ = computed(async (get): Promise<AgentStorageContext> => {
-    const requests = agentStorageReadPlan(scope);
+  const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
+    const requests = memberMemoryReadPlan(scope);
     const db = get(db$);
-    return captureAgentStorageContext(
+    return captureMemberMemoryContext(
       requests,
       await (async () => {
         const readPlan = storageBaseIndexReadPlan(requests);
@@ -593,7 +593,7 @@ function createIdentityContext(
     ...connectorContext.signals,
     officialCatalog$: reusedOfficialCatalog(supplied),
     seedSkills$: globalReferences.seedSkills$,
-    storage$,
+    memory$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
     environment$,
@@ -614,7 +614,7 @@ export const preloadAgentRunContext$ = command(
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
-      signals.storage$,
+      signals.memory$,
       signals.agent$,
       signals.orgRows$,
       signals.orgMetadata$,
