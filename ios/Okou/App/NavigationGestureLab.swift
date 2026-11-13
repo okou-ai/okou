@@ -47,8 +47,9 @@
             ) { row, _ in
               if let message = row.message {
                 MessageBodyView(
-                  text: message.text, baseURL: fixture.baseURL, markdown: fixture.markdown)
-                  .padding(20)
+                  text: message.text, baseURL: fixture.baseURL, markdown: fixture.markdown
+                )
+                .padding(20)
               }
             }
             .accessibilityIdentifier("lab-transcript")
