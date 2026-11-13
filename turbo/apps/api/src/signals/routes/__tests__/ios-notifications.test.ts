@@ -11,6 +11,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   authenticateIosSession,
   reconcileIosNotifications,
@@ -22,6 +23,18 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const callbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
+
+async function cancelStartedRun(actor: ApiTestUser, runId: string) {
+  const input = await runs.executionInput(runId);
+  await runs.requestCancelRun(actor, runId, [200]);
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 137, error: "Run cancelled" },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
 
 async function prepareRuntime() {
   await runs.configureRunnerGroup();
@@ -45,8 +58,7 @@ async function unreadConversation(actor: ApiTestUser) {
     agentId: agent.agentId,
     prompt: "Unread result",
   });
-  await runs.requestCancelRun(actor, sent.runId, [200]);
-  await flushWaitUntilForTest();
+  await cancelStartedRun(actor, sent.runId);
   return { ...sent, agentId: agent.agentId };
 }
 
@@ -238,8 +250,7 @@ describe("iOS notification read-state reconciliation", () => {
       threadId: first.threadId,
       prompt: "A later unread result",
     });
-    await runs.requestCancelRun(actor, next.runId, [200]);
-    await flushWaitUntilForTest();
+    await cancelStartedRun(actor, next.runId);
     const result = await reconcile(actor, [
       { identifier: "older", threadId: first.threadId, runId: first.runId },
       { identifier: "newer", threadId: next.threadId, runId: next.runId },

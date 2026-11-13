@@ -708,8 +708,9 @@ describe("CHAT-02: thread connector account selection", () => {
         connectionStatus: "connected",
       },
     ]);
+    const firstClaim = await fixture.claimChatRun(runnerGroup, first.runId);
     await own(() => {
-      return cancelChatRun(actor, first.runId);
+      return cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
     });
     await own(() => {
       return connectors.updateCustomConnector(actor, customConnector.id, {
