@@ -193,7 +193,9 @@ function selectedGroupsFromEvents(
             id: event.id,
             text:
               event.content ??
-              messageDocumentToDisplayText(event.userMessage) ??
+              messageDocumentToDisplayText(
+                "userMessage" in event ? event.userMessage : undefined,
+              ) ??
               "",
           },
         ];
