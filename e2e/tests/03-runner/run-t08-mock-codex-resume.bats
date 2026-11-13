@@ -5,6 +5,7 @@
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
+load '../../helpers/runner-session-diagnostics'
 
 setup_file() {
     runner_e2e_use_mock_codex_profile
@@ -32,9 +33,8 @@ teardown_file() {
     assert_output --partial "first turn"
 
     local first_output="$output"
-    local thread_id first_session_id
+    local thread_id
     thread_id="$(runner_chat_field "$first_output" '.threadId')"
-    first_session_id="$(runner_chat_field "$first_output" '.sessionId')"
 
     run runner_chat_continue "$RUNNER_AGENT_ID" "$thread_id" "second turn"
 
@@ -42,9 +42,5 @@ teardown_file() {
     assert_output --partial '"status":"completed"'
     assert_output --partial "second turn"
 
-    local second_thread_id second_session_id
-    second_thread_id="$(runner_chat_field "$output" '.threadId')"
-    second_session_id="$(runner_chat_field "$output" '.sessionId')"
-    [[ "$second_thread_id" == "$thread_id" ]]
-    [[ "$second_session_id" == "$first_session_id" ]]
+    runner_chat_assert_codex_continuity "$first_output" "$output"
 }
