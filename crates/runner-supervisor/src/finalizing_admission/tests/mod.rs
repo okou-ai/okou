@@ -6,13 +6,13 @@ use super::*;
 use runner_executor::executor::RunnerPreSpawnConcurrency;
 use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRuns};
 use runner_lifecycle::idle_pool::{
-    IdlePool, IdlePoolConfig, test_support::ParkedIdleCandidateBuilder,
+    IdlePool, IdlePoolConfig, ParkedIdleCandidate, test_support::ParkedIdleCandidateBuilder,
 };
 use runner_provider::RunCancellationRegistry;
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
 #[test]
-fn fresh_fallback_home_lock_policy_matches_predecessor_state() {
+fn fallback_home_lock_policy_matches_predecessor_state() {
     let cases = [
         (
             ActiveRunReuseState::Pending,
@@ -43,7 +43,7 @@ fn fresh_fallback_home_lock_policy_matches_predecessor_state() {
     ];
     for (state, expected) in cases {
         assert_eq!(
-            home_prepare_lock_policy_for_fresh_fallback(state),
+            home_prepare_lock_policy_for_fallback(state),
             expected,
             "{state:?}"
         );
@@ -51,7 +51,7 @@ fn fresh_fallback_home_lock_policy_matches_predecessor_state() {
 }
 
 #[test]
-fn fresh_fallback_home_lock_policy_reads_live_predecessor() {
+fn fallback_home_lock_policy_reads_live_predecessor() {
     let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
     let predecessor_run_id = RunId::new_v4();
     let guard = active_runs.register(
@@ -70,7 +70,7 @@ fn fresh_fallback_home_lock_policy_reads_live_predecessor() {
         native_generation_run_id: Some(predecessor_run_id),
     };
     assert_eq!(
-        admission.fresh_fallback_home_prepare_policy(),
+        admission.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Pending,
             HomeImagePreparePolicy::TryCacheWithoutLockWait
@@ -80,7 +80,7 @@ fn fresh_fallback_home_lock_policy_reads_live_predecessor() {
     let started_at = Instant::now();
     assert!(publisher.mark_finalizing(started_at));
     assert_eq!(
-        admission.fresh_fallback_home_prepare_policy(),
+        admission.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Finalizing { started_at },
             HomeImagePreparePolicy::TryCacheWithLockWait,
@@ -88,7 +88,7 @@ fn fresh_fallback_home_lock_policy_reads_live_predecessor() {
     );
     assert!(publisher.publish_exact_sandbox());
     assert_eq!(
-        admission.fresh_fallback_home_prepare_policy(),
+        admission.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::ExactSandboxPublished,
             HomeImagePreparePolicy::TryCacheWithoutLockWait
@@ -96,7 +96,7 @@ fn fresh_fallback_home_lock_policy_reads_live_predecessor() {
     );
     drop(guard);
     assert_eq!(
-        admission.fresh_fallback_home_prepare_policy(),
+        admission.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Released,
             HomeImagePreparePolicy::TryCacheWithLockWait
@@ -392,37 +392,64 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
 
 #[tokio::test]
 async fn fallback_budget_wakeup_reuses_exact_published_while_waiting() {
-    assert_fallback_budget_wakeup_reuses_published(true, true).await;
+    assert_fallback_budget_wakeup_reuses_published(FallbackPublication::Exact, true).await;
 }
 
 #[tokio::test]
 async fn fallback_budget_wakeup_reuses_generic_published_while_waiting() {
-    assert_fallback_budget_wakeup_reuses_published(false, true).await;
+    assert_fallback_budget_wakeup_reuses_published(FallbackPublication::Generic, true).await;
+}
+
+#[tokio::test]
+async fn fallback_budget_wakeup_reuses_blank_published_while_waiting() {
+    assert_fallback_budget_wakeup_reuses_published(FallbackPublication::Blank, true).await;
 }
 
 #[tokio::test]
 async fn history_free_budget_wakeup_keeps_generationless_publication_generic() {
-    assert_fallback_budget_wakeup_reuses_published(false, false).await;
+    assert_fallback_budget_wakeup_reuses_published(FallbackPublication::Generic, false).await;
 }
 
-async fn assert_fallback_budget_wakeup_reuses_published(exact: bool, native_history: bool) {
+enum FallbackPublication {
+    Exact,
+    Generic,
+    Blank,
+}
+
+async fn assert_fallback_budget_wakeup_reuses_published(
+    publication: FallbackPublication,
+    native_history: bool,
+) {
     let mut admission = released_admission();
     if !native_history {
         admission.native_generation_run_id = None;
     }
     let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
     let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
-    let exact_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
-    let exact_id = sandbox::SandboxId::new_v4();
-    let builder = ParkedIdleCandidateBuilder::new(&admission.reuse_key, exact_lease)
-        .with_source_run_id(admission.source_run_id)
-        .with_sandbox_id(exact_id);
-    let candidate = if exact {
-        builder
-            .with_native_generation_run_id(admission.source_run_id)
-            .build()
-    } else {
-        builder.build()
+    let published_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+    let published_id = sandbox::SandboxId::new_v4();
+    let candidate = match publication {
+        FallbackPublication::Blank => ParkedIdleCandidate::blank(
+            Box::new(MockSandbox::new("published-blank")),
+            Arc::new(Box::new(MockSandboxFactory::new())),
+            published_lease,
+            published_id,
+            "vm0/default".into(),
+            "test-rootfs".into(),
+            None,
+        ),
+        FallbackPublication::Exact | FallbackPublication::Generic => {
+            let builder = ParkedIdleCandidateBuilder::new(&admission.reuse_key, published_lease)
+                .with_source_run_id(admission.source_run_id)
+                .with_sandbox_id(published_id);
+            if matches!(publication, FallbackPublication::Exact) {
+                builder
+                    .with_native_generation_run_id(admission.source_run_id)
+                    .build()
+            } else {
+                builder.build()
+            }
+        }
     };
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
         IdlePoolConfig::default(),
@@ -478,7 +505,7 @@ async fn assert_fallback_budget_wakeup_reuses_published(exact: bool, native_hist
         .unwrap();
         assert!(reserved_exact.is_none());
         cancellation.unregister().await;
-        selected
+        (selected, timing.blank_pool_selection())
     });
     tokio::time::timeout(Duration::from_secs(5), entered.notified())
         .await
@@ -491,19 +518,25 @@ async fn assert_fallback_budget_wakeup_reuses_published(exact: bool, native_hist
             runner_lifecycle::idle_pool::ParkResult::Parked
         ));
         // Make both wakeups ready before the selector resumes. Its budget
-        // branch must still recheck the newly published exact generation.
+        // branch must still recheck the newly published idle sandbox.
         drop(held);
     }
-    let selected = tokio::time::timeout(Duration::from_secs(5), task)
+    let (selected, blank_selection) = tokio::time::timeout(Duration::from_secs(5), task)
         .await
         .expect("selector should accept the published sandbox")
         .unwrap();
-    let reservation = match (exact, selected) {
-        (true, FinalizingResource::Exact(reservation))
-        | (false, FinalizingResource::Reusable(reservation)) => reservation,
+    let reservation = match (&publication, selected) {
+        (FallbackPublication::Exact, FinalizingResource::Exact(reservation))
+        | (
+            FallbackPublication::Generic | FallbackPublication::Blank,
+            FinalizingResource::Reusable(reservation),
+        ) => reservation,
         _ => panic!("published reuse should win over the newly available fresh capacity"),
     };
-    assert_eq!(reservation.sandbox_id(), exact_id);
+    assert_eq!(reservation.sandbox_id(), published_id);
+    if matches!(publication, FallbackPublication::Blank) {
+        assert_eq!(blank_selection, Some(BlankPoolSelection::Hit));
+    }
     assert_eq!(idle_pool.lock().await.len(), 0);
     assert_eq!(budget.allocated(), (2, 2048, 1));
     let (reservation, _) = reservation.into_parts();

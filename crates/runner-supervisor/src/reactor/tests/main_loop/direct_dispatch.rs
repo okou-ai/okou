@@ -9,6 +9,7 @@ use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod continuation;
+mod fallback;
 
 fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
     json!({

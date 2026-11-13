@@ -27,18 +27,20 @@ use tracing::info;
 use crate::idle_lifecycle::{
     IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
     ReservedIdleActivation, SharedIdlePool, reserve_exact_idle_for_spawn,
-    reserve_reusable_idle_for_spawn, reserve_source_idle_for_spawn,
-    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
+    reserve_source_idle_for_spawn, rollback_reserved_idle_for_spawn,
+    select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 use runner_executor::executor::{
-    ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome, FinalizingHandoffReason,
-    RunnerPreSpawnTiming,
+    BlankPoolSelection, ExecutionFailure, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
+    FinalizingHandoffReason, RunnerPreSpawnTiming,
 };
 use runner_lifecycle::active_runs::{
     ActiveRunHandoffRequest, ActiveRunReuseProof, ActiveRunReuseState,
 };
 use runner_lifecycle::home_image_cache::HomeImagePreparePolicy;
-use runner_lifecycle::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
+use runner_lifecycle::idle_pool::{
+    ExactIdleReservationMiss, FinalizingHandoffCandidate, IdleSandboxKind,
+};
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::RunCancellationRegistration;
@@ -60,19 +62,15 @@ pub struct FinalizingAdmission {
 }
 
 impl FinalizingAdmission {
-    /// Read the live predecessor state when a fresh fallback is ready to start,
+    /// Read the live predecessor state when a blank or fresh fallback is ready to start,
     /// not when its resource was first selected. Return the same snapshot for logging.
-    pub fn fresh_fallback_home_prepare_policy(
-        &self,
-    ) -> (ActiveRunReuseState, HomeImagePreparePolicy) {
+    pub fn fallback_home_prepare_policy(&self) -> (ActiveRunReuseState, HomeImagePreparePolicy) {
         let state = self.predecessor.state();
-        (state, home_prepare_lock_policy_for_fresh_fallback(state))
+        (state, home_prepare_lock_policy_for_fallback(state))
     }
 }
 
-fn home_prepare_lock_policy_for_fresh_fallback(
-    state: ActiveRunReuseState,
-) -> HomeImagePreparePolicy {
+fn home_prepare_lock_policy_for_fallback(state: ActiveRunReuseState) -> HomeImagePreparePolicy {
     match state {
         ActiveRunReuseState::Pending
         | ActiveRunReuseState::ExactSandboxPublished
@@ -551,7 +549,7 @@ async fn receive_finalizing_handoff(
 /// Acquire capacity after the predecessor can no longer provide an exact direct handoff.
 ///
 /// Each loop first reserves a matching idle entry, then tries retained retiring leases and
-/// rechecks exact or generic reuse before accepting fresh budget capacity. Idle entries selected
+/// rechecks exact, generic, or blank reuse before accepting fresh budget capacity. Idle entries selected
 /// for pressure are either returned as reuse reservations or converted into retiring leases;
 /// they are never counted twice. When neither source can make progress, the loop waits for cancellation, budget
 /// availability, or an idle-pool change and retries. A cancellation or other failure returns
@@ -609,7 +607,7 @@ async fn acquire_fallback_resource(
                 device_rate_limits,
                 // Exact and generic publication share the reuse-key slot. A
                 // generic predecessor must be reserved before pressure eviction.
-                allow_compatible_blank: false,
+                allow_compatible_blank: true,
                 blank_pool_diagnostics: None,
                 vcpu,
                 memory_mb,
@@ -620,7 +618,9 @@ async fn acquire_fallback_resource(
         if let Some(snapshot) = idle_snapshot {
             set_idle_status_snapshot(ctx.status, snapshot).await;
         }
-        debug_assert!(blank_pool_selection.is_none());
+        if let Some(selection) = blank_pool_selection {
+            pre_spawn_timing.record_blank_pool_selection(selection);
+        }
         match selection {
             IdlePressureSelection::Reusable(reservation) => {
                 let reservation = accept_fallback_idle(cancellation, reservation, ctx).await?;
@@ -685,6 +685,9 @@ fn fallback_idle_resource(
     native_generation_run_id: Option<RunId>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
 ) -> FinalizingResource {
+    if reservation.kind() == IdleSandboxKind::Blank {
+        pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
+    }
     if let Some(native_generation_run_id) = native_generation_run_id {
         if reservation.native_generation_run_id() == Some(native_generation_run_id)
             && reservation.source_run_id() == Some(native_generation_run_id)
@@ -731,10 +734,13 @@ async fn reserve_fallback_idle(
     } else {
         None
     };
-    let Some(reservation) =
-        reserve_reusable_idle_for_spawn(ctx.idle_pool, reuse_key, profile_name, device_rate_limits)
-            .await
-    else {
+    let reservation = {
+        let mut pool = ctx.idle_pool.lock().await;
+        pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)
+            .or_else(|| pool.reserve_blank(profile_name, device_rate_limits).ok())
+            .map(|reservation| ReservedIdleActivation::new(reservation, pool.status_snapshot()))
+    };
+    let Some(reservation) = reservation else {
         return Ok(FallbackIdleLookup::Miss(miss));
     };
     accept_fallback_idle(cancellation, reservation, ctx)

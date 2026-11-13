@@ -39,9 +39,8 @@ async fn assert_finalizing_home(successor: Successor) {
     let rootfs_hash = profiles["vm0/default"].rootfs_hash.clone();
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 8, 16384, 2, overrides.clone());
-    // Keep replenishment out of the fixture; offer one explicit parked blank
-    // after the producer has entered its real finalization path.
-    config.capacity.max_idle = 0;
+    // The two-slot capacity rounds the blank refill target down to zero;
+    // offer one explicit blank after the producer enters finalization.
     let budget = config.capacity.budget.clone();
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(HomeImageCache::shared(
