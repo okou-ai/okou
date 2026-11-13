@@ -47,7 +47,10 @@ import { setupAgentPhoneConnectPage$ } from "./okou-page/agentphone-connect-page
 import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
-import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
+import {
+  setupFeishuSettingsPage$,
+  setupFeishuSetupPage$,
+} from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
 import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page-setup.ts";
@@ -446,6 +449,22 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.settingsLark,
     setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
+  },
+  {
+    path: ROUTES.settingsFeishuSetup,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSetupPage$),
+  },
+  {
+    path: ROUTES.settingsFeishuSetupBot,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSetupPage$),
+  },
+  {
+    path: ROUTES.settingsLarkSetup,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSetupPage$),
+  },
+  {
+    path: ROUTES.settingsLarkSetupBot,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSetupPage$),
   },
   {
     path: ROUTES.githubConnect,

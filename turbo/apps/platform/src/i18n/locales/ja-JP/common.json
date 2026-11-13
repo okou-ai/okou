@@ -4167,13 +4167,9 @@
     },
     "setupGuide": {
       "backToFields": "入力に戻る",
-      "enlarge": "スクリーンショットを拡大",
-      "fullImage": "全体を表示",
       "hideSecret": "{{label}}を非表示",
-      "imageArea": "表示範囲",
       "imageProgress": "画像 {{current}} / {{total}}",
       "images": "参考画像",
-      "keyArea": "重要な部分",
       "permissionReference": "画像はインポートの場所を示しています。右側でコピーした完全な JSON を使用してください。",
       "permissionsJson": "権限 JSON を表示",
       "showSecret": "{{label}}を表示",

@@ -1,11 +1,15 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { pathname } from "../../../signals/location.ts";
 import type { FeishuInstallationStatus } from "@okouai/api-contracts/contracts/feishu-connect";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, fill } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
+  queryAction,
+  findAction,
   mockFeishu,
   setupFeishuSettingsPage,
 } from "./connector-integrations-test-helpers.ts";
@@ -19,7 +23,7 @@ test.each(["feishu", "lark"] as const)(
     mockFeishu(context, {}, platform);
     await setupFeishuSettingsPage(context, platform);
     click(await screen.findByText("Add bot"));
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     const appId = await screen.findByLabelText("App ID");
     const secret = screen.getByLabelText("App Secret");
     await fill(appId, "cli_draft");
@@ -32,44 +36,34 @@ test.each(["feishu", "lark"] as const)(
     click(getAction("button", "Back to fields"));
     expect(secret).toHaveValue("draft-secret");
 
-    click(getAction("radio", "Full screenshot"));
-    expect(getAction("radio", "Full screenshot")).toHaveAttribute(
-      "aria-checked",
+    expect(pathname()).toBe(`/settings/${platform}/setup`);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Chat threads" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("feishu-guide-canvas")).toHaveAttribute(
+      "data-zoomable-image-canvas",
       "true",
     );
+    await expect(findAction("button", "Zoom in")).resolves.toBeInTheDocument();
+    await user.keyboard("{Escape}");
     expect(secret).toHaveValue("draft-secret");
     expect(appId).toHaveValue("cli_draft");
-    const trigger = getAction("button", "Enlarge screenshot");
-    await user.click(trigger);
-    const preview = await screen.findByRole("dialog", {
-      name: "Add the app credentials",
-    });
-    expect(
-      within(preview).getByRole("img", {
-        name: "Feishu app creation result showing where to find the App ID and App Secret",
-      }),
-    ).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    const setupDialog = await screen.findByRole("dialog", {
-      name: platform === "feishu" ? "Add a Feishu bot" : "Add a Lark bot",
-    });
-    expect(secret).toHaveValue("draft-secret");
-    expect(trigger).toHaveFocus();
 
-    click(getAction("button", "Close"));
-    await waitFor(() => {
-      expect(setupDialog).not.toBeInTheDocument();
+    click(getAction("link", `${platform === "lark" ? "Lark" : "Feishu"} bots`));
+    await screen.findByRole("heading", {
+      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
     });
-    click(getAction("button", "Add bot"));
-    click(getAction("button", "Next"));
+    expect(pathname()).toBe(`/settings/${platform}`);
+    click(getAction("link", "Add bot"));
+    click(await findAction("button", "Next"));
     await expect(screen.findByLabelText("App Secret")).resolves.toHaveValue("");
     expect(screen.getByLabelText("App Secret")).toHaveAttribute(
       "type",
       "password",
-    );
-    expect(getAction("radio", "Key area")).toHaveAttribute(
-      "aria-checked",
-      "true",
     );
   },
 );
@@ -98,18 +92,18 @@ test.each(["feishu", "lark"] as const)(
     await setupFeishuSettingsPage(context, platform);
     await screen.findByText("Review bot");
     click(getAction("button", "More options for Review bot"));
-    click(getAction("button", "Review guide"));
+    click(getAction("link", "Review guide"));
     await screen.findByText("Create an Agent app");
     for (let index = 0; index < 4; index++) {
-      click(getAction("button", "Next"));
+      click(await findAction("button", "Next"));
     }
     await screen.findByText("Import app and user scopes");
     click(getAction("radio", "2. Paste the JSON and review new scopes"));
-    expect(
-      screen.getByRole("img", {
+    await expect(
+      screen.findByRole("img", {
         name: "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
       }),
-    ).toBeInTheDocument();
+    ).resolves.toBeInTheDocument();
     expect(screen.getByText("Image 2 of 2")).toBeInTheDocument();
     const json = screen.getByTestId("feishu-scope-import-json");
     const details = json.closest("details");
@@ -120,8 +114,66 @@ test.each(["feishu", "lark"] as const)(
     expect(json).toBeVisible();
     expect(json.textContent).toContain('"tenant"');
     expect(json.textContent).toContain('"user"');
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await screen.findByText("Configure event delivery");
     expect(screen.getByText("Image 1 of 2")).toBeInTheDocument();
+  },
+);
+
+test.each(["feishu", "lark"] as const)(
+  "%s setup deep links preserve admin access",
+  async (platform) => {
+    mockFeishu(context, { isAdmin: false }, platform);
+    await setupPage({
+      context,
+      path: `/settings/${platform}/setup`,
+      featureSwitches: {
+        [platform === "lark"
+          ? FeatureSwitchKey.LarkIntegration
+          : FeatureSwitchKey.FeishuIntegration]: true,
+      },
+    });
+    await screen.findByText(
+      `An organization admin must configure the app. You can connect your own account from the ${platform === "lark" ? "Lark" : "Feishu"} bot list after setup is complete.`,
+    );
+    expect(queryAction("button", "Next")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+);
+
+test.each(["feishu", "lark"] as const)(
+  "%s setup links cannot bypass its feature switch",
+  async (platform) => {
+    await setupPage({
+      context,
+      path: `/settings/${platform}/setup`,
+      featureSwitches: {
+        [FeatureSwitchKey.FeishuIntegration]: platform !== "feishu",
+        [FeatureSwitchKey.LarkIntegration]: platform !== "lark",
+      },
+    });
+    expect(pathname()).not.toBe(`/settings/${platform}/setup`);
+    expect(screen.queryByText("Create an Agent app")).not.toBeInTheDocument();
+  },
+);
+
+test.each(["feishu", "lark"] as const)(
+  "%s setup does not substitute another bot for a missing installation",
+  async (platform) => {
+    mockFeishu(context, {}, platform);
+    await setupPage({
+      context,
+      path: `/settings/${platform}/setup/f0000000-0000-4000-a000-000000000099`,
+      featureSwitches: {
+        [platform === "lark"
+          ? FeatureSwitchKey.LarkIntegration
+          : FeatureSwitchKey.FeishuIntegration]: true,
+      },
+    });
+    await screen.findByRole("heading", {
+      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
+    });
+    expect(pathname()).toBe(`/settings/${platform}`);
+    expect(screen.queryByLabelText("App Secret")).not.toBeInTheDocument();
   },
 );

@@ -4167,13 +4167,9 @@
     },
     "setupGuide": {
       "backToFields": "返回填寫",
-      "enlarge": "放大檢視",
-      "fullImage": "完整截圖",
       "hideSecret": "隱藏{{label}}",
-      "imageArea": "截圖範圍",
       "imageProgress": "第 {{current}} / {{total}} 張",
       "images": "參考截圖",
-      "keyArea": "關鍵位置",
       "permissionReference": "截圖用於指引匯入位置，權限內容以右側複製的完整 JSON 為準。",
       "permissionsJson": "檢視權限 JSON",
       "showSecret": "顯示{{label}}",

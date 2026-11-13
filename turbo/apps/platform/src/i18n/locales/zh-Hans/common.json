@@ -4167,13 +4167,9 @@
     },
     "setupGuide": {
       "backToFields": "返回填写",
-      "enlarge": "放大查看",
-      "fullImage": "完整截图",
       "hideSecret": "隐藏{{label}}",
-      "imageArea": "截图范围",
       "imageProgress": "第 {{current}} / {{total}} 张",
       "images": "参考截图",
-      "keyArea": "关键位置",
       "permissionReference": "截图用于指引导入位置，权限内容以右侧复制的完整 JSON 为准。",
       "permissionsJson": "查看权限 JSON",
       "showSecret": "显示{{label}}",

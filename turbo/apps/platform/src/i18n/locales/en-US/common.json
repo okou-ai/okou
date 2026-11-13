@@ -4180,13 +4180,9 @@
     },
     "setupGuide": {
       "backToFields": "Back to fields",
-      "enlarge": "Enlarge screenshot",
-      "fullImage": "Full screenshot",
       "hideSecret": "Hide {{label}}",
-      "imageArea": "Screenshot area",
       "imageProgress": "Image {{current}} of {{total}}",
       "images": "Reference screenshots",
-      "keyArea": "Key area",
       "permissionReference": "The screenshot shows where to import. Use the complete JSON copied on the right.",
       "permissionsJson": "View permission JSON",
       "showSecret": "Show {{label}}",

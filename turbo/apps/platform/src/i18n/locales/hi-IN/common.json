@@ -4182,13 +4182,9 @@
     },
     "setupGuide": {
       "backToFields": "फ़ील्ड पर वापस जाएँ",
-      "enlarge": "स्क्रीनशॉट बड़ा करें",
-      "fullImage": "पूरा स्क्रीनशॉट",
       "hideSecret": "{{label}} छिपाएँ",
-      "imageArea": "स्क्रीनशॉट क्षेत्र",
       "imageProgress": "चित्र {{current}} / {{total}}",
       "images": "संदर्भ स्क्रीनशॉट",
-      "keyArea": "मुख्य क्षेत्र",
       "permissionReference": "स्क्रीनशॉट आयात का स्थान दिखाता है। दाईं ओर से कॉपी किया गया पूरा JSON उपयोग करें।",
       "permissionsJson": "अनुमति JSON देखें",
       "showSecret": "{{label}} दिखाएँ",

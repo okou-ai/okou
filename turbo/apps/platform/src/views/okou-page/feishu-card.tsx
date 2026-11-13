@@ -18,7 +18,6 @@ import {
   Check,
   Eye,
   EyeOff,
-  X,
 } from "lucide-react";
 import {
   FEISHU_OAUTH_SCOPES,
@@ -65,20 +64,18 @@ import {
   toggleFeishuCredentialVisibility$,
   advanceFeishuSetupStep$,
   checkFeishuAppIdAvailable$,
-  closeFeishuDialog$,
-  completeFeishuDialogClose$,
+  closeFeishuSetup$,
   completeFeishuInstallationSetup$,
   disconnectFeishuOrg$,
-  feishuDialogExisting$,
-  feishuDialogInstallationId$,
-  feishuDialogOpen$,
+  feishuSetupExisting$,
+  feishuSetupInstallationId$,
+  feishuSetupActive$,
   feishuInstallations$,
   feishuOrgData$,
   feishuSetupForm$,
   feishuSetupStep$,
   feishuUninstallInstallationId$,
   goBackFeishuSetupStep$,
-  openFeishuDialog$,
   setFeishuUninstallInstallationId$,
   setupFeishuOrg$,
   updateFeishuSetupForm$,
@@ -89,12 +86,11 @@ import {
 } from "../../signals/okou-page/feishu.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { FeishuSetupGuide } from "./feishu-setup-guide.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 
 const feishuIconImg = settingsIconAssetUrl("lark");
-type FeishuDialogData = FeishuBotInstallation;
+type FeishuSetupData = FeishuBotInstallation;
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const { t } = useTranslation();
@@ -196,14 +192,14 @@ function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
           total: FEISHU_SETUP_STEPS.length,
         },
       )}
-      className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-4 sm:justify-center sm:gap-5 sm:px-6 md:py-5"
+      className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-4 @4xl/feishu-setup:justify-center @4xl/feishu-setup:gap-5 @4xl/feishu-setup:px-6 @3xl/feishu-setup:py-5"
     >
       {FEISHU_SETUP_STEPS.map((item, index) => {
         return (
           <li
             key={item}
             aria-current={index === currentIndex ? "step" : undefined}
-            className="flex min-w-0 items-center gap-2 text-xs sm:text-sm"
+            className="flex min-w-0 items-center gap-2 text-xs @4xl/feishu-setup:text-sm"
           >
             <span
               className={cn(
@@ -223,7 +219,7 @@ function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
               className={cn(
                 index === currentIndex
                   ? "font-medium text-foreground"
-                  : "hidden text-muted-foreground sm:inline",
+                  : "hidden text-muted-foreground @4xl/feishu-setup:inline",
               )}
             >
               {t(($) => {
@@ -233,7 +229,7 @@ function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
             {index < FEISHU_SETUP_STEPS.length - 1 ? (
               <span
                 aria-hidden
-                className="ml-2 hidden h-px w-4 bg-divider lg:block"
+                className="ml-2 hidden h-px w-4 bg-divider @5xl/feishu-setup:block"
               />
             ) : null}
           </li>
@@ -594,7 +590,7 @@ function FeishuTokensStep({
   );
 }
 
-function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
+function FeishuEventsStep({ data }: { data: FeishuSetupData | null }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   return (
@@ -658,7 +654,7 @@ function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
   );
 }
 
-function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
+function FeishuRedirectStep({ data }: { data: FeishuSetupData | null }) {
   const brandName = useGet(brandName$);
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -716,7 +712,7 @@ function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
   );
 }
 
-function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
+function FeishuPermissionsStep({ data }: { data: FeishuSetupData | null }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   const scopes = data?.oauthScopes ?? FEISHU_OAUTH_SCOPES;
@@ -863,7 +859,7 @@ function FeishuSetupStepContent({
   readOnly,
 }: {
   step: FeishuSetupStep;
-  data: FeishuDialogData | null;
+  data: FeishuSetupData | null;
   form: FeishuSetupInput;
   saving: boolean;
   readOnly: boolean;
@@ -908,7 +904,7 @@ type FeishuSetupRequest = FeishuSetupInput & {
 
 function feishuSetupRequest(
   form: FeishuSetupInput,
-  data: FeishuDialogData | null,
+  data: FeishuSetupData | null,
 ): FeishuSetupRequest {
   const input = {
     appId: form.appId.trim(),
@@ -924,7 +920,7 @@ function feishuSetupRequest(
 
 function canContinueFeishuSetup(args: {
   readonly step: FeishuSetupStep;
-  readonly data: FeishuDialogData | null;
+  readonly data: FeishuSetupData | null;
   readonly form: FeishuSetupInput;
   readonly saving: boolean;
 }): boolean {
@@ -1013,7 +1009,7 @@ function FeishuSetupWizardFooter({
   onBack,
 }: {
   step: FeishuSetupStep;
-  data: FeishuDialogData | null;
+  data: FeishuSetupData | null;
   saving: boolean;
   checkingAppId: boolean;
   canContinue: boolean;
@@ -1040,7 +1036,7 @@ function FeishuSetupWizardFooter({
     readOnly,
   });
   return (
-    <footer className="sticky bottom-0 order-3 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-5 py-5 md:static md:px-8 lg:px-12">
+    <footer className="sticky bottom-0 order-3 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-5 py-5 @3xl/feishu-setup:static @3xl/feishu-setup:px-6 @5xl/feishu-setup:px-8">
       <Button
         type="button"
         variant="outline"
@@ -1079,7 +1075,7 @@ function FeishuSetupWizard({
   readOnly,
   onClose,
 }: {
-  data: FeishuDialogData | null;
+  data: FeishuSetupData | null;
   readOnly: boolean;
   onClose: () => void;
 }) {
@@ -1135,14 +1131,14 @@ function FeishuSetupWizard({
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
       <FeishuSetupProgress step={step} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[minmax(0,1.18fr)_minmax(0,1fr)] md:overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto @3xl/feishu-setup:grid @3xl/feishu-setup:grid-cols-[minmax(0,1.18fr)_minmax(0,1fr)] @3xl/feishu-setup:overflow-hidden">
         <FeishuSetupGuide step={step} />
-        <div className="contents md:order-2 md:flex md:min-h-0 md:flex-col md:border-l md:border-border">
+        <div className="contents @3xl/feishu-setup:order-2 @3xl/feishu-setup:flex @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:flex-col @3xl/feishu-setup:border-l @3xl/feishu-setup:border-border">
           <div
             id="feishu-setup-fields"
-            className="order-1 px-5 py-7 md:min-h-0 md:flex-1 md:overflow-y-auto md:px-8 md:py-9 lg:px-12"
+            className="order-1 px-5 py-7 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:flex-1 @3xl/feishu-setup:overflow-y-auto @3xl/feishu-setup:px-8 @3xl/feishu-setup:py-9 @5xl/feishu-setup:px-12"
           >
-            <p className="mb-3 hidden text-xs text-muted-foreground md:block">
+            <p className="mb-3 hidden text-xs text-muted-foreground @3xl/feishu-setup:block">
               {t(
                 ($) => {
                   return $.onboarding.common.stepProgress;
@@ -1157,7 +1153,7 @@ function FeishuSetupWizard({
               type="button"
               variant="link"
               size="sm"
-              className="mb-5 px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+              className="mb-5 px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground @3xl/feishu-setup:hidden"
               onClick={() => {
                 // Fragment navigation reruns route setup and discards this draft.
                 document
@@ -1281,7 +1277,6 @@ function FeishuBotMenu({
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  const open = useSet(openFeishuDialog$);
   const setUninstallInstallationId = useSet(setFeishuUninstallInstallationId$);
   const [disconnectLoadable, disconnect] = useLoadableSet(disconnectFeishuOrg$);
   const signal = useGet(pageSignal$);
@@ -1313,16 +1308,22 @@ function FeishuBotMenu({
       />
       <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
         {isAdmin ? (
-          <button
-            type="button"
+          <Link
+            pathname={
+              bot.id
+                ? platform === "lark"
+                  ? ROUTES.settingsLarkSetupBot
+                  : ROUTES.settingsFeishuSetupBot
+                : platform === "lark"
+                  ? ROUTES.settingsLarkSetup
+                  : ROUTES.settingsFeishuSetup
+            }
+            options={
+              bot.id
+                ? { pathParams: { installationId: bot.id } }
+                : { searchParams: new URLSearchParams({ appId: bot.appId }) }
+            }
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
-            onClick={() => {
-              open({
-                appId: bot.appId,
-                step: bot.setupCompleted ? "create" : "redirect",
-                installationId: bot.id,
-              });
-            }}
           >
             {bot.setupCompleted
               ? t(($) => {
@@ -1331,7 +1332,7 @@ function FeishuBotMenu({
               : t(($) => {
                   return $.connectors.providerSettings[platform].manage;
                 })}
-          </button>
+          </Link>
         ) : null}
         {bot.isConnected ? (
           <button
@@ -1499,11 +1500,9 @@ function FeishuBotList({
 function FeishuBotsCard({
   bots,
   isAdmin,
-  onAdd,
 }: {
   bots: FeishuBotInstallation[];
   isAdmin: boolean;
-  onAdd: () => void;
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -1516,12 +1515,19 @@ function FeishuBotsCard({
           })}
         </h2>
         {isAdmin && bots.length === 0 ? (
-          <Button type="button" size="sm" onClick={onAdd}>
+          <Link
+            pathname={
+              platform === "lark"
+                ? ROUTES.settingsLarkSetup
+                : ROUTES.settingsFeishuSetup
+            }
+            className={buttonVariants({ variant: "secondary", size: "sm" })}
+          >
             <Plus size={16} />
             {t(($) => {
               return $.connectors.providerSettings[platform].addBot;
             })}
-          </Button>
+          </Link>
         ) : null}
       </div>
       <FeishuBotList bots={bots} isAdmin={isAdmin} />
@@ -1662,104 +1668,84 @@ function FeishuSettingsSkeleton() {
   );
 }
 
-function FeishuDialogBody({
-  data,
-  isAdmin,
-  onClose,
-}: {
-  data: FeishuDialogData | null;
-  isAdmin: boolean;
-  onClose: () => void;
-}) {
+export function FeishuSetupPage() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  if (!isAdmin) {
-    return (
-      <p className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.connectors.providerSettings[platform].dialogAdminRequired;
-        })}
-      </p>
-    );
-  }
-  const readOnly = data?.setupCompleted ?? false;
-  return (
-    <FeishuSetupWizard data={data} readOnly={readOnly} onClose={onClose} />
-  );
-}
-
-function FeishuSetupDialog({
-  data,
-  isAdmin,
-}: {
-  data: FeishuDialogData | null;
-  isAdmin: boolean;
-}) {
-  const { t } = useTranslation();
-  const platform = useGet(feishuPlatform$);
-  const open = useGet(feishuDialogOpen$);
-  const existing = useGet(feishuDialogExisting$);
-  const close = useSet(closeFeishuDialog$);
-  const completeClose = useSet(completeFeishuDialogClose$);
-  const readOnly = data?.setupCompleted ?? false;
-  let title = existing
-    ? t(($) => {
-        return $.connectors.providerSettings[platform].manageDialogTitle;
-      })
-    : t(($) => {
-        return $.connectors.providerSettings[platform].addDialogTitle;
-      });
-  let description = t(($) => {
-    return $.connectors.providerSettings[platform].addDialogDescription;
+  const active = useGet(feishuSetupActive$);
+  const existing = useGet(feishuSetupExisting$);
+  const installationId = useGet(feishuSetupInstallationId$);
+  const dataLoadable = useLastLoadable(feishuOrgData$);
+  const botsLoadable = useLastLoadable(feishuInstallations$);
+  const close = useSet(closeFeishuSetup$);
+  const orgData = loadableData(dataLoadable);
+  const data = setupFeishuBot({
+    bots: loadableData(botsLoadable) ?? [],
+    existing,
+    installationId,
   });
-  if (readOnly) {
-    title = t(($) => {
-      return $.connectors.providerSettings[platform].reviewGuideTitle;
-    });
-    description = t(($) => {
-      return $.connectors.providerSettings[platform].reviewGuideDescription;
-    });
-  }
+  const readOnly = data?.setupCompleted ?? false;
+  const hasError = feishuSettingsHasError(
+    dataLoadable.state,
+    botsLoadable.state,
+  );
+  const title = t(($) => {
+    return readOnly
+      ? $.connectors.providerSettings[platform].reviewGuideTitle
+      : existing
+        ? $.connectors.providerSettings[platform].manageDialogTitle
+        : $.connectors.providerSettings[platform].addDialogTitle;
+  });
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          close();
-        }
-      }}
-      onOpenChangeComplete={(nextOpen) => {
-        if (!nextOpen) {
-          completeClose();
-        }
-      }}
+    <main
+      className="@container/feishu-setup flex min-h-0 flex-1 flex-col overflow-hidden"
+      aria-labelledby="feishu-setup-title"
     >
-      <DialogContent
-        mode="fullscreen"
-        surface="canvas"
-        scrollable={false}
-        showCloseButton={false}
-        contentClassName="flex min-h-0 flex-col gap-0 overflow-hidden p-0"
-        initialFocus={false}
-      >
-        <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-4 space-y-0 border-b border-border px-5 py-4 md:px-8">
-          <div className="flex min-w-0 items-center gap-4">
-            <OkouLogomark className="size-7 shrink-0 text-foreground" />
-            <DialogTitle className="text-sm font-medium">{title}</DialogTitle>
-          </div>
-          <DialogDescription className="sr-only">
-            {description}
-          </DialogDescription>
-          <Button type="button" variant="quiet" onClick={close}>
-            <X size={16} />
-            {t(($) => {
-              return $.connectors.actions.close;
-            })}
-          </Button>
-        </DialogHeader>
-        <FeishuDialogBody data={data} isAdmin={isAdmin} onClose={close} />
-      </DialogContent>
-    </Dialog>
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-8">
+        <div className="flex min-w-0 items-center gap-4">
+          <h1
+            id="feishu-setup-title"
+            className="text-lg font-semibold tracking-tight"
+          >
+            {title}
+          </h1>
+        </div>
+        <Link
+          pathname={
+            platform === "lark" ? ROUTES.settingsLark : ROUTES.settingsFeishu
+          }
+          className={buttonVariants({ variant: "quiet", size: "sm" })}
+        >
+          <ArrowLeft size={16} />
+          {t(($) => {
+            return $.connectors.providerSettings[platform].bots;
+          })}
+        </Link>
+      </header>
+      {hasError ? (
+        <p role="alert" className="p-8 text-sm text-destructive">
+          {t(($) => {
+            return $.connectors.providerSettings[platform].loadError;
+          })}
+        </p>
+      ) : !active || !orgData ? (
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-6 p-8"
+          data-testid="feishu-setup-loading"
+        >
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="min-h-0 flex-1 rounded-3xl" />
+        </div>
+      ) : !orgData.isAdmin ? (
+        <p className="p-8 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.connectors.providerSettings[platform].dialogAdminRequired;
+          })}
+        </p>
+      ) : (
+        <FeishuSetupWizard data={data} readOnly={readOnly} onClose={close} />
+      )}
+    </main>
   );
 }
 
@@ -1876,7 +1862,7 @@ function findFeishuBot(
   );
 }
 
-function dialogFeishuBot(args: {
+function setupFeishuBot(args: {
   readonly bots: readonly FeishuBotInstallation[];
   readonly existing: boolean;
   readonly installationId: string | null;
@@ -1909,17 +1895,9 @@ export function FeishuSettingsPage() {
   const platform = useGet(feishuPlatform$);
   const dataLoadable = useLastLoadable(feishuOrgData$);
   const botsLoadable = useLastLoadable(feishuInstallations$);
-  const dialogExisting = useGet(feishuDialogExisting$);
-  const dialogInstallationId = useGet(feishuDialogInstallationId$);
-  const open = useSet(openFeishuDialog$);
   const data = loadableData(dataLoadable) ?? null;
   const bots = loadableData(botsLoadable) ?? [];
   const isAdmin = data?.isAdmin ?? false;
-  const dialogData = dialogFeishuBot({
-    bots,
-    existing: dialogExisting,
-    installationId: dialogInstallationId,
-  });
   const loading = feishuSettingsLoading({
     dataState: dataLoadable.state,
     botsState: botsLoadable.state,
@@ -1985,17 +1963,7 @@ export function FeishuSettingsPage() {
             <FeishuSettingsSkeleton />
           ) : (
             <>
-              <FeishuBotsCard
-                bots={bots}
-                isAdmin={isAdmin}
-                onAdd={() => {
-                  open({
-                    appId: "",
-                    step: "create",
-                  });
-                }}
-              />
-              <FeishuSetupDialog data={dialogData} isAdmin={isAdmin} />
+              <FeishuBotsCard bots={bots} isAdmin={isAdmin} />
               <FeishuUninstallDialog bots={bots} />
             </>
           )}

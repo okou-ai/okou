@@ -2,18 +2,13 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { Button, buttonVariants, IconButton } from "@okouai/ui";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@okouai/ui/components/ui/dialog";
+import { Button, buttonVariants } from "@okouai/ui";
 import {
   SegmentControl,
   SegmentControlItem,
 } from "@okouai/ui/components/ui/segment-control";
 import { useGet, useSet } from "ccstate-react";
-import { ExternalLink, X, ZoomIn } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -32,15 +27,15 @@ import {
   platformLarkCreateAppForAgentImg,
 } from "../../lib/static-assets.ts";
 import {
-  feishuGuideExpanded$,
-  feishuGuideFocused$,
   feishuGuideImageIndex$,
+  feishuGuideCanvas,
   feishuPlatform$,
-  setFeishuGuideExpanded$,
-  setFeishuGuideFocused$,
   setFeishuGuideImageIndex$,
   type FeishuSetupStep,
 } from "../../signals/okou-page/feishu.ts";
+
+import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
+import { ArtifactImageZoomControls } from "./artifact-actions.tsx";
 
 interface GuideImage {
   readonly src: string;
@@ -259,7 +254,7 @@ export function FeishuSetupGuide({ step }: { readonly step: FeishuSetupStep }) {
       aria-label={t(($) => {
         return $.connectors.setupGuide.title;
       })}
-      className="order-2 flex shrink-0 flex-col gap-4 bg-gray-50 p-5 md:order-1 md:min-h-0 md:shrink md:gap-5 md:p-8 lg:px-10"
+      className="order-2 flex shrink-0 flex-col gap-4 bg-gray-50 p-5 @3xl/feishu-setup:order-1 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:shrink @3xl/feishu-setup:gap-5 @3xl/feishu-setup:p-6 @5xl/feishu-setup:px-8"
     >
       {GUIDE_PRELOAD_SOURCES.map((src) => {
         return <link key={src} rel="preload" as="image" href={src} />;
@@ -289,62 +284,43 @@ export function FeishuSetupGuide({ step }: { readonly step: FeishuSetupStep }) {
           <ExternalLink size={14} />
         </a>
       </div>
-      <FeishuGuideStage step={step} image={image} />
+      <FeishuGuideStage image={image} />
       <FeishuGuideControls step={step} images={images} />
-      <FeishuGuidePreview image={image} />
     </section>
   );
 }
 
-function FeishuGuideStage({
-  step,
-  image,
-}: {
-  readonly step: FeishuSetupStep;
-  readonly image: GuideImage;
-}) {
-  const { t } = useTranslation();
-  const focused = useGet(feishuGuideFocused$);
-  const setExpanded = useSet(setFeishuGuideExpanded$);
-  const showCrop = step === "credentials" && focused;
-  const zoomLabel = t(($) => {
-    return $.connectors.setupGuide.enlarge;
-  });
+function FeishuGuideStage({ image }: { readonly image: GuideImage }) {
+  const navigationOwnerRef = useSet(feishuGuideCanvas.navigationOwnerRef$);
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      aria-label={zoomLabel}
-      onClick={() => {
-        return setExpanded(true);
-      }}
-      className="relative flex h-64 min-h-0 w-full items-center justify-center overflow-hidden rounded-3xl border border-surface-border bg-background p-4 hover:border-foreground/40 hover:bg-background md:h-auto md:flex-1 md:p-5"
+    <div
+      ref={navigationOwnerRef}
+      role="group"
+      aria-label={image.alt}
+      tabIndex={0}
+      className="relative flex h-72 min-h-0 w-full shrink-0 overflow-hidden rounded-3xl border border-surface-border bg-background @3xl/feishu-setup:h-auto @3xl/feishu-setup:flex-1 @3xl/feishu-setup:shrink"
     >
-      {showCrop ? (
-        // Keep the original image; crop only the surrounding whitespace.
-        <div className="relative aspect-[96/61] max-h-full w-full overflow-hidden">
-          <img
-            src={image.src}
-            alt={image.alt}
-            width={image.width}
-            height={image.height}
-            className="absolute -left-[12.5%] -top-[60.656%] h-auto w-[123.959%] max-w-none"
-          />
-        </div>
-      ) : (
-        <img
-          src={image.src}
-          alt={image.alt}
-          width={image.width}
-          height={image.height}
-          className="h-full min-h-0 w-full rounded-lg object-contain"
-        />
-      )}
-      <span className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-lg border border-surface-border bg-background px-2 py-1 text-xs text-muted-foreground">
-        <ZoomIn size={14} />
-        {zoomLabel}
-      </span>
-    </Button>
+      <ZoomableArtifactImageCanvas
+        key={image.src}
+        src={image.src}
+        alt={image.alt}
+        signals={feishuGuideCanvas}
+        canvasTestId="feishu-guide-canvas"
+        imageTestId="feishu-guide-image"
+        className="bg-background"
+        contentClassName="p-4 @3xl/feishu-setup:p-5"
+        pendingContent={<Loader2 size={20} className="animate-spin" />}
+      >
+        {(controls) => {
+          return (
+            <ArtifactImageZoomControls
+              controls={controls}
+              testIdPrefix="feishu-guide"
+            />
+          );
+        }}
+      </ZoomableArtifactImageCanvas>
+    </div>
   );
 }
 
@@ -358,9 +334,7 @@ function FeishuGuideControls({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   const index = useGet(feishuGuideImageIndex$);
-  const focused = useGet(feishuGuideFocused$);
   const setIndex = useSet(setFeishuGuideImageIndex$);
-  const setFocused = useSet(setFeishuGuideFocused$);
   const image = images[index] ?? images[0];
   return (
     <div className="shrink-0 space-y-3">
@@ -386,30 +360,6 @@ function FeishuGuideControls({
           </span>
         ) : null}
       </div>
-      {step === "credentials" ? (
-        <SegmentControl
-          size="xs"
-          variant="plain"
-          value={focused ? "focus" : "full"}
-          onValueChange={(value) => {
-            setFocused(value === "focus");
-          }}
-          aria-label={t(($) => {
-            return $.connectors.setupGuide.imageArea;
-          })}
-        >
-          <SegmentControlItem value="focus">
-            {t(($) => {
-              return $.connectors.setupGuide.keyArea;
-            })}
-          </SegmentControlItem>
-          <SegmentControlItem value="full">
-            {t(($) => {
-              return $.connectors.setupGuide.fullImage;
-            })}
-          </SegmentControlItem>
-        </SegmentControl>
-      ) : null}
       {images.length > 1 ? (
         <SegmentControl
           variant="plain"
@@ -461,7 +411,7 @@ function FeishuGuideControls({
         type="button"
         variant="link"
         size="sm"
-        className="px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+        className="px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground @3xl/feishu-setup:hidden"
         onClick={() => {
           document
             .getElementById("feishu-setup-fields")
@@ -473,47 +423,5 @@ function FeishuGuideControls({
         })}
       </Button>
     </div>
-  );
-}
-
-function FeishuGuidePreview({ image }: { readonly image: GuideImage }) {
-  const { t } = useTranslation();
-  const expanded = useGet(feishuGuideExpanded$);
-  const setExpanded = useSet(setFeishuGuideExpanded$);
-  return (
-    <Dialog open={expanded} onOpenChange={setExpanded}>
-      <DialogContent
-        maxWidth={1440}
-        height={1000}
-        showCloseButton={false}
-        scrollable={false}
-        contentClassName="flex min-h-0 flex-col gap-0 overflow-hidden p-0"
-      >
-        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-5 py-3">
-          <DialogTitle className="text-sm font-medium">
-            {image.label}
-          </DialogTitle>
-          <IconButton
-            aria-label={t(($) => {
-              return $.connectors.actions.close;
-            })}
-            onClick={() => {
-              return setExpanded(false);
-            }}
-          >
-            <X size={18} />
-          </IconButton>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
-          <img
-            src={image.src}
-            alt={image.alt}
-            width={image.width}
-            height={image.height}
-            className="mx-auto h-auto w-full rounded-xl bg-background"
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

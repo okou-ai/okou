@@ -12,7 +12,7 @@ import {
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 
 import {
   click,
@@ -54,6 +54,16 @@ export function getAction(
     throw new Error(`Expected ${role} named "${name}"`);
   }
   return action;
+}
+
+export function findAction(
+  role: "button" | "link" | "radio" | "tab",
+  name: string,
+  container: ParentNode = document.body,
+): Promise<HTMLElement> {
+  return waitFor(() => {
+    return getAction(role, name, container);
+  });
 }
 
 export function getIntegrationCard(title: string): HTMLElement {
