@@ -229,6 +229,9 @@ final class ThreadListStore {
               refreshAgain = true
               continue
             }
+            #if STAGING
+              let perfStart = ProcessInfo.processInfo.systemUptime
+            #endif
             if revision != readRevision || response.indicators == nil {
               for index in result.indices {
                 let held = threads.first { $0.id == result[index].id }
@@ -252,6 +255,11 @@ final class ThreadListStore {
               unreadAgentIDs = Set(
                 response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
             }
+            #if STAGING
+              let perfMS = (ProcessInfo.processInfo.systemUptime - perfStart) * 1_000
+              Logger(subsystem: "ai.okou.ios", category: "IOSPerf").notice(
+                "baseline_merge count=\(result.count) ms=\(perfMS)")
+            #endif
             guard response.cursor.seqID >= appliedThreadSequence else { continue }
             appliedThreadSequence = response.cursor.seqID
             projectThreads(result)

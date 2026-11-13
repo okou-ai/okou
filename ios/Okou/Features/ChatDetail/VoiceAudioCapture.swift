@@ -1,6 +1,7 @@
 import AVFoundation
 import ChatData
 import Foundation
+import OSLog
 import Synchronization
 
 struct VoiceAudioChunk: Sendable {
@@ -31,6 +32,9 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
     try await VoiceRecordingAudioSession.shared.activate(owner: owner)
     do {
       try Task.checkCancellation()
+      #if STAGING
+        let perfStart = ProcessInfo.processInfo.systemUptime
+      #endif
       let audio = AVAudioSession.sharedInstance()
       let engine = AVAudioEngine()
       let input = engine.inputNode
@@ -48,6 +52,10 @@ final class NativeVoiceAudioCapture: VoiceAudioCapture {
       self.continuation = continuation
       engine.prepare()
       try engine.start()
+      #if STAGING
+        let perfMS = (ProcessInfo.processInfo.systemUptime - perfStart) * 1_000
+        Logger(subsystem: "ai.okou.ios", category: "IOSPerf").notice("audio_engine ms=\(perfMS)")
+      #endif
       observers = [
         NotificationCenter.default.addObserver(
           forName: AVAudioSession.interruptionNotification, object: audio, queue: .main
