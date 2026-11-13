@@ -1,5 +1,22 @@
 # Changelog
 
+## [10.25.4](https://github.com/okou-ai/okou/compare/cli-v10.25.3...cli-v10.25.4) (2026-11-13)
+
+
+### Bug Fixes
+
+* **connectors:** preserve builtin mcp endpoint queries ([#46959](https://github.com/okou-ai/okou/issues/46959)) ([b82ba36](https://github.com/okou-ai/okou/commit/b82ba3634f5ce631f814989078d2809aaf6b9fa0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.58.1
+    * @okouai/connectors bumped to 3.23.1
+    * @okouai/core bumped to 8.835.1
+    * @okouai/pi-agent-runtime bumped to 1.51.115
+
 ## [10.25.3](https://github.com/okou-ai/okou/compare/cli-v10.25.2...cli-v10.25.3) (2026-11-13)
 
 

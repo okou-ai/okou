@@ -13,6 +13,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1123.1](https://github.com/okou-ai/okou/compare/app-v0.1123.0...app-v0.1123.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.58.1
+    * @okouai/connectors bumped to 3.23.1
+    * @okouai/core bumped to 8.835.1
+    * @okouai/ui bumped to 1.21.9
+
 ## [0.1123.0](https://github.com/okou-ai/okou/compare/app-v0.1122.3...app-v0.1123.0) (2026-11-13)
 
 
