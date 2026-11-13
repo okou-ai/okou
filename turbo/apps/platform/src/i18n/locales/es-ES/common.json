@@ -2815,6 +2815,11 @@
       "ideasLabel": "Ideas para empezar",
       "label": "Tareas para empezar",
       "more": "Más",
+      "presentationFormat": "Formato de presentación",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
       "shelf": {

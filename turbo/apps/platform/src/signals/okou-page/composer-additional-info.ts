@@ -1,3 +1,4 @@
+import type { PresentationOutputFormat } from "./presentation-output-format.ts";
 import type {
   ComposerCreateMode,
   PresentationSlideCount,
@@ -59,6 +60,7 @@ export function buildComposerAdditionalInfo(
   mode: ComposerCreateMode | null,
   presentationSlideCount: PresentationSlideCount,
   visualization: VisualizationPreferences | undefined,
+  presentationFormat?: PresentationOutputFormat,
 ): string | undefined {
   const text = [
     mode ? `Create ${mode === "image" ? "an" : "a"} ${mode}.` : "",
@@ -66,19 +68,28 @@ export function buildComposerAdditionalInfo(
       ? [
           "# Presentation Generation Defaults",
           "The user set these for presentations generated in this run:",
+          ...(presentationFormat
+            ? [`- Output format: ${presentationFormat.toUpperCase()} format`]
+            : []),
           `- Slide count: ${
             presentationSlideCount === "auto"
               ? "Auto (choose the number of slides based on the content)"
               : presentationSlideCount
           }`,
-          "Where this run's message asks for a different slide count, the message wins.",
+          presentationFormat
+            ? "The output format is a preference. Where this run's message asks for a different output format or slide count, the message wins."
+            : "Where this run's message asks for a different slide count, the message wins.",
         ].join("\n")
       : "",
     visualization
       ? [
           "# Visualization",
           "The user wants a visualized result for this run.",
-          `- Preferred output format: ${visualization.output ?? "report"}`,
+          `- Preferred output format: ${visualization.output ?? "report"}${
+            visualization.output === "presentation" && presentationFormat
+              ? ` (${presentationFormat.toUpperCase()} format)`
+              : ""
+          }`,
           visualization.charts.length > 0
             ? `- Preferred chart types: ${visualization.charts.join(", ")}`
             : "",

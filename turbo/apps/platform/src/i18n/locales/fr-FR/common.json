@@ -2815,6 +2815,11 @@
       "ideasLabel": "Idées pour démarrer",
       "label": "Tâches pour démarrer",
       "more": "Plus",
+      "presentationFormat": "Format de présentation",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {

@@ -6,7 +6,6 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import {
   VISUALIZATION_OUTPUTS,
   type VisualizationChart,
-  type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
 import {
   ComposerRail,
@@ -15,63 +14,11 @@ import {
 } from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
-
-/**
- * The two groups' labels. On the capability tray the tab above already names
- * the type, so they step down to secondary labels rather than read as a second
- * and third title.
- */
-const VISUALIZATION_SECTION_LABEL = cn(
-  "min-w-0 truncate text-base font-medium",
-  "in-data-[slot=capability-tray]:text-[13px] in-data-[slot=capability-tray]:leading-5 in-data-[slot=capability-tray]:text-muted-foreground",
-);
-
-function VisualizationOutputButton({
-  output,
-  signals,
-}: {
-  readonly output: VisualizationOutput;
-  readonly signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.visualization;
-    },
-    { returnObjects: true },
-  );
-  const selectedOutput = useGet(signals.taskChips.visualization.output$);
-  const setOutput = useSet(signals.taskChips.visualization.setOutput$);
-  const label = copy.outputs[output];
-  const selected = selectedOutput === output;
-  return (
-    <ToggleButton
-      selected={selected}
-      // `tile` is `block w-full`, which made every chip claim its own row once
-      // the picker stopped being a grid. `inline` is the layout that shrinks.
-      layout="inline"
-      aria-label={label}
-      // The metrics of the task-chip row this panel hangs from: `h-9`, `px-3`
-      // and the button base's own radius and text size. A pill at `text-xs` was
-      // the one control on the surface drawn to its own scale.
-      className={cn(
-        "h-9 shrink-0 px-3 py-0",
-        !selected && [
-          "border-control-border bg-transparent",
-          // On the capability tray's tint an outlined chip is one more line;
-          // the chip is raised like the covers under it instead. The border
-          // width stays, so selecting one never moves its neighbours.
-          "in-data-[slot=capability-tray]:border-transparent in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:shadow-segment-selected",
-        ],
-      )}
-      onClick={() => {
-        setOutput(output);
-      }}
-    >
-      {label}
-    </ToggleButton>
-  );
-}
+import {
+  COMPOSER_SECTION_LABEL,
+  ComposerOutputPicker,
+} from "./composer-output-picker.tsx";
+import { ComposerPresentationOutputPicker } from "./composer-presentation-output-picker.tsx";
 
 function VisualizationOutputPicker({
   signals,
@@ -87,30 +34,22 @@ function VisualizationOutputPicker({
     },
     { returnObjects: true },
   );
+  const selectedOutput = useGet(signals.taskChips.visualization.output$);
+  const setOutput = useSet(signals.taskChips.visualization.setOutput$);
   return (
-    // The header line, the `gap-3` under it and the group that owns the label
-    // are every other type's shelf, so this panel stops being the one laid out
-    // to its own metrics.
-    <div
-      className="flex min-w-0 flex-col gap-3"
-      role="group"
-      aria-label={copy.outputFormat}
-    >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className={VISUALIZATION_SECTION_LABEL}>{copy.outputFormat}</p>
-        {headerAction}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {VISUALIZATION_OUTPUTS.map((output) => {
-          return (
-            <VisualizationOutputButton
-              key={output}
-              output={output}
-              signals={signals}
-            />
-          );
+    <div className="flex min-w-0 flex-col gap-3">
+      <ComposerOutputPicker
+        label={copy.outputFormat}
+        options={VISUALIZATION_OUTPUTS.map((value) => {
+          return { value, label: copy.outputs[value] };
         })}
-      </div>
+        selectedValue={selectedOutput}
+        onSelect={setOutput}
+        headerAction={headerAction}
+      />
+      {selectedOutput === "presentation" && (
+        <ComposerPresentationOutputPicker nested />
+      )}
     </div>
   );
 }
@@ -213,7 +152,7 @@ function VisualizationChartPicker({
       role="group"
       aria-label={copy.preferredCharts}
     >
-      <p className={VISUALIZATION_SECTION_LABEL}>{copy.preferredCharts}</p>
+      <p className={COMPOSER_SECTION_LABEL}>{copy.preferredCharts}</p>
       <ComposerRail
         rail="charts"
         // The shelf labels its own wrapper, so the rail inside stays unnamed:

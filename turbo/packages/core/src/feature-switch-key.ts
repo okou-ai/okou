@@ -9,6 +9,7 @@ export enum FeatureSwitchKey {
   AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
+  PresentationOutputFormat = "presentationOutputFormat",
   PastedTextAttachments = "pastedTextAttachments",
   ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",

@@ -56,6 +56,10 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import {
+  presentationOutputFormat$,
+  presentationOutputFormatEnabled$,
+} from "./presentation-output-format.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -939,8 +943,11 @@ function createSubmitCurrentInput({
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
-        get(taskChips.task$) === "visualization"
+        selectedTask === "visualization"
           ? get(taskChips.visualization.preferences$)
+          : undefined,
+        get(presentationOutputFormatEnabled$)
+          ? get(presentationOutputFormat$)
           : undefined,
       );
       const additionalInfo = joinAdditionalInfo(

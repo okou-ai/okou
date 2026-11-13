@@ -2768,6 +2768,11 @@
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
       "more": "Mehr",
+      "presentationFormat": "Präsentationsformat",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {

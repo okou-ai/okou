@@ -2756,6 +2756,11 @@
       "ideasLabel": "上手靈感",
       "label": "上手任務",
       "more": "更多",
+      "presentationFormat": "簡報格式",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {

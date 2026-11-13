@@ -2756,6 +2756,11 @@
       "ideasLabel": "始めるためのアイデア",
       "label": "タスクを始める",
       "more": "その他",
+      "presentationFormat": "プレゼンテーション形式",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
