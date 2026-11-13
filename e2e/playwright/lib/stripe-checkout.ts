@@ -6,6 +6,8 @@ import {
   type Page,
 } from "@playwright/test";
 
+import type { StripeInputName } from "./stripe-checkout-observation";
+
 const FIELD_TIMEOUT_MS = 10_000;
 
 interface StripeFieldDefinition {
@@ -28,6 +30,24 @@ interface StripeFrameState {
   readonly payWithCard: StripeLocatorState;
   readonly submit: StripeLocatorState;
   readonly readyState: string;
+  readonly inputs: readonly StripeInputState[];
+  readonly formEvents: Window["__okouStripeFormEvents"] | null;
+  readonly linkSaveInfo: StripeLocatorState & {
+    readonly checked: boolean | null;
+  };
+}
+
+interface StripeInputState {
+  readonly name: StripeInputName;
+  readonly type: string;
+  readonly empty: boolean;
+  readonly focused: boolean;
+  readonly required: boolean;
+  readonly valid: boolean;
+  readonly valueMissing: boolean;
+  readonly typeMismatch: boolean;
+  readonly customError: boolean;
+  readonly ariaInvalid: boolean;
 }
 
 interface LocatedStripeControl {
@@ -541,6 +561,38 @@ export async function collectStripeCheckoutState(
           locatorState(checkoutSubmitLocator(frame)),
           frame.evaluate(() => document.readyState),
         ]);
+      const inputs = await frame.locator("input").evaluateAll((elements) =>
+        elements
+          .filter(
+            (element): element is HTMLInputElement =>
+              element instanceof HTMLInputElement && element.type !== "hidden",
+          )
+          .slice(0, 32)
+          .map((input): StripeInputState => ({
+            name:
+              input.name === "email" ||
+              input.name === "cardNumber" ||
+              input.name === "cardExpiry" ||
+              input.name === "cardCvc" ||
+              input.name === "billingName" ||
+              input.name === "billingPostalCode"
+                ? input.name
+                : "other",
+            type: input.type,
+            empty: input.value.length === 0,
+            focused: document.activeElement === input,
+            required: input.required,
+            valid: input.validity.valid,
+            valueMissing: input.validity.valueMissing,
+            typeMismatch: input.validity.typeMismatch,
+            customError: input.validity.customError,
+            ariaInvalid: input.getAttribute("aria-invalid") === "true",
+          })),
+      );
+      const saveInfo = frame.getByRole("checkbox", {
+        name: /save my information/i,
+      });
+      const saveInfoState = await locatorState(saveInfo);
       return {
         cardCvc,
         cardExpiry,
@@ -550,6 +602,15 @@ export async function collectStripeCheckoutState(
         payWithCard,
         submit,
         readyState,
+        inputs,
+        formEvents: await frame.evaluate(
+          () => window.__okouStripeFormEvents ?? null,
+        ),
+        linkSaveInfo: {
+          ...saveInfoState,
+          checked:
+            saveInfoState.count > 0 ? await saveInfo.first().isChecked() : null,
+        },
       };
     }),
   );

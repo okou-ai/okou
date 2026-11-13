@@ -5,11 +5,13 @@ import { type Page } from "@playwright/test";
 
 import { captureClerkReadiness } from "./clerk-readiness";
 import { collectStripeCheckoutState } from "./stripe-checkout";
+import type { StripeCheckoutObservation } from "./stripe-checkout-observation";
 
 export async function capturePaidOnboardingFailure(
   page: Page,
   credentialFileName: string,
   outputDirectory: string,
+  checkoutObservation?: StripeCheckoutObservation,
 ): Promise<void> {
   const diagnosticDirectory = join(
     outputDirectory,
@@ -22,6 +24,7 @@ export async function capturePaidOnboardingFailure(
     writePaidOnboardingState(
       page,
       join(diagnosticDirectory, `${fileStem}.json`),
+      checkoutObservation,
     ),
     page.screenshot({
       fullPage: true,
@@ -42,6 +45,7 @@ export async function capturePaidOnboardingFailure(
 async function writePaidOnboardingState(
   page: Page,
   path: string,
+  checkoutObservation: StripeCheckoutObservation | undefined,
 ): Promise<void> {
   const [stripe, clerkReport] = await Promise.all([
     collectStripeCheckoutState(page).catch(() => null),
@@ -59,8 +63,12 @@ async function writePaidOnboardingState(
           },
         }
       : { kind: "unavailable" };
-  await writeFile(path, `${JSON.stringify({ clerk, stripe }, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  await writeFile(
+    path,
+    `${JSON.stringify({ clerk, stripe, checkoutObservation }, null, 2)}\n`,
+    {
+      encoding: "utf8",
+      mode: 0o600,
+    },
+  );
 }
