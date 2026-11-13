@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod continuation;
+
 fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
     json!({
         "runnerId": identity.runner_id(), "heartbeatGeneration": identity.heartbeat_generation(),
