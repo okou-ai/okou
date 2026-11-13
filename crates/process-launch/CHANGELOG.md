@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/okou-ai/okou/compare/process-launch-v0.1.5...process-launch-v0.1.6) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use safe pidfd acquisition across remaining owners ([#46912](https://github.com/okou-ai/okou/issues/46912)) ([eb43993](https://github.com/okou-ai/okou/commit/eb43993f436261b2850e87ebf5e87e1a6ebc6947))
+
 ## [0.1.5](https://github.com/okou-ai/okou/compare/process-launch-v0.1.4...process-launch-v0.1.5) (2026-11-06)
 
 

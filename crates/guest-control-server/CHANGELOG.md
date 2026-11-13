@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.99](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.98...guest-control-server-v0.24.99) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use safe pidfd acquisition across remaining owners ([#46912](https://github.com/okou-ai/okou/issues/46912)) ([eb43993](https://github.com/okou-ai/okou/commit/eb43993f436261b2850e87ebf5e87e1a6ebc6947))
+
 ## [0.24.98](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.97...guest-control-server-v0.24.98) (2026-11-12)
 
 ## [0.24.97](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.96...guest-control-server-v0.24.97) (2026-11-12)
