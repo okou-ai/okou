@@ -27,6 +27,11 @@ test.each(["feishu", "lark"] as const)(
     click(getAction("button", "Show App Secret"));
     expect(secret).toHaveAttribute("type", "text");
 
+    click(getAction("button", "View setup reference"));
+    expect(appId).toHaveValue("cli_draft");
+    click(getAction("button", "Back to fields"));
+    expect(secret).toHaveValue("draft-secret");
+
     click(getAction("radio", "Full screenshot"));
     expect(getAction("radio", "Full screenshot")).toHaveAttribute(
       "aria-checked",

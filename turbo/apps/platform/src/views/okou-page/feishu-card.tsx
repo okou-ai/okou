@@ -1153,14 +1153,22 @@ function FeishuSetupWizard({
                 },
               )}
             </p>
-            <a
-              href="#feishu-setup-reference"
-              className="mb-5 inline-flex text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="mb-5 px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+              onClick={() => {
+                // Fragment navigation reruns route setup and discards this draft.
+                document
+                  .getElementById("feishu-setup-reference")
+                  ?.scrollIntoView({ block: "start" });
+              }}
             >
               {t(($) => {
                 return $.connectors.setupGuide.viewReference;
               })}
-            </a>
+            </Button>
             <FeishuSetupStepContent
               step={step}
               data={data}

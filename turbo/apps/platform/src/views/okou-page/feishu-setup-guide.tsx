@@ -457,14 +457,21 @@ function FeishuGuideControls({
           })}
         </p>
       ) : null}
-      <a
-        href="#feishu-setup-fields"
-        className="inline-flex text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="px-0 text-xs font-normal text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+        onClick={() => {
+          document
+            .getElementById("feishu-setup-fields")
+            ?.scrollIntoView({ block: "start" });
+        }}
       >
         {t(($) => {
           return $.connectors.setupGuide.backToFields;
         })}
-      </a>
+      </Button>
     </div>
   );
 }
