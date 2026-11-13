@@ -78,7 +78,8 @@ final class SettingsBillingTests: XCTestCase {
         return ChatHTTPResponse(
           status: 426,
           body:
-            #"{"error":{"code":"IOS_UPDATE_REQUIRED","message":"Update Okou"},"minimumSupportedVersion":"99.0.0"}"#)
+            #"{"error":{"code":"IOS_UPDATE_REQUIRED","message":"Update Okou"},"minimumSupportedVersion":"99.0.0"}"#
+        )
       default: throw URLError(.unsupportedURL)
       }
     }
