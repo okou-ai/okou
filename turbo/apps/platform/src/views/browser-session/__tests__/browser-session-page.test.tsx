@@ -293,7 +293,7 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
       "Okou opens pages here as it works. Enter a URL above to browse yourself.",
     ),
   ).toBeInTheDocument();
-  expect(within(viewer).getByPlaceholderText("Enter a URL")).toBeEnabled();
+  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
   const blankTab = within(viewer).getByLabelText("New tab", {
     selector: '[role="tab"]',
   });
