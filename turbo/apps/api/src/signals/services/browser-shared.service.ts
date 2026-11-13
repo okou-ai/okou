@@ -1,13 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import {
-  and,
-  eq,
-  getTableColumns,
-  gt,
-  inArray,
-  isNotNull,
-  or,
-} from "drizzle-orm";
+import { and, eq, getTableColumns, gt, isNotNull, or } from "drizzle-orm";
 import {
   BROWSER_MAX_SCREEN_HEIGHT,
   BROWSER_MIN_SCREEN_HEIGHT,
@@ -24,10 +16,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
-import {
-  browserThreadProfiles,
-  browserSessionInstances,
-} from "@okouai/db/schema/browser-session";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -262,11 +250,7 @@ const settleSharedInstancePublication$ = command(
         profiles,
         eq(profiles.providerSessionId, session.id),
       );
-      const legacy = await db.$count(
-        browserSessionInstances,
-        eq(browserSessionInstances.providerSessionId, session.id),
-      );
-      if (referenced === 0 && legacy === 0) {
+      if (referenced === 0) {
         await provider(
           stopBrowserUseSessionForCleanup(
             session.id,
@@ -349,33 +333,6 @@ const provisionSharedInstance$ = command(
       return { kind: "ok", value: { profile: args.previous, created: false } };
     }
     const db = get(db$);
-    const [old] = await db
-      .select({ id: browserSessionInstances.providerSessionId })
-      .from(browserSessionInstances)
-      .innerJoin(
-        browserThreadProfiles,
-        eq(
-          browserThreadProfiles.chatThreadId,
-          browserSessionInstances.chatThreadId,
-        ),
-      )
-      .where(
-        and(
-          eq(browserThreadProfiles.orgId, args.owner.orgId),
-          eq(browserThreadProfiles.userId, args.owner.userId),
-          inArray(browserSessionInstances.status, ["active", "stopping"]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (old) {
-      return {
-        kind: "error",
-        status: 409,
-        code: "BROWSER_FRESH_CUTOVER_REQUIRED",
-        message: "Retire the previous thread Browser before shared admission",
-      };
-    }
     const capacity = await set(
       ensureSharedBrowserCapacity$,
       args.owner.orgId,
@@ -1074,8 +1031,8 @@ function sharedBrowserResize(
               session.cdpUrl,
               BROWSER_SCREEN_WIDTH,
               height,
-              signal,
               window.primaryWindowId,
+              signal,
             ),
             signal,
           );
