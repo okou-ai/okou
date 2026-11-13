@@ -3,11 +3,17 @@ import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
+const apnsToken = string().regex(/^(?:[0-9a-f]{2}){32,256}$/u);
 const binding = object({
   installationId: uuid(),
   revision: number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  deviceToken: string().regex(/^(?:[0-9a-f]{2}){32,256}$/u),
+  deviceToken: apnsToken,
   environment: zEnum(["production", "sandbox"]),
+  /**
+   * WidgetKit's push token for this installation's widgets, in the binding's APNs
+   * environment. Absent until a widget is installed and from older apps.
+   */
+  widgetPushToken: apnsToken.optional(),
 });
 const responses = {
   200: object({ success: literal(true) }),

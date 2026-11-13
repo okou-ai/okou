@@ -1,6 +1,8 @@
+import ChatData
 import Foundation
 import OSLog
 import UserNotifications
+import WidgetKit
 
 /// UserNotifications may call from any queue; only the actor-owned delivery
 /// state reads callbacks, owns network work and completes an alert.
@@ -13,8 +15,8 @@ final class NotificationServiceExtension: UNNotificationServiceExtension {
     super.init()
   }
 
-  init(session: NotificationExtensionSession) {
-    delivery = NotificationExtensionDelivery(session: session)
+  init(session: NotificationExtensionSession, widgets: OkouWidgetSnapshotStore? = nil) {
+    delivery = NotificationExtensionDelivery(session: session, widgets: widgets)
     super.init()
   }
 
@@ -41,9 +43,13 @@ private final class NotificationExtensionDelivery {
   private var deadline: Task<Void, Never>?
   private var requestID = UUID()
   private let session: NotificationExtensionSession?
+  private let widgets: OkouWidgetSnapshotStore?
 
-  nonisolated init(session: NotificationExtensionSession? = nil) {
+  nonisolated init(
+    session: NotificationExtensionSession? = nil, widgets: OkouWidgetSnapshotStore? = nil
+  ) {
     self.session = session
+    self.widgets = widgets
   }
 
   func receive(_ delivery: NotificationDelivery) {
@@ -52,9 +58,12 @@ private final class NotificationExtensionDelivery {
     requestID = id
     content = delivery.content
     handler = delivery.handler
-    guard let destination = NotificationDestination(userInfo: delivery.content.userInfo),
-      let session = session ?? NotificationExtensionSession.live()
-    else {
+    guard let destination = NotificationDestination(userInfo: delivery.content.userInfo) else {
+      finish()
+      return
+    }
+    markWidgetChatFinished(destination)
+    guard let session = session ?? NotificationExtensionSession.live() else {
       finish()
       return
     }
@@ -73,6 +82,25 @@ private final class NotificationExtensionDelivery {
       guard requestID == id else { return }
       finish()
     }
+  }
+
+  /// Alerts are sent only for finished and failed runs, so the alerted chat now waits to be
+  /// read. The file change needs no network and lands before the alert shows; the reload also
+  /// lets the widget's own refresh add a chat its snapshot did not list.
+  private func markWidgetChatFinished(_ destination: NotificationDestination) {
+    guard let store = widgets ?? OkouWidgetSnapshotStore() else { return }
+    var belongs = false
+    do {
+      try store.update { snapshot in
+        belongs = snapshot.belongs(toUser: destination.userId, workspace: destination.workspaceId)
+        return belongs ? snapshot.markingFinished(threadID: destination.threadId, at: .now) : nil
+      }
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
+        .error(
+          "Cannot update the widget snapshot: \(error.localizedDescription, privacy: .public)")
+    }
+    if belongs { WidgetCenter.shared.reloadTimelines(ofKind: OkouWidgetSnapshot.widgetKind) }
   }
 
   func finish() {

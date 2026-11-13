@@ -151,12 +151,13 @@ if entitlements['application-identifier'] != 'C5UWSXYB67.' + sys.argv[2]:
     raise ValueError('Exported bundle has the wrong application entitlement')
 if entitlements['com.apple.developer.team-identifier'] != 'C5UWSXYB67':
     raise ValueError('Exported bundle has the wrong signing team')
-if sys.argv[2] == 'ai.okou.ios' and entitlements.get('aps-environment') != 'production':
-    raise ValueError('Exported app must have production APNs')
+# The app receives alerts; the widgets receive WidgetKit pushes.
+if sys.argv[2] in ('ai.okou.ios', 'ai.okou.ios.widgets') and entitlements.get('aps-environment') != 'production':
+    raise ValueError('Exported app and widgets must have production APNs')
 if entitlements.get('com.apple.security.application-groups') != ['group.ai.okou.ios']:
     raise ValueError('Exported bundle must share the Okou cache App Group')
-# The widgets read the App's snapshot from the App Group; only signed-in bundles share the Keychain.
-if sys.argv[2] != 'ai.okou.ios.widgets' and entitlements.get('keychain-access-groups') != ['C5UWSXYB67.ai.okou.ios']:
+# Every bundle reads the App's session: the extension and the widgets fetch with it.
+if entitlements.get('keychain-access-groups') != ['C5UWSXYB67.ai.okou.ios']:
     raise ValueError('Exported bundle must share the existing Okou Keychain group')
 if entitlements.get('get-task-allow'):
     raise ValueError('Exported bundle is development-signed')

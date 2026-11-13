@@ -72,7 +72,7 @@ class DistributionProfileTests(unittest.TestCase):
             if bundle == "ai.okou.ios":
                 self.assertEqual(entitlements["aps-environment"], "production")
 
-    def test_prepares_the_widget_signature_with_only_the_shared_app_group(self):
+    def test_prepares_the_widget_signature_with_widget_pushes_and_the_shared_session(self):
         profile = self.profile("ai.okou.ios.widgets")
         result, output = self.invoke(profile, "ai.okou.ios.widgets")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -83,11 +83,25 @@ class DistributionProfileTests(unittest.TestCase):
         self.assertEqual(
             entitlements["com.apple.security.application-groups"], ["group.ai.okou.ios"]
         )
-        self.assertNotIn("keychain-access-groups", entitlements)
-        profile["Entitlements"]["com.apple.security.application-groups"] = []
-        result, output = self.invoke(profile, "ai.okou.ios.widgets")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(output.exists())
+        self.assertEqual(entitlements["keychain-access-groups"], [f"{TEAM}.ai.okou.ios"])
+        self.assertEqual(entitlements["aps-environment"], "production")
+
+    def test_rejects_a_widget_profile_without_push_or_shared_storage(self):
+        for mutation in (
+            lambda e: e.pop("aps-environment"),
+            lambda e: e.update({"aps-environment": "development"}),
+            lambda e: e.update({"keychain-access-groups": []}),
+            lambda e: e.update({"com.apple.security.application-groups": []}),
+        ):
+            profile = self.profile("ai.okou.ios.widgets")
+            mutation(profile["Entitlements"])
+            result, output = self.invoke(profile, "ai.okou.ios.widgets")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(output.exists())
+        profile = self.profile("ai.okou.ios.widgets")
+        del profile["Entitlements"]["aps-environment"]
+        result, _ = self.invoke(profile, "ai.okou.ios.widgets")
+        self.assertIn("must enable production APNs", result.stderr)
 
     def test_rejects_profiles_that_cannot_share_the_cache_or_session(self):
         for capability in (

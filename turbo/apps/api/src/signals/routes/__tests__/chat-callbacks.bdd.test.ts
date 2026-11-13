@@ -5238,6 +5238,151 @@ describe("CHAT-02: push notification gating", () => {
     }
   }, 60_000);
 
+  it("reloads installed widgets when a run starts, finishes and is read, at most once per window per device", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const identity = { ...actor, orgId: actor.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    const provider = await createApnsFixture(context);
+    const widgetToken = "ef".repeat(32);
+    const registration = await registerIosPush(context, identity, {
+      widgetPushToken: widgetToken,
+    });
+    const widgetPushes = () => {
+      return provider.requests.filter((request) => {
+        return request.headers["apns-push-type"] === "widgets";
+      });
+    };
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Reload my widgets",
+    });
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(1);
+    const started = widgetPushes()[0]!;
+    expect(started.origin).toBe("https://api.push.apple.com");
+    expect(started.headers).toMatchObject({
+      ":path": `/3/device/${widgetToken}`,
+      "apns-topic": "ai.okou.ios.push-type.widgets",
+      "apns-push-type": "widgets",
+    });
+    expect(started.headers["apns-collapse-id"]).toBeUndefined();
+    expect(started.payload).toStrictEqual({ aps: { "content-changed": true } });
+
+    // Inside the window, the reload the first push started reads this change.
+    mockNow(startedAt + 5000);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      run.runId,
+      await claimChatRun(runnerGroup, run.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(1);
+    expect(
+      provider.requests.filter((request) => {
+        return (
+          request.headers[":path"] === `/3/device/${registration.deviceToken}`
+        );
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          okou: expect.objectContaining({
+            notificationId: `${run.runId}:completed`,
+          }),
+        }),
+      }),
+    );
+
+    mockNow(startedAt + 11_000);
+    await chat.markThreadRead(actor, run.threadId);
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(2);
+    expect(widgetPushes()[1]?.payload).toStrictEqual({
+      aps: { "content-changed": true },
+    });
+
+    // A finished run outside the window reloads the widgets again.
+    mockNow(startedAt + 22_000);
+    const failed = await startChatRun(actor, {
+      agentId,
+      prompt: "Fail after a window",
+    });
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(3);
+    mockNow(startedAt + 33_000);
+    await failChatRun(
+      failed.runId,
+      await claimChatRun(runnerGroup, failed.runId),
+      "Task failed",
+    );
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(4);
+  }, 60_000);
+
+  it("clears only a rejected widget token, and a registration without one stops widget pushes", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const identity = { ...actor, orgId: actor.orgId! };
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
+    const provider = await createApnsFixture(context);
+    const registration = await registerIosPush(context, identity, {
+      widgetPushToken: "ef".repeat(32),
+    });
+    const widgetPushes = () => {
+      return provider.requests.filter((request) => {
+        return request.headers["apns-push-type"] === "widgets";
+      });
+    };
+    provider.responses.push({ status: 410, reason: "Unregistered" });
+    const rejected = await startChatRun(actor, {
+      agentId,
+      prompt: "Widget token rejected",
+    });
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(1);
+
+    mockNow(startedAt + 11_000);
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(
+      rejected.runId,
+      await claimChatRun(runnerGroup, rejected.runId),
+    );
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(1);
+    // The installation's alerts survive the cleared widget token.
+    expect(provider.requests.at(-1)?.headers).toMatchObject({
+      ":path": `/3/device/${registration.deviceToken}`,
+      "apns-push-type": "alert",
+    });
+
+    await registerIosPush(context, identity, {
+      ...registration,
+      revision: 2,
+      widgetPushToken: "12".repeat(32),
+    });
+    mockNow(startedAt + 22_000);
+    await chat.markThreadRead(actor, rejected.threadId);
+    await flushWaitUntilForTest();
+    expect(widgetPushes().at(-1)?.headers[":path"]).toBe(
+      `/3/device/${"12".repeat(32)}`,
+    );
+    expect(widgetPushes()).toHaveLength(2);
+
+    // An app without widgets, or from before widget pushes, registers no token.
+    await registerIosPush(context, identity, {
+      installationId: registration.installationId,
+      revision: 3,
+    });
+    mockNow(startedAt + 33_000);
+    await startChatRun(actor, { agentId, prompt: "No widget token" });
+    await flushWaitUntilForTest();
+    expect(widgetPushes()).toHaveLength(2);
+  }, 60_000);
+
   it("delivers native completion without VAPID, uses a versioned envelope, and retires only invalid tokens", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
