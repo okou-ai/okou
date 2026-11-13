@@ -744,6 +744,17 @@ function SshSavedLoginPicker({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const credentials = useLoadable(sshCredentials$);
   const choose = useSet(chooseSshCredential$);
+  if (credentials.state === "loading") {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        className="min-w-0 max-w-28 flex-1 w-auto"
+        label={t(($) => {
+          return $.ssh.credential.loading;
+        })}
+      />
+    );
+  }
   return (
     <RemoteLoginPicker
       protocol="ssh"
@@ -848,20 +859,15 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         <SshSavedLoginPicker disabled={disabled} />
       </div>
       <div
-        hidden={credentials.state === "hasData" && credentials.data !== null}
+        hidden={
+          credentials.state === "loading" ||
+          (credentials.state === "hasData" && credentials.data !== null)
+        }
         className="grid gap-2"
       >
         {credentials.state === "hasError" ? (
           <SshLoadError />
-        ) : credentials.state === "loading" ? (
-          <LoadingSkeleton
-            label={t(($) => {
-              return $.ssh.credential.loading;
-            })}
-            variant="fields"
-            count={2}
-          />
-        ) : !credentials.data ? (
+        ) : credentials.state === "hasData" && !credentials.data ? (
           <p>
             {t(($) => {
               return $.ssh.unavailable;
@@ -1747,7 +1753,7 @@ function OwnerSshCredentials() {
         label={t(($) => {
           return $.ssh.credential.loading;
         })}
-        variant="fields"
+        variant="rows"
         count={2}
       />
     );

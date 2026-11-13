@@ -102,7 +102,7 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
             return $.cloudflareAccess.loading;
           })}
           variant="fields"
-          count={2}
+          count={1}
         />
       ) : configs.data ? (
         <div className="grid gap-2">

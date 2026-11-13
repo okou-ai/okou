@@ -80,7 +80,7 @@ export function TailscaleSelection({
             return $.tailscale.loading;
           })}
           variant="fields"
-          count={2}
+          count={1}
         />
       ) : (
         available && (

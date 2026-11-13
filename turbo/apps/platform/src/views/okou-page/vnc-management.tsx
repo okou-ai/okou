@@ -475,7 +475,7 @@ function OwnerVncCredentials() {
         label={t(($) => {
           return $.vnc.loading;
         })}
-        variant="fields"
+        variant="rows"
         count={2}
       />
     );

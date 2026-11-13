@@ -49,7 +49,7 @@ function ComputerNetworkSelection() {
             return $.remoteControlSetup.loading;
           })}
           variant="fields"
-          count={2}
+          count={1}
         />
       )}
       {networks.state === "hasError" && (
@@ -203,8 +203,7 @@ export function ComputerNetworkSummary() {
         label={t(($) => {
           return $.remoteControlSetup.loading;
         })}
-        variant="fields"
-        count={2}
+        variant="text"
       />
     );
   }

@@ -823,6 +823,7 @@ function useDirectorySshDiscovery(search: string, category: string | null) {
         return $.ssh.loading;
       })}
       variant="cards"
+      count={1}
     />
   ) : null;
   return {
@@ -854,6 +855,7 @@ function useDirectoryVncDiscovery(search: string, category: string | null) {
         return $.vnc.loading;
       })}
       variant="cards"
+      count={1}
     />
   ) : null;
   return {

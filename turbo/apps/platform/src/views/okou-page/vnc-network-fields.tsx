@@ -120,7 +120,7 @@ function VncNetworkConfig({
           return $.vnc.native.loading;
         })}
         variant="fields"
-        count={2}
+        count={1}
       />
     );
   }

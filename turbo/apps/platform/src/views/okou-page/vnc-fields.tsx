@@ -30,6 +30,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from "@okouai/ui";
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
@@ -1037,12 +1038,13 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           </p>
         </div>
       ) : connections.state === "loading" ? (
-        <LoadingSkeleton
-          label={t(($) => {
+        <Skeleton
+          role="status"
+          aria-busy="true"
+          aria-label={t(($) => {
             return $.vnc.transport.loading;
           })}
-          variant="fields"
-          count={2}
+          className="h-9 w-full"
         />
       ) : connections.data === null ? (
         <p role="alert" className="text-sm">
@@ -1835,7 +1837,20 @@ function VncSavedLoginPicker({
   readonly disabled: boolean;
   readonly credentials: readonly VncCredentialResponse[];
 }) {
+  const { t } = useTranslation();
+  const saved = useLoadable(vncCredentials$);
   const choose = useSet(chooseVncCredential$);
+  if (saved.state === "loading") {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        className="min-w-0 max-w-28 flex-1 w-auto"
+        label={t(($) => {
+          return $.vnc.loading;
+        })}
+      />
+    );
+  }
   return (
     <RemoteLoginPicker
       protocol="vnc"
@@ -1871,15 +1886,7 @@ function VncCredentialStatus() {
     return <VncCredentialLoadError />;
   }
   if (credentials.state === "loading") {
-    return (
-      <LoadingSkeleton
-        label={t(($) => {
-          return $.vnc.loading;
-        })}
-        variant="fields"
-        count={2}
-      />
-    );
+    return null;
   }
   if (credentials.data === null) {
     return (
@@ -1911,7 +1918,7 @@ export function VncCredentialSelection({
   });
   return (
     <fieldset className="grid min-w-0 gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">
           {t(($) => {
             return $.remoteControlSetup.loginHeading;
