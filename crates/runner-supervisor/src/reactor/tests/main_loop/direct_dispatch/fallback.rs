@@ -18,6 +18,8 @@ enum Available {
     Retained,
     BlankAndHome,
     LateHome,
+    UnadvertisedHomeOnBlank,
+    UnadvertisedHomeOnFresh,
     ReplacedHome,
     Blank,
     Home,
@@ -37,6 +39,16 @@ async fn supplied_fallback_combines_available_blank_and_home() {
 #[tokio::test]
 async fn supplied_fallback_reuses_home_published_after_intake_without_an_inventory_hint() {
     assert_fallback(Available::LateHome).await;
+}
+
+#[tokio::test]
+async fn supplied_blank_reuses_unadvertised_home_without_a_live_producer() {
+    assert_fallback(Available::UnadvertisedHomeOnBlank).await;
+}
+
+#[tokio::test]
+async fn supplied_fresh_vm_reuses_unadvertised_home_without_a_live_producer() {
+    assert_fallback(Available::UnadvertisedHomeOnFresh).await;
 }
 
 #[tokio::test]
@@ -60,6 +72,10 @@ async fn supplied_fallback_creates_cold_vm_when_sandbox_and_home_are_unavailable
 }
 
 async fn assert_fallback(available: Available) {
+    let ordinary = matches!(
+        available,
+        Available::UnadvertisedHomeOnBlank | Available::UnadvertisedHomeOnFresh
+    );
     let execution = MockLifecycleGate::new();
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(execution.clone());
@@ -75,6 +91,8 @@ async fn assert_fallback(available: Available) {
     let budget = config.capacity.budget.clone();
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    // A separate producer does not share the receiver's in-process notifications.
+    let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
     let key = "thread:supplied-home-fallback";
     let cached_home = matches!(
         available,
@@ -89,9 +107,10 @@ async fn assert_fallback(available: Available) {
     };
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache.clone());
     let cache_dir = config.paths.home.home_image_cache_dir();
-    let producer = env
-        .active_runs
-        .register(source, Some(key.into()), "vm0/default".into());
+    let producer = (!ordinary).then(|| {
+        env.active_runs
+            .register(source, Some(key.into()), "vm0/default".into())
+    });
     let retained = if matches!(available, Available::Retained) {
         Some(
             seed_idle_pool_with_overrides(
@@ -113,6 +132,7 @@ async fn assert_fallback(available: Available) {
         Available::Retained
             | Available::BlankAndHome
             | Available::LateHome
+            | Available::UnadvertisedHomeOnBlank
             | Available::ReplacedHome
             | Available::Blank
     ) {
@@ -150,6 +170,15 @@ async fn assert_fallback(available: Available) {
     peer.wait_connected().await;
     peer.allow_health();
     wait_status_mode(&env._temp_dir.path().join("status.json"), "running", WAIT).await;
+    if ordinary {
+        // A completed producer need not remain in ActiveRuns, and advisory
+        // inventory can miss a real publication after its watch is invalidated.
+        let moved = cache_dir.with_extension("moved");
+        tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+        tokio::fs::rename(&moved, &cache_dir).await.unwrap();
+        seed_home_cache_state_for_run(&publisher, &paths, key, "vm0/default", IMAGE_BYTES, source)
+            .await;
+    }
     let run_id = RunId::new_v4();
     let mut body = envelope(identity, run_id);
     body["executionContext"]["reuseKey"] = json!(key);
@@ -160,9 +189,11 @@ async fn assert_fallback(available: Available) {
         client(&socket, identity, run_id, &body.to_string()).await.2["disposition"],
         "accepted"
     );
-    env.start_observer
-        .wait_finalizing_handoff_requested(source, run_id, WAIT)
-        .await;
+    if !ordinary {
+        env.start_observer
+            .wait_finalizing_handoff_requested(source, run_id, WAIT)
+            .await;
+    }
     if matches!(available, Available::LateHome) {
         // Use the old Claim fixture's real watcher-loss lifecycle. Publication
         // is available on disk even though its advisory inventory is stale.
@@ -172,7 +203,9 @@ async fn assert_fallback(available: Available) {
         seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", IMAGE_BYTES, source)
             .await;
     }
-    assert!(producer.reuse_publisher().publish_no_exact_sandbox());
+    if let Some(producer) = &producer {
+        assert!(producer.reuse_publisher().publish_no_exact_sandbox());
+    }
     if matches!(available, Available::ReplacedHome) {
         unpark.wait_entered(1, WAIT).await.unwrap();
         let before = env.handle.heartbeat_count();
@@ -204,7 +237,9 @@ async fn assert_fallback(available: Available) {
             overrides.home_drive_replacements().is_empty(),
             "a selected source must not silently accept another producer's home"
         );
-    } else if (cached_home || matches!(available, Available::LateHome)) && retained.is_none() {
+    } else if (cached_home || ordinary || matches!(available, Available::LateHome))
+        && retained.is_none()
+    {
         let drive = if blank.is_some() {
             overrides.home_drive_replacements().last().cloned()
         } else {

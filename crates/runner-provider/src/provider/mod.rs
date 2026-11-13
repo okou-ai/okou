@@ -703,6 +703,7 @@ pub struct ClaimedJob {
     completion_auth: CompletionAuth,
     active_input_source: Option<ActiveInputSource>,
     api_claim_timing: Option<ApiClaimTiming>,
+    supplied: bool,
 }
 
 /// Claim durations at the application boundary. Response body reads include
@@ -849,6 +850,7 @@ impl ClaimedJob {
             completion_auth,
             active_input_source,
             api_claim_timing: None,
+            supplied: true,
         }
     }
 
@@ -902,6 +904,7 @@ impl ClaimedJob {
             completion_auth,
             active_input_source,
             api_claim_timing: Some(api_claim_timing),
+            supplied: false,
         })
     }
 
@@ -924,6 +927,7 @@ impl ClaimedJob {
             completion_auth: CompletionAuth::local(),
             active_input_source,
             api_claim_timing: None,
+            supplied: false,
         })
     }
 
@@ -933,6 +937,11 @@ impl ClaimedJob {
 
     pub fn context(&self) -> &ExecutionContext {
         &self.context
+    }
+
+    /// Complete input was delivered directly, rather than acquired through discovery.
+    pub fn is_supplied(&self) -> bool {
+        self.supplied
     }
 
     pub fn api_claim_timing(&self) -> Option<ApiClaimTiming> {
