@@ -7,6 +7,8 @@ import { captureClerkReadiness } from "./clerk-readiness";
 import { collectStripeCheckoutState } from "./stripe-checkout";
 import type { StripeCheckoutObservation } from "./stripe-checkout-observation";
 
+const PAGE_STATE_TIMEOUT_MS = 1_000;
+
 export async function capturePaidOnboardingFailure(
   page: Page,
   credentialFileName: string,
@@ -47,6 +49,33 @@ async function writePaidOnboardingState(
   path: string,
   checkoutObservation: StripeCheckoutObservation | undefined,
 ): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Renderer evaluation has no Playwright timeout. Preserve the independently
+    // observed network metadata even when Checkout's main thread is stalled.
+    // The caller closes this page's context, draining unfinished evaluations.
+    const state = await Promise.race([
+      readPaidOnboardingState(page),
+      new Promise<{ clerk: { kind: "unavailable" }; stripe: null }>(
+        (resolve) => {
+          timer = setTimeout(
+            () => resolve({ clerk: { kind: "unavailable" }, stripe: null }),
+            PAGE_STATE_TIMEOUT_MS,
+          );
+        },
+      ),
+    ]);
+    await writeFile(
+      path,
+      `${JSON.stringify({ ...state, checkoutObservation }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readPaidOnboardingState(page: Page) {
   const [stripe, clerkReport] = await Promise.all([
     collectStripeCheckoutState(page).catch(() => null),
     captureClerkReadiness(page),
@@ -63,12 +92,5 @@ async function writePaidOnboardingState(
           },
         }
       : { kind: "unavailable" };
-  await writeFile(
-    path,
-    `${JSON.stringify({ clerk, stripe, checkoutObservation }, null, 2)}\n`,
-    {
-      encoding: "utf8",
-      mode: 0o600,
-    },
-  );
+  return { clerk, stripe };
 }
