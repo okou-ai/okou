@@ -10,7 +10,7 @@ struct MessageMediaPlayer: View {
   @State private var failure: String?
 
   var body: some View {
-    Group {
+    ZStack {
       if let failure {
         OkouEmptyState("Unable to open result", icon: "file-warning", description: Text(failure)) {
           Button("Retry", action: retry)
