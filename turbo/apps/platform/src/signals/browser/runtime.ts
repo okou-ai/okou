@@ -29,8 +29,6 @@ import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { addressSubmission } from "./navigation/submission.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
@@ -1343,11 +1341,8 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
-  const addressSearchEnabled$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.BrowserAddressSearch];
-  });
   const submission$ = computed((get) => {
-    return addressSubmission(get(model.address$), get(addressSearchEnabled$));
+    return addressSubmission(get(model.address$));
   });
   const addressSubmissionKind$ = computed((get) => {
     const submission = get(submission$);
@@ -1433,7 +1428,6 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     },
   );
   return {
-    addressSearchEnabled$,
     addressSubmissionKind$,
     addressComposing$,
     composeAddress$,

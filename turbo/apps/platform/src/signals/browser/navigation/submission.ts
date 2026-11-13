@@ -3,7 +3,6 @@ import { navigationAddress } from "../input/address.ts";
 /** Classify submitted input without consulting history or requesting suggestions. */
 export function addressSubmission(
   input: string,
-  searchEnabled: boolean,
 ): { readonly url: string } | { readonly search: string } | null {
   const url = navigationAddress(input);
   if (url) {
@@ -11,7 +10,6 @@ export function addressSubmission(
   }
   const text = input.trim();
   if (
-    !searchEnabled ||
     !text ||
     /^[a-z][\w+.-]*:/i.test(text) ||
     text.startsWith("/") ||

@@ -681,7 +681,6 @@ function BrowserAddressInput({
   const edit = useSet(signals.editAddress$);
   const reset = useSet(signals.resetAddress$);
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
-  const searchEnabled = useGet(signals.addressSearchEnabled$);
   const kind = useGet(signals.addressSubmissionKind$);
   const compose = useSet(signals.composeAddress$);
   return (
@@ -692,13 +691,11 @@ function BrowserAddressInput({
         return $.browserViewer.address;
       })}
       placeholder={t(($) => {
-        return searchEnabled
-          ? $.browserViewer.addressSearchPlaceholder
-          : $.browserSession.addressPlaceholder;
+        return $.browserViewer.addressSearchPlaceholder;
       })}
       className="h-8 min-w-0 flex-1"
       value={address}
-      inputMode={searchEnabled ? "text" : "url"}
+      inputMode="text"
       enterKeyHint={kind === "search" ? "search" : "go"}
       autoComplete="off"
       autoCapitalize="none"
@@ -770,7 +767,6 @@ function BrowserAddress({
   const { t } = useTranslation();
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
-  const searchEnabled = useGet(signals.addressSearchEnabled$);
   const kind = useGet(signals.addressSubmissionKind$);
   const composing = useGet(signals.addressComposing$);
   const label = t(($) => {
@@ -796,21 +792,15 @@ function BrowserAddress({
         }}
       >
         <BrowserAddressInput signals={signals} navigating={navigating} />
-        {searchEnabled && (
-          <IconButton
-            type="submit"
-            className="size-8"
-            aria-label={label}
-            title={label}
-            disabled={!canSubmit || navigating || composing || !kind}
-          >
-            {kind === "search" ? (
-              <Search size={16} />
-            ) : (
-              <ArrowRight size={16} />
-            )}
-          </IconButton>
-        )}
+        <IconButton
+          type="submit"
+          className="size-8"
+          aria-label={label}
+          title={label}
+          disabled={!canSubmit || navigating || composing || !kind}
+        >
+          {kind === "search" ? <Search size={16} /> : <ArrowRight size={16} />}
+        </IconButton>
       </form>
       <TransientAlert
         occurrences={

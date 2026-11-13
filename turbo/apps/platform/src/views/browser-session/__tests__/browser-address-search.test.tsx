@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   browserContract,
   type BrowserSession,
@@ -89,14 +88,6 @@ async function openViewer(
   await setupPage({
     context,
     path: `/browsers/${threadId}`,
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      organization: {
-        activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
-        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-      },
-    },
-    featureSwitches: { [FeatureSwitchKey.BrowserAddressSearch]: true },
   });
   const viewer = await screen.findByRole("region", {
     name: "Remote browser viewer",

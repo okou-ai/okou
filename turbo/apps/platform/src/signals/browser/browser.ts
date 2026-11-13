@@ -114,7 +114,6 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
-  readonly addressSearchEnabled$: Computed<boolean>;
   readonly addressSubmissionKind$: Computed<"navigate" | "search" | null>;
   readonly addressComposing$: Computed<boolean>;
   readonly composeAddress$: Command<void, [boolean]>;
