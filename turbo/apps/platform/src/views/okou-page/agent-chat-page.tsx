@@ -644,7 +644,7 @@ export function AgentComposerPage() {
   );
 }
 
-export function AgentChatPage() {
+export function AgentChatPage({ project = false }: { project?: boolean }) {
   const showChatList = useGet(pwaChatListVisible$);
-  return showChatList ? <PwaChatListPage /> : <AgentComposerPage />;
+  return showChatList && !project ? <PwaChatListPage /> : <AgentComposerPage />;
 }
