@@ -238,9 +238,8 @@ manifest audit; this is a location/contract exception, not a rule-wide exclusion
 or increased count baseline. See [public entry points](../docs/android/android-development.md#public-android-entry-points)
 before adding exported components, deep links or external Intent handling.
 
-The validation workflow does not publish releases. FCM credentials are not
-configured. The transport below is available to feature owners; the local shell
-still makes no authenticated API requests.
+The validation workflow builds and tests the application; it does not publish
+releases or configure FCM credentials.
 
 ## GitHub Releases
 
@@ -388,11 +387,11 @@ nullable/empty values and optional query construction. The archive fixture uses
 the validator's input representation for documented historical/default values;
 semantic normalization remains the consuming domain's responsibility.
 
-These are compile/read proofs, not installed application endpoints or a native
-chat-list feature. They do not enter the production API-consumption inventory.
-`check:kotlin` and the focused generator tests detect fixture drift; the consumption
-lint retains its production-only generated-client check. Run the reader proof from
-`android/`, with the SDK configured as above:
+These test-only fixtures prove compilation/decoding and do not register installed
+consumers. The native chat list uses the production bindings and route inventory
+selected in `bindings.ts`. `check:kotlin` and the focused generator tests detect
+fixture drift; consumption lint checks the production generated-client boundary.
+Run the reader proof from `android/`, with the SDK configured as above:
 
 ```bash
 ./gradlew :app:testDebugUnitTest --tests ai.okou.android.api.ChatReadBindingsTest --no-daemon
@@ -408,12 +407,13 @@ service; direct arbitrary HTTP in features is outside the transport contract.
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
 identity and a suspending `WorkspaceTokenProvider` resolved for each request.
 The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
-cover current workspace and member preference bootstrap. The authentication
+cover workspace/member preferences and the native chat-list reads. The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
-Construction starts no token resolution or network work and is not wired into
-the local shell. A real bootstrap must render native UI while responses remain
-pending and keep protected data/actions behind their actual prerequisites.
+Construction starts no token resolution or network work. The authenticated root
+owns workspace bootstrap, and the retained chat-list owner starts its independent
+reads after authorization. Native UI renders while responses remain pending;
+protected data/actions stay behind their actual prerequisites.
 
 The client returns typed HTTP/network/incompatible-response failures, propagates
 coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
@@ -432,8 +432,8 @@ envelope metadata remains unknown. Coroutine cancellation still propagates.
 
 HTTP 426 retains a read-only `updateRequired` state and blocks further calls
 from that client; a malformed envelope keeps the minimum version unknown.
-The real authenticated root must observe this state and present its native
-blocking update destination. No self-clear/retry is provided for an installed
+The authenticated root observes this state and presents its native blocking
+update destination. No self-clear/retry is provided for an installed
 version that needs an update. The backend Android floor starts unset; see
 [Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
 
