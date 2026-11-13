@@ -35,6 +35,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   ) {
     navigation.applySelection = nil
     navigation.delegate = nil
+    coordinator.uninstallPopGestures()
     coordinator.sidebar.setTransitioning(false)
   }
 
@@ -47,6 +48,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
     private var transitionTarget: Bool?
+    private var popGestures: [WorkspacePopGestureDelegate] = []
 
     init(sidebar: SidebarInteraction) {
       self.sidebar = sidebar
@@ -56,11 +58,19 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
       navigation.loadViewIfNeeded()
-      // Keep native return gestures available while the navigation bar is hidden.
-      navigation.interactivePopGestureRecognizer?.delegate = nil
-      navigation.interactiveContentPopGestureRecognizer?.delegate = nil
+      popGestures = [
+        navigation.interactivePopGestureRecognizer,
+        navigation.interactiveContentPopGestureRecognizer,
+      ].compactMap { $0 }.map {
+        WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: $0)
+      }
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }
+    }
+
+    func uninstallPopGestures() {
+      popGestures.forEach { $0.uninstall() }
+      popGestures.removeAll()
     }
 
     private func applySelection() {
