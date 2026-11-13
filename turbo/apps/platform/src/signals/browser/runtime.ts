@@ -1775,7 +1775,8 @@ export function createBrowserRuntime(
   const navigationActions = createNavigationActions(context, graph);
   const addressRef$ = onRef(
     command(({ set }, node: HTMLInputElement, signal: AbortSignal) => {
-      // A remounted field must not replay feedback from an earlier interaction.
+      // Composition and feedback belong to the mounted field.
+      set(navigationActions.composeAddress$, false);
       set(navigationActions.notifyAddressSubmit$, null);
       set(graph.address.mount$, node, signal);
     }),

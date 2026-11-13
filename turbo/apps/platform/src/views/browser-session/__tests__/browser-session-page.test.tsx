@@ -1065,6 +1065,56 @@ async function expectStreamingViewer(): Promise<void> {
   });
 }
 
+test("A restarted Browser accepts searches after composition in the initial address field", async () => {
+  const activeSession = browserSession();
+  const pausedSession = browserSession({
+    status: "suspended",
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+  });
+  const cdpUrl = "wss://cdp.browser-use.com/composition-restart";
+  mockBrowserCdp(context, cdpUrl);
+  const requested = context.mocks.deferred<void>();
+  const acquisition = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    requested.resolve();
+    await acquisition.promise;
+    return respond(200, browserAcquisition(pausedSession));
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(200, browserAcquisition(activeSession, cdpUrl));
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  const page = await startPage({ context, path: `/browsers/${THREAD_ID}` });
+  await page.content;
+  await requested.promise;
+  const original = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(original, "季度报告");
+  fireEvent.compositionStart(original);
+  await act(acquisition.resolve);
+  await page.ready;
+  await screen.findByText("Browser not live");
+
+  click(getButton("Start browser"));
+  await expectStreamingViewer();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "annual report");
+  expect(
+    screen.getByLabelText("Search Google", { selector: "button" }),
+  ).toBeEnabled();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=annual+report",
+    );
+  });
+});
+
 function mockSharedViewer(liveUrl: string | null = null) {
   const session = browserSession({
     liveUrl,
