@@ -4,12 +4,54 @@ struct MessageZoomableImage: UIViewRepresentable {
   let image: UIImage
   var zoomStep = 0
   var accessibilityLabel = String(localized: "Image. Pinch to zoom, or double tap.")
+  var navigateImage: ((Int) -> Void)?
 
+  func makeCoordinator() -> Coordinator { Coordinator() }
   func makeUIView(context: Context) -> MessageImageScrollView {
-    MessageImageScrollView(image: image, accessibilityLabel: accessibilityLabel)
+    let view = MessageImageScrollView(image: image, accessibilityLabel: accessibilityLabel)
+    context.coordinator.navigateImage = navigateImage
+    context.coordinator.install(on: view)
+    return view
   }
   func updateUIView(_ view: MessageImageScrollView, context: Context) {
+    context.coordinator.navigateImage = navigateImage
     view.adjustZoom(to: zoomStep)
+  }
+
+  final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    var navigateImage: ((Int) -> Void)?
+    private weak var view: MessageImageScrollView?
+
+    func install(on view: MessageImageScrollView) {
+      self.view = view
+      for direction: UISwipeGestureRecognizer.Direction in [.left, .right] {
+        let swipe = UISwipeGestureRecognizer(target: self, action: #selector(navigate(_:)))
+        swipe.direction = direction
+        swipe.delegate = self
+        view.addGestureRecognizer(swipe)
+        view.panGestureRecognizer.require(toFail: swipe)
+        if let pinch = view.pinchGestureRecognizer { swipe.require(toFail: pinch) }
+      }
+    }
+
+    private var canNavigate: Bool {
+      guard let view, navigateImage != nil else { return false }
+      return !view.isZooming && view.zoomScale <= view.minimumZoomScale * 1.01
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
+      -> Bool
+    {
+      canNavigate
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+      canNavigate
+    }
+
+    @objc private func navigate(_ gesture: UISwipeGestureRecognizer) {
+      navigateImage?(gesture.direction == .left ? 1 : -1)
+    }
   }
 }
 

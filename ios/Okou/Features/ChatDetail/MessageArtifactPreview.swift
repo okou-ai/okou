@@ -206,7 +206,12 @@ private struct ArtifactPreviewContent: View {
     MessageFilePreview(
       kind: artifact.kind, symbol: artifact.symbol, file: file,
       thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
-      canRetry: true, retry: viewer.retry)
+      canRetry: true, retry: viewer.retry,
+      navigateImage: { direction in
+        if let content = value.data {
+          viewer.navigateImage(direction, content: content, previewID: preview.id)
+        }
+      })
   }
 }
 
