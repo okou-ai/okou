@@ -108,10 +108,8 @@ import {
   ChatEnqueueTimingCollector,
 } from "./chat-enqueue-timing.service";
 
-import {
-  cancelRun$,
-  type CancelRunResult,
-} from "./agent-run-terminal-transition.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import {
   canonicalPrivateWebInputPlan,
   canonicalWebInputPlan,

@@ -94,7 +94,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -160,7 +160,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       prompt: "Use the refreshed MCP identity",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     const builtin = claim.firewalls?.find((entry) => {
       return entry.kind === "builtin" && entry.name === catalog.slug;
     });
@@ -256,7 +256,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -342,7 +342,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       prompt: "Use a live DCR registration",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     const builtin = claim.firewalls?.find((entry) => {
       return entry.kind === "builtin" && entry.name === catalog.slug;
     });
@@ -498,7 +498,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
@@ -564,7 +564,7 @@ describe("builtin Automatic firewall credential destinations", () => {
         prompt: "Use persisted Automatic refresh tokens",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
+      const claim = await runs.executionInput(run.runId);
       const builtin = claim.firewalls?.find((entry) => {
         return entry.kind === "builtin" && entry.name === catalog.slug;
       });
@@ -801,7 +801,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -869,7 +869,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const outcome = await settleIncludingAbort(
       (async () => {
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await runs.claimRunnerJob(run.runId);
+        const claim = await runs.executionInput(run.runId);
         const builtin = claim.firewalls?.find((entry) => {
           return entry.kind === "builtin" && entry.name === catalog.slug;
         });

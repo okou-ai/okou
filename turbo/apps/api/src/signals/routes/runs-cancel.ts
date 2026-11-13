@@ -7,10 +7,8 @@ import { apiStartTime$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { logger } from "../../lib/log";
-import {
-  cancelRun$,
-  type CancelRunResult,
-} from "../services/agent-run-terminal-transition.service";
+import { cancelRun$ } from "../services/agent-run-cancellation.service";
+import type { CancelRunResult } from "../services/agent-run-terminal-transition.service";
 import {
   dispatchCancelSideEffects$,
   shouldDispatchCancelSideEffects,

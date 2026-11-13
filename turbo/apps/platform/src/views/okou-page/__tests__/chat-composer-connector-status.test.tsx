@@ -200,7 +200,7 @@ test("Pending connected membership does not expose an ordinary add action as if 
   });
   const dialog = await openDirectory();
   await openCustom(dialog);
-  await within(dialog).findByText("Loading connectors…");
+  await within(dialog).findByRole("status", { name: "Loading connectors…" });
   expect(queryFastControl("button", "Connect Acme Search", dialog)).toBeNull();
   expect(within(dialog).queryByText("No accounts")).toBeNull();
   gate.resolve();

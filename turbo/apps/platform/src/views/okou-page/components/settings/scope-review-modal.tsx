@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { useLastResolved, useLoadable } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import {
@@ -135,11 +136,12 @@ export function ScopeReviewModal({
         </DialogHeader>
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
+          <LoadingSkeleton
+            label={t(($) => {
               return $.connectors.permissions.scopeReview.loading;
             })}
-          </p>
+            variant="rows"
+          />
         ) : scopeDiff ? (
           <ScopeReviewContent
             addedScopes={scopeDiff.addedScopes}

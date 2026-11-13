@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import {
   RemoteNetworkScopeField,
   RemoteNetworkScopeConfirmation,
@@ -177,11 +178,12 @@ function TailscaleDeletionBody({
       {config.scope === "organization" && (
         <>
           {impact.state === "loading" && (
-            <p role="status">
-              {t(($) => {
+            <LoadingSkeleton
+              label={t(($) => {
                 return $.tailscale.loading;
               })}
-            </p>
+              variant="text"
+            />
           )}
           {impact.state === "hasError" && (
             <LoadErrorRow

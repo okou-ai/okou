@@ -257,7 +257,7 @@ export async function createClaimedImageRun(
       }
     };
   }
-  const runnerGroup = chat.api.configureRunnerGroup();
+  const runnerGroup = await chat.api.configureRunnerGroup();
   let restoreAcceptedState = captureExternalState();
   let restorePreviousState: (() => void) | undefined;
   let restoreSetupExternalState: (() => void) | undefined;
@@ -416,7 +416,7 @@ export async function createClaimedImageRun(
     return chat.api.heartbeatRunner(claimedRunnerGroup);
   });
   const claimed = await run(async () => {
-    const claim = await chat.api.claimRunnerJob(sent.runId);
+    const claim = await chat.api.executionInput(sent.runId);
     owner.rememberClaim(sent.runId, claim.sandboxToken);
     return {
       ...sent,

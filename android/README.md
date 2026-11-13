@@ -356,18 +356,26 @@ Add only contracts a native consumer actually needs. Unsupported schema shapes
 fail generation; do not replace them with untyped JSON or parallel handwritten DTOs.
 
 The selected emitter supports string-keyed records, root array/map aliases and
-typed object unions with disjoint string tags or unique required wire keys.
+typed object unions with disjoint string tags, unique required wire keys,
+required null/non-null selectors or forbidden/required key pairs.
 Union selection rejects unknown or ambiguous variants and preserves the original
 wire object without inserting a discriminator wrapper. Nullable/optional fields,
 combined string-enum vocabularies, explicit nulls and empty tuples retain their
 wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
-unrepresented values still fail generation. This is a typed reader boundary,
+unrepresented values still fail generation. Canonical numeric literal zero has
+an explicit wire representation. Optional never fields are omitted and rejected
+when present. Only deliberately unconstrained canonical JSON leaves become
+`JsonElement`; optional leaves preserve absence separately from explicit JSON null.
+This is a typed reader boundary,
 not a second implementation of Zod's complete validation/transform runtime.
 
 Retrofit query support is limited to canonical scalar fields; omitted optional
 values stay absent from the URL. Server-defaulted scalars use explicit arguments.
-Query compositions, path parameters and
-non-200 success binding support require a future actual consumer before expansion.
+Required string path parameters retain Retrofit's normal segment escaping.
+Supported scalar object-union queries generate typed alternatives and an extension
+method that validates the canonical branch constraints before invoking the wire
+method. Unsupported or ambiguous compositions still fail generation. Non-200
+success bindings require a future actual consumer before expansion.
 
 Regenerate from the repository root with the Turbo workspace dependencies installed:
 
@@ -395,6 +403,13 @@ kotlinx.serialization and Retrofit/MockWebServer setup, including branch rejecti
 nullable/empty values and optional query construction. The archive fixture uses
 the validator's input representation for documented historical/default values;
 semantic normalization remains the consuming domain's responsibility.
+
+The separate `historyfixtures` test namespace and `ChatHistoryBindingsTest` prove
+canonical event snapshots, raw-row pages, paired cold/warm cursors, thread detail
+and the no-body mark-read POST. Real Kotlin codecs and Retrofit/MockWebServer verify
+raw event variants, opaque structured payloads, optional JSON nulls, forbidden
+fields, path escaping and query validation. History routes remain outside the
+installed reader inventory until the runtime history consumer is integrated.
 
 These test-only fixtures prove compilation/decoding and do not register installed
 consumers. The native chat list uses the production bindings and route inventory

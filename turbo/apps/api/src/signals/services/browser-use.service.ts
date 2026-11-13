@@ -681,54 +681,16 @@ async function resizeBrowserUseCdp(
   cdpUrl: string,
   width: number,
   height: number,
+  primaryWindowId: number,
   signal: AbortSignal,
-  primaryWindowId?: number,
 ): Promise<void> {
   await withBrowserUseCdpSocket(cdpUrl, signal, async (socket) => {
-    if (primaryWindowId !== undefined) {
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: 1,
-          method: "Browser.setContentsSize",
-          params: { windowId: primaryWindowId, width, height },
-        },
-        signal,
-      );
-      return;
-    }
-    const targets = browserUseCdpTargetsSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        { id: 1, method: "Target.getTargets", params: {} },
-        signal,
-      ),
-      { reportInput: true },
-    );
-    const target = targets.targetInfos.find((candidate) => {
-      return candidate.type === "page";
-    });
-    if (!target) {
-      throw new Error("Browser Use CDP returned no page target");
-    }
-    const window = browserUseCdpWindowSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: 2,
-          method: "Browser.getWindowForTarget",
-          params: { targetId: target.targetId },
-        },
-        signal,
-      ),
-      { reportInput: true },
-    );
     await sendBrowserUseCdpCommand(
       socket,
       {
-        id: 3,
+        id: 1,
         method: "Browser.setContentsSize",
-        params: { windowId: window.windowId, width, height },
+        params: { windowId: primaryWindowId, width, height },
       },
       signal,
     );
@@ -806,12 +768,11 @@ async function browserUseInputWindowMatches(
   socket: WebSocket,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
   return (
-    target.primaryWindowId === undefined ||
     (await nativeWindowForTarget(
       socket,
       target.pageTargetId,
@@ -1152,29 +1113,21 @@ async function withBrowserUseCdpDeadline<T>(
 
 export async function listBrowserUseTabUrls(
   connection: BrowserUseNativeConnection,
+  primaryWindowId: number,
   signal: AbortSignal,
-  primaryWindowId?: number,
 ): Promise<{
   readonly windowExists: boolean;
   readonly urls: readonly string[];
 }> {
   return await withBrowserUseBridge(connection, signal, async (client) => {
-    const observed =
-      primaryWindowId === undefined
-        ? await client.call("listWindows", { populate: true })
-        : await client.call("getWindow", {
-            windowId: primaryWindowId,
-            populate: true,
-          });
+    const observed = await client.call("getWindow", {
+      windowId: primaryWindowId,
+      populate: true,
+    });
     const windows = array(browserUseNativeWindowSchema).parse(
-      primaryWindowId === undefined
-        ? observed.value
-        : observed.value === null
-          ? []
-          : [observed.value],
+      observed.value === null ? [] : [observed.value],
     );
     if (
-      primaryWindowId !== undefined &&
       windows.some((window) => {
         return window.id !== primaryWindowId;
       })
@@ -1256,7 +1209,7 @@ async function selectBrowserScreenshotPage(
   }
 
   const sessionId = focusedSessionId ?? fallbackSessionId;
-  if (!sessionId) {
+  if (!sessionId || !selectedTargetId) {
     throw new Error("Browser Use CDP could not attach to a page target");
   }
 
@@ -1265,8 +1218,8 @@ async function selectBrowserScreenshotPage(
 
 export async function captureBrowserUseScreenshot(
   cdpUrl: string,
+  primaryWindowId: number,
   signal: AbortSignal,
-  primaryWindowId?: number,
 ): Promise<Buffer> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
@@ -1282,24 +1235,22 @@ export async function captureBrowserUseScreenshot(
       return target.type === "page";
     });
     const sequence = { next: 2 };
-    if (primaryWindowId !== undefined) {
-      const windowIds = await mapConcurrent(
-        pageTargets,
-        BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY,
-        async (target) => {
-          return await nativeWindowForTarget(
-            socket,
-            target.targetId,
-            sequence,
-            cdpSignal,
-          );
-        },
-      );
-      cdpSignal.throwIfAborted();
-      pageTargets = pageTargets.filter((_target, index) => {
-        return windowIds[index] === primaryWindowId;
-      });
-    }
+    const windowIds = await mapConcurrent(
+      pageTargets,
+      BROWSER_USE_WINDOW_LOOKUP_CONCURRENCY,
+      async (target) => {
+        return await nativeWindowForTarget(
+          socket,
+          target.targetId,
+          sequence,
+          cdpSignal,
+        );
+      },
+    );
+    cdpSignal.throwIfAborted();
+    pageTargets = pageTargets.filter((_target, index) => {
+      return windowIds[index] === primaryWindowId;
+    });
     if (pageTargets.length === 0) {
       throw new Error("Browser Use CDP returned no page target");
     }
@@ -1328,8 +1279,6 @@ export async function captureBrowserUseScreenshot(
     commandId += 1;
     const viewport = layout.cssVisualViewport;
     if (
-      primaryWindowId !== undefined &&
-      selectedTargetId &&
       !(await browserUseInputWindowMatches(
         socket,
         { pageTargetId: selectedTargetId, primaryWindowId },
@@ -1365,8 +1314,6 @@ export async function captureBrowserUseScreenshot(
       { reportInput: true },
     );
     if (
-      primaryWindowId !== undefined &&
-      selectedTargetId &&
       !(await browserUseInputWindowMatches(
         socket,
         { pageTargetId: selectedTargetId, primaryWindowId },
@@ -2393,7 +2340,7 @@ async function validateBrowserUseUserActionOnSocket(
   socket: WebSocket,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
@@ -2522,7 +2469,7 @@ export async function validateBrowserUseUserAction(
   cdpUrl: string,
   target: {
     readonly pageTargetId: string;
-    readonly primaryWindowId?: number;
+    readonly primaryWindowId: number;
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
@@ -2581,7 +2528,7 @@ export interface BrowserUseUserActionApplyField {
 }
 
 export interface BrowserUseUserActionExactTarget {
-  readonly primaryWindowId?: number;
+  readonly primaryWindowId: number;
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrlHash: string;
@@ -3781,16 +3728,16 @@ export async function resizeBrowserUseSession(
   cdpUrl: string,
   width: number,
   height: number,
+  primaryWindowId: number,
   signal: AbortSignal,
-  primaryWindowId?: number,
 ): Promise<void> {
   const result = await settle(
     resizeBrowserUseCdp(
       cdpUrl,
       width,
       height,
-      browserUseCdpSignal(signal),
       primaryWindowId,
+      browserUseCdpSignal(signal),
     ),
   );
   signal.throwIfAborted();
@@ -4128,21 +4075,6 @@ export async function getBrowserUseSession(
   const body = await browserUseRequest(
     `/browsers/${encodeURIComponent(providerSessionId)}`,
     { method: "GET" },
-    signal,
-  );
-  return parseBrowserUseSession(body);
-}
-
-export async function stopBrowserUseSession(
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<BrowserUseSession> {
-  const body = await browserUseRequest(
-    `/browsers/${encodeURIComponent(providerSessionId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ action: "stop" }),
-    },
     signal,
   );
   return parseBrowserUseSession(body);

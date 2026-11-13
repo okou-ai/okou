@@ -88,8 +88,8 @@ async function seedMembership(actor: ApiTestUser): Promise<void> {
   );
 }
 
-function prepareChatRuntime(): void {
-  api.configureRunnerGroup();
+async function prepareChatRuntime(): Promise<void> {
+  await api.configureRunnerGroup();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   chatCallbacks.acceptChatObjectStorage();
@@ -171,7 +171,7 @@ function client() {
 
 describe("GET /api/indicators", () => {
   it("reports unread timestamps for an Okou token without changing read state", async () => {
-    prepareChatRuntime();
+    await prepareChatRuntime();
     const actor = bdd.user();
     const agentId = await createEntitledAgent(actor, "Unread indicator agent");
     const unread = await createCancelledThread({
@@ -209,7 +209,7 @@ describe("GET /api/indicators", () => {
   });
 
   it("scopes unread indicators to the token user and organization", async () => {
-    prepareChatRuntime();
+    await prepareChatRuntime();
     const owner = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(owner) });
     const otherOrg = bdd.user({ userId: owner.userId });
@@ -253,7 +253,7 @@ describe("GET /api/indicators", () => {
   });
 
   it("reports read-cursor changes through indicators while mark responses carry no unread snapshot", async () => {
-    prepareChatRuntime();
+    await prepareChatRuntime();
     const actor = bdd.user();
     const agentId = await createEntitledAgent(actor, "Read cursor agent");
     const toggled = await createCancelledThread({
@@ -283,7 +283,7 @@ describe("GET /api/indicators", () => {
   });
 
   it("reports a finished thread with a new active Run as active instead of unread", async () => {
-    prepareChatRuntime();
+    await prepareChatRuntime();
     const actor = bdd.user();
     const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
     const rerun = await createCancelledThread({
@@ -322,7 +322,7 @@ describe("GET /api/indicators", () => {
   });
 
   it("limits active threads after filtering out inaccessible Agents", async () => {
-    prepareChatRuntime();
+    await prepareChatRuntime();
     // Every send must start a Run (runs, not waiting inputs, feed the active
     // indicator), so lift the organization concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");

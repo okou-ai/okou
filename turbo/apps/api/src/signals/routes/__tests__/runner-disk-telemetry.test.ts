@@ -182,7 +182,7 @@ describe("Runner disk telemetry HTTP", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     await fixture.initializeDatabase();
     await fixture.grantEntitlement();
     await fixture.run(() => {
@@ -204,56 +204,11 @@ describe("Runner disk telemetry HTTP", () => {
       fixture.owned.runId = created.runId;
       return created;
     });
-    const runnerId = randomUUID();
-    await fixture.run(() => {
-      return runs.requestRawHeartbeatRunner(true, [200], {
-        runnerId,
-        group,
-        snapshotGeneration: 1,
-        snapshotSequence: 1,
-        totalVcpu: 8,
-        totalMemoryMb: 16_384,
-        maxConcurrent: 2,
-        allocatedVcpu: 0,
-        allocatedMemoryMb: 0,
-        runningCount: 0,
-        admittableProfiles: ["vm0/default"],
-        heldSandboxStates: [],
-        heldHomeStates: [],
-        activeReuseProducers: [],
-        mode: "running",
-      });
+    const input = await fixture.run(() => {
+      return runs.executionInput(run.runId);
     });
-    const polled = await fixture.run(() => {
-      return runs.requestPollRunner(
-        true,
-        {
-          runnerId,
-          group,
-          supportedProfiles: ["vm0/default"],
-        },
-        [200],
-      );
-    });
-    expect(polled.body).toMatchObject({ job: { runId: run.runId } });
-    const claimed = await fixture.run(async () => {
-      const response = await runs.requestClaimRunnerJob(
-        true,
-        run.runId,
-        [200],
-        {
-          runnerIdentity: { runnerId, heartbeatGeneration: 1 },
-        },
-      );
-      if (response.status === 200) {
-        fixture.owned.sandboxToken = response.body.sandboxToken;
-      }
-      return response;
-    });
-    if (claimed.status !== 200) {
-      throw new Error("Expected claim");
-    }
-    const headers = { authorization: `Bearer ${claimed.body.sandboxToken}` };
+    fixture.owned.sandboxToken = input.sandboxToken;
+    const headers = { authorization: `Bearer ${input.sandboxToken}` };
     const metric = {
       ts: "2026-10-10T00:00:00Z",
       cpu: 1,

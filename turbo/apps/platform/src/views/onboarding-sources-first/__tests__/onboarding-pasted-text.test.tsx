@@ -448,24 +448,26 @@ test("Finishing a later paste does not enable Run while an earlier upload is pen
   await user.click(input);
   await user.paste(clipboard(first));
   await expect(
-    screen.findByText(`Loading ${FIRST_FILENAME}`),
+    screen.findByRole("status", { name: `Loading ${FIRST_FILENAME}` }),
   ).resolves.toBeInTheDocument();
   expect(button("Next")).toBeDisabled();
 
   await user.paste(clipboard(second));
   await expect(
-    screen.findByText(`Loading ${SECOND_FILENAME}`),
+    screen.findByRole("status", { name: `Loading ${SECOND_FILENAME}` }),
   ).resolves.toBeInTheDocument();
   secondGate.resolve();
   await waitFor(() => {
     expect(
-      screen.queryByText(`Loading ${SECOND_FILENAME}`),
+      screen.queryByRole("status", { name: `Loading ${SECOND_FILENAME}` }),
     ).not.toBeInTheDocument();
     expect(button(`Remove ${SECOND_FILENAME}`)).toBeInTheDocument();
   });
   expect(button("Next")).toBeDisabled();
   expect(input).toHaveValue(TASK);
-  expect(screen.getByText(`Loading ${FIRST_FILENAME}`)).toBeInTheDocument();
+  expect(
+    screen.getByRole("status", { name: `Loading ${FIRST_FILENAME}` }),
+  ).toBeInTheDocument();
 
   firstGate.resolve();
   await waitFor(() => {
@@ -575,7 +577,7 @@ test("The attachment cap includes uploads still in progress and preserves a reje
   await user.click(input);
   await user.paste(clipboard("a".repeat(10_001)));
   await expect(
-    screen.findByText(`Loading ${FIRST_FILENAME}`),
+    screen.findByRole("status", { name: `Loading ${FIRST_FILENAME}` }),
   ).resolves.toBeInTheDocument();
 
   const rejected = "b".repeat(10_001);

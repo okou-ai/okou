@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../components/loading-skeleton.tsx";
 import {
   isAutoSelectedModel,
   sameSelectedModel,
@@ -428,15 +429,20 @@ function EnabledExplicitModelFirstModelPicker({
       </SelectTrigger>
       <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
         {modelsResponse === undefined || catalog === undefined ? (
-          <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
-            {loading
-              ? t(($) => {
-                  return $.settings.models.picker.loading;
-                })
-              : t(($) => {
-                  return $.settings.models.picker.loadError;
-                })}
-          </p>
+          loading ? (
+            <LoadingSkeleton
+              className="px-2 py-2"
+              label={t(($) => {
+                return $.settings.models.picker.loading;
+              })}
+            />
+          ) : (
+            <p role="alert" className="px-2 py-2 text-sm text-muted-foreground">
+              {t(($) => {
+                return $.settings.models.picker.loadError;
+              })}
+            </p>
+          )
         ) : models.length === 0 ? (
           <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
             {t(($) => {

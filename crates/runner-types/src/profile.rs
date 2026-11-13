@@ -14,8 +14,8 @@ pub struct ProfileDef {
 
 /// Resource shape for [`crate::profile_name::DEFAULT_PROFILE`].
 pub const DEFAULT_PROFILE_DEF: ProfileDef = ProfileDef {
-    vcpu: 2,
-    memory_mb: 4096,
-    rootfs_disk_mb: 12288,
-    home_disk_mb: 24576,
+    vcpu: api_contracts::generated::constants::runners::DEFAULT_PROFILE_VCPU,
+    memory_mb: api_contracts::generated::constants::runners::DEFAULT_PROFILE_MEMORY_MB,
+    rootfs_disk_mb: api_contracts::generated::constants::runners::DEFAULT_PROFILE_ROOTFS_DISK_MB,
+    home_disk_mb: api_contracts::generated::constants::runners::DEFAULT_PROFILE_HOME_DISK_MB,
 };

@@ -528,13 +528,15 @@ pub fn accept_with_timeout(listener: &UnixListener, timeout: Duration) -> io::Re
 }
 
 fn create_unix_socket() -> io::Result<OwnedFd> {
-    // SAFETY: socket arguments are constants for an AF_UNIX stream socket.
-    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fd is a newly-created socket owned by this function.
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
+
+    socket_with(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .map_err(io::Error::from)
 }
 
 fn abstract_sockaddr(name: &str) -> io::Result<libc::sockaddr_un> {

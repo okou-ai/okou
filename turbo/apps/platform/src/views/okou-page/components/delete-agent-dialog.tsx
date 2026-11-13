@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../components/loading-skeleton.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -392,11 +393,13 @@ function AgentDeleteFeedback({
   return (
     <>
       {deleteWorkflowsState === "loading" && (
-        <p role="status" className="px-6 pb-6 text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.delete.workflows.loading;
           })}
-        </p>
+          variant="rows"
+          className="px-6 pb-6"
+        />
       )}
       {deleteWorkflowsState === "error" ? (
         <div

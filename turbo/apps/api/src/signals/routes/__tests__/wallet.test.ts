@@ -65,7 +65,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { tier: unattended ? "team" : "pro" });
   await api.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
@@ -82,7 +82,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
         prompt: "Prepare a test Link purchase approval",
       });
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.claimRunnerJob(run.runId);
+  const claim = await api.executionInput(run.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Missing claimed run token");
@@ -3157,7 +3157,7 @@ test("an approval Workflow continues the original web chat once and retains inte
   if (!resumed?.runId) {
     throw new Error("Missing approval continuation run");
   }
-  const claim = await fixture.api.claimRunnerJob(resumed.runId);
+  const claim = await fixture.api.executionInput(resumed.runId);
   const headers = {
     authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
   };
@@ -3233,7 +3233,7 @@ test("cancelling a watched purchase from another chat fails before contacting Li
     prompt: "Inspect an existing purchase from another chat",
   });
   await fixture.api.heartbeatRunner(fixture.runnerGroup);
-  const claim = await fixture.api.claimRunnerJob(other.runId);
+  const claim = await fixture.api.executionInput(other.runId);
   onTestFinished(async () => {
     await fixture.api.requestCancelRun(fixture.actor, other.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(

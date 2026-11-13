@@ -41,6 +41,14 @@ const connectorsApi = createConnectorBddApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
 
+function receivedCalendarRun(runnerGroup: string) {
+  const dispatch = runsApi.receivedDispatches(runnerGroup).at(-1);
+  if (!dispatch) {
+    throw new Error("Expected a dispatched Calendar run");
+  }
+  return dispatch.executionContext;
+}
+
 async function completeRunThroughSandbox(
   sandboxToken: string,
   runId: string,
@@ -285,7 +293,7 @@ interface CalendarScenario {
 }
 
 async function setupFixture(): Promise<CalendarScenario> {
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   const { actor } = await wf.setupWorkflowOrg();
@@ -650,11 +658,8 @@ describe("POST /api/webhooks/google-calendar", () => {
         [200],
       );
       expect(selections.body.selections).toStrictEqual([]);
-      await runsApi.heartbeatRunner(runnerGroup);
-      const firstJob = await runsApi.pollRunner(runnerGroup);
-      expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
-      const firstRunId = firstJob.body.job!.runId;
-      await runsApi.claimRunnerJob(firstRunId);
+      const firstRunId = receivedCalendarRun(runnerGroup).runId;
+      await runsApi.executionInput(firstRunId);
 
       // A redelivery for the same event revision dispatches nothing and no new
       // runner job appears.
@@ -667,8 +672,7 @@ describe("POST /api/webhooks/google-calendar", () => {
         dispatched: 0,
         duplicates: 0,
       });
-      const idleAfterDuplicate = await runsApi.pollRunner(runnerGroup);
-      expect(idleAfterDuplicate.body.job).toBeNull();
+      expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
     });
   });
 
@@ -848,11 +852,9 @@ describe("POST /api/webhooks/google-calendar", () => {
           status: 401,
           body: { error: "Unauthorized" },
         });
-        await runsApi.heartbeatRunner(scenario.runnerGroup);
-        const idleAfterOldSource = await runsApi.pollRunner(
-          scenario.runnerGroup,
+        expect(runsApi.receivedDispatches(scenario.runnerGroup)).toStrictEqual(
+          [],
         );
-        expect(idleAfterOldSource.body.job).toBeNull();
 
         const selectedSource = await postGoogleCalendarWebhook(
           webhookHeaders(secondWatch),
@@ -867,12 +869,7 @@ describe("POST /api/webhooks/google-calendar", () => {
           },
         });
         await flushWaitUntilForTest();
-        await runsApi.heartbeatRunner(scenario.runnerGroup);
-        const job = await runsApi.pollRunner(scenario.runnerGroup);
-        if (!job.body.job) {
-          throw new Error("Expected a selected-account Calendar run");
-        }
-        const claim = await runsApi.claimRunnerJob(job.body.job.runId);
+        const claim = receivedCalendarRun(scenario.runnerGroup);
         expect(
           Object.values(claim.secretConnectorMetadataMap ?? {}),
         ).toContainEqual(
@@ -990,9 +987,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     await expect(
       postGoogleCalendarWebhook(webhookHeaders(firstWatch)),
     ).resolves.toStrictEqual({ status: 401, body: { error: "Unauthorized" } });
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const idle = await runsApi.pollRunner(scenario.runnerGroup);
-    expect(idle.body.job).toBeNull();
+    expect(runsApi.receivedDispatches(scenario.runnerGroup)).toStrictEqual([]);
   });
 
   it("reconciles Calendar watches across default deletion and first-account re-add", async () => {
@@ -1357,9 +1352,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 0,
       duplicates: 0,
     });
-    await runsApi.heartbeatRunner(runnerGroup);
-    const idle = await runsApi.pollRunner(runnerGroup);
-    expect(idle.body.job).toBeNull();
+    expect(runsApi.receivedDispatches(runnerGroup)).toStrictEqual([]);
   });
 
   it("dispatches updated calendar events once per event revision", async () => {
@@ -1454,10 +1447,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       created.body.chatThreadId,
       'Google Calendar event "Existing updated" was updated.',
     );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const firstJob = await runsApi.pollRunner(runnerGroup);
-    expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
-    const firstClaim = await runsApi.claimRunnerJob(firstJob.body.job!.runId);
+    const firstClaim = receivedCalendarRun(runnerGroup);
 
     // The same revision (same etag) arriving again dispatches nothing.
     const second = await postGoogleCalendarWebhook(webhookHeaders(watch));
@@ -1469,14 +1459,10 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 0,
       duplicates: 0,
     });
-    const idleAfterSameRevision = await runsApi.pollRunner(runnerGroup);
-    expect(idleAfterSameRevision.body.job).toBeNull();
+    expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
 
     // Finish the first run so the workflow queue can dispatch the next event.
-    await completeRunThroughSandbox(
-      firstClaim.sandboxToken,
-      firstJob.body.job!.runId,
-    );
+    await completeRunThroughSandbox(firstClaim.sandboxToken, firstClaim.runId);
 
     // A new revision (new etag) dispatches exactly one more run.
     const third = await postGoogleCalendarWebhook(webhookHeaders(watch));
@@ -1489,12 +1475,9 @@ describe("POST /api/webhooks/google-calendar", () => {
       duplicates: 0,
     });
     await flushWaitUntilForTest();
-    const thirdJob = await runsApi.pollRunner(runnerGroup);
-    expect(thirdJob.body.job?.runId).toStrictEqual(expect.any(String));
-    expect(thirdJob.body.job?.runId).not.toBe(firstJob.body.job?.runId);
-    await runsApi.claimRunnerJob(thirdJob.body.job!.runId);
-    const idleAfterThird = await runsApi.pollRunner(runnerGroup);
-    expect(idleAfterThird.body.job).toBeNull();
+    const thirdRun = receivedCalendarRun(runnerGroup);
+    expect(thirdRun.runId).not.toBe(firstClaim.runId);
+    expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(2);
   });
 
   it("dispatches cancelled calendar events and de-duplicates minimal deleted payloads", async () => {
@@ -1581,12 +1564,10 @@ describe("POST /api/webhooks/google-calendar", () => {
     );
     // Only the cancelled automation dispatched a run; the minimal deleted
     // payload never reaches the updated automation.
-    await runsApi.heartbeatRunner(runnerGroup);
-    const firstJob = await runsApi.pollRunner(runnerGroup);
-    expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
-    await runsApi.claimRunnerJob(firstJob.body.job!.runId);
-    const idleAfterFirst = await runsApi.pollRunner(runnerGroup);
-    expect(idleAfterFirst.body.job).toBeNull();
+    expect(receivedCalendarRun(runnerGroup).runId).toStrictEqual(
+      expect.any(String),
+    );
+    expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
 
     const second = await postGoogleCalendarWebhook(webhookHeaders(watch));
 
@@ -1597,8 +1578,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 0,
       duplicates: 0,
     });
-    const idleAfterSecond = await runsApi.pollRunner(runnerGroup);
-    expect(idleAfterSecond.body.job).toBeNull();
+    expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
   });
 
   it.each([

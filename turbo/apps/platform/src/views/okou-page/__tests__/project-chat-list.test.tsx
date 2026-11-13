@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
@@ -64,20 +64,6 @@ function hasButton(name: string, containers: readonly ParentNode[]) {
 
 function projectToggle(name: string, projectId = launchId) {
   return button(`Show or hide chats in ${name}`, projectRows(projectId));
-}
-
-function projectLink(name: string, projectId = launchId) {
-  const link = projectRows(projectId)
-    .flatMap((row) => {
-      return queryAllByRoleFast("link", row);
-    })
-    .find((item) => {
-      return item.textContent?.trim() === name;
-    });
-  if (!link) {
-    throw new Error(`Project link ${name} not found`);
-  }
-  return link;
 }
 
 function threadLink(threadId: string) {
@@ -396,7 +382,7 @@ test("A pinned chat moves past another Agent's pin in the same Project", async (
   });
 });
 
-test("Double-clicking a Project's name opens its page and leaves its chats unfolded", async () => {
+test("Clicking an expanded, unselected Project title folds its chats and keeps the current conversation", async () => {
   const ordinary = continuityThread(306, 1, "Ordinary chat");
   const member = {
     ...continuityThread(306, 2, "Launch planning"),
@@ -407,10 +393,91 @@ test("Double-clicking a Project's name opens its page and leaves its chats unfol
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 
-  await userEvent.setup({ delay: null }).dblClick(projectLink("Launch"));
-  await waitFor(() => {
-    expect(location.pathname).toBe(`/projects/${launchId}`);
-  });
+  click(button("Launch", projectRows()));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+
+  click(button("Launch", projectRows()));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  expect(threadLink(ordinary.id)).toHaveAttribute("aria-current", "page");
 });
+
+test.each([
+  { mobile: false, reducedMotion: false },
+  { mobile: true, reducedMotion: false },
+  { mobile: false, reducedMotion: true },
+  { mobile: true, reducedMotion: true },
+])(
+  "Folding a large Project keeps the chat list virtualized and scrollable (mobile: $mobile, reduced motion: $reducedMotion)",
+  async ({ mobile, reducedMotion }) => {
+    const rowHeight = mobile ? 60 : 36;
+    context.mocks.browser.matchMedia((query) => {
+      return (
+        (query === "(min-width: 48rem)" && !mobile) ||
+        (query === "(prefers-reduced-motion: reduce)" && reducedMotion)
+      );
+    });
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.dataset.slot === "scroll-area-viewport" ? 5 * rowHeight : 0;
+      },
+    );
+    const group = Array.from({ length: 600 }, (_, index) => {
+      return chatListThread(5000 + index, `Launch chat ${index + 1}`, {
+        projectId: launchId,
+        sortAt: new Date(Date.parse(at) - index * 1000).toISOString(),
+      });
+    });
+    const outside = Array.from({ length: 600 }, (_, index) => {
+      return chatListThread(6000 + index, `Outside chat ${index + 1}`, {
+        sortAt: new Date(Date.parse(at) - index * 1000).toISOString(),
+      });
+    });
+    await openChatList(
+      308,
+      [...group, ...outside],
+      `/agents/${group[0]!.agentId}/chat`,
+    );
+    const viewport = mobile
+      ? await screen.findByRole("region", { name: "Chat threads" })
+      : await screen.findByTestId("sidebar-scroll-area");
+    const mountedRows = () => {
+      return within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row");
+    };
+    await within(viewport).findByText("Outside chat 1");
+    expect(mountedRows().length).toBeLessThanOrEqual(21);
+
+    click(projectToggle("Launch"));
+    await within(viewport).findByText("Launch chat 1");
+    expect(mountedRows().length).toBeLessThanOrEqual(21);
+    expect(viewport.scrollTop).toBe(0);
+
+    // Scroll while the fold transition is still eligible to run. Rows entering
+    // the virtual window must immediately show the requested part of the list.
+    fireEvent.scroll(viewport, { target: { scrollTop: 300 * rowHeight } });
+    await within(viewport).findByText("Launch chat 300");
+    expect(
+      within(viewport).queryByText("Launch chat 1"),
+    ).not.toBeInTheDocument();
+    expect(mountedRows().length).toBeLessThanOrEqual(21);
+
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    await within(viewport).findByText("Launch chat 1");
+    click(projectToggle("Launch"));
+    await within(viewport).findByText("Outside chat 1");
+    click(projectToggle("Launch"));
+    await within(viewport).findByText("Launch chat 1");
+    click(projectToggle("Launch"));
+    await within(viewport).findByText("Outside chat 1");
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(viewport).queryByText("Launch chat 1"),
+    ).not.toBeInTheDocument();
+    expect(viewport.scrollTop).toBe(0);
+
+    fireEvent.scroll(viewport, { target: { scrollTop: 302 * rowHeight } });
+    await within(viewport).findByText("Outside chat 301");
+    expect(mountedRows().length).toBeLessThanOrEqual(21);
+  },
+);

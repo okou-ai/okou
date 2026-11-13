@@ -12,12 +12,13 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import baselineSkillBundle from "../../../test-fixtures/connector-skill-bundle.json";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
+import { chatEventsRoutes } from "../chat-events";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   mockGitHubConnectorOAuth,
@@ -34,6 +35,7 @@ const {
   connectors,
   entitledNativeChatActor,
   sendChatRun,
+  queueChatRun,
   claimChatRun,
   cancelChatRun,
 } = createChatEventsFixture(context);
@@ -65,15 +67,12 @@ async function claimAndCancel(
   agentId: string,
   runnerGroup: string,
 ) {
-  const queued = await sendChatRun(actor, {
+  const run = await sendChatRun(actor, {
     agentId,
     prompt: "use the current connector permission definitions",
   });
-  const { claim, sandboxHeaders } = await claimChatRun(
-    runnerGroup,
-    queued.runId,
-  );
-  await cancelChatRun(actor, queued.runId, sandboxHeaders);
+  const { claim, sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
+  await cancelChatRun(actor, run.runId, sandboxHeaders);
   return claim;
 }
 
@@ -181,7 +180,7 @@ test("uses current permission definitions after publication with a warm claim ca
     ask: [],
     unknownPolicy: "allow",
   });
-  const queued = await sendChatRun(actor, {
+  const queued = await queueChatRun(actor, {
     agentId,
     prompt: "use definitions published after this Run was queued",
   });
@@ -209,10 +208,8 @@ test("uses current permission definitions after publication with a warm claim ca
   figma.firewall.defaultAllowed = [];
   figma.firewall.defaultUnknownPolicy = "ask";
   await publish(artifact);
-  const { claim, sandboxHeaders } = await claimChatRun(
-    runnerGroup,
-    queued.runId,
-  );
+  const run = await queued.launch();
+  const { claim, sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
   expect(claim.networkPolicies?.figma).toStrictEqual({
     allow: [],
     deny: ["file_comments:read", "file_content:read"],
@@ -220,7 +217,7 @@ test("uses current permission definitions after publication with a warm claim ca
     unknownPolicy: "ask",
   });
   expect(claim.networkPolicyRefreshes?.figma).toBeUndefined();
-  await cancelChatRun(actor, queued.runId, sandboxHeaders);
+  await cancelChatRun(actor, run.runId, sandboxHeaders);
 });
 
 describe.each([false, true])(
@@ -281,7 +278,7 @@ describe.each([false, true])(
           connectorChatAccountAccess: chatAccounts,
         });
         await claimAndCancel(actor, agentId, runnerGroup);
-        const queued = await sendChatRun(actor, {
+        const queued = await queueChatRun(actor, {
           agentId,
           prompt: "use the current GitHub permissions at claim",
         });
@@ -304,9 +301,10 @@ describe.each([false, true])(
             }),
           ).resolves.toStrictEqual([]);
         }
+        const run = await queued.launch();
         const { claim, sandboxHeaders } = await claimChatRun(
           runnerGroup,
-          queued.runId,
+          run.runId,
         );
         expect(claim.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({ kind: "builtin", connectorSlug: "github" }),
@@ -325,7 +323,7 @@ describe.each([false, true])(
         expect(claim.networkPolicies?.github?.allow).toContain(
           "notifications:read",
         );
-        await cancelChatRun(actor, queued.runId, sandboxHeaders);
+        await cancelChatRun(actor, run.runId, sandboxHeaders);
         const accounts = await connectors.listBuiltinConnectorAccounts(
           actor,
           "github",
@@ -347,8 +345,10 @@ describe.each([false, true])(
     ] as const)(
       "evaluates the captured permission source and temporary deadline: %s",
       async (expiry) => {
+        // Heartbeats advanced across grant expiry prune the global fleet.
+        await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
         const expired = expiry !== "active";
-        const startedAt = Date.parse("2026-11-05T00:00:00.000Z");
+        const startedAt = now();
         mockNow(startedAt);
         const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
         mockSlackConnectorOAuth();
@@ -394,21 +394,19 @@ describe.each([false, true])(
           connectorChatAccountAccess: chatAccounts,
         });
         await claimAndCancel(actor, agentId, runnerGroup);
-        const queued = await sendChatRun(actor, {
+        const queued = await queueChatRun(actor, {
           agentId,
           prompt: "use the current Slack write grant and its original expiry",
-        });
-        // Queued Runs retain their permission-store decision even if the
-        // member changes modes before a Runner claims them.
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: !chatAccounts,
         });
         const expiresAt = startedAt + 60 * 60 * 1000;
         mockNow(
           expiry === "expired-before-claim"
             ? expiresAt
-            : startedAt + 30 * 60 * 1000,
+            : expiry === "expired-during-claim"
+              ? expiresAt - 1
+              : startedAt + 30 * 60 * 1000,
         );
+        await runs.registerDirectRunner(runnerGroup);
         if (expiry === "expired-during-claim") {
           // Claim encrypts its reconstructed secrets after hydration. Let the
           // external KMS response cross the exact temporary-allow boundary.
@@ -417,9 +415,14 @@ describe.each([false, true])(
             return undefined;
           });
         }
+        const run = await queued.launch();
+        // Delivered input keeps its permission source after a mode change.
+        await connectors.updateFeatureSwitches(actor, {
+          connectorChatAccountAccess: !chatAccounts,
+        });
         const { claim, sandboxHeaders } = await claimChatRun(
           runnerGroup,
-          queued.runId,
+          run.runId,
         );
         expect(claim.networkPolicies?.slack?.allow).toStrictEqual(
           expired
@@ -439,7 +442,7 @@ describe.each([false, true])(
             connectorChatAccountAccess: chatAccounts,
           });
           mockNow(expiresAt);
-          const synced = await runs.syncConnectorRuntime(queued.runId, {
+          const synced = await runs.syncConnectorRuntime(run.runId, {
             targets: claim.connectorRuntimeTargets.filter((target) => {
               return (
                 target.kind === "builtin" && target.connectorSlug === "slack"
@@ -457,7 +460,7 @@ describe.each([false, true])(
             }),
           );
         }
-        await cancelChatRun(actor, queued.runId, sandboxHeaders);
+        await cancelChatRun(actor, run.runId, sandboxHeaders);
       },
     );
   },

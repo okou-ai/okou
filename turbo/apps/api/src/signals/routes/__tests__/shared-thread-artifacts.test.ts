@@ -92,7 +92,7 @@ async function fixture() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
@@ -606,7 +606,7 @@ test("copies an uploaded video with independent bytes and the parent revocation"
   const f = await fixture();
   const sourceRun = await f.selection("Upload a video");
   await runs.heartbeatRunner(f.runnerGroup);
-  const claim = await runs.claimRunnerJob(sourceRun.runId);
+  const claim = await runs.executionInput(sourceRun.runId);
   const bearerToken = okouTokenFromClaim(claim);
   const source = await f.upload(f.actor, "Private video bytes", {
     filename: "video.mp4",

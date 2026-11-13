@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import {
   RemoteCredentialCard,
@@ -743,6 +744,17 @@ function SshSavedLoginPicker({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const credentials = useLoadable(sshCredentials$);
   const choose = useSet(chooseSshCredential$);
+  if (credentials.state === "loading") {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        className="min-w-0 max-w-28 flex-1 w-auto"
+        label={t(($) => {
+          return $.ssh.credential.loading;
+        })}
+      />
+    );
+  }
   return (
     <RemoteLoginPicker
       protocol="ssh"
@@ -847,18 +859,15 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
         <SshSavedLoginPicker disabled={disabled} />
       </div>
       <div
-        hidden={credentials.state === "hasData" && credentials.data !== null}
+        hidden={
+          credentials.state === "loading" ||
+          (credentials.state === "hasData" && credentials.data !== null)
+        }
         className="grid gap-2"
       >
         {credentials.state === "hasError" ? (
           <SshLoadError />
-        ) : credentials.state === "loading" ? (
-          <p role="status">
-            {t(($) => {
-              return $.ssh.credential.loading;
-            })}
-          </p>
-        ) : !credentials.data ? (
+        ) : credentials.state === "hasData" && !credentials.data ? (
           <p>
             {t(($) => {
               return $.ssh.unavailable;
@@ -1740,11 +1749,13 @@ function OwnerSshCredentials() {
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {
     return (
-      <p role="status">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.ssh.credential.loading;
         })}
-      </p>
+        variant="rows"
+        count={2}
+      />
     );
   }
   if (credentials.state === "hasError") {

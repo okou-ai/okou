@@ -72,7 +72,7 @@ describe("model identity new writes", () => {
 
   it("preserves a personal selection and effort when rename and send omit the model", async () => {
     const { actor, agentId } = await actorWithAgent();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
@@ -186,7 +186,7 @@ describe("model identity new writes", () => {
     // personal subscription launches on the platform route.
     const { actor, agentId } = await actorWithAgent();
     await runs.grantProEntitlement(actor);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const run = await runs.createThreadRun(actor, {
       agentId,

@@ -101,11 +101,11 @@ const COMMAND_CAPABILITY_MAP: Record<
   "user-template": "user-template:write",
   data: "data-search:read",
   banking: "banking:read",
-  suggestion: ["suggestion:read", "suggestion:write"],
+  feed: ["suggestion:read", "suggestion:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "feed"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -116,10 +116,10 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "suggestion",
-    description: "Manage actionable next-step suggestions from Okou",
+    name: "feed",
+    description: "Manage typed feed items from Okou",
     load: async () => {
-      return (await import("./commands/suggestion/index")).suggestionCommand;
+      return (await import("./commands/feed/index")).feedCommand;
     },
   },
   {

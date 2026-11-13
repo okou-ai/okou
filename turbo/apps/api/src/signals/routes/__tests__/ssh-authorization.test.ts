@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
-import { runnersRoutes } from "../runners";
 import { sshAccessRoutes } from "../ssh-access";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
@@ -197,23 +195,11 @@ describe("SSH chat authorization", () => {
       runId: launched[0].runId,
     };
     resumed.push(continuationOwner);
-    const claimed = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        headers: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        query: { workflowSkills: "2" },
-        params: { id: launched[0].runId },
-        body: {
-          runnerIdentity: s.run.runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
+    const input = await createRunsApi(context).executionInput(
+      launched[0].runId,
     );
-    const nextToken = claimed.body.platformEnvironment.OKOU_TOKEN;
-    continuationOwner.sandboxToken = claimed.body.sandboxToken;
+    const nextToken = input.platformEnvironment.OKOU_TOKEN;
+    continuationOwner.sandboxToken = input.sandboxToken;
     if (!nextToken) {
       throw new Error("Expected the continuation Run credential");
     }

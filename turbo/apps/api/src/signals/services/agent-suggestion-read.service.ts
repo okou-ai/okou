@@ -1,14 +1,18 @@
+import {
+  suggestionStatus,
+  liveSuggestion,
+  suggestionRow,
+} from "./agent-suggestions-lifecycle";
 import { command } from "ccstate";
 import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
-import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
+import { feedItems } from "@okouai/db/schema/feed-item";
 import {
   SUGGESTION_RETENTION_MS,
   suggestionReceiptSchema,
   suggestionSchema,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { liveSuggestion, suggestionRow } from "./agent-suggestions-lifecycle";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
 
 interface Owner {
@@ -17,16 +21,17 @@ interface Owner {
 }
 export function suggestionOwner(owner: Owner) {
   return and(
-    eq(agentSuggestions.orgId, owner.orgId),
-    eq(agentSuggestions.userId, owner.userId),
+    eq(feedItems.orgId, owner.orgId),
+    eq(feedItems.userId, owner.userId),
+    eq(feedItems.type, "suggestion"),
   );
 }
 export const storedSuggestion$ = command(
   async ({ get }, owner: Owner, id: string, signal: AbortSignal) => {
     const [row] = await get(db$)
       .select()
-      .from(agentSuggestions)
-      .where(and(suggestionOwner(owner), eq(agentSuggestions.id, id)))
+      .from(feedItems)
+      .where(and(suggestionOwner(owner), eq(feedItems.id, id)))
       .limit(1);
     signal.throwIfAborted();
     return row ? suggestionRow(row) : null;
@@ -57,10 +62,8 @@ export const storedSuggestions$ = command(
     }
     const rows = await get(db$)
       .select()
-      .from(agentSuggestions)
-      .where(
-        and(suggestionOwner(owner), inArray(agentSuggestions.id, canonicalIds)),
-      );
+      .from(feedItems)
+      .where(and(suggestionOwner(owner), inArray(feedItems.id, canonicalIds)));
     signal.throwIfAborted();
     const stored = new Map(
       rows.map((row) => {
@@ -79,32 +82,32 @@ const recentSuggestionReceipts$ = command(
     const cutoff = new Date(nowDate().getTime() - SUGGESTION_RETENTION_MS);
     const rows = await get(db$)
       .select({
-        id: agentSuggestions.id,
-        status: agentSuggestions.status,
-        selectedOptionId: agentSuggestions.selectedOptionId,
-        feedbacks: agentSuggestions.feedbacks,
-        createdAt: agentSuggestions.createdAt,
-        updatedAt: agentSuggestions.updatedAt,
+        id: feedItems.id,
+        type: feedItems.type,
+        priority: feedItems.priority,
+        state: feedItems.state,
+        createdAt: feedItems.createdAt,
+        updatedAt: feedItems.updatedAt,
+        expiresAt: feedItems.expiresAt,
       })
-      .from(agentSuggestions)
+      .from(feedItems)
       .where(
         and(
           suggestionOwner(owner),
-          ne(agentSuggestions.status, "active"),
-          gt(agentSuggestions.updatedAt, cutoff),
+          ne(suggestionStatus, "active"),
+          gt(feedItems.updatedAt, cutoff),
         ),
       )
-      .orderBy(
-        sql`${desc(agentSuggestions.updatedAt)} NULLS LAST`,
-        asc(agentSuggestions.id),
-      )
+      .orderBy(sql`${desc(feedItems.updatedAt)} NULLS LAST`, asc(feedItems.id))
       .limit(100);
     signal.throwIfAborted();
     return rows.map((row) => {
       return suggestionReceiptSchema.parse({
         ...row,
+        content: null,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
+        expiresAt: row.expiresAt?.toISOString() ?? null,
       });
     });
   },
@@ -113,12 +116,12 @@ export const readSuggestions$ = command(
   async ({ get, set }, owner: Owner, signal: AbortSignal) => {
     const rows = await get(db$)
       .select()
-      .from(agentSuggestions)
+      .from(feedItems)
       .where(and(suggestionOwner(owner), liveSuggestion(nowDate())))
       .orderBy(
-        sql`${desc(agentSuggestions.priority)} NULLS LAST`,
-        asc(agentSuggestions.createdAt),
-        asc(agentSuggestions.id),
+        sql`${desc(feedItems.priority)} NULLS LAST`,
+        asc(feedItems.createdAt),
+        asc(feedItems.id),
       )
       .limit(10);
     signal.throwIfAborted();
@@ -129,7 +132,7 @@ export const readSuggestions$ = command(
       );
     });
     const receipts = await set(recentSuggestionReceipts$, owner, signal);
-    return { status: 200 as const, body: { suggestions, receipts } };
+    return { status: 200 as const, body: { items: suggestions, receipts } };
   },
 );
 export const readSuggestionManagement$ = command(
@@ -141,15 +144,15 @@ export const readSuggestionManagement$ = command(
   ) => {
     const rows = await get(db$)
       .select()
-      .from(agentSuggestions)
+      .from(feedItems)
       .where(
         and(
           suggestionOwner(owner),
           liveSuggestion(nowDate()),
-          after ? gt(agentSuggestions.id, after) : undefined,
+          after ? gt(feedItems.id, after) : undefined,
         ),
       )
-      .orderBy(asc(agentSuggestions.id))
+      .orderBy(asc(feedItems.id))
       .limit(101);
     signal.throwIfAborted();
     const page = rows.slice(0, 100);
@@ -165,7 +168,7 @@ export const readSuggestionManagement$ = command(
     return {
       status: 200 as const,
       body: {
-        suggestions,
+        items: suggestions,
         receipts,
         nextAfter: rows.length > 100 ? (page.at(-1)?.id ?? null) : null,
       },

@@ -134,7 +134,7 @@ export async function claimPublicToolRun(
   const runs = createRunsApi(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   const personal = await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -180,7 +180,7 @@ export async function claimPublicToolRun(
   });
   owned.runId = run.runId;
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   owned.sandboxToken = claim.sandboxToken;
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {

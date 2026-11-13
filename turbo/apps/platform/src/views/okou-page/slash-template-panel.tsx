@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // The slash panel indexes creation types and workflows, with desktop previews
 // embedded on the right.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
@@ -461,11 +462,13 @@ function SlashPanelWorkflowList({
   const { t } = useTranslation();
   if (loading) {
     return (
-      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.chat.composer.workflows.loading;
         })}
-      </div>
+        variant="rows"
+        className="px-2 py-1.5"
+      />
     );
   }
   return (

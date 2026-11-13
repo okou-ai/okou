@@ -785,7 +785,10 @@ describe("template usage Axiom transport", () => {
           expect(serialized).not.toContain(privateValue);
         }
         expect(events[0]).not.toHaveProperty("colorSystemId");
-        await chat.cancelChatRun(owned.actor, run.runId);
+        const input = await chat.api.executionInput(run.runId);
+        await chat.cancelChatRun(owned.actor, run.runId, {
+          authorization: `Bearer ${input.sandboxToken}`,
+        });
         await owned.sendChatRun(owned.actor, {
           agentId: owned.agentId,
           threadId: run.threadId,
@@ -1145,48 +1148,43 @@ describe("template usage Axiom transport", () => {
     expect(context.mocks.axiom.sdkIngest).not.toHaveBeenCalled();
   });
 
-  it("keeps committed usage when Runner activation fails and the run is cancelled", async () => {
-    const owned = await publicChatActor(context);
+  it("keeps committed template usage when the Runner refuses complete input", async () => {
+    const owned = await publicChatActor(context, {
+      runner: {
+        reply: (envelope) => {
+          return HttpResponse.json({
+            runnerId: envelope.runnerId,
+            heartbeatGeneration: envelope.heartbeatGeneration,
+            runId: envelope.executionContext.runId,
+            disposition: "rejected",
+          });
+        },
+      },
+    });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
-      let notificationFailed = false;
-      context.mocks.ably.publish.mockImplementation((topic: unknown) => {
-        if (topic === "job") {
-          notificationFailed = true;
-          return Promise.reject(new Error("Runner notification unavailable"));
-        }
-        return Promise.resolve(undefined);
-      });
       const sourceEventId = randomUUID();
       const run = await owned.sendChatRun(owned.actor, {
         agentId: owned.agentId,
         clientEventId: sourceEventId,
-        prompt: "Prepare an invoice despite a notification outage",
+        prompt: "Prepare an invoice despite refused delivery",
         template: {
           type: "document",
           selection: { documentTemplateId: "document-template:simple-invoice" },
         },
       });
       await flushWaitUntilForTest();
-      expect(notificationFailed).toBeTruthy();
       expect((await fixture.api.readRun(owned.actor, run.runId)).status).toBe(
-        "pending",
+        "failed",
       );
-      const expected = [
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([
         expect.objectContaining({
           runId: run.runId,
           sourceEventId,
           dispatchPath: "queued-claim",
           templateCategory: "document",
         }),
-      ];
-      expect(templateEvents(owned.actor.orgId)).toStrictEqual(expected);
-      await fixture.cancelChatRun(owned.actor, run.runId);
-      await flushWaitUntilForTest();
-      expect((await fixture.api.readRun(owned.actor, run.runId)).status).toBe(
-        "cancelled",
-      );
-      expect(templateEvents(owned.actor.orgId)).toStrictEqual(expected);
+      ]);
     });
   });
 
@@ -1209,7 +1207,7 @@ describe("template usage Axiom transport", () => {
       });
       await flushWaitUntilForTest();
       const persisted = await fixture.api.readRun(owned.actor, run.runId);
-      expect(persisted.status).toBe("pending");
+      expect(persisted.status).toBe("running");
       expect(persisted.appendSystemPrompt).toContain(
         "Selected document template:",
       );
@@ -1652,7 +1650,7 @@ describe("selected eager Axiom operation payload", () => {
         expect(matches).toHaveLength(1);
         expect(matches[0]).toMatchObject({
           connector_context_builtin_decrypt_count: actualDecrypts,
-          preparation_phase: "claim",
+          preparation_phase: "dispatch",
           connector_context_builtin_decrypt_count_bucket:
             expectedCount === 2 ? "2_4" : String(expectedCount),
           duration_ms: expect.any(Number),

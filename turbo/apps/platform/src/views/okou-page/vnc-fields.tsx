@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { Info } from "lucide-react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { RemoteCredentialReplacement } from "./remote-credential-card.tsx";
@@ -29,6 +30,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from "@okouai/ui";
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
@@ -1043,11 +1045,14 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           </p>
         </div>
       ) : connections.state === "loading" ? (
-        <p role="status" className="text-sm">
-          {t(($) => {
+        <Skeleton
+          role="status"
+          aria-busy="true"
+          aria-label={t(($) => {
             return $.vnc.transport.loading;
           })}
-        </p>
+          className="h-9 w-full"
+        />
       ) : connections.data === null ? (
         <p role="alert" className="text-sm">
           {t(($) => {
@@ -1839,7 +1844,20 @@ function VncSavedLoginPicker({
   readonly disabled: boolean;
   readonly credentials: readonly VncCredentialResponse[];
 }) {
+  const { t } = useTranslation();
+  const saved = useLoadable(vncCredentials$);
   const choose = useSet(chooseVncCredential$);
+  if (saved.state === "loading") {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        className="min-w-0 max-w-28 flex-1 w-auto"
+        label={t(($) => {
+          return $.vnc.loading;
+        })}
+      />
+    );
+  }
   return (
     <RemoteLoginPicker
       protocol="vnc"
@@ -1875,13 +1893,7 @@ function VncCredentialStatus() {
     return <VncCredentialLoadError />;
   }
   if (credentials.state === "loading") {
-    return (
-      <p role="status" className="text-sm">
-        {t(($) => {
-          return $.vnc.loading;
-        })}
-      </p>
-    );
+    return null;
   }
   if (credentials.data === null) {
     return (
@@ -1913,7 +1925,7 @@ export function VncCredentialSelection({
   });
   return (
     <fieldset className="grid min-w-0 gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">
           {t(($) => {
             return $.remoteControlSetup.loginHeading;

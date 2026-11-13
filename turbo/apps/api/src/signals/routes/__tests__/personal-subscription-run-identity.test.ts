@@ -48,7 +48,7 @@ function availableModel(
   });
 }
 
-type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
+type Claim = Awaited<ReturnType<typeof runs.executionInput>>;
 
 /**
  * Sends a prompt, lets the background pick run, and returns the rejection the
@@ -158,7 +158,7 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   const subscription = await runs.grantProEntitlement(actor);
   mockClaudeCodeTokenEndpoint();
   const connected = await connect(
@@ -185,9 +185,9 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   };
   const claim = async (runId: string) => {
     const state = await runs.readRun(actor, runId);
-    expect(state.status, JSON.stringify(state)).toBe("pending");
+    expect(state.status, JSON.stringify(state)).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
-    return await runs.claimRunnerJob(runId);
+    return await runs.executionInput(runId);
   };
   return {
     actor,
@@ -334,7 +334,7 @@ describe("personal subscription run identity", () => {
         const target = await f.start();
         admitted.push(target);
         await expect(runs.readRun(f.actor, target)).resolves.toMatchObject({
-          status: "pending",
+          status: "running",
           source: { account: { status: "connected", id: f.connected.id } },
         });
 
@@ -395,7 +395,7 @@ describe("personal subscription run identity", () => {
         await owner.initialize();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         const connected = await connect(actor, type, "identity-auto");
         const agent = await bdd.createAgent(actor, {
           displayName: "Auto subscription",
@@ -408,9 +408,9 @@ describe("personal subscription run identity", () => {
         });
         ownedRunId = sent.runId;
         const state = await runs.readRun(actor, sent.runId);
-        expect(state.status, JSON.stringify(state)).toBe("pending");
+        expect(state.status, JSON.stringify(state)).toBe("running");
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await runs.claimRunnerJob(sent.runId);
+        const claim = await runs.executionInput(sent.runId);
         ownedClaim = claim;
         // The member's own subscription account serves the run, not Built-in.
         expect(accountId(claim, type)).toBe(connected.id);

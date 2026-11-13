@@ -1,11 +1,12 @@
 [package]
 name = "runner-rpc-client"
-version = "0.5.2"
+version = "0.5.3"
 edition.workspace = true
 
 [dependencies]
 libc = { workspace = true, features = ["std"] }
 runner-rpc-proto.workspace = true
+rustix = { workspace = true, features = ["net", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt", "time"] }
 

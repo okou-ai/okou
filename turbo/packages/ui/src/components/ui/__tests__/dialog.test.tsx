@@ -251,6 +251,33 @@ describe("Dialog", () => {
     ).toHaveAttribute("data-open");
   });
 
+  it("skips only the entrance for a dialog taking over from another", () => {
+    render(
+      <Dialog open>
+        <DialogContent animateOpen={false}>
+          <DialogTitle>Hand-off dialog</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+    const popup = screen.getByRole("dialog", { name: "Hand-off dialog" });
+    expect(overlay).toHaveClass(
+      "data-open:animate-none",
+      "data-closed:animate-[okou-dialog-backdrop-out_150ms_ease-out]",
+    );
+    expect(overlay).not.toHaveClass(
+      "data-open:animate-[okou-dialog-backdrop-in_150ms_ease-out]",
+    );
+    expect(popup).toHaveClass(
+      "data-open:animate-none",
+      "data-closed:animate-[okou-dialog-popup-out_150ms_ease-out]",
+    );
+    expect(popup).not.toHaveClass(
+      "data-open:animate-[okou-dialog-popup-in_150ms_ease-out]",
+    );
+  });
+
   it("renders an overlay for nested dialogs", () => {
     render(
       <Dialog open>

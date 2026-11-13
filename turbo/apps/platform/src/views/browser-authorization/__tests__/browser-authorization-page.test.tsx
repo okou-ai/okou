@@ -63,6 +63,35 @@ test("Cloud-browser authorization uses the current app's brand", async () => {
   );
 });
 
+test.each([404, 410] as const)(
+  "An unavailable authorization link does not offer browser access (%s)",
+  async (status) => {
+    context.mocks.api(
+      browserAuthorizationRequestsContract.get,
+      ({ respond }) => {
+        return respond(status, {
+          error: { code: "NOT_FOUND", message: "Request unavailable" },
+        });
+      },
+    );
+    await setupPage({
+      context,
+      path: `/browser/authorize/${REQUEST_TOKEN}`,
+      host: "app.okou.ai",
+    });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Authorization link unavailable");
+    expect(alert).toHaveTextContent(
+      "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
+    );
+    expect(
+      screen.getByRole("img", { name: "Okou" }).closest("a"),
+    ).toHaveAttribute("href", "/connectors");
+    expect(queryAllByRoleFast("button", alert)).toHaveLength(0);
+  },
+);
+
 test("A user can enable the cloud browser for one conversation", async () => {
   let applyCount = 0;
   mockPendingAuthorization();

@@ -1,7 +1,9 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { useGet, useLoadable } from "ccstate-react";
 import { Monitor, GitCommit, Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@okouai/ui";
+import type { ReactNode } from "react";
 
 import { getBuildCommitSha } from "../../../../lib/build-info.ts";
 import { appVersion$ } from "../../../../signals/app-version.ts";
@@ -21,8 +23,8 @@ function BuildInfoTarget({
   icon: Icon,
 }: {
   readonly title: string;
-  readonly version: string;
-  readonly commitSha: string;
+  readonly version: ReactNode;
+  readonly commitSha: ReactNode;
   readonly icon: typeof GitCommit;
 }) {
   const { t } = useTranslation();
@@ -79,12 +81,16 @@ export function BuildInfoBlock() {
     unavailable,
   );
   const frontendVersion = formatBuildInfoValue(appVersion, unavailable);
-  const backendCommitSha = loading
-    ? loadingLabel
-    : formatBuildInfoValue(backendBuildInfo?.backendCommitSha, unavailable);
-  const backendVersion = loading
-    ? loadingLabel
-    : formatBuildInfoValue(backendBuildInfo?.backendVersion, unavailable);
+  const backendCommitSha = loading ? (
+    <LoadingSkeleton variant="text" label={loadingLabel} />
+  ) : (
+    formatBuildInfoValue(backendBuildInfo?.backendCommitSha, unavailable)
+  );
+  const backendVersion = loading ? (
+    <LoadingSkeleton variant="text" label={loadingLabel} className="h-4 w-16" />
+  ) : (
+    formatBuildInfoValue(backendBuildInfo?.backendVersion, unavailable)
+  );
 
   return (
     <div className="flex items-start gap-4 rounded-xl bg-card p-4 border border-surface-border">

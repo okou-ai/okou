@@ -104,7 +104,7 @@ async function startDiscordRun(
 
 async function claimRun(actor: ConnectedDiscordActor, runId: string) {
   await runs.heartbeatRunner(actor.runnerGroup);
-  return runs.claimRunnerJob(runId);
+  return runs.executionInput(runId);
 }
 
 async function completeRun(args: {

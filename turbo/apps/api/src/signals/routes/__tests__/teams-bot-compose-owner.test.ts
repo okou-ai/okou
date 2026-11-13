@@ -86,7 +86,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const fixture = await owner.create({ withDefaultAgent: true });
     server.use(
       http.post(
@@ -125,8 +125,8 @@ test("selects the onboarded default agent for a public Teams personal message", 
       agentId: fixture.defaultAgentId,
       prompt,
       triggerSource: "teams",
-      status: "pending",
-      startedAt: null,
+      status: "running",
+      startedAt: expect.any(String),
     });
 
     await runs.requestCancelRun(fixture.actor, run.id, [200]);
@@ -141,7 +141,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
       agentId: fixture.defaultAgentId,
       prompt,
       status: "cancelled",
-      startedAt: null,
+      startedAt: run.startedAt,
     });
   });
 });
@@ -150,7 +150,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const fixture = await owner.create({ withDefaultAgent: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const originalAccount = {
@@ -204,8 +204,8 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       agentId: fixture.defaultAgentId,
       prompt,
       triggerSource: "teams",
-      status: "pending",
-      startedAt: null,
+      status: "running",
+      startedAt: expect.any(String),
     });
 
     await runs.requestCancelRun(fixture.actor, run.id, [200]);
@@ -220,7 +220,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       agentId: fixture.defaultAgentId,
       prompt,
       status: "cancelled",
-      startedAt: null,
+      startedAt: run.startedAt,
     });
   });
 });
@@ -229,7 +229,7 @@ test("returns a connection notice without starting a Run when Teams sender ident
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const fixture = await owner.create({ withDefaultAgent: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const before = await owner.status(fixture);

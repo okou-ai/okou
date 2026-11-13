@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import { defaultAgentId$ } from "../../../../signals/agent.ts";
 import type { ReactNode } from "react";
@@ -14,7 +15,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { SlidersHorizontal, Loader2, Search, X } from "lucide-react";
+import { SlidersHorizontal, Search, X } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -372,12 +373,13 @@ function AgentAccessList({
 function LoadingAgents() {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-[240px] flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-      <Loader2 size={16} className="animate-spin" />
-      {t(($) => {
+    <LoadingSkeleton
+      label={t(($) => {
         return $.connectors.access.loading;
       })}
-    </div>
+      variant="rows"
+      className="min-h-[240px]"
+    />
   );
 }
 

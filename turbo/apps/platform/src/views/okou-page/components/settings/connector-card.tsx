@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import type { ReactNode } from "react";
 import { Toolbar } from "@base-ui/react/toolbar";
 import type { LoadableState } from "ccstate-react";
@@ -308,21 +309,26 @@ export function ConnectorMembershipText({
   const { t } = useTranslation();
   return (
     <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-      {status === "loading"
-        ? t(($) => {
+      {status === "loading" ? (
+        <LoadingSkeleton
+          variant="text"
+          label={t(($) => {
             return $.connectors.catalog.directory.loading;
-          })
-        : status === "unavailable"
-          ? t(($) => {
-              return $.connectors.accounts.accountsUnavailable;
-            })
-          : connected
-            ? t(($) => {
-                return $.connectors.card.connected;
-              })
-            : t(($) => {
-                return $.connectors.accounts.noAccounts;
-              })}
+          })}
+        />
+      ) : status === "unavailable" ? (
+        t(($) => {
+          return $.connectors.accounts.accountsUnavailable;
+        })
+      ) : connected ? (
+        t(($) => {
+          return $.connectors.card.connected;
+        })
+      ) : (
+        t(($) => {
+          return $.connectors.accounts.noAccounts;
+        })
+      )}
     </span>
   );
 }

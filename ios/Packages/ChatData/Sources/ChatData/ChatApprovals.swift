@@ -47,7 +47,7 @@ public struct ChatShellAuthorization: Decodable, Equatable, Sendable {
   public let grantExpiresAt: Date?
 }
 
-public enum ChatShareAudience: String, Encodable, Sendable {
+public enum ChatShareAudience: String, Codable, Sendable {
   case `private`, organization, `public`
 }
 

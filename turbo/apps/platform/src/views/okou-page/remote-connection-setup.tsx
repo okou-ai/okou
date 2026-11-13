@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -210,20 +211,24 @@ function RemoteSetupSaved({ setup }: { readonly setup: RemoteSetup }) {
   if (name.state !== "hasData" || name.data === null) {
     return (
       <div className="grid justify-items-center gap-4 py-12">
-        <p
-          role={name.state === "loading" ? "status" : "alert"}
-          className="text-sm text-muted-foreground"
-        >
-          {t(($) => {
-            return name.state === "loading"
-              ? $.remoteControlSetup.loading
-              : name.state === "hasError"
+        {name.state === "loading" ? (
+          <LoadingSkeleton
+            variant="text"
+            label={t(($) => {
+              return $.remoteControlSetup.loading;
+            })}
+          />
+        ) : (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return name.state === "hasError"
                 ? setup.protocol === "ssh"
                   ? $.ssh.loadFailed
                   : $.vnc.loadFailed
                 : $.remoteControlSetup.resourceUnavailable;
-          })}
-        </p>
+            })}
+          </p>
+        )}
         <Button variant="neutral" onClick={leave}>
           {t(($) => {
             return $.remoteControlSetup.cancel;

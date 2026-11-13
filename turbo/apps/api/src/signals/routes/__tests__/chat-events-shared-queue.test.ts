@@ -33,6 +33,7 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   failChatRun,
+  cancelAndCompleteChatRun,
   cancelChatRun,
 
   requestSendEventWithBearer,
@@ -235,7 +236,7 @@ describe("CHAT-02: shared user message queue", () => {
       `queue-first [direct dispatch](/chats/${referencedThreadId})`,
     );
 
-    await cancelChatRun(actor, runId);
+    await cancelAndCompleteChatRun(actor, runId);
   }, 90_000);
 
   it("launches the FIFO head of overlapping idle sends and steers the other input", async () => {
@@ -371,7 +372,7 @@ describe("CHAT-02: shared user message queue", () => {
         runId,
       }),
     );
-    await cancelChatRun(actor, runId);
+    await cancelAndCompleteChatRun(actor, runId);
   }, 90_000);
 
   it("persists user-forwarded run provenance across chat threads", async () => {
@@ -498,8 +499,8 @@ describe("CHAT-02: shared user message queue", () => {
       },
     });
 
-    await cancelChatRun(actor, forwardedRunId);
-    await cancelChatRun(actor, source.runId);
+    await cancelAndCompleteChatRun(actor, forwardedRunId);
+    await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
   it("persists agent-run provenance for messages sent across chat threads", async () => {
@@ -726,21 +727,21 @@ describe("CHAT-02: shared user message queue", () => {
 
     // Freeing a slot picks the oldest queued thread first; the launched run
     // keeps the delegated autonomy budget carried by the queued input.
-    await cancelChatRun(actor, firstTargetRunId);
+    await cancelAndCompleteChatRun(actor, firstTargetRunId);
     await flushWaitUntilForTest();
     const secondTargetRunId = await readPickedInputRun(
       actor,
       secondTargetThread.id,
       secondEventId,
     );
-    await cancelChatRun(actor, secondTargetRunId);
+    await cancelAndCompleteChatRun(actor, secondTargetRunId);
     await flushWaitUntilForTest();
     const nowTargetRunId = await readPickedInputRun(
       actor,
       nowTargetThread.id,
       nowEventId,
     );
-    await cancelChatRun(actor, nowTargetRunId);
+    await cancelAndCompleteChatRun(actor, nowTargetRunId);
     await cancelChatRun(actor, source.runId, sourceSandboxHeaders);
   }, 90_000);
 
@@ -1124,7 +1125,7 @@ describe("CHAT-02: shared user message queue", () => {
     const mockClaim = await claimChatRun(runnerGroup, mockRunId);
     expect(mockClaim.claim.prompt).toBe("queued preview mock run");
     expect(mockClaim.claim.realAgentInPreview).toBeUndefined();
-    await cancelChatRun(actor, mockRunId);
+    await cancelAndCompleteChatRun(actor, mockRunId);
   }, 90_000);
 
   it("projects additional info and inline templates into queued web launch material", async () => {
@@ -1255,7 +1256,7 @@ describe("CHAT-02: shared user message queue", () => {
       [201],
     );
 
-    await cancelChatRun(actor, anchor.runId);
+    await cancelAndCompleteChatRun(actor, anchor.runId);
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
@@ -1310,7 +1311,7 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, firstClaimed.runId);
+    await cancelAndCompleteChatRun(actor, firstClaimed.runId);
   }, 90_000);
 
   it("keeps a queued send drainable when thread-list publication fails", async () => {
@@ -1361,7 +1362,7 @@ describe("CHAT-02: shared user message queue", () => {
       });
     expect(threadListPublishes).toHaveLength(1);
 
-    await cancelChatRun(actor, anchor.runId);
+    await cancelAndCompleteChatRun(actor, anchor.runId);
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
@@ -1381,7 +1382,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the queued message to remain drainable");
     }
-    await cancelChatRun(actor, promoted.runId);
+    await cancelAndCompleteChatRun(actor, promoted.runId);
   }, 90_000);
 
   it("appends replacements on auto-send and keeps queued recalls idempotent", async () => {
@@ -1501,7 +1502,7 @@ describe("CHAT-02: shared user message queue", () => {
     expect(followUp.appendSystemPrompt ?? "").not.toContain(
       "queue-first message to recall",
     );
-    await cancelChatRun(actor, promoted.runId);
+    await cancelAndCompleteChatRun(actor, promoted.runId);
   }, 90_000);
 
   it("waits when a fresh cancellation recovery is the only dispatch blocker", async () => {
@@ -1554,7 +1555,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!launchedRunId) {
       throw new Error("Expected the queued send after cancellation recovery");
     }
-    await cancelChatRun(actor, launchedRunId);
+    await cancelAndCompleteChatRun(actor, launchedRunId);
   }, 90_000);
 
   it("auto-fires queued messages after cancellation recovery completes", async () => {
@@ -1624,6 +1625,6 @@ describe("CHAT-02: shared user message queue", () => {
 
     const followUp = await api.readRun(actor, fired.runId);
     expect(followUp.prompt).toContain("queue-first fires after cancel");
-    await cancelChatRun(actor, fired.runId);
+    await cancelAndCompleteChatRun(actor, fired.runId);
   }, 90_000);
 });

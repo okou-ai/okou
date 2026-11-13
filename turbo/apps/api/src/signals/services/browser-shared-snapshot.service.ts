@@ -90,7 +90,7 @@ export const captureSharedSnapshot$ = command(
       // Order captures before native IO; a late reply is not a newer snapshot.
       const capturedAt = nowDate();
       const observed = await settleIncludingAbort(
-        listBrowserUseTabUrls(args, captureSignal, window.primaryWindowId),
+        listBrowserUseTabUrls(args, window.primaryWindowId, captureSignal),
       );
       captureSignal.throwIfAborted();
       if (!observed.ok) {

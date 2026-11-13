@@ -453,7 +453,7 @@ const runnerBuiltinFirewallsResolveResponseSchema = object({
 
 /**
  * Default profile when none is specified.
- * Must stay in sync with Rust: crates/runner/src/profile.rs → DEFAULT_PROFILE
+ * Native profile defaults are generated from this contract and runner-dispatch.
  */
 export const DEFAULT_PROFILE = "vm0/default";
 

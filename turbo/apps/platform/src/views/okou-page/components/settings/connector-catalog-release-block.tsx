@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { useLoadable } from "ccstate-react";
 import { Plug } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -12,11 +13,16 @@ export function ConnectorCatalogReleaseBlock() {
     return $.settings.buildInfo.unavailable;
   });
   const placeholder =
-    release.state === "loading"
-      ? t(($) => {
+    release.state === "loading" ? (
+      <LoadingSkeleton
+        variant="text"
+        label={t(($) => {
           return $.settings.buildInfo.loading;
-        })
-      : unavailable;
+        })}
+      />
+    ) : (
+      unavailable
+    );
 
   return (
     <section

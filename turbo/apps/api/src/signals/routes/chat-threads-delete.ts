@@ -14,7 +14,6 @@ import {
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { deleteChatThread$ } from "../services/chat-thread.service";
-import { stopThreadBrowsers$ } from "../services/browser.service";
 import { reconcileSharedBrowsers$ } from "../services/browser-shared-reconcile.service";
 import { dispatchCancelSideEffects$ } from "../services/run-cancel.service";
 import { tapError } from "../utils";
@@ -55,9 +54,6 @@ const deleteAndCleanUp$ = command(
     waitUntil(
       set(synchronizeUserPushBadge$, args.userId, new AbortController().signal),
     );
-
-    await set(stopThreadBrowsers$, { chatThreadId: args.threadId }, signal);
-    signal.throwIfAborted();
 
     // Dispatch post-cancel side effects (runner halt, queue drain, credit
     // reconciliation) for every run we stopped while tearing down the thread.

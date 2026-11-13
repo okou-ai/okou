@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { ReactNode } from "react";
 import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -84,11 +85,12 @@ function DirectoryCustomSection({
           })}
         />
       ) : sourceState === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.connectors.catalog.directory.loading;
           })}
-        </p>
+          variant="cards"
+        />
       ) : connectors.length > 0 ? (
         <CustomConnectorGrid connectors={connectors} isAdmin={isAdmin} />
       ) : (

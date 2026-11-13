@@ -15,7 +15,7 @@ export async function claimPublicDiscordTestRun(
   runs.acceptTelemetryIngest();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   const agent = await bdd.createAgent(actor, {
     displayName: "Discord native caller",
@@ -24,7 +24,7 @@ export async function claimPublicDiscordTestRun(
     agentId: agent.agentId,
     prompt: "Use the Discord integration",
   });
-  const claim = await runs.claimRunnerJob(sent.runId);
+  const claim = await runs.executionInput(sent.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the Runner claim to issue an Okou run token");

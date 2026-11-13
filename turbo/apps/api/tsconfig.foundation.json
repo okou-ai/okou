@@ -339,7 +339,6 @@
     "src/signals/services/private-artifact-storage.service.ts",
     "src/signals/services/provider-usage-publication.service.ts",
     "src/signals/services/run-uploaded-files.service.ts",
-    "src/signals/services/runner-dispatch.service.ts",
     "src/signals/services/runner-reuse-preference.ts",
     "src/signals/services/runner-reuse-timing.service.ts",
     "src/signals/services/runner-vnc-authority.service.ts",
@@ -365,7 +364,8 @@
     "src/signals/services/workflow-attachment-cleanup.service.ts",
     "src/signals/services/background-job-command.service.ts",
     "src/signals/services/background-job.service.ts",
-    "src/signals/services/personal-instructions.service.ts"
+    "src/signals/services/personal-instructions.service.ts",
+    "src/lib/invocation-budget.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

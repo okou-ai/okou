@@ -188,7 +188,7 @@ function sendClaimedModelMessage(model: FooterModel) {
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
       mockOptionalEnv("VAPID_PUBLIC_KEY", undefined);
       mockOptionalEnv("VAPID_PRIVATE_KEY", undefined);
-      const runnerGroup = api.configureRunnerGroup();
+      const runnerGroup = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor);
       const fast = model === "gpt-6.1-sol";

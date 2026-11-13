@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { expect } from "vitest";
 
@@ -9,7 +8,6 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockOptionalEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { logsRoutes } from "../../logs";
-import { runnersRoutes } from "../../runners";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
@@ -98,7 +96,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       visibility: "public",
     });
     state.agentId = agent.agentId;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     let runId: string;
     let threadId: string;
     if (source === "web") {
@@ -166,7 +164,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       );
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-      status: "pending",
+      status: "running",
     });
     return {
       ...owner,
@@ -193,31 +191,21 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     runnerHeaders: { readonly authorization: string },
   ) {
     const runs = createRunsApi(context);
+    const input = await runs.executionInput(run.runId);
+    const selected = runs.dispatchedRun(run.runId);
     const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
+      runnerId: selected.runnerId,
+      heartbeatGeneration: selected.heartbeatGeneration,
     };
     await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
       group: run.runnerGroup,
       runnerId: runnerIdentity.runnerId,
       snapshotGeneration: runnerIdentity.heartbeatGeneration,
+      snapshotSequence: 2,
+      runnerHostname: `runner-${runnerIdentity.runnerId}.okou.app`,
+      ingressServiceActive: true,
     });
-    const response = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: run.runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = response.body.sandboxToken;
+    const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
       throw new Error(
         "Expected the real Runner claim to issue its sandbox token",
@@ -228,7 +216,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
       status: "running",
     });
     await flushWaitUntilForTest();
-    const agentToken = response.body.platformEnvironment.OKOU_TOKEN;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
       throw new Error("Expected the claim's real Agent credential");
     }

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { ClipboardEvent } from "react";
 import type { Computed } from "ccstate";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -114,14 +115,15 @@ function OnboardingPastedFile({
       <div className="min-w-0 flex-1">
         <p className="break-words">{file.name}</p>
         {result.state === "loading" && (
-          <p role="status" className="text-xs text-muted-foreground">
-            {t(
+          <LoadingSkeleton
+            variant="text"
+            label={t(
               ($) => {
                 return $.chat.attachments.loadingFile;
               },
               { filename: file.name },
             )}
-          </p>
+          />
         )}
         {result.state === "hasError" && (
           <p role="alert" className="text-xs text-destructive">
