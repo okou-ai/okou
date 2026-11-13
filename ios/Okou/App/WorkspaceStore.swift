@@ -15,6 +15,7 @@ final class WorkspaceStore {
   private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
   private let modelBootstrap: WorkspaceModelBootstrap?
+  private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -156,6 +157,7 @@ final class WorkspaceStore {
       try await Task.sleep(for: $0)
     },
     modelBootstrap: WorkspaceModelBootstrap? = nil,
+    createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     let lifecycleTasks = LifecycleTasks()
@@ -167,6 +169,7 @@ final class WorkspaceStore {
     }
     self.client = client
     self.modelBootstrap = modelBootstrap
+    self.createRealtime = createRealtime
     resources = WorkspaceResources(
       client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
       lifecycleTasks: lifecycleTasks)
@@ -218,13 +221,9 @@ final class WorkspaceStore {
         onChange: { [weak self] in self?.requestRefresh($0) },
         onConnection: { [weak self] status in
           self?.connectionStatus = status
-          if status == .connected {
-            _ = self?.modelBootstrap?.subscriptionsReady()
-          } else if status == .unavailable || status == .disconnected {
-            self?.modelBootstrap?.allowHTTP()
-          }
+          self?.modelBootstrap?.connectionChanged(status)
         },
-        lifecycleTasks: lifecycleTasks)
+        createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
       realtime.setForeground(isForeground)
       realtime.start()
@@ -367,6 +366,7 @@ final class WorkspaceStore {
     isForeground = active
     realtime?.setForeground(active)
     if phase == .background {
+      modelBootstrap?.beginRecovery()
       refreshSuspended = true
       refreshGeneration = UUID()
       refreshTask?.cancel()
@@ -376,9 +376,12 @@ final class WorkspaceStore {
       list.cancelRefresh()
       for conversation in conversations.values { conversation.cancelRefresh() }
       // Reconnect with a complete catch-up, including invalidations received while suspended.
-      invalidations.insert(.reconnected)
+      invalidations.insert(.foregroundResume)
     } else if active {
       refreshSuspended = false
+      if resuming, connectionStatus == .connected {
+        _ = modelBootstrap?.subscriptionsReady()
+      }
     }
     newComposer.setForeground(active)
     for conversation in conversations.values { conversation.composer.setForeground(active) }
@@ -411,6 +414,9 @@ final class WorkspaceStore {
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
+    if invalidation == .realtimeResume || invalidation == .realtimeGap {
+      modelBootstrap?.beginRecovery()
+    }
     invalidations.insert(invalidation)
     resumePendingRefresh()
   }
@@ -493,10 +499,12 @@ final class WorkspaceStore {
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
     let full = batch.contains(where: \.requiresFullRefresh)
-    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    if modelStore.active
+      && (full || batch.contains(.runModels) || batch.contains(.modelPreference)
+        || batch.contains(.realtimeResume))
     {
       await modelStore.refresh(batch)
-    } else if full {
+    } else if full || batch.contains(.realtimeResume) {
       do { try resources.invalidate(batch) } catch { handle(error) }
     }
   }

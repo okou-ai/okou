@@ -89,8 +89,13 @@ final class RealtimeHTTPFixture: Sendable {
     for connection in resources.0 { connection.cancel() }
   }
 
-  func attached(_ name: String) throws {
-    try send(["action": 11, "channel": name], channel: name)
+  func attached(_ name: String, resumed: Bool = false) throws {
+    try send(["action": 11, "channel": name, "flags": resumed ? 4 : 0], channel: name)
+  }
+
+  func notify(_ topic: String, channel: String) throws {
+    try send(
+      ["action": 15, "channel": channel, "messages": [["name": topic]]], channel: channel)
   }
 
   func attachAutomatically() { state.withLock { $0.autoAttach = true } }

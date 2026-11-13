@@ -30,27 +30,22 @@ final class WorkspaceResources {
     self.modelBootstrap = modelBootstrap
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let lifetime = lifetime
-    let initialModelRead: Computed<Task<Void, Error>>? = modelBootstrap.map { bootstrap in
-      computedTask { get, options in
-        guard try get(lifetime) else { throw CancellationError() }
-        try await bootstrap.wait()
-        try Task.checkCancellation()
-        try options.signal.checkCancellation()
-      }
+    let modelReadiness: (@MainActor () async throws -> Void)? = modelBootstrap.map { bootstrap in
+      { try await bootstrap.wait() }
     }
     let service = ChatModelService(client: client)
     let preference = WorkspaceRead(
       "model preference", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.preference)
+      readiness: modelReadiness, read: service.preference)
     let available = WorkspaceRead(
       "available models", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.availableModels)
+      readiness: modelReadiness, read: service.availableModels)
     let catalog = WorkspaceRead(
       "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.catalog)
+      readiness: modelReadiness, read: service.catalog)
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.featureSwitches)
+      readiness: modelReadiness, read: service.featureSwitches)
     self.preference = preference
     self.available = available
     self.catalog = catalog
@@ -82,6 +77,10 @@ final class WorkspaceResources {
       if changes.contains(.initialSubscriptions) {
         full = (modelBootstrap?.subscriptionsReady() ?? true) || full
       }
+      if changes.contains(where: \.coordinatesModelRecovery) {
+        full = (modelBootstrap?.needsRecoveryRead ?? true) || full
+      }
+      if full { modelBootstrap?.didScheduleRead() }
       if full || changes.contains(.modelPreference) {
         try context.set(preference.reload)
       }
@@ -146,7 +145,7 @@ private final class WorkspaceRead<Value: Sendable> {
   private let lifecycleTasks: LifecycleTasks
   private let revision = CCState.State(0)
   private let lifetime: CCState.State<Bool>
-  private let readiness: Computed<Task<Void, Error>>?
+  private let readiness: (@MainActor () async throws -> Void)?
   private let operation: String
   private let sleep: @Sendable (Duration) async throws -> Void
   private let read: @MainActor () async throws -> Value
@@ -157,7 +156,7 @@ private final class WorkspaceRead<Value: Sendable> {
   init(
     _ operation: String, sleep: @escaping @Sendable (Duration) async throws -> Void,
     lifetime: CCState.State<Bool>, lifecycleTasks: LifecycleTasks,
-    readiness: Computed<Task<Void, Error>>? = nil,
+    readiness: (@MainActor () async throws -> Void)? = nil,
     read: @escaping @MainActor () async throws -> Value
   ) {
     self.operation = operation
@@ -171,12 +170,12 @@ private final class WorkspaceRead<Value: Sendable> {
   lazy var value = Computed<Task<Value, Error>> { [weak self] get, options in
     guard let self, try get(lifetime), !closed else { throw CancellationError() }
     _ = try get(revision)
-    let ready = try readiness.map { try get($0) }
+    let readiness = readiness
     failed = false
     let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self, operation, sleep, read] in
+    let task = Task.immediate { @MainActor [weak self, operation, sleep, read, readiness] in
       do {
-        if let ready { try await ready.value }
+        try await readiness?()
         try Task.checkCancellation()
         try signal.checkCancellation()
         let value = try await ChatReadRecovery.read(operation, sleep: sleep, body: read)
