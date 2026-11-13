@@ -145,7 +145,7 @@ def validate(directory):
         io_released = clock(waiting.get("io_released_ns"), events[2]["monotonic_ns"], terminal[4]["monotonic_ns"])
         polled = clock(waiting.get("status_wait_polled_ns"), terminal[4]["monotonic_ns"], events[3]["monotonic_ns"])
         before, after = waiting.get("status_waits_before"), waiting.get("status_waits_after")
-        if not pressure.integer(before) or not pressure.integer(after) or after != before + 1:
+        if not failure.status_wait_advanced(before, after):
             raise ValueError("final status wait not positively observed")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
         if first != second or first in runners:

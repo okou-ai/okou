@@ -120,7 +120,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         resumed = batch.clock(waiting.get("source_resumed_ns"),held,events[5]["monotonic_ns"])
         polled = batch.clock(waiting.get("status_wait_polled_ns"),resumed,events[5]["monotonic_ns"])
         before,after = waiting.get("status_waits_before"),waiting.get("status_waits_after")
-        if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
+        if not failure.status_wait_advanced(before, after):
             raise ValueError("replacement final status wait not observed")
         second = foreground.heartbeat(waiting.get("heartbeat"),2,polled,events[5]["monotonic_ns"])
         if first != second or first in runners:
