@@ -21,7 +21,6 @@ final class WorkspaceResources {
   private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
   private let billing: WorkspaceRead<WorkspaceBilling>
-  let settingsFeatures: Computed<Task<SidebarFeatureSwitches, Error>>
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
@@ -56,7 +55,6 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
-    settingsFeatures = features.value
     let billing = WorkspaceRead(
       "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       read: WorkspaceBillingService(client: client).status)
@@ -136,14 +134,11 @@ final class WorkspaceResources {
 
   func prepareSettings() throws {
     try store.set(billing.reload)
-    try features.retryFailed(in: store)
   }
 
   func loadSettingsBilling() async throws {
-    let switches = try await store.get(settingsFeatures).value
     try Task.checkCancellation()
     guard try store.get(lifetime) else { throw CancellationError() }
-    guard switches.effectiveSwitches["iosSettingsBilling"] == true else { return }
     try billing.retryFailed(in: store)
     _ = try await store.get(billingValue).value
   }

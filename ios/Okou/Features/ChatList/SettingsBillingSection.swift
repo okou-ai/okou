@@ -4,22 +4,6 @@ import SwiftUI
 
 struct SettingsBillingSection: View {
   let workspace: WorkspaceStore
-  @LoadableValue private var features: Loadable<SidebarFeatureSwitches>
-
-  init(workspace: WorkspaceStore) {
-    self.workspace = workspace
-    _features = LoadableValue(task: workspace.settingsResources.settingsFeatures)
-  }
-
-  var body: some View {
-    if features.data?.effectiveSwitches["iosSettingsBilling"] == true {
-      SettingsBillingContent(workspace: workspace)
-    }
-  }
-}
-
-private struct SettingsBillingContent: View {
-  let workspace: WorkspaceStore
   @LoadableValue private var billing: Loadable<WorkspaceBilling>
   @LoadableStatus<WorkspaceBilling> private var billingStatus: LoadableState
 

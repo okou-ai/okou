@@ -16,8 +16,6 @@ final class SettingsBillingTests: XCTestCase {
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/feature-switches":
-        return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsBilling":true}}"#)
       case "/api/billing/status":
         let state = server.withLock { $0 }
         if state.fails {
@@ -53,27 +51,9 @@ final class SettingsBillingTests: XCTestCase {
     XCTAssertEqual(upgraded.tier, "pro")
   }
 
-  func testDisabledRolloutDoesNotReadBilling() async throws {
-    let fixture = ChatHTTPFixture { request in
-      guard request.url?.path == "/api/feature-switches" else {
-        throw URLError(.unsupportedURL)
-      }
-      return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsBilling":false}}"#)
-    }
-    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { workspace.close() }
-    workspace.prepareSettings()
-    await workspace.loadSettingsBilling()
-    let resources = workspace.settingsResources
-    let features = try await resources.store.get(resources.settingsFeatures).value
-    XCTAssertEqual(features.effectiveSwitches["iosSettingsBilling"], false)
-  }
-
   func testBillingReadPreservesTheRequiredAppUpdateBoundary() async {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/feature-switches":
-        return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsBilling":true}}"#)
       case "/api/billing/status":
         return ChatHTTPResponse(
           status: 426,
