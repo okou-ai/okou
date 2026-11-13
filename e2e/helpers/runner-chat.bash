@@ -713,6 +713,17 @@ runner_chat_steer() {
         }'
 }
 
+# Only retain the public identity and route needed to diagnose continuation.
+# Run responses can contain unrelated fields that must not enter CI diagnostics.
+runner_chat_run_summary() {
+    jq -c '{
+        runId,
+        status,
+        sessionId: .result.frameworkSessionId,
+        source: (.source | {providerType, runtimeProviderType, model, credentialScope})
+    }'
+}
+
 runner_chat_send_after_completion() {
     local agent_id="$1"
     local thread_id="$2"
@@ -748,11 +759,15 @@ runner_chat_send_after_completion() {
         return 1
     fi
 
-    _wait_for_runner_chat_output \
+    if ! _wait_for_runner_chat_output \
         "$thread_id" \
         "$run_id" \
         "$expected_output" \
-        45 || return 1
+        45; then
+        printf '# Completed successor for thread %s: %s\n' \
+            "$thread_id" "$(runner_chat_run_summary <<<"$run_response")" >&2
+        return 1
+    fi
 
     jq -cn \
         --arg runId "$run_id" \

@@ -25,6 +25,7 @@ teardown() {
 assert_auto_route() {
     local run_id="$1" response
     response=$(runner_api_curl "/api/runs/${run_id}") || return
+    runner_chat_run_summary <<<"$response"
     jq -e --arg runId "$run_id" '
         .runId == $runId and
         .status == "completed" and
@@ -32,7 +33,7 @@ assert_auto_route() {
         .source.runtimeProviderType == "openrouter-codex" and
         .source.model == "auto" and
         .source.credentialScope == "org"
-    ' <<<"$response"
+    ' <<<"$response" >/dev/null
 }
 
 @test "auto preserves session continuity and its OpenRouter route on a successor" {
@@ -55,6 +56,9 @@ assert_auto_route() {
     assert_success
     run assert_auto_route "$RUN_ID"
     assert_success
+    # BATS retains this on failure, even when successor content fails before
+    # the session and route assertions below can execute.
+    printf '# Initial Auto run for thread %s: %s\n' "$THREAD_ID" "$output"
 
     # No explicit model on continuation: the thread keeps Auto and its session.
     local successor_expected="${expected}_NEXT"
