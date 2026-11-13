@@ -114,6 +114,36 @@ token lookup. Native system-bar presentation follows the resolved app mode.
 
 ## Service and Release Boundaries
 
+### Local Storage
+
+Use Android's storage owners and choose the location by data lifetime. Structured
+server-confirmed chat data uses Room/SQLite, with Web's snapshot, event replay,
+cursor and consistency rules as its semantic reference. Keep one lazy database
+owner per application process; run IO off Main and commit related records in a
+transaction. Store snapshots as per-entity rows so tail appends do not rewrite an
+entire archive. Use the AndroidX bundled SQLite driver to avoid CursorWindow's
+per-row limit. Native response decoding must not add data-size/count limits that
+reject legitimate canonical data Web can read; use streaming and cursor progress
+checks. Export Room schemas through its Gradle plugin. A disposable-cache rebuild
+policy must never cover user-authored drafts
+or other data that cannot be recovered from the server.
+
+Resolve paths through Context, never hard-code device paths. Keep offline cache
+databases in app-private `noBackupFilesDir` and disposable download/upload staging
+in `cacheDir`; neither requires storage permissions. Durable unsent input needs
+its own private persistent owner and explicit migration/recovery rules. Credentials
+belong to the authentication SDK/Keystore, and device preferences to DataStore.
+Canonical member preferences remain server-owned. User-selected imports/exports
+use the Storage Access Framework or MediaStore as appropriate, and sharing uses
+content URIs with scoped grants rather than exposing private file paths.
+
+Scope protected content by API origin, account and workspace; revalidate current
+authorization before restoring it. Keep optimistic mutations and transient stream
+deltas outside confirmed tables. Storage failures must remain observable without
+discarding already confirmed live content. Closing a workspace cancels its work
+and retires its storage lease; physical database/file cleanup must not block Main.
+Tests must close/checkpoint SQLite before copying or restoring its files.
+
 ### Public Android Entry Points
 
 An exported component can be launched by another application. The desktop

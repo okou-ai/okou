@@ -2,8 +2,21 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:kotlin
 package ai.okou.android.api.generated
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 enum class OrganizationRole {
@@ -187,4 +200,496 @@ data class AndroidUpgradeRequiredError(
 data class AndroidUpgradeRequired(
     val `error`: AndroidUpgradeRequiredError,
     val `minimumSupportedVersion`: String,
+)
+
+@Serializable(with = ChatSnapshotSerializer::class) sealed interface ChatSnapshot
+
+@Serializable
+data class ChatSnapshotVariant1(
+    val `url`: String,
+    val `expiresInSeconds`: Long,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long?,
+) : ChatSnapshot
+
+@Serializable(with = CanonicalEmptyArraySerializer::class) data object CanonicalEmptyArray
+
+object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
+    override val descriptor = ListSerializer(String.serializer()).descriptor
+
+    override fun deserialize(decoder: Decoder): CanonicalEmptyArray {
+        val input =
+            decoder as? JsonDecoder ?: throw SerializationException("Expected JSON empty array")
+        val value = input.decodeJsonElement() as? JsonArray
+        if (value == null || value.isNotEmpty())
+            throw SerializationException("Expected empty array")
+        return CanonicalEmptyArray
+    }
+
+    override fun serialize(encoder: Encoder, value: CanonicalEmptyArray) {
+        val output =
+            encoder as? JsonEncoder ?: throw SerializationException("Expected JSON empty array")
+        output.encodeJsonElement(JsonArray(emptyList()))
+    }
+}
+
+@Serializable
+data class ChatSnapshotVariant2(
+    val `chatThreads`: CanonicalEmptyArray,
+    val `latestEventId`: JsonNull,
+    val `latestSeqId`: JsonNull,
+) : ChatSnapshot
+
+object ChatSnapshotSerializer : KSerializer<ChatSnapshot> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ChatSnapshot")
+
+    override fun deserialize(decoder: Decoder): ChatSnapshot {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ChatSnapshot")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ChatSnapshot")
+        val matches = listOf(value.containsKey("url"), value.containsKey("chatThreads"))
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ChatSnapshot variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ChatSnapshotVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ChatSnapshotVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ChatSnapshot variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatSnapshot) {
+        when (value) {
+            is ChatSnapshotVariant1 ->
+                encoder.encodeSerializableValue(ChatSnapshotVariant1.serializer(), value)
+            is ChatSnapshotVariant2 ->
+                encoder.encodeSerializableValue(ChatSnapshotVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable(with = ChatEventsEventsItemSerializer::class) sealed interface ChatEventsEventsItem
+
+@Serializable
+enum class ChatEventsEventsItemVariant1Kind {
+    @SerialName("created") CREATED,
+    @SerialName("renamed") RENAMED,
+    @SerialName("deleted") DELETED,
+    @SerialName("pinned") PINNED,
+    @SerialName("unpinned") UNPINNED,
+    @SerialName("model_selection_updated") MODEL_SELECTION_UPDATED,
+    @SerialName("service_tier_updated") SERVICE_TIER_UPDATED,
+    @SerialName("computer_use_host_updated") COMPUTER_USE_HOST_UPDATED,
+    @SerialName("sort_touched") SORT_TOUCHED,
+    @SerialName("archived") ARCHIVED,
+    @SerialName("unarchived") UNARCHIVED,
+}
+
+@Serializable
+enum class ChatEventsEventsItemVariant1ModelSettingsValueEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant1ModelSettingsValue(
+    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null
+)
+
+@Serializable
+enum class ChatEventsEventsItemVariant1ModelSettingsPatchEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant1ModelSettingsPatch(
+    val `model`: String,
+    val `effort`: ChatEventsEventsItemVariant1ModelSettingsPatchEffort,
+)
+
+@Serializable
+enum class ChatEventsEventsItemVariant1ReasoningEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class ChatEventsEventsItemVariant1ServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant1(
+    val `id`: String,
+    val `seqId`: Long,
+    val `kind`: ChatEventsEventsItemVariant1Kind,
+    val `chatThreadId`: String,
+    val `projectId`: String? = null,
+    val `agentId`: String,
+    val `reassignedAgentId`: String? = null,
+    val `title`: String?,
+    val `pinOrder`: String? = null,
+    val `muted`: Boolean? = null,
+    val `hidden`: Boolean? = null,
+    val `selectedModel`: String?,
+    val `modelSettings`: Map<String, ChatEventsEventsItemVariant1ModelSettingsValue>? = null,
+    val `modelSettingsPatch`: ChatEventsEventsItemVariant1ModelSettingsPatch? = null,
+    val `reasoningEffort`: ChatEventsEventsItemVariant1ReasoningEffort? = null,
+    val `serviceTier`: ChatEventsEventsItemVariant1ServiceTier?,
+    val `computerUseHostId`: String?,
+    val `cloudBrowserEnabled`: Boolean? = null,
+    val `createdAt`: String,
+) : ChatEventsEventsItem
+
+@Serializable
+enum class ChatEventsEventsItemVariant2Kind {
+    @SerialName("project_updated") PROJECT_UPDATED
+}
+
+@Serializable
+enum class ChatEventsEventsItemVariant2ModelSettingsValueEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant2ModelSettingsValue(
+    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null
+)
+
+@Serializable
+enum class ChatEventsEventsItemVariant2ModelSettingsPatchEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant2ModelSettingsPatch(
+    val `model`: String,
+    val `effort`: ChatEventsEventsItemVariant2ModelSettingsPatchEffort,
+)
+
+@Serializable
+enum class ChatEventsEventsItemVariant2ReasoningEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class ChatEventsEventsItemVariant2ServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+data class ChatEventsEventsItemVariant2(
+    val `id`: String,
+    val `seqId`: Long,
+    val `kind`: ChatEventsEventsItemVariant2Kind,
+    val `chatThreadId`: String,
+    val `projectId`: String?,
+    val `agentId`: String,
+    val `reassignedAgentId`: String? = null,
+    val `title`: String?,
+    val `pinOrder`: String? = null,
+    val `muted`: Boolean? = null,
+    val `hidden`: Boolean? = null,
+    val `selectedModel`: String?,
+    val `modelSettings`: Map<String, ChatEventsEventsItemVariant2ModelSettingsValue>? = null,
+    val `modelSettingsPatch`: ChatEventsEventsItemVariant2ModelSettingsPatch? = null,
+    val `reasoningEffort`: ChatEventsEventsItemVariant2ReasoningEffort? = null,
+    val `serviceTier`: ChatEventsEventsItemVariant2ServiceTier?,
+    val `computerUseHostId`: String?,
+    val `cloudBrowserEnabled`: Boolean? = null,
+    val `createdAt`: String,
+) : ChatEventsEventsItem
+
+object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ChatEventsEventsItem")
+
+    override fun deserialize(decoder: Decoder): ChatEventsEventsItem {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ChatEventsEventsItem")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ChatEventsEventsItem")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "created",
+                                "renamed",
+                                "deleted",
+                                "pinned",
+                                "unpinned",
+                                "model_selection_updated",
+                                "service_tier_updated",
+                                "computer_use_host_updated",
+                                "sort_touched",
+                                "archived",
+                                "unarchived",
+                            )
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("project_updated")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ChatEventsEventsItem variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ChatEventsEventsItemVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ChatEventsEventsItemVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ChatEventsEventsItem variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatEventsEventsItem) {
+        when (value) {
+            is ChatEventsEventsItemVariant1 ->
+                encoder.encodeSerializableValue(ChatEventsEventsItemVariant1.serializer(), value)
+            is ChatEventsEventsItemVariant2 ->
+                encoder.encodeSerializableValue(ChatEventsEventsItemVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable
+data class ChatEvents(val `events`: List<ChatEventsEventsItem>, val `hasMore`: Boolean)
+
+@Serializable
+enum class IndicatorsAgentsValue {
+    @SerialName("active") ACTIVE,
+    @SerialName("unread") UNREAD,
+}
+
+@Serializable
+enum class IndicatorsThreadsValue {
+    @SerialName("active") ACTIVE,
+    @SerialName("unread") UNREAD,
+}
+
+@Serializable
+data class Indicators(
+    val `agents`: Map<String, IndicatorsAgentsValue>,
+    val `threads`: Map<String, IndicatorsThreadsValue>,
+    val `unreadAt`: Map<String, String>,
+)
+
+@Serializable
+enum class AgentsItemVisibility {
+    @SerialName("public") PUBLIC,
+    @SerialName("private") PRIVATE,
+}
+
+@Serializable
+data class AgentsItem(
+    val `agentId`: String,
+    val `isDefaultAgent`: Boolean,
+    val `ownerId`: String,
+    val `description`: String?,
+    val `displayName`: String?,
+    val `sound`: String?,
+    val `avatarUrl`: String?,
+    val `visibility`: AgentsItemVisibility,
+)
+
+typealias Agents = List<AgentsItem>
+
+@Serializable(with = ProjectSnapshotSerializer::class) sealed interface ProjectSnapshot
+
+@Serializable
+data class ProjectSnapshotVariant1ProjectsItem(
+    val `id`: String,
+    val `name`: String,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable
+data class ProjectSnapshotVariant1(
+    val `projects`: List<ProjectSnapshotVariant1ProjectsItem>,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
+) : ProjectSnapshot
+
+@Serializable
+data class ProjectSnapshotVariant2(
+    val `url`: String,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
+) : ProjectSnapshot
+
+object ProjectSnapshotSerializer : KSerializer<ProjectSnapshot> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ProjectSnapshot")
+
+    override fun deserialize(decoder: Decoder): ProjectSnapshot {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ProjectSnapshot")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ProjectSnapshot")
+        val matches = listOf(value.containsKey("projects"), value.containsKey("url"))
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ProjectSnapshot variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ProjectSnapshotVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ProjectSnapshotVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ProjectSnapshot variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ProjectSnapshot) {
+        when (value) {
+            is ProjectSnapshotVariant1 ->
+                encoder.encodeSerializableValue(ProjectSnapshotVariant1.serializer(), value)
+            is ProjectSnapshotVariant2 ->
+                encoder.encodeSerializableValue(ProjectSnapshotVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable
+enum class ProjectEventsEventsItemKind {
+    @SerialName("created") CREATED,
+    @SerialName("renamed") RENAMED,
+    @SerialName("deleted") DELETED,
+}
+
+@Serializable
+data class ProjectEventsEventsItem(
+    val `id`: String,
+    val `seqId`: Long,
+    val `projectId`: String,
+    val `kind`: ProjectEventsEventsItemKind,
+    val `name`: String?,
+    val `createdAt`: String,
+)
+
+@Serializable
+data class ProjectEvents(val `events`: List<ProjectEventsEventsItem>, val `hasMore`: Boolean)
+
+@Serializable
+data class FeatureSwitches(
+    val `switches`: Map<String, Boolean>,
+    val `effectiveSwitches`: Map<String, Boolean>,
+)
+
+@Serializable
+enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class ChatArchiveChatThreadsItemModelSettingsValue(
+    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null
+)
+
+@Serializable
+enum class ChatArchiveChatThreadsItemReasoningEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class ChatArchiveChatThreadsItemServiceTier {
+    @SerialName("priority") PRIORITY,
+    @SerialName("ultrafast") ULTRAFAST,
+}
+
+@Serializable
+data class ChatArchiveChatThreadsItem(
+    val `id`: String,
+    val `projectId`: String? = null,
+    val `agentId`: String,
+    val `title`: String?,
+    val `sortAt`: String,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+    val `pinnedAt`: String?,
+    val `pinOrder`: String? = null,
+    val `archived`: Boolean,
+    val `hidden`: Boolean? = null,
+    val `muted`: Boolean? = null,
+    val `renamedAt`: String?,
+    val `selectedModel`: String? = null,
+    val `modelSettings`: Map<String, ChatArchiveChatThreadsItemModelSettingsValue>? = null,
+    val `reasoningEffort`: ChatArchiveChatThreadsItemReasoningEffort? = null,
+    val `serviceTier`: ChatArchiveChatThreadsItemServiceTier? = null,
+    val `computerUseHostId`: String? = null,
+    val `cloudBrowserEnabled`: Boolean? = null,
+)
+
+@Serializable data class ChatArchive(val `chatThreads`: List<ChatArchiveChatThreadsItem>)
+
+@Serializable
+data class ProjectArchiveProjectsItem(
+    val `id`: String,
+    val `name`: String,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable
+data class ProjectArchive(
+    val `projects`: List<ProjectArchiveProjectsItem>,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
 )

@@ -3,6 +3,14 @@ import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
+import {
+  chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
+} from "../contracts/chat-threads";
+import { agentsMainContract } from "../contracts/agents";
+import { projectsContract } from "../contracts/projects";
+import { projectSnapshotArchiveSchema } from "../validators/projects";
+import { featureSwitchesContract } from "../contracts/feature-switches";
 
 export interface KotlinRouteBinding {
   readonly name: string;
@@ -18,7 +26,41 @@ export interface KotlinRouteBinding {
   };
 }
 
-/** The selected native workspace/preferences surface, not an export of every Web contract. */
+const chatReadBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "chatSnapshot",
+    response: "ChatSnapshot",
+    route: chatThreadsContract.snapshot,
+  },
+  {
+    name: "chatEvents",
+    response: "ChatEvents",
+    route: chatThreadsContract.events,
+  },
+  {
+    name: "indicators",
+    response: "Indicators",
+    route: chatThreadsContract.indicators,
+  },
+  { name: "agents", response: "Agents", route: agentsMainContract.list },
+  {
+    name: "projectSnapshot",
+    response: "ProjectSnapshot",
+    route: projectsContract.snapshot,
+  },
+  {
+    name: "projectEvents",
+    response: "ProjectEvents",
+    route: projectsContract.events,
+  },
+  {
+    name: "featureSwitches",
+    response: "FeatureSwitches",
+    route: featureSwitchesContract.get,
+  },
+];
+
+/** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   { name: "organization", response: "Organization", route: orgContract.get },
   {
@@ -38,6 +80,7 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "UpdatePreferencesRequest",
     route: userPreferencesContract.update,
   },
+  ...chatReadBindings,
 ];
 
 export interface KotlinTypeBinding {
@@ -72,5 +115,22 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "AndroidUpgradeRequired",
     schema: androidUpgradeRequiredSchema,
     direction: "output",
+  },
+  ...chatReadBindings.map(({ response, route }) => {
+    return {
+      name: response,
+      schema: route.responses[200]!,
+      direction: "output" as const,
+    };
+  }),
+  {
+    name: "ChatArchive",
+    schema: chatThreadSnapshotArchiveSchema,
+    direction: "input",
+  },
+  {
+    name: "ProjectArchive",
+    schema: projectSnapshotArchiveSchema,
+    direction: "input",
   },
 ];

@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">Conversas</string>
+    <string name="chat_refresh">Atualizar conversas</string>
+    <string name="chat_loading">Carregando conversas…</string>
+    <string name="chat_refreshing">Atualizando conversas…</string>
+    <string name="chat_load_failed">Não foi possível carregar as conversas. Verifique sua conexão e tente novamente.</string>
+    <string name="chat_refresh_failed">Não foi possível atualizar. Exibindo as últimas conversas carregadas.</string>
+    <string name="chat_cached">Exibindo conversas salvas.</string>
+    <string name="chat_cache_unavailable">O armazenamento offline está indisponível. Estas conversas podem não estar disponíveis após reiniciar.</string>
+    <string name="chat_metadata_loading">Carregando nomes do Okou e dos projetos…</string>
+    <string name="chat_metadata_unavailable">Algumas informações do Okou ou dos projetos estão indisponíveis.</string>
+    <string name="chat_status_observed">Os estados de atividade e não lido são da última atualização.</string>
+    <string name="chat_status_unavailable">Não foi possível atualizar o estado. Os indicadores anteriores podem estar desatualizados.</string>
+    <string name="chat_status_loading">Verificando atividade e conversas não lidas…</string>
+    <string name="chat_refresh_status">Atualizar estado</string>
+    <string name="chat_recent">Recentes</string>
+    <string name="chat_unread">Não lidas</string>
+    <string name="chat_archived">Arquivadas</string>
+    <string name="chat_muted">Silenciadas</string>
+    <string name="chat_outside_projects">Conversas fora dos projetos</string>
+    <string name="chat_project_empty">Nenhuma conversa neste projeto.</string>
+    <string name="chat_empty">Nenhuma conversa nesta visualização.</string>
+    <string name="chat_untitled">Conversa sem título</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">Fixada</string>
+    <string name="chat_active">Ativa</string>
+    <string name="chat_metadata_cached">Exibindo os nomes salvos do Okou e dos projetos.</string>
+</resources>

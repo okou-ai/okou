@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">聊天</string>
+    <string name="chat_refresh">刷新聊天</string>
+    <string name="chat_loading">正在加载聊天…</string>
+    <string name="chat_refreshing">正在刷新聊天…</string>
+    <string name="chat_load_failed">无法加载聊天。请检查网络后重试。</string>
+    <string name="chat_refresh_failed">无法刷新，正在显示上次加载的聊天。</string>
+    <string name="chat_cached">正在显示已保存的聊天。</string>
+    <string name="chat_cache_unavailable">离线存储不可用，重启后可能无法查看这些聊天。</string>
+    <string name="chat_metadata_loading">正在加载 Okou 和项目名称…</string>
+    <string name="chat_metadata_unavailable">部分 Okou 或项目信息不可用。</string>
+    <string name="chat_status_observed">活跃和未读状态来自上次刷新。</string>
+    <string name="chat_status_unavailable">无法刷新状态，之前的标记可能已过时。</string>
+    <string name="chat_status_loading">正在检查活跃和未读状态…</string>
+    <string name="chat_refresh_status">刷新状态</string>
+    <string name="chat_recent">最近</string>
+    <string name="chat_unread">未读</string>
+    <string name="chat_archived">已归档</string>
+    <string name="chat_muted">已静音</string>
+    <string name="chat_outside_projects">项目外的聊天</string>
+    <string name="chat_project_empty">此项目暂无聊天。</string>
+    <string name="chat_empty">此视图暂无聊天。</string>
+    <string name="chat_untitled">未命名聊天</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">已置顶</string>
+    <string name="chat_active">活跃</string>
+    <string name="chat_metadata_cached">正在显示已保存的 Okou 和项目名称。</string>
+</resources>

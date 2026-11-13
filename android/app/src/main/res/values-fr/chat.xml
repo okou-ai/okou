@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">Discussions</string>
+    <string name="chat_refresh">Actualiser les discussions</string>
+    <string name="chat_loading">Chargement des discussions…</string>
+    <string name="chat_refreshing">Actualisation des discussions…</string>
+    <string name="chat_load_failed">Impossible de charger les discussions. Vérifiez votre connexion et réessayez.</string>
+    <string name="chat_refresh_failed">Actualisation impossible. Les dernières discussions chargées sont affichées.</string>
+    <string name="chat_cached">Les discussions enregistrées sont affichées.</string>
+    <string name="chat_cache_unavailable">Le stockage hors ligne est indisponible. Ces discussions pourraient être indisponibles après un redémarrage.</string>
+    <string name="chat_metadata_loading">Chargement des noms Okou et des projets…</string>
+    <string name="chat_metadata_unavailable">Certaines informations Okou ou de projet sont indisponibles.</string>
+    <string name="chat_status_observed">Les états actif et non lu datent de la dernière actualisation.</string>
+    <string name="chat_status_unavailable">Actualisation des états impossible. Les anciens indicateurs peuvent être obsolètes.</string>
+    <string name="chat_status_loading">Vérification des états actif et non lu…</string>
+    <string name="chat_refresh_status">Actualiser les états</string>
+    <string name="chat_recent">Récentes</string>
+    <string name="chat_unread">Non lues</string>
+    <string name="chat_archived">Archivées</string>
+    <string name="chat_muted">En sourdine</string>
+    <string name="chat_outside_projects">Discussions hors projets</string>
+    <string name="chat_project_empty">Aucune discussion dans ce projet.</string>
+    <string name="chat_empty">Aucune discussion dans cette vue.</string>
+    <string name="chat_untitled">Discussion sans titre</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">Épinglée</string>
+    <string name="chat_active">Active</string>
+    <string name="chat_metadata_cached">Les noms Okou et des projets enregistrés sont affichés.</string>
+</resources>

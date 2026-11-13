@@ -3,12 +3,6 @@
     <string name="home">Beranda</string>
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
-    <string name="home_title">Ruang untuk ide berikutnya</string>
-    <string name="home_description">Tulis draf dan lihat pratinjaunya di perangkat ini.</string>
-    <string name="draft_label">Draf</string>
-    <string name="draft_hint">Apa yang sedang Anda pikirkan?</string>
-    <string name="local_preview">Pratinjau draf</string>
-    <string name="preview_title">Pratinjau</string>
     <string name="appearance">Tampilan</string>
     <string name="appearance_description">Pilih tampilan Okou di perangkat ini.</string>
     <string name="appearance_system">Ikuti sistem</string>
@@ -21,9 +15,6 @@
     <string name="appearance_read_failed">Tidak dapat memuat tampilan. Coba lagi.</string>
     <string name="appearance_write_failed">Tidak dapat menyimpan tampilan. Coba lagi.</string>
     <string name="retry">Coba lagi</string>
-    <plurals name="draft_lines">
-        <item quantity="other">%1$d baris</item>
-    </plurals>
     <string name="auth_welcome">Selamat datang di Okou</string>
     <string name="auth_restoring">Memulihkan sesi Anda…</string>
     <string name="auth_preparing_workspace">Menyiapkan ruang kerja Anda…</string>

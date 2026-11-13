@@ -1,7 +1,7 @@
 package ai.okou.android
 
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import org.junit.Rule
 import org.junit.Test
@@ -18,10 +18,10 @@ class SessionRootTest {
     fun initialNativeLoginPresentationDoesNotWaitForAuthentication() {
         compose.onNodeWithText("Welcome to Okou").assertExists()
         compose.onNodeWithText("Restoring your session…").assertExists()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithTag("chat_list").assertDoesNotExist()
         compose.onNodeWithText("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Welcome to Okou").assertExists()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithTag("chat_list").assertDoesNotExist()
     }
 }

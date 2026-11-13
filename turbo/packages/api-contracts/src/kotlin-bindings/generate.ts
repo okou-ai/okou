@@ -47,6 +47,7 @@ function queryParameters(route: KotlinRouteBinding["route"]): string[] {
   if (!route.query) return [];
   // Retrofit serializes typed scalars into query strings; Zod's output captures
   // the post-coercion scalar type rather than the unknown coercion input.
+  // Server-defaulted fields remain explicit arguments rather than duplicating defaults.
   const schema = toJSONSchema(route.query, { io: "output" });
   if (
     !schemaObject(schema) ||
@@ -66,7 +67,6 @@ function queryParameters(route: KotlinRouteBinding["route"]): string[] {
       !schemaObject(value) ||
       value.anyOf ||
       value.enum ||
-      value.default !== undefined ||
       value.const !== undefined
     )
       throw new Error("Unsupported Retrofit query field");

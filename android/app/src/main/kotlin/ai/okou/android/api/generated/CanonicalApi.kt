@@ -7,6 +7,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 internal interface CanonicalApi {
     @GET("/api/org")
@@ -26,4 +27,31 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Body body: UpdatePreferencesRequest,
     ): Response<UserPreferences>
+
+    @GET("/api/chat-threads/snapshot")
+    suspend fun `chatSnapshot`(@Header("Authorization") token: String): Response<ChatSnapshot>
+
+    @GET("/api/chat-threads/events")
+    suspend fun `chatEvents`(
+        @Header("Authorization") token: String,
+        @Query("sinceSeqId") `querySinceSeqId`: Long? = null,
+    ): Response<ChatEvents>
+
+    @GET("/api/indicators")
+    suspend fun `indicators`(@Header("Authorization") token: String): Response<Indicators>
+
+    @GET("/api/agents")
+    suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
+
+    @GET("/api/projects/snapshot")
+    suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
+
+    @GET("/api/projects/events")
+    suspend fun `projectEvents`(
+        @Header("Authorization") token: String,
+        @Query("sinceSeqId") `querySinceSeqId`: Long,
+    ): Response<ProjectEvents>
+
+    @GET("/api/feature-switches")
+    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 }

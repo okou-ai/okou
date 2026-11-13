@@ -4,6 +4,7 @@ import ai.okou.android.AppearanceMode
 import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
+import ai.okou.android.chat.ChatListRoute
 import ai.okou.android.preferences.MemberPreferencesSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -62,12 +63,12 @@ fun SessionRoot(
         if (state.stage == SessionStage.Ready && ready != null) {
             key(ready.identity, state.generation) {
                 OkouApp(
-                    ready.home,
                     appearance,
                     selectAppearance,
                     retryAppearance,
                     account = { WorkspaceActions(state, chooseWorkspace, signOut) },
                     workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
+                    homeContent = { ChatListRoute(ready.chats) },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {

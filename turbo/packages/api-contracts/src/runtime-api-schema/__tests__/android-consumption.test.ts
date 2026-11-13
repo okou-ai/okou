@@ -67,13 +67,16 @@ describe("Android generated consumption CLI", () => {
     expect(await lint()).toBe(1);
   });
 
-  it("checks production packages named test instead of confusing them with test source sets", async () => {
-    await put(
-      "android/app/src/main/kotlin/ai/okou/android/test/Connection.kt",
-      'import retrofit2.http.GET\ninterface Extra { @GET("/api/unregistered") suspend fun get(): String }',
-    );
-    expect(await lint()).toBe(1);
-  });
+  it.each(["test", "sharedTest"])(
+    "checks production packages named %s instead of confusing them with test source sets",
+    async (name) => {
+      await put(
+        `android/app/src/main/kotlin/ai/okou/android/${name}/Connection.kt`,
+        'import retrofit2.http.GET\ninterface Extra { @GET("/api/unregistered") suspend fun get(): String }',
+      );
+      expect(await lint()).toBe(1);
+    },
+  );
 
   it("does not interpret comments or local test fixtures as production API consumers", async () => {
     await put(
@@ -82,6 +85,10 @@ describe("Android generated consumption CLI", () => {
     );
     await put(
       "android/app/src/test/kotlin/Fixture.kt",
+      'val path = "/api/fixture"',
+    );
+    await put(
+      "android/app/src/sharedTest/kotlin/ApiFixture.kt",
       'val path = "/api/fixture"',
     );
     expect(await lint()).toBe(0);

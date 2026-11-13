@@ -6,7 +6,7 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. After authoritative
 membership and workspace bootstrap, the application provides **Home and Settings** destinations,
-an editable local draft preview, and device-local Light/Dark/Follow system
+the native chat list, and device-local Light/Dark/Follow system
 appearance. Compact windows use bottom navigation; wider windows use a rail.
 Home remains usable while Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from
@@ -17,14 +17,43 @@ Web color palettes and the languages allowed by canonical `supportedLocales`.
 Palette/language preferences synchronize through the member/workspace API;
 Light/Dark/Follow system remains device-local and independent.
 
-The workspace presentation owner retains native text, selection and IME state
-across navigation and configuration changes; previews are independent immutable
-text snapshots. Switching account/workspace or signing out retires that owner.
+The workspace presentation owner retains chat-list state across navigation and
+configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
 by default; see [native authentication](AUTHENTICATION.md)
 for public staging overrides, provider setup and verification boundaries. Chat
 Send, push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
+
+Confirmed chat and Project navigation follows Web's snapshot/event-log model using an
+application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, excluded
+from backups. AndroidX's bundled SQLite driver avoids CursorWindow's single-row
+limit. Chat threads and Projects have independent snapshots, event tails and
+cursors. Snapshots are stored per entity, and confirmed tail events append through
+transactions with their synchronization position. Changed network datasets await
+persistence and readback before publication. Unchanged catch-up reuses the confirmed
+dataset without another disk transaction; changed Agent/settings references still
+persist independently. A storage failure leaves the network result usable with a
+visible cache warning, and a later refresh retries unsaved data.
+Data is scoped to API origin/user/workspace and the current authorization snapshot;
+an older synchronization cannot replace a newer persisted tail. Last-confirmed
+Agent/Project references keep the scoped list usable after a process restart while
+their network reads are unavailable. Cache display precedes network catch-up;
+chat tails over 100 events attempt a server-snapshot rebase after catch-up, with
+optional rebase server failures preserving the synchronized result, as on Web.
+Project tails retain their event identities. Chat's absent cursor refreshes its
+snapshot; Project's valid zero cursor continues through events. An expired cursor
+rebuilds from the server and resumes catch-up. A freshly loaded
+snapshot that immediately expires or a page that makes no progress fails the read.
+There are no fixed response-byte, row-count, page-count or per-scope disk limits.
+JSON decoding and Room work run off Main; canonical responses and signed archives
+are decoded from streams without a full response byte-array/String copy.
+The versioned database contains only rebuildable server-confirmed data;
+unsupported local schemas may be recreated, never migrated together with drafts
+or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
+integration. A saved list and the last status refresh do not establish current
+network freshness. Signed archive URLs, credentials and transient indicators are
+not persisted. No local message history or durable draft store is introduced.
 
 ## Prerequisites and Setup
 
@@ -85,6 +114,11 @@ cd android
 ./gradlew :app:testDebugUnitTest --no-daemon
 ```
 
+The chat suites exercise real disk reopening, the generated canonical HTTP/codec
+boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
+holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+runs the list/Settings/recreation journey on the existing API 35 managed device.
+
 The plain Kotlin state-holder tests do not themselves use Android APIs. An
 independent Kotlin/JVM test entry could compile those same sources without an
 SDK, without splitting production modules. The command above uses the app's
@@ -118,10 +152,9 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 ### Instrumented Android Tests
 
 The `androidTest` suite launches the real Activity and uses UI Automator to
-exercise platform keyboard/insets and Back, retained editor/caret state,
-appearance restoration with a new Activity owner, native system bars and live
-platform night-mode changes, plus palette/language changes and retained editing
-through native app-language recreation. The existing JVM/Robolectric tests retain the
+exercise chat-list navigation and Back, appearance restoration with a new Activity
+owner, native system bars and live platform night-mode changes, plus palette/language
+changes through native app-language recreation. The existing JVM/Robolectric tests retain the
 broader state/error/localization matrix.
 
 On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
@@ -146,9 +179,11 @@ Compile/package the suite without starting a device:
 ```
 
 Use an isolated test emulator. The fixture snapshots/restores app preferences,
-platform night mode, app locale, fixture API preferences and keyboard settings, scopes its UI Automation shell
-permissions, and closes its Activity owners on success and failure. It does not
-contact a backend. A new Activity owner is not a process-death restoration test.
+platform night mode, app locale, fixture API preferences and chat-list cache,
+scopes its UI Automation shell permissions, and closes its Activity owners on
+success and failure. Fixtures use a local HTTP server or external-service adapters
+without contacting a live backend. A new Activity owner is not a process-death
+restoration test.
 
 Managed-device HTML reports are under `app/build/reports/androidTests/`, with
 JUnit results/logcat under `app/build/outputs/androidTest-results/`. Official
@@ -161,7 +196,7 @@ CI retains these outputs and the Gradle execution log for seven days in
 ## Components and Authority
 
 - `app`: native Activity, Home/Settings routes, retained presentation owners,
-  pure preview snapshots, local preference storage and the shared native theme.
+  confirmed chat-list storage, local preferences and the shared native theme.
   Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
@@ -171,11 +206,10 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-DraftPreviewStateHolderTest covers validation, verbatim snapshots and owner
-isolation. AppearanceModelTest exercises real presentation/decoding against the
+AppearanceModelTest exercises real presentation/decoding against the
 DataStore IO boundary, including read/write recovery, confirmation ordering,
 cancellation and actual file-backed reopen. OkouAppTest and MainActivityTest
-exercise real routes, native editor selection, back/configuration retention,
+exercise real routes, chat filters, back/configuration retention,
 appearance and adaptive navigation. LocalizedResourcesTest verifies native
 locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
@@ -212,9 +246,8 @@ manifest audit; this is a location/contract exception, not a rule-wide exclusion
 or increased count baseline. See [public entry points](../docs/android/android-development.md#public-android-entry-points)
 before adding exported components, deep links or external Intent handling.
 
-The validation workflow does not publish releases. FCM credentials are not
-configured. The transport below is available to feature owners; the local shell
-still makes no authenticated API requests.
+The validation workflow builds and tests the application; it does not publish
+releases or configure FCM credentials.
 
 ## GitHub Releases
 
@@ -332,7 +365,8 @@ unrepresented values still fail generation. This is a typed reader boundary,
 not a second implementation of Zod's complete validation/transform runtime.
 
 Retrofit query support is limited to canonical scalar fields; omitted optional
-values stay absent from the URL. Query defaults/compositions, path parameters and
+values stay absent from the URL. Server-defaulted scalars use explicit arguments.
+Query compositions, path parameters and
 non-200 success binding support require a future actual consumer before expansion.
 
 Regenerate from the repository root with the Turbo workspace dependencies installed:
@@ -362,11 +396,11 @@ nullable/empty values and optional query construction. The archive fixture uses
 the validator's input representation for documented historical/default values;
 semantic normalization remains the consuming domain's responsibility.
 
-These are compile/read proofs, not installed application endpoints or a native
-chat-list feature. They do not enter the production API-consumption inventory.
-`check:kotlin` and the focused generator tests detect fixture drift; the consumption
-lint retains its production-only generated-client check. Run the reader proof from
-`android/`, with the SDK configured as above:
+These test-only fixtures prove compilation/decoding and do not register installed
+consumers. The native chat list uses the production bindings and route inventory
+selected in `bindings.ts`. `check:kotlin` and the focused generator tests detect
+fixture drift; consumption lint checks the production generated-client boundary.
+Run the reader proof from `android/`, with the SDK configured as above:
 
 ```bash
 ./gradlew :app:testDebugUnitTest --tests ai.okou.android.api.ChatReadBindingsTest --no-daemon
@@ -382,16 +416,18 @@ service; direct arbitrary HTTP in features is outside the transport contract.
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
 identity and a suspending `WorkspaceTokenProvider` resolved for each request.
 The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
-cover current workspace and member preference bootstrap. The authentication
+cover workspace/member preferences and the native chat-list reads. The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
-Construction starts no token resolution or network work and is not wired into
-the local shell. A real bootstrap must render native UI while responses remain
-pending and keep protected data/actions behind their actual prerequisites.
+Construction starts no token resolution or network work. The authenticated root
+owns workspace bootstrap, and the retained chat-list owner starts its independent
+reads after authorization. Native UI renders while responses remain pending;
+protected data/actions stay behind their actual prerequisites.
 
 The client returns typed HTTP/network/incompatible-response failures, propagates
-coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
-64 KiB after gzip decompression, and closes responses. Error status remains
+coroutine cancellation, streams successful JSON responses without an application
+size cutoff, limits error envelopes to 64 KiB after gzip decompression, and closes
+responses. Error status remains
 available when its envelope is malformed/oversized. Unknown fields permit additive
 responses; required nullable fields and enum values retain the generated reader's contract.
 JSON field types follow Kotlin serialization semantics rather than recreating
@@ -406,8 +442,8 @@ envelope metadata remains unknown. Coroutine cancellation still propagates.
 
 HTTP 426 retains a read-only `updateRequired` state and blocks further calls
 from that client; a malformed envelope keeps the minimum version unknown.
-The real authenticated root must observe this state and present its native
-blocking update destination. No self-clear/retry is provided for an installed
+The authenticated root observes this state and presents its native blocking
+update destination. No self-clear/retry is provided for an installed
 version that needs an update. The backend Android floor starts unset; see
 [Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
 
@@ -426,8 +462,9 @@ failures, including `503 Retry-After: 0`. A lost response is not remote rollback
 operation owners decide retry/readback. `SignedTransferClient` owns a separate
 HTTP client without the token provider, cookies or API/client headers. It accepts
 signed HTTPS download/upload URLs, rejects credential-header injection and
-redirects, and requires a download byte limit. Large file/streaming/resume owners
-should add their own bounded file APIs with the actual feature.
+redirects, and supports both explicit-limit byte downloads and stream consumers.
+The chat/Project archive readers use streaming JSON. File/resume owners should add
+their own file APIs with the actual feature.
 
 Release network policy requires HTTPS. Debug permits cleartext only for
 `localhost`, `127.0.0.1` and `::1`, for local transport fixtures/development.
