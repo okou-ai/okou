@@ -7,7 +7,12 @@ export function addressPaste(input: string): string {
   const hasSpaces = (text.match(/\s+/gu) ?? []).some((space) => {
     return !/[\r\n]/u.test(space);
   });
-  const output = text.replace(/\s*[\r\n]\s*/gu, hasSpaces ? " " : "");
+  const output = text.replace(/\s+/gu, (space) => {
+    if (!/[\r\n]/u.test(space)) {
+      return space;
+    }
+    return hasSpaces ? " " : "";
+  });
   let cursor = 0;
   let removed = false;
   while (cursor < output.length) {
