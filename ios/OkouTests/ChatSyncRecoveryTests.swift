@@ -78,9 +78,14 @@ final class ChatSyncRecoveryTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.listReads } - before, 3)
     XCTAssertEqual(store.list.threads.first?.title, "Saved chat")
     XCTAssertNotNil(store.selectedConversation)
-    XCTAssertNotNil(store.list.syncError)
     XCTAssertNil(store.list.actionError)
-    XCTAssertEqual(store.synchronizationState, .updateFailed)
+    // The sidebar, search, and sync banner now observe this original failed Task.
+    do {
+      try await store.list.stateStore.get(store.list.listValue).value
+      XCTFail("The shared chat-list read must retain the exhausted HTTP failure")
+    } catch {
+      XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+    }
 
     fixture.state.value.withLock {
       $0.listOffline = false
@@ -88,6 +93,11 @@ final class ChatSyncRecoveryTests: XCTestCase {
     }
     await store.refresh([.threadList])
     XCTAssertEqual(store.list.threads.first?.title, "Recovered chat")
+    do {
+      try await store.list.stateStore.get(store.list.listValue).value
+    } catch {
+      XCTFail("Explicit retry must replace the failed chat-list Task: \(error)")
+    }
     XCTAssertNil(store.list.syncError)
     XCTAssertNil(store.synchronizationState)
   }

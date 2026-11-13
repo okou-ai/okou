@@ -77,7 +77,7 @@ final class WorkspaceStore {
 
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
-    if list.isLoading || selectedConversation?.isLoading == true { return .updating }
+    if selectedConversation?.isLoading == true { return .updating }
     if list.syncError != nil
       || selectedConversation?.syncError != nil
     {
@@ -633,8 +633,8 @@ final class WorkspaceStore {
       await list.restoreCached()
       guard ownsRequest() else { return false }
       if !list.threads.contains(where: { $0.id == id }) {
-        await list.refresh(waitForCurrent: true)
-        guard ownsRequest(), list.error == nil else { return false }
+        let refreshed = await list.refresh(waitForCurrent: true)
+        guard ownsRequest(), refreshed, list.error == nil else { return false }
       }
       guard ownsRequest() else { return false }
       // Keep the destination resident while its history resolves the run anchor.
@@ -671,7 +671,9 @@ final class WorkspaceStore {
     guard search.ownsPresentation(searchID) else { return false }
     search.setOpeningError(nil)
     let needsRefresh = !list.threads.contains(where: { $0.id == id })
-    if needsRefresh { await list.refresh(waitForCurrent: true) }
+    if needsRefresh {
+      guard await list.refresh(waitForCurrent: true) else { return false }
+    }
     guard !closed, !Task.isCancelled else { return false }
     guard search.ownsPresentation(searchID) else { return false }
     guard !needsRefresh || list.error == nil else { return false }
