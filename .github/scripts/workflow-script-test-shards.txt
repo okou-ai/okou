@@ -76,6 +76,7 @@
 2 staging-workflow-test.sh
 2 verify-okou-cli-artifact-test.sh
 2 vm0-monitoring-runner-status-collect-test.sh
+2 vm0-monitoring-runner-ingress-collect-test.sh
 2 wait-runner-image-groups-test.sh
 3 ansible-ssh-control-path-test.sh
 3 app-preview-ingress-workflow-test.sh
