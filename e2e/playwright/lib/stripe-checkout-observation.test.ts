@@ -60,6 +60,7 @@ test("checkout observations distinguish invalid submission from a completed requ
   assert.equal(email?.focused, true);
   assert.deepEqual(invalid.frames[0].formEvents?.invalidFields, ["email"]);
   assert.equal(invalid.frames[0].formEvents?.submitEvents, 0);
+  assert.equal(invalid.frames[0].formEvents?.submitClickEvents, 1);
   assert.deepEqual(observer.snapshot().requests, []);
   // Reading validity must not invoke checkValidity/reportValidity or change
   // focus, inputs or validation events while collecting failure evidence.

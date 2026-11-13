@@ -1,7 +1,8 @@
 import type { Frame, Page, Request, Response } from "@playwright/test";
 
 const MAX_REQUESTS = 32;
-const MAX_NAVIGATIONS = 16;
+const MAX_MAIN_NAVIGATIONS = 8;
+const MAX_CHILD_NAVIGATIONS = 24;
 
 export type StripeInputName =
   | "email"
@@ -18,6 +19,9 @@ interface StripeFormEvents {
   emailInputEvents: number;
   emailChangeEvents: number;
   emailBlurEvents: number;
+  submitPointerDownEvents: number;
+  submitPointerUpEvents: number;
+  submitClickEvents: number;
 }
 
 declare global {
@@ -61,6 +65,9 @@ export async function observeStripeCheckout(page: Page) {
       emailInputEvents: 0,
       emailChangeEvents: 0,
       emailBlurEvents: 0,
+      submitPointerDownEvents: 0,
+      submitPointerUpEvents: 0,
+      submitClickEvents: 0,
     };
     window.__okouStripeFormEvents = events;
     document.addEventListener("submit", () => events.submitEvents++, true);
@@ -95,6 +102,28 @@ export async function observeStripeCheckout(page: Page) {
           if (type === "input") events.emailInputEvents++;
           if (type === "change") events.emailChangeEvents++;
           if (type === "blur") events.emailBlurEvents++;
+        },
+        true,
+      );
+    }
+    for (const type of ["pointerdown", "pointerup", "click"] as const) {
+      document.addEventListener(
+        type,
+        (event) => {
+          const button =
+            event.target instanceof Element
+              ? event.target.closest("button")
+              : null;
+          if (
+            !button ||
+            !/^(subscribe|start trial)$/iu.test(
+              button.textContent?.trim() ?? "",
+            )
+          )
+            return;
+          if (type === "pointerdown") events.submitPointerDownEvents++;
+          if (type === "pointerup") events.submitPointerUpEvents++;
+          if (type === "click") events.submitClickEvents++;
         },
         true,
       );
@@ -148,13 +177,17 @@ export async function observeStripeCheckout(page: Page) {
     if (observation) observation.outcome = "failed";
   };
   const onNavigated = (frame: Frame) => {
-    if (navigations.length >= MAX_NAVIGATIONS) {
+    const main = frame === page.mainFrame();
+    const count = navigations.filter(
+      (navigation) => navigation.main === main,
+    ).length;
+    if (count >= (main ? MAX_MAIN_NAVIGATIONS : MAX_CHILD_NAVIGATIONS)) {
       omittedNavigations++;
       return;
     }
     navigations.push({
       origin: new URL(frame.url()).origin,
-      main: frame === page.mainFrame(),
+      main,
       elapsedMs: elapsed(),
     });
   };

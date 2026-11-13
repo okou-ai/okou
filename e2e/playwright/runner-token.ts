@@ -228,7 +228,11 @@ async function preparePaidRunner(
       vercelAutomationBypassSecret,
     });
     await page.goto(checkoutUrl, { waitUntil: "domcontentloaded" });
-    await fillStripeCheckout(page);
+    const formLocation = await fillStripeCheckout(page);
+    console.log("Runner Checkout submit click returned", {
+      target: target.fileName,
+      formLocation,
+    });
     await page.waitForURL((url) => url.origin === new URL(appUrl).origin, {
       timeout: 180_000,
       waitUntil: "domcontentloaded",

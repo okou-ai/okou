@@ -632,7 +632,9 @@ async function disableLinkSaveInfo(frame: Frame): Promise<void> {
   }
 }
 
-export async function fillStripeCheckout(page: Page): Promise<void> {
+export async function fillStripeCheckout(
+  page: Page,
+): Promise<"main" | "descendant"> {
   await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 30_000 });
 
   const formFrame = await waitForCheckoutFormReady(page);
@@ -673,4 +675,5 @@ export async function fillStripeCheckout(page: Page): Promise<void> {
   // earlier opt-out. Reassert the intended checkout form state before payment.
   await disableLinkSaveInfo(formFrame);
   await checkoutSubmitLocator(formFrame).click({ timeout: 30_000 });
+  return formFrame === page.mainFrame() ? "main" : "descendant";
 }
