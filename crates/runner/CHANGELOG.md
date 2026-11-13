@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.248.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.5...runner-rs-v0.248.6) (2026-11-13)
+
+
+### Bug Fixes
+
+* **runner:** initialize postgres directories in updated rootfs ([#46970](https://github.com/okou-ai/okou/issues/46970)) ([b896054](https://github.com/okou-ai/okou/commit/b8960548c4df22d0210ab232239b6fa01d2ef720))
+
 ## [0.248.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.4...runner-rs-v0.248.5) (2026-11-13)
 
 ### Release Dependencies

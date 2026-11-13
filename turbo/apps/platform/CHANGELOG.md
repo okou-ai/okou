@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1123.2](https://github.com/okou-ai/okou/compare/app-v0.1123.1...app-v0.1123.2) (2026-11-13)
+
+
+### Performance Improvements
+
+* **platform:** narrow vnc field editor subscriptions ([#46992](https://github.com/okou-ai/okou/issues/46992)) ([8267d6b](https://github.com/okou-ai/okou/commit/8267d6b1d1c9fc7ad10fdcb40821ebc5dc2e2bfe))
+
 ## [0.1123.1](https://github.com/okou-ai/okou/compare/app-v0.1123.0...app-v0.1123.1) (2026-11-13)
 
 
