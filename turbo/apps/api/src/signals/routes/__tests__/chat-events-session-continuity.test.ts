@@ -710,16 +710,26 @@ describe("CHAT-02: run-level model overrides", () => {
 
     // The launch reads the thread session when the slot frees, not when the
     // input was accepted.
-    await cancelChatRun(actor, blockerOne.runId);
+    const blockerOneClaim = await claimChatRun(runnerGroup, blockerOne.runId);
+    const blockerTwoClaim = await claimChatRun(runnerGroup, blockerTwo.runId);
+    await cancelChatRun(
+      actor,
+      blockerOne.runId,
+      blockerOneClaim.sandboxHeaders,
+    );
     await flushWaitUntilForTest();
     const picked = await waiting.launchedRun();
-    await waitForRunStatus(actor, picked.runId, "pending");
+    await waitForRunStatus(actor, picked.runId, "running");
     const resumed = await claimChatRun(runnerGroup, picked.runId);
     expect(resumed.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
-    await cancelChatRun(actor, picked.runId);
-    await cancelChatRun(actor, blockerTwo.runId);
+    await cancelChatRun(actor, picked.runId, resumed.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      blockerTwo.runId,
+      blockerTwoClaim.sandboxHeaders,
+    );
   }, 90_000);
 
   // Caller-owned Fable (Claude Code) and Astra (Codex) use distinct runtime families.
@@ -795,30 +805,25 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(secondRun.result?.framework).toBe(toRuntime);
 
       const runners = createRunsApi(context);
-      const holders = [randomUUID(), randomUUID()];
-      for (const [index, sourceRunId] of [
-        first.runId,
-        second.runId,
-      ].entries()) {
-        await runners.requestHeartbeatRunner(true, [200], {
-          runnerId: holders[index],
-          group: runnerGroup,
-          snapshotGeneration: 7,
-          snapshotSequence: 1,
-          admittableProfiles: [],
-          heldSandboxStates: [
-            {
-              reuseKey: `thread:${first.threadId}`,
-              lastCompletedAt: nowDate().toISOString(),
-              reusableSandbox: {
-                profile: "vm0/default",
-                sourceRunId,
+      const holders = [];
+      for (const sourceRunId of [first.runId, second.runId]) {
+        const holder = await runners.registerDirectRunner(runnerGroup, {
+          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 7 },
+          heartbeat: {
+            heldSandboxStates: [
+              {
+                reuseKey: `thread:${first.threadId}`,
+                lastCompletedAt: nowDate().toISOString(),
+                reusableSandbox: {
+                  profile: "vm0/default",
+                  sourceRunId,
+                },
               },
-            },
-          ],
+            ],
+          },
         });
+        holders.push(holder.runnerId);
       }
-      context.mocks.ably.publish.mockClear();
       const third = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
@@ -826,22 +831,10 @@ describe("CHAT-02: run-level model overrides", () => {
           "continue with both earlier rounds when returning to the first model",
         model: from,
       });
-      const polled = await runners.pollRunner(runnerGroup);
-      expect(polled.body.job).toMatchObject({
-        runId: third.runId,
-        runnerPreference: {
-          tier: "exactSandbox",
-          predecessorRunId: second.runId,
-          runnerIdentity: { runnerId: holders[1], heartbeatGeneration: 7 },
-        },
+      expect(runners.dispatchedRun(third.runId)).toMatchObject({
+        runnerId: holders[1],
+        heartbeatGeneration: 7,
       });
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-        "job",
-        expect.objectContaining({
-          runId: third.runId,
-          runnerPreference: polled.body.job?.runnerPreference,
-        }),
-      );
       const thirdClaim = await claimChatRun(runnerGroup, third.runId);
       expect(thirdClaim.claim.cliAgentType).toBe(fromRuntime);
       expect(thirdClaim.claim.nativeContinuation).toMatchObject({

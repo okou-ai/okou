@@ -309,11 +309,8 @@ describe("shared Browser public consumers", () => {
       });
       await runs.heartbeatRunner(f.owned.runnerGroup);
       await flushWaitUntilForTest();
-      const runId = (await runs.pollRunner(f.owned.runnerGroup)).body.job
-        ?.runId;
-      if (!runId) {
-        throw new Error("Expected the Slack chat Run");
-      }
+      const input = await runs.nextReceivedExecution(f.owned.runnerGroup);
+      const runId = input.runId;
       expect(
         (
           await createRunReadsApi(context).requestReadLogById(

@@ -55,7 +55,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
-// real run dispatch through runner poll/claim, and completion replies through
+// real run dispatch through the Runner HTTP receiver, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
 // APIs; the only mocked surfaces are the AgentPhone provider, Stripe, Clerk,
 // S3, and Axiom boundaries.
@@ -275,19 +275,8 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
 }> {
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
-  let runId: string | undefined;
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      const poll = await runs.pollRunner(runnerGroup);
-      runId = poll.body.job?.runId;
-      return runId ?? null;
-    })(),
-  ).resolves.not.toBeNull();
-  if (!runId) {
-    throw new Error("Expected an AgentPhone run to be dispatched");
-  }
-  const claim = await runs.executionInput(runId);
+  const claim = await runs.nextReceivedExecution(runnerGroup);
+  const runId = claim.runId;
   if (claim.cliAgentType !== "claude-code" && claim.cliAgentType !== "codex") {
     throw new Error(
       `Expected a native AgentPhone claim, got ${claim.cliAgentType}`,
@@ -2895,7 +2884,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         .sort(),
     ).toStrictEqual([...messageIds].sort());
     await runs.heartbeatRunner(runnerGroup);
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     const finalLifecycle = await chat.requestThreadEvents(actor, {}, [200]);
     if (finalLifecycle.status !== 200) {
       throw new Error("Expected the completed phone thread lifecycle");
@@ -3295,7 +3285,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await send("use the system default");
     await runs.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     const events = await createChatFilesBddApi(context).listThreadEventRows(
       actor,
       preferred.threadId,
@@ -3485,8 +3475,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       body: "third queued prompt",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const whileBusy = await runs.pollRunner(runnerGroup);
-    expect(whileBusy.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
 
     await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
     const sharedSession = await waitForRunSessionIdPresent(actor, run1.runId);
@@ -3501,8 +3491,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForRunSessionId(actor, run3.runId, sharedSession);
 
     await runs.heartbeatRunner(runnerGroup);
-    const drained = await runs.pollRunner(runnerGroup);
-    expect(drained.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
   });
 
   it("rejects a queued AgentPhone input and replies with the failure when launch preparation fails with debug enabled", async () => {
@@ -3711,7 +3701,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(sends.messages).toHaveLength(beforeCompletion);
     await runs.heartbeatRunner(runnerGroup);
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
   });
 
   it("deduplicates repeated provider messages and completion callbacks", async () => {
@@ -3739,8 +3730,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const run = await claimDispatchedRun(runnerGroup);
     expect(run.prompt).toBe("process exactly once");
     await runs.heartbeatRunner(runnerGroup);
-    const duplicateJob = await runs.pollRunner(runnerGroup);
-    expect(duplicateJob.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
 
     const sendsBeforeCompletion = sends.messages.length;
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
@@ -3760,8 +3751,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       ...message,
     });
     await runs.heartbeatRunner(runnerGroup);
-    const lateDuplicate = await runs.pollRunner(runnerGroup);
-    expect(lateDuplicate.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     expect(sends.messages).toHaveLength(sendsAfterCompletion);
   });
 
@@ -3805,7 +3796,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const run = await claimDispatchedRun(runnerGroup);
       expect(run.prompt).toBe(message.body);
       await runs.heartbeatRunner(runnerGroup);
-      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      await flushWaitUntilForTest();
+      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
       if (isGroup) {
         const history = await integrations.requestAgentPhoneGroupHistory(
           actor,
@@ -3824,7 +3816,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForSendCount(sends, sendCount + 1);
       await ap.postAgentPhoneInboundMessage(message);
       await runs.heartbeatRunner(runnerGroup);
-      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+      await flushWaitUntilForTest();
+      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
       expect(sends.messages).toHaveLength(sendCount + 1);
     },
   );
@@ -4684,7 +4677,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(response.body).toBe("OK");
     await runs.heartbeatRunner(runnerGroup);
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     expect(sends.messages).toHaveLength(sendsBefore);
   });
 
@@ -5023,7 +5017,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     }
 
     await runs.heartbeatRunner(runnerGroup);
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     expect(sends.messages).toHaveLength(sendsBefore);
     for (const groupId of groupIds) {
       const history = await integrations.requestAgentPhoneGroupHistory(
@@ -5413,8 +5408,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
     });
     await runs.heartbeatRunner(runnerGroup);
-    const idle = await runs.pollRunner(runnerGroup);
-    expect(idle.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
 
     // A later direct message must not inherit content from a group chat.
     await ap.postAgentPhoneInboundMessage({
@@ -5524,8 +5519,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(borrowPrompt.body).not.toContain("/settings/agentphone?");
     await runs.heartbeatRunner(runnerGroup);
-    const borrowIdle = await runs.pollRunner(runnerGroup);
-    expect(borrowIdle.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     const ownerGroupEvents = await createChatFilesBddApi(
       context,
     ).listThreadEvents(actor, groupThreadId);
@@ -5615,8 +5610,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: true,
     });
     await runs.heartbeatRunner(runnerGroup);
-    const idle = await runs.pollRunner(runnerGroup);
-    expect(idle.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
   });
 
   it.each(["Okou hi", "  OKOU，帮我总结", "Okou", "okou would probably know"])(
@@ -5675,8 +5670,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         isGroup: true,
       });
       await runs.heartbeatRunner(runnerGroup);
-      const idle = await runs.pollRunner(runnerGroup);
-      expect(idle.body.job).toBeNull();
+      await flushWaitUntilForTest();
+      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     }
     expect(sends.messages).toHaveLength(beforeChatter);
   });
@@ -5701,8 +5696,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     expect(sends.messages).toHaveLength(before);
     await runs.heartbeatRunner(runnerGroup);
-    const idle = await runs.pollRunner(runnerGroup);
-    expect(idle.body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
   });
 
   it("tells a group when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
@@ -5794,7 +5789,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       }),
     ).toBeFalsy();
     await runs.heartbeatRunner(runnerGroup);
-    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    await flushWaitUntilForTest();
+    expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
 
     // Completing the active run frees the slot and launches the waiting input.
     await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);

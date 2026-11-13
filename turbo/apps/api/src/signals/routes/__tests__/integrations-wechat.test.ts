@@ -271,18 +271,7 @@ async function responseFixture() {
       await receiveBatch(connectionId);
     },
     async claim() {
-      let runId: string | undefined;
-      await expect
-        .poll(
-          async () => {
-            await runs.heartbeatRunner(runnerGroup);
-            runId = (await runs.pollRunner(runnerGroup)).body.job?.runId;
-            return runId;
-          },
-          { timeout: 10_000 },
-        )
-        .toBeDefined();
-      return await runs.executionInput(uuid().parse(runId));
+      return await runs.nextReceivedExecution(runnerGroup);
     },
     async finish(
       run: { readonly runId: string; readonly sandboxToken: string },
@@ -1229,19 +1218,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     return await receiveBatch(connectionId);
   }
   async function claim() {
-    let runId: string | undefined;
-    await expect
-      .poll(
-        async () => {
-          await runs.heartbeatRunner(runnerGroup);
-          const poll = await runs.pollRunner(runnerGroup);
-          runId = poll.body.job?.runId;
-          return runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBeDefined();
-    return await runs.executionInput(uuid().parse(runId));
+    return await runs.nextReceivedExecution(runnerGroup);
   }
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({

@@ -386,6 +386,7 @@ type DispatchEnvelope = zInfer<typeof runnerDispatchEnvelopeSchema>;
 interface CapturedDispatch {
   readonly group: string;
   readonly envelope: DispatchEnvelope;
+  observed: boolean;
 }
 const dispatchedInputs = singleton(() => {
   return new WeakMap<AbortSignal, Map<string, CapturedDispatch>>();
@@ -585,6 +586,9 @@ export function createRunsApi(context: TestContext) {
           executionInputs(context).set(envelope.executionContext.runId, {
             group,
             envelope,
+            observed:
+              executionInputs(context).get(envelope.executionContext.runId)
+                ?.observed ?? false,
           });
           if (options.reply) {
             return await options.reply(envelope, bytes);
@@ -886,13 +890,36 @@ export function createRunsApi(context: TestContext) {
       return envelope;
     },
 
+    unobservedDispatches(group: string) {
+      return [...executionInputs(context).values()]
+        .filter((entry) => {
+          return entry.group === group && !entry.observed;
+        })
+        .map((entry) => {
+          return entry.envelope;
+        });
+    },
+
+    async nextReceivedExecution(group: string) {
+      await flushWaitUntilForTest();
+      const entry = [...executionInputs(context).values()].find((entry) => {
+        return entry.group === group && !entry.observed;
+      });
+      if (!entry) {
+        throw new Error(`No unobserved execution was dispatched to ${group}`);
+      }
+      entry.observed = true;
+      return entry.envelope.executionContext;
+    },
+
     async executionInput(runId: string) {
       await flushWaitUntilForTest();
-      const envelope = executionInputs(context).get(runId)?.envelope;
-      if (!envelope) {
+      const entry = executionInputs(context).get(runId);
+      if (!entry) {
         throw new Error(`Run ${runId} was not directly dispatched`);
       }
-      return envelope.executionContext;
+      entry.observed = true;
+      return entry.envelope.executionContext;
     },
 
     async readRunnerCancellation(

@@ -27,7 +27,6 @@ import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
-import { singleton } from "../../../lib/singleton";
 import { server } from "../../../mocks/server";
 import { seededSkillBundleArchive } from "../../../test-fixtures/seeded-skill-bundle-archive";
 
@@ -258,25 +257,18 @@ async function flushWaitUntilAndAssert(assertion: () => void): Promise<void> {
   assertion();
 }
 
-const observedDispatches = singleton(() => {
-  return new WeakMap<AbortSignal, Set<string>>();
-});
 async function pollRunnerRun(
   runnerGroup: string,
   message: string,
 ): Promise<string> {
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
-  const observed =
-    observedDispatches().get(context.signal) ?? new Set<string>();
-  observedDispatches().set(context.signal, observed);
-  const runId = runs.receivedDispatches(runnerGroup).find((entry) => {
-    return !observed.has(entry.executionContext.runId);
-  })?.executionContext.runId;
+  const runId =
+    runs.unobservedDispatches(runnerGroup)[0]?.executionContext.runId;
   if (!runId) {
     throw new Error(message);
   }
-  observed.add(runId);
+  await runs.executionInput(runId);
   return runId;
 }
 
@@ -2176,8 +2168,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       await flushWaitUntilForTest();
       await runs.heartbeatRunner(runnerGroup);
-      const polled = await runs.pollRunner(runnerGroup);
-      expect(polled.body.job).toBeNull();
+      expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
     });
   });
 
@@ -3563,6 +3554,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadTs,
     });
     const stoppedRunId = await pollSlackRun(runnerGroup);
+    const stoppedInput = await runs.executionInput(stoppedRunId);
     const { chatThreadId } = await ownedThreadWhere(
       actor,
       launchedBy(stoppedRunId),
@@ -3672,6 +3664,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(1);
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    await webhooks.requestAgentComplete(
+      { runId: stoppedRunId, exitCode: 137 },
+      { authorization: `Bearer ${stoppedInput.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUserId,
