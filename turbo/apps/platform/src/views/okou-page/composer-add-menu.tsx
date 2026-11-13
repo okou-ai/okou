@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Plus, type LucideIcon } from "lucide-react";
 import {
@@ -25,7 +25,10 @@ interface ComposerAddMenuRow {
  */
 export type ComposerAddMenuItem = ComposerAddMenuRow &
   (
-    | { readonly onSelect: () => void }
+    | {
+        /** Return false when the action has handed focus to its destination. */
+        readonly onSelect: () => void | false;
+      }
     | {
         /** The submenu's own menu items, rendered flat like the rows here. */
         readonly submenu: ReactNode;
@@ -73,11 +76,18 @@ export function ComposerAddMenu({
   readonly groups: readonly ComposerAddMenuGroup[];
 }) {
   const { t } = useTranslation();
+  const restoreFocus = useRef(true);
   const label = t(($) => {
     return $.chat.composer.add;
   });
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) {
+          restoreFocus.current = true;
+        }
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -98,6 +108,9 @@ export function ComposerAddMenu({
         sideOffset={8}
         aria-label={label}
         className="w-56"
+        finalFocus={() => {
+          return restoreFocus.current;
+        }}
       >
         {/* Flat on purpose: Base UI reads its items from the popup's own
             children, so a wrapper element per group would sit between them and
@@ -130,7 +143,12 @@ export function ComposerAddMenu({
                 );
               }
               return (
-                <DropdownMenuItem key={item.id} onClick={item.onSelect}>
+                <DropdownMenuItem
+                  key={item.id}
+                  onClick={() => {
+                    restoreFocus.current = item.onSelect() !== false;
+                  }}
+                >
                   <ComposerAddMenuRowLabel item={item} />
                 </DropdownMenuItem>
               );

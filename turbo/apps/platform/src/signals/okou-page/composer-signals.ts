@@ -981,6 +981,9 @@ function createSubmitCurrentInput({
         nextSubmission,
         signal,
       );
+      if (submitted) {
+        set(taskChips.home.dismissMenu$);
+      }
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
         // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.

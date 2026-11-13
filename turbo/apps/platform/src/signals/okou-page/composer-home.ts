@@ -7,6 +7,7 @@ import type {
 
 export type HomeWorkflowKind = "scheduled" | "triggers" | "advanced";
 export type HomeExploreKind = "search" | "research";
+export type HomeCapability = HomeExploreKind | "create" | "workflow";
 
 /** Discovery and its injected prompts are local to each composer. */
 export function createComposerHomeSignals(
@@ -17,12 +18,17 @@ export function createComposerHomeSignals(
   closeWorkflow$: Command<void, []>,
 ) {
   const internalVisible$ = state(true);
+  const internalMenuOpen$ = state(false);
   const internalExploreKind$ = state<HomeExploreKind | null>(null);
   const internalWorkflowKind$ = state<HomeWorkflowKind>("scheduled");
   const task$ = computed((get) => {
     return get(internalVisible$)
       ? (get(internalExploreKind$) ?? get(selectedTask$))
       : null;
+  });
+  // Sticky generation settings handed to another composer do not open discovery.
+  const menuTask$ = computed((get) => {
+    return get(internalMenuOpen$) ? get(task$) : null;
   });
   const workflowKind$ = computed((get) => {
     return get(internalWorkflowKind$);
@@ -31,9 +37,13 @@ export function createComposerHomeSignals(
     set(internalVisible$, true);
     set(internalExploreKind$, null);
   });
+  const dismissMenu$ = command(({ set }) => {
+    set(internalMenuOpen$, false);
+  });
   const close$ = command(async ({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(internalVisible$, false);
+    set(internalMenuOpen$, false);
     set(closeWorkflow$);
     const cleared = set(actions.clearPrompt$);
     // The initiating capability control has unmounted; the composer remains.
@@ -51,6 +61,30 @@ export function createComposerHomeSignals(
     set(internalVisible$, true);
     set(internalExploreKind$, kind);
   });
+  const openCapability$ = command(
+    ({ get, set }, capability: HomeCapability) => {
+      set(internalMenuOpen$, true);
+      switch (capability) {
+        case "search":
+        case "research": {
+          set(openExplore$, capability);
+          return;
+        }
+        case "create": {
+          const task = get(selectedTask$);
+          set(
+            openTask$,
+            task !== null && task !== "workflow" ? task : "presentation",
+          );
+          return;
+        }
+        case "workflow": {
+          set(openWorkflow$, get(workflowKind$));
+          return;
+        }
+      }
+    },
+  );
   const prepareWorkflow$ = command(
     async (
       { set },
@@ -90,11 +124,14 @@ export function createComposerHomeSignals(
   );
   return {
     task$,
+    menuTask$,
     workflowKind$,
     show$,
     close$,
+    dismissMenu$,
     openWorkflow$,
     openExplore$,
+    openCapability$,
     prepareWorkflow$,
     prepareExplore$,
   };

@@ -25,6 +25,8 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { useComposerCapabilities } from "./composer-capabilities.ts";
+import { ComposerCapabilityTray } from "./composer-capability-tray.tsx";
 import {
   ComposerProjectControl,
   useComposerProjectMenuItem,
@@ -5645,16 +5647,7 @@ function VoiceDraftFooter({
   );
 }
 
-/**
- * Group attachments, the new chat's Project and templates separately from
- * importing skills, which brings workflows in from the user's Claude Code or
- * Codex.
- *
- * Starting a presentation, image, website or visualization deliberately
- * stays out: the task chips sit directly under the composer and already reach
- * every one of them in a single click, so a second copy behind the `+` would be
- * the longer route to the same place.
- */
+/** Attachments, home capabilities and skill imports share the add menu. */
 function useComposerAddMenuGroups(
   signals: ComposerSignals,
 ): readonly ComposerAddMenuGroup[] {
@@ -5663,6 +5656,19 @@ function useComposerAddMenuGroups(
   const template = useTemplatePickerTrigger(signals);
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const project = useComposerProjectMenuItem(signals);
+  const capabilities = useComposerCapabilities(signals);
+  const capabilityItem = (
+    capability: NonNullable<typeof capabilities>[number],
+  ) => {
+    return {
+      ...capability,
+      onSelect: () => {
+        capability.run();
+        // The capability panel keeps the draft's caret, not the menu trigger.
+        return false as const;
+      },
+    };
+  };
   return [
     [
       {
@@ -5683,6 +5689,14 @@ function useComposerAddMenuGroups(
         onSelect: template.open,
       },
     ],
+    ...(capabilities
+      ? [
+          [
+            capabilityItem(capabilities[0]),
+            ...capabilities.slice(1).map(capabilityItem),
+          ] satisfies ComposerAddMenuGroup,
+        ]
+      : []),
     [
       {
         id: "import-skills",
@@ -7084,6 +7098,7 @@ export function ChatComposer({
       >
         <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
+        {layout !== "home" && <ComposerCapabilityTray signals={signals} />}
         <ComposerCard signals={signals} layout={layout} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
