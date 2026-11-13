@@ -134,7 +134,6 @@ describe("Browser proxy attachment and safe tabs", () => {
             viewerUrl: "https://app.okou.ai/browsers/" + THREAD,
             liveUrl: "https://private-live.test/?token=private",
             screenshotUrl: null,
-            proxyCountryCode: null,
             timeoutMinutes: 240,
             idleExpiresAt: "2026-11-02T10:10:00.000Z",
             suspendedAt: null,

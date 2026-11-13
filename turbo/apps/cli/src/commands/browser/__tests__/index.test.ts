@@ -69,7 +69,6 @@ function browser(status: "active" | "suspended" = "active") {
       status === "active"
         ? "https://live.browser-use.com/?wss=secret-live-token"
         : null,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
     idleExpiresAt: status === "active" ? "2026-07-24T10:10:00.000Z" : null,
     suspendedAt: status === "suspended" ? "2026-07-24T10:05:00.000Z" : null,
@@ -222,7 +221,6 @@ describe("okou browser command", () => {
 
     expect(requestBody).toStrictEqual({
       name: "booking",
-      proxyCountryCode: null,
     });
     expect(authorization).toBe("Bearer test-token");
     expect(spawnSyncMock).toHaveBeenCalledWith(

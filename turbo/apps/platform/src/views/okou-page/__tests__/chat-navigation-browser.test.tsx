@@ -64,9 +64,7 @@ function liveBrowserSession(): BrowserSession {
     viewerUrl: `https://viewer.example.test/browsers/${THREAD_ID}`,
     liveUrl: "https://viewer.example.test/live/research",
     screenshotUrl: null,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
-    screen: { width: 1440, height: 900, resizable: true },
     window: {
       instanceId: "22222222-2222-4222-8222-222222222222",
       primaryWindowId: 0,

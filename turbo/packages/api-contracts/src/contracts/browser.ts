@@ -51,15 +51,6 @@ export const browserSuspensionReasonSchema = zEnum([
   "user",
 ]);
 
-const browserScreenSchema = object({
-  width: literal(BROWSER_SCREEN_WIDTH),
-  height: number()
-    .int()
-    .min(BROWSER_MIN_SCREEN_HEIGHT)
-    .max(BROWSER_MAX_SCREEN_HEIGHT),
-  resizable: boolean(),
-});
-
 export const browserWindowContextSchema = object({
   instanceId: uuid(),
   primaryWindowId: number().int().nonnegative().safe(),
@@ -74,10 +65,7 @@ export const browserSessionSchema = object({
   viewerUrl: url(),
   liveUrl: url().nullable(),
   screenshotUrl: url().nullable(),
-  proxyCountryCode: string().length(2).nullable(),
   timeoutMinutes: number().int().positive(),
-  // Only live provider instances have persisted window dimensions.
-  screen: browserScreenSchema.optional(),
   // Present while this chat has a live assigned window.
   window: browserWindowContextSchema.optional(),
   // When Okou reclaims the live provider instance unless somebody leases it
@@ -97,16 +85,6 @@ export type BrowserSession = zInfer<typeof browserSessionSchema>;
 
 export const browserCreateRequestSchema = object({
   name: string().trim().min(1).max(64).default("browser"),
-  // Retained for supported API clients; shared provisioning uses the provider's
-  // default location. Remove with the API consumer gate in #42932.
-  proxyCountryCode: string()
-    .trim()
-    .length(2)
-    .transform((value) => {
-      return value.toLowerCase();
-    })
-    .nullable()
-    .default(null),
 }).strict();
 
 export type BrowserCreateRequest = zInfer<typeof browserCreateRequestSchema>;

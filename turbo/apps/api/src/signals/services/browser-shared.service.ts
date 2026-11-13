@@ -202,7 +202,6 @@ function presentation(
     viewerUrl: `${env("APP_URL")}/browsers/${meta.chatThreadId}`,
     liveUrl: live ? session.liveUrl : null,
     screenshotUrl,
-    proxyCountryCode: null,
     timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
     ...(live
       ? {

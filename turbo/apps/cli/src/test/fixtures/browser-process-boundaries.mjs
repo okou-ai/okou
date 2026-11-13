@@ -48,7 +48,6 @@ if (process.argv[2] !== "__browser-proxy") {
       viewerUrl: "https://app.okou.ai/browsers/test-output",
       liveUrl: null,
       screenshotUrl: null,
-      proxyCountryCode: null,
       timeoutMinutes: 240,
       idleExpiresAt: "2026-11-03T10:10:00.000Z",
       suspendedAt: null,
