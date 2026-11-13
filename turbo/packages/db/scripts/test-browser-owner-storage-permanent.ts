@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { browserOwnerProfiles } from "../src/schema/browser-owner";
 import { browserChatSessions } from "../src/schema/browser-chat-session";
+import { browserSessionScreenshotDeletions } from "../src/schema/browser-session";
 
 /** Current schema integrity; caller-level concurrency lives in Runner route tests. */
 export async function validatePermanentBrowserOwnerStorage(
@@ -20,6 +21,7 @@ export async function validatePermanentBrowserOwnerStorage(
     chatThreadId = randomUUID();
   const orgId = `browser-owner-schema-${randomUUID()}`;
   const now = new Date();
+  const screenshotObjectKey = `private-artifacts/${randomUUID()}/preview.png`;
   const creationExpiresAt = new Date(now.getTime() + 60_000);
   const timeoutAt = new Date(now.getTime() + 240 * 60_000);
   try {
@@ -171,6 +173,19 @@ export async function validatePermanentBrowserOwnerStorage(
       ),
       { code: "23514", constraint: "browser_chat_sessions_screenshot_check" },
     );
+    await db
+      .update(browserChatSessions)
+      .set({
+        screenshotObjectKey,
+        screenshotUrl: "https://example.com/browser-preview.png",
+        screenshotCapturedAt: now,
+      })
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
+    await db.insert(browserSessionScreenshotDeletions).values({
+      objectKey: screenshotObjectKey,
+      chatThreadId,
+      createdAt: now,
+    });
     await assert.rejects(
       client.query(
         "UPDATE browser_owner_profiles SET status = 'stopping' WHERE id = $1",
@@ -233,12 +248,37 @@ export async function validatePermanentBrowserOwnerStorage(
     assert.equal(retained?.name, "Saved chat");
     assert.equal(retained?.encryptedTabUrls, "encrypted-urls");
     assert.equal(retained?.tabUrlsCapturedAt?.getTime(), now.getTime());
+    assert.equal(retained?.screenshotObjectKey, screenshotObjectKey);
+    assert.equal(
+      retained?.screenshotUrl,
+      "https://example.com/browser-preview.png",
+    );
+    assert.equal(retained?.screenshotCapturedAt?.getTime(), now.getTime());
     const stale = await client.query(
       "UPDATE browser_owner_profiles SET status = 'stopped' WHERE id = $1 AND instance_id = $2 RETURNING id",
       [profileId, instanceId],
     );
     assert.equal(stale.rowCount, 0);
+    await db
+      .delete(browserChatSessions)
+      .where(eq(browserChatSessions.chatThreadId, chatThreadId));
+    const [intent] = await db
+      .select()
+      .from(browserSessionScreenshotDeletions)
+      .where(
+        eq(browserSessionScreenshotDeletions.objectKey, screenshotObjectKey),
+      );
+    assert.deepEqual(intent, {
+      objectKey: screenshotObjectKey,
+      chatThreadId,
+      createdAt: now,
+    });
   } finally {
+    await db
+      .delete(browserSessionScreenshotDeletions)
+      .where(
+        eq(browserSessionScreenshotDeletions.objectKey, screenshotObjectKey),
+      );
     await db
       .delete(browserChatSessions)
       .where(eq(browserChatSessions.chatThreadId, chatThreadId));

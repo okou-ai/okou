@@ -817,7 +817,9 @@ feature; the catalog shows each one.
   The sidebar's back button and chat selection request native pushes to the chat;
   a swipe is never the only way back. Content that scrolls
   sideways (a code block or a table) participates in UIKit's native gesture arbitration.
-  UIKit owns the interactive pop and its recognition policy.
+  UIKit owns the interactive pop and its animation. Coordinate return gestures
+  with vertical scrolling through public delegate failure relationships;
+  preserve horizontal content arbitration.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
   reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
   Continuing either gesture to a full swipe executes that action; a shorter swipe leaves

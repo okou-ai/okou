@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-script="$repo_root/ansible/files/vm0-monitoring-runner-status-collect.py"
+script="$repo_root/ansible/files/vm0-monitoring-runner-collect.py"
 playbook="$repo_root/ansible/playbooks/provision-monitoring.yml"
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
@@ -37,7 +37,7 @@ run_with_path_env() {
     -u OKOU_RUNNERS_DIR \
     -u OKOU_MONITORING_TEXTFILE_DIR \
     "$@" \
-    python3 "$script" 2>"$stderr_file"
+    python3 -I -B "$script" status 2>"$stderr_file"
 }
 
 run_collector() {
@@ -447,9 +447,9 @@ test_missing_textfile_dir_fails() {
 }
 
 test_playbook_provisions_collector_identity_and_cadence() {
-  assert_playbook_contains 'src: ../files/vm0-monitoring-runner-status-collect.py'
-  assert_playbook_contains 'dest: /usr/local/bin/vm0-monitoring-runner-status-collect'
-  assert_playbook_contains 'ExecStart=/usr/local/bin/vm0-monitoring-runner-status-collect'
+  assert_playbook_contains 'src: ../files/vm0-monitoring-runner-collect.py'
+  assert_playbook_contains 'dest: /usr/local/bin/vm0-monitoring-runner-collect'
+  assert_playbook_contains 'ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-runner-collect status'
   assert_playbook_contains 'dest: /etc/systemd/system/vm0-monitoring-runner-status-collect.service'
   assert_playbook_contains 'dest: /etc/systemd/system/vm0-monitoring-runner-status-collect.timer'
   assert_playbook_contains 'name: vm0-monitoring-runner-status-collect.timer'

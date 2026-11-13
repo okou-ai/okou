@@ -2,7 +2,7 @@
 #
 # Installs Grafana Alloy on bare metal hosts to collect system metrics
 # (via built-in prometheus.exporter.unix), home image cache and runner
-# lifecycle textfile metrics, and remote-write to Grafana Cloud.
+# lifecycle and ingress textfile metrics, and remote-write to Grafana Cloud.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-monitoring.yml \
@@ -34,6 +34,8 @@
           - gpg
           - apt-transport-https
           - software-properties-common
+          - curl
+          - python3-yaml
         state: present
         update_cache: true
         lock_timeout: 300
@@ -94,10 +96,10 @@
         mode: "0755"
       become: true
 
-    - name: Install Okou monitoring runner status collector script
+    - name: Install Okou monitoring Runner collector script
       copy:
-        src: ../files/vm0-monitoring-runner-status-collect.py
-        dest: /usr/local/bin/vm0-monitoring-runner-status-collect
+        src: ../files/vm0-monitoring-runner-collect.py
+        dest: /usr/local/bin/vm0-monitoring-runner-collect
         owner: root
         group: root
         mode: "0755"
@@ -127,8 +129,44 @@
 
           [Service]
           Type=oneshot
-          ExecStart=/usr/local/bin/vm0-monitoring-runner-status-collect
+          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-runner-collect status
+          Environment=PATH=/usr/bin:/bin
+          TimeoutStartSec=15s
+          KillMode=control-group
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/vm0-monitoring/textfile-collector
+          RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
         dest: /etc/systemd/system/vm0-monitoring-runner-status-collect.service
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
+    - name: Install Okou monitoring Runner ingress collector service
+      copy:
+        content: |
+          [Unit]
+          Description=Collect Okou runner public ingress metrics
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/python3 -I -B /usr/local/bin/vm0-monitoring-runner-collect ingress --hostname={{ inventory_hostname }}
+          Environment=PATH=/usr/bin:/bin
+          TimeoutStartSec=35s
+          KillMode=control-group
+          Restart=no
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/vm0-monitoring/textfile-collector
+          RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+        dest: /etc/systemd/system/vm0-monitoring-runner-ingress-collect.service
         owner: root
         group: root
         mode: "0644"
@@ -174,6 +212,26 @@
         mode: "0644"
       become: true
 
+    - name: Install Okou monitoring Runner ingress collector timer
+      copy:
+        content: |
+          [Unit]
+          Description=Collect Okou runner public ingress metrics after a one-minute gap
+
+          [Timer]
+          OnBootSec=15s
+          OnUnitInactiveSec=60s
+          AccuracySec=1s
+          Unit=vm0-monitoring-runner-ingress-collect.service
+
+          [Install]
+          WantedBy=timers.target
+        dest: /etc/systemd/system/vm0-monitoring-runner-ingress-collect.timer
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
     - name: Generate initial Okou home image cache metrics
       systemd:
         name: vm0-monitoring-home-image-cache-collect.service
@@ -204,6 +262,24 @@
         state: started
         enabled: true
         daemon_reload: true
+      become: true
+
+    - name: Enable Okou monitoring Runner ingress collector timer
+      systemd:
+        name: vm0-monitoring-runner-ingress-collect.timer
+        state: started
+        enabled: true
+        daemon_reload: true
+      become: true
+
+    - name: Remove obsolete Okou monitoring Runner collector files after unit reload
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/vm0-monitoring-runner-status-collect
+        - /usr/local/bin/vm0-monitoring-runner-ingress-collect
+        - /var/lib/vm0-monitoring/textfile-collector/.runner-ingress-attempt
       become: true
 
     - name: Configure Grafana Alloy

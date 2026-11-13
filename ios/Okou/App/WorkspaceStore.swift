@@ -73,9 +73,9 @@ final class WorkspaceStore {
   private let draftRepository: ChatDraftRepository?
   private var draftAgentID: String?
   private var agentDraftTask: Task<Void, Never>?
-  /// Chats the API last reported with an unsent draft, updated as this device lets a chat go.
-  private var draftThreadIDs: Set<String> = []
-  @ObservationIgnored private var draftsRevision = 0
+  @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
+    resources: resources, lifecycleTasks: lifecycleTasks,
+    didFail: { [weak self] in self?.handle($0) })
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   var synchronizationState: ChatSynchronizationState? {
@@ -97,8 +97,11 @@ final class WorkspaceStore {
   func retrySynchronization() async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     realtime?.retry()
+    do { try resources.retrySidebarDrafts() } catch { handle(error) }
+    async let drafts: Void = activateDrafts()
     await refreshNavigation()
     await refresh()
+    await drafts
   }
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
@@ -270,7 +273,7 @@ final class WorkspaceStore {
       return conversation.composer.hasContent
     }
     if let composer = conversations[threadID]?.composer { return composer.hasContent }
-    return draftThreadIDs.contains(threadID)
+    return sidebarDrafts.threadIDs.contains(threadID)
   }
 
   func conversation(for id: String) -> ConversationStore? {
@@ -290,6 +293,7 @@ final class WorkspaceStore {
         models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
+      didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id) },
       measurementScope: measurementScope,
       didRequestNewChat: { [weak self] in self?.startNewChat() },
       readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
@@ -324,6 +328,7 @@ final class WorkspaceStore {
 
   @discardableResult
   func close() -> Task<Void, Never> {
+    sidebarDrafts.close()
     threadPreview?.close()
     threadPreview = nil
     closed = true
@@ -461,9 +466,7 @@ final class WorkspaceStore {
     async let indicatorsRefresh: Void = refreshIndicators(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
-      async let drafts: Void = refreshDrafts()
       await list.refresh(includingIndicators: false)
-      await drafts
     }
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await historyRefresh
@@ -1022,32 +1025,17 @@ final class WorkspaceStore {
         chatLinkThreadID != id,
         conversation.canRelease, conversations[id] === conversation
       else { continue }
-      noteDraft(id, conversation.composer.hasContent)
+      sidebarDrafts.noteReleased(id, hasDraft: conversation.composer.hasContent)
       conversation.close()
       conversations[id] = nil
       lastUse[id] = nil
     }
   }
 
-  /// The draft list never gates the chat list: a failed read keeps the last one until the
-  /// next list refresh, and a read that overlaps a local change is dropped.
-  private func refreshDrafts() async {
-    guard let draftRepository else { return }
-    let revision = draftsRevision
-    do {
-      let ids = try await draftRepository.threadIDs()
-      guard !closed, !Task.isCancelled, revision == draftsRevision else { return }
-      draftThreadIDs = ids
-    } catch {
-      handle(error)
-    }
-  }
-
-  /// What this device knew about a chat's draft when it released the chat's composer.
-  private func noteDraft(_ id: String, _ hasDraft: Bool) {
-    draftsRevision &+= 1
-    guard draftThreadIDs.contains(id) != hasDraft else { return }
-    if hasDraft { draftThreadIDs.insert(id) } else { draftThreadIDs.remove(id) }
+  /// Sidebar activation observes the cached draft resource without invalidating it.
+  func activateDrafts() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled, draftRepository != nil else { return }
+    await sidebarDrafts.activate()
   }
 
   private func handle(_ failure: Error) {

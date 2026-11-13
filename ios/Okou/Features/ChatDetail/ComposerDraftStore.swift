@@ -179,6 +179,7 @@ final class ComposerDraftStore {
   private let repository: ChatDraftRepository?
   private let storage: ChatDraftStorage?
   private let didFail: @MainActor (Error) -> Void
+  private let didSave: @MainActor (ComposerDraft) async -> Void
   private var metadata: [ComposerDraft.DraftAttachment] = []
   private var baseline: ComposerDraft?
   private var dirty = false
@@ -194,6 +195,7 @@ final class ComposerDraftStore {
   init(
     target: ChatDraftTarget, commands: ChatCommands, repository: ChatDraftRepository? = nil,
     storage: ChatDraftStorage? = nil, didFail: @escaping @MainActor (Error) -> Void,
+    didSave: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     voiceCapture: (any VoiceAudioCapture)? = nil,
     syncSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -206,6 +208,7 @@ final class ComposerDraftStore {
     self.repository = repository
     self.storage = storage
     self.didFail = didFail
+    self.didSave = didSave
     voice =
       target == .unassigned
       ? nil
@@ -376,6 +379,7 @@ final class ComposerDraftStore {
           conflictingRemote = nil
           syncError = nil
           persist()
+          await didSave(sent)
         } catch is CancellationError { return } catch {
           guard !closed, !Task.isCancelled else { return }
           persist()

@@ -150,7 +150,7 @@ def control_records(waiting, held, joined, request, response, allow, directory):
         preparation.blob(result[key],65536)
 
 
-CONTRACT = preparation.Contract("RunningRestore",wire)
+CONTRACT = preparation.Contract("RunningRestore", wire, validate_running_control=control_records)
 PREFIX,CASES = CONTRACT.prefix,CONTRACT.cases
 
 

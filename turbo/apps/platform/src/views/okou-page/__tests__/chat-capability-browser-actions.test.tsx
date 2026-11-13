@@ -492,6 +492,15 @@ test.each([false, true])(
       within(sidebar).findByText("Browser not live"),
     ).resolves.toBeInTheDocument();
     expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+    const tabRow = within(sidebar)
+      .getByLabelText("New tab")
+      .closest("[data-browser-toolbar]");
+    expect(tabRow).toContainElement(
+      buttonsByName("Close cloud browser", sidebar)[0],
+    );
+    expect(tabRow).toContainElement(
+      within(sidebar).getByLabelText("Open this browser in a new page"),
+    );
     expect(
       within(sidebar).getByLabelText("Remote browser input"),
     ).toBeDisabled();

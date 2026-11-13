@@ -240,77 +240,12 @@ async function resetDatabase(dbUrl: string): Promise<void> {
   });
 }
 
-async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
-  console.log("=== Phase 2.4: Validate expanded browser schema ===\n");
+async function validateCanonicalChatEventTypes(dbUrl: string): Promise<void> {
+  console.log("=== Validate canonical chat event types ===\n");
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
   try {
-    const tables = await client.query<{
-      browserProfiles: string | null;
-      tabSnapshots: string | null;
-    }>(
-      `
-        SELECT
-          to_regclass('public.browser_profiles')::text AS "browserProfiles",
-          to_regclass('public.browser_session_tab_snapshots')::text
-            AS "tabSnapshots"
-      `,
-    );
-    // The retired browser table stays until the pre-cleanup API drains; the
-    // follow-up contraction release drops it together with its declaration.
-    assert.deepEqual(tables.rows, [
-      {
-        browserProfiles: "browser_profiles",
-        tabSnapshots: "browser_session_tab_snapshots",
-      },
-    ]);
-
-    const retiredColumns = await client.query<{ count: number }>(
-      `
-        SELECT count(*)::integer AS "count"
-        FROM "information_schema"."columns"
-        WHERE "table_schema" = 'public'
-          AND ("table_name", "column_name") IN (
-            ('browser_sessions', 'id'),
-            ('browser_sessions', 'browser_profile_id'),
-            ('browser_session_instances', 'browser_session_id'),
-            ('browser_thread_profiles', 'id')
-          )
-      `,
-    );
-    // Same two-release contract: the declarations and physical columns are
-    // dropped together only after this release has drained.
-    assert.deepEqual(retiredColumns.rows, [{ count: 4 }]);
-
-    const primaryKeys = await client.query<{
-      columnName: string;
-      tableName: string;
-    }>(
-      `
-        SELECT
-          "tc"."table_name" AS "tableName",
-          "kcu"."column_name" AS "columnName"
-        FROM "information_schema"."table_constraints" AS "tc"
-        INNER JOIN "information_schema"."key_column_usage" AS "kcu"
-          ON "tc"."constraint_name" = "kcu"."constraint_name"
-          AND "tc"."table_schema" = "kcu"."table_schema"
-        WHERE "tc"."table_schema" = 'public'
-          AND "tc"."constraint_type" = 'PRIMARY KEY'
-          AND "tc"."table_name" IN (
-            'browser_sessions',
-            'browser_thread_profiles'
-          )
-        ORDER BY "tc"."table_name", "kcu"."ordinal_position"
-      `,
-    );
-    // Current code keys every lookup by chat_thread_id, but the physical
-    // primary key stays on the retired identity column for this release.
-    assert.deepEqual(primaryKeys.rows, [
-      { tableName: "browser_sessions", columnName: "id" },
-      { tableName: "browser_thread_profiles", columnName: "id" },
-    ]);
-
     const eventTypeConstraint = await client.query<{ definition: string }>(
       `
         SELECT pg_get_constraintdef("oid") AS "definition"
@@ -340,9 +275,6 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
       "run.failed",
       "usage.recorded",
     ]);
-    console.log(
-      "   ✅ retired browser tables and identity columns still exist",
-    );
     console.log("   ✅ chat event types are the canonical set\n");
   } finally {
     await client.end();
@@ -3251,7 +3183,7 @@ async function main(): Promise<void> {
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
-    await validateExpandedBrowserSchema(dbUrl1);
+    await validateCanonicalChatEventTypes(dbUrl1);
     await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
@@ -3296,6 +3228,7 @@ async function main(): Promise<void> {
     await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);
     await validatePermanentBrowserOwnerStorage(dbUrl2);
+    await validateCanonicalChatEventTypes(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
@@ -3322,7 +3255,7 @@ async function main(): Promise<void> {
       console.log("   ✅ Journal timestamps are strictly increasing");
       console.log("   ✅ Latest snapshot accurately reflects final DB state");
       console.log(
-        "   ✅ Browser state uses canonical thread identity; chat event types are canonical",
+        "   ✅ Current Browser storage and canonical chat event types are preserved",
       );
       console.log(
         "   ✅ Chat event storage accepts explicit sequences and cursors",

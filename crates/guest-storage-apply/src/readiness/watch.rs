@@ -1,25 +1,18 @@
 use super::{Readiness, State};
+use rustix::event::{EventfdFlags, eventfd};
+use rustix::fs::inotify::{self, CreateFlags};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-fn owned_fd(fd: libc::c_int) -> io::Result<File> {
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: callers pass only new descriptors returned by inotify_init1/eventfd.
-    Ok(unsafe { File::from_raw_fd(fd) })
-}
-
 pub(super) fn arm(path: &Path) -> io::Result<File> {
-    // SAFETY: inotify_init1 has no pointer arguments and returns a new descriptor.
-    let events = owned_fd(unsafe { libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK) })?;
+    let events = File::from(inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK)?);
     let path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
     let mask = libc::IN_CREATE
         | libc::IN_ATTRIB
@@ -48,8 +41,7 @@ impl Readiness {
         self,
         notify: impl Fn(io::Result<()>) + Send + 'static,
     ) -> io::Result<Watcher> {
-        // SAFETY: eventfd has no pointer arguments and returns a new descriptor.
-        let stop = Arc::new(owned_fd(unsafe { libc::eventfd(0, libc::EFD_CLOEXEC) })?);
+        let stop = Arc::new(File::from(eventfd(0, EventfdFlags::CLOEXEC)?));
         let wake = stop.clone();
         let state = self.state.clone();
         let worker_state = state.clone();
