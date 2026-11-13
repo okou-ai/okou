@@ -1429,7 +1429,11 @@ test("Unified turn preselection retains a prompt outside the loaded history page
   await screen.findByText(ANSWER);
   click(requiredButtonNamed("Share message"));
   const menu = await screen.findByRole("menu", { name: "Share message" });
-  click(within(menu).getByRole("menuitem", { name: "Select messages…" }));
+  const selectMessages = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Select messages…";
+  });
+  expect(selectMessages).toBeDefined();
+  click(selectMessages!);
   await screen.findAllByText("2 selected");
   click(requiredButtonNamed("Create link"));
   await screen.findByRole("textbox", { name: "Shared chat link" });
