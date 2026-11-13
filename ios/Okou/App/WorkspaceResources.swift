@@ -20,6 +20,8 @@ final class WorkspaceResources {
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
+  private let billing: WorkspaceRead<WorkspaceBilling>
+  let billingValue: Computed<Task<WorkspaceBilling, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -53,6 +55,11 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
+    let billing = WorkspaceRead(
+      "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: WorkspaceBillingService(client: client).status)
+    self.billing = billing
+    billingValue = billing.value
     let agents = WorkspaceRead<[AgentRecord]>(
       "agents", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks
     ) {
@@ -125,6 +132,17 @@ final class WorkspaceResources {
     try store.set(invalidateReads, changes)
   }
 
+  func prepareSettings() throws {
+    try store.set(billing.reload)
+  }
+
+  func loadSettingsBilling() async throws {
+    try Task.checkCancellation()
+    guard try store.get(lifetime) else { throw CancellationError() }
+    try billing.retryFailed(in: store)
+    _ = try await store.get(billingValue).value
+  }
+
   func close() {
     modelBootstrap?.close()
     preference.close()
@@ -133,6 +151,7 @@ final class WorkspaceResources {
     features.close()
     agents.close()
     projects.close()
+    billing.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(

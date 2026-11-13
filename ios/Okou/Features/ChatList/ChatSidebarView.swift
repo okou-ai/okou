@@ -585,6 +585,7 @@ struct ChatSidebarView: View {
   private var footer: some View {
     HStack(spacing: OkouSpace.md) {
       Button {
+        store.prepareSettings()
         showsSettings = true
       } label: {
         let profile = authentication.profile

@@ -23,6 +23,8 @@ final class WorkspaceStore {
   private let didRefreshReadState: @MainActor () -> Void
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
+  var settingsResources: WorkspaceResources { resources }
+  var billingURL: URL { webURL.appending(path: "settings/billing") }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   private(set) var newChatSubmission: NewChatSubmission?
@@ -1049,6 +1051,22 @@ final class WorkspaceStore {
     guard !closed, (failure as? APIClientError)?.statusCode == 426 else { return }
     needsUpgrade = true
     close()
+  }
+
+  func prepareSettings() {
+    guard !closed, !needsUpgrade else { return }
+    do { try resources.prepareSettings() } catch { handle(error) }
+  }
+
+  func loadSettingsBilling() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    do { try await resources.loadSettingsBilling() } catch is CancellationError {
+    } catch { handle(error) }
+  }
+
+  func refreshSettingsBilling() async {
+    prepareSettings()
+    await loadSettingsBilling()
   }
 
 }
