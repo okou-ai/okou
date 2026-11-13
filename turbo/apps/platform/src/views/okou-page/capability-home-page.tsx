@@ -52,7 +52,6 @@ import {
   WORKFLOW_RECOMMENDATIONS,
   type WorkflowRecommendation,
   type WorkflowRecommendationDraft,
-  type WorkflowRecommendationId,
   type WorkflowShelfCover,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -180,12 +179,14 @@ const SCHEDULE_SUGGESTIONS = [
  * The recommendations that run on a clock. Scheduled offers them after its
  * two starters; Advanced keeps them too, as the shelf of every workflow.
  */
-const SCHEDULED_RECOMMENDATIONS = [
-  "morning",
-  "weekly",
-  "metrics",
-  "competitors",
-] as const satisfies readonly WorkflowRecommendationId[];
+const SCHEDULED_RECOMMENDATIONS = WORKFLOW_RECOMMENDATIONS.filter((item) => {
+  return (
+    item.id === "morning" ||
+    item.id === "weekly" ||
+    item.id === "competitors" ||
+    item.id === "metrics"
+  );
+});
 
 /**
  * Every capability card shares one anatomy: copy at the top left, its drawing
@@ -949,12 +950,7 @@ function HomeWorkflowSuggestions({
                 />
               );
             }),
-            ...SCHEDULED_RECOMMENDATIONS.flatMap((id) => {
-              const item = WORKFLOW_RECOMMENDATIONS.find((candidate) => {
-                return candidate.id === id;
-              });
-              return item ? [recommendationTile(item)] : [];
-            }),
+            ...SCHEDULED_RECOMMENDATIONS.map(recommendationTile),
           ]
         : TRIGGER_EXAMPLES.map(({ id, source, mode, cover }) => {
             const steps = copy.workflow.triggers.items[id];

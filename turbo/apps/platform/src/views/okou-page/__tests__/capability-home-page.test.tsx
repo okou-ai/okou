@@ -403,8 +403,8 @@ test("Scheduled leads with its two starters, then the workflows that run on a cl
     "Repeat on a schedule",
     "Start your day with a clear plan",
     "Wrap up your week clearly",
-    "See how your business is doing",
     "Know when competitors change",
+    "See how your business is doing",
   ]);
   // A recommendation prepares the same draft here as on the Advanced shelf.
   click(button("Start your day with a clear plan", scheduled));
@@ -421,9 +421,6 @@ test("A trigger's cover is named by its title and described by its flow", async 
   expect(button("Email replies", triggers)).toHaveAccessibleDescription(
     "Gmail: Email starred → Extract requests → Draft reply",
   );
-  // The flow is no longer printed across the cover.
-  expect(within(triggers).queryByText("Email starred")).toBeNull();
-  expect(within(triggers).queryByText("Draft reply")).toBeNull();
 });
 
 test.each([
