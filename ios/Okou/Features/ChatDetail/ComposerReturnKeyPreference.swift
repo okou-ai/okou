@@ -48,8 +48,9 @@ extension ComposerTextView {
     // UIKit owns the empty-editor key state. A ready attachment or another
     // editor block can still make an empty focused editor a valid Send target.
     let automaticallyEnables = preference == .send && (hasText || !canSend)
-    guard returnKeyPreference != preference
-      || enablesReturnKeyAutomatically != automaticallyEnables
+    guard
+      returnKeyPreference != preference
+        || enablesReturnKeyAutomatically != automaticallyEnables
     else { return }
     returnKeyPreference = preference
     returnKeyType = preference == .send ? .send : .default
