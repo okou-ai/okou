@@ -48,7 +48,6 @@ export function mockBrowserCdp(
     readonly extensionRuntimeId?: string;
     readonly nativeBase64?: boolean;
     readonly endpointAliases?: readonly string[];
-    readonly searchAvailable?: boolean;
   } = {},
 ) {
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
@@ -76,7 +75,6 @@ export function mockBrowserCdp(
     return { ...target };
   });
   let created = 0;
-  let focusedTarget = targets[0]?.targetId;
   let corruptPageAttachment = false;
   let updateBeforeTabRead = false;
   let sessionSequence = 0;
@@ -244,26 +242,6 @@ export function mockBrowserCdp(
     }
   }
 
-  function searchResult(tabId: number, windowId: number, text: string) {
-    const target = targets.find((target) => {
-      return nativeTab(target).id === tabId;
-    });
-    if (!target || (target.windowId ?? 0) !== windowId) {
-      throw new Error("Foreign search target");
-    }
-    const sessionId = [...sessionTargets].find(([id, targetId]) => {
-      return targetId === target.targetId && !retiredSessions.has(id);
-    })?.[0];
-    if (!sessionId) {
-      throw new Error("Missing search session");
-    }
-    navigate(
-      { method: "Page.navigate", connectionId: 0, sessionId },
-      `https://search.example/?q=${encodeURIComponent(text)}`,
-    );
-    return null;
-  }
-
   function nativeResult(expression: string) {
     const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
     const request = object({
@@ -271,7 +249,6 @@ export function mockBrowserCdp(
       windowId: number().optional(),
       tabId: number().optional(),
       url: string().optional(),
-      text: string().optional(),
     }).parse(JSON.parse(raw));
     if (request.method === "getTab" && updateBeforeTabRead) {
       updateBeforeTabRead = false;
@@ -286,15 +263,7 @@ export function mockBrowserCdp(
     let value: unknown;
     switch (request.method) {
       case "hello": {
-        value = {
-          protocol: 1,
-          capabilities: [
-            "windows",
-            "tabs",
-            "events",
-            ...(options.searchAvailable === false ? [] : ["search"]),
-          ],
-        };
+        value = { protocol: 1, capabilities: ["windows", "tabs", "events"] };
         break;
       }
       case "getWindow": {
@@ -316,19 +285,6 @@ export function mockBrowserCdp(
           targets.map(nativeTab).find((tab) => {
             return tab.id === request.tabId;
           }) ?? null;
-        break;
-      }
-      case "listTabs": {
-        value = targets
-          .filter((target) => (target.windowId ?? 0) === request.windowId)
-          .map((target) => ({
-            ...nativeTab(target),
-            active: target.targetId === focusedTarget,
-          }));
-        break;
-      }
-      case "search": {
-        value = searchResult(request.tabId!, request.windowId!, request.text!);
         break;
       }
       case "closeTab": {
@@ -567,19 +523,11 @@ export function mockBrowserCdp(
           expression.includes("doc.activeElement") &&
           expression.includes("offsetX:")
             ? { type: "object", value: focusedEditing }
-            : expression ===
-                'document.visibilityState === "visible" && document.hasFocus()'
-              ? {
-                  type: "boolean",
-                  value:
-                    targetForSession(request.sessionId).targetId ===
-                    focusedTarget,
-                }
-              : expression.includes("const fence =")
-                ? { type: "object", value: { fence: 1000, now: 1001 } }
-                : expression.includes("devicePixelRatio")
-                  ? { type: "object", value: { ...viewport, dpr: 1 } }
-                  : { type: "undefined" },
+            : expression.includes("const fence =")
+              ? { type: "object", value: { fence: 1000, now: 1001 } }
+              : expression.includes("devicePixelRatio")
+                ? { type: "object", value: { ...viewport, dpr: 1 } }
+                : { type: "undefined" },
       };
     }
     return {};
@@ -604,10 +552,6 @@ export function mockBrowserCdp(
 
   function pageResult(request: BrowserRequest): unknown {
     switch (request.method) {
-      case "Page.bringToFront": {
-        focusedTarget = targetForSession(request.sessionId).targetId;
-        return {};
-      }
       case "Page.reload": {
         const target = targetForSession(request.sessionId);
         if (crashedTargets.delete(target.targetId)) {

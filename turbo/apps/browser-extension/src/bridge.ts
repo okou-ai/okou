@@ -85,34 +85,12 @@ function cancelProbe(nonce: string): void {
   probes.delete(nonce);
 }
 
-async function searchTab(
-  request: Extract<BridgeRequest, { method: "search" }>,
-): Promise<null> {
-  const target = await chrome.tabs.get(request.tabId);
-  if (target.windowId !== request.windowId || !request.text.trim()) {
-    throw new Error("Search target is outside the assigned window");
-  }
-  // An explicit tabId avoids Chrome's last-active-window fallback.
-  await chrome.search.query({ tabId: request.tabId, text: request.text });
-  return null;
-}
-
-async function moveTabs(
-  request: Extract<BridgeRequest, { method: "moveTabs" }>,
-): Promise<NativeTab[]> {
-  const moved = await chrome.tabs.move([...request.tabIds], {
-    windowId: request.windowId,
-    index: request.index,
-  });
-  return (Array.isArray(moved) ? moved : [moved]).map(tab);
-}
-
 async function operation(request: BridgeRequest): Promise<unknown> {
   switch (request.method) {
     case "hello":
       return {
         protocol: PROTOCOL_VERSION,
-        capabilities: ["windows", "tabs", "events", "identity-probe", "search"],
+        capabilities: ["windows", "tabs", "events", "identity-probe"],
       };
     case "getWindow": {
       const value = await missing(
@@ -151,15 +129,16 @@ async function operation(request: BridgeRequest): Promise<unknown> {
         }),
       );
     case "moveTabs": {
-      return await moveTabs(request);
+      const moved = await chrome.tabs.move([...request.tabIds], {
+        windowId: request.windowId,
+        index: request.index,
+      });
+      return (Array.isArray(moved) ? moved : [moved]).map(tab);
     }
     case "activateTab": {
       const value = await chrome.tabs.update(request.tabId, { active: true });
       if (!value) throw new Error("Tab disappeared during activation");
       return tab(value);
-    }
-    case "search": {
-      return await searchTab(request);
     }
     case "closeTab":
       await chrome.tabs.remove(request.tabId);

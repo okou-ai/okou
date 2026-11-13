@@ -15,25 +15,17 @@ import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
-async function openViewer(
-  options: { blank?: boolean; searchAvailable?: boolean } = {},
-) {
+async function openViewer(options: { blank?: boolean } = {}) {
   const browser = mockBrowserCdp(
     context,
     "wss://browser.example/address-search",
     {
-      searchAvailable: options.searchAvailable,
       targets: [
         {
           targetId: "home",
@@ -103,19 +95,19 @@ async function openViewer(
 }
 
 test.each([false, true])(
-  "Plain text searches the selected page with Chrome's default engine (blank=%s)",
+  "Plain text opens Google search on the selected page (blank=%s)",
   async (blank) => {
     const { address, viewer } = await openViewer({ blank });
     await fill(address, "quarterly sales");
     expect(
-      within(viewer).getByLabelText("Search with default search engine", {
+      within(viewer).getByLabelText("Search Google", {
         selector: "button",
       }),
     ).toBeEnabled();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => {
       expect(address).toHaveValue(
-        "https://search.example/?q=quarterly%20sales",
+        "https://www.google.com/search?q=quarterly+sales",
       );
     });
   },
@@ -125,12 +117,14 @@ test("The pointer submit action distinguishes search from direct URL navigation"
   const { address, viewer } = await openViewer();
   await fill(address, "annual report");
   click(
-    within(viewer).getByLabelText("Search with default search engine", {
+    within(viewer).getByLabelText("Search Google", {
       selector: "button",
     }),
   );
   await waitFor(() => {
-    expect(address).toHaveValue("https://search.example/?q=annual%20report");
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=annual+report",
+    );
   });
   await fill(address, "sales.example/new");
   click(within(viewer).getByLabelText("Open address", { selector: "button" }));
@@ -166,33 +160,19 @@ test("Composition confirmation does not submit a search", async () => {
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(address).toHaveValue(
-      `https://search.example/?q=${encodeURIComponent("季度报告")}`,
+      `https://www.google.com/search?q=${encodeURIComponent("季度报告")}`,
     );
   });
 });
 
-test("An unsupported search on an older Browser leaves URL navigation usable", async () => {
-  const { viewer, address } = await openViewer({ searchAvailable: false });
-  await fill(address, "quarterly sales");
-  await userEvent.keyboard("{Enter}");
-  await expect(within(viewer).findByRole("alert")).resolves.toHaveTextContent(
-    "Reopen Browser to enable search",
-  );
-  await fill(address, "sales.example/new");
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(address).toHaveValue("http://sales.example/new");
-  });
-});
-
-test("A native search retains its original pending receipt across document replacement", async () => {
+test("A Google search URL retains its original pending receipt across document replacement", async () => {
   const { browser, viewer, address } = await openViewer();
-  const search = browser.holdNextNative("search");
+  const search = browser.holdNext("Page.navigate");
   await fill(address, "quarterly sales");
   await userEvent.keyboard("{Enter}");
   await search.received;
   await expect(
-    within(viewer).findByLabelText("search.example", {
+    within(viewer).findByLabelText("www.google.com", {
       selector: '[role="tab"]',
     }),
   ).resolves.toBeInTheDocument();
@@ -203,30 +183,20 @@ test("A native search retains its original pending receipt across document repla
   });
   await waitFor(() => {
     expect(address).toHaveAttribute("aria-busy", "false");
-    expect(address).toHaveValue("https://search.example/?q=quarterly%20sales");
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=quarterly+sales",
+    );
     expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
   });
 });
 
-test("A native membership change during identity verification cancels search", async () => {
-  const { browser, viewer, address } = await openViewer();
-  await fill(address, "quarterly sales");
-  const read = browser.holdNextNative("listTabs");
+test("Google search keeps Unicode and reserved characters in a single query parameter", async () => {
+  const { address } = await openViewer();
+  await fill(address, "季度报告 & revenue + 20% #2026");
   await userEvent.keyboard("{Enter}");
-  await read.received;
-  await act(async () => {
-    browser.move("reports", 9);
-    await read.release();
-  });
   await waitFor(() => {
-    expect(queryAllByRoleFast("tab", viewer)).toHaveLength(1);
-  });
-  click(within(viewer).getByLabelText("New tab"));
-  await waitFor(() => {
-    expect(address).toHaveValue("");
-  });
-  click(within(viewer).getByLabelText("Home", { selector: '[role="tab"]' }));
-  await waitFor(() => {
-    expect(address).toHaveValue("https://home.example/");
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=%E5%AD%A3%E5%BA%A6%E6%8A%A5%E5%91%8A+%26+revenue+%2B+20%25+%232026",
+    );
   });
 });

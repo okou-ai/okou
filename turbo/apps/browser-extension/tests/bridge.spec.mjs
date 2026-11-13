@@ -1,6 +1,6 @@
 import { chromium, expect, test } from "@playwright/test";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -31,25 +31,10 @@ test.afterAll(async () => {
   });
 });
 
-async function fixture({ localSearch = false } = {}) {
+async function fixture() {
   const parent = resolve("test-results/profiles");
   await mkdir(parent, { recursive: true });
   const profile = await mkdtemp(resolve(parent, "bridge-"));
-  if (localSearch) {
-    await mkdir(resolve(profile, "Default"));
-    await writeFile(
-      resolve(profile, "Default/Preferences"),
-      JSON.stringify({
-        default_search_provider_data: {
-          template_url_data: {
-            short_name: "Owned local search",
-            keyword: "owned-search",
-            url: `${origin}/search?q={searchTerms}`,
-          },
-        },
-      }),
-    );
-  }
   const extension = resolve("dist");
   const owner = spawn(
     process.env.CHROMIUM_EXECUTABLE ?? chromium.executablePath(),
@@ -124,9 +109,9 @@ async function fixture({ localSearch = false } = {}) {
         // connectOverCDP owns this driver connection, not the Chromium process.
         await browser.close();
       },
-      async client(transport = wire) {
+      async client() {
         const client = await OkouBrowserClient.connect({
-          transport,
+          transport: wire,
           runtimeId,
         });
         clients.push(client);
@@ -153,129 +138,6 @@ async function fixture({ localSearch = false } = {}) {
     throw error;
   }
 }
-
-test("default-engine search uses exact native identity for blank and duplicate-URL pages", async () => {
-  const f = await fixture({ localSearch: true });
-  try {
-    const client = await f.client();
-    expect(client.supports("search")).toBe(true);
-    const owned = await f.window("about:blank");
-    const sibling = await f.window(`${origin}/sibling`);
-    const page = f.context.pages().find((page) => {
-      return page.url() === "about:blank" && page !== f.context.pages()[0];
-    });
-    expect(page).toBeTruthy();
-    const targetId = await f.target(page);
-    const identity = await client.identifyFocusedTarget(
-      targetId,
-      owned.id,
-      AbortSignal.timeout(10000),
-    );
-    expect(identity?.windowId).toBe(owned.id);
-    await client.call("search", {
-      tabId: identity.id,
-      windowId: owned.id,
-      text: "quarterly sales",
-    });
-    await expect(page).toHaveURL(`${origin}/search?q=quarterly+sales`);
-
-    // A second page with identical metadata cannot be mistaken for this target.
-    const duplicate = (
-      await client.call("createTab", {
-        windowId: owned.id,
-        url: `${origin}/search?q=quarterly+sales`,
-        active: true,
-      })
-    ).value;
-    await page.evaluate(() => {
-      document.hasFocus = () => {
-        return false;
-      };
-    });
-    const ordinary = await client.identifyFocusedTarget(
-      targetId,
-      owned.id,
-      AbortSignal.timeout(10000),
-    );
-    expect(ordinary?.id).toBe(identity.id);
-    await expect(
-      client.call("search", {
-        tabId: ordinary.id,
-        windowId: sibling.id,
-        text: "foreign",
-      }),
-    ).rejects.toThrow();
-    await client.call("search", {
-      tabId: ordinary.id,
-      windowId: owned.id,
-      text: "annual report",
-    });
-    await expect(page).toHaveURL(`${origin}/search?q=annual+report`);
-    let switched = false;
-    const racing = await f.client({
-      async request(method, params, sessionId) {
-        const result = await f.wire.request(method, params, sessionId);
-        if (
-          method === "Runtime.evaluate" &&
-          params.expression ===
-            'document.visibilityState === "visible" && document.hasFocus()' &&
-          !switched
-        ) {
-          switched = true;
-          await client.call("activateTab", { tabId: duplicate.id });
-        }
-        return result;
-      },
-      onEvent: f.wire.onEvent,
-    });
-    expect(
-      await racing.identifyFocusedTarget(
-        targetId,
-        owned.id,
-        AbortSignal.timeout(10000),
-      ),
-    ).toBeNull();
-    const emulation = await f.context.newCDPSession(page);
-    try {
-      await emulation.send("Emulation.setFocusEmulationEnabled", {
-        enabled: true,
-      });
-      expect(
-        (
-          await emulation.send("Runtime.evaluate", {
-            expression:
-              'document.visibilityState === "visible" && Document.prototype.hasFocus.call(document)',
-            returnByValue: true,
-          })
-        ).result.value,
-      ).toBe(true);
-      const emulated = await f.client({
-        async request(method, params, sessionId) {
-          const result = await f.wire.request(method, params, sessionId);
-          if (method === "Page.bringToFront") {
-            await client.call("activateTab", { tabId: duplicate.id });
-          }
-          return result;
-        },
-        onEvent: f.wire.onEvent,
-      });
-      expect(
-        await emulated.identifyFocusedTarget(
-          targetId,
-          owned.id,
-          AbortSignal.timeout(10000),
-        ),
-      ).toBeNull();
-    } finally {
-      await emulation.detach();
-    }
-    expect(
-      (await client.call("listTabs", { windowId: sibling.id })).value[0].url,
-    ).toBe(`${origin}/sibling`);
-  } finally {
-    await f.close();
-  }
-});
 
 test("native window operations and event subscriptions preserve independent clients and siblings", async () => {
   const f = await fixture();

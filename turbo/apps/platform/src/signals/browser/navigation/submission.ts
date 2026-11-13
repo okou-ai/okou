@@ -1,12 +1,13 @@
 import { navigationAddress } from "../input/address.ts";
 
 /** Classify submitted input without consulting history or requesting suggestions. */
-export function addressSubmission(
-  input: string,
-): { readonly url: string } | { readonly search: string } | null {
+export function addressSubmission(input: string): {
+  readonly kind: "navigate" | "search";
+  readonly url: string;
+} | null {
   const url = navigationAddress(input);
   if (url) {
-    return { url };
+    return { kind: "navigate", url };
   }
   const text = input.trim();
   if (
@@ -20,5 +21,7 @@ export function addressSubmission(
   ) {
     return null;
   }
-  return { search: text };
+  const searchUrl = new URL("https://www.google.com/search");
+  searchUrl.searchParams.set("q", text);
+  return { kind: "search", url: searchUrl.href };
 }

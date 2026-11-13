@@ -48,7 +48,6 @@ import {
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
-import { SearchUnavailableFault } from "../../signals/browser/navigation/search.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
@@ -68,20 +67,16 @@ import {
 function BrowserOperationError({
   occurrences,
   duplicateMessage,
-  message: suppliedMessage,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
   readonly occurrences: readonly (object | false | null)[];
   readonly duplicateMessage?: string;
-  readonly message?: string;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const message =
-    suppliedMessage ??
-    t(($) => {
-      return $.browserViewer.operationFailed;
-    });
+  const message = t(($) => {
+    return $.browserViewer.operationFailed;
+  });
   return (
     <TransientAlert
       occurrences={occurrences.filter((occurrence): occurrence is object => {
@@ -780,7 +775,7 @@ function BrowserAddress({
   const composing = useGet(signals.addressComposing$);
   const label = t(($) => {
     return kind === "search"
-      ? $.browserViewer.searchDefaultEngine
+      ? $.browserViewer.searchGoogle
       : $.browserViewer.openAddress;
   });
   return (
@@ -907,15 +902,6 @@ function BrowserNavigation({
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
         occurrences={failures}
-        message={
-          operation.state === "hasError" &&
-          operation.error instanceof NavigationFault &&
-          operation.error.cause instanceof SearchUnavailableFault
-            ? t(($) => {
-                return $.browserViewer.searchUnavailable;
-              })
-            : undefined
-        }
         className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
       />
     </div>

@@ -82,11 +82,7 @@ export interface ViewerHistory {
 }
 
 export type NavigationAction =
-  | "back"
-  | "forward"
-  | "reload"
-  | { readonly url: string }
-  | { readonly search: string };
+  "back" | "forward" | "reload" | { readonly url: string };
 
 export type NavigationReceipt =
   | {

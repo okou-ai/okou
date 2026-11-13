@@ -1346,7 +1346,7 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   });
   const addressSubmissionKind$ = computed((get) => {
     const submission = get(submission$);
-    return submission ? ("search" in submission ? "search" : "navigate") : null;
+    return submission?.kind ?? null;
   });
   const composingState$ = state(false);
   const addressComposing$ = computed((get) => {
@@ -1394,7 +1394,11 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
         throw new CdpFault("input", "Enter a valid page address.");
       }
       const submission = set(model.prepareAddress$, scope);
-      const receipt = await set(lease.controller.navigate$, target, signal);
+      const receipt = await set(
+        lease.controller.navigate$,
+        { url: target.url },
+        signal,
+      );
       set(model.acceptAddress$, submission, receipt);
       return receipt;
     },
