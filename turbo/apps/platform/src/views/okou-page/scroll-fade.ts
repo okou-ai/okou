@@ -90,10 +90,9 @@ export const SCROLLBAR_HIDDEN =
 
 /**
  * Both vertical edges, each drawn only while the scroller has content past it:
- * for a short list in a popover, or the capability tray's window of covers,
- * either of which can sit at rest, mid-scroll, or at the end. Reads Base UI's
- * `data-overflow-y-start` / `data-overflow-y-end` off the `ScrollArea.Root`,
- * which has to carry `group`, as
+ * for a short list in a popover that can sit at rest, mid-scroll, or at the
+ * end. Reads Base UI's `data-overflow-y-start` / `data-overflow-y-end` off the
+ * `ScrollArea.Root`, which has to carry `group`, as
  * `SCROLL_FADE_Y_START_WHEN_OVERFLOWING` does. The stacked variant is more
  * specific than either single one, so it wins while both edges overflow.
  *

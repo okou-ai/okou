@@ -68,7 +68,6 @@ import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
-import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 import { CapabilityIllustration } from "./capability-illustrations.tsx";
 
 /*
@@ -740,32 +739,30 @@ function CapabilityTray({
 /**
  * The tray's choices, in one window that keeps the same height for every
  * capability and type, so switching between them changes what is in the tray
- * and never moves the greeting above it. 240px is what Find people's two rows
- * of cards take; a catalog taller than that scrolls down inside the window
- * instead of running sideways, with the top of the next row left in view to
- * say there is more. The fade is the 20px every vertical scroller takes: over
- * covers, a deeper one washes out most of the row it is meant to point at. Each type opens at its top, so the window is keyed by
- * the type it shows.
+ * and never moves the greeting above it. 240px above the tray's foot is what
+ * Find people's two rows of cards take; a catalog taller than that scrolls
+ * down inside the window instead of running sideways. Each type opens at its
+ * top, so the window is keyed by the type it shows.
  *
- * The window bleeds through the tray's padding and puts it back inside, so the
- * overlay scrollbar sits in the tray's gutter rather than over the covers.
- * The 4px above and below are the room a cover lifts into under the pointer
- * and a card's shadow needs, kept inside the clip. Rows snap to their tops,
- * and the window keeps its scroll to itself at either end.
+ * The window runs down through the tray's bottom padding to the tray's foot,
+ * which tucks under the composer: a row that does not fit slides under the
+ * composer's edge, the way the page's own scroller does, rather than being cut
+ * or faded short of it. The same padding sits inside the window instead, so a
+ * window that fits, and one scrolled to its end, still stops its last row where
+ * the tray's padding would.
+ *
+ * The window also bleeds through the tray's side padding and puts it back
+ * inside, so the overlay scrollbar sits in the tray's gutter rather than over
+ * the covers. The 4px at the top is the room a cover lifts into under the
+ * pointer, kept inside the clip; rows snap to their tops, and the window keeps
+ * its scroll to itself at either end.
  */
 function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
   return (
-    <ScrollArea.Root
-      // `group` so the viewport's fade can read the root's own
-      // `data-overflow-y-*`.
-      className="group relative -mx-4 -mt-1 sm:-mx-5"
-    >
+    <ScrollArea.Root className="relative -mx-4 -mt-1 -mb-10 sm:-mx-5">
       <ScrollArea.Viewport
         data-slot="scroll-area-viewport"
-        className={cn(
-          "h-61 snap-y snap-proximity scroll-pt-1 overscroll-contain px-4 py-1 focus:outline-none sm:px-5",
-          SCROLL_FADE_Y_WHEN_OVERFLOWING,
-        )}
+        className="h-71 snap-y snap-proximity scroll-pt-1 overscroll-contain px-4 pt-1 pb-10 focus:outline-none sm:px-5"
       >
         <ScrollArea.Content>{children}</ScrollArea.Content>
       </ScrollArea.Viewport>
