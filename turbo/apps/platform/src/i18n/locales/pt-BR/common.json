@@ -1691,6 +1691,7 @@
         "navigation": "Explorar sugestões",
         "show": "Mostrar sugestão {{index}} de {{total}}"
       },
+      "feedLabel": "Feed",
       "label": "Sugestões",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

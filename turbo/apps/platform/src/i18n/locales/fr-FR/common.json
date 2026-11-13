@@ -1691,6 +1691,7 @@
         "navigation": "Parcourir les suggestions",
         "show": "Afficher la suggestion {{index}} sur {{total}}"
       },
+      "feedLabel": "Fil",
       "label": "Suggestions",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

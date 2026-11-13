@@ -1664,6 +1664,7 @@
         "navigation": "切換建議",
         "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
+      "feedLabel": "動態",
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",

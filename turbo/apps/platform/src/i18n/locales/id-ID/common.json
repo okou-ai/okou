@@ -1664,6 +1664,7 @@
         "navigation": "Jelajahi saran",
         "show": "Tampilkan saran {{index}} dari {{total}}"
       },
+      "feedLabel": "Feed",
       "label": "Saran",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

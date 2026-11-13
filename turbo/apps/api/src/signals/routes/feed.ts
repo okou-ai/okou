@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import {
   readSuggestionManagement$,
   readSuggestions$,
@@ -27,7 +27,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in owner) {
     return owner;
   }
-  const body = await get(bodyResultOf(suggestionsContract.create));
+  const body = await get(bodyResultOf(feedContract.create));
   signal.throwIfAborted();
   return body.ok
     ? await set(createSuggestion$, owner, body.data, signal)
@@ -38,13 +38,13 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in owner) {
     return owner;
   }
-  const body = await get(bodyResultOf(suggestionsContract.update));
+  const body = await get(bodyResultOf(feedContract.update));
   signal.throwIfAborted();
   return body.ok
     ? await set(
         updateSuggestion$,
         owner,
-        get(pathParamsOf(suggestionsContract.update)).id,
+        get(pathParamsOf(feedContract.update)).id,
         body.data,
         signal,
       )
@@ -57,7 +57,7 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
     : await set(
         removeSuggestion$,
         owner,
-        get(pathParamsOf(suggestionsContract.remove)).id,
+        get(pathParamsOf(feedContract.remove)).id,
         signal,
       );
 });
@@ -66,13 +66,13 @@ const consume$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in owner) {
     return owner;
   }
-  const body = await get(bodyResultOf(suggestionsContract.consume));
+  const body = await get(bodyResultOf(feedContract.consume));
   signal.throwIfAborted();
   return body.ok
     ? await set(
         consumeSuggestion$,
         owner,
-        get(pathParamsOf(suggestionsContract.consume)).id,
+        get(pathParamsOf(feedContract.consume)).id,
         body.data,
         signal,
       )
@@ -88,9 +88,9 @@ const writeAuth = {
   requireOrganization: true,
   requiredCapability: "suggestion:write",
 } as const;
-export const suggestionsRoutes: readonly RouteEntry[] = [
+export const feedRoutes: readonly RouteEntry[] = [
   {
-    route: suggestionsContract.manage,
+    route: feedContract.manage,
     handler: authRoute(
       { ...readAuth, accept: ["agent"] },
       command(async ({ get, set }, signal: AbortSignal) => {
@@ -101,14 +101,14 @@ export const suggestionsRoutes: readonly RouteEntry[] = [
           : await set(
               readSuggestionManagement$,
               owner,
-              get(queryOf(suggestionsContract.manage)).after,
+              get(queryOf(feedContract.manage)).after,
               signal,
             );
       }),
     ),
   },
   {
-    route: suggestionsContract.feedback,
+    route: feedContract.feedback,
     handler: authRoute(
       { accept: ["session"], requireOrganization: true },
       command(async ({ get, set }, signal: AbortSignal) => {
@@ -116,13 +116,13 @@ export const suggestionsRoutes: readonly RouteEntry[] = [
         if ("status" in owner) {
           return owner;
         }
-        const body = await get(bodyResultOf(suggestionsContract.feedback));
+        const body = await get(bodyResultOf(feedContract.feedback));
         signal.throwIfAborted();
         return body.ok
           ? await set(
               recordSuggestionFeedback$,
               owner,
-              get(pathParamsOf(suggestionsContract.feedback)).id,
+              get(pathParamsOf(feedContract.feedback)).id,
               body.data,
               signal,
             )
@@ -130,12 +130,12 @@ export const suggestionsRoutes: readonly RouteEntry[] = [
       }),
     ),
   },
-  { route: suggestionsContract.list, handler: authRoute(readAuth, list$) },
-  { route: suggestionsContract.create, handler: authRoute(writeAuth, create$) },
-  { route: suggestionsContract.update, handler: authRoute(writeAuth, update$) },
-  { route: suggestionsContract.remove, handler: authRoute(writeAuth, remove$) },
+  { route: feedContract.list, handler: authRoute(readAuth, list$) },
+  { route: feedContract.create, handler: authRoute(writeAuth, create$) },
+  { route: feedContract.update, handler: authRoute(writeAuth, update$) },
+  { route: feedContract.remove, handler: authRoute(writeAuth, remove$) },
   {
-    route: suggestionsContract.consume,
+    route: feedContract.consume,
     handler: authRoute(
       { accept: ["session"], requireOrganization: true },
       consume$,

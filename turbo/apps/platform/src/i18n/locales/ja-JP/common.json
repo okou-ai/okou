@@ -1664,6 +1664,7 @@
         "navigation": "提案を切り替える",
         "show": "提案 {{index}}/{{total}} を表示"
       },
+      "feedLabel": "フィード",
       "label": "提案",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

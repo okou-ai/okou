@@ -114,7 +114,6 @@ const suggestionOptionsSchema = array(suggestionOptionSchema)
 const suggestionContentSchema = object({
   title: string().trim().min(1).max(120),
   rationale: string().trim().max(200),
-  priority: number().int().min(-2147483648).max(2147483647),
   options: suggestionOptionsSchema,
   customOption: object({
     id: literal("custom"),
@@ -149,46 +148,65 @@ const suggestionContentSchema = object({
       }, "Custom direction requires one complete neutral quote with an empty note and optional files"),
   }),
 });
-export const suggestionSchema = suggestionContentSchema.extend({
-  id: suggestionIdSchema,
+export type SuggestionContent = zInfer<typeof suggestionContentSchema>;
+export const suggestionStateSchema = object({
   status: suggestionStatusSchema,
   selectedOptionId: suggestionOptionIdSchema.nullable(),
-  feedbacks: array(suggestionFeedbackSchema).max(100).default([]),
+  feedbacks: array(suggestionFeedbackSchema).max(100),
+}).strict();
+export type SuggestionState = zInfer<typeof suggestionStateSchema>;
+export const feedItemTypeSchema = literal("suggestion");
+const feedItemBaseSchema = object({
+  id: suggestionIdSchema,
+  type: feedItemTypeSchema,
+  priority: number().int().min(-2147483648).max(2147483647),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
-  expiresAt: iso.datetime().optional(),
+  expiresAt: iso.datetime().nullable(),
+});
+export const suggestionSchema = feedItemBaseSchema.extend({
+  content: suggestionContentSchema,
+  state: suggestionStateSchema,
+  expiresAt: iso.datetime(),
   consumeToken: string()
     .regex(/^[a-f0-9]{64}$/u)
     .optional(),
 });
-export const suggestionReceiptSchema = suggestionSchema
-  .pick({
-    id: true,
-    status: true,
-    selectedOptionId: true,
-    createdAt: true,
-    updatedAt: true,
-    feedbacks: true,
-  })
-  .extend({ status: zEnum(["consumed", "removed"]) });
-export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
-export const suggestionCreateSchema = suggestionContentSchema.extend({
-  id: suggestionIdSchema,
-  priority: suggestionContentSchema.shape.priority.default(0),
-  expiresAt: iso.datetime().optional(),
+export const suggestionReceiptSchema = feedItemBaseSchema.extend({
+  content: literal(null),
+  state: suggestionStateSchema.extend({
+    status: zEnum(["consumed", "removed"]),
+  }),
+  expiresAt: iso.datetime(),
 });
-export const suggestionUpdateSchema = suggestionContentSchema
-  .extend({ expiresAt: iso.datetime().optional() })
-  .partial()
+export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
+export type Suggestion = zInfer<typeof suggestionSchema>;
+export type FeedItem = Suggestion | SuggestionReceipt;
+export const suggestionCreateSchema = object({
+  id: suggestionIdSchema,
+  type: feedItemTypeSchema,
+  priority: feedItemBaseSchema.shape.priority.default(0),
+  content: suggestionContentSchema,
+  expiresAt: iso.datetime().optional(),
+}).strict();
+export const suggestionUpdateSchema = object({
+  priority: feedItemBaseSchema.shape.priority.optional(),
+  content: suggestionContentSchema.partial().strict().optional(),
+  expiresAt: iso.datetime().optional(),
+})
+  .strict()
   .refine(
     (body) => {
-      return Object.keys(body).length > 0;
+      return (
+        body.priority !== undefined ||
+        body.expiresAt !== undefined ||
+        (body.content !== undefined && Object.keys(body.content).length > 0)
+      );
     },
     {
-      message: "Provide at least one suggestion field to update",
+      message: "Provide at least one feed item field to update",
     },
   );
-export type Suggestion = zInfer<typeof suggestionSchema>;
 export type SuggestionCreate = zInfer<typeof suggestionCreateSchema>;
 export type SuggestionUpdate = zInfer<typeof suggestionUpdateSchema>;
 const suggestionConsumeSchema = object({
@@ -206,15 +224,18 @@ const errors = {
   409: apiErrorSchema,
 };
 const params = object({ id: suggestionIdSchema });
-export const suggestionsContract = c.router({
+export const feedContract = c.router({
   manage: {
     method: "GET",
-    path: "/api/suggestions/active",
+    path: "/api/feed/items/active",
     headers: authHeadersSchema,
-    query: object({ after: suggestionIdSchema.optional() }),
+    query: object({
+      after: suggestionIdSchema.optional(),
+      type: feedItemTypeSchema.optional(),
+    }),
     responses: {
       200: object({
-        suggestions: array(suggestionSchema).max(100),
+        items: array(suggestionSchema).max(100),
         receipts: array(suggestionReceiptSchema),
         nextAfter: suggestionIdSchema.nullable(),
       }),
@@ -224,11 +245,12 @@ export const suggestionsContract = c.router({
   },
   list: {
     method: "GET",
-    path: "/api/suggestions",
+    path: "/api/feed/items",
     headers: authHeadersSchema,
+    query: object({ type: feedItemTypeSchema.optional() }),
     responses: {
       200: object({
-        suggestions: array(suggestionSchema).max(SUGGESTION_LIMIT),
+        items: array(suggestionSchema).max(SUGGESTION_LIMIT),
         receipts: array(suggestionReceiptSchema).optional(),
       }),
       ...errors,
@@ -237,7 +259,7 @@ export const suggestionsContract = c.router({
   },
   create: {
     method: "POST",
-    path: "/api/suggestions",
+    path: "/api/feed/items",
     headers: authHeadersSchema,
     body: suggestionCreateSchema,
     responses: { 200: suggestionSchema, ...errors },
@@ -245,7 +267,7 @@ export const suggestionsContract = c.router({
   },
   update: {
     method: "PATCH",
-    path: "/api/suggestions/:id",
+    path: "/api/feed/items/:id",
     headers: authHeadersSchema,
     pathParams: params,
     body: suggestionUpdateSchema,
@@ -254,7 +276,7 @@ export const suggestionsContract = c.router({
   },
   remove: {
     method: "DELETE",
-    path: "/api/suggestions/:id",
+    path: "/api/feed/items/:id",
     headers: authHeadersSchema,
     pathParams: params,
     responses: { 204: c.noBody(), ...errors },
@@ -262,7 +284,7 @@ export const suggestionsContract = c.router({
   },
   consume: {
     method: "POST",
-    path: "/api/suggestions/:id/consume",
+    path: "/api/feed/items/:id/suggestion/consume",
     headers: authHeadersSchema,
     pathParams: params,
     body: suggestionConsumeSchema,
@@ -271,7 +293,7 @@ export const suggestionsContract = c.router({
   },
   feedback: {
     method: "POST",
-    path: "/api/suggestions/:id/feedback",
+    path: "/api/feed/items/:id/suggestion/feedback",
     headers: authHeadersSchema,
     pathParams: params,
     body: suggestionFeedbackRequestSchema.extend({

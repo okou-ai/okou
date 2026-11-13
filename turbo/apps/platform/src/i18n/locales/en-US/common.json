@@ -1667,7 +1667,8 @@
         "navigation": "Browse suggestions",
         "show": "Show suggestion {{index}} of {{total}}"
       },
-      "label": "Suggestions",
+      "feedLabel": "Feed",
+      "label": "Suggestion",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
       "messageSent": "Message sent",

@@ -1,12 +1,13 @@
-import { command } from "ccstate";
-import { and, asc, inArray, isNotNull, not, or, sql } from "drizzle-orm";
-import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
-import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
 import {
+  suggestionStatus,
   liveSuggestion,
   retainedSuggestion,
 } from "./agent-suggestions-lifecycle";
+import { command } from "ccstate";
+import { and, asc, eq, inArray, isNotNull, not, or, sql } from "drizzle-orm";
+import { feedItems } from "@okouai/db/schema/feed-item";
+import { nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 
 const CLEANUP_BATCH_SIZE = 1000;
 const MAX_BATCHES = 10;
@@ -15,7 +16,7 @@ export const cleanupSuggestions$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const needsCompaction = and(
-      isNotNull(agentSuggestions.content),
+      isNotNull(feedItems.content),
       not(liveSuggestion(at)),
     );
     let cleaned = 0;
@@ -24,17 +25,22 @@ export const cleanupSuggestions$ = command(
       signal.throwIfAborted();
       const candidates = await db
         .select({
-          orgId: agentSuggestions.orgId,
-          userId: agentSuggestions.userId,
-          id: agentSuggestions.id,
+          orgId: feedItems.orgId,
+          userId: feedItems.userId,
+          id: feedItems.id,
         })
-        .from(agentSuggestions)
-        .where(or(not(retainedSuggestion(at)), needsCompaction))
+        .from(feedItems)
+        .where(
+          and(
+            eq(feedItems.type, "suggestion"),
+            or(not(retainedSuggestion(at)), needsCompaction),
+          ),
+        )
         .orderBy(
-          asc(agentSuggestions.expiresAt),
-          asc(agentSuggestions.orgId),
-          asc(agentSuggestions.userId),
-          asc(agentSuggestions.id),
+          asc(feedItems.expiresAt),
+          asc(feedItems.orgId),
+          asc(feedItems.userId),
+          asc(feedItems.id),
         )
         .limit(CLEANUP_BATCH_SIZE);
       signal.throwIfAborted();
@@ -42,25 +48,25 @@ export const cleanupSuggestions$ = command(
         break;
       }
       const selected = inArray(
-        sql`(${agentSuggestions.orgId}, ${agentSuggestions.userId}, ${agentSuggestions.id})`,
+        sql`(${feedItems.orgId}, ${feedItems.userId}, ${feedItems.id})`,
         candidates.map((row) => {
           return sql`(${row.orgId}, ${row.userId}, ${row.id}::uuid)`;
         }),
       );
       // Recheck current row state in each write so newly appended feedback survives.
       const removed = await db
-        .delete(agentSuggestions)
+        .delete(feedItems)
         .where(and(selected, not(retainedSuggestion(at))))
-        .returning({ id: agentSuggestions.id });
+        .returning({ id: feedItems.id });
       signal.throwIfAborted();
       const compacted = await db
-        .update(agentSuggestions)
+        .update(feedItems)
         .set({
           content: null,
-          status: sql`CASE WHEN ${agentSuggestions.status} = 'active' THEN 'consumed' ELSE ${agentSuggestions.status} END`,
+          state: sql`jsonb_set(${feedItems.state}, '{status}', to_jsonb(CASE WHEN ${suggestionStatus} = 'active' THEN 'consumed' ELSE ${suggestionStatus} END))`,
         })
         .where(and(selected, retainedSuggestion(at), needsCompaction))
-        .returning({ id: agentSuggestions.id });
+        .returning({ id: feedItems.id });
       signal.throwIfAborted();
       deleted += removed.length;
       cleaned += removed.length + compacted.length;

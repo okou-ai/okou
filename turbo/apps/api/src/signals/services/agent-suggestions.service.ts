@@ -1,3 +1,10 @@
+import {
+  suggestionStatus,
+  suggestionFeedbackEvents,
+  liveSuggestion,
+  retainedSuggestion,
+  suggestionRow,
+} from "./agent-suggestions-lifecycle";
 import { createHash, randomUUID } from "node:crypto";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
@@ -9,7 +16,7 @@ import { command } from "ccstate";
 import { and, arrayContains, eq, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
+import { feedItems } from "@okouai/db/schema/feed-item";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -22,7 +29,7 @@ import {
   type SuggestionConsume,
   type SuggestionFeedback,
   type SuggestionFeedbackRequest,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -39,12 +46,6 @@ import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/mo
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
 import {
-  liveSuggestion,
-  retainedSuggestion,
-  suggestionRow,
-  suggestionContent,
-} from "./agent-suggestions-lifecycle";
-import {
   storedSuggestion$,
   storedSuggestions$,
   suggestionOwner,
@@ -60,16 +61,16 @@ interface Owner {
   readonly orgId: string;
 }
 function scope(owner: Owner, id: string) {
-  return and(suggestionOwner(owner), eq(agentSuggestions.id, id));
+  return and(suggestionOwner(owner), eq(feedItems.id, id));
 }
 function containsOption(optionId: string) {
   return optionId === "custom"
-    ? sql`${agentSuggestions.content}->'customOption'->>'id' = 'custom'`
-    : sql`${agentSuggestions.content}->'options' @> ${sql.param(JSON.stringify([{ id: optionId }]))}::jsonb`;
+    ? sql`${feedItems.content}->'customOption'->>'id' = 'custom'`
+    : sql`${feedItems.content}->'options' @> ${sql.param(JSON.stringify([{ id: optionId }]))}::jsonb`;
 }
 function feedbackIdentity(id: string) {
   return arrayContains(
-    agentSuggestions.feedbacks,
+    suggestionFeedbackEvents,
     sql`${sql.param(JSON.stringify([{ id }]))}::jsonb`,
   );
 }
@@ -93,8 +94,8 @@ function feedbackInput(
 function storedFeedback(feedback: NewFeedback, optionId?: string | null) {
   const context =
     feedback.targetId === null
-      ? sql`jsonb_build_object('title', ${agentSuggestions.content}->'title', 'rationale', ${agentSuggestions.content}->'rationale', 'optionLabel', (SELECT choice->'label' FROM jsonb_array_elements(${agentSuggestions.content}->'options') AS choice WHERE choice->>'id' = ${optionId ?? ""} LIMIT 1))`
-      : sql`(SELECT previous->'context' FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS previous WHERE previous->>'id' = ${feedback.targetId} LIMIT 1)`;
+      ? sql`jsonb_build_object('title', ${feedItems.content}->'title', 'rationale', ${feedItems.content}->'rationale', 'optionLabel', (SELECT choice->'label' FROM jsonb_array_elements(${feedItems.content}->'options') AS choice WHERE choice->>'id' = ${optionId ?? ""} LIMIT 1))`
+      : sql`(SELECT previous->'context' FROM jsonb_array_elements(${suggestionFeedbackEvents}) AS previous WHERE previous->>'id' = ${feedback.targetId} LIMIT 1)`;
   return sql`(${sql.param(JSON.stringify(feedback))}::jsonb || jsonb_build_object('context', ${context}))`;
 }
 export const suggestionAccess$ = command(
@@ -215,7 +216,7 @@ export const createSuggestion$ = command(
     input: SuggestionCreate,
     signal: AbortSignal,
   ) => {
-    for (const option of input.options) {
+    for (const option of input.content.options) {
       const invalid = await set(
         validateThread$,
         owner,
@@ -240,37 +241,29 @@ export const createSuggestion$ = command(
     const item = suggestionSchema.parse({
       ...input,
       expiresAt,
-      status: "active",
-      selectedOptionId: null,
+      state: { status: "active", selectedOptionId: null, feedbacks: [] },
       createdAt: timestamp,
       updatedAt: timestamp,
     });
     const [inserted] = await set(writeDb$)
-      .insert(agentSuggestions)
+      .insert(feedItems)
       .values({
         ...owner,
         id: item.id,
-        status: item.status,
+        type: item.type,
+        state: item.state,
         priority: item.priority,
-        content: suggestionContent(item),
-        selectedOptionId: null,
-        feedbacks: [],
+        content: item.content,
         createdAt: at,
         updatedAt: at,
         expiresAt: new Date(expiresAt),
       })
       .onConflictDoUpdate({
-        target: [
-          agentSuggestions.orgId,
-          agentSuggestions.userId,
-          agentSuggestions.id,
-        ],
+        target: [feedItems.orgId, feedItems.userId, feedItems.id],
         set: {
-          status: "active",
+          state: item.state,
           priority: item.priority,
-          content: suggestionContent(item),
-          selectedOptionId: null,
-          feedbacks: [],
+          content: item.content,
           createdAt: at,
           updatedAt: at,
           expiresAt: new Date(expiresAt),
@@ -289,12 +282,16 @@ export const createSuggestion$ = command(
     }
     const existing = await set(storedSuggestion$, owner, input.id, signal);
     if (
-      existing?.status === "active" &&
-      existing.title === input.title &&
-      existing.rationale === input.rationale &&
+      existing?.content &&
+      existing.state.status === "active" &&
+      existing.content.title === input.content.title &&
+      existing.content.rationale === input.content.rationale &&
       existing.priority === input.priority &&
-      isDeepStrictEqual(existing.options, input.options) &&
-      isDeepStrictEqual(existing.customOption, input.customOption)
+      isDeepStrictEqual(existing.content.options, input.content.options) &&
+      isDeepStrictEqual(
+        existing.content.customOption,
+        input.content.customOption,
+      )
     ) {
       return {
         status: 200 as const,
@@ -321,23 +318,26 @@ const changeSuggestion$ = command(
   ) => {
     const at = nowDate();
     const timestamp = at.toISOString();
-    const {
-      feedback,
-      status,
-      selectedOptionId,
-      priority,
-      expiresAt,
-      ...content
-    } = patch;
+    const { feedback, status, selectedOptionId, priority, expiresAt, content } =
+      patch;
     const [row] = await set(writeDb$)
-      .update(agentSuggestions)
+      .update(feedItems)
       .set({
-        content: Object.keys(content).length
-          ? sql`${agentSuggestions.content} || ${sql.param(JSON.stringify(content))}::jsonb`
-          : undefined,
+        content:
+          content && Object.keys(content).length
+            ? sql`${feedItems.content} || ${sql.param(JSON.stringify(content))}::jsonb`
+            : undefined,
         priority,
-        status,
-        selectedOptionId,
+        state: sql`${feedItems.state} || ${sql.param(
+          JSON.stringify({
+            ...(status === undefined ? {} : { status }),
+            ...(selectedOptionId === undefined ? {} : { selectedOptionId }),
+          }),
+        )}::jsonb || jsonb_build_object('feedbacks', ${
+          feedback
+            ? sql`${suggestionFeedbackEvents} || jsonb_build_array(${storedFeedback(feedback, selectedOptionId)})`
+            : suggestionFeedbackEvents
+        })`,
         updatedAt: at,
         expiresAt:
           status === undefined
@@ -345,21 +345,18 @@ const changeSuggestion$ = command(
                 getSuggestionExpiresAt({ updatedAt: timestamp, expiresAt }),
               )
             : undefined,
-        feedbacks: feedback
-          ? sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback, selectedOptionId)})`
-          : undefined,
       })
       .where(
         and(
           scope(owner, id),
           feedback
             ? and(
-                sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+                sql`jsonb_array_length(${suggestionFeedbackEvents}) < 100`,
                 not(feedbackIdentity(feedback.id)),
               )
             : undefined,
           status === "consumed"
-            ? eq(agentSuggestions.status, "active")
+            ? eq(suggestionStatus, "active")
             : liveSuggestion(at),
           typeof selectedOptionId === "string"
             ? containsOption(selectedOptionId)
@@ -392,8 +389,8 @@ export const updateSuggestion$ = command(
     ) {
       return badRequestMessage("Suggestion expiry must be in the future.");
     }
-    if (input.options) {
-      for (const option of input.options) {
+    if (input.content?.options) {
+      for (const option of input.content.options) {
         const invalid = await set(
           validateThread$,
           owner,
@@ -434,57 +431,53 @@ const consumeCachedSuggestion$ = command(
     const item = suggestionSchema.parse({
       ...snapshot,
       consumeToken: undefined,
-      status: "consumed",
-      selectedOptionId: optionId,
-      feedbacks: [
-        ...snapshot.feedbacks,
-        {
-          ...feedback,
-          context: {
-            title: snapshot.title,
-            rationale: snapshot.rationale,
-            optionLabel:
-              snapshot.options.find((option) => {
-                return option.id === optionId;
-              })?.label ?? null,
+      state: {
+        ...snapshot.state,
+        status: "consumed",
+        selectedOptionId: optionId,
+        feedbacks: [
+          ...snapshot.state.feedbacks,
+          {
+            ...feedback,
+            context: {
+              title: snapshot.content.title,
+              rationale: snapshot.content.rationale,
+              optionLabel:
+                snapshot.content.options.find((option) => {
+                  return option.id === optionId;
+                })?.label ?? null,
+            },
           },
-        },
-      ],
+        ],
+      },
       updatedAt: at.toISOString(),
     });
     const [inserted] = await set(writeDb$)
-      .insert(agentSuggestions)
+      .insert(feedItems)
       .values({
         ...owner,
         id: item.id,
-        status: "consumed",
+        type: item.type,
+        state: item.state,
         priority: item.priority,
-        content: suggestionContent(item),
-        selectedOptionId: optionId,
-        feedbacks: item.feedbacks,
+        content: item.content,
         createdAt: new Date(item.createdAt),
         updatedAt: at,
         expiresAt: new Date(getSuggestionExpiresAt(snapshot)),
       })
       .onConflictDoUpdate({
-        target: [
-          agentSuggestions.orgId,
-          agentSuggestions.userId,
-          agentSuggestions.id,
-        ],
+        target: [feedItems.orgId, feedItems.userId, feedItems.id],
         set: {
-          status: "consumed",
+          state: item.state,
           priority: item.priority,
-          content: suggestionContent(item),
-          selectedOptionId: optionId,
-          feedbacks: item.feedbacks,
+          content: item.content,
           createdAt: new Date(item.createdAt),
           updatedAt: at,
           expiresAt: new Date(getSuggestionExpiresAt(snapshot)),
         },
         setWhere: not(retainedSuggestion(at)),
       })
-      .returning({ id: agentSuggestions.id });
+      .returning({ id: feedItems.id });
     signal.throwIfAborted();
     if (!inserted) {
       // Publication may have won after the first consume found no active card.
@@ -532,7 +525,7 @@ export const consumeSuggestion$ = command(
       snapshot?.id === id &&
       hasValidSuggestionConsumeToken(owner, snapshot) &&
       (optionId === null ||
-        snapshot.options.some((option) => {
+        snapshot.content.options.some((option) => {
           return option.id === optionId;
         }))
     ) {
@@ -574,22 +567,20 @@ const recordInitialSuggestionFeedback$ = command(
       );
     }
     const [saved] = await set(writeDb$)
-      .update(agentSuggestions)
+      .update(feedItems)
       .set({
-        status: "consumed",
-        selectedOptionId: null,
+        state: sql`${feedItems.state} || jsonb_build_object('status', 'consumed', 'selectedOptionId', NULL, 'feedbacks', ${suggestionFeedbackEvents} || jsonb_build_array(${storedFeedback(feedback)}))`,
         updatedAt: nowDate(),
-        feedbacks: sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback)})`,
       })
       .where(
         and(
           scope(owner, id),
-          eq(agentSuggestions.status, "active"),
-          sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+          eq(suggestionStatus, "active"),
+          sql`jsonb_array_length(${suggestionFeedbackEvents}) < 100`,
           not(feedbackIdentity(input.id)),
         ),
       )
-      .returning({ id: agentSuggestions.id });
+      .returning({ id: feedItems.id });
     signal.throwIfAborted();
     if (saved) {
       await publishAgentSuggestionsChangedSafely(owner);
@@ -613,7 +604,7 @@ const recordInitialSuggestionFeedback$ = command(
       return { status: 200 as const, body: { restored: false } };
     }
     const current = await set(storedSuggestion$, owner, id, signal);
-    return current?.feedbacks.some((item) => {
+    return current?.state.feedbacks.some((item) => {
       return (
         item.id === input.id &&
         item.kind === input.kind &&
@@ -668,34 +659,34 @@ const reviseSuggestionFeedback$ = command(
       snapshot?.id === id &&
       hasValidSuggestionConsumeToken(owner, snapshot) &&
       getSuggestionExpiresAt(snapshot) > nowDate().getTime();
-    const restore = canRestore
-      ? eq(agentSuggestions.status, "consumed")
-      : sql`false`;
+    const restore = canRestore ? eq(suggestionStatus, "consumed") : sql`false`;
     const at = nowDate();
     const [row] = await set(writeDb$)
-      .update(agentSuggestions)
+      .update(feedItems)
       .set({
-        status: sql`CASE WHEN ${restore} THEN 'active' ELSE ${agentSuggestions.status} END`,
+        state: sql`${feedItems.state} || jsonb_build_object(
+          'status', CASE WHEN ${restore} THEN 'active' ELSE ${suggestionStatus} END,
+          'selectedOptionId', CASE WHEN ${restore} THEN NULL ELSE ${feedItems.state}->>'selectedOptionId' END,
+          'feedbacks', ${suggestionFeedbackEvents} || jsonb_build_array(${storedFeedback(feedback)})
+        )`,
         content: canRestore
-          ? sql`CASE WHEN ${restore} THEN ${sql.param(JSON.stringify(suggestionContent(snapshot)))}::jsonb ELSE ${agentSuggestions.content} END`
+          ? sql`CASE WHEN ${restore} THEN ${sql.param(JSON.stringify(snapshot.content))}::jsonb ELSE ${feedItems.content} END`
           : undefined,
-        selectedOptionId: sql`CASE WHEN ${restore} THEN NULL ELSE ${agentSuggestions.selectedOptionId} END`,
         expiresAt: canRestore
-          ? sql`CASE WHEN ${restore} THEN ${new Date(getSuggestionExpiresAt(snapshot)).toISOString()}::timestamptz ELSE ${agentSuggestions.expiresAt} END`
+          ? sql`CASE WHEN ${restore} THEN ${new Date(getSuggestionExpiresAt(snapshot)).toISOString()}::timestamptz ELSE ${feedItems.expiresAt} END`
           : undefined,
         updatedAt: at,
-        feedbacks: sql`${agentSuggestions.feedbacks} || jsonb_build_array(${storedFeedback(feedback)})`,
       })
       .where(
         and(
           scope(owner, id),
-          sql`jsonb_array_length(${agentSuggestions.feedbacks}) < 100`,
+          sql`jsonb_array_length(${suggestionFeedbackEvents}) < 100`,
           feedbackIdentity(input.targetId ?? ""),
           not(feedbackIdentity(input.id)),
-          sql`NOT EXISTS (SELECT 1 FROM jsonb_array_elements(${agentSuggestions.feedbacks}) AS response WHERE response->>'kind' = 'undo' AND response->>'targetId' = ${input.targetId})`,
+          sql`NOT EXISTS (SELECT 1 FROM jsonb_array_elements(${suggestionFeedbackEvents}) AS response WHERE response->>'kind' = 'undo' AND response->>'targetId' = ${input.targetId})`,
         ),
       )
-      .returning({ status: agentSuggestions.status });
+      .returning({ status: suggestionStatus });
     signal.throwIfAborted();
     if (!row) {
       return conflict("The feedback changed. Refresh your suggestions.");
@@ -727,7 +718,7 @@ export const recordSuggestionFeedback$ = command(
       );
     }
     const existing = await set(storedSuggestion$, owner, id, signal);
-    const duplicate = existing?.feedbacks.find((feedback) => {
+    const duplicate = existing?.state.feedbacks.find((feedback) => {
       return feedback.id === input.id;
     });
     if (duplicate && existing) {
@@ -742,14 +733,14 @@ export const recordSuggestionFeedback$ = command(
       }
       return {
         status: 200 as const,
-        body: { restored: existing.status === "active" },
+        body: { restored: existing.state.status === "active" },
       };
     }
     return await set(
       reviseSuggestionFeedback$,
       owner,
       id,
-      { input, feedbacks: existing?.feedbacks ?? [] },
+      { input, feedbacks: existing?.state.feedbacks ?? [] },
       signal,
     );
   },
@@ -811,7 +802,8 @@ export const validateSuggestionFollowup$ = command(
     );
     for (const { context, part } of feedbacks) {
       const entry = stored.get(context.suggestionId);
-      const item = entry?.status === "active" ? entry : null;
+      const item =
+        entry?.content && entry.state.status === "active" ? entry : null;
       // A saved quote is self-contained and can outlive its disposable card.
       // Retired or absent cards grant no new authority and keep their receipt.
       if (!item) {
@@ -826,19 +818,22 @@ export const validateSuggestionFollowup$ = command(
             return entry.fileId;
           }),
       );
-      const savedQuote = item?.customOption.draft.draftUserMessage?.parts.find(
-        (entry) => {
-          return entry.type === "feedback";
-        },
-      );
+      const savedQuote =
+        item?.content.customOption.draft.draftUserMessage?.parts.find(
+          (entry) => {
+            return entry.type === "feedback";
+          },
+        );
       if (
         savedQuote?.type !== "feedback" ||
         savedQuote.quote !== part.quote ||
-        (item.customOption.draft.draftAttachments ?? []).some((file) => {
-          return !submittedFiles.has(file.id);
-        }) ||
+        (item.content.customOption.draft.draftAttachments ?? []).some(
+          (file) => {
+            return !submittedFiles.has(file.id);
+          },
+        ) ||
         createHash("sha256")
-          .update(JSON.stringify(item.customOption.draft))
+          .update(JSON.stringify(item.content.customOption.draft))
           .digest("hex") !== context.contextVersion
       ) {
         return conflict(
