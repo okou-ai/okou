@@ -226,14 +226,6 @@ const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
-const viewerConnectionInner$ = command(async ({ set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const result = await set(threadBrowser.viewer$, signal);
-  return result.kind === "error"
-    ? errorResponse(result)
-    : { status: 200 as const, body: result.value };
-});
-
 const browserReadAuth = Object.freeze({
   requireOrganization: true,
   missingOrganizationStatus: 401 as const,
@@ -300,16 +292,5 @@ export const browserRoutes: readonly RouteEntry[] = [
   {
     route: browserContract.get,
     handler: authRoute(browserReadAuth, getBrowserInner$),
-  },
-  {
-    route: browserContract.viewerConnection,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        accept: ["session"],
-      },
-      viewerConnectionInner$,
-    ),
   },
 ];

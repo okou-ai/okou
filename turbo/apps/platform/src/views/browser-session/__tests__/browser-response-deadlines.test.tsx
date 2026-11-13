@@ -1,6 +1,6 @@
 import {
   browserContract,
-  type BrowserSession,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   act,
@@ -65,7 +65,7 @@ function mockViewer(autoOpen = true) {
     ],
   });
   let windowId = 101;
-  function session(id = threadId): BrowserSession {
+  function session(id = threadId): BrowserConnection["browser"] {
     return {
       threadId: id,
       name: "booking",

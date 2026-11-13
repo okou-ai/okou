@@ -185,32 +185,35 @@ function managedBrowserSession(args: {
   readonly screenshotUrl: string;
   readonly liveUrl: string | null;
 }): BrowserSession {
-  return {
+  const metadata = {
     threadId: RUN_THREAD_ID,
     name: "Research",
-    status: args.status,
     viewerUrl: `https://browser.example.test/view/${RUN_THREAD_ID}`,
     liveUrl: args.liveUrl,
     screenshotUrl: args.screenshotUrl,
     timeoutMinutes: 240,
-    ...(args.status === "active"
-      ? {
-          window: {
-            instanceId: "20000000-0000-4000-a000-000000001108",
-            primaryWindowId: 0,
-          },
-          idleExpiresAt: "2026-08-18T12:10:00.000Z",
-          suspendedAt: null,
-          suspensionReason: null,
-        }
-      : {
-          idleExpiresAt: null,
-          suspendedAt: "2026-08-18T12:05:00.000Z",
-          suspensionReason: "idle" as const,
-        }),
     createdAt: "2026-08-18T11:00:00.000Z",
     updatedAt: "2026-08-18T12:05:00.000Z",
   };
+  return args.status === "active"
+    ? {
+        ...metadata,
+        status: "active",
+        window: {
+          instanceId: "20000000-0000-4000-a000-000000001108",
+          primaryWindowId: 0,
+        },
+        idleExpiresAt: "2026-08-18T12:10:00.000Z",
+        suspendedAt: null,
+        suspensionReason: null,
+      }
+    : {
+        ...metadata,
+        status: "suspended",
+        idleExpiresAt: null,
+        suspendedAt: "2026-08-18T12:05:00.000Z",
+        suspensionReason: "idle" as const,
+      };
 }
 
 function planActionUrl(origin: string): string {

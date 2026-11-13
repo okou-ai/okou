@@ -11,6 +11,10 @@ function browserResponse() {
       threadId,
       name: "browser",
       status: "active",
+      window: {
+        instanceId: "33333333-3333-4333-8333-333333333333",
+        primaryWindowId: 1,
+      },
       viewerUrl: `https://app.okou.ai/browsers/${threadId}`,
       liveUrl: "https://live.browser.example",
       screenshotUrl: null,
@@ -22,6 +26,11 @@ function browserResponse() {
       updatedAt: "2026-07-30T01:00:00.000Z",
     },
     cdpUrl: "wss://cdp.browser.example",
+    extension: {
+      id: "44444444-4444-4444-8444-444444444444",
+      runtimeId: "a".repeat(32),
+      version: "1.0.0",
+    },
   };
 }
 

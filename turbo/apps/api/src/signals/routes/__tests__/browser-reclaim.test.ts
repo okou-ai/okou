@@ -126,14 +126,19 @@ describe("shared Browser expiry through public reopen", () => {
       const sibling = await open(b);
       expect(sibling.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
       const retainedViewer = await accept(
-        client().viewerConnection({
+        client().get({
           headers,
           params: { threadId: b.threadId },
+          query: { viewer: "native" },
         }),
         [200],
       );
-      expect(retainedViewer.body.extension.id).toBe(TEST_BROWSER_EXTENSION.id);
-      expect(retainedViewer.body.browser.window).toStrictEqual(sibling.window);
+      expect(retainedViewer.body.viewer?.extension.id).toBe(
+        TEST_BROWSER_EXTENSION.id,
+      );
+      expect(retainedViewer.body.viewer?.browser.window).toStrictEqual(
+        sibling.window,
+      );
       navigate(
         f,
         first.window.primaryWindowId,
@@ -189,17 +194,20 @@ describe("shared Browser expiry through public reopen", () => {
       ).toStrictEqual(["https://b.example.test/recover"]);
       expect(f.provider.sessionRequests).toHaveLength(2);
       const replacementViewer = await accept(
-        client().viewerConnection({
+        client().get({
           headers,
           params: { threadId: b.threadId },
+          query: { viewer: "native" },
         }),
         [200],
       );
-      expect(replacementViewer.body.extension.id).toBe(replacementExtensionId);
-      expect(replacementViewer.body.browser.window).toStrictEqual(
+      expect(replacementViewer.body.viewer?.extension.id).toBe(
+        replacementExtensionId,
+      );
+      expect(replacementViewer.body.viewer?.browser.window).toStrictEqual(
         reopenedB.window,
       );
-      expect(replacementViewer.body.cdpUrl).toBe(f.provider.native.url);
+      expect(replacementViewer.body.viewer?.cdpUrl).toBe(f.provider.native.url);
     });
   });
 

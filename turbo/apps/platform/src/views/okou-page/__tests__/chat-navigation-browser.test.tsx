@@ -2,6 +2,7 @@ import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import {
   browserContract,
   type BrowserSession,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadComputerUseHostContract,
@@ -56,7 +57,7 @@ const TAKE_OVER_MESSAGE =
   "I've taken over the browser. Don't use it until I hand it back.";
 const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
 
-function liveBrowserSession(): BrowserSession {
+function liveBrowserSession(): BrowserConnection["browser"] {
   return {
     threadId: THREAD_ID,
     name: "research",
@@ -279,7 +280,7 @@ test("A live Browser card resumes a window reclaimed after its summary was read"
     },
   };
   const { native } = mockBrowserApi(active);
-  let current = active;
+  let current: BrowserSession = active;
   context.mocks.api(browserContract.get, ({ query, respond }) => {
     return respond(200, browserReadResponse(current, query));
   });
