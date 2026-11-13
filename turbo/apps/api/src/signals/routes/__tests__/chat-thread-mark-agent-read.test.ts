@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -11,6 +12,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -159,6 +161,8 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
   });
 
   it("leaves unread threads older than the seven-day window untouched", async () => {
+    // The receiver registered eight days ahead performs fleet-wide cleanup.
+    await setupApp({ context, routes: agentsRoutes, isolatePg: true });
     // The stale thread's last message is written at the real current time;
     // the app clock then moves eight days ahead, so that message falls outside
     // the seven-day window while the recent thread is written inside it.

@@ -595,6 +595,12 @@ describe("Workflow schedule recovery", () => {
   }
 
   it("completes an in-flight user schedule using its edited recurrence", async () => {
+    // Registering a receiver in 2030 invokes fleet-wide stale-row cleanup.
+    await setupApp({
+      context,
+      routes: workflowAutomationsRoutes,
+      isolatePg: true,
+    });
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const client = automationClient();
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
@@ -660,6 +666,12 @@ describe("Workflow schedule recovery", () => {
   });
 
   it("stops a user-created schedule after three failed manual runs", async () => {
+    // These future serving heartbeats must not prune parallel tests' receivers.
+    await setupApp({
+      context,
+      routes: workflowAutomationsRoutes,
+      isolatePg: true,
+    });
     const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
     mockNow(startedAt);
     const client = automationClient();

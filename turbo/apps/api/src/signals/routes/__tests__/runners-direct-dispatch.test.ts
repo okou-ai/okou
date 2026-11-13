@@ -474,6 +474,8 @@ test.each([
 });
 
 test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
+  // The three-minute shift can prune another case's still-fresh receiver.
+  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const clock = now();
   mockNow(clock);

@@ -26,6 +26,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
@@ -47,6 +48,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { agentsRoutes } from "../agents";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -5186,6 +5188,9 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 
 describe("CHAT-02: push notification gating", () => {
   it("reuses the native signing token until its fifty-minute lifetime ends", async () => {
+    // Serving heartbeats at minute 49/50 prune the global fleet. Keep that
+    // operator in this case's database so parallel Runs retain their receiver.
+    await setupApp({ context, routes: agentsRoutes, isolatePg: true });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
