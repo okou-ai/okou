@@ -114,7 +114,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     );
   };
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copy}>
+    <Button type="button" variant="neutral" size="sm" onClick={copy}>
       <Copy size={14} />
       {t(($) => {
         return $.connectors.providerSettings[platform].copy;
@@ -205,7 +205,7 @@ function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
               className={cn(
                 "flex size-6 shrink-0 items-center justify-center rounded-full border border-surface-border text-xs text-muted-foreground",
                 index === currentIndex &&
-                  "border-foreground bg-foreground text-background",
+                  "border-primary bg-primary text-primary-foreground",
                 index < currentIndex && "bg-gray-50",
               )}
             >
@@ -1039,7 +1039,7 @@ function FeishuSetupWizardFooter({
     <footer className="sticky bottom-0 order-3 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-5 py-5 @3xl/feishu-setup:static @3xl/feishu-setup:px-6 @5xl/feishu-setup:px-8">
       <Button
         type="button"
-        variant="outline"
+        variant="neutral"
         disabled={saving}
         onClick={isFirstStep ? onClose : onBack}
       >
@@ -1056,8 +1056,8 @@ function FeishuSetupWizardFooter({
       </Button>
       <Button
         type="submit"
-        variant="secondary"
-        className="min-w-28 bg-foreground text-background hover:bg-foreground/90"
+        variant="default"
+        className="min-w-28"
         disabled={!canContinue}
       >
         {saving ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -1426,7 +1426,7 @@ function FeishuBotRow({
         {!bot.isConnected && canConnect ? (
           <Button
             type="button"
-            variant="outline"
+            variant="neutral"
             size="sm"
             className="h-9 justify-center"
             onClick={() => {
@@ -1521,7 +1521,7 @@ function FeishuBotsCard({
                 ? ROUTES.settingsLarkSetup
                 : ROUTES.settingsFeishuSetup
             }
-            className={buttonVariants({ variant: "secondary", size: "sm" })}
+            className={buttonVariants({ variant: "default", size: "sm" })}
           >
             <Plus size={16} />
             {t(($) => {
@@ -1688,8 +1688,8 @@ function FeishuPageHeader({
           <Link
             pathname={backPath}
             className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
+              buttonVariants({ variant: "quiet", size: "sm" }),
+              "h-8 gap-2 px-2",
             )}
           >
             <ArrowLeft size={17} />
@@ -1843,7 +1843,7 @@ function FeishuUninstallDialog({ bots }: { bots: FeishuBotInstallation[] }) {
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="neutral"
             disabled={uninstalling}
             onClick={() => {
               setUninstallInstallationId(null);

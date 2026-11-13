@@ -347,7 +347,7 @@ function FeishuGuideControls({
               <SegmentControlItem
                 key={item.src}
                 value={itemIndex}
-                className="h-auto min-w-0 flex-1 justify-start whitespace-normal rounded-xl border border-surface-border px-2 py-2 text-left text-xs data-checked:border-foreground data-checked:bg-background"
+                className="h-auto min-w-0 flex-1 justify-start whitespace-normal rounded-xl border border-surface-border px-2 py-2 text-left text-xs data-checked:border-primary"
               >
                 <img
                   src={item.src}
