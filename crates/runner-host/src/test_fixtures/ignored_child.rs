@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::future::{Future, poll_fn};
 use std::io;
 #[cfg(target_os = "linux")]
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -174,7 +174,7 @@ async fn kill_session_members(
         }
 
         for member in scan.members {
-            if let Err(error) = signal_pidfd(&member.pidfd, libc::SIGKILL)
+            if let Err(error) = signal_pidfd(&member.pidfd, rustix::process::Signal::KILL)
                 && error.raw_os_error() != Some(libc::ESRCH)
                 && first_error.is_none()
             {
@@ -356,23 +356,8 @@ fn open_pidfd(pid: libc::pid_t) -> io::Result<Option<OwnedFd>> {
 }
 
 #[cfg(target_os = "linux")]
-fn signal_pidfd(pidfd: &OwnedFd, signal: libc::c_int) -> io::Result<()> {
-    // SAFETY: `pidfd` is valid, `signal` is a standard signal, and a null
-    // siginfo pointer requests ordinary signal semantics.
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_pidfd_send_signal,
-            pidfd.as_raw_fd(),
-            signal,
-            std::ptr::null::<libc::siginfo_t>(),
-            0,
-        )
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+fn signal_pidfd(pidfd: &OwnedFd, signal: rustix::process::Signal) -> io::Result<()> {
+    rustix::process::pidfd_send_signal(pidfd, signal).map_err(io::Error::from)
 }
 
 pub async fn run_ignored_child_test(
