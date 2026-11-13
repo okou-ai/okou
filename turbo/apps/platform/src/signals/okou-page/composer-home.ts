@@ -7,7 +7,7 @@ import {
   type State,
 } from "ccstate";
 import { restoreChatLayoutScroll$ } from "../chat-page/chat-layout.ts";
-import { createDeferredPromise } from "../utils.ts";
+import { resetSignal, waitForBrowserPaint } from "../utils.ts";
 import type { ComposerTask } from "./composer-task-chips.ts";
 import type {
   WorkflowRecommendationActions,
@@ -20,23 +20,20 @@ export type HomeCapability = HomeExploreKind | "create" | "workflow";
 
 /** A source action waits for its own mounted composer before restoring reading intent. */
 function createCapabilityLayoutSignals() {
-  const root$ = state<{ readonly element: HTMLElement } | null>(null);
-  const request$ = state<ReturnType<typeof createDeferredPromise<void>> | null>(
-    null,
-  );
+  const root$ = state<{
+    readonly element: HTMLElement;
+    readonly signal: AbortSignal;
+  } | null>(null);
+  const resetPaint$ = resetSignal();
   const mount$ = command(
     ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      const root = { element };
+      const root = { element, signal };
       set(root$, root);
       signal.addEventListener(
         "abort",
         () => {
           if (get(root$) === root) {
             set(root$, null);
-            const request = get(request$);
-            if (request && !request.settled()) {
-              request.resolve();
-            }
           }
         },
         { once: true },
@@ -49,30 +46,24 @@ function createCapabilityLayoutSignals() {
     if (!root?.element.isConnected) {
       return;
     }
-    const request = createDeferredPromise<void>(signal);
-    // A newer action supersedes an unpainted layout without stranding its caller.
-    const previous = get(request$);
-    if (previous && !previous.settled()) {
-      previous.resolve();
-    }
-    set(request$, request);
-    await request.promise;
+    const paintSignal = set(resetPaint$, signal, root.signal);
+    // Unmount and supersession release the initiating action normally; only
+    // that action's own cancellation must reject its continuation.
+    const [paint] = await Promise.allSettled([
+      waitForBrowserPaint(paintSignal),
+    ]);
     signal.throwIfAborted();
-    if (get(root$) === root && get(request$) === request) {
+    if (paint.status === "rejected") {
+      if (!paintSignal.aborted) {
+        throw paint.reason;
+      }
+      return;
+    }
+    if (get(root$) === root && !paintSignal.aborted) {
       await set(restoreChatLayoutScroll$, signal);
     }
   });
-  const commit$ = command(
-    (
-      { get },
-      request: NonNullable<ReturnType<typeof createDeferredPromise<void>>>,
-    ) => {
-      if (get(request$) === request && !request.settled()) {
-        request.resolve();
-      }
-    },
-  );
-  return { request$, mount$, sync$, commit$ };
+  return { mount$, sync$ };
 }
 
 function createPrepareWorkflowCommand(actions: WorkflowRecommendationActions) {

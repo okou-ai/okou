@@ -11,7 +11,8 @@ export function measureDisplay(canvas: HTMLCanvasElement): DisplaySize | null {
 /**
  * Native viewport and density changes have their own events. Application
  * layout changes (sidebar width, panel visibility) call the browser's
- * `syncLayout$` from the command or commit that owns them.
+ * `syncLayout$` from the command that owns them. Native activation measures
+ * after paint without requiring a React layout acknowledgement.
  */
 export function observeDisplay(
   canvas: HTMLCanvasElement,

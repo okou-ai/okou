@@ -75,7 +75,6 @@ import {
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
 import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
-import { RequestCommit } from "../components/layout-panel.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
@@ -7080,8 +7079,6 @@ export function ChatComposer({
   discovery,
 }: ChatComposerProps) {
   const setLifecycleRef = useSet(signals.setLifecycleRef$);
-  const layoutRequest = useGet(signals.taskChips.home.layout.request$);
-  const commitLayout = useSet(signals.taskChips.home.layout.commit$);
   return (
     <>
       {(!signals.threadId || signals.editor.forwardComposer) && (
@@ -7091,22 +7088,16 @@ export function ChatComposer({
           itself: the model-scope notice and the pending-items strip are its
           siblings at exactly this width, and a control that reads a width it is
           not inside reads the window instead. */}
-      <RequestCommit
-        request={layoutRequest}
-        commitKey="composer-capability"
-        onCommit={commitLayout}
+      <div
+        ref={setLifecycleRef}
+        className="@container/composer relative flex w-full min-w-0 flex-col"
       >
-        <div
-          ref={setLifecycleRef}
-          className="@container/composer relative flex w-full min-w-0 flex-col"
-        >
-          <ComposerNoticeSlot signals={signals} />
-          {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
-          {discovery}
-          <ComposerCard signals={signals} layout={layout} />
-          <ImageAnnotationEditor signals={signals.imageAnnotation} />
-        </div>
-      </RequestCommit>
+        <ComposerNoticeSlot signals={signals} />
+        {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
+        {discovery}
+        <ComposerCard signals={signals} layout={layout} />
+        <ImageAnnotationEditor signals={signals.imageAnnotation} />
+      </div>
     </>
   );
 }

@@ -1172,7 +1172,9 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
   click(buttonByName("Show chat list"));
   // Base UI has staged the list at zero, before any native animation exists.
   // This is still the pre-motion 800px panel: admission must use its 400px floor.
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  });
 
   const panel = native.transition("panel", "flex-basis");
   const list = native.transition("chat-list", "width");
@@ -1231,7 +1233,9 @@ test("Browser tab admission cannot unlock an old wide budget after native cancel
   const oldPanel = native.transition("panel", "flex-basis");
   const oldList = native.transition("chat-list", "width");
   click(buttonByName("Show chat list"));
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  });
   const newPanel = native.transition("panel", "flex-basis");
   const newList = native.transition("chat-list", "width");
   click(buttonByName("Hide chat list"));

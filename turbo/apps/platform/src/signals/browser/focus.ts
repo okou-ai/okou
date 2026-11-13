@@ -1,5 +1,19 @@
 import { command, computed, state, type Computed } from "ccstate";
-import type { BrowserFocusHandoff, BrowserSignals } from "./browser.ts";
+import type { BrowserSignals } from "./browser.ts";
+import { detach, Reason, waitForBrowserPaint } from "../utils.ts";
+
+/** A domain-authorized destination, revalidated after the browser paints. */
+type BrowserFocusHandoff = {
+  readonly request: object;
+  readonly mount: object;
+  readonly selection: object;
+} & (
+  | { readonly kind: "tab"; readonly targetId: string }
+  | {
+      readonly kind: "toolbar";
+      readonly destination: "picker" | "new-tab";
+    }
+);
 
 export interface ToolbarNodes {
   readonly toolbar: HTMLDivElement;
@@ -15,6 +29,7 @@ interface FocusSources {
 }
 interface ToolbarMount {
   readonly toolbar: HTMLDivElement;
+  readonly signal: AbortSignal;
 }
 export interface ToolbarFocusToken {
   readonly request: object;
@@ -495,7 +510,7 @@ function createFocusListeners(graph: FocusGraph, requests: FocusRequests) {
       if (previous) {
         set(requests.reset$, previous);
       }
-      const mount: ToolbarMount = { toolbar };
+      const mount: ToolbarMount = { toolbar, signal };
       set(mount$, mount);
       signal.addEventListener(
         "abort",
@@ -579,6 +594,45 @@ export function createToolbarFocus(
 ) {
   const graph = createFocusState(nodes$, sources);
   const requests = createFocusRequests(graph);
+  const applyDestination$ = createFocusCommit(graph, requests);
+  const pending$ = state<BrowserFocusHandoff | null>(null);
+  const finishHandoff$ = command(
+    async ({ get, set }, handoff: BrowserFocusHandoff, signal: AbortSignal) => {
+      using _pending = {
+        [Symbol.dispose]() {
+          if (get(pending$) === handoff) {
+            set(pending$, null);
+          }
+        },
+      };
+      await waitForBrowserPaint(signal);
+      signal.throwIfAborted();
+      set(applyDestination$, handoff);
+    },
+  );
+  // Inventory, selection receipts and admission changes are the semantic
+  // triggers. Neither a React render nor a DOM mutation observer owns intent.
+  const reconcile$ = command(({ get, set }) => {
+    const handoff = get(graph.handoff$);
+    const mount = get(graph.mount$);
+    if (!handoff || !mount || get(pending$) === handoff) {
+      return;
+    }
+    set(pending$, handoff);
+    detach(
+      set(finishHandoff$, handoff, mount.signal),
+      Reason.DomCallback,
+      "browser toolbar focus handoff",
+    );
+  });
+  const selected$ = command(({ set }, token: ToolbarFocusToken | null) => {
+    set(requests.selected$, token);
+    set(reconcile$);
+  });
+  const closed$ = command(({ set }, token: ToolbarFocusToken | null) => {
+    set(requests.closed$, token);
+    set(reconcile$);
+  });
   const newAddress$ = command(({ get, set }) => {
     set(requests.discard$);
     const address = get(nodes$)?.address;
@@ -606,12 +660,11 @@ export function createToolbarFocus(
     newAddress$,
     beginClose$: requests.beginClose$,
     beginSelect$: requests.beginSelect$,
-    closed$: requests.closed$,
-    selected$: requests.selected$,
+    closed$,
+    selected$,
     cancel$: requests.cancel$,
     revoke$: requests.revoke$,
-    handoff$: graph.handoff$,
-    acknowledge$: createFocusCommit(graph, requests),
+    reconcile$,
     listen$: createFocusListeners(graph, requests),
   };
 }

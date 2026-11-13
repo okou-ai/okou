@@ -24,9 +24,9 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
+import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import {
   artifactCatalog$,
-  artifactCatalogSidebar,
   loadMoreArtifactCatalog$,
   openArtifact$,
   scrollArtifactCardIntoViewRef$,
@@ -700,9 +700,6 @@ export function ArtifactCatalogPage({
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
-  const syncImageLayout = useSet(
-    artifactCatalogSidebar.imageCanvas.syncLayout$,
-  );
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
@@ -733,7 +730,6 @@ export function ArtifactCatalogPage({
       layout={chatLayout}
       animateEntry
       open={sidebarOpen}
-      onSidebarLayoutCommit={syncImageLayout}
       sidebar={<ArtifactCatalogSidebar />}
     >
       <div className="flex min-h-0 flex-1 flex-col">

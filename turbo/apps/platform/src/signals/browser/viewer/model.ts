@@ -268,7 +268,11 @@ function createModelPresentation(
   return { presentation$, controls$ };
 }
 
-function createModelPublication(atoms: ModelAtoms, values: ModelValues) {
+function createModelPublication(
+  atoms: ModelAtoms,
+  values: ModelValues,
+  toolbarChanged$: Command<void, []>,
+) {
   const { lifecycleState$, inventoryInternal$, faviconState$ } = atoms;
   const update$ = command(({ get, set }, patch: Partial<ViewerLifecycle>) => {
     const previous = get(lifecycleState$);
@@ -291,6 +295,7 @@ function createModelPublication(atoms: ModelAtoms, values: ModelValues) {
         }),
       ),
     );
+    set(toolbarChanged$);
     return next;
   });
   return { update$, inventoryUpdate$ };
@@ -422,6 +427,7 @@ function createModelTransitions(
   publication: ModelPublication,
   changed$: Command<void, []>,
   observeAddressTarget$: Command<void, [string]>,
+  toolbarChanged$: Command<void, []>,
 ) {
   const { intentState$, imageState$, loadingPreviewState$, lifecycleState$ } =
     atoms;
@@ -466,6 +472,7 @@ function createModelTransitions(
     }
     set(snapshotTransition$, event);
     set(changed$);
+    set(toolbarChanged$);
     return undefined;
   });
   const commitIntent$ = command(
@@ -508,11 +515,15 @@ function createFaviconActions(atoms: ModelAtoms) {
   return { setFavicon$, rejectFavicon$ };
 }
 
-function createConfigurationActions(atoms: ModelAtoms) {
+function createConfigurationActions(
+  atoms: ModelAtoms,
+  toolbarChanged$: Command<void, []>,
+) {
   const { spaceState$, captureState$, transportState$, modeState$ } = atoms;
   return {
     resizeTabs$: command(({ set }, space: TabSpace) => {
       set(spaceState$, space);
+      set(toolbarChanged$);
     }),
     setCapture$: command(({ set }, value: ViewerCaptureOptions) => {
       set(captureState$, value);
@@ -532,8 +543,12 @@ export function createViewerSignals(
   navigationScopeSource$: Computed<object | null>,
   creationReadySource$: Computed<boolean>,
   connectedSource$: Computed<boolean>,
-  changed$: Command<void, []>,
+  notifications: {
+    readonly changed$: Command<void, []>;
+    readonly toolbarChanged$?: Command<void, []>;
+  },
 ) {
+  const { changed$, toolbarChanged$ = changed$ } = notifications;
   const atoms = createModelAtoms();
   const values = createModelValues(
     atoms,
@@ -546,16 +561,17 @@ export function createViewerSignals(
     values,
     creationReadySource$,
   );
-  const publication = createModelPublication(atoms, values);
+  const publication = createModelPublication(atoms, values, toolbarChanged$);
   const address = createAddressSignals(values);
   const transitions = createModelTransitions(
     atoms,
     publication,
     changed$,
     address.observeAddressTarget$,
+    toolbarChanged$,
   );
   const favicon = createFaviconActions(atoms);
-  const configuration = createConfigurationActions(atoms);
+  const configuration = createConfigurationActions(atoms, toolbarChanged$);
   return {
     ...values,
     ...presentation,
@@ -564,8 +580,12 @@ export function createViewerSignals(
     ...address,
     ...favicon,
     ...configuration,
-    // Resource-owned readiness can change without a lifecycle transition.
-    readinessChanged$: changed$,
+    // Resource-owned readiness can enable a pending destination without a
+    // selection or inventory transition (for example, an empty new-tab button).
+    readinessChanged$: command(({ set }) => {
+      set(changed$);
+      set(toolbarChanged$);
+    }),
   };
 }
 export type ViewerSignals = ReturnType<typeof createViewerSignals>;

@@ -3,7 +3,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
-import { resetSignal } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
 import { createCatalogArtifactPreviewSignals } from "./artifact-catalog-preview.ts";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
 
@@ -18,13 +20,18 @@ export function createArtifactCatalogSidebarSignals(
   const diagram = createArtifactDiagramPreviewSignals();
   const preview = createCatalogArtifactPreviewSignals(catalog, diagram.open$);
 
-  const close$ = command(({ set }) => {
+  const close$ = command(({ get, set }) => {
     set(resetOpenSignal$);
     set(internalOpen$, false);
     set(internalFullscreen$, false);
     set(catalog.selectArtifact$, null);
     set(imageCanvas.reset$);
     set(diagram.dispose$);
+    detach(
+      set(refreshWorkspaceLayout$, get(pageSignal$)),
+      Reason.DomCallback,
+      "catalog sidebar dismissal",
+    );
   });
 
   return {
@@ -68,17 +75,23 @@ export function createArtifactCatalogSidebarSignals(
         );
         signal.throwIfAborted();
         openSignal.throwIfAborted();
+        await set(refreshWorkspaceLayout$, openSignal);
       },
     ),
     close$,
     fullscreen$: computed((get) => {
       return get(internalFullscreen$);
     }),
-    toggleFullscreen$: command(({ set }) => {
+    toggleFullscreen$: command(({ get, set }) => {
       set(imageCanvas.reset$);
       set(internalFullscreen$, (fullscreen) => {
         return !fullscreen;
       });
+      detach(
+        set(refreshWorkspaceLayout$, get(pageSignal$)),
+        Reason.DomCallback,
+        "catalog sidebar fullscreen",
+      );
     }),
     detail$: catalog.selectedArtifactDetail$,
     imageCanvas,

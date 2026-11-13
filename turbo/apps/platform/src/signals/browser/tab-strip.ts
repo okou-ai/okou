@@ -1,5 +1,6 @@
 import { command, state, type Command, type Computed } from "ccstate";
 import type { TabSpace } from "./viewer/tab-layout.ts";
+import { detach, onRef, Reason, waitForBrowserPaint } from "../utils.ts";
 
 export interface TabStripNodes {
   readonly toolbar: HTMLDivElement;
@@ -28,7 +29,7 @@ function measureTabStrip(nodes: TabStripNodes): TabSpace | null {
   };
 }
 
-/** Explicit host/viewport commits own admission; CSS distributes tab widths. */
+/** Host commands and native viewport/DOM lifetimes own tab admission. */
 export function createTabStripLayout(
   nodes$: Computed<TabStripNodes | null>,
   resize$: Command<void, [TabSpace]>,
@@ -36,7 +37,10 @@ export function createTabStripLayout(
   const motion$ = state<TabStripMotion | null>(null);
   const limit$ = state<number | null>(null);
   const lastSpace$ = state<TabSpace | null>(null);
-  const owner$ = state<object | null>(null);
+  const owner$ = state<{
+    readonly token: object;
+    readonly signal: AbortSignal;
+  } | null>(null);
   const sync$ = command(
     ({ get, set }, motion?: TabStripMotion | null): void => {
       // Undefined is a local geometry acknowledgement, not proof of host
@@ -84,14 +88,48 @@ export function createTabStripLayout(
       }
     },
   );
+  const measureToolbar$ = command(
+    async ({ get, set }, owner: object, signal: AbortSignal) => {
+      await waitForBrowserPaint(signal);
+      if (get(owner$)?.token === owner) {
+        set(sync$);
+      }
+    },
+  );
+  const toolbarChanged$ = command(({ get, set }) => {
+    const owner = get(owner$);
+    if (owner) {
+      detach(
+        set(measureToolbar$, owner.token, owner.signal),
+        Reason.DomCallback,
+        "browser toolbar geometry",
+      );
+    }
+  });
+  // This is the actual fixed-width action group, not a render-commit sentinel.
+  // Its removal remeasures against the surviving surface's lifetime.
+  const actionsRef$ = onRef(
+    command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
+      if (node.isConnected) {
+        set(toolbarChanged$);
+      }
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(toolbarChanged$);
+        },
+        { once: true },
+      );
+    }),
+  );
   const mount$ = command(({ get, set }, signal: AbortSignal): void => {
-    const owner = {};
+    const owner = { token: {}, signal };
     set(owner$, owner);
     set(limit$, null);
     set(lastSpace$, null);
     const refresh = () => {
       if (get(owner$) === owner) {
-        set(sync$);
+        set(toolbarChanged$);
       }
     };
     window.addEventListener("resize", refresh, { signal });
@@ -109,5 +147,5 @@ export function createTabStripLayout(
     );
     refresh();
   });
-  return { sync$, mount$ };
+  return { sync$, mount$, actionsRef$ };
 }
