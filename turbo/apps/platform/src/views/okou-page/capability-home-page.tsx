@@ -68,7 +68,7 @@ import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
-import { CAPABILITY_TRAY_FADE_Y } from "./scroll-fade.ts";
+import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 import { CapabilityIllustration } from "./capability-illustrations.tsx";
 
 /*
@@ -742,8 +742,9 @@ function CapabilityTray({
  * capability and type, so switching between them changes what is in the tray
  * and never moves the greeting above it. 240px is what Find people's two rows
  * of cards take; a catalog taller than that scrolls down inside the window
- * instead of running sideways, with the next row left in view under the fade
- * to say there is more. Each type opens at its top, so the window is keyed by
+ * instead of running sideways, with the top of the next row left in view to
+ * say there is more. The fade is the 20px every vertical scroller takes: over
+ * covers, a deeper one washes out most of the row it is meant to point at. Each type opens at its top, so the window is keyed by
  * the type it shows.
  *
  * The window bleeds through the tray's padding and puts it back inside, so the
@@ -763,7 +764,7 @@ function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
         data-slot="scroll-area-viewport"
         className={cn(
           "h-61 snap-y snap-proximity scroll-pt-1 overscroll-contain px-4 py-1 focus:outline-none sm:px-5",
-          CAPABILITY_TRAY_FADE_Y,
+          SCROLL_FADE_Y_WHEN_OVERFLOWING,
         )}
       >
         <ScrollArea.Content>{children}</ScrollArea.Content>
