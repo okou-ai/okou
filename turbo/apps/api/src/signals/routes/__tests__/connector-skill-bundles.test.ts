@@ -49,7 +49,7 @@ describe("Connector Skill bundle delivery", () => {
         });
         return { selected, s3, connectionId: account.connectionId };
       });
-      const run = await owner.sendChatRun(owner.actor, {
+      const queued = await owner.queueChatRun(owner.actor, {
         agentId: owner.agentId,
         model: "claude-fable-5-1",
         prompt: "Use the selected custom Skill",
@@ -69,6 +69,7 @@ describe("Connector Skill bundle delivery", () => {
           connectionId,
         });
       });
+      const run = await queued.launch();
       const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
       const firewall = claimed.claim.firewalls?.find((entry) => {
         return (
@@ -169,7 +170,7 @@ describe("Connector Skill bundle delivery", () => {
         });
       });
       const mountPath = `${root}/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-      const run = await owner.sendChatRun(owner.actor, {
+      const queued = await owner.queueChatRun(owner.actor, {
         agentId: owner.agentId,
         prompt: "Use the selected Connector Skill",
         model,
@@ -182,6 +183,7 @@ describe("Connector Skill bundle delivery", () => {
           skillMarkdown: "Updated instructions while the Run is queued.",
         });
       });
+      const run = await queued.launch();
       const first = await owner.claimChatRun(owner.runnerGroup, run.runId);
       expect(first.claim.cliAgentType).toBe(framework);
       expect(first.claim.contentBundles.skills).toContainEqual(

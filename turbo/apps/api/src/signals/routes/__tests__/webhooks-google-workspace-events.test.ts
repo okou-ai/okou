@@ -461,6 +461,7 @@ async function setupFixture(
   options: GoogleMeetProviderOptions = {},
 ): Promise<GoogleMeetFixture> {
   const provider = configureGoogleMeetBoundaries(options);
+  await runs.registerDirectRunner(provider.runnerGroup);
   const { actor } = await workflows.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");

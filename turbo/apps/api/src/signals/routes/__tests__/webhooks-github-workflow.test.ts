@@ -87,7 +87,7 @@ async function setupFixture(): Promise<{
   readonly agentId: string;
   readonly workflowId: string;
 }> {
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+  await runsApi.configureRunnerGroup();
   const { actor } = await wf.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");

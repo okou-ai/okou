@@ -746,9 +746,7 @@ describe("Teams chat callbacks", () => {
         throw new Error("Expected an accepted Teams Run before cleanup");
       }
       expect(acceptedRun.prompt).toBe(prompt);
-      expect(acceptedRun.status).toBe(
-        phase === "claimed Run" ? "running" : "pending",
-      );
+      expect(acceptedRun.status).toBe("running");
       await owner.cleanup();
       const after = await runReadsApi.requestListLogs(
         teams.actor,

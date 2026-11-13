@@ -41,7 +41,7 @@ import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -66,7 +66,7 @@ const TEST_APP_ROUTES = Object.freeze([
 
 const context = testContext();
 const BROWSER_USE_API_URL = "https://api.browser-use.com/api/v3";
-const STARTED_AT_MS = Date.parse("2026-07-24T10:00:00.000Z");
+const STARTED_AT_MS = now();
 const MINUTE_MS = 60_000;
 
 function browserInputWrites() {

@@ -14,7 +14,7 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { settleIncludingAbort } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -30,6 +30,7 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
 
 /*
  * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
@@ -552,9 +553,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       throw new Error("Expected released capacity to launch the queued input");
     }
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    const pickedInput = await api.executionInput(picked.runId);
+    const pickedClaim = await api.executionInput(picked.runId);
     await api.requestCancelRun(actor, picked.runId, [200]);
-    await finishCancelledRun(picked.runId, pickedInput.sandboxToken);
+    await finishCancelledRun(picked.runId, pickedClaim.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -1976,6 +1977,13 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
+    const started = await reads.requestReadLogById(
+      actor,
+      agentRun.runId,
+      [200],
+    );
+    mustOk(started, "the dispatched Run's start time");
+    const runStartedAtMs = Date.parse(started.body.startedAt ?? runCreatedAt);
     context.mocks.axiom.useRealQuery.mockReturnValue(true);
     let snapshotVisible = false;
     const queryRequests: {
@@ -2080,10 +2088,7 @@ describe("RUN-04: agent run telemetry families", () => {
 | limit 1`,
         startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
         endTime: new Date(
-          Math.max(
-            runCreatedAtMs,
-            Date.parse((await api.readRun(actor, agentRun.runId)).startedAt!),
-          ) + HOUR_MS,
+          Math.max(runCreatedAtMs, runStartedAtMs) + HOUR_MS,
         ).toISOString(),
       },
     };
@@ -2619,7 +2624,7 @@ describe("RUN-04: agent run telemetry families", () => {
       runnerHostname: `runner-${api.dispatchedRun(runId).runnerId}.okou.app`,
       runnerVersion: null,
       runnerId: expect.any(String),
-      runnerHeartbeatGeneration: 1,
+      runnerHeartbeatGeneration: api.dispatchedRun(runId).heartbeatGeneration,
     });
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
@@ -2870,47 +2875,67 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     await owned.run(async () => {
       const kms = holdCurrentSecretKms(context.signal);
       const clientEventId = randomUUID();
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          clientEventId,
-          prompt: "pending detail run",
-        },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the pending detail input");
-      }
-      await kms.entered;
-      const messages = await chat.listThreadEvents(actor, sent.body.threadId);
-      const pendingRunId = messages.events.find((event) => {
-        return event.revokesEventId === clientEventId;
-      })?.runId;
-      if (!pendingRunId) {
-        throw new Error("Expected a durable pending Run");
-      }
-      const pendingDetail = await reads.requestReadLogById(
-        actor,
-        pendingRunId,
-        [200],
-      );
-      expect(pendingDetail.body).toMatchObject({
-        id: pendingRunId,
-        status: "pending",
-        sessionId: null,
-        completedAt: null,
+      let pendingRunId: string | undefined;
+      const preparation = await settleIncludingAbort(async () => {
+        const sent = await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            prompt: "pending detail run",
+            clientEventId,
+          },
+          [201],
+        );
+        if (sent.status !== 201) {
+          throw new Error("Expected the pending input to be accepted");
+        }
+        await kms.entered;
+        const messages = await chat.listThreadEvents(actor, sent.body.threadId);
+        pendingRunId = messages.events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        })?.runId;
+        if (!pendingRunId) {
+          throw new Error(
+            "Expected the admitted Run while preparation is held",
+          );
+        }
+        const pendingDetail = await reads.requestReadLogById(
+          actor,
+          pendingRunId,
+          [200],
+        );
+        expect(pendingDetail.body).toMatchObject({
+          id: pendingRunId,
+          status: "pending",
+          sessionId: null,
+          completedAt: null,
+        });
+        const pendingList = await reads.requestListLogs(
+          actor,
+          { status: "pending" },
+          [200],
+        );
+        expect(
+          pendingList.body.data.map((run) => {
+            return run.id;
+          }),
+        ).toContain(pendingRunId);
       });
       kms.release();
+      if (!preparation.ok) {
+        throw preparation.error;
+      }
       await flushWaitUntilForTest();
-      const prepared = await api.executionInput(pendingRunId);
+      if (!pendingRunId) {
+        throw new Error("Expected the prepared Run");
+      }
+      const pendingClaim = await owned.claimRunnerRun(pendingRunId);
       await api.requestCancelRun(actor, pendingRunId, [200]);
       await webhooks.requestAgentComplete(
-        { runId: pendingRunId, exitCode: 137, error: "Run cancelled" },
-        sandboxHeaders(prepared.sandboxToken),
+        { runId: pendingRunId, exitCode: 1, error: "Run cancelled" },
+        sandboxHeaders(pendingClaim.sandboxToken),
         [200],
       );
-      await flushWaitUntilForTest();
 
       const failedRun = await owned.sendChatRun(actor, {
         agentId,

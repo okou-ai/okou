@@ -26,6 +26,7 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
+const chatFixture = createChatEventsFixture(context);
 
 function headers(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -47,7 +48,7 @@ async function fixture(
     model: "claude-fable-5-1",
   });
   if (framework !== "claude-code") {
-    await createChatEventsFixture(context).configureSubscriptionPiModel(actor);
+    await chatFixture.configureSubscriptionPiModel(actor);
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: requireOrgId(actor) },
@@ -111,7 +112,7 @@ test.each([
     const workflow = await createWorkflow(actor, agent.agentId, {
       files: [{ path: "reference.md", content: "old attachment" }],
     });
-    const run = await runs.createThreadRun(actor, {
+    const queued = await chatFixture.queueChatRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the available workflows",
     });
@@ -132,6 +133,7 @@ test.each([
     const second = await createWorkflow(actor, agent.agentId, {
       instruction: "newly available",
     });
+    const run = await queued.launch();
     await runs.heartbeatRunner(group);
     context.mocks.s3.send.mockClear();
     const claim = await runs.executionInput(run.runId);
@@ -245,7 +247,7 @@ test("re-evaluates private/public precedence without exposing another member's p
   await createWorkflow(other, agent.agentId, {
     instruction: "foreign private body",
   });
-  const run = await runs.createThreadRun(actor, {
+  const queued = await chatFixture.queueChatRun(actor, {
     agentId: agent.agentId,
     prompt: "Use the available workflows",
   });
@@ -253,6 +255,7 @@ test("re-evaluates private/public precedence without exposing another member's p
     name,
     instruction: "private body",
   });
+  const run = await queued.launch();
   await runs.heartbeatRunner(group);
   const claim = await runs.executionInput(run.runId);
   expect(
@@ -303,7 +306,7 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
 test("runs a queued explicit invocation without its deleted Workflow", async () => {
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
-  const run = await runs.createThreadRun(actor, {
+  const queued = await chatFixture.queueChatRun(actor, {
     agentId: agent.agentId,
     prompt: `/${workflow.name}`,
   });
@@ -314,6 +317,7 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
     }),
     [204],
   );
+  const run = await queued.launch();
   await runs.heartbeatRunner(group);
   const claim = await runs.executionInput(run.runId);
   expect(
@@ -327,7 +331,7 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
 test("mounts the current winner for a queued invocation whose slug is reused", async () => {
   const { actor, agent, group, s3 } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
-  const run = await runs.createThreadRun(actor, {
+  const queued = await chatFixture.queueChatRun(actor, {
     agentId: agent.agentId,
     prompt: `/${workflow.name}`,
   });
@@ -344,6 +348,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
     name: workflow.name,
     instruction: "different invocation target",
   });
+  const run = await queued.launch();
   await runs.heartbeatRunner(group);
   const claim = await runs.executionInput(run.runId);
   const invoked = claim.contentBundles.skills.find((entry) => {

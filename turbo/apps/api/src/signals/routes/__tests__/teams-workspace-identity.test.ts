@@ -697,7 +697,7 @@ test.each([
         expect(run).toMatchObject({
           agentId,
           triggerSource: "teams",
-          status: "pending",
+          status: "running",
         });
         await reads.requestReadLogById(receiving.actor, run.id, [404]);
         if (scenario === "probe-unavailable") {

@@ -4,16 +4,14 @@ import { randomUUID } from "node:crypto";
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { computerUseRoutes } from "../computer-use";
-import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 
 const context = testContext();
 
-const STARTED_AT_MS = Date.parse("2026-09-18T12:00:00.000Z");
+const STARTED_AT_MS = now();
 const CASE_TIMEOUT_MS = 30_000;
 
 interface RunningCommand {
@@ -90,7 +88,6 @@ describe("GET /api/computer-use/commands/:commandId", () => {
     "preserves session, PAT and supported Agent auth with exact owner and host isolation",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
-      await setupApp({ context, routes: computerUseRoutes, isolatePg: true });
       const scenario = createScenario();
       const { bdd, authOrg, computerUse, orgScoped, agentTokenFor } = scenario;
       return await scenario.run(async () => {
@@ -185,7 +182,6 @@ describe("GET /api/computer-use/commands/:commandId", () => {
     "preserves queued, running, succeeded, failed and offloaded response fields",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
-      await setupApp({ context, routes: computerUseRoutes, isolatePg: true });
       const scenario = createScenario();
       const { bdd, computerUse, orgScoped } = scenario;
       return await scenario.run(async () => {
@@ -314,7 +310,6 @@ describe("GET /api/computer-use/commands/:commandId", () => {
     "fails a running command once it passes its timeout, audits it once and keeps late completions from overwriting it",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
-      await setupApp({ context, routes: computerUseRoutes, isolatePg: true });
       const scenario = createScenario();
       const { bdd, computerUse, orgScoped, createRunningWriteCommand } =
         scenario;
@@ -376,7 +371,6 @@ describe("GET /api/computer-use/commands/:commandId", () => {
     "lets Desktop polling expire a blocker after the strict timeout boundary and preserves its audit through late completions",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
-      await setupApp({ context, routes: computerUseRoutes, isolatePg: true });
       const scenario = createScenario();
       const { bdd, computerUse, orgScoped, createRunningWriteCommand } =
         scenario;

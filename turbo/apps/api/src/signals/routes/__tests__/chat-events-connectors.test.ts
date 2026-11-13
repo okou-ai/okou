@@ -28,6 +28,7 @@ const {
   sendChatRun,
   claimChatRun,
   completeChatRunOk,
+  cancelAndCompleteChatRun,
   cancelChatRun,
   sessionHeaders,
 } = createChatEventsFixture(context);
@@ -501,7 +502,7 @@ describe("CHAT-02: thread connector account selection", () => {
       expect(
         reauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
       ).toMatchObject({ sourceId: connection.id });
-      await cancelChatRun(actor, reauthorized.runId);
+      await cancelAndCompleteChatRun(actor, reauthorized.runId);
     },
   );
 

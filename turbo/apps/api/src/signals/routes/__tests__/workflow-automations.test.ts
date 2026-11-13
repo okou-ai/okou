@@ -4442,12 +4442,7 @@ describe("okou workflow automations", () => {
   });
 
   it("lazily binds a chat thread when a one-time automation runs now", async () => {
-    await setupApp({
-      context,
-      routes: workflowAutomationsRoutes,
-      isolatePg: true,
-    });
-    const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56);
+    const requestedAt = now();
     mockNow(requestedAt);
     const { workflowId } = await setupFixture();
     await runs.configureRunnerGroup();

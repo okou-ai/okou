@@ -150,6 +150,25 @@ export async function publicChatActor(
         return fixture.sendWaitingChatInput(...parameters);
       });
     },
+    queueChatRun: (...parameters: Parameters<typeof fixture.queueChatRun>) => {
+      return run(async () => {
+        const waiting = await fixture.queueChatRun(...parameters);
+        owner.rememberClaim(
+          waiting.blocker.runId,
+          waiting.blocker.sandboxToken,
+        );
+        return {
+          launch() {
+            return run(async () => {
+              const launched = await waiting.launch();
+              const claim = await fixture.api.executionInput(launched.runId);
+              owner.rememberClaim(launched.runId, claim.sandboxToken);
+              return launched;
+            });
+          },
+        };
+      });
+    },
     requestSendEvent: (
       ...parameters: Parameters<typeof fixture.chat.requestSendEvent>
     ) => {

@@ -611,6 +611,7 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("uses a manual GitLab credential in a Run without optional host configuration", async () => {
+    clearMockNow();
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "gitlab"));
     const connected = await connectorsApi.connectManualGrant(
@@ -646,6 +647,7 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("mounts all 17 normally published connector skill versions", async () => {
+    clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
@@ -739,6 +741,7 @@ describe("connector catalog valid lifecycle", () => {
   }, 30_000);
 
   it("loads the current published connector skill when a queued Run is claimed", async () => {
+    clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
@@ -767,7 +770,7 @@ describe("connector catalog valid lifecycle", () => {
         [connector.id],
       );
     });
-    const first = await owned.sendChatRun(owned.actor, {
+    const queued = await owned.queueChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "Use the first published skill",
     });
@@ -805,6 +808,7 @@ describe("connector catalog valid lifecycle", () => {
       });
       await owned.run(flushWaitUntilForTest);
     };
+    const first = await queued.launch();
     await check(first.runId, updated);
     const later = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -814,6 +818,7 @@ describe("connector catalog valid lifecycle", () => {
   }, 30_000);
 
   it("makes a verified Steam OpenID identity available to its Run", async () => {
+    clearMockNow();
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockOptionalEnv("STEAM_WEB_API_KEY", "catalog-steam-api-key");
@@ -858,6 +863,7 @@ describe("connector catalog valid lifecycle", () => {
   });
 
   it("refreshes AWS credentials in a Run after external-code authorization", async () => {
+    clearMockNow();
     const provider = mockAwsExternalCodeProvider();
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "aws"));

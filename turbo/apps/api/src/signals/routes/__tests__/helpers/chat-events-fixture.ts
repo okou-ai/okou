@@ -744,6 +744,34 @@ export function createChatEventsFixture(context: TestContext) {
     }
   }
 
+  async function cancelAndCompleteChatRun(actor: ApiTestUser, runId: string) {
+    const claim = await api.executionInput(runId);
+    await cancelChatRun(actor, runId, {
+      authorization: `Bearer ${claim.sandboxToken}`,
+    });
+  }
+
+  /** Hold a real Thread input behind an executing Run until the caller launches it. */
+  async function queueChatRun(actor: ApiTestUser, body: ChatRunSendBody) {
+    const blocker = await sendChatRun(actor, {
+      agentId: body.agentId,
+      model: body.model,
+      prompt: "Hold the following input until its configuration is ready",
+    });
+    const waiting = await sendWaitingChatInput(actor, {
+      ...body,
+      threadId: blocker.threadId,
+    });
+    const claim = await api.executionInput(blocker.runId);
+    return {
+      blocker: { runId: blocker.runId, sandboxToken: claim.sandboxToken },
+      async launch() {
+        await cancelAndCompleteChatRun(actor, blocker.runId);
+        return await waiting.launchedRun();
+      },
+    };
+  }
+
   function chatEventsClient() {
     return setupApp({
       context,
@@ -1148,6 +1176,7 @@ export function createChatEventsFixture(context: TestContext) {
     sendChatRun,
     sendChatRunAfterPick,
     sendWaitingChatInput,
+    queueChatRun,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,
     claimChatRun,
@@ -1157,6 +1186,7 @@ export function createChatEventsFixture(context: TestContext) {
     completeChatRunOk,
     failChatRun,
     cancelChatRun,
+    cancelAndCompleteChatRun,
     chatEventsClient,
     chatThreadsClient,
     sessionHeaders,

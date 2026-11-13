@@ -1191,9 +1191,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
   });
 
   it("uses current permission expiry for an admitted builtin connector", async () => {
-    await withMockNowForTest(new Date("2026-09-07T08:00:00.000Z"), async () => {
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
       const owner = bdd.user();
-      const owned: { agentId?: string; runId?: string } = {};
+      const owned: { agentId?: string; runId?: string; sandboxToken?: string } =
+        {};
       const kmsKeyId = env("SECRETS_KMS_KEY_ID");
       const configureCloudflareOAuth = () => {
         mockOptionalEnv("CLOUDFLARE_OAUTH_CLIENT_ID", "cloudflare-test-client");
@@ -1216,6 +1218,13 @@ describe("POST /api/connectors/diagnostics/check", () => {
         );
         if (owned.runId) {
           await runsApi.requestCancelRun(owner, owned.runId, [200]);
+          if (owned.sandboxToken) {
+            await createWebhookCallbackApi(context).requestAgentComplete(
+              { runId: owned.runId, exitCode: 137, error: "Run cancelled" },
+              { authorization: `Bearer ${owned.sandboxToken}` },
+              [200],
+            );
+          }
           await flushWaitUntilForTest();
         }
         if (owned.agentId) {
@@ -1277,6 +1286,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         },
       });
       owned.runId = runId;
+      owned.sandboxToken = (await runsApi.executionInput(runId)).sandboxToken;
       await runsApi.applyUserPermissionGrant(owner, {
         agentId,
         connectorSlug: "cloudflare",
@@ -1305,7 +1315,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-      mockNow(new Date("2026-09-07T09:00:00.000Z"));
+      mockNow(startedAt + 60 * 60 * 1000);
       const expired = await checkWithToken(
         okouToken(owner, runId, ["connector:read", "agent-run:read"]),
         request,

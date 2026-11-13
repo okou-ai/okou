@@ -248,6 +248,7 @@ async function feedbackContext(
   await withMockNowForTest(
     Math.max(now(), Date.parse(automation.nextRunAt)),
     async () => {
+      await runs.registerDirectRunner(fixture.runnerGroup);
       await accept(
         app(cronExecuteWorkflowAutomationsContract).execute({
           headers: cronHeaders,
@@ -396,7 +397,7 @@ describe("Agent suggestions", () => {
   });
 
   it("renews a card for 24 hours after an update", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const suggestion = input();
@@ -404,7 +405,9 @@ describe("Agent suggestions", () => {
       client().create({ headers: fixture.headers, body: suggestion }),
       [200],
     );
-    expect(created.body.expiresAt).toBe("2026-10-28T00:00:00.000Z");
+    expect(created.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS).toISOString(),
+    );
 
     mockNow(start + 60_000);
     const updated = await accept(
@@ -415,7 +418,9 @@ describe("Agent suggestions", () => {
       }),
       [200],
     );
-    expect(updated.body.expiresAt).toBe("2026-10-28T00:01:00.000Z");
+    expect(updated.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS + 60_000).toISOString(),
+    );
     expect(updated.body.createdAt).toBe(created.body.createdAt);
     mockNow(start + SUGGESTION_RETENTION_MS);
     const current = await accept(
@@ -433,10 +438,13 @@ describe("Agent suggestions", () => {
   });
 
   it("honors an earlier deadline and caps a later deadline at 24 hours", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
-    const early = { ...input(), expiresAt: "2026-10-27T00:01:00.000Z" };
+    const early = {
+      ...input(),
+      expiresAt: new Date(start + 60_000).toISOString(),
+    };
     await accept(
       client().create({ headers: fixture.headers, body: early }),
       [200],
@@ -444,23 +452,30 @@ describe("Agent suggestions", () => {
     const capped = await accept(
       client().create({
         headers: fixture.headers,
-        body: { ...input(), expiresAt: "2026-10-29T00:00:00.000Z" },
+        body: {
+          ...input(),
+          expiresAt: new Date(
+            start + 2 * SUGGESTION_RETENTION_MS,
+          ).toISOString(),
+        },
       }),
       [200],
     );
-    expect(capped.body.expiresAt).toBe("2026-10-28T00:00:00.000Z");
+    expect(capped.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS).toISOString(),
+    );
     await accept(
       client().update({
         headers: fixture.headers,
         params: { id: capped.body.id },
-        body: { expiresAt: "2026-10-27T00:02:00.000Z" },
+        body: { expiresAt: new Date(start + 120_000).toISOString() },
       }),
       [200],
     );
     await accept(
       client().create({
         headers: fixture.headers,
-        body: { ...input(), expiresAt: "2026-10-26T23:59:59.000Z" },
+        body: { ...input(), expiresAt: new Date(start - 1000).toISOString() },
       }),
       [400],
     );
@@ -506,7 +521,7 @@ describe("Agent suggestions", () => {
   });
 
   it("retains selected, dismissed and withdrawn feedback for 24 hours after processing", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const selected = input();
@@ -1905,7 +1920,7 @@ describe("Suggestion feedback context", () => {
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const first = await accept(
@@ -2016,7 +2031,7 @@ describe("Suggestion feedback context", () => {
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     const day = 86_400_000;
     mockNow(start);
     const fixture = await primaryRun();
@@ -2058,7 +2073,7 @@ describe("Suggestion feedback context", () => {
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     for (let index = 0; index < 101; index++) {

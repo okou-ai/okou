@@ -185,7 +185,7 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   };
   const claim = async (runId: string) => {
     const state = await runs.readRun(actor, runId);
-    expect(state.status, JSON.stringify(state)).toBe("pending");
+    expect(state.status, JSON.stringify(state)).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
     return await runs.executionInput(runId);
   };
@@ -334,7 +334,7 @@ describe("personal subscription run identity", () => {
         const target = await f.start();
         admitted.push(target);
         await expect(runs.readRun(f.actor, target)).resolves.toMatchObject({
-          status: "pending",
+          status: "running",
           source: { account: { status: "connected", id: f.connected.id } },
         });
 
@@ -408,7 +408,7 @@ describe("personal subscription run identity", () => {
         });
         ownedRunId = sent.runId;
         const state = await runs.readRun(actor, sent.runId);
-        expect(state.status, JSON.stringify(state)).toBe("pending");
+        expect(state.status, JSON.stringify(state)).toBe("running");
         await runs.heartbeatRunner(runnerGroup);
         const claim = await runs.executionInput(sent.runId);
         ownedClaim = claim;

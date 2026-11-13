@@ -174,7 +174,7 @@ describe("Teams message launch context", () => {
       );
       expect(listed.body.data).toContainEqual(
         expect.objectContaining({
-          status: "pending",
+          status: "running",
           triggerSource: "teams",
           agentId: owned.defaultAgentId,
           prompt: "hello from teams diagnostics",
@@ -192,7 +192,7 @@ describe("Teams message launch context", () => {
         [200],
       );
       expect(detail.body).toMatchObject({
-        status: "pending",
+        status: "running",
         triggerSource: "teams",
         agentId: owned.defaultAgentId,
         error: null,
@@ -333,7 +333,7 @@ describe("Teams webhook dispatch", () => {
     expect(listed.body.data).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          status: "pending",
+          status: "running",
           triggerSource: "teams",
           prompt: "dispatch despite realtime failure",
         }),
