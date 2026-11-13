@@ -210,15 +210,15 @@ final class AttachmentDraftTests: XCTestCase {
   }
 
   func testNewImageChatStaysSelectedWhenAnOlderListRefreshFinishesAfterSending() async throws {
-    let oldListReady = expectation(description: "The pre-creation list is awaiting indicators")
-    let freshListReady = expectation(description: "The replacement list is awaiting indicators")
+    let oldListReady = expectation(description: "The pre-creation list response is held")
+    let freshListReady = expectation(description: "The replacement list response is held")
     let (oldList, releaseOldList) = AsyncStream<Void>.makeStream()
     let (freshList, releaseFreshList) = AsyncStream<Void>.makeStream()
     defer {
       releaseOldList.finish()
       releaseFreshList.finish()
     }
-    let reads = Mutex((snapshots: 0, indicators: 0))
+    let reads = Mutex(0)
     let deleted = Mutex(false)
     let image = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).pngData { context in
       UIColor.systemTeal.setFill()
@@ -231,26 +231,16 @@ final class AttachmentDraftTests: XCTestCase {
       threadList: { request in
         switch request.url?.path {
         case "/api/chat-threads/snapshot":
-          let first = reads.withLock {
-            $0.snapshots += 1
-            return $0.snapshots == 1
+          let count = reads.withLock {
+            $0 += 1
+            return $0
           }
           let threads =
-            first || deleted.withLock { $0 }
+            count == 1 || deleted.withLock { $0 }
             ? ""
             : """
             {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
             """
-          return ChatHTTPResponse(
-            body:
-              "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
-        case "/api/chat-threads/events":
-          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-        case "/api/indicators":
-          let count = reads.withLock {
-            $0.indicators += 1
-            return $0.indicators
-          }
           if count == 1 {
             oldListReady.fulfill()
             for await _ in oldList { break }
@@ -258,6 +248,12 @@ final class AttachmentDraftTests: XCTestCase {
             freshListReady.fulfill()
             for await _ in freshList { break }
           }
+          return ChatHTTPResponse(
+            body:
+              "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+        case "/api/indicators":
           return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
         default: throw URLError(.unsupportedURL)
         }
