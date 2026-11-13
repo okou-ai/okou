@@ -8,7 +8,11 @@ import { chromium, expect } from "@playwright/test";
 
 import { formatErrorReport } from "./error-report";
 import { capturePaidOnboardingFailure } from "./paid-onboarding-diagnostics";
-import { fillStripeCheckout } from "./stripe-checkout";
+import {
+  collectStripeCheckoutState,
+  fillStripeCheckout,
+} from "./stripe-checkout";
+import { observeStripeCheckout } from "./stripe-checkout-observation";
 
 function gate() {
   let resolve: () => void = () => {};
@@ -74,6 +78,8 @@ test("checkout completes in a late nested Stripe form with collapsed Card contro
   const browser = await chromium.launch();
   context.after(() => browser.close());
   const page = await browser.newPage();
+  const observer = await observeStripeCheckout(page);
+  context.after(() => observer.dispose());
   const attachRequested = gate();
   const attachReleased = gate();
   const cardRequested = gate();
@@ -116,7 +122,7 @@ test("checkout completes in a late nested Stripe form with collapsed Card contro
       contentType: "text/html",
       body: `<!doctype html>
         <form>
-          <label>Email<input name="email" type="email" required></label>
+          <label>Email<input name="email" type="text" inputmode="email" required></label>
           <button type="button" id="card">Card</button>
           <section id="fields"></section>
           <label><input id="saveInfo" type="checkbox" checked>Save my information for faster checkout</label>
@@ -179,6 +185,11 @@ test("checkout completes in a late nested Stripe form with collapsed Card contro
     await expect(page.getByRole("status")).toHaveText(
       "Checkout completed without Link",
     );
+    const state = await collectStripeCheckoutState(page);
+    const form = state.frames.find((frame) => frame.submit.visible);
+    assert.equal(form?.formEvents?.emailInputEvents, 1);
+    assert.equal(form?.formEvents?.emailChangeEvents, 1);
+    assert.equal(form?.formEvents?.emailBlurEvents, 1);
   } finally {
     attachReleased.resolve();
     cardReleased.resolve();

@@ -96,7 +96,7 @@ export async function observeStripeCheckout(page: Page) {
         (event) => {
           if (
             !(event.target instanceof HTMLInputElement) ||
-            event.target.type !== "email"
+            (event.target.type !== "email" && event.target.name !== "email")
           )
             return;
           if (type === "input") events.emailInputEvents++;
