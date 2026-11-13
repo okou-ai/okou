@@ -37,13 +37,15 @@ const RAIL_ITEM_FRAME = cn(
   "in-data-[slot=capability-tray]:w-auto",
 );
 /**
- * On the capability tray the items wrap into rows instead: as many columns of
- * at least the item width as the tray holds, stretched to fill it, so the
- * covers keep the shelf's metrics while the tray's window scrolls downward.
+ * On the capability tray the items wrap into rows instead, stretched to fill
+ * the tray while its window scrolls downward. A column may shrink to 88% of
+ * the shelf's item width before the row drops one: four covers then hold down
+ * to a ~1200px window with the sidebar open, where one fewer column would make
+ * each row so tall that the next one sinks entirely into the window's fade.
  */
 const RAIL_TRACK = cn(
   "flex w-max items-start gap-3",
-  "in-data-[slot=capability-tray]:grid in-data-[slot=capability-tray]:w-full in-data-[slot=capability-tray]:grid-cols-[repeat(auto-fill,minmax(var(--rail-item-width),1fr))] in-data-[slot=capability-tray]:gap-y-4",
+  "in-data-[slot=capability-tray]:grid in-data-[slot=capability-tray]:w-full in-data-[slot=capability-tray]:grid-cols-[repeat(auto-fill,minmax(calc(var(--rail-item-width)*0.88),1fr))] in-data-[slot=capability-tray]:gap-y-4",
 );
 /**
  * Items resolve left to right as the row arrives. The step is capped so a
