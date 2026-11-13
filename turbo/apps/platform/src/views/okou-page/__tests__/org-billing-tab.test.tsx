@@ -139,20 +139,6 @@ function activeTeamBillingStatus(): BillingStatusResponse {
   };
 }
 
-function activeCustomBillingStatus(): BillingStatusResponse {
-  return {
-    ...activeProBillingStatus(),
-    tier: "custom",
-    ...billingPlanCapabilities("custom"),
-    credits: 0,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    hasSubscription: false,
-    creditBreakdown: [],
-    concurrencyLimit: 10,
-  };
-}
-
 function noActiveBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
@@ -2741,93 +2727,6 @@ test("Manage workspace payment methods in Stripe", async () => {
     expect(window.location.href).toBe(
       "https://billing.stripe.com/customer-portal/test-org",
     );
-  });
-});
-
-test("Show custom-plan access without self-service plan changes", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Custom Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, activeCustomBillingStatus());
-  });
-
-  await openBillingTab();
-
-  await waitFor(() => {
-    expect(screen.getByText("Custom plan")).toBeInTheDocument();
-    expect(
-      screen.getByText("Custom access with 10 concurrent runs"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("10 concurrent runs")).toBeInTheDocument();
-    expect(screen.getByText("Payment methods")).toBeInTheDocument();
-  });
-  expect(screen.queryByText("Upgrade")).not.toBeInTheDocument();
-  expect(screen.queryByText("Downgrade")).not.toBeInTheDocument();
-});
-
-test("Keep self-service plans unavailable for a custom workspace", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Custom Usage Pack Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, activeCustomBillingStatus());
-  });
-  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse());
-  });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      tier: "team",
-      currentPeriodEnd: "2026-04-01T00:00:00Z",
-      allocations: [],
-    });
-  });
-
-  await openBillingTab("/?settings=billing");
-
-  await screen.findByText("Custom plan");
-
-  click(buttonByText("Compare all plans"));
-  const choosePlanDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  for (const name of ["Pro plan", "Team plan"]) {
-    const plan = within(choosePlanDialog).getByRole("article", { name });
-    expect(buttonByText("Unavailable", plan)).toBeDisabled();
-  }
-});
-
-test("Show the end date for a cancelled custom plan", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Custom Cancel Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, {
-      ...activeCustomBillingStatus(),
-      cancelAtPeriodEnd: true,
-      scheduledChange: {
-        type: "cancel",
-        targetTier: "limited-free-1",
-        effectiveDate: "2026-08-09T00:00:00Z",
-      },
-    });
-  });
-
-  await openBillingTab();
-
-  await waitFor(() => {
-    expect(screen.getByText("Custom plan")).toBeInTheDocument();
-    expect(
-      screen.getByText("Your custom plan will end on Aug 9, 2026."),
-    ).toBeInTheDocument();
   });
 });
 

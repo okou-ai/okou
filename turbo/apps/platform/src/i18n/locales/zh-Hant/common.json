@@ -1186,11 +1186,6 @@
       "cancellationNotice": "你的{{plan}}套餐已取消，將於{{date}}結束。",
       "compare": "對比套餐",
       "compareAll": "對比所有套餐",
-      "custom": {
-        "name": "定製"
-      },
-      "customAccess": "定製權益，{{value}} 個併發執行",
-      "customCancellationNotice": "你的定製套餐將於{{date}}結束。",
       "downgrade": "降級",
       "downgradeNotice": "你的{{currentPlan}}套餐將於{{date}}降級為{{targetPlan}}。",
       "downgradesOn": "將於{{date}}降級為{{plan}}",
@@ -5193,7 +5188,6 @@
       "inUse_other": "{{limit}} 個名額中已使用 {{active}} 個"
     },
     "tiers": {
-      "custom": "自定義",
       "free": "免費",
       "pro": "Pro",
       "team": "Team"

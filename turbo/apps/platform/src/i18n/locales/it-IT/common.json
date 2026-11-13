@@ -1212,11 +1212,6 @@
       "cancellationNotice": "Il tuo piano {{plan}} è stato annullato e terminerà il {{date}}.",
       "compare": "Confronta i piani",
       "compareAll": "Confronta tutti i piani",
-      "custom": {
-        "name": "Personalizzato"
-      },
-      "customAccess": "Accesso personalizzato con {{value}} esecuzioni simultanee",
-      "customCancellationNotice": "Il tuo piano personalizzato terminerà il {{date}}.",
       "downgrade": "Passa a un piano inferiore",
       "downgradeNotice": "Il piano {{currentPlan}} passerà a {{targetPlan}} il {{date}}.",
       "downgradesOn": "Passa a {{plan}} il {{date}}",
@@ -5271,7 +5266,6 @@
       "inUse_other": "{{active}} di {{limit}} slot in uso"
     },
     "tiers": {
-      "custom": "Personalizzato",
       "free": "Gratuito",
       "pro": "Pro",
       "team": "Team"

@@ -96,14 +96,14 @@ test("The queue deep link opens a drawer that can be closed", async () => {
   });
 });
 
-test("Team and Custom administrators can buy additional concurrency without changing plans", async () => {
+test("Team administrators can buy additional concurrency without changing plans", async () => {
   const teamBilling = billingStatus({
     tier: "team",
     canBuyConcurrency: true,
     concurrencyLimit: 5,
     concurrencyUnitAmountCents: 4200,
   });
-  const fixture = installQueuePageFixture(context, {
+  installQueuePageFixture(context, {
     billing: teamBilling,
     queue: queueResponse({
       tier: "team",
@@ -121,31 +121,6 @@ test("Team and Custom administrators can buy additional concurrency without chan
   expect(within(drawer).getByText("3 of 5 slots in use")).toBeVisible();
   expect(within(drawer).getByText("Additional concurrency")).toBeVisible();
   expect(button(drawer, "Buy $42/month")).toBeEnabled();
-  expect(queryButton(drawer, /^Upgrade to /u)).toBeUndefined();
-
-  fixture.setQueueResponse(
-    queueResponse({
-      tier: "custom",
-      limit: 10,
-      active: 10,
-      available: 0,
-      memberUsage: [],
-    }),
-  );
-  fixture.setBillingStatus(
-    billingStatus({
-      tier: "custom",
-      canBuyConcurrency: true,
-      concurrencyLimit: 10,
-      concurrencyUnitAmountCents: 10_000,
-    }),
-  );
-  await announceBillingChange();
-
-  const customPlan = await within(drawer).findByText("Custom");
-  expect(customPlan).toBeVisible();
-  expect(within(drawer).getByText("10 of 10 slots in use")).toBeVisible();
-  expect(button(drawer, "Buy $100/month")).toBeEnabled();
   expect(queryButton(drawer, /^Upgrade to /u)).toBeUndefined();
 });
 
@@ -372,9 +347,9 @@ test("A Team administrator reviews a first concurrency purchase before checkout"
 
 test("The queue shows active slot usage for each member", async () => {
   installQueuePageFixture(context, {
-    billing: billingStatus({ tier: "custom", concurrencyLimit: 80 }),
+    billing: billingStatus({ tier: "team", concurrencyLimit: 80 }),
     queue: queueResponse({
-      tier: "custom",
+      tier: "team",
       limit: 80,
       active: 17,
       available: 63,

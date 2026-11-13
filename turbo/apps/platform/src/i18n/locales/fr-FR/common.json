@@ -1212,11 +1212,6 @@
       "cancellationNotice": "Votre abonnement {{plan}} a été annulé et prendra fin le {{date}}.",
       "compare": "Comparer les forfaits",
       "compareAll": "Comparer tous les forfaits",
-      "custom": {
-        "name": "Personnalisé"
-      },
-      "customAccess": "Accès personnalisé avec {{value}} exécutions concurrentes",
-      "customCancellationNotice": "Votre forfait personnalisé prendra fin le {{date}}.",
       "downgrade": "Rétrograder",
       "downgradeNotice": "Votre plan {{currentPlan}} rétrogradera vers {{targetPlan}} le {{date}}.",
       "downgradesOn": "Rétrogradations vers {{plan}} le {{date}}",
@@ -5271,7 +5266,6 @@
       "inUse_other": "{{active}} sur {{limit}} emplacements utilisés"
     },
     "tiers": {
-      "custom": "Personnalisé",
       "free": "Gratuit",
       "pro": "Pro",
       "team": "Team"

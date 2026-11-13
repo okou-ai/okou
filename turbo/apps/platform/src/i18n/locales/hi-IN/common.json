@@ -1189,11 +1189,6 @@
       "cancellationNotice": "आपकी {{plan}} योजना रद्द कर दी गई है और {{date}} पर समाप्त होगी।",
       "compare": "योजनाओं की तुलना करें",
       "compareAll": "सभी योजनाओं की तुलना करें",
-      "custom": {
-        "name": "रिवाज़"
-      },
-      "customAccess": "{{value}} समवर्ती रन के साथ कस्टम एक्सेस",
-      "customCancellationNotice": "आपकी कस्टम योजना {{date}} पर समाप्त हो जाएगी।",
       "downgrade": "डाउनग्रेड",
       "downgradeNotice": "आपका {{currentPlan}} प्लान {{date}} पर {{targetPlan}} में डाउनग्रेड हो जाएगा।",
       "downgradesOn": "{{date}} पर {{plan}} में डाउनग्रेड",
@@ -5211,7 +5206,6 @@
       "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
     },
     "tiers": {
-      "custom": "कस्टम",
       "free": "मुक्त",
       "pro": "प्रो",
       "team": "टीम"

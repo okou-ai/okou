@@ -1212,11 +1212,6 @@
       "cancellationNotice": "Tu plan {{plan}} ha sido cancelado y terminará el {{date}}.",
       "compare": "Comparar planes",
       "compareAll": "Compara todos los planes",
-      "custom": {
-        "name": "Personalizado"
-      },
-      "customAccess": "Acceso personalizado con ejecuciones concurrentes {{value}}",
-      "customCancellationNotice": "Tu plan personalizado terminará en {{date}}.",
       "downgrade": "Cambiar a un plan inferior",
       "downgradeNotice": "Tu plan cambiará de {{currentPlan}} a {{targetPlan}} el {{date}}.",
       "downgradesOn": "Cambio a {{plan}} el {{date}}",
@@ -5271,7 +5266,6 @@
       "inUse_other": "{{active}} de {{limit}} cupos en uso"
     },
     "tiers": {
-      "custom": "Personalizado",
       "free": "Gratis",
       "pro": "Pro",
       "team": "Equipo"

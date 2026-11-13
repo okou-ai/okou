@@ -55,16 +55,4 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     audioDailyRateLimit: 500,
     audioDailyDurationSeconds: 500 * 60,
   },
-  custom: {
-    planRank: 3,
-    baseConcurrencyLimit: 10,
-    canBuyConcurrency: true,
-    canBuyCredits: true,
-    autoRechargeAllowed: true,
-    restrictedBuiltInModels: false,
-    workflowWebhookAutomationAllowed: true,
-    audioLifetimeLimit: null,
-    audioDailyRateLimit: 500,
-    audioDailyDurationSeconds: 500 * 60,
-  },
 };

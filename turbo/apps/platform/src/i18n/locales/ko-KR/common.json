@@ -1186,11 +1186,6 @@
       "cancellationNotice": "{{plan}} 플랜이 취소되어 {{date}}에 종료됩니다.",
       "compare": "플랜 비교",
       "compareAll": "모든 플랜 비교",
-      "custom": {
-        "name": "사용자 지정"
-      },
-      "customAccess": "{{value}} 동시 실행이 포함된 사용자 지정 액세스",
-      "customCancellationNotice": "사용자 지정 플랜이 {{date}}에 종료됩니다.",
       "downgrade": "다운그레이드",
       "downgradeNotice": "{{currentPlan}} 플랜이 {{date}}에 {{targetPlan}}으로 다운그레이드됩니다.",
       "downgradesOn": "{{date}}에 {{plan}}으로 다운그레이드됨",
@@ -5193,7 +5188,6 @@
       "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
     },
     "tiers": {
-      "custom": "맞춤형",
       "free": "무료",
       "pro": "프로",
       "team": "팀"

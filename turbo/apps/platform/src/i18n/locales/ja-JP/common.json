@@ -1186,11 +1186,6 @@
       "cancellationNotice": "{{plan}} プランはキャンセルされ、{{date}} に終了します。",
       "compare": "プランを比較する",
       "compareAll": "すべてのプランを比較する",
-      "custom": {
-        "name": "カスタム"
-      },
-      "customAccess": "{{value}} 同時実行によるカスタム アクセス",
-      "customCancellationNotice": "カスタム プランは {{date}} に終了します。",
       "downgrade": "ダウングレード",
       "downgradeNotice": "{{currentPlan}} プランは、{{date}} の {{targetPlan}} にダウングレードされます。",
       "downgradesOn": "{{date}} の {{plan}} にダウングレード",
@@ -5193,7 +5188,6 @@
       "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
     },
     "tiers": {
-      "custom": "カスタム",
       "free": "無料",
       "pro": "プロ",
       "team": "チーム"

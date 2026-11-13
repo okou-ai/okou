@@ -47,8 +47,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canRestorePlan: false,
       };
     }
-    case "team":
-    case "custom": {
+    case "team": {
       return {
         status: "active",
         canBuyConcurrency: true,
