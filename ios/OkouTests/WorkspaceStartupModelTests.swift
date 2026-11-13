@@ -149,7 +149,8 @@ final class WorkspaceStartupFixture: Sendable {
   init(
     beforeModelRead: (@Sendable (String) async throws -> Void)? = nil,
     beforeNavigationRead: (@Sendable () async throws -> Void)? = nil,
-    realtimeToken: String? = nil
+    realtimeToken: String? = nil,
+    indicators: ChatHTTPFixture.Handler? = nil
   ) {
     let state = state
     history = ConversationHistoryFixture(
@@ -185,7 +186,7 @@ final class WorkspaceStartupFixture: Sendable {
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Fixture offline"}}"#)
         default: throw URLError(.unsupportedURL)
         }
-      })
+      }, indicators: indicators)
   }
 
   @MainActor

@@ -11,6 +11,7 @@ enum ChatInvalidation: Hashable, Sendable {
   case runModels
   case modelPreference
   case threadList
+  case indicators
   case history(threadID: String)
   case detail(threadID: String)
   case readCursor
@@ -33,6 +34,7 @@ enum ChatInvalidation: Hashable, Sendable {
     case "runModelsChanged": self = .runModels
     case "userPreferenceChanged": self = .modelPreference
     case "threadListChanged": self = .threadList
+    case "chatIndicatorsChanged": self = .indicators
     case "chatThreadReadCursorUpdated": self = .readCursor
     default:
       let prefixes = ["chatThreadMessageCreated:", "chatThreadDetailChanged:"]
