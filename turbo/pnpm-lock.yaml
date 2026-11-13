@@ -132,7 +132,7 @@ importers:
         version: 3.13.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@hono/node-server':
         specifier: ^2.1.6
-        version: 2.1.8(hono@4.13.18)
+        version: 2.1.6(hono@4.13.18)
       '@hono/otel':
         specifier: ^1.1.2
         version: 1.1.2(hono@4.13.18)
@@ -2781,8 +2781,8 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
-  '@hono/node-server@2.1.8':
-    resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
+  '@hono/node-server@2.1.6':
+    resolution: {integrity: sha512-p/KH9MnfNcsm3sR6x4lNgm5j+QN4Et8srKredl9DZfXiyZ1UQ3aQ2YVpFLbqktYN5JI+DB+VZFKM2PqE5hLKjQ==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4 || ^5.0.0-0
@@ -11193,7 +11193,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@hono/node-server@2.1.8(hono@4.13.18)':
+  '@hono/node-server@2.1.6(hono@4.13.18)':
     dependencies:
       hono: 4.13.18
 
