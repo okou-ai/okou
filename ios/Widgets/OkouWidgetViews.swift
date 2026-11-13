@@ -22,7 +22,7 @@ struct OkouStatusWidgetView: View {
       let model = OkouWidgetModel(snapshot: snapshot, date: entry.date)
       switch family {
       case .systemSmall: OkouSmallWidget(model: model)
-      case .systemMedium: OkouMediumWidget(model: model)
+      case .systemMedium: OkouMediumWidget(model: model, updated: entry.date)
       case .systemLarge: OkouLargeWidget(model: model, updated: entry.date)
       case .accessoryRectangular: OkouRectangularWidget(model: model)
       case .accessoryCircular: OkouCircularWidget(model: model)
@@ -131,70 +131,65 @@ struct OkouGreeting: View {
   }
 }
 
-/// The quiet state's header: the mascot, the greeting and the actions on one line, so the rest
-/// of the widget is free for chats. The widget's name already shows under it on the Home Screen.
-struct OkouQuietHeader: View {
+/// Every medium and large widget's header, in one geometry for every state: the mascot, a
+/// title with a note under it, and New chat. Quiet, the title is the greeting and the note says
+/// nothing is running; busy, the title counts what needs you, what is unread and what is
+/// working, and the note says when the widget last refreshed. A widget that changes state keeps
+/// its shape, and the mascot stays the size that balances the button.
+struct OkouHeader: View {
   let model: OkouWidgetModel
   let avatar: CGFloat
-  let greeting: CGFloat
+  let updated: Date
 
   var body: some View {
-    // No stack spacing: a spacer would take a gap of its own and leave the greeting short.
+    // No stack spacing: a spacer would take a gap of its own and leave the title short.
     HStack(alignment: .center, spacing: 0) {
       OkouMascot(mood: model.mood, size: avatar)
         .padding(.trailing, 10)
-      OkouGreeting(model: model, size: greeting, prefersOneLine: true)
+      if model.isQuiet {
+        OkouGreeting(model: model, size: 17, prefersOneLine: true)
+      } else {
+        OkouStatusTitle(model: model, updated: updated)
+      }
       Spacer(minLength: 8)
       OkouNewChatButton()
     }
   }
 }
 
-/// Chat rows of one fixed height with the sidebar's hairlines between them — none beside the
-/// orange card, which carries its own edge. Medium and large widgets show two and six of them
-/// whether or not anything is running, so both states keep one rhythm.
-struct OkouChatList: View {
-  static let rowHeight: CGFloat = 42
-  let chats: [OkouWidgetChat]
-  let model: OkouWidgetModel
-
-  var body: some View {
-    VStack(spacing: 0) {
-      ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
-        OkouChatRow(chat: chat, model: model)
-          .frame(height: Self.rowHeight)
-        if index < chats.count - 1 && chat.state != .needsYou
-          && chats[index + 1].state != .needsYou
-        {
-          Divider().overlay(OkouColor.border).padding(.leading, 30)
-        }
-      }
-    }
+/// The busy title: the counts in the list's order, each in its row's colour, at the greeting's
+/// size. When they don't all fit, the title steps down two points before the later counts
+/// step back.
+struct OkouStatusTitle: View {
+  private struct Fit: Hashable {
+    let count: Int
+    let size: CGFloat
   }
-}
 
-/// The busy header for medium and large widgets: the mascot, the name and what is live right
-/// now — the counts the rows below cannot all show.
-struct OkouBusyHeader: View {
   let model: OkouWidgetModel
+  let updated: Date
 
   var body: some View {
-    HStack(spacing: 8) {
-      OkouMascot(mood: model.mood, size: 30)
-      Text("Okou")
-        .font(.okouWidget(14, weight: .semibold))
-        .foregroundStyle(OkouColor.foreground)
-      // The counts in the list's order; when they don't all fit, the later ones step back.
+    VStack(alignment: .leading, spacing: 4) {
       ViewThatFits(in: .horizontal) {
-        ForEach(Array((1...max(parts.count, 1)).reversed()), id: \.self) { count in
-          summary(parts.prefix(count)).lineLimit(1)
+        ForEach(fits, id: \.self) { fit in
+          summary(parts.prefix(fit.count))
+            .font(.okouWidget(fit.size, weight: .semibold, relativeTo: .headline))
+            .lineLimit(1)
         }
       }
-      .font(.okouWidget(12, weight: .medium))
-      Spacer(minLength: 0)
-      OkouNewChatButton()
+      Text("Updated \(updated.formatted(date: .omitted, time: .shortened))")
+        .font(.okouWidget(12))
+        .foregroundStyle(OkouColor.mutedForeground)
+        .lineLimit(1)
     }
-    .frame(height: OkouNewChatButton.size)
+    .layoutPriority(1)
+  }
+
+  private var fits: [Fit] {
+    stride(from: max(parts.count, 1), through: 1, by: -1).flatMap { count in
+      [Fit(count: count, size: 17), Fit(count: count, size: 15)]
+    }
   }
 
   private var parts: [Text] {
@@ -208,8 +203,7 @@ struct OkouBusyHeader: View {
         Text("\(model.finished.count) unread").foregroundStyle(OkouStatusColor.running))
     }
     if !model.working.isEmpty {
-      parts.append(
-        Text("\(model.working.count) working").foregroundStyle(OkouColor.mutedForeground))
+      parts.append(Text("\(model.working.count) working").foregroundStyle(OkouColor.foreground))
     }
     return parts
   }
@@ -221,6 +215,32 @@ struct OkouBusyHeader: View {
       result = result + part
     }
     return result
+  }
+}
+
+/// Chat rows with the sidebar's hairlines between them — none beside the orange card, which
+/// carries its own edge. Medium and large widgets show two and six of them whether or not
+/// anything is running, so both states keep one rhythm. The rows share the height under the
+/// header, within a range that keeps them a list on every iPhone size, so the widget has no
+/// empty foot; a short list keeps its rows at the top.
+struct OkouChatList: View {
+  static let rowHeights: ClosedRange<CGFloat> = 36...52
+  let chats: [OkouWidgetChat]
+  let model: OkouWidgetModel
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
+        OkouChatRow(chat: chat, model: model)
+          .frame(minHeight: Self.rowHeights.lowerBound, maxHeight: Self.rowHeights.upperBound)
+        if index < chats.count - 1 && chat.state != .needsYou
+          && chats[index + 1].state != .needsYou
+        {
+          Divider().overlay(OkouColor.border).padding(.leading, 30)
+        }
+      }
+    }
+    .frame(maxHeight: .infinity, alignment: .top)
   }
 }
 
@@ -361,21 +381,21 @@ struct OkouSmallWidget: View {
   /// a running timer has the width it needs.
   private func active(_ chat: OkouWidgetChat) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 5) {
-        OkouMascot(mood: model.mood, size: 26)
+      HStack(spacing: 6) {
+        OkouMascot(mood: model.mood, size: 30)
         Text(label(chat))
-          .font(.okouWidget(12, weight: .semibold))
+          .font(.okouWidget(13, weight: .semibold))
           .foregroundStyle(labelColor(chat))
           .lineLimit(1)
           .widgetAccentable()
         Spacer(minLength: 0)
       }
-      .frame(height: 26)
+      .frame(height: 30)
       Text(chat.title)
-        .font(.okouWidget(15, weight: .semibold, relativeTo: .headline))
+        .font(.okouWidget(17, weight: .semibold, relativeTo: .headline))
         .foregroundStyle(OkouColor.foreground)
         .lineLimit(4)
-        .minimumScaleFactor(0.85)
+        .minimumScaleFactor(0.8)
         .padding(.top, 8)
         .privacySensitive()
       Spacer(minLength: 4)
@@ -437,25 +457,16 @@ struct OkouSmallWidget: View {
 
 struct OkouMediumWidget: View {
   let model: OkouWidgetModel
+  let updated: Date
 
   var body: some View {
-    if model.isQuiet {
-      // Nothing to report: the greeting is the header, and the room below goes to the chats
-      // people come back to.
-      VStack(alignment: .leading, spacing: 0) {
-        OkouQuietHeader(model: model, avatar: 44, greeting: 17)
-        OkouChatList(chats: model.rows(2), model: model)
-          .padding(.top, 6)
-      }
-      .widgetURL(OkouWidgetLink.newChat)
-    } else {
-      VStack(alignment: .leading, spacing: 0) {
-        OkouBusyHeader(model: model)
-        OkouChatList(chats: model.rows(2), model: model)
-          .padding(.top, 6)
-        Spacer(minLength: 0)
-      }
+    VStack(alignment: .leading, spacing: 0) {
+      OkouHeader(model: model, avatar: 44, updated: updated)
+      // Quiet, the room below the greeting goes to the chats people come back to.
+      OkouChatList(chats: model.rows(2), model: model)
+        .padding(.top, 6)
     }
+    .widgetURL(model.isQuiet ? OkouWidgetLink.newChat : nil)
   }
 }
 
@@ -470,11 +481,9 @@ struct OkouLargeWidget: View {
       quiet
     } else {
       VStack(alignment: .leading, spacing: 0) {
-        OkouBusyHeader(model: model)
+        OkouHeader(model: model, avatar: 48, updated: updated)
         OkouChatList(chats: model.rows(6), model: model)
-          .padding(.top, 10)
-        Spacer(minLength: 0)
-        updatedLabel
+          .padding(.top, 8)
       }
     }
   }
@@ -485,12 +494,12 @@ struct OkouLargeWidget: View {
       .foregroundStyle(OkouColor.quietMark)
   }
 
-  /// Nothing to report: the greeting is the header, the freshness note sits on the list's
-  /// heading, and six chats — pinned first, then recent — share the rest of the height.
+  /// Nothing to report: the freshness note sits on the list's heading, and six chats — pinned
+  /// first, then recent — share the rest of the height.
   private var quiet: some View {
     let chats = model.rows(6)
     return VStack(alignment: .leading, spacing: 0) {
-      OkouQuietHeader(model: model, avatar: 48, greeting: 17)
+      OkouHeader(model: model, avatar: 48, updated: updated)
       HStack {
         Text(listTitle(chats))
           .font(.okouWidget(12, weight: .semibold))
@@ -501,7 +510,6 @@ struct OkouLargeWidget: View {
       .padding(.top, 14)
       OkouChatList(chats: chats, model: model)
         .padding(.top, 2)
-      Spacer(minLength: 0)
     }
     .widgetURL(OkouWidgetLink.newChat)
   }
@@ -612,13 +620,11 @@ struct OkouSignedOutWidget: View {
       VStack(alignment: .leading, spacing: 0) {
         header(avatar: 44)
         OkouPlaceholderRows(count: 2).padding(.top, 6)
-        Spacer(minLength: 0)
       }
     case .systemLarge:
       VStack(alignment: .leading, spacing: 0) {
-        header(avatar: 44)
-        OkouPlaceholderRows(count: 6).padding(.top, 16)
-        Spacer(minLength: 0)
+        header(avatar: 48)
+        OkouPlaceholderRows(count: 6).padding(.top, 8)
       }
     default:
       Text("Open Okou to sign in").font(.okouWidget(13))
@@ -681,13 +687,17 @@ struct OkouPlaceholderRows: View {
           }
           Capsule().fill(OkouColor.border).frame(width: 26, height: 8)
         }
-        .frame(height: OkouChatList.rowHeight)
+        .frame(
+          minHeight: OkouChatList.rowHeights.lowerBound,
+          maxHeight: OkouChatList.rowHeights.upperBound
+        )
         .opacity(1 - Double(index) * 0.12)
         if index < count - 1 {
           Divider().overlay(OkouColor.border).padding(.leading, 30)
         }
       }
     }
+    .frame(maxHeight: .infinity, alignment: .top)
     .accessibilityHidden(true)
   }
 }
