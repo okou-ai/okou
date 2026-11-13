@@ -3284,6 +3284,13 @@
       "when": 1794481335704,
       "tag": "1547_vnc_chat_authorizations",
       "breakpoints": true
+    },
+    {
+      "idx": 1548,
+      "version": "7",
+      "when": 1794489847042,
+      "tag": "1548_copy_staff_single_agent",
+      "breakpoints": true
     }
   ]
 }

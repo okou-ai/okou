@@ -1,5 +1,21 @@
 # Single Agent migration operators
 
+The online staff copy uses the normal Drizzle migration
+`1548_copy_staff_single_agent.sql`, after the API/Runner readers in
+[#46786](https://github.com/okou-ai/okou/pull/46786) have deployed and their
+outgoing API requests have drained and incompatible Runners have exited. It reuses
+existing R2 hashes. Do not use
+this directory's offline, in-place `single-agent:production apply` for that
+cutover. The existing inventory/planning commands remain read-only; their
+in-place plans are not online copy execution plans.
+
+The production rollback resolver independently requires both API and Runner
+artifacts to contain preparation commit
+`eddbe0f4edae253b6a9240e0f312f25b36acad5b` after this activation ships. The
+separately deployed API 2.65.0 / Runner 0.247.0 release contains that preparation.
+An API rollback or a feature-switch change does not undo the copied data,
+Chat routing, Project membership or Automation associations.
+
 Read-only inventory and offline dry-run planning for #45474, under Epic #45400.
 The `single-agent:prepare` commands do not implement `apply` or recovery. Every generated plan has
 `executable: false`, including plans with no detected blockers. A plan is an
