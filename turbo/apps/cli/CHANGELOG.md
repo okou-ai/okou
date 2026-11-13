@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.26.0](https://github.com/okou-ai/okou/compare/cli-v10.25.7...cli-v10.26.0) (2026-11-13)
+
+
+### Features
+
+* introduce typed feed items under suggestions rollout ([#47053](https://github.com/okou-ai/okou/issues/47053)) ([e052b90](https://github.com/okou-ai/okou/commit/e052b90b3ed950ce46c7fc51235e87c1c3034164))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.61.0
+    * @okouai/core bumped to 8.836.2
+    * @okouai/pi-agent-runtime bumped to 1.51.119
+
 ## [10.25.7](https://github.com/okou-ai/okou/compare/cli-v10.25.6...cli-v10.25.7) (2026-11-13)
 
 

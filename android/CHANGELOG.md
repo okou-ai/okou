@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/okou-ai/okou/compare/android-v0.6.0...android-v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **android:** prove canonical conversation history bindings ([#47058](https://github.com/okou-ai/okou/issues/47058)) ([d62e358](https://github.com/okou-ai/okou/commit/d62e3581fa036a5b330c76bdd053e773bc0ac5bd))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/android-v0.5.0...android-v0.6.0) (2026-11-13)
 
 
