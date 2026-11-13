@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 
 import { capturePaidOnboardingFailure } from "./paid-onboarding-diagnostics";
+import { collectStripeCheckoutState } from "./stripe-checkout";
 import { observeStripeCheckout } from "./stripe-checkout-observation";
 
 test(
@@ -50,6 +51,12 @@ test(
     });
     await Promise.all([blocked, finished]);
 
+    // Readiness/field errors collect the same optional state before reaching
+    // the outer failure writer; that path must have a deadline as well.
+    await assert.rejects(
+      collectStripeCheckoutState(page),
+      /state capture deadline exceeded/u,
+    );
     await capturePaidOnboardingFailure(
       page,
       "fixture.json",

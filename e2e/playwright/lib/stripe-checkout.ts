@@ -549,6 +549,30 @@ function sanitizedOrigin(url: string): string {
 export async function collectStripeCheckoutState(
   page: Page,
 ): Promise<StripeCheckoutState> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Error construction also reads this state before the outer failure
+    // writer runs. A stalled renderer must not hold either error boundary.
+    return await Promise.race([
+      readStripeCheckoutState(page),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error("Stripe Checkout state capture deadline exceeded"),
+            ),
+          1_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readStripeCheckoutState(
+  page: Page,
+): Promise<StripeCheckoutState> {
   const mainFrame = page.mainFrame();
   const frames = await Promise.all(
     page.frames().map(async (frame): Promise<StripeFrameState> => {
