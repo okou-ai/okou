@@ -133,14 +133,20 @@ async fn https_reset_recovery_keeps_each_timed_claim_attempt_observable() {
     });
     let url = format!("https://localhost:{}", address.port());
     let mut http = client(&url);
-    Arc::get_mut(&mut http.inner).unwrap().client = reqwest::Client::builder()
-        .timeout(super::super::DEFAULT_TIMEOUT)
-        .dns_resolver(super::super::TimedResolver::default())
-        .connector_layer(super::super::ConnectionTimingLayer)
-        .connector_layer(ConnectionDiagnosticsLayer)
-        .add_root_certificate(reqwest::Certificate::from_der(cert.cert.der()).unwrap())
-        .build()
-        .unwrap();
+    let root = reqwest::Certificate::from_der(cert.cert.der()).unwrap();
+    Arc::get_mut(&mut http.inner).unwrap().client = Arc::new(
+        super::super::ClientPool::new(move || {
+            reqwest::Client::builder()
+                .timeout(super::super::DEFAULT_TIMEOUT)
+                .dns_resolver(super::super::TimedResolver::default())
+                .connector_layer(super::super::ConnectionTimingLayer)
+                .connector_layer(ConnectionDiagnosticsLayer)
+                .add_root_certificate(root.clone())
+                .build()
+                .map_err(|error| crate::error::ProviderError::Internal(error.to_string()))
+        })
+        .unwrap(),
+    );
     let captured = CapturedEvents::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let attempt = http
@@ -240,14 +246,20 @@ async fn reset_case(tls: bool) {
         if tls {
             // Only the external TLS trust boundary is replaced. Production
             // layers, timeout, pool, finalized requests and send path remain.
-            Arc::get_mut(&mut http.inner).unwrap().client = reqwest::Client::builder()
-                .timeout(super::super::DEFAULT_TIMEOUT)
-                .dns_resolver(super::super::TimedResolver::default())
-                .connector_layer(super::super::ConnectionTimingLayer)
-                .connector_layer(ConnectionDiagnosticsLayer)
-                .add_root_certificate(reqwest::Certificate::from_der(cert.cert.der()).unwrap())
-                .build()
-                .unwrap();
+            let root = reqwest::Certificate::from_der(cert.cert.der()).unwrap();
+            Arc::get_mut(&mut http.inner).unwrap().client = Arc::new(
+                super::super::ClientPool::new(move || {
+                    reqwest::Client::builder()
+                        .timeout(super::super::DEFAULT_TIMEOUT)
+                        .dns_resolver(super::super::TimedResolver::default())
+                        .connector_layer(super::super::ConnectionTimingLayer)
+                        .connector_layer(ConnectionDiagnosticsLayer)
+                        .add_root_certificate(root.clone())
+                        .build()
+                        .map_err(|error| crate::error::ProviderError::Internal(error.to_string()))
+                })
+                .unwrap(),
+            );
         }
         let response = http
             .authenticated_request(
@@ -502,7 +514,14 @@ async fn diagnostic_state_contention_never_blocks_a_failed_request() {
         .authenticated_request(reqwest::Method::GET, url.clone(), "private-auth-canary")
         .prepare("connect")
         .unwrap();
-    let error = http.inner.client.get(url).send().await.unwrap_err();
+    let error = http
+        .inner
+        .client
+        .current()
+        .get(url)
+        .send()
+        .await
+        .unwrap_err();
     let state = http.inner.diagnostics.0.shared.state();
     let diagnostics = http.inner.diagnostics.clone();
     let context = request.context().clone();
@@ -533,7 +552,14 @@ async fn delayed_response_cannot_update_a_replacement_registration() {
     .await;
     let http = client(&server.url());
     let started = Instant::now();
-    let response = http.inner.client.get(server.url()).send().await.unwrap();
+    let response = http
+        .inner
+        .client
+        .current()
+        .get(server.url())
+        .send()
+        .await
+        .unwrap();
     let tuple = Tuple::from_info(response.extensions().get::<HttpInfo>().unwrap());
     // Model the external observation after the old registry entry was evicted:
     // reqwest exposes a tuple, not a kernel socket cookie. Use real response
