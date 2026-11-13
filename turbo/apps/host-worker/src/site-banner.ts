@@ -81,9 +81,7 @@ export async function withSiteBanner(
       }),
       children: createElement(HostedSiteBannerActions, {
         continueUrl: continueUrl.href,
-        // Tolerate old API presentation during deployment/rollback. Remove once
-        // APIs omitting this field neither serve nor remain rollback targets (#46746).
-        downloadAllowed: presentation.downloadAllowed !== false,
+        downloadAllowed: presentation.downloadAllowed,
       }),
     }),
     { signal: request.signal },
