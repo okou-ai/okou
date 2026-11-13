@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::io::Write as _;
-use std::os::unix::io::{FromRawFd, OwnedFd};
+use std::os::unix::io::OwnedFd;
 use std::path::Path;
 use std::time::Duration;
 
@@ -9,6 +9,7 @@ use nbd_cow::cow_io::CowIo;
 use nbd_cow::error::Result as NbdResult;
 use nbd_cow::server::dispatch;
 use nbd_cow::{BLOCK_SIZE, DEFAULT_FLUSH_THRESHOLD};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::UnixStream;
@@ -274,12 +275,13 @@ pub async fn wait_for_dispatch(task: JoinHandle<NbdResult<()>>) -> TestResult<()
 }
 
 fn socketpair() -> std::io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0i32; 2];
-    let ret = unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) };
-    if ret != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) })
+    nix::sys::socket::socketpair(
+        AddressFamily::Unix,
+        SockType::Stream,
+        None,
+        SockFlag::empty(),
+    )
+    .map_err(std::io::Error::from)
 }
 
 fn read_u32_be(buf: &[u8], offset: usize) -> u32 {
