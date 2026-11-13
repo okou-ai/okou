@@ -430,7 +430,7 @@ final class AttachmentDraftTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
-    store.setForeground(true)
+    store.setPhase(.active)
     XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
     let sending = Task { await store.sendNewChat() }

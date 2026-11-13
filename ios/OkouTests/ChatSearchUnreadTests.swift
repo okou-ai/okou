@@ -153,7 +153,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
@@ -190,7 +190,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -225,7 +225,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })

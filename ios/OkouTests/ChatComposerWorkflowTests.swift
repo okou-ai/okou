@@ -351,7 +351,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let workspace = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { workspace.close() }
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     await workspace.refreshNavigation()
     workspace.newChatDraft = "Summarize /morning-brief "
     XCTAssertEqual(workspace.newChatDraft, "Summarize /morning-brief ")

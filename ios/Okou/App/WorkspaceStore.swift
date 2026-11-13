@@ -4,6 +4,7 @@ import ChatDomain
 import Foundation
 import OSLog
 import Observation
+import SwiftUI
 
 /// One immutable network/cache scope, with independently observed feature state.
 @MainActor @Observable
@@ -357,14 +358,16 @@ final class WorkspaceStore {
     }
   }
 
-  func setForeground(_ active: Bool) {
+  func setPhase(_ phase: ScenePhase) {
     guard !closed else { return }
-    let suspended = !active
-    guard isForeground != active || refreshSuspended != suspended else { return }
+    let active = phase == .active
+    // Background suspension survives the intermediate inactive phase on the way back.
+    let resuming = refreshSuspended
+    guard isForeground != active || (phase == .background && !refreshSuspended) else { return }
     isForeground = active
     realtime?.setForeground(active)
-    refreshSuspended = suspended
-    if suspended {
+    if phase == .background {
+      refreshSuspended = true
       refreshGeneration = UUID()
       refreshTask?.cancel()
       refreshTask = nil
@@ -374,11 +377,13 @@ final class WorkspaceStore {
       for conversation in conversations.values { conversation.cancelRefresh() }
       // Reconnect with a complete catch-up, including invalidations received while suspended.
       invalidations.insert(.reconnected)
+    } else if active {
+      refreshSuspended = false
     }
     newComposer.setForeground(active)
     for conversation in conversations.values { conversation.composer.setForeground(active) }
     selectedConversation?.reconcileVisibility()
-    if active {
+    if active && resuming {
       (selectedConversation?.composer ?? newComposer).requestSync()
     }
   }
@@ -407,7 +412,14 @@ final class WorkspaceStore {
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
     invalidations.insert(invalidation)
-    guard !refreshSuspended, refreshTask == nil else { return }
+    resumePendingRefresh()
+  }
+
+  @discardableResult
+  func resumePendingRefresh() -> Task<Void, Never>? {
+    guard !closed, !needsUpgrade, !refreshSuspended else { return nil }
+    if let refreshTask { return refreshTask }
+    guard !invalidations.isEmpty else { return nil }
     let generation = refreshGeneration
     refreshTask = Task { [weak self] in
       guard let self else { return }
@@ -423,6 +435,7 @@ final class WorkspaceStore {
       }
     }
     if let refreshTask { lifecycleTasks.track(refreshTask) }
+    return refreshTask
   }
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
