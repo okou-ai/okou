@@ -6,6 +6,15 @@ export interface OrgCustomConnectorField {
   readonly description?: string;
 }
 
+export interface OrgCustomConnectorFirewall {
+  readonly permissions: {
+    readonly name: string;
+    readonly description?: string;
+    readonly defaultPolicy: "allow" | "deny";
+    readonly rules: string[];
+  }[];
+}
+
 export interface OrgCustomConnectorHeaderInjection {
   readonly name: string;
   readonly valueTemplate: string;

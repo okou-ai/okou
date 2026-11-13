@@ -139,11 +139,16 @@ interface CustomConnectorDefinitionRow {
   readonly authMode: OrgCustomConnectorAuthMode;
   readonly oauthProviderAdapter: string | null;
   readonly permissionBundleRef: string | null;
+  readonly firewall: typeof orgCustomConnectors.$inferSelect.firewall;
 }
 
 interface CustomConnectorDefinitions {
   readonly missingIds: readonly string[];
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
+  readonly firewalls: ReadonlyMap<
+    string,
+    typeof orgCustomConnectors.$inferSelect.firewall
+  >;
 }
 
 export function customConnectorDefinitionSelection() {
@@ -154,6 +159,7 @@ export function customConnectorDefinitionSelection() {
     authMode: orgCustomConnectors.authMode,
     oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
     permissionBundleRef: orgCustomConnectors.permissionBundleRef,
+    firewall: orgCustomConnectors.firewall,
   };
 }
 
@@ -191,11 +197,17 @@ export function customConnectorDefinitions(
     return {
       missingIds,
       permissionBundleRefs: new Map(),
+      firewalls: new Map(),
     };
   }
 
   return {
     missingIds: [],
+    firewalls: new Map(
+      rows.map((row) => {
+        return [row.id, row.firewall];
+      }),
+    ),
     permissionBundleRefs: new Map(
       rows.map((row) => {
         return [
@@ -328,6 +340,7 @@ async function validateExplicitPermissionNames(args: {
   readonly connectorId: string;
   readonly permissionNames: readonly string[];
   readonly permissionBundleRef: string | null;
+  readonly firewall: typeof orgCustomConnectors.$inferSelect.firewall;
 }): Promise<
   | { readonly ok: true; readonly permissionNames: readonly string[] }
   | {
@@ -354,6 +367,7 @@ async function validateExplicitPermissionNames(args: {
   const bundle = await loadCustomConnectorPermissionBundle({
     catalog: args.snapshot.serverFirewallMetadata,
     ref: args.permissionBundleRef,
+    firewall: args.firewall,
   });
   if (!bundle) {
     return {
@@ -389,6 +403,7 @@ async function resolveCustomConnectorPermissionSelection(args: {
     readonly string[]
   >;
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
+  readonly firewalls: CustomConnectorDefinitions["firewalls"];
   readonly snapshot: ConnectorRuntimeSelection | null;
 }): Promise<
   | {
@@ -441,6 +456,7 @@ async function resolveCustomConnectorPermissionSelection(args: {
       connectorId,
       permissionNames: args.grantByConnectorId.get(connectorId) ?? [],
       permissionBundleRef: args.permissionBundleRefs.get(connectorId) ?? null,
+      firewall: args.firewalls.get(connectorId) ?? null,
     });
     if (!result.ok) {
       return result;
@@ -518,7 +534,11 @@ const readCustomConnectorDefinitions$ = command(
     },
   ): Promise<CustomConnectorDefinitions> => {
     if (args.connectorIds.length === 0) {
-      return { missingIds: [], permissionBundleRefs: new Map() };
+      return {
+        missingIds: [],
+        permissionBundleRefs: new Map(),
+        firewalls: new Map(),
+      };
     }
     const rows: CustomConnectorDefinitionRow[] = await set(writeDb$)
       .select(customConnectorDefinitionSelection())
@@ -620,6 +640,7 @@ const persistUserCustomConnectors$ = command(
         previousPermissionNamesByConnectorId:
           customConnectorPermissionNamesById(previousRows),
         permissionBundleRefs: definitions.permissionBundleRefs,
+        firewalls: definitions.firewalls,
         snapshot: connectorCatalogSnapshot,
       },
     );

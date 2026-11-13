@@ -106,6 +106,7 @@ export const applyConnectorPermissions$ = command(
         ? await db
             .select({
               permissionBundleRef: orgCustomConnectors.permissionBundleRef,
+              firewall: orgCustomConnectors.firewall,
             })
             .from(orgCustomConnectors)
             .where(
@@ -149,6 +150,7 @@ export const applyConnectorPermissions$ = command(
               await loadCustomConnectorPermissionBundle({
                 catalog: snapshot.serverFirewalls,
                 ref: definition.permissionBundleRef,
+                firewall: definition.firewall,
               })
             )?.permissionNames
           : undefined;

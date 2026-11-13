@@ -16,6 +16,7 @@ import {
 
 import {
   customConnectorFieldKindSchema,
+  customConnectorFirewallSchema,
   customConnectorFieldSchema,
   customConnectorHeaderInjectionSchema,
   customConnectorListResponseSchema,
@@ -43,6 +44,8 @@ export {
   CUSTOM_CONNECTOR_INJECTION_TEMPLATE_MAX_CHARS,
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   customConnectorSlugSchema,
+  customConnectorFirewallSchema,
+  type CustomConnectorFirewall,
   customConnectorFieldKindSchema,
   customConnectorFieldSchema,
   customConnectorHeaderInjectionSchema,
@@ -292,6 +295,7 @@ const customConnectorHttpDefinitionWriteCoreSchema =
   customConnectorDefinitionWriteBaseSchema.extend({
     kind: literal("http").optional(),
     prefixTemplates: array(string().min(1)).min(1),
+    firewall: customConnectorFirewallSchema.nullable().optional(),
     permissionBundleRef: customConnectorPermissionBundleRefSchema
       .nullable()
       .optional(),
@@ -302,6 +306,18 @@ const customConnectorHttpDefinitionWriteCoreSchema =
 const customConnectorHttpDefinitionWriteSchema =
   customConnectorHttpDefinitionWriteCoreSchema.superRefine((value, context) => {
     validateCustomConnectorAuthWrite(value, context, "http");
+    if (
+      value.firewall &&
+      value.permissionBundleRef &&
+      value.permissionBundleRef !== "builtin:custom@1"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Custom firewall cannot be combined with a builtin permission bundle",
+        path: ["firewall"],
+      });
+    }
   });
 
 export const customConnectorHttpCreateBodySchema =
@@ -311,12 +327,25 @@ export const customConnectorHttpCreateBodySchema =
     })
     .superRefine((value, context) => {
       validateCustomConnectorAuthWrite(value, context, "http");
+      if (
+        value.firewall &&
+        value.permissionBundleRef &&
+        value.permissionBundleRef !== "builtin:custom@1"
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Custom firewall cannot be combined with a builtin permission bundle",
+          path: ["firewall"],
+        });
+      }
     });
 
 export const customConnectorMcpCreateBodySchema =
   customConnectorDefinitionWriteBaseSchema
     .extend({
       kind: literal("mcp"),
+      firewall: zNull().optional(),
       endpoint: string().min(1).max(2048),
       transport: customConnectorMcpTransportSchema,
       permissionBundleRef: zNull().optional(),
@@ -342,6 +371,7 @@ export const customConnectorMcpUpdateBodySchema =
   customConnectorDefinitionWriteBaseSchema
     .extend({
       kind: literal("mcp"),
+      firewall: zNull().optional(),
       endpoint: string().min(1).max(2048),
       transport: customConnectorMcpTransportSchema,
       permissionBundleRef: zNull().optional(),

@@ -15,6 +15,7 @@ import {
 import { sql } from "drizzle-orm";
 import type {
   OrgCustomConnectorFields,
+  OrgCustomConnectorFirewall,
   OrgCustomConnectorHeaderInjections,
   OrgCustomConnectorPrefixTemplates,
   OrgCustomConnectorQueryInjections,
@@ -68,6 +69,7 @@ export const orgCustomConnectors = pgTable(
       .default("manual"),
     enabled: boolean("enabled").notNull().default(true),
     permissionBundleRef: varchar("permission_bundle_ref", { length: 128 }),
+    firewall: jsonb("firewall").$type<OrgCustomConnectorFirewall>(),
     mcpEndpoint: text("mcp_endpoint"),
     mcpTransport: varchar("mcp_transport", {
       length: 32,
@@ -169,6 +171,19 @@ export const orgCustomConnectors = pgTable(
             )
           )
         )`,
+      ),
+      check(
+        "chk_org_custom_connectors_firewall",
+        sql`((
+          ${table.firewall} IS NULL
+          AND ${table.permissionBundleRef} IS DISTINCT FROM 'builtin:custom@1'
+        ) OR (
+          ${table.firewall} IS NOT NULL
+          AND ${table.permissionBundleRef} = 'builtin:custom@1'
+          AND ${table.mcpEndpoint} IS NULL
+          AND jsonb_typeof(${table.firewall}) = 'object'
+          AND jsonb_typeof(${table.firewall}->'permissions') = 'array'
+        )) IS TRUE`,
       ),
       check(
         "chk_org_custom_connectors_storage_version_positive",

@@ -2,7 +2,11 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { CustomConnectorPermissionBundleRef } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  customConnectorFirewallSchema,
+  type CustomConnectorFirewall,
+  type CustomConnectorPermissionBundleRef,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   ExpandedFirewallConfig,
   FirewallPolicyValue,
@@ -32,7 +36,10 @@ export interface CustomConnectorPermissionBundle {
 export function customConnectorPermissionBundleDependencySlug(
   ref: string,
 ): ConnectorSlug | null {
-  if (ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF) {
+  if (
+    ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF ||
+    ref === "builtin:custom@1"
+  ) {
     return null;
   }
   const match = PERMISSION_BUNDLE_REF_PATTERN.exec(ref);
@@ -43,7 +50,33 @@ export function customConnectorPermissionBundleDependencySlug(
 export async function loadCustomConnectorPermissionBundle(args: {
   readonly catalog: ConnectorServerFirewallMetadataCatalog;
   readonly ref: CustomConnectorPermissionBundleRef;
+  readonly firewall?: CustomConnectorFirewall | null;
 }): Promise<CustomConnectorPermissionBundle | null> {
+  if (args.ref === "builtin:custom@1") {
+    const parsed = customConnectorFirewallSchema.safeParse(args.firewall);
+    if (!parsed.success) {
+      return null;
+    }
+    return {
+      ref: args.ref,
+      connectorSlug: "custom",
+      permissionNames: new Set(
+        parsed.data.permissions.map((permission) => {
+          return permission.name;
+        }),
+      ),
+      permissions: parsed.data.permissions.map(
+        ({ defaultPolicy: _defaultPolicy, ...permission }) => {
+          return permission;
+        },
+      ),
+      defaultPolicies: Object.fromEntries(
+        parsed.data.permissions.map((permission) => {
+          return [permission.name, permission.defaultPolicy];
+        }),
+      ),
+    };
+  }
   if (args.ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF) {
     return {
       ref: args.ref,

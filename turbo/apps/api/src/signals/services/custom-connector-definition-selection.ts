@@ -42,6 +42,7 @@ export function customConnectorDefinitionSelection() {
     authMode: orgCustomConnectors.authMode,
     enabled: orgCustomConnectors.enabled,
     permissionBundleRef: orgCustomConnectors.permissionBundleRef,
+    firewall: orgCustomConnectors.firewall,
     mcpEndpoint: orgCustomConnectors.mcpEndpoint,
     mcpTransport: orgCustomConnectors.mcpTransport,
     skillMarkdown: orgCustomConnectors.skillMarkdown,

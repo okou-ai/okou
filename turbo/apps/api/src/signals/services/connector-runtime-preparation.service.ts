@@ -295,6 +295,7 @@ export async function loadEffectiveCustomConnectorPermissionBundle(args: {
     ? ((await loadCustomConnectorPermissionBundle({
         catalog: args.snapshot.serverFirewallMetadata,
         ref,
+        firewall: args.row.connector.firewall,
       })) ?? undefined)
     : null;
 }

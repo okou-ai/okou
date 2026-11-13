@@ -1,7 +1,10 @@
+import { validateRule } from "@okouai/connectors/firewall-expander";
 import type { ConnectorConnectionMetadataArgs } from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import {
+  customConnectorFirewallSchema,
+  type CustomConnectorFirewall,
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
   type CreateCustomConnectorBody,
@@ -275,6 +278,7 @@ export interface CustomConnectorHttpRow<
   readonly kind: "http";
   readonly prefixTemplates: readonly string[];
   readonly permissionBundleRef: CustomConnectorPermissionBundleRef | null;
+  readonly firewall: CustomConnectorFirewall | null;
 }
 
 export interface CustomConnectorMcpRow<
@@ -285,6 +289,7 @@ export interface CustomConnectorMcpRow<
   readonly endpoint: string;
   readonly transport: CustomConnectorMcpTransport;
   readonly permissionBundleRef: null;
+  readonly firewall: null;
 }
 
 export type CustomConnectorRow<
@@ -312,6 +317,7 @@ interface DefinitionInputBase {
   readonly queryInjections: readonly CustomConnectorQueryInjection[];
   readonly authMode?: CustomConnectorAuthMode;
   readonly permissionBundleRef: CustomConnectorPermissionBundleRef | null;
+  readonly firewall: CustomConnectorFirewall | null;
   readonly skillMarkdown: string | null;
   readonly slug?: string;
 }
@@ -326,6 +332,7 @@ interface McpDefinitionInput extends DefinitionInputBase {
   readonly endpoint: string;
   readonly transport: CustomConnectorMcpTransport;
   readonly permissionBundleRef: null;
+  readonly firewall: null;
 }
 
 type DefinitionInput = HttpDefinitionInput | McpDefinitionInput;
@@ -337,6 +344,7 @@ interface ValidatedDefinitionBase {
   readonly queryInjections: readonly CustomConnectorQueryInjection[];
   readonly authMode: CustomConnectorAuthMode;
   readonly permissionBundleRef: CustomConnectorPermissionBundleRef | null;
+  readonly firewall: CustomConnectorFirewall | null;
   readonly skillMarkdown: string | null;
   readonly slug: string | undefined;
 }
@@ -351,6 +359,7 @@ interface ValidatedMcpDefinition extends ValidatedDefinitionBase {
   readonly endpoint: string;
   readonly transport: CustomConnectorMcpTransport;
   readonly permissionBundleRef: null;
+  readonly firewall: null;
 }
 
 type ValidatedDefinition = ValidatedHttpDefinition | ValidatedMcpDefinition;
@@ -482,6 +491,7 @@ type PersistedMcpDefinitionRow = CustomConnectorConnectionDefinitionRow & {
   readonly mcpEndpoint: string;
   readonly mcpTransport: "streamable-http";
   readonly permissionBundleRef: null;
+  readonly firewall: null;
 };
 
 function hasHttpDiscriminator(
@@ -610,6 +620,10 @@ export function normaliseCustomConnectorConnectionDefinition<
       kind: "http" as const,
       prefixTemplates,
       permissionBundleRef: row.permissionBundleRef,
+      firewall:
+        row.firewall === null
+          ? null
+          : customConnectorFirewallSchema.parse(row.firewall),
     };
   }
 
@@ -630,6 +644,7 @@ export function normaliseCustomConnectorConnectionDefinition<
     endpoint: row.mcpEndpoint,
     transport: row.mcpTransport,
     permissionBundleRef: null,
+    firewall: null,
   };
 }
 
@@ -674,7 +689,8 @@ function grantConfigurationChanged(args: {
           args.definition.prefixTemplates,
         ) ||
         args.existing.permissionBundleRef !==
-          args.definition.permissionBundleRef
+          args.definition.permissionBundleRef ||
+        !jsonValuesEqual(args.existing.firewall, args.definition.firewall)
       : args.existing.kind === "mcp" && args.definition.kind === "mcp"
         ? args.existing.endpoint !== args.definition.endpoint ||
           args.existing.transport !== args.definition.transport
@@ -976,6 +992,7 @@ export function serialiseCustomConnector(args: {
     kind: "http",
     prefixTemplates: [...args.row.prefixTemplates],
     permissionBundleRef: effectivePermissionBundleRef(args.row),
+    firewall: args.row.firewall,
   } satisfies CustomConnectorHttpResponse;
 }
 
@@ -1636,6 +1653,30 @@ function validateDefinition(
     return slug;
   }
 
+  if (
+    (input.permissionBundleRef === "builtin:custom@1") !==
+    (input.firewall !== null)
+  ) {
+    return badRequestMessage(
+      "Custom firewall rules and their permission bundle must be configured together",
+    );
+  }
+  if (input.firewall) {
+    const firewall = input.firewall;
+    const validation = safeSync(() => {
+      for (const permission of firewall.permissions) {
+        for (const rule of permission.rules) {
+          validateRule(rule, permission.name, "custom");
+        }
+      }
+    });
+    if ("error" in validation) {
+      if (validation.error instanceof Error) {
+        return badRequestMessage(validation.error.message);
+      }
+      throw validation.error;
+    }
+  }
   const shared = {
     displayName,
     fields,
@@ -1643,6 +1684,7 @@ function validateDefinition(
     queryInjections,
     authMode,
     permissionBundleRef: input.permissionBundleRef,
+    firewall: input.firewall,
     skillMarkdown: input.skillMarkdown,
     slug,
   };
@@ -1654,6 +1696,7 @@ function validateDefinition(
     return {
       ...shared,
       kind: "mcp",
+      firewall: null,
       endpoint,
       transport: input.transport,
       permissionBundleRef: null,
@@ -1689,9 +1732,10 @@ function validateDefinition(
 const validatePermissionBundleRef$ = command(
   async (
     { set },
-    permissionBundleRef: CustomConnectorPermissionBundleRef | null,
+    definition: ValidatedDefinition,
     signal: AbortSignal,
   ): Promise<BadRequestResponse | null> => {
+    const permissionBundleRef = definition.permissionBundleRef;
     if (permissionBundleRef === null) {
       return null;
     }
@@ -1715,6 +1759,7 @@ const validatePermissionBundleRef$ = command(
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,
+      firewall: definition.firewall,
     });
     signal.throwIfAborted();
     return bundle
@@ -1739,6 +1784,7 @@ function definitionFromCreateInput(
         queryInjections: input.queryInjections,
         authMode: input.authMode,
         permissionBundleRef: null,
+        firewall: null,
         skillMarkdown: input.skillMarkdown ?? null,
         slug: input.slug,
       }
@@ -1750,7 +1796,10 @@ function definitionFromCreateInput(
         headerInjections: input.headerInjections,
         queryInjections: input.queryInjections,
         authMode: input.authMode,
-        permissionBundleRef: input.permissionBundleRef ?? null,
+        permissionBundleRef: input.firewall
+          ? "builtin:custom@1"
+          : (input.permissionBundleRef ?? null),
+        firewall: input.firewall ?? null,
         skillMarkdown: input.skillMarkdown ?? null,
         slug: input.slug,
       };
@@ -1776,6 +1825,7 @@ function definitionFromUpdateInput(
       queryInjections: input.queryInjections,
       authMode,
       permissionBundleRef: null,
+      firewall: null,
       skillMarkdown,
     };
   }
@@ -1787,10 +1837,23 @@ function definitionFromUpdateInput(
     headerInjections: input.headerInjections,
     queryInjections: input.queryInjections,
     authMode,
-    permissionBundleRef:
-      input.permissionBundleRef !== undefined
+    permissionBundleRef: input.firewall
+      ? "builtin:custom@1"
+      : input.permissionBundleRef !== undefined
         ? input.permissionBundleRef
-        : (existing?.permissionBundleRef ?? null),
+        : input.firewall === null &&
+            existing?.permissionBundleRef === "builtin:custom@1"
+          ? null
+          : (existing?.permissionBundleRef ?? null),
+    firewall:
+      input.firewall !== undefined
+        ? input.firewall
+        : input.permissionBundleRef !== undefined &&
+            input.permissionBundleRef !== "builtin:custom@1"
+          ? null
+          : existing?.kind === "http"
+            ? existing.firewall
+            : null,
     skillMarkdown,
   };
 }
@@ -1798,6 +1861,7 @@ function definitionFromUpdateInput(
 function protocolColumns(definition: ValidatedDefinition): {
   readonly prefixTemplates: string[];
   readonly permissionBundleRef: CustomConnectorPermissionBundleRef | null;
+  readonly firewall: CustomConnectorFirewall | null;
   readonly mcpEndpoint: string | null;
   readonly mcpTransport: CustomConnectorMcpTransport | null;
 } {
@@ -1805,6 +1869,7 @@ function protocolColumns(definition: ValidatedDefinition): {
     return {
       prefixTemplates: [],
       permissionBundleRef: null,
+      firewall: null,
       mcpEndpoint: definition.endpoint,
       mcpTransport: definition.transport,
     };
@@ -1812,6 +1877,7 @@ function protocolColumns(definition: ValidatedDefinition): {
   return {
     prefixTemplates: [...definition.prefixTemplates],
     permissionBundleRef: definition.permissionBundleRef,
+    firewall: definition.firewall,
     mcpEndpoint: null,
     mcpTransport: null,
   };
@@ -1923,6 +1989,9 @@ export function customConnectorCreateSource(
       sql`${sql.param(protocol.permissionBundleRef, orgCustomConnectors.permissionBundleRef)}`
         .mapWith(orgCustomConnectors.permissionBundleRef)
         .as("permission_bundle_ref"),
+    firewall: sql`${sql.param(protocol.firewall, orgCustomConnectors.firewall)}`
+      .mapWith(orgCustomConnectors.firewall)
+      .as("firewall"),
     mcpEndpoint:
       sql`${sql.param(protocol.mcpEndpoint, orgCustomConnectors.mcpEndpoint)}`
         .mapWith(orgCustomConnectors.mcpEndpoint)
@@ -2172,7 +2241,7 @@ export const createCustomConnector$ = command(
     }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
-      v.permissionBundleRef,
+      v,
       signal,
     );
     signal.throwIfAborted();
@@ -2903,7 +2972,7 @@ export const updateCustomConnectorDefinition$ = command(
     }
     const invalidPermissionBundle = await set(
       validatePermissionBundleRef$,
-      prepared.definition.permissionBundleRef,
+      prepared.definition,
       signal,
     );
     signal.throwIfAborted();
@@ -3233,6 +3302,7 @@ export function getCustomConnectorPermissionBundle(args: {
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,
+      firewall: connector.firewall,
     });
     if (!bundle) {
       return null;

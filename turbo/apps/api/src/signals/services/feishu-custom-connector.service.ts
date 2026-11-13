@@ -198,6 +198,7 @@ function desiredConnectorDefinition(installation: FeishuConnectorInstallation) {
     authMode: "oauth" as const,
     enabled: true,
     permissionBundleRef: null,
+    firewall: null,
     skillMarkdown: feishuSkillMarkdown(installation.platform),
   };
 }

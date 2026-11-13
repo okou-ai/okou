@@ -113,6 +113,53 @@ export const customConnectorPermissionBundleRefSchema = string()
   .max(128)
   .regex(/^builtin:[a-z0-9][a-z0-9-]*@1$/u);
 
+/** HTTP permissions belong to the connector definition; unknown routes deny. */
+export const customConnectorFirewallSchema = object({
+  permissions: array(
+    object({
+      name: string()
+        .min(1)
+        .max(128)
+        .regex(/^[a-zA-Z0-9][a-zA-Z0-9:._-]*$/u),
+      description: string().max(1024).optional(),
+      defaultPolicy: zEnum(["allow", "deny"]),
+      rules: array(
+        string()
+          .max(2048)
+          .regex(/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|ANY) \/[^\s?#]*$/u),
+      )
+        .min(1)
+        .max(256),
+    }),
+  )
+    .min(1)
+    .max(128),
+})
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      new Set(
+        value.permissions.map((permission) => {
+          return permission.name;
+        }),
+      ).size !== value.permissions.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate firewall permission name",
+      });
+    }
+    if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 65_536) {
+      context.addIssue({
+        code: "custom",
+        message: "Custom firewall must not exceed 64 KiB",
+      });
+    }
+  });
+export type CustomConnectorFirewall = zInfer<
+  typeof customConnectorFirewallSchema
+>;
+
 export const customConnectorSkillMarkdownSchema = string().refine(
   (value) => {
     return new TextEncoder().encode(value).byteLength <= 65_536;
@@ -131,6 +178,7 @@ const customConnectorResponseBaseSchema = object({
   id: uuid(),
   slug: string(),
   displayName: string(),
+  firewall: customConnectorFirewallSchema.nullable().optional(),
   fields: array(customConnectorFieldSchema),
   headerInjections: array(customConnectorHeaderInjectionSchema),
   queryInjections: array(customConnectorQueryInjectionSchema),
@@ -249,6 +297,7 @@ export const customConnectorMcpResponseCoreSchema =
     transport: customConnectorMcpTransportSchema,
     prefixTemplates: tuple([]),
     permissionBundleRef: zNull().optional(),
+    firewall: zNull().optional(),
   });
 
 export const customConnectorMcpAuthResponseSchema = union([

@@ -87,6 +87,13 @@ export const createCustomConnectorCommand = new Command()
     const personal = personalCommandMode(command);
     return `
 Types and authentication:
+  HTTP definitions may include a firewall with permissions containing name,
+  description, defaultPolicy (allow/deny), and rules such as "POST /grants".
+  Rules are relative to each API prefix; unlisted endpoints are denied.
+  Use defaultPolicy: "deny" for actions requiring explicit owner authorization.
+  Do not combine a firewall with a builtin permissionBundleRef. MCP does not
+  support HTTP firewall rules.
+
   HTTP uses prefixTemplates and supports authMode: none, manual, oauth.
   HTTP API prefixes accept http:// or https://.
   MCP requires kind: "mcp", endpoint, transport: "streamable-http" and supports

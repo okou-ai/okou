@@ -40,6 +40,9 @@ export const updateCustomConnectorCommand = new Command()
     "after",
     `
 The file uses the same complete HTTP or MCP definition shape as create.
+Omit firewall to preserve existing HTTP rules; supply firewall: null to remove
+them. A firewall contains permissions with name, description, defaultPolicy
+(allow/deny), and method/path rules; unknown endpoints are denied.
 HTTP supports authMode: none, manual, oauth; MCP also supports automatic.
 authMode is required. See connector custom create --help for mode restrictions
 and valid examples. The connector argument accepts a full slug, UUID, or exact

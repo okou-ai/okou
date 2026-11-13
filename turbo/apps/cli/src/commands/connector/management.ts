@@ -145,6 +145,7 @@ export function customConnectorMetadata(connector: CustomConnectorResponse) {
         return value !== null;
       }),
     permissionBundleRef: connector.permissionBundleRef ?? null,
+    ...(connector.firewall ? { firewall: connector.firewall } : {}),
     ...(isIntegrationManagedCustomConnector(connector)
       ? {
           connected: connector.connected,

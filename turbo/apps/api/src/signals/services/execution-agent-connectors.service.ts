@@ -116,10 +116,12 @@ function executionDefinitionFromRow(
         kind: "http",
         prefixTemplates: definition.prefixTemplates,
         permissionBundleRef: definition.permissionBundleRef,
+        firewall: definition.firewall,
       }
     : {
         ...shared,
         kind: "mcp",
+        firewall: null,
         endpoint: definition.endpoint,
         transport: definition.transport,
       };

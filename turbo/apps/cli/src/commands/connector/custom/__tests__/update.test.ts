@@ -136,6 +136,65 @@ describe("okou connector custom update", () => {
     return path;
   }
 
+  it("updates and displays an HTTP firewall without losing default-deny rules", async () => {
+    const connector = customConnector({ id: CONNECTOR_ID });
+    const firewall = {
+      permissions: [
+        {
+          name: "read",
+          defaultPolicy: "allow" as const,
+          rules: ["GET /records"],
+        },
+        {
+          name: "grants:issue",
+          defaultPolicy: "deny" as const,
+          rules: ["POST /grants"],
+        },
+      ],
+    };
+    const definition = {
+      kind: connector.kind,
+      displayName: connector.displayName,
+      prefixTemplates: connector.prefixTemplates,
+      fields: connector.fields,
+      headerInjections: connector.headerInjections,
+      queryInjections: connector.queryInjections,
+      authMode: connector.authMode,
+      firewall,
+    };
+    let received: unknown;
+    server.use(
+      http.put(
+        `http://localhost:3000/api/custom-connectors/${CONNECTOR_ID}`,
+        async ({ request }) => {
+          received = await request.json();
+          return HttpResponse.json({
+            ...connector,
+            firewall,
+            permissionBundleRef: "builtin:custom@1",
+          });
+        },
+      ),
+    );
+    await customConnectorCommand.parseAsync([
+      "node",
+      "okou",
+      "update",
+      CONNECTOR_ID,
+      "--file",
+      writeDefinition(definition),
+      "--json",
+    ]);
+    expect(received).toStrictEqual(definition);
+    const printed: unknown = JSON.parse(
+      mockConsoleLog.mock.calls.flat().join("\n"),
+    );
+    expect(printed).toMatchObject({
+      firewall,
+      permissionBundleRef: "builtin:custom@1",
+    });
+  });
+
   it.each(["preserve", "remove", "replace"] as const)(
     "updates a network requirement with explicit %s semantics",
     async (operation) => {

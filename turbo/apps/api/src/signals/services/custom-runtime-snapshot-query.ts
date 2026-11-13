@@ -96,6 +96,9 @@ const emptySections = Object.freeze({
   definition_permissionBundleRef: sql`NULL::text`
     .mapWith(nullableDriverValueDecoder(pgTextDecoder))
     .as("definition_permissionBundleRef"),
+  definition_firewall: sql`NULL::jsonb`
+    .mapWith(nullableDriverValueDecoder(orgCustomConnectors.firewall))
+    .as("definition_firewall"),
   definition_mcpEndpoint: sql`NULL::text`
     .mapWith(nullableDriverValueDecoder(pgTextDecoder))
     .as("definition_mcpEndpoint"),
@@ -384,6 +387,7 @@ function customRuntimeSnapshotReadPlan(args: CustomRuntimeSnapshotInput) {
             definitions.permissionBundleRef,
             FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
           ),
+          ne(definitions.permissionBundleRef, "builtin:custom@1"),
           sql`${dependencySlug} COLLATE "C" ~ '^[a-z0-9][a-z0-9-]{0,63}$'`,
         ),
       ),
@@ -446,6 +450,7 @@ function customRuntimeDefinitionRows(
       definition_authMode: definitions.authMode,
       definition_enabled: definitions.enabled,
       definition_permissionBundleRef: definitions.permissionBundleRef,
+      definition_firewall: definitions.firewall,
       definition_mcpEndpoint: definitions.mcpEndpoint,
       definition_mcpTransport: definitions.mcpTransport,
       definition_skillMarkdown: definitions.skillMarkdown,
@@ -687,6 +692,7 @@ function customRuntimeDefinitionFromRow(row: SnapshotRow) {
       authMode: requiredSlot(row.definition_authMode),
       enabled: requiredSlot(row.definition_enabled),
       permissionBundleRef: row.definition_permissionBundleRef,
+      firewall: row.definition_firewall,
       mcpEndpoint: row.definition_mcpEndpoint,
       mcpTransport: row.definition_mcpTransport,
       skillMarkdown: row.definition_skillMarkdown,
