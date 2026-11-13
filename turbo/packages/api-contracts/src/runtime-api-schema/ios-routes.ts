@@ -1,4 +1,3 @@
-import { chatShareSelectionContract } from "../contracts/chat-share-selection";
 import { agentConnectorAccessContract } from "../contracts/agent-connector-access";
 import { agentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
 import { agentDraftContract } from "../contracts/agent-draft";
@@ -540,15 +539,6 @@ const iosContracts: readonly {
   { id: "ios.mailContract.getDraft", route: mailContract.getDraft },
   { id: "ios.mailContract.sendDraft", route: mailContract.sendDraft },
   { id: "ios.mailContract.deleteDraft", route: mailContract.deleteDraft },
-  // Keep the published selection routes registered for installed iOS clients.
-  {
-    id: "ios.chatShareSelectionContract.get",
-    route: chatShareSelectionContract.get,
-  },
-  {
-    id: "ios.chatShareSelectionContract.create",
-    route: chatShareSelectionContract.create,
-  },
   {
     id: "ios.sharedThreadVisibilityContract.get",
     route: sharedThreadVisibilityContract.get,
