@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.101](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.100...guest-control-server-v0.24.101) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate remaining pipe acquisition to owned apis ([#47006](https://github.com/okou-ai/okou/issues/47006)) ([60f6b48](https://github.com/okou-ai/okou/commit/60f6b48ab2773eb2e8acb79516cd479826492daa))
+
 ## [0.24.100](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.99...guest-control-server-v0.24.100) (2026-11-13)
 
 

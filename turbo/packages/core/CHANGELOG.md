@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.835.2](https://github.com/okou-ai/okou/compare/core-v8.835.1...core-v8.835.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **app:** unify home project and chat workspace layout ([#46999](https://github.com/okou-ai/okou/issues/46999)) ([37e65b4](https://github.com/okou-ai/okou/commit/37e65b47f9eeb8b1e58a3cf318b384dc0a63b6e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.0
+
 ## [8.835.1](https://github.com/okou-ai/okou/compare/core-v8.835.0...core-v8.835.1) (2026-11-13)
 
 
