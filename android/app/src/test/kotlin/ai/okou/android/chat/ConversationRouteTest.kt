@@ -163,7 +163,8 @@ class ConversationRouteTest {
         fixture.historyMarkRead = successfulRead
         compose.onNodeWithText(compose.activity.getString(R.string.retry)).performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isEmpty() &&
+                fixture.readRequests.get() >= 6
         }
         assertEquals(6, fixture.readRequests.get())
     }
