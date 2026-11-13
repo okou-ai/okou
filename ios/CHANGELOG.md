@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/okou-ai/okou/compare/ios-v0.42.1...ios-v0.43.0) (2026-11-13)
+
+
+### Features
+
+* align web and ios chat message sharing ([#47059](https://github.com/okou-ai/okou/issues/47059)) ([971a42f](https://github.com/okou-ai/okou/commit/971a42fa47c06591adb653265a8ce4055c40b266))
+
 ## [0.42.1](https://github.com/okou-ai/okou/compare/ios-v0.42.0...ios-v0.42.1) (2026-11-13)
 
 

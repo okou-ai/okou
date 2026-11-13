@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.68](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.67...process-control-ipc-v0.5.68) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate raw socket creation to owned apis ([#47077](https://github.com/okou-ai/okou/issues/47077)) ([355af4a](https://github.com/okou-ai/okou/commit/355af4a8b3e17e8fc02b8caf5b4cad30eb94e0cd))
+
 ## [0.5.67](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.66...process-control-ipc-v0.5.67) (2026-11-13)
 
 ## [0.5.66](https://github.com/okou-ai/okou/compare/process-control-ipc-v0.5.65...process-control-ipc-v0.5.66) (2026-11-12)
