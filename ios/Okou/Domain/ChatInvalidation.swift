@@ -4,6 +4,9 @@ import Foundation
 enum ChatInvalidation: Hashable, Sendable {
   case startup
   case initialSubscriptions
+  case foregroundResume
+  case realtimeResume
+  case realtimeGap
   case computerAccess
   case runModels
   case modelPreference
@@ -15,6 +18,11 @@ enum ChatInvalidation: Hashable, Sendable {
 
   var requiresFullRefresh: Bool {
     self == .startup || self == .initialSubscriptions || self == .reconnected
+      || self == .foregroundResume || self == .realtimeGap
+  }
+
+  var coordinatesModelRecovery: Bool {
+    self == .foregroundResume || self == .realtimeResume || self == .realtimeGap
   }
 
   init?(notification: String) {
