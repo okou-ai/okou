@@ -2,8 +2,9 @@ use super::*;
 use crate::cow::CowLayer;
 use crate::cow_io::CowIo;
 use crate::protocol_impl::{Command, NbdReply, NbdRequest, REPLY_MAGIC, serialize_request};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType};
 use std::io::Write as _;
-use std::os::unix::io::{FromRawFd, OwnedFd};
+use std::os::unix::io::OwnedFd;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 
@@ -82,13 +83,15 @@ fn setup_dispatch_socket() -> (
     tokio::net::unix::OwnedWriteHalf,
     OwnedFd,
 ) {
-    let (client_fd, server_fd) = {
-        let mut fds = [0i32; 2];
-        let ret =
-            unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) };
-        assert_eq!(ret, 0);
-        unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) }
-    };
+    let (client_fd, server_fd) = must(
+        nix::sys::socket::socketpair(
+            AddressFamily::Unix,
+            SockType::Stream,
+            None,
+            SockFlag::empty(),
+        ),
+        "create dispatch socketpair",
+    );
 
     let client_std = std::os::unix::net::UnixStream::from(client_fd);
     must(
