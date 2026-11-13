@@ -33,10 +33,10 @@ enum OkouWidgetPublishing {
           id: thread.id, title: parts.text, emoji: parts.emoji, state: state,
           isPinned: thread.pinnedAt != nil, activityAt: thread.sortAt))
     }
-    // Working and finished chats lead, then pinned ones, then the most recent of the rest.
+    // Unread results and working chats lead, then pinned ones, then the most recent of the rest.
     var ordered: [OkouWidgetSnapshot.Chat] = []
-    for chat in chats where chat.state == .working { ordered.append(chat) }
     for chat in chats where chat.state == .finished { ordered.append(chat) }
+    for chat in chats where chat.state == .working { ordered.append(chat) }
     for chat in chats where chat.isPinned && chat.state != .working && chat.state != .finished {
       ordered.append(chat)
     }

@@ -20,7 +20,7 @@ final class OkouWidgetPublishingTests: XCTestCase {
       unreadAt: indicator == .unread ? sortAt : nil, isMuted: muted)
   }
 
-  func testWorkingAndFinishedChatsLeadThenPinsThenRecentWithSidebarStates() {
+  func testUnreadAndWorkingChatsLeadThenPinsThenRecentWithSidebarStates() {
     let threads = [
       thread(1, title: "Recent idle", minutesAgo: 1),
       thread(2, title: "✅ Pinned done", minutesAgo: 30, pinned: true),
@@ -36,11 +36,11 @@ final class OkouWidgetPublishingTests: XCTestCase {
 
     XCTAssertEqual(
       snapshot.chats.map(\.title),
-      ["Working", "Finished", "Pinned done", "Recent idle", "Muted finished", "Has a draft"])
+      ["Finished", "Working", "Pinned done", "Recent idle", "Muted finished", "Has a draft"])
     XCTAssertEqual(
-      snapshot.chats.map(\.state), [.working, .finished, .idle, .idle, .idle, .draft])
+      snapshot.chats.map(\.state), [.finished, .working, .idle, .idle, .idle, .draft])
     // The status emoji leaves the title for its own column, as in the sidebar.
-    XCTAssertEqual(snapshot.chats[0].emoji, "⏳")
+    XCTAssertEqual(snapshot.chats[1].emoji, "⏳")
     XCTAssertEqual(snapshot.chats[2].emoji, "✅")
     XCTAssertTrue(snapshot.chats[2].isPinned)
     // Archived chats never reach the widget, and nothing reports a pending approval yet.
