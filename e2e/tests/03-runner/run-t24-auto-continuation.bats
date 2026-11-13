@@ -44,7 +44,7 @@ assert_auto_route() {
 
     # Run and thread IDs isolate this invocation; keep live-model replies simple.
     local expected='CONTINUE_OK' first_session successor_result successor_run_id
-    run runner_chat_send "$AGENT_ID" "Reply with only this token: ${expected}" "" "auto"
+    run runner_chat_send "$AGENT_ID" "Reply with only the word: ${expected}" "" "auto"
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
@@ -60,7 +60,7 @@ assert_auto_route() {
     local successor_expected="${expected}_NEXT"
     run runner_chat_send_after_completion \
         "$AGENT_ID" "$THREAD_ID" "$RUN_ID" \
-        "Now reply with a different token: append _NEXT to your previous token." "$successor_expected" 180
+        "Now reply with a different word: append _NEXT to your previous word." "$successor_expected" 180
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"

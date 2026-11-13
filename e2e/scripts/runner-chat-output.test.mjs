@@ -12,7 +12,7 @@ const helper = fileURLToPath(
 const threadId = "output-test-thread";
 const runId = "output-test-run";
 const steerEventId = "output-test-steer";
-const steerPrompt = "Reply with only this token: STEER_OK";
+const steerPrompt = "Reply with only the word: STEER_OK";
 
 const completion = { eventType: "run.completed", runId };
 const consumedSteer = {
