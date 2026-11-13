@@ -11,6 +11,7 @@ use guest_contracts::epoch_milliseconds::{
 };
 use tracing::warn;
 
+use crate::idle_pool::ExactIdleReservationMiss;
 use crate::resource_budget::ResourceBudget;
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
@@ -84,6 +85,7 @@ impl Drop for RunnerPreSpawnConcurrencyGuard {
 #[derive(Clone, Copy)]
 pub enum RunnerPreSpawnPhase {
     ResumeSessionValidation,
+    FinalizingWait,
     DeviceRateLimits,
     IdleReuseLookup,
     HomeCacheStateLookup,
@@ -91,6 +93,66 @@ pub enum RunnerPreSpawnPhase {
     IdleUnpark,
     ActiveStatusPublish,
     SpawnJobSetup,
+}
+
+#[derive(Clone, Copy)]
+pub enum FinalizingHandoffOutcome {
+    Accepted,
+    ActivationFailed,
+    PublishedExact,
+    PreFinalizationDeadline,
+    NotAcceptedBeforeDeadline,
+    NoExact,
+    Cancelled,
+}
+
+#[derive(Clone, Copy)]
+pub enum FinalizingHandoffReason {
+    PreFinalizationDeadline,
+    HandoffAcceptanceDeadline,
+    PublishedExactUnavailable,
+    PredecessorReleasedWithoutExact,
+    PredecessorNoExact,
+    ExactHandoffUnavailable,
+    HandoffRequestUnavailable,
+    ExactHandoffClosed,
+    SuccessorCancelled,
+    ActivationCancelled,
+    HandoffIdentityMismatch,
+    ExactActivationFallback,
+    ExactActivationFailed,
+}
+
+impl FinalizingHandoffReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PreFinalizationDeadline => "pre_finalization_deadline",
+            Self::HandoffAcceptanceDeadline => "handoff_acceptance_deadline",
+            Self::PublishedExactUnavailable => "published_exact_unavailable",
+            Self::PredecessorReleasedWithoutExact => "predecessor_released_without_exact",
+            Self::PredecessorNoExact => "predecessor_no_exact",
+            Self::ExactHandoffUnavailable => "exact_handoff_unavailable",
+            Self::HandoffRequestUnavailable => "handoff_request_unavailable",
+            Self::ExactHandoffClosed => "exact_handoff_closed",
+            Self::SuccessorCancelled => "successor_cancelled",
+            Self::ActivationCancelled => "activation_cancelled",
+            Self::HandoffIdentityMismatch => "handoff_identity_mismatch",
+            Self::ExactActivationFallback => "exact_activation_fallback",
+            Self::ExactActivationFailed => "exact_activation_failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct FinalizingHandoffTelemetry {
+    outcome: FinalizingHandoffOutcome,
+    reason: Option<FinalizingHandoffReason>,
+}
+
+#[derive(Clone, Copy)]
+pub enum FinalizingExactIdleLookup {
+    Hit,
+    Miss(ExactIdleReservationMiss),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,9 +205,72 @@ impl BlankPoolSelection {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct FinalizingDiagnostics {
+    handoff: Option<FinalizingHandoffTelemetry>,
+    exact_idle_lookup: Option<FinalizingExactIdleLookup>,
+}
+
+impl FinalizingHandoffOutcome {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::ActivationFailed => "activation_failed",
+            Self::PublishedExact => "published_exact",
+            Self::PreFinalizationDeadline => "pre_finalization_deadline",
+            Self::NotAcceptedBeforeDeadline => "not_accepted_before_deadline",
+            Self::NoExact => "no_exact",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    const fn succeeded(self) -> bool {
+        matches!(self, Self::Accepted | Self::PublishedExact)
+    }
+}
+
+impl FinalizingHandoffTelemetry {
+    pub fn record(self, telemetry: &mut JobTelemetry) {
+        telemetry.record_bounded_outcome_with_error(
+            "runner_claim_finalizing_handoff",
+            self.outcome.succeeded(),
+            (!self.outcome.succeeded()).then_some(self.outcome.as_str()),
+            self.outcome.as_str(),
+            self.reason.map(FinalizingHandoffReason::as_str),
+        );
+    }
+}
+
+impl FinalizingExactIdleLookup {
+    fn record(self, telemetry: &mut JobTelemetry) {
+        let (outcome, reason) = match self {
+            Self::Hit => ("hit", None),
+            Self::Miss(reason) => ("miss", Some(reason.as_str())),
+        };
+        telemetry.record_bounded_outcome(
+            "runner_claim_finalizing_exact_idle_lookup",
+            true,
+            outcome,
+            reason,
+        );
+    }
+}
+
+impl FinalizingDiagnostics {
+    pub fn record(self, telemetry: &mut JobTelemetry) {
+        if let Some(handoff) = self.handoff {
+            handoff.record(telemetry);
+        }
+        if let Some(exact_idle_lookup) = self.exact_idle_lookup {
+            exact_idle_lookup.record(telemetry);
+        }
+    }
+}
+
 impl RunnerPreSpawnPhase {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::ResumeSessionValidation,
+        Self::FinalizingWait,
         Self::DeviceRateLimits,
         Self::IdleReuseLookup,
         Self::HomeCacheStateLookup,
@@ -158,6 +283,7 @@ impl RunnerPreSpawnPhase {
     const fn action_type(self) -> &'static str {
         match self {
             Self::ResumeSessionValidation => "runner_claim_resume_session_validation",
+            Self::FinalizingWait => "runner_claim_finalizing_wait",
             Self::DeviceRateLimits => "runner_claim_device_rate_limits",
             Self::IdleReuseLookup => "runner_claim_idle_reuse_lookup",
             Self::HomeCacheStateLookup => "runner_claim_home_cache_state_lookup",
@@ -172,6 +298,7 @@ impl RunnerPreSpawnPhase {
 #[derive(Default)]
 struct RunnerPreSpawnPhaseDurations {
     resume_session_validation: Option<Duration>,
+    finalizing_wait: Option<Duration>,
     device_rate_limits: Option<Duration>,
     idle_reuse_lookup: Option<Duration>,
     home_cache_state_lookup: Option<Duration>,
@@ -185,6 +312,7 @@ impl RunnerPreSpawnPhaseDurations {
     fn get_mut(&mut self, phase: RunnerPreSpawnPhase) -> &mut Option<Duration> {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => &mut self.resume_session_validation,
+            RunnerPreSpawnPhase::FinalizingWait => &mut self.finalizing_wait,
             RunnerPreSpawnPhase::DeviceRateLimits => &mut self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => &mut self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => &mut self.home_cache_state_lookup,
@@ -198,6 +326,7 @@ impl RunnerPreSpawnPhaseDurations {
     fn get(&self, phase: RunnerPreSpawnPhase) -> Option<Duration> {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => self.resume_session_validation,
+            RunnerPreSpawnPhase::FinalizingWait => self.finalizing_wait,
             RunnerPreSpawnPhase::DeviceRateLimits => self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => self.home_cache_state_lookup,
@@ -214,6 +343,8 @@ pub struct RunnerPreSpawnTiming {
     concurrency: RunnerPreSpawnConcurrencyGuard,
     phase_durations: RunnerPreSpawnPhaseDurations,
     task_enqueued_at: Option<Instant>,
+    finalizing_handoff: Option<FinalizingHandoffTelemetry>,
+    finalizing_exact_idle_lookup: Option<FinalizingExactIdleLookup>,
     blank_pool_selection: Option<BlankPoolSelection>,
 }
 
@@ -234,8 +365,36 @@ impl RunnerPreSpawnTiming {
             concurrency: concurrency.enter(),
             phase_durations: RunnerPreSpawnPhaseDurations::default(),
             task_enqueued_at: None,
+            finalizing_handoff: None,
+            finalizing_exact_idle_lookup: None,
             blank_pool_selection: None,
         }
+    }
+
+    pub fn record_finalizing_handoff_outcome(&mut self, outcome: FinalizingHandoffOutcome) {
+        self.record_finalizing_handoff(outcome, None);
+    }
+
+    pub fn record_finalizing_handoff(
+        &mut self,
+        outcome: FinalizingHandoffOutcome,
+        reason: Option<FinalizingHandoffReason>,
+    ) {
+        self.finalizing_handoff = Some(FinalizingHandoffTelemetry { outcome, reason });
+    }
+
+    pub fn finalizing_diagnostics(&self) -> Option<FinalizingDiagnostics> {
+        (self.finalizing_handoff.is_some() || self.finalizing_exact_idle_lookup.is_some())
+            .then_some(FinalizingDiagnostics {
+                handoff: self.finalizing_handoff,
+                exact_idle_lookup: self.finalizing_exact_idle_lookup,
+            })
+    }
+
+    pub fn record_finalizing_exact_idle_lookup(&mut self, lookup: FinalizingExactIdleLookup) {
+        // Capacity waits can probe more than once. Retaining only the latest atomic observation
+        // emits one terminal decision for the successor instead of one row per retry.
+        self.finalizing_exact_idle_lookup = Some(lookup);
     }
 
     pub fn record_blank_pool_selection(&mut self, selection: BlankPoolSelection) {
@@ -290,6 +449,12 @@ impl RunnerPreSpawnTiming {
                 true,
                 None,
             );
+        }
+        if let Some(handoff) = self.finalizing_handoff {
+            handoff.record(telemetry);
+        }
+        if let Some(exact_lookup) = self.finalizing_exact_idle_lookup {
+            exact_lookup.record(telemetry);
         }
         if let Some(blank_pool_selection) = self.blank_pool_selection {
             blank_pool_selection.record(telemetry);

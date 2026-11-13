@@ -31,7 +31,9 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     let diagnostics =
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
+    let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
     let ctx = PreClaimResources {
+        active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
         mode_rx: &mode_rx,

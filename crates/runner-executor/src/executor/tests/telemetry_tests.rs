@@ -20,9 +20,9 @@ use super::super::telemetry::{
     record_api_startup_boundaries,
 };
 use super::super::{
-    BlankPoolSelection, BlankPoolSelectionReason, ExecutionHooks, NewSandboxDispatch,
-    RunnerPreSpawnConcurrency, RunnerPreSpawnTiming, SandboxReuseDisposition,
-    SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
+    BlankPoolSelection, BlankPoolSelectionReason, ExecutionHooks, FinalizingHandoffOutcome,
+    FinalizingHandoffReason, NewSandboxDispatch, RunnerPreSpawnConcurrency, RunnerPreSpawnTiming,
+    SandboxReuseDisposition, SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
     execute_job_with_prepared_notifier,
 };
 use super::support::{
@@ -1075,6 +1075,38 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         &baseline_telemetry,
         "api_to_agent_ready",
         Some(RunnerPreSpawnConcurrencyBucket::One),
+    );
+}
+
+#[test]
+fn pre_finalization_deadline_records_bounded_handoff_outcome() {
+    let mut telemetry = new_telemetry();
+    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+
+    timing.record_finalizing_handoff(
+        FinalizingHandoffOutcome::PreFinalizationDeadline,
+        Some(FinalizingHandoffReason::PreFinalizationDeadline),
+    );
+    timing
+        .finalizing_diagnostics()
+        .expect("pre-finalization diagnostics")
+        .record(&mut telemetry);
+
+    assert_action_outcome(
+        &telemetry,
+        "runner_claim_finalizing_handoff",
+        false,
+        Some("pre_finalization_deadline"),
+    );
+    assert!(
+        telemetry
+            .pending_ops_with_outcome_snapshot()
+            .iter()
+            .any(|operation| {
+                operation.0 == "runner_claim_finalizing_handoff"
+                    && operation.2.as_deref() == Some("pre_finalization_deadline")
+                    && operation.3.as_deref() == Some("pre_finalization_deadline")
+            })
     );
 }
 

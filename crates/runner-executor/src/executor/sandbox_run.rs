@@ -1026,12 +1026,18 @@ pub(super) async fn prepare_home_image(
         },
         home_drive_required: true,
     };
-    let lease = match params.home_image_prepare_policy {
-        HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
-        HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
-            cache
-                .prepare_with_policy(request, params.home_image_prepare_policy)
-                .await
+    let lease = if let Some(source) = params.required_home_source_run_id {
+        cache
+            .prepare_from_source(request, source, params.home_image_prepare_policy)
+            .await
+    } else {
+        match params.home_image_prepare_policy {
+            HomeImagePreparePolicy::TryCacheWithLockWait => cache.prepare(request).await,
+            HomeImagePreparePolicy::TryCacheWithoutLockWait | HomeImagePreparePolicy::SkipCache => {
+                cache
+                    .prepare_with_policy(request, params.home_image_prepare_policy)
+                    .await
+            }
         }
     };
     let prepare_error = home_image_prepare_error(lease.result());

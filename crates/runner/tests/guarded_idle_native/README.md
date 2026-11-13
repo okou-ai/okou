@@ -356,12 +356,12 @@ protection remain separate gates.
 
 ## Retired acquisition corpora
 
-The remote Claim rejection, provider-failure, producer-loss and finalizing
-acquisition corpora were retired with the Runner Claim/Poll client. Their
+The remote Claim rejection, provider-failure and producer-loss acquisition
+corpora were retired with the Runner Claim/Poll client. Their
 historical receipt readers remain for preserved evidence; shared ext4 and
 retained-custody utilities are also used by the current Guest preparation and
 running-restore corpora. Ordinary native memory, Guest, retirement, pause,
-unpark and required-saving fixtures remain active.
+unpark, finalizing handoff and required-saving fixtures remain active.
 
 ## Same-key replacement against a captured batch
 
@@ -763,9 +763,11 @@ running result. Both carry the original backing proof through
 in `GuardedFinalizingAdmission`. Required covered preparation, freeze, exact
 exit, publication and factory tail must complete before release of the full
 logical lease. Fresh and snapshot restores verify ordinary bytes and absence of
-the predecessor private runtime. The native seam carries a local fixture claim;
-ordinary provider-boundary tests verify preservation of real returned completion
-authorization. This opt-in fixture is compiled by ordinary checks and requires
+the predecessor private runtime. The native seam carries local fixture input;
+ordinary provider-boundary tests verify preservation of the original supplied
+completion authorization. Unexpected park/provider outcomes retain original
+data, the cache lock and the full logical lease until explicit disposal.
+This opt-in fixture is compiled by ordinary checks and requires
 separate execution on the specified KVM/NBD host to establish native acceptance.
 
 An accepted aged conversion transfers its full logical lease separately from
@@ -826,9 +828,9 @@ capacity savings, restored session/history correctness, or the parent P3d corpus
 
 ## Measured terminal corpus
 
-`native_terminal_corpus_records_data_and_phase_ownership` selects eight cases:
+`native_terminal_corpus_records_data_and_phase_ownership` selects twelve cases:
 exact and all-inventory retirement, caller-owned cancellation, speculative guest
-restore failure, each with fresh boot
+restore failure, and parked/running finalizing cancellation, each with fresh boot
 and the matching snapshot. It preserves the complete older fixture above.
 Every case writes a 64 KiB home payload containing its original run identity,
 saves it through the real owner, restores and verifies its digest, and checks
@@ -904,7 +906,7 @@ the caller's credentials or substitute fake provider commands.
 python3 crates/runner/tests/guarded_idle_native/report.py "$P1_OUTPUT_DIRECTORY"
 ```
 
-The report requires all eight cases, stable original identities, every phase
+The report requires all twelve cases, stable original identities, every phase
 and actual samples in both live saving and the added required fixture IO. The
 total post-exit window also includes publication and teardown before the added
 tail starts. It reports
@@ -958,7 +960,7 @@ python3 crates/runner/tests/guarded_idle_native/pressure_report.py "$P1_OUTPUT_D
 
 Each report requires its complete two-mode corpus, original data/backing/full
 lease/required IO and actual P1 windows, plus pressure or different-Guest/join
-witnesses. The eight-case terminal report remains separate and strict.
+witnesses. The twelve-case terminal report remains separate and strict.
 Ordinary Cargo/default Crates CI runs the pressure report's real-file and CLI
 regressions through its ordinary Rust wrapper; the native entries remain opt-in.
 

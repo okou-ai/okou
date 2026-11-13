@@ -78,6 +78,8 @@ pub struct IdleDestroyTracker {
     tasks: TaskTracker,
     reuse_state_notify: Arc<Notify>,
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
+    finalizing_owners:
+        Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
@@ -89,6 +91,7 @@ impl IdleDestroyTracker {
             tasks: TaskTracker::new(),
             reuse_state_notify,
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             #[cfg(any(test, feature = "test-support"))]
             pressure_pool_waits: tokio::sync::watch::channel(0).0,
@@ -246,6 +249,38 @@ impl IdleDestroyTracker {
     pub async fn close_and_wait(&self) {
         let _ = self.tasks.close();
         self.tasks.wait().await;
+    }
+
+    pub(crate) fn retain_finalizing_recovery(
+        &self,
+        recovery: crate::finalizing_admission::GuardedFinalizingRecovery,
+    ) {
+        if recovery.claimed.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain
+        {
+            // Preserve actual custody on an advisory poisoned lock. Recovery
+            // still reports that error; this never fabricates a valid receipt.
+            let mut owners = match self.finalizing_owners.lock() {
+                Ok(owners) => owners,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            owners.push(recovery);
+        }
+    }
+
+    /// Recover original claim/resource owners only after joined shutdown.
+    /// Taking custody supplies neither physical credit nor completion proof.
+    pub fn take_retained_finalizing_owners(
+        &self,
+    ) -> Result<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>, MemoryOperationError>
+    {
+        if !self.tasks.is_closed() || !self.tasks.is_empty() {
+            return Err(MemoryOperationError::OwnershipInvariant);
+        }
+        let mut owners = self
+            .finalizing_owners
+            .lock()
+            .map_err(|_| MemoryOperationError::AccountingPoisoned)?;
+        Ok(std::mem::take(&mut *owners))
     }
 }
 

@@ -73,6 +73,7 @@ use runner_types::ids::RunId;
 mod claim_tasks;
 pub mod error;
 mod factory_lifecycle;
+mod finalizing_claim;
 mod heartbeat;
 mod home_cache_observation;
 mod home_cache_refresh;
@@ -406,6 +407,10 @@ enum StartLoopEvent {
         discovered_cli_agent_session_id: Option<String>,
         sandbox_reuse_disposition: crate::executor::SandboxReuseDisposition,
     },
+    FinalizingHandoffRequested {
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+    },
     BeforeIdlePoolOwnershipTransfer {
         run_id: RunId,
     },
@@ -461,6 +466,41 @@ struct StartLoopTestObserverInner {
 
 #[cfg(test)]
 impl StartLoopTestObserver {
+    async fn wait_finalizing_handoff_requested(
+        &self,
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+        timeout: Duration,
+    ) {
+        self.wait_for(
+            timeout,
+            "finalizing handoff registration",
+            |event| match event {
+                StartLoopEvent::FinalizingHandoffRequested {
+                    predecessor_run_id: observed_predecessor,
+                    successor_run_id: observed_successor,
+                } if *observed_predecessor == predecessor_run_id
+                    && *observed_successor == successor_run_id =>
+                {
+                    Some(())
+                }
+                _ => None,
+            },
+        )
+        .await;
+    }
+
+    fn notify_finalizing_handoff_requested(
+        &self,
+        predecessor_run_id: RunId,
+        successor_run_id: RunId,
+    ) {
+        self.record(StartLoopEvent::FinalizingHandoffRequested {
+            predecessor_run_id,
+            successor_run_id,
+        });
+    }
+
     fn record(&self, event: StartLoopEvent) {
         self.inner
             .events
@@ -687,6 +727,7 @@ mod start_loop_observer_tests;
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OuterJobPanicPoint {
+    ClaimedWithoutSandbox,
     ClaimedActivation,
     ActiveOrUnknown,
     IdlePoolOwned,

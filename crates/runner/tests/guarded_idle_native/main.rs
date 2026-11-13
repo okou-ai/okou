@@ -13,6 +13,7 @@ mod create_cancellation;
 mod dual_history;
 mod evidence;
 mod final_exec;
+mod finalizing;
 mod fixed_restore;
 mod fixture;
 mod foreground_io;
@@ -27,6 +28,7 @@ mod pressure;
 mod pressure_condition;
 mod quiesce;
 mod recovery_source;
+mod refusal;
 mod returned_guest;
 mod returned_guest_probe;
 mod running_restore;
@@ -227,6 +229,8 @@ enum NativeScope {
     Preparation,
     CallerOwned,
     SpeculativeGuestFailure,
+    FinalizingParked,
+    FinalizingRunning,
     Pressure,
     LaterParking,
 }
@@ -269,6 +273,8 @@ async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult
         NativeScope::Batch(IdleRetirementBatchScope::All),
         NativeScope::CallerOwned,
         NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
     ])
     .await
 }
@@ -670,6 +676,8 @@ async fn exercise_factories(
         NativeScope::Aged,
         NativeScope::CallerOwned,
         NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
         NativeScope::Pressure,
     ];
     exercise_selected_factories(runtime, base, inputs, &scopes, None, Corpus::Terminal).await
@@ -1003,6 +1011,32 @@ async fn exercise_retirement(
             .ok_or_else(|| io::Error::other("native receipt has no backing"))?;
         proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
     }
+    if matches!(
+        scope,
+        NativeScope::FinalizingParked | NativeScope::FinalizingRunning
+    ) {
+        if let Some(proof) = proof {
+            proof.event("terminal_started", serde_json::json!({}))?;
+        }
+        return finalizing::exercise(
+            finalizing::Context {
+                factory,
+                cache,
+                sandbox,
+                home,
+                budget,
+                operations,
+                rootfs_hash,
+                run_id,
+                sandbox_id,
+                reuse_key,
+            },
+            inputs,
+            matches!(scope, NativeScope::FinalizingRunning),
+            proof,
+        )
+        .await;
+    }
     let parked: TestResult<_> = async {
         if let Corpus::GuestPreparation(selected) = corpus {
             let digest = fixture::verify_speculative_guest(&*sandbox, run_id).await?;
@@ -1219,6 +1253,7 @@ async fn exercise_retirement(
                 pressure::exercise(&pool, &status, &tracker, &operations, inputs, proof).await?;
                 Ok(None)
             }
+            NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
             NativeScope::CallerOwned | NativeScope::SpeculativeGuestFailure => {
                 use runner_lifecycle::idle_pool::{
                     ActivationCleanupOutcome, GuardedSpeculativeIdleOwner, IdleActivationOwner,

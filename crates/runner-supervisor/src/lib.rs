@@ -36,6 +36,7 @@ pub mod blank_pool;
 pub mod claimed_activation;
 pub mod claimed_resource_activation;
 mod duration;
+pub mod finalizing_admission;
 pub mod heartbeat;
 pub mod host_memory;
 pub mod idle_lifecycle;

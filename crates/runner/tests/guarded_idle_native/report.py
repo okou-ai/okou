@@ -15,6 +15,7 @@ NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
 NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2
 SCOPES = (
     "Batch(Exact)", "Batch(All)", "CallerOwned", "SpeculativeGuestFailure",
+    "FinalizingParked", "FinalizingRunning",
 )
 CASES = {f"{scope}-{mode}" for scope in SCOPES for mode in ("fresh", "snapshot")}
 PHASES = (
