@@ -13,6 +13,7 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: () -> Void
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
+  @LoadableValue private var listRead: Loadable<Void>
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
 
   init(
@@ -29,6 +30,7 @@ struct ChatSidebarView: View {
     self.close = close
     self.newChat = newChat
     _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
+    _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
   }
 
@@ -66,15 +68,19 @@ struct ChatSidebarView: View {
     Binding(get: { store.sidebar.filter }, set: { store.sidebar.select($0) })
   }
 
+  private var listError: String? {
+    listRead.error?.localizedDescription ?? store.list.error
+  }
+
   var body: some View {
     List {
-      if store.list.isLoading && !store.list.hasLoadedThreads {
+      if listRead.state == .loading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
           .listRowInsets(.horizontal, 0)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
-      } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
+      } else if !store.list.hasLoadedThreads && listError != nil {
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
@@ -89,7 +95,7 @@ struct ChatSidebarView: View {
       } else if case .hasData(let presentation) = presentation {
         threadSection(presentation)
         // The inbox explains itself inside the section, below its projects.
-        if !presentation.isInbox && presentation.isEmpty && store.list.error == nil
+        if !presentation.isInbox && presentation.isEmpty && listError == nil
           && store.error == nil
         {
           Text(emptyMessage(presentation.filter))
@@ -291,7 +297,7 @@ struct ChatSidebarView: View {
         }
       }
       let inboxEmpty =
-        contents.isInbox && chats.isEmpty && store.list.error == nil && store.error == nil
+        contents.isInbox && chats.isEmpty && listError == nil && store.error == nil
       if !contents.projects.isEmpty && (!chats.isEmpty || inboxEmpty) {
         // A hairline closes the projects, so their chats never run into the list below.
         OkouListDivider()

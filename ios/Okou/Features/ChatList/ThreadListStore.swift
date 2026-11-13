@@ -53,11 +53,10 @@ final class ThreadListStore {
   private(set) var markingAgentRead = false
   private var readRevision = 0
   private(set) var actionError: String?
-  private(set) var refreshError: String?
   private var indicatorsError: String?
-  var syncError: String? { refreshError ?? indicatorsError }
+  // Standalone indicator failures retain their own policy; list errors live on listValue.
+  var syncError: String? { indicatorsError }
   var error: String? { actionError ?? syncError }
-  private(set) var isLoading = false
   private(set) var hasLoadedThreads = false
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
@@ -74,7 +73,13 @@ final class ThreadListStore {
   private var appliedThreadSequence = 0
   private var appliedIndicatorsRevision = 0
   private var creationRevision = 0
-  private var refreshTask: Task<Void, Never>?
+  @ObservationIgnored private let listDemand = CCState.State<UUID?>(nil)
+  @ObservationIgnored private let listLifetime = CCState.State(true)
+  @ObservationIgnored private let reloadList: Command<Void, Void>
+  @ObservationIgnored private let clearList: Command<Void, Void>
+  // Original request ownership and coalescing, not a second read phase/result.
+  private var listTask: Task<Void, Error>?
+  private var listReadID: UUID?
   @ObservationIgnored private var navigationSubscription: Subscription?
   @ObservationIgnored private var navigationPublication: Task<Void, Never>?
   private var navigationReadID = UUID()
@@ -114,6 +119,13 @@ final class ThreadListStore {
     agentsValue = Computed { try $0(confirmedAgents) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
     replaceAgents = Command { context, value in try context.set(confirmedAgents, value) }
+    let listDemand = listDemand
+    let listLifetime = listLifetime
+    reloadList = Command { context in
+      guard try context.get(listLifetime) else { throw CancellationError() }
+      try context.set(listDemand, UUID())
+    }
+    clearList = Command { context in try context.set(listDemand, nil) }
     self.client = client
     self.sync = sync
     self.resources = resources
@@ -177,6 +189,93 @@ final class ThreadListStore {
 
   var stateStore: CCState.Store { resources.store }
   var navigationValue: Computed<Task<[AgentRecord], Error>> { resources.navigation }
+  @ObservationIgnored lazy var listValue = makeListValue()
+
+  private func makeListValue() -> Computed<Task<Void, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, try get(listLifetime), !closed else { throw CancellationError() }
+      guard let demand = try get(listDemand) else { return Task<Void, Error>.immediate {} }
+      let signal = options.signal
+      let task = Task<Void, Error> { @MainActor [weak self] in
+        guard let self else { throw CancellationError() }
+        defer {
+          if listReadID == demand {
+            listTask = nil
+            listReadID = nil
+          }
+        }
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        await restoreCached()
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        guard !closed else { throw CancellationError() }
+        repeat {
+          refreshAgain = false
+          do {
+            let revision = readRevision
+            let creation = creationRevision
+            let response = try await ChatReadRecovery.read("chat list", sleep: readRetrySleep) {
+              try await self.sync.threadsWithIndicators()
+            }
+            var result = response.threads
+            let cachedUnread = response.indicators == nil ? await sync.cachedIndicators() : nil
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            guard !closed else { throw CancellationError() }
+            settleOptimisticChanges(eventIDs: response.eventIDs)
+            // A read started before creation cannot remove its acknowledged thread.
+            guard creation == creationRevision else {
+              refreshAgain = true
+              continue
+            }
+            if revision != readRevision || response.indicators == nil {
+              for index in result.indices {
+                let held = threads.first { $0.id == result[index].id }
+                result[index].indicator = held?.indicator
+                result[index].unreadAt = held?.unreadAt
+                if held == nil, revision == readRevision, !result[index].isMuted,
+                  let timestamp = cachedUnread?.unreadAt[result[index].id]
+                {
+                  // Indicators can reach disk before this chat's list event.
+                  result[index].indicator = .unread
+                  result[index].unreadAt = timestamp
+                }
+              }
+              if revision == readRevision, let cachedUnread,
+                cachedUnread.revision > appliedIndicatorsRevision
+              {
+                unreadAgentIDs = cachedUnread.unreadAgentIDs
+              }
+              if revision != readRevision { refreshAgain = true }
+            } else {
+              unreadAgentIDs = Set(
+                response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
+            }
+            guard response.cursor.seqID >= appliedThreadSequence else { continue }
+            appliedThreadSequence = response.cursor.seqID
+            projectThreads(result)
+            indicatorsError = nil
+          } catch {
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            guard !closed else { throw CancellationError() }
+            blocked = (error as? APIClientError)?.statusCode == 426
+            didFail(error)
+            if refreshAgain && !blocked { continue }
+            throw error
+          }
+        } while refreshAgain && !closed && !blocked && !Task.isCancelled
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+      }
+      listTask = task
+      listReadID = demand
+      lifecycleTasks.track(task)
+      signal.onCancel { task.cancel() }
+      return task
+    }
+  }
 
   private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
     // These are synchronous local business values, not a network or persistence boundary.
@@ -240,83 +339,30 @@ final class ThreadListStore {
     } catch { didFail(error) }
   }
 
-  func refresh(waitForCurrent: Bool = false) async {
-    guard !closed, !blocked, !Task.isCancelled else { return }
-    if let refreshTask {
+  /// Explicit invalidations coalesce into the resident read and one follow-up cycle.
+  /// Only an awaited successful cycle can authorize navigation that needed fresh chats.
+  @discardableResult
+  func refresh(waitForCurrent: Bool = false) async -> Bool {
+    guard !closed, !blocked, !Task.isCancelled else { return false }
+    if let listTask {
       refreshAgain = true
-      if waitForCurrent { await refreshTask.value }
-      return
+      guard waitForCurrent else { return false }
+      do {
+        try await listTask.value
+        return !closed && !blocked && !Task.isCancelled
+      } catch { return false }
     }
-    let generation = refreshGeneration
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if refreshGeneration == generation {
-          isLoading = false
-          refreshTask = nil
-        }
-      }
-      guard !Task.isCancelled, refreshGeneration == generation else { return }
-      await restoreCached()
-      guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-      isLoading = true
-      repeat {
-        refreshAgain = false
-        do {
-          let revision = readRevision
-          let creation = creationRevision
-          let response = try await ChatReadRecovery.read("chat list", sleep: readRetrySleep) {
-            try await sync.threadsWithIndicators()
-          }
-          var result = response.threads
-          let cachedUnread = response.indicators == nil ? await sync.cachedIndicators() : nil
-          try Task.checkCancellation()
-          guard !closed, refreshGeneration == generation else { return }
-          settleOptimisticChanges(eventIDs: response.eventIDs)
-          // A read started before creation cannot remove its acknowledged thread.
-          guard creation == creationRevision else {
-            refreshAgain = true
-            continue
-          }
-          if revision != readRevision || response.indicators == nil {
-            for index in result.indices {
-              let held = threads.first { $0.id == result[index].id }
-              result[index].indicator = held?.indicator
-              result[index].unreadAt = held?.unreadAt
-              if held == nil, revision == readRevision, !result[index].isMuted,
-                let timestamp = cachedUnread?.unreadAt[result[index].id]
-              {
-                // Indicators can reach disk before this chat's list event.
-                result[index].indicator = .unread
-                result[index].unreadAt = timestamp
-              }
-            }
-            if revision == readRevision, let cachedUnread,
-              cachedUnread.revision > appliedIndicatorsRevision
-            {
-              unreadAgentIDs = cachedUnread.unreadAgentIDs
-            }
-            if revision != readRevision { refreshAgain = true }
-          } else {
-            unreadAgentIDs = Set(
-              response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
-          }
-          guard response.cursor.seqID >= appliedThreadSequence else { continue }
-          appliedThreadSequence = response.cursor.seqID
-          projectThreads(result)
-          refreshError = nil
-          indicatorsError = nil
-        } catch is CancellationError {
-          return
-        } catch {
-          guard !Task.isCancelled, refreshGeneration == generation else { return }
-          showRefreshFailure(error)
-        }
-      } while refreshAgain && !closed && !blocked && !Task.isCancelled
+    do {
+      try stateStore.set(reloadList)
+      let read = try stateStore.get(listValue)
+      try await read.value
+      return !closed && !blocked && !Task.isCancelled
+    } catch is CancellationError {
+      return false
+    } catch {
+      // The original Task reports HTTP failures; do not mirror them in action state.
+      return false
     }
-    lifecycleTasks.track(task)
-    refreshTask = task
-    await task.value
   }
 
   func insertCreated(_ thread: ChatThread) {
@@ -792,6 +838,7 @@ final class ThreadListStore {
   func close() {
     closed = true
     cancelRefresh()
+    do { try stateStore.set(listLifetime, false) } catch { didFail(error) }
     cancelNavigationPublication()
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
@@ -816,21 +863,16 @@ final class ThreadListStore {
 
   func cancelRefresh() {
     refreshGeneration = UUID()
-    refreshTask?.cancel()
+    listTask?.cancel()
     indicatorsTask?.cancel()
-    refreshTask = nil
+    listTask = nil
+    listReadID = nil
+    do { try stateStore.set(clearList) } catch { didFail(error) }
     indicatorsTask = nil
     refreshAgain = false
     indicatorsAgain = false
-    isLoading = false
-    refreshError = nil
     indicatorsError = nil
   }
 
-  private func showRefreshFailure(_ failure: Error) {
-    guard !closed else { return }
-    refreshError = failure.localizedDescription
-    blocked = (failure as? APIClientError)?.statusCode == 426
-    didFail(failure)
-  }
+  isolated deinit { listTask?.cancel() }
 }
