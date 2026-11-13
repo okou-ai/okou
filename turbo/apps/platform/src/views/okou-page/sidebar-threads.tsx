@@ -1875,7 +1875,7 @@ function ChatThreadListRowFrame({
       className={cn(
         "w-full pb-1",
         rowHeight !== null && "absolute left-0 top-0",
-        "motion-safe:group-data-[project-fold-motion]/chat-list:transition-[transform,translate,opacity] motion-safe:group-data-[project-fold-motion]/chat-list:duration-[180ms] motion-safe:group-data-[project-fold-motion]/chat-list:ease-out motion-safe:group-data-[project-fold-motion]/chat-list:starting:opacity-0 motion-safe:group-data-[project-fold-motion=expand]/chat-list:starting:-translate-y-1 motion-safe:group-data-[project-fold-motion=collapse]/chat-list:starting:translate-y-1",
+        "motion-safe:group-data-[project-fold-motion]/chat-list:transition-[transform,translate,opacity] motion-safe:group-data-[project-fold-motion]/chat-list:duration-(--duration-disclosure) motion-safe:group-data-[project-fold-motion]/chat-list:ease-disclosure motion-safe:group-data-[project-fold-motion]/chat-list:starting:opacity-0 motion-safe:group-data-[project-fold-motion=expand]/chat-list:starting:-translate-y-1 motion-safe:group-data-[project-fold-motion=collapse]/chat-list:starting:translate-y-1",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
         drop.targeted && row.projectId === null && "rounded-lg",

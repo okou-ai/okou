@@ -320,7 +320,7 @@ function ProjectFoldToggle({
                 <ChevronRight
                   size={16}
                   className={cn(
-                    "hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block motion-safe:transition-transform motion-safe:duration-[180ms] motion-safe:ease-out",
+                    "hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block motion-safe:transition-transform motion-safe:duration-(--duration-disclosure) motion-safe:ease-disclosure",
                     expanded && "rotate-90",
                   )}
                 />
