@@ -221,7 +221,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
     description:
-      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+      "Show who is in control with Take over and Hand back, use a floating loading status instead of the permanent footer, and refine the start button.",
     enabled: false,
   },
   [FeatureSwitchKey.ShareAudienceDescriptions]: {
