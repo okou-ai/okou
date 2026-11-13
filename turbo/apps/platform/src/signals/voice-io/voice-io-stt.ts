@@ -74,7 +74,7 @@ function audioInputQuotaLimitMessage(
   tier: BillingTier,
   isAdmin: boolean,
 ): string {
-  if (tier === "team" || tier === "custom") {
+  if (tier === "team") {
     return i18n.t(($) => {
       return $.chat.voice.inputLimitReachedReset;
     });
@@ -269,7 +269,7 @@ export const openAudioInputQuotaRecovery$ = command(
     const billingStatus = await get(billingStatusAsync$);
     signal.throwIfAborted();
     const tier = apiTierToBillingTier(billingStatus.tier);
-    const waitsForReset = tier === "team" || tier === "custom";
+    const waitsForReset = tier === "team";
     toast.error(audioInputQuotaLimitMessage(tier, isAdmin), {
       id: AUDIO_INPUT_QUOTA_TOAST_ID,
     });

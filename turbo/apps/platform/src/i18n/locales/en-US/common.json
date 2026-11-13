@@ -479,8 +479,10 @@
       "inkLabel": "Ink {{color}}",
       "notePlaceholder": "What should change?",
       "open": "Annotate",
+      "preparingCopy": "Preparing the marked-up copy of {{filename}}",
       "redo": "Redo",
       "removeMark": "Remove mark",
+      "retryCopy": "Retry the marked-up copy of {{filename}}",
       "subtitle_one": "{{count}} mark",
       "subtitle_other": "{{count}} marks",
       "textPlaceholder": "Type here",
@@ -1189,11 +1191,6 @@
       "cancellationNotice": "Your {{plan}} plan has been cancelled and will end on {{date}}.",
       "compare": "Compare plans",
       "compareAll": "Compare all plans",
-      "custom": {
-        "name": "Custom"
-      },
-      "customAccess": "Custom access with {{value}} concurrent runs",
-      "customCancellationNotice": "Your custom plan will end on {{date}}.",
       "downgrade": "Downgrade",
       "downgradeNotice": "Your {{currentPlan}} plan will downgrade to {{targetPlan}} on {{date}}.",
       "downgradesOn": "Downgrades to {{plan}} on {{date}}",
@@ -2491,7 +2488,9 @@
       "copyFailed": "Could not copy the link",
       "create": "Share",
       "createFailed": "Could not create the shared chat.",
+      "createLink": "Create link",
       "deselectGroup": "Deselect message group",
+      "deselectMessage": "Deselect message",
       "everyone": "Everyone",
       "linkCopied": "Link copied",
       "messageShareFailed": "The shared link could not be created.",
@@ -2499,6 +2498,8 @@
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
+      "selectMessage": "Select message",
+      "selectMessages": "Select messages…",
       "shareLink": "Shared chat link",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share",
@@ -5167,7 +5168,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Open {{name}} homepage",
+    "openHome": "New chat in {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5208,7 +5209,6 @@
       "inUse_other": "{{active}} of {{limit}} slots in use"
     },
     "tiers": {
-      "custom": "Custom",
       "free": "Free",
       "pro": "Pro",
       "team": "Team"
@@ -7254,7 +7254,7 @@
           "adminHint": "Ask a workspace admin to upgrade.",
           "benefitDescription": "Create signed endpoints that start workflows from external systems.",
           "benefitTitle": "Secure inbound workflow automation",
-          "description": "Webhook automations require a Team or Custom workspace.",
+          "description": "Webhook automations require a Team workspace.",
           "title": "Upgrade for webhook automations",
           "upgradeAction": "Upgrade to Team"
         },

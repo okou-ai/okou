@@ -478,8 +478,10 @@
       "inkLabel": "Warna {{color}}",
       "notePlaceholder": "Apa yang harus diubah?",
       "open": "Anotasi",
+      "preparingCopy": "Menyiapkan salinan bertanda {{filename}}",
       "redo": "Ulangi",
       "removeMark": "Hapus tanda",
+      "retryCopy": "Coba lagi salinan bertanda {{filename}}",
       "subtitle_other": "{{count}} tanda",
       "textPlaceholder": "Ketik di sini",
       "tools": {
@@ -1186,11 +1188,6 @@
       "cancellationNotice": "Paket {{plan}} Anda telah dibatalkan dan akan berakhir pada {{date}}.",
       "compare": "Bandingkan paket",
       "compareAll": "Bandingkan semua paket",
-      "custom": {
-        "name": "Kustom"
-      },
-      "customAccess": "Akses kustom dengan {{value}} eksekusi concurrent",
-      "customCancellationNotice": "Paket kustom Anda akan berakhir pada {{date}}.",
       "downgrade": "Turunkan",
       "downgradeNotice": "Paket {{currentPlan}} Anda akan diturunkan ke {{targetPlan}} pada {{date}}.",
       "downgradesOn": "Turun ke {{plan}} pada {{date}}",
@@ -2482,13 +2479,17 @@
       "copyFailed": "Tautan tidak dapat disalin",
       "create": "Bagikan",
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat.",
+      "createLink": "Buat tautan",
       "deselectGroup": "Batalkan pilihan grup pesan",
+      "deselectMessage": "Batalkan pilihan pesan",
       "everyone": "Semua orang",
       "linkCopied": "Tautan disalin",
       "messageShareFailed": "Tautan berbagi tidak dapat dibuat.",
       "organizationDescription": "Hanya orang di organisasi Anda",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
+      "selectMessage": "Pilih pesan",
+      "selectMessages": "Pilih pesan…",
       "shareLink": "Tautan percakapan yang dibagikan",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
@@ -5151,7 +5152,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Buka beranda {{name}}",
+    "openHome": "Chat baru di {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5192,7 +5193,6 @@
       "inUse_other": "{{active}} dari {{limit}} slot digunakan"
     },
     "tiers": {
-      "custom": "Kustom",
       "free": "Gratis",
       "pro": "Pro",
       "team": "Tim"
@@ -7233,7 +7233,7 @@
           "adminHint": "Minta admin ruang kerja untuk upgrade.",
           "benefitDescription": "Buat endpoint bertanda tangan yang memulai alur kerja dari sistem eksternal.",
           "benefitTitle": "Otomatisasi alur kerja masuk yang aman",
-          "description": "Otomatisasi webhook memerlukan ruang kerja Team atau Custom.",
+          "description": "Otomatisasi webhook memerlukan ruang kerja Team.",
           "title": "Upgrade untuk otomatisasi webhook",
           "upgradeAction": "Upgrade ke Team"
         },

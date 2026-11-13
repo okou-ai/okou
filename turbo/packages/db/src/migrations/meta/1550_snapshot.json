@@ -1,5 +1,5 @@
 {
-  "id": "c7cf4eb7-9d39-4d99-afa6-dd6d8045599f",
+  "id": "56639872-352b-4950-aebd-9e4c0c4e0476",
   "prevId": "36cfeab6-c5f7-41af-827e-fa78c1f10577",
   "version": "7",
   "dialect": "postgresql",
@@ -20608,18 +20608,6 @@
           "notNull": true,
           "default": true
         },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -25289,6 +25277,14 @@
         "chk_org_metadata_pending_target_not_pro_suspend": {
           "name": "chk_org_metadata_pending_target_not_pro_suspend",
           "value": "\"org_metadata\".\"pending_subscription_target_tier\" IS NULL OR \"org_metadata\".\"pending_subscription_target_tier\" <> 'pro-suspend'"
+        },
+        "chk_org_metadata_tier_not_custom": {
+          "name": "chk_org_metadata_tier_not_custom",
+          "value": "\"org_metadata\".\"tier\" <> 'custom'"
+        },
+        "chk_org_metadata_pending_target_not_custom": {
+          "name": "chk_org_metadata_pending_target_not_custom",
+          "value": "\"org_metadata\".\"pending_subscription_target_tier\" IS NULL OR \"org_metadata\".\"pending_subscription_target_tier\" <> 'custom'"
         }
       },
       "isRLSEnabled": false
@@ -25547,6 +25543,10 @@
         "chk_org_plan_entitlements_plan_key_not_pro_suspend": {
           "name": "chk_org_plan_entitlements_plan_key_not_pro_suspend",
           "value": "\"org_plan_entitlements\".\"plan_key\" <> 'pro-suspend'"
+        },
+        "chk_org_plan_entitlements_plan_key_not_custom": {
+          "name": "chk_org_plan_entitlements_plan_key_not_custom",
+          "value": "\"org_plan_entitlements\".\"plan_key\" <> 'custom'"
         },
         "chk_org_plan_entitlements_plan_rank": {
           "name": "chk_org_plan_entitlements_plan_rank",

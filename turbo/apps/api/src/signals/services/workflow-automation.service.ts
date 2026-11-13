@@ -293,7 +293,7 @@ function workflowWebhookTeamRequiredResult(): {
 } {
   return {
     kind: "team-required",
-    message: "Webhook automations require a Team or Custom workspace",
+    message: "Webhook automations require a Team workspace",
   };
 }
 type AutomationActionFailure = Exclude<

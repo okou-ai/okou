@@ -131,6 +131,11 @@ export const orgMetadata = pgTable(
         "chk_org_metadata_pending_target_not_pro_suspend",
         sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'pro-suspend'`,
       ),
+      check("chk_org_metadata_tier_not_custom", sql`${table.tier} <> 'custom'`),
+      check(
+        "chk_org_metadata_pending_target_not_custom",
+        sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'custom'`,
+      ),
       foreignKey({
         name: "org_metadata_default_agent_id_agents_id_fk",
         columns: [table.defaultAgentId],

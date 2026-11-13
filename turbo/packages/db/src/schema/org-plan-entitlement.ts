@@ -27,6 +27,10 @@ export const orgPlanEntitlements = pgTable(
         "chk_org_plan_entitlements_plan_key_not_pro_suspend",
         sql`${table.planKey} <> 'pro-suspend'`,
       ),
+      check(
+        "chk_org_plan_entitlements_plan_key_not_custom",
+        sql`${table.planKey} <> 'custom'`,
+      ),
       check("chk_org_plan_entitlements_plan_rank", sql`${table.planRank} >= 0`),
       check(
         "chk_org_plan_entitlements_base_concurrency",

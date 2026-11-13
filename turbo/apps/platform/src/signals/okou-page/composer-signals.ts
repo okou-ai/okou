@@ -290,6 +290,11 @@ export interface ComposerSignals {
     void,
     [ChatAttachment, AnnotationImage]
   >;
+  /** Produces a draft image's annotated copy again after it failed. */
+  readonly retryAnnotatedCopy$: Command<
+    Promise<void>,
+    [ChatAttachment, AbortSignal]
+  >;
   readonly setLifecycleRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -589,8 +594,7 @@ export function createComposerSignals(
     options.connector ??
     createComposerConnectorSignals(options.agentId, options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
-  const { imageAnnotation, openAttachmentPreview$ } =
-    createComposerAttachmentAnnotation(draft, draftSignals);
+  const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
   const connectorCompletion = createComposerConnectorCompletion(
     connector,
     options.agentId,
@@ -658,11 +662,10 @@ export function createComposerSignals(
       generationTemplate$: draft.generationTemplate$,
       setGenerationTemplate$: draft.setGenerationTemplate$,
     },
-    imageAnnotation,
-    openAttachmentPreview$,
+    ...annotation,
     setLifecycleRef$: createComposerLifecycleRef(
       taskChips,
-      imageAnnotation,
+      annotation.imageAnnotation,
       draft,
     ),
   };
@@ -765,7 +768,22 @@ function createComposerAttachmentAnnotation(
       });
     },
   );
-  return { imageAnnotation, openAttachmentPreview$ };
+  /**
+   * Produces the copy again for the marks already on the attachment. Attaching
+   * no longer waits for the copy, so a failed one is retried from the chip
+   * rather than by pressing "Attach marks" again in an editor still open.
+   */
+  const retryAnnotatedCopy$ = command(
+    ({ get, set }, attachment: ChatAttachment, signal: AbortSignal) => {
+      return set(
+        actions.confirmAttachmentAnnotations$,
+        attachment,
+        get(attachment.annotations$),
+        signal,
+      );
+    },
+  );
+  return { imageAnnotation, openAttachmentPreview$, retryAnnotatedCopy$ };
 }
 
 /**

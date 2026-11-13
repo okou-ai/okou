@@ -40,7 +40,7 @@ import {
 } from "./org-plan-entitlements.service";
 import { usagePackCreditGrantValues } from "./usage-pack-credit.service";
 
-const PAID_TIERS = ["pro", "team", "custom"] as const;
+const PAID_TIERS = ["pro", "team"] as const;
 
 interface BootstrapPublicationArgs {
   readonly orgId: string;

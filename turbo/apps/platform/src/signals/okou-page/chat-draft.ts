@@ -459,9 +459,16 @@ function createAttachmentAnnotationSignals(args: {
       : null,
   );
   const resetUploadSignal$ = resetSignal();
+  // The copy being produced for the current marks. The editor is closed while
+  // it runs, so the chip is the only place it can show — and the only place a
+  // failed one can be retried, since send stays blocked until it exists.
+  const internalAnnotatedCopy$ = state<Promise<void>>(Promise.resolve());
 
   const annotations$ = computed((get) => {
     return get(internalAnnotations$);
+  });
+  const annotatedCopy$ = computed((get) => {
+    return get(internalAnnotatedCopy$);
   });
   const annotatedFileId$ = computed((get) => {
     return get(internalAnnotatedFileId$);
@@ -489,9 +496,11 @@ function createAttachmentAnnotationSignals(args: {
       set(internalAnnotations$, annotations);
       set(internalAnnotatedFileId$, null);
       if (!annotations || !isAnnotationMeaningful(annotations)) {
+        set(internalAnnotatedCopy$, Promise.resolve());
         return Promise.resolve();
       }
       const operation = set(uploadAnnotatedCopy$, annotations, signal);
+      set(internalAnnotatedCopy$, operation);
       return operation;
     },
   );
@@ -522,6 +531,7 @@ function createAttachmentAnnotationSignals(args: {
   return {
     annotations$,
     annotatedFileId$,
+    annotatedCopy$,
     annotationReady$,
     confirmAnnotations$,
     prepareAnnotatedCopy$,
@@ -551,6 +561,8 @@ export interface ChatAttachment {
   preview$: Computed<Promise<ComposerAttachmentPreview | null>>;
   /** Whether the annotated derivative required by a send is available. */
   annotationReady$: Computed<boolean>;
+  /** The latest attempt to produce that derivative; settled when none is due. */
+  annotatedCopy$: Computed<Promise<void>>;
   /** Cancel the in-flight upload. Always safe to call (no-op if already completed). */
   cancel$: Command<void, []>;
   /** Start the upload and publish its fileInfo$ promise for later send-time resolution. */

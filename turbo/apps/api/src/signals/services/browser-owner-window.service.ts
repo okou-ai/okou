@@ -105,8 +105,8 @@ async function prepareBrowserOwnerWindow(
       input.cdpUrl,
       BROWSER_SCREEN_WIDTH,
       BROWSER_INITIAL_SCREEN_HEIGHT,
-      signal,
       candidate.primaryWindowId,
+      signal,
     );
   }
   signal.throwIfAborted();

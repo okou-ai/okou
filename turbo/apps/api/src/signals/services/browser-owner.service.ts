@@ -4,11 +4,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
-import {
-  browserProfiles,
-  browserSessionInstances,
-  browserThreadProfiles,
-} from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import {
   and,
@@ -18,7 +13,6 @@ import {
   gt,
   isNotNull,
   isNull,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -296,28 +290,6 @@ const allocateOwnerBrowser$ = command(
                         ),
                     )
                   : undefined,
-                notExists(
-                  new QueryBuilder()
-                    .select({ id: browserProfiles.id })
-                    .from(browserProfiles)
-                    .where(
-                      eq(
-                        browserProfiles.providerProfileId,
-                        action.providerProfileId,
-                      ),
-                    ),
-                ),
-                notExists(
-                  new QueryBuilder()
-                    .select({ id: browserThreadProfiles.id })
-                    .from(browserThreadProfiles)
-                    .where(
-                      eq(
-                        browserThreadProfiles.providerProfileId,
-                        action.providerProfileId,
-                      ),
-                    ),
-                ),
               ),
             ),
         )
@@ -378,17 +350,6 @@ const publishOwnerBrowser$ = command(
             eq(profiles.status, "creating"),
             gt(profiles.creationExpiresAt, now),
             gt(profiles.timeoutAt, now),
-            notExists(
-              new QueryBuilder()
-                .select({ id: browserSessionInstances.providerSessionId })
-                .from(browserSessionInstances)
-                .where(
-                  eq(
-                    browserSessionInstances.providerSessionId,
-                    action.providerSessionId,
-                  ),
-                ),
-            ),
           ),
         )
         .returning()

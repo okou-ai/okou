@@ -3632,6 +3632,7 @@ function ChatThreadBottomBar({
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
+  const unified = useGet(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection];
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
   const audience = useGet(thread.sharing.audience$);
@@ -3709,7 +3710,9 @@ function ChatThreadBottomBar({
                   <Share2 size={16} />
                 )}
                 {t(($) => {
-                  return $.chat.sharing.create;
+                  return unified
+                    ? $.chat.sharing.createLink
+                    : $.chat.sharing.create;
                 })}
               </Button>
             </div>
@@ -5995,6 +5998,13 @@ function shareableEventFromChatEvent(
   if (displayText) {
     return { id: event.id, text: displayText };
   }
+  if (
+    event.userMessage?.parts.some((part) => {
+      return part.type === "file";
+    })
+  ) {
+    return { id: event.id, text: "" };
+  }
   const automation = eventNonContentPart(event);
   if (automation?.type !== "automation") {
     return null;
@@ -6006,7 +6016,49 @@ function shareableEventFromChatEvent(
     : null;
 }
 
-function SelectablePagedGroupRow({
+function SelectablePagedGroupRow(props: Parameters<typeof PagedGroupRow>[0]) {
+  const { group, thread, dateDividers, modelChanges } = props;
+  const phase = useGet(thread.sharing.phase$);
+  const unified = useGet(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection];
+  const selectionData = useGet(thread.sharing.selection$);
+  const sharing = phase !== "idle";
+  if (sharing && unified && group.role === "user" && group.events.length > 1) {
+    return group.events.map((event) => {
+      return (
+        <SelectablePagedGroupRow
+          key={event.id}
+          group={{ ...group, beginEventId: event.id, events: [event] }}
+          thread={thread}
+          modelChanges={modelChanges}
+          stackFirstOnPrevious={false}
+          dateDividers={dateDividers}
+        />
+      );
+    });
+  }
+  const eligible = new Set(
+    selectionData?.messages.map((message) => {
+      return message.eventId;
+    }),
+  );
+  const displayGroup =
+    sharing && unified
+      ? {
+          ...group,
+          events: group.events.filter((event) => {
+            return eligible.has(event.id);
+          }),
+        }
+      : sharing
+        ? chatGroupForSharing(group)
+        : group;
+  if (sharing && unified && displayGroup.events.length === 0) {
+    return null;
+  }
+  return <ChatShareSelectionRow {...props} displayGroup={displayGroup} />;
+}
+
+function ChatShareSelectionRow({
   group,
   thread,
   modelChanges,
@@ -6015,14 +6067,15 @@ function SelectablePagedGroupRow({
   runWorkSection,
   statusRow,
   statusTailEvents,
-}: Parameters<typeof PagedGroupRow>[0]) {
+  displayGroup,
+}: Parameters<typeof PagedGroupRow>[0] & { displayGroup: ChatEventGroup }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
   const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const unified = useGet(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection];
   const sharing = phase !== "idle";
-  const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
     <PagedGroupRow
       group={displayGroup}
@@ -6082,6 +6135,7 @@ function SelectablePagedGroupRow({
     indeterminate,
     selecting: phase === "selecting",
     onToggle: toggleGroup,
+    singleMessage: unified,
   };
   // Preserve the message list's rhythm inside this group, including the gaps
   // that back-to-back user bubbles stack into.
@@ -6093,7 +6147,7 @@ function SelectablePagedGroupRow({
     </div>
   );
 
-  if (nameLine) {
+  if (nameLine || unified) {
     return (
       <div
         data-chat-share-selectable-group
@@ -6139,6 +6193,7 @@ function SelectablePagedGroupRow({
 }
 
 interface ShareGroupSelectionProps {
+  singleMessage?: boolean;
   allSelected: boolean;
   indeterminate: boolean;
   selecting: boolean;
@@ -6148,7 +6203,15 @@ interface ShareGroupSelectionProps {
 function shareGroupSelectionLabel(
   t: TFunction<"common">,
   allSelected: boolean,
+  singleMessage = false,
 ): string {
+  if (singleMessage) {
+    return t(($) => {
+      return allSelected
+        ? $.chat.sharing.deselectMessage
+        : $.chat.sharing.selectMessage;
+    });
+  }
   return t(($) => {
     return allSelected
       ? $.chat.sharing.deselectGroup
@@ -6183,7 +6246,7 @@ function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
           "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
         )}
       >
-        {shareGroupSelectionLabel(t, allSelected)}
+        {shareGroupSelectionLabel(t, allSelected, props.singleMessage)}
       </Field.Label>
       <Checkbox
         checked={allSelected}
@@ -6215,7 +6278,7 @@ function ShareGroupSelectionColumn({
           and keeps its text for assistive technology only. */}
       <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
         <span className="sr-only">
-          {shareGroupSelectionLabel(t, allSelected)}
+          {shareGroupSelectionLabel(t, allSelected, props.singleMessage)}
         </span>
       </Field.Label>
       {/* Centred on the group's first line: the name line of a reply, or the
@@ -8326,6 +8389,7 @@ function PagedGroupPrimaryActions({
   onCopy,
   onShare,
   shareCopied,
+  onSelectMessages,
   pdfAction,
   relatedArtifacts,
 }: {
@@ -8336,6 +8400,7 @@ function PagedGroupPrimaryActions({
   onCopy: () => Promise<boolean>;
   onShare: ((audience: SharedThreadAudience) => void) | undefined;
   shareCopied: boolean;
+  onSelectMessages?: () => void;
   pdfAction?: ReactNode;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
@@ -8391,7 +8456,13 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {onShare && <MessageShareMenu onShare={onShare} copied={shareCopied} />}
+      {onShare && (
+        <MessageShareMenu
+          onShare={onShare}
+          copied={shareCopied}
+          onSelectMessages={onSelectMessages}
+        />
+      )}
       {pdfAction}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8422,6 +8493,7 @@ function PagedGroupActions({
   const pageSignal = useGet(pageSignal$);
   const copyEvent = useSet(thread.copyEvent$);
   const shareMessage = useSet(thread.sharing.shareMessage$);
+  const selectMore = useSet(thread.sharing.startFromMessage$);
   const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const switches = useGet(featureSwitch$);
@@ -8474,7 +8546,20 @@ function PagedGroupActions({
         thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
-        shareCopied={copiedMessageEventId === shareEventIds[0]}
+        onSelectMessages={
+          switches[FeatureSwitchKey.ChatSharingSelection] && handleShare
+            ? () => {
+                return detach(
+                  selectMore(shareEventIds, pageSignal),
+                  Reason.DomCallback,
+                );
+              }
+            : undefined
+        }
+        shareCopied={
+          copiedMessageEventId !== null &&
+          shareEventIds.includes(copiedMessageEventId)
+        }
         pdfAction={
           hasContent &&
           handleShare &&

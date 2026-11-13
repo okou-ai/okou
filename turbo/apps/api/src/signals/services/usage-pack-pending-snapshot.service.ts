@@ -19,7 +19,6 @@ import { safeJsonParse, settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { nowDateSql } from "../../lib/time";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
-import { tierForKnownPlanPrice } from "./billing-checkout.service";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
 
 import type {
@@ -94,7 +93,6 @@ export type UsagePackPendingSnapshotOperation =
       readonly shape: {
         readonly tier: UsagePackContext["subscription"]["tier"];
         readonly planPriceId: string;
-        readonly projectsOrgPlan: boolean;
       };
     }
   | {
@@ -250,7 +248,7 @@ function pendingSnapshotInput(operation: UsagePackPendingSnapshotOperation) {
         status: operation.subscription.status,
         tier: operation.shape.tier,
         planPriceId: operation.shape.planPriceId,
-        projectsOrgPlan: operation.shape.projectsOrgPlan,
+        projectsOrgPlan: true,
         cancelAtPeriodEnd,
         ...(operation.checkoutSessionId
           ? { checkoutSessionId: operation.checkoutSessionId }
@@ -258,25 +256,16 @@ function pendingSnapshotInput(operation: UsagePackPendingSnapshotOperation) {
       };
     }
     case "deactivate": {
-      const projectsLimitedPlan = !operation.subscription.items.data.some(
-        (item) => {
-          return tierForKnownPlanPrice(item.price) === "custom";
-        },
-      );
       return {
         ...scope,
         subscriptionId: operation.subscription.id,
         status: operation.status,
-        projectsLimitedPlan,
-        ...(projectsLimitedPlan
-          ? {
-              limits: ORG_PLAN_ENTITLEMENT_TIER_VALUES["limited-free-1"],
-              sourceMetadata: retireMarketingMetadata({
-                ...operation.subscription.metadata,
-                usagePackInvalidReason: operation.reason,
-              }),
-            }
-          : {}),
+        projectsLimitedPlan: true,
+        limits: ORG_PLAN_ENTITLEMENT_TIER_VALUES["limited-free-1"],
+        sourceMetadata: retireMarketingMetadata({
+          ...operation.subscription.metadata,
+          usagePackInvalidReason: operation.reason,
+        }),
       };
     }
   }

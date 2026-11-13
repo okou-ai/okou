@@ -5,7 +5,8 @@ import SwiftUI
 @MainActor
 struct ChatThreadMenu {
   enum Action: Hashable {
-    case pin, movePinUp, movePinDown, rename, moveToProject, status, mute, markUnread, archive
+    case share, pin, movePinUp, movePinDown, rename, moveToProject, status, mute, markUnread,
+      archive
     case setStatus(String?)
   }
 
@@ -45,6 +46,14 @@ struct ChatThreadMenu {
         title: pinned ? String(localized: "Unpin chat") : String(localized: "Pin chat"),
         icon: pinned ? "pin-off" : "pin", enabled: available && list.canPin(threadID))
     ]
+    if workspace.selectedConversation?.thread.id == threadID,
+      workspace.selectedConversation?.sharingEnabled == true
+    {
+      items.append(
+        Item(
+          action: .share, title: String(localized: "Share chat"), icon: "share-2",
+          enabled: available))
+    }
     if pinned, let pinNeighbors {
       items += [
         Item(
@@ -110,6 +119,7 @@ struct ChatThreadMenu {
       (items + statusItems).contains(where: { $0.action == action && $0.enabled })
     else { return }
     switch action {
+    case .share: workspace.selectedConversation?.startSharing()
     case .pin: await workspace.list.togglePinned(threadID)
     case .movePinUp:
       guard let above = pinNeighbors?.above else { return }

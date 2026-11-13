@@ -108,11 +108,6 @@ function planName(tier: BillingTier): string {
       return $.billing.plans.team.name;
     });
   }
-  if (tier === "custom") {
-    return i18n.t(($) => {
-      return $.billing.plans.custom.name;
-    });
-  }
   return i18n.t(($) => {
     return $.billing.plans.free.name;
   });
@@ -128,11 +123,7 @@ function getPlanPrice(tier: "limited-free-1" | "pro"): string {
 }
 
 function isPaidTier(tier: BillingTier): boolean {
-  return tier === "pro" || tier === "team" || tier === "custom";
-}
-
-function isCustomTier(tier: BillingTier): boolean {
-  return tier === "custom";
+  return tier === "pro" || tier === "team";
 }
 
 function isNoActivePlanTier(tier: BillingTier): boolean {
@@ -584,16 +575,14 @@ function PlanActionButtons({
   onDowngrade: () => void;
   onRestore: () => void;
 }) {
-  const customLocked = isCustomTier(currentTier);
   const showUpgrade = futureTier
     ? futureTier === "pro"
     : !showConvert &&
-      !customLocked &&
       ((isPaid && currentTier !== "team" && !hasScheduledChange) || !isPaid);
   const showDowngrade = futureTier
     ? futureTier === "team"
-    : !customLocked && isPaid && !hasScheduledChange;
-  const showRestore = !futureTier && !customLocked && isPaid && canRestorePlan;
+    : isPaid && !hasScheduledChange;
+  const showRestore = !futureTier && isPaid && canRestorePlan;
 
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -664,18 +653,7 @@ function currentPlanNameLabel(currentTier: BillingTier): string {
   );
 }
 
-function currentPlanStatusLabel(
-  currentTier: BillingTier,
-  periodLabel: string | null,
-): string {
-  if (isCustomTier(currentTier)) {
-    return i18n.t(
-      ($) => {
-        return $.billing.plans.customAccess;
-      },
-      { value: formatLocalizedNumber(10) },
-    );
-  }
+function currentPlanStatusLabel(periodLabel: string | null): string {
   return (
     periodLabel ??
     i18n.t(($) => {
@@ -761,14 +739,6 @@ function billingControlCapabilities(
 
 function cancellationNoticeText(tier: BillingTier, changeDate: string): string {
   const formattedDate = formatBillingDate(changeDate);
-  if (tier === "custom") {
-    return i18n.t(
-      ($) => {
-        return $.billing.plans.customCancellationNotice;
-      },
-      { date: formattedDate },
-    );
-  }
   return i18n.t(
     ($) => {
       return $.billing.plans.cancellationNotice;
@@ -2011,7 +1981,6 @@ function UsagePackPricingFlowContent({
   if (mode.kind === "migration") {
     return (
       <UsagePackMigrationContent
-        currentTier={currentTier}
         migration={mode.migration}
         migrationOpen={migrationOpen}
         migrationTargetTier={migrationTargetTier}
@@ -2124,10 +2093,7 @@ export function OrgBillingTab({
     handleDowngrade,
   );
   const currentPlanLabel = currentPlanNameLabel(currentTier);
-  const currentPlanDescription = currentPlanStatusLabel(
-    currentTier,
-    periodLabel,
-  );
+  const currentPlanDescription = currentPlanStatusLabel(periodLabel);
   const showBuyCredits = capabilities.canBuyCredits;
   const showConcurrency = capabilities.canBuyConcurrency;
   const managementMode = billingManagementMode(status);

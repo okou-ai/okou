@@ -95,9 +95,7 @@ export function replacedLegacyPlanSubscriptionId(
     return null;
   }
   const replacesPaidTier =
-    (args.details.tier === "team" && wallet.tier === "pro") ||
-    (args.details.tier === "custom" &&
-      (wallet.tier === "pro" || wallet.tier === "team"));
+    args.details.tier === "team" && wallet.tier === "pro";
   return replacesPaidTier || wallet.subscriptionStatus === "trialing"
     ? wallet.stripeSubscriptionId
     : null;

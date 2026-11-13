@@ -494,8 +494,10 @@
       "inkLabel": "Color {{color}}",
       "notePlaceholder": "¿Qué debería cambiar?",
       "open": "Anotar",
+      "preparingCopy": "Preparando la copia con marcas de {{filename}}",
       "redo": "Rehacer",
       "removeMark": "Eliminar marca",
+      "retryCopy": "Reintentar la copia con marcas de {{filename}}",
       "subtitle_one": "{{count}} marca",
       "subtitle_many": "{{count}} marcas",
       "subtitle_other": "{{count}} marcas",
@@ -1212,11 +1214,6 @@
       "cancellationNotice": "Tu plan {{plan}} ha sido cancelado y terminará el {{date}}.",
       "compare": "Comparar planes",
       "compareAll": "Compara todos los planes",
-      "custom": {
-        "name": "Personalizado"
-      },
-      "customAccess": "Acceso personalizado con ejecuciones concurrentes {{value}}",
-      "customCancellationNotice": "Tu plan personalizado terminará en {{date}}.",
       "downgrade": "Cambiar a un plan inferior",
       "downgradeNotice": "Tu plan cambiará de {{currentPlan}} a {{targetPlan}} el {{date}}.",
       "downgradesOn": "Cambio a {{plan}} el {{date}}",
@@ -2535,7 +2532,9 @@
       "copyFailed": "No se pudo copiar el enlace",
       "create": "Compartir",
       "createFailed": "No se pudo crear la conversación compartida.",
+      "createLink": "Crear enlace",
       "deselectGroup": "Deseleccionar grupo de mensajes",
+      "deselectMessage": "Deseleccionar mensaje",
       "everyone": "Todos",
       "linkCopied": "Enlace copiado",
       "messageShareFailed": "No se pudo crear el enlace compartido.",
@@ -2544,6 +2543,8 @@
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
       "selectGroup": "Seleccionar grupo de mensajes",
+      "selectMessage": "Seleccionar mensaje",
+      "selectMessages": "Seleccionar mensajes…",
       "shareLink": "Enlace de conversación compartida",
       "start": "Compartir mensajes",
       "tooLarge": "Selecciona menos mensajes para compartir",
@@ -5226,7 +5227,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Abrir la página de inicio de {{name}}",
+    "openHome": "Nuevo chat en {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5270,7 +5271,6 @@
       "inUse_other": "{{active}} de {{limit}} cupos en uso"
     },
     "tiers": {
-      "custom": "Personalizado",
       "free": "Gratis",
       "pro": "Pro",
       "team": "Equipo"
@@ -7333,7 +7333,7 @@
           "adminHint": "Pide a un administrador de espacio de trabajo que actualice.",
           "benefitDescription": "Crea endpoints firmados que inicien flujos de trabajo desde sistemas externos.",
           "benefitTitle": "Automatización segura de flujos de trabajo entrantes",
-          "description": "Las automatizaciones de Webhook requieren un espacio de trabajo en equipo o personalizado.",
+          "description": "Las automatizaciones de Webhook requieren un espacio de trabajo Team.",
           "title": "Actualizar para usar automatizaciones de webhooks",
           "upgradeAction": "Actualizar a Team"
         },

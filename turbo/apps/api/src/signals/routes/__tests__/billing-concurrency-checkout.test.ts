@@ -4134,7 +4134,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
       expect(response.body).toStrictEqual({
         error: {
           message:
-            "Additional concurrency is only available for Team or Custom workspaces",
+            "Additional concurrency is only available for Team workspaces",
           code: "BAD_REQUEST",
         },
       });

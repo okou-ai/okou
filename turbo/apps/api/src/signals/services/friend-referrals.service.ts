@@ -99,7 +99,7 @@ export const grantPaidFriendReferralRewards$ = command(
           eq(usagePackCreditGrants.grantType, "purchased"),
           gt(usagePackCreditGrants.originalAmount, 0),
           eq(orgMetadata.stripeCustomerId, customerId),
-          inArray(orgPlanEntitlements.planKey, ["pro", "team", "custom"]),
+          inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
           eq(orgPlanEntitlements.status, "active"),
           or(
             isNull(orgPlanEntitlements.expiresAt),

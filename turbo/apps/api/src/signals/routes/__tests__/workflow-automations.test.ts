@@ -1113,7 +1113,7 @@ describe("okou workflow automations", () => {
     expect(created.body.nextRunAt).toBeTruthy();
   });
 
-  it("requires Team or Custom for webhook automation creation", async () => {
+  it("requires Team for webhook automation creation", async () => {
     const { actor, customerId, subscriptionId, workflowId } =
       await setupFixture();
 
@@ -1127,7 +1127,7 @@ describe("okou workflow automations", () => {
     );
     expect(proRejected.body.error).toStrictEqual({
       code: "TEAM_REQUIRED",
-      message: "Webhook automations require a Team or Custom workspace",
+      message: "Webhook automations require a Team workspace",
     });
 
     await runs.grantProEntitlement(actor, {

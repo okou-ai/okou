@@ -478,8 +478,10 @@
       "inkLabel": "色 {{color}}",
       "notePlaceholder": "何を変えますか？",
       "open": "注釈",
+      "preparingCopy": "{{filename}} のマーク付きコピーを準備しています",
       "redo": "やり直す",
       "removeMark": "マークを削除",
+      "retryCopy": "{{filename}} のマーク付きコピーを再試行",
       "subtitle_other": "{{count}} 件のマーク",
       "textPlaceholder": "ここに入力",
       "tools": {
@@ -1186,11 +1188,6 @@
       "cancellationNotice": "{{plan}} プランはキャンセルされ、{{date}} に終了します。",
       "compare": "プランを比較する",
       "compareAll": "すべてのプランを比較する",
-      "custom": {
-        "name": "カスタム"
-      },
-      "customAccess": "{{value}} 同時実行によるカスタム アクセス",
-      "customCancellationNotice": "カスタム プランは {{date}} に終了します。",
       "downgrade": "ダウングレード",
       "downgradeNotice": "{{currentPlan}} プランは、{{date}} の {{targetPlan}} にダウングレードされます。",
       "downgradesOn": "{{date}} の {{plan}} にダウングレード",
@@ -2482,13 +2479,17 @@
       "copyFailed": "リンクをコピーできませんでした",
       "create": "共有",
       "createFailed": "共有された会話を作成できませんでした。",
+      "createLink": "リンクを作成",
       "deselectGroup": "メッセージグループの選択を解除",
+      "deselectMessage": "メッセージの選択を解除",
       "everyone": "全員",
       "linkCopied": "リンクをコピーしました",
       "messageShareFailed": "共有リンクを作成できませんでした。",
       "organizationDescription": "組織内のメンバーのみ",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
+      "selectMessage": "メッセージを選択",
+      "selectMessages": "メッセージを選択…",
       "shareLink": "共有された会話のリンク",
       "start": "メッセージを共有",
       "tooLarge": "共有するメッセージを減らしてください",
@@ -5151,7 +5152,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "{{name}} のホームを開く",
+    "openHome": "{{name}} で新しいチャット",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5192,7 +5193,6 @@
       "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
     },
     "tiers": {
-      "custom": "カスタム",
       "free": "無料",
       "pro": "プロ",
       "team": "チーム"
@@ -7233,7 +7233,7 @@
           "adminHint": "ワークスペース管理者にアップグレードを依頼してください。",
           "benefitDescription": "外部システムからワークフローを開始する署名付きエンドポイントを作成します。",
           "benefitTitle": "安全な受信ワークフローのオートメーション",
-          "description": "Webhook のオートメーションには、チーム ワークスペースまたはカスタム ワークスペースが必要です。",
+          "description": "Webhook のオートメーションには、チーム ワークスペースが必要です。",
           "title": "Webhook オートメーションのためのアップグレード",
           "upgradeAction": "チームにアップグレード"
         },

@@ -25,9 +25,11 @@ import { ShareMenuContent } from "./artifact-share-menu.tsx";
 export function MessageShareMenu({
   copied,
   onShare,
+  onSelectMessages,
 }: {
   readonly copied: boolean;
   readonly onShare: (audience: SharedThreadAudience) => void;
+  readonly onSelectMessages?: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -106,6 +108,16 @@ export function MessageShareMenu({
             </span>
           </span>
         </DropdownMenuItem>
+        {onSelectMessages && (
+          <DropdownMenuItem onClick={onSelectMessages}>
+            <Share2 className="text-muted-foreground" />
+            <span>
+              {t(($) => {
+                return $.chat.sharing.selectMessages;
+              })}
+            </span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
       <span role="status" className="sr-only">
         {copied ? copiedLabel : ""}

@@ -152,6 +152,7 @@ readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WECHAT_WORKFLOWS_ONLY_PATH=.github/rollback-floors/wechat-workflows-only
 readonly CONNECTOR_RESOURCE_SPLIT_PATH=.github/rollback-floors/connector-resource-split
+readonly RETIRED_BILLING_ISSUANCE_PATH=.github/rollback-floors/retired-billing-issuance
 readonly CONNECTOR_DIAGNOSTIC_TARGETS_PATH=.github/rollback-floors/connector-diagnostic-targets
 readonly RUN_STORAGE_OUTPUT_READER_PATH=.github/rollback-floors/run-storage-output-reader
 readonly GUEST_STORAGE_OUTPUT_COMPLETION_READER_PATH=.github/rollback-floors/guest-storage-output-completion-reader
@@ -893,6 +894,21 @@ if [[ ! "$pi_memory_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_memory_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates Pi memory storage retirement: ${pi_memory_retired_commit}."
+fi
+
+# #47016 stops Custom/Atom issuance before the Custom read contract is removed.
+# A rollback must not restore writers that can recreate the retired plan.
+if ! retired_billing_issuance_commit=$(git show "origin/main:${RETIRED_BILLING_ISSUANCE_PATH}"); then
+  fail "Cannot read the retired billing issuance rollback floor from main."
+fi
+if [[ ! "$retired_billing_issuance_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid retired billing issuance rollback floor."
+fi
+if ! git merge-base --is-ancestor "$retired_billing_issuance_commit" origin/main; then
+  fail "Retired billing issuance rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$retired_billing_issuance_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Custom/Atom issuance retirement: ${retired_billing_issuance_commit}."
 fi
 
 # PR1 introduced /api/connectors/connected and /api/remotes/overview before

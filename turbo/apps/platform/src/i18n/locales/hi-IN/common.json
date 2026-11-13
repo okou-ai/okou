@@ -479,8 +479,10 @@
       "inkLabel": "रंग {{color}}",
       "notePlaceholder": "क्या बदलना चाहिए?",
       "open": "टिप्पणी करें",
+      "preparingCopy": "{{filename}} की चिह्नित प्रति तैयार हो रही है",
       "redo": "फिर से करें",
       "removeMark": "चिह्न हटाएँ",
+      "retryCopy": "{{filename}} की चिह्नित प्रति फिर से बनाएँ",
       "subtitle_one": "{{count}} चिह्न",
       "subtitle_other": "{{count}} चिह्न",
       "textPlaceholder": "यहाँ लिखें",
@@ -1189,11 +1191,6 @@
       "cancellationNotice": "आपकी {{plan}} योजना रद्द कर दी गई है और {{date}} पर समाप्त होगी।",
       "compare": "योजनाओं की तुलना करें",
       "compareAll": "सभी योजनाओं की तुलना करें",
-      "custom": {
-        "name": "रिवाज़"
-      },
-      "customAccess": "{{value}} समवर्ती रन के साथ कस्टम एक्सेस",
-      "customCancellationNotice": "आपकी कस्टम योजना {{date}} पर समाप्त हो जाएगी।",
       "downgrade": "डाउनग्रेड",
       "downgradeNotice": "आपका {{currentPlan}} प्लान {{date}} पर {{targetPlan}} में डाउनग्रेड हो जाएगा।",
       "downgradesOn": "{{date}} पर {{plan}} में डाउनग्रेड",
@@ -2491,7 +2488,9 @@
       "copyFailed": "लिंक कॉपी नहीं हो सका",
       "create": "शेयर करें",
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी।",
+      "createLink": "लिंक बनाएं",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
+      "deselectMessage": "संदेश का चयन हटाएं",
       "everyone": "सभी",
       "linkCopied": "लिंक कॉपी हो गया",
       "messageShareFailed": "साझा लिंक नहीं बनाया जा सका।",
@@ -2499,6 +2498,8 @@
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
+      "selectMessage": "संदेश चुनें",
+      "selectMessages": "संदेश चुनें…",
       "shareLink": "साझा बातचीत का लिंक",
       "start": "संदेश शेयर करें",
       "tooLarge": "शेयर करने के लिए कम संदेश चुनें",
@@ -5169,7 +5170,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "{{name}} का होमपेज खोलें",
+    "openHome": "{{name}} में नई चैट",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5210,7 +5211,6 @@
       "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
     },
     "tiers": {
-      "custom": "कस्टम",
       "free": "मुक्त",
       "pro": "प्रो",
       "team": "टीम"
@@ -7257,7 +7257,7 @@
           "adminHint": "वर्कस्पेस एडमिन से अपग्रेड करने के लिए कहें।",
           "benefitDescription": "हस्ताक्षरित समापन बिंदु बनाएं जो बाहरी सिस्टम से वर्कफ़्लो प्रारंभ करें।",
           "benefitTitle": "सुरक्षित इनबाउंड वर्कफ़्लो ऑटोमेशन",
-          "description": "वेबहुक ऑटोमेशन के लिए टीम या कस्टम वर्कस्पेस की आवश्यकता होती है।",
+          "description": "वेबहुक ऑटोमेशन के लिए टीम वर्कस्पेस की आवश्यकता होती है।",
           "title": "वेबहुक ऑटोमेशन के लिए अपग्रेड करें",
           "upgradeAction": "टीम में अपग्रेड करें"
         },

@@ -494,8 +494,10 @@
       "inkLabel": "Couleur {{color}}",
       "notePlaceholder": "Que faut-il changer ?",
       "open": "Annoter",
+      "preparingCopy": "Préparation de la copie annotée de {{filename}}",
       "redo": "Rétablir",
       "removeMark": "Supprimer l'annotation",
+      "retryCopy": "Réessayer la copie annotée de {{filename}}",
       "subtitle_one": "{{count}} annotation",
       "subtitle_many": "{{count}} annotations",
       "subtitle_other": "{{count}} annotations",
@@ -1212,11 +1214,6 @@
       "cancellationNotice": "Votre abonnement {{plan}} a été annulé et prendra fin le {{date}}.",
       "compare": "Comparer les forfaits",
       "compareAll": "Comparer tous les forfaits",
-      "custom": {
-        "name": "Personnalisé"
-      },
-      "customAccess": "Accès personnalisé avec {{value}} exécutions concurrentes",
-      "customCancellationNotice": "Votre forfait personnalisé prendra fin le {{date}}.",
       "downgrade": "Rétrograder",
       "downgradeNotice": "Votre plan {{currentPlan}} rétrogradera vers {{targetPlan}} le {{date}}.",
       "downgradesOn": "Rétrogradations vers {{plan}} le {{date}}",
@@ -2535,7 +2532,9 @@
       "copyFailed": "Impossible de copier le lien",
       "create": "Partager",
       "createFailed": "Impossible de créer la conversation partagée.",
+      "createLink": "Créer un lien",
       "deselectGroup": "Désélectionner le groupe de messages",
+      "deselectMessage": "Désélectionner le message",
       "everyone": "Tout le monde",
       "linkCopied": "Lien copié",
       "messageShareFailed": "Impossible de créer le lien de partage.",
@@ -2544,6 +2543,8 @@
       "selectedCount_many": "{{count}} sélectionnés",
       "selectedCount_other": "{{count}} sélectionnés",
       "selectGroup": "Sélectionner le groupe de messages",
+      "selectMessage": "Sélectionner le message",
+      "selectMessages": "Sélectionner des messages…",
       "shareLink": "Lien de la conversation partagée",
       "start": "Partager des messages",
       "tooLarge": "Sélectionnez moins de messages à partager",
@@ -5226,7 +5227,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Ouvrir l’accueil de {{name}}",
+    "openHome": "Nouvelle discussion dans {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5270,7 +5271,6 @@
       "inUse_other": "{{active}} sur {{limit}} emplacements utilisés"
     },
     "tiers": {
-      "custom": "Personnalisé",
       "free": "Gratuit",
       "pro": "Pro",
       "team": "Team"
@@ -7333,7 +7333,7 @@
           "adminHint": "Demandez à un administrateur d'espace de travail de mettre à niveau.",
           "benefitDescription": "Créez des points de terminaison signés qui déclenchent des workflows depuis des systèmes externes.",
           "benefitTitle": "Automatisation des workflows entrants sécurisée",
-          "description": "Les automatisations par webhook nécessitent un espace de travail Équipe ou Personnalisé.",
+          "description": "Les automatisations par webhook nécessitent un espace de travail Équipe.",
           "title": "Mettez à niveau pour les automatisations par webhook",
           "upgradeAction": "Passer à Équipe"
         },

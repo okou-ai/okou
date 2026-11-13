@@ -478,8 +478,10 @@
       "inkLabel": "{{color}}墨迹",
       "notePlaceholder": "想改哪里？",
       "open": "标注",
+      "preparingCopy": "正在生成 {{filename}} 的标注副本",
       "redo": "重做",
       "removeMark": "删除标注",
+      "retryCopy": "重新生成 {{filename}} 的标注副本",
       "subtitle_other": "{{count}} 处标注",
       "textPlaceholder": "在这里输入",
       "tools": {
@@ -1186,11 +1188,6 @@
       "cancellationNotice": "你的{{plan}}套餐已取消，将于{{date}}结束。",
       "compare": "对比套餐",
       "compareAll": "对比所有套餐",
-      "custom": {
-        "name": "定制"
-      },
-      "customAccess": "定制权益，{{value}} 个并发运行",
-      "customCancellationNotice": "你的定制套餐将于{{date}}结束。",
       "downgrade": "降级",
       "downgradeNotice": "你的{{currentPlan}}套餐将于{{date}}降级为{{targetPlan}}。",
       "downgradesOn": "将于{{date}}降级为{{plan}}",
@@ -2482,13 +2479,17 @@
       "copyFailed": "无法复制链接",
       "create": "分享",
       "createFailed": "无法创建分享对话。",
+      "createLink": "创建链接",
       "deselectGroup": "取消选择该组消息",
+      "deselectMessage": "取消选择消息",
       "everyone": "所有人",
       "linkCopied": "链接已复制",
       "messageShareFailed": "分享链接创建失败。",
       "organizationDescription": "仅限组织内成员",
       "selectedCount_other": "已选 {{count}} 条",
       "selectGroup": "选择该组消息",
+      "selectMessage": "选择消息",
+      "selectMessages": "选择消息…",
       "shareLink": "分享对话链接",
       "start": "分享消息",
       "tooLarge": "选择的消息过多，请减少后再分享",
@@ -5151,7 +5152,7 @@
     "name": "Project 名称",
     "new": "新建 Project",
     "noMatches": "No projects found",
-    "openHome": "打开 {{name}} 首页",
+    "openHome": "在 {{name}} 中新建聊天",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5192,7 +5193,6 @@
       "inUse_other": "{{limit}} 个名额中已使用 {{active}} 个"
     },
     "tiers": {
-      "custom": "自定义",
       "free": "免费",
       "pro": "Pro",
       "team": "Team"
@@ -7233,7 +7233,7 @@
           "adminHint": "请工作区管理员升级。",
           "benefitDescription": "创建带签名的接口地址，让外部系统触发工作流。",
           "benefitTitle": "安全地从外部触发工作流",
-          "description": "Webhook 自动化需要 Team 或 Custom 工作区。",
+          "description": "Webhook 自动化需要 Team 工作区。",
           "title": "升级后可用 webhook 自动化",
           "upgradeAction": "升级到 Team"
         },

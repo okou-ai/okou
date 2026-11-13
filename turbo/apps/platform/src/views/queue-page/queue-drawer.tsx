@@ -726,13 +726,9 @@ function QueueDrawerContent() {
         ? t(($) => {
             return $.queue.tiers.pro;
           })
-        : concurrency.tier === "team"
-          ? t(($) => {
-              return $.queue.tiers.team;
-            })
-          : t(($) => {
-              return $.queue.tiers.custom;
-            });
+        : t(($) => {
+            return $.queue.tiers.team;
+          });
   const canManageBilling =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const visibleUpgrade = canManageBilling ? upgrade : undefined;

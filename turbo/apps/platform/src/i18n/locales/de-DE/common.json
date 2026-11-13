@@ -479,8 +479,10 @@
       "inkLabel": "Farbe {{color}}",
       "notePlaceholder": "Was soll sich ändern?",
       "open": "Markieren",
+      "preparingCopy": "Markierte Kopie von {{filename}} wird vorbereitet",
       "redo": "Wiederholen",
       "removeMark": "Markierung entfernen",
+      "retryCopy": "Markierte Kopie von {{filename}} erneut erstellen",
       "subtitle_one": "{{count}} Markierung",
       "subtitle_other": "{{count}} Markierungen",
       "textPlaceholder": "Hier eingeben",
@@ -1189,11 +1191,6 @@
       "cancellationNotice": "Ihr {{plan}}-Plan wurde gekündigt und endet am {{date}}.",
       "compare": "Tarife vergleichen",
       "compareAll": "Vergleichen Sie alle Pläne",
-      "custom": {
-        "name": "Benutzerdefiniert"
-      },
-      "customAccess": "Benutzerdefinierter Zugriff mit {{value}} gleichzeitigen Ausführungen",
-      "customCancellationNotice": "Ihr benutzerdefinierter Plan endet am {{date}}.",
       "downgrade": "Downgrade",
       "downgradeNotice": "Ihr {{currentPlan}}-Plan wird am {{date}} auf {{targetPlan}} heruntergestuft.",
       "downgradesOn": "Downgrade auf {{plan}} auf {{date}}",
@@ -2491,7 +2488,9 @@
       "copyFailed": "Der Link konnte nicht kopiert werden",
       "create": "Teilen",
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden.",
+      "createLink": "Link erstellen",
       "deselectGroup": "Nachrichtengruppe abwählen",
+      "deselectMessage": "Nachricht abwählen",
       "everyone": "Alle",
       "linkCopied": "Link kopiert",
       "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden.",
@@ -2499,6 +2498,8 @@
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
+      "selectMessage": "Nachricht auswählen",
+      "selectMessages": "Nachrichten auswählen…",
       "shareLink": "Link zur geteilten Unterhaltung",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus",
@@ -5169,7 +5170,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Startseite von {{name}} öffnen",
+    "openHome": "Neuer Chat in {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
@@ -5210,7 +5211,6 @@
       "inUse_other": "{{active}} von {{limit}} Slots belegt"
     },
     "tiers": {
-      "custom": "Benutzerdefiniert",
       "free": "Frei",
       "pro": "Pro",
       "team": "Team"
@@ -7256,7 +7256,7 @@
           "adminHint": "Bitten Sie einen Arbeitsbereichsadministrator um ein Upgrade.",
           "benefitDescription": "Erstellen Sie signierte Endpunkte, die Workflows von externen Systemen starten.",
           "benefitTitle": "Sichere Automatisierung des Inbound-Workflows",
-          "description": "Webhook-Automatisierungen erfordern einen Team- oder benutzerdefinierten Arbeitsbereich.",
+          "description": "Webhook-Automatisierungen erfordern einen Team-Arbeitsbereich.",
           "title": "Upgrade für Webhook-Automatisierungen",
           "upgradeAction": "Upgrade auf Team"
         },
