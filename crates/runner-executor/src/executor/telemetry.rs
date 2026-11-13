@@ -11,14 +11,11 @@ use guest_contracts::epoch_milliseconds::{
 };
 use tracing::warn;
 
-use crate::guest_timezone::GuestTimezoneAssumption;
-use crate::idle_pool::ExactIdleReservationMiss;
 use crate::resource_budget::ResourceBudget;
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetOccupancy, RunnerStartupPath,
 };
-use runner_provider::ApiClaimTiming;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
@@ -87,7 +84,6 @@ impl Drop for RunnerPreSpawnConcurrencyGuard {
 #[derive(Clone, Copy)]
 pub enum RunnerPreSpawnPhase {
     ResumeSessionValidation,
-    FinalizingWait,
     DeviceRateLimits,
     IdleReuseLookup,
     HomeCacheStateLookup,
@@ -95,89 +91,6 @@ pub enum RunnerPreSpawnPhase {
     IdleUnpark,
     ActiveStatusPublish,
     SpawnJobSetup,
-}
-
-/// Terminal reason for an owned Home readiness wait after claim.
-#[derive(Clone, Copy, Debug)]
-pub enum HomeWaitOutcome {
-    SnapshotReady,
-    RevalidatedReady,
-    WaitDeadlineExpired,
-    Cancelled,
-    Unavailable,
-}
-
-impl HomeWaitOutcome {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::SnapshotReady => "snapshot_ready",
-            Self::RevalidatedReady => "revalidated_ready",
-            // Preserve the established outcome label independently of routing expiry.
-            Self::WaitDeadlineExpired => "preference_expired",
-            Self::Cancelled => "cancelled",
-            Self::Unavailable => "unavailable",
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum FinalizingHandoffOutcome {
-    Accepted,
-    ActivationFailed,
-    PublishedExact,
-    PreFinalizationDeadline,
-    NotAcceptedBeforeDeadline,
-    NoExact,
-    Cancelled,
-}
-
-#[derive(Clone, Copy)]
-pub enum FinalizingHandoffReason {
-    PreFinalizationDeadline,
-    HandoffAcceptanceDeadline,
-    PublishedExactUnavailable,
-    PredecessorReleasedWithoutExact,
-    PredecessorNoExact,
-    ExactHandoffUnavailable,
-    HandoffRequestUnavailable,
-    ExactHandoffClosed,
-    SuccessorCancelled,
-    ActivationCancelled,
-    HandoffIdentityMismatch,
-    ExactActivationFallback,
-    ExactActivationFailed,
-}
-
-impl FinalizingHandoffReason {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::PreFinalizationDeadline => "pre_finalization_deadline",
-            Self::HandoffAcceptanceDeadline => "handoff_acceptance_deadline",
-            Self::PublishedExactUnavailable => "published_exact_unavailable",
-            Self::PredecessorReleasedWithoutExact => "predecessor_released_without_exact",
-            Self::PredecessorNoExact => "predecessor_no_exact",
-            Self::ExactHandoffUnavailable => "exact_handoff_unavailable",
-            Self::HandoffRequestUnavailable => "handoff_request_unavailable",
-            Self::ExactHandoffClosed => "exact_handoff_closed",
-            Self::SuccessorCancelled => "successor_cancelled",
-            Self::ActivationCancelled => "activation_cancelled",
-            Self::HandoffIdentityMismatch => "handoff_identity_mismatch",
-            Self::ExactActivationFallback => "exact_activation_fallback",
-            Self::ExactActivationFailed => "exact_activation_failed",
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct FinalizingHandoffTelemetry {
-    outcome: FinalizingHandoffOutcome,
-    reason: Option<FinalizingHandoffReason>,
-}
-
-#[derive(Clone, Copy)]
-pub enum FinalizingExactIdleLookup {
-    Hit,
-    Miss(ExactIdleReservationMiss),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -230,72 +143,9 @@ impl BlankPoolSelection {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct FinalizingDiagnostics {
-    handoff: Option<FinalizingHandoffTelemetry>,
-    exact_idle_lookup: Option<FinalizingExactIdleLookup>,
-}
-
-impl FinalizingHandoffOutcome {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Accepted => "accepted",
-            Self::ActivationFailed => "activation_failed",
-            Self::PublishedExact => "published_exact",
-            Self::PreFinalizationDeadline => "pre_finalization_deadline",
-            Self::NotAcceptedBeforeDeadline => "not_accepted_before_deadline",
-            Self::NoExact => "no_exact",
-            Self::Cancelled => "cancelled",
-        }
-    }
-
-    const fn succeeded(self) -> bool {
-        matches!(self, Self::Accepted | Self::PublishedExact)
-    }
-}
-
-impl FinalizingHandoffTelemetry {
-    pub fn record(self, telemetry: &mut JobTelemetry) {
-        telemetry.record_bounded_outcome_with_error(
-            "runner_claim_finalizing_handoff",
-            self.outcome.succeeded(),
-            (!self.outcome.succeeded()).then_some(self.outcome.as_str()),
-            self.outcome.as_str(),
-            self.reason.map(FinalizingHandoffReason::as_str),
-        );
-    }
-}
-
-impl FinalizingExactIdleLookup {
-    fn record(self, telemetry: &mut JobTelemetry) {
-        let (outcome, reason) = match self {
-            Self::Hit => ("hit", None),
-            Self::Miss(reason) => ("miss", Some(reason.as_str())),
-        };
-        telemetry.record_bounded_outcome(
-            "runner_claim_finalizing_exact_idle_lookup",
-            true,
-            outcome,
-            reason,
-        );
-    }
-}
-
-impl FinalizingDiagnostics {
-    pub fn record(self, telemetry: &mut JobTelemetry) {
-        if let Some(handoff) = self.handoff {
-            handoff.record(telemetry);
-        }
-        if let Some(exact_idle_lookup) = self.exact_idle_lookup {
-            exact_idle_lookup.record(telemetry);
-        }
-    }
-}
-
 impl RunnerPreSpawnPhase {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 8] = [
         Self::ResumeSessionValidation,
-        Self::FinalizingWait,
         Self::DeviceRateLimits,
         Self::IdleReuseLookup,
         Self::HomeCacheStateLookup,
@@ -308,7 +158,6 @@ impl RunnerPreSpawnPhase {
     const fn action_type(self) -> &'static str {
         match self {
             Self::ResumeSessionValidation => "runner_claim_resume_session_validation",
-            Self::FinalizingWait => "runner_claim_finalizing_wait",
             Self::DeviceRateLimits => "runner_claim_device_rate_limits",
             Self::IdleReuseLookup => "runner_claim_idle_reuse_lookup",
             Self::HomeCacheStateLookup => "runner_claim_home_cache_state_lookup",
@@ -323,7 +172,6 @@ impl RunnerPreSpawnPhase {
 #[derive(Default)]
 struct RunnerPreSpawnPhaseDurations {
     resume_session_validation: Option<Duration>,
-    finalizing_wait: Option<Duration>,
     device_rate_limits: Option<Duration>,
     idle_reuse_lookup: Option<Duration>,
     home_cache_state_lookup: Option<Duration>,
@@ -337,7 +185,6 @@ impl RunnerPreSpawnPhaseDurations {
     fn get_mut(&mut self, phase: RunnerPreSpawnPhase) -> &mut Option<Duration> {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => &mut self.resume_session_validation,
-            RunnerPreSpawnPhase::FinalizingWait => &mut self.finalizing_wait,
             RunnerPreSpawnPhase::DeviceRateLimits => &mut self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => &mut self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => &mut self.home_cache_state_lookup,
@@ -351,7 +198,6 @@ impl RunnerPreSpawnPhaseDurations {
     fn get(&self, phase: RunnerPreSpawnPhase) -> Option<Duration> {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => self.resume_session_validation,
-            RunnerPreSpawnPhase::FinalizingWait => self.finalizing_wait,
             RunnerPreSpawnPhase::DeviceRateLimits => self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => self.home_cache_state_lookup,
@@ -365,31 +211,10 @@ impl RunnerPreSpawnPhaseDurations {
 
 pub struct RunnerPreSpawnTiming {
     claim_returned_at: Instant,
-    api_claim_timing: Option<ApiClaimTiming>,
     concurrency: RunnerPreSpawnConcurrencyGuard,
     phase_durations: RunnerPreSpawnPhaseDurations,
     task_enqueued_at: Option<Instant>,
-    exact_reuse_speculation: Option<ExactReuseSpeculationTiming>,
-    finalizing_handoff: Option<FinalizingHandoffTelemetry>,
-    finalizing_exact_idle_lookup: Option<FinalizingExactIdleLookup>,
     blank_pool_selection: Option<BlankPoolSelection>,
-    home_wait: Option<(Duration, HomeWaitOutcome)>,
-}
-
-#[derive(Clone, Copy)]
-pub struct RunnerPreSpawnOperationTiming {
-    pub duration: Duration,
-    pub succeeded: bool,
-}
-
-#[derive(Clone, Copy)]
-pub struct ExactReuseSpeculationTiming {
-    pub unpark: RunnerPreSpawnOperationTiming,
-    pub guest_restore: Option<RunnerPreSpawnOperationTiming>,
-    pub claim_overlap: Duration,
-    pub post_claim_remainder: Duration,
-    pub timezone_correction: Option<RunnerPreSpawnOperationTiming>,
-    pub timezone_assumption: Option<GuestTimezoneAssumption>,
 }
 
 pub(super) struct RunnerSpawnTiming {
@@ -400,56 +225,17 @@ pub(super) struct RunnerSpawnTiming {
 impl RunnerPreSpawnTiming {
     #[cfg(test)]
     pub(crate) fn start_after_claim() -> Self {
-        Self::start_at(Instant::now(), None, &RunnerPreSpawnConcurrency::default())
+        Self::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default())
     }
 
-    pub fn start_at(
-        claim_returned_at: Instant,
-        api_claim_timing: Option<ApiClaimTiming>,
-        concurrency: &RunnerPreSpawnConcurrency,
-    ) -> Self {
+    pub fn start_at(claim_returned_at: Instant, concurrency: &RunnerPreSpawnConcurrency) -> Self {
         Self {
             claim_returned_at,
-            api_claim_timing,
             concurrency: concurrency.enter(),
             phase_durations: RunnerPreSpawnPhaseDurations::default(),
             task_enqueued_at: None,
-            exact_reuse_speculation: None,
-            finalizing_handoff: None,
-            finalizing_exact_idle_lookup: None,
             blank_pool_selection: None,
-            home_wait: None,
         }
-    }
-
-    pub fn record_exact_reuse_speculation(&mut self, timing: ExactReuseSpeculationTiming) {
-        self.exact_reuse_speculation = Some(timing);
-    }
-
-    pub fn record_finalizing_handoff_outcome(&mut self, outcome: FinalizingHandoffOutcome) {
-        self.record_finalizing_handoff(outcome, None);
-    }
-
-    pub fn record_finalizing_handoff(
-        &mut self,
-        outcome: FinalizingHandoffOutcome,
-        reason: Option<FinalizingHandoffReason>,
-    ) {
-        self.finalizing_handoff = Some(FinalizingHandoffTelemetry { outcome, reason });
-    }
-
-    pub fn finalizing_diagnostics(&self) -> Option<FinalizingDiagnostics> {
-        (self.finalizing_handoff.is_some() || self.finalizing_exact_idle_lookup.is_some())
-            .then_some(FinalizingDiagnostics {
-                handoff: self.finalizing_handoff,
-                exact_idle_lookup: self.finalizing_exact_idle_lookup,
-            })
-    }
-
-    pub fn record_finalizing_exact_idle_lookup(&mut self, lookup: FinalizingExactIdleLookup) {
-        // Capacity waits can probe more than once. Retaining only the latest atomic observation
-        // emits one terminal decision for the successor instead of one row per retry.
-        self.finalizing_exact_idle_lookup = Some(lookup);
     }
 
     pub fn record_blank_pool_selection(&mut self, selection: BlankPoolSelection) {
@@ -457,12 +243,6 @@ impl RunnerPreSpawnTiming {
         // claim metadata is available. Retain only the latest decision so one
         // run emits one terminal blank-selection operation.
         self.blank_pool_selection = Some(selection);
-    }
-
-    /// Retain the aggregate series and identify its Home-wait subset separately.
-    pub fn record_home_wait(&mut self, duration: Duration, outcome: HomeWaitOutcome) {
-        self.record_phase(RunnerPreSpawnPhase::FinalizingWait, duration);
-        self.home_wait = Some((duration, outcome));
     }
 
     pub fn blank_pool_selection(&self) -> Option<BlankPoolSelection> {
@@ -498,65 +278,10 @@ impl RunnerPreSpawnTiming {
     }
 
     fn record_collected_phases(&self, telemetry: &mut JobTelemetry, executor_started_at: Instant) {
-        if let Some(timing) = self.api_claim_timing {
-            telemetry.record(
-                "runner_claim_http_request",
-                timing.request_elapsed(),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_claim_request_to_response_headers",
-                timing.request_to_response_headers_elapsed(),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_claim_response_body_read",
-                timing.response_body_read_elapsed(),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_claim_response_first_body_chunk_wait",
-                timing.response_first_body_chunk_wait_elapsed(),
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_claim_response_body_after_first_chunk",
-                timing.response_body_after_first_chunk_elapsed(),
-                true,
-                None,
-            );
-            let response_attribution = timing.response_attribution();
-            telemetry.record_bounded_outcome(
-                "runner_claim_response_body_attribution",
-                true,
-                response_attribution.body_size_bucket(),
-                Some(response_attribution.content_encoding()),
-            );
-            telemetry.record(
-                "runner_claim_response_decode",
-                timing.response_decode_elapsed(),
-                true,
-                None,
-            );
-        }
         for phase in RunnerPreSpawnPhase::ALL {
             if let Some(duration) = self.phase_durations.get(phase) {
                 telemetry.record(phase.action_type(), duration, true, None);
             }
-        }
-        if let Some((duration, outcome)) = self.home_wait {
-            // Keep the emitted series stable while internal ownership names evolve.
-            telemetry.record_with_outcome(
-                "runner_claim_peer_home_wait",
-                duration,
-                true,
-                None,
-                Some(outcome.as_str()),
-            );
         }
         if let Some(task_enqueued_at) = self.task_enqueued_at {
             telemetry.record(
@@ -566,64 +291,8 @@ impl RunnerPreSpawnTiming {
                 None,
             );
         }
-        if let Some(handoff) = self.finalizing_handoff {
-            handoff.record(telemetry);
-        }
-        if let Some(exact_lookup) = self.finalizing_exact_idle_lookup {
-            exact_lookup.record(telemetry);
-        }
         if let Some(blank_pool_selection) = self.blank_pool_selection {
             blank_pool_selection.record(telemetry);
-        }
-        if let Some(timing) = self.exact_reuse_speculation.as_ref() {
-            telemetry.record(
-                "runner_exact_reuse_preclaim_unpark",
-                timing.unpark.duration,
-                timing.unpark.succeeded,
-                (!timing.unpark.succeeded).then_some("speculative_unpark_failed"),
-            );
-            if let Some(operation) = timing.guest_restore {
-                telemetry.record(
-                    "runner_exact_reuse_preclaim_guest_restore",
-                    operation.duration,
-                    operation.succeeded,
-                    (!operation.succeeded).then_some("speculative_guest_restore_failed"),
-                );
-            }
-            telemetry.record(
-                "runner_exact_reuse_claim_overlap",
-                timing.claim_overlap,
-                true,
-                None,
-            );
-            telemetry.record(
-                "runner_exact_reuse_postclaim_remainder",
-                timing.post_claim_remainder,
-                true,
-                None,
-            );
-            if let Some(operation) = timing.timezone_correction {
-                telemetry.record(
-                    "runner_exact_reuse_timezone_correction",
-                    operation.duration,
-                    operation.succeeded,
-                    (!operation.succeeded).then_some("speculative_timezone_correction_failed"),
-                );
-            }
-            if let Some(assumption) = timing.timezone_assumption {
-                let action_type = match assumption {
-                    GuestTimezoneAssumption::Match => {
-                        "runner_exact_reuse_timezone_assumption_match"
-                    }
-                    GuestTimezoneAssumption::Mismatch => {
-                        "runner_exact_reuse_timezone_assumption_mismatch"
-                    }
-                    GuestTimezoneAssumption::Unknown => {
-                        "runner_exact_reuse_timezone_assumption_unknown"
-                    }
-                };
-                telemetry.record(action_type, Duration::ZERO, true, None);
-            }
         }
     }
 }

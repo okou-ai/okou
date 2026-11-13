@@ -37,3 +37,23 @@ fn missing_server_sources_report_canonical_operator_inputs() {
         assert_eq!(error.to_string(), format!("config error: {expected}"));
     }
 }
+
+#[test]
+fn execution_transport_requires_official_remote_but_preserves_local_submissions() {
+    for token in ["vm0_official_fixture", "personal-secret", ""] {
+        let server = config::ServerConfig {
+            url: "https://api.example.test".into(),
+            token: token.into(),
+        };
+        assert!(validate_execution_transport(&server, true).is_ok());
+        let result = validate_execution_transport(&server, false);
+        if token.starts_with("vm0_official_") {
+            assert!(result.is_ok());
+        } else {
+            let message = result.unwrap_err().to_string();
+            assert!(message.contains("official direct-dispatch credentials"));
+            assert!(message.contains("--local"));
+            assert!(!message.contains("personal-secret"));
+        }
+    }
+}

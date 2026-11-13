@@ -12,23 +12,18 @@ use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tracing::info;
 
 use super::RuntimeProfile;
-use super::claimed_home_wait::{ClaimedHomeWait, ClaimedHomeWaitRequest};
 use super::error::ReactorError;
-use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
 use super::job_discovery::{
     AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
     DiscoveredJobResult, SandboxAdmittedJob, prepare_admitted_job, prepare_discovered_job,
-    prepare_job_profile, recover_unconsumed_finalizing_claim,
+    prepare_job_profile,
 };
 use super::job_spawn::JobResult;
-use super::pending_candidate::PendingRetry;
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
-    AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
-    admit_and_claim,
+    AdmittedClaim, PreClaimOutcome, PreClaimRequest, admit_and_claim,
 };
-use runner_executor::executor::BlankPoolSelection;
-use runner_provider::JobCandidate;
+use runner_provider::{JobCandidate, LocalJobSource};
 use runner_types::ids::RunId;
 
 // A conservative pressure bound, independent of stricter local resources.
@@ -99,7 +94,6 @@ impl ClaimTasks {
                     profile_name: &profile.profile_name,
                     job_vcpu: profile.vcpu,
                     job_memory: profile.memory_mb,
-                    home_disk_mb: profile.home_disk_mb,
                     device_rate_limits: &context.spawn_ctx.device_rate_limits,
                 },
                 work.deadline,
@@ -121,7 +115,7 @@ impl ClaimTasks {
             ClaimTaskResult {
                 run_id,
                 outcome,
-                retry: PendingRetry::supplied(),
+
                 _permit: work.permit.take(),
             }
         }));
@@ -157,7 +151,7 @@ impl ClaimTasks {
         job: DiscoveredJob,
         profiles: &BTreeMap<String, RuntimeProfile>,
         factories: &BTreeMap<String, (SharedFactory, bool)>,
-        retry: PendingRetry,
+        source: Arc<dyn LocalJobSource>,
     ) {
         if !self.has_capacity() {
             return;
@@ -187,9 +181,9 @@ impl ClaimTasks {
                     profile_name: &job.profile.profile_name,
                     job_vcpu: job.profile.vcpu,
                     job_memory: job.profile.memory_mb,
-                    home_disk_mb: job.profile.home_disk_mb,
                     device_rate_limits: &context.spawn_ctx.device_rate_limits,
                 },
+                source.as_ref(),
                 &resources,
                 admission_ready,
             )
@@ -198,13 +192,12 @@ impl ClaimTasks {
                 PreClaimOutcome::Claimed(admission) => {
                     prepare_claimed(*admission, job.profile, context).await
                 }
-                PreClaimOutcome::Pending(candidate) => ClaimTaskOutcome::Pending(candidate),
                 PreClaimOutcome::Deferred => ClaimTaskOutcome::Deferred,
             };
             ClaimTaskResult {
                 run_id,
                 outcome,
-                retry,
+
                 _permit: Some(permit),
             }
         }));
@@ -230,20 +223,6 @@ impl ClaimTasks {
             ClaimTaskOutcome::Prepared(result) => (*result)
                 .dispatch(&self.context.spawn_ctx, jobs)
                 .map_err(ClaimConsumptionError::Ownership),
-            ClaimTaskOutcome::Finalizing(claim) => {
-                let request = (*claim)
-                    .into_request()
-                    .map_err(ClaimConsumptionError::Ownership)?;
-                spawn_finalizing_claim(request, &self.context.spawn_ctx, jobs);
-                Ok(DiscoveredJobResult::completed(false))
-            }
-            ClaimTaskOutcome::HomeWait(claim) => {
-                jobs.spawn((*claim).run(self.context.spawn_ctx.clone()));
-                Ok(DiscoveredJobResult::completed(false))
-            }
-            ClaimTaskOutcome::Pending(candidate) => {
-                Ok(DiscoveredJobResult::pending(*candidate, result.retry))
-            }
             ClaimTaskOutcome::Deferred => Ok(DiscoveredJobResult::completed(false)),
             ClaimTaskOutcome::Failed(error) => Err(ClaimConsumptionError::Ownership(error)),
             // Activation used to run inline: retain its existing recovery and
@@ -273,15 +252,12 @@ impl ClaimConsumptionError {
 pub(super) struct ClaimTaskResult {
     run_id: RunId,
     outcome: ClaimTaskOutcome,
-    retry: PendingRetry,
+
     _permit: Option<OwnedSemaphorePermit>,
 }
 
 enum ClaimTaskOutcome {
     Prepared(Box<DiscoveredJobResult>),
-    Finalizing(Box<UnconsumedFinalizingClaim>),
-    HomeWait(Box<ClaimedHomeWait>),
-    Pending(Box<JobCandidate>),
     Deferred,
     Failed(ReactorError),
     Panicked(Box<dyn Any + Send>),
@@ -293,72 +269,15 @@ async fn prepare_claimed(
     context: Arc<AdmissionContext>,
 ) -> ClaimTaskOutcome {
     let AdmittedClaim {
-        required_home_source_run_id,
         claimed,
         resource,
         cancellation,
         claim_returned_at,
         blank_pool_selection,
     } = admission;
-    let resource = match resource {
-        AdmittedResource::HomeWait {
-            lease,
-            wait_deadline,
-            predecessor_run_id,
-        } => {
-            return ClaimTaskOutcome::HomeWait(Box::new(ClaimedHomeWait::new(
-                ClaimedHomeWaitRequest {
-                    predecessor_run_id,
-                    claimed,
-                    cancellation,
-                    lease,
-                    wait_deadline,
-                    claim_returned_at,
-                    blank_pool_selection,
-                    profile,
-                },
-                &context.spawn_ctx,
-            )));
-        }
-        AdmittedResource::Finalizing(admission) => {
-            let DiscoveredJobProfile {
-                profile_name,
-                rootfs_hash,
-                vcpu,
-                memory_mb,
-                home_disk_mb,
-                restore_guest_state,
-                factory,
-            } = profile;
-            return ClaimTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingClaim {
-                request: Some(FinalizingClaimRequest {
-                    claimed,
-                    cancellation,
-                    admission,
-                    claim_returned_at,
-                    profile_name,
-                    rootfs_hash,
-                    vcpu,
-                    memory_mb,
-                    home_disk_mb,
-                    restore_guest_state,
-                    device_rate_limits: context.spawn_ctx.device_rate_limits.clone(),
-                    factory,
-                }),
-                blank_pool_selection,
-                context,
-            }));
-        }
-        AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
-        AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
-        AdmittedResource::ExactSpeculation(speculation) => {
-            SandboxAdmittedResource::ExactSpeculation(speculation)
-        }
-    };
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_admitted_job(
         SandboxAdmittedJob {
-            required_home_source_run_id,
             claimed,
             resource,
             cancellation,
@@ -367,7 +286,6 @@ async fn prepare_claimed(
         },
         profile,
         DiscoveredJobContext {
-            runner_identity: context.runner_identity,
             budget: &spawn_ctx.budget,
             idle_pool: &spawn_ctx.idle_pool,
             status: &spawn_ctx.status,
@@ -380,36 +298,5 @@ async fn prepare_claimed(
         Ok(Ok(result)) => ClaimTaskOutcome::Prepared(Box::new(result)),
         Ok(Err(error)) => ClaimTaskOutcome::Failed(error),
         Err(panic) => ClaimTaskOutcome::Panicked(panic),
-    }
-}
-
-struct UnconsumedFinalizingClaim {
-    request: Option<FinalizingClaimRequest>,
-    blank_pool_selection: Option<BlankPoolSelection>,
-    context: Arc<AdmissionContext>,
-}
-
-impl UnconsumedFinalizingClaim {
-    fn into_request(mut self) -> Result<FinalizingClaimRequest, ReactorError> {
-        self.request.take().ok_or_else(|| {
-            ReactorError::Internal("finalizing result lost its admission before handoff".to_owned())
-        })
-    }
-}
-
-impl Drop for UnconsumedFinalizingClaim {
-    fn drop(&mut self) {
-        let Some(request) = self.request.take() else {
-            return;
-        };
-        let blank_pool_selection = self.blank_pool_selection;
-        let context = Arc::clone(&self.context);
-        let cleanup = context.spawn_ctx.idle_destroy_tracker.clone();
-        cleanup.spawn_cleanup(
-            async move {
-                recover_unconsumed_finalizing_claim(request, blank_pool_selection, &context).await;
-            },
-            "unconsumed_finalizing_claim",
-        );
     }
 }

@@ -6,31 +6,13 @@ fn template(owner: &str) -> Value {
     serde_json::json!({"ownerKind":owner,"templateId":TEMPLATE_ID,"beforeMountPaths":[],"sha256":"a".repeat(64),"archiveBytes":40*1024*1024,"downloadUrl":"https://example.test/template.tar.gz"})
 }
 
-#[tokio::test]
-async fn api_claim_accepts_large_template_bundles_in_separate_owner_directories() {
-    let server = MockServer::start_async().await;
-    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+#[test]
+fn publication_accepts_large_template_bundles_in_separate_owner_directories() {
     let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
     body["contentBundles"]["templates"] =
         serde_json::json!([template("user-template"), template("presentation-template")]);
-    let request = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path(format!("/api/runners/jobs/{run_id}/claim"));
-            then.status(200).json_body(body);
-        })
-        .await;
-    let api = api_client_for_server(&server);
-    let response = api
-        .claim_for_test(&JobCandidate::new(
-            run_id,
-            crate::profile::DEFAULT_PROFILE.to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap();
+    let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     let entries = response
-        .context
         .storage_manifest
         .unwrap()
         .storages
@@ -52,14 +34,11 @@ async fn api_claim_accepts_large_template_bundles_in_separate_owner_directories(
             .all(|entry| entry.archive_size == Some(40 * 1024 * 1024)
                 && entry.vas_version_id == "a".repeat(64))
     );
-    request.assert_calls_async(1).await;
 }
 
-#[tokio::test]
-async fn api_claim_rejects_unsafe_template_owners_references_and_duplicate_mounts() {
+#[test]
+fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() {
     for kind in ["owner", "id", "size", "url", "duplicate", "overlap", "null"] {
-        let server = MockServer::start_async().await;
-        let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
         let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
         body["contentBundles"]["templates"] = serde_json::json!([template("user-template")]);
         match kind {
@@ -94,33 +73,13 @@ async fn api_claim_rejects_unsafe_template_owners_references_and_duplicate_mount
                     .push(mount);
             }
         }
-        let request = server
-            .mock_async(|when, then| {
-                when.method(POST)
-                    .path(format!("/api/runners/jobs/{run_id}/claim"));
-                then.status(200).json_body(body);
-            })
-            .await;
-        let api = api_client_for_server(&server);
-        let error = api
-            .claim_for_test(&JobCandidate::new(
-                run_id,
-                crate::profile::DEFAULT_PROFILE.to_string(),
-            ))
-            .await
-            .expect_err("invalid template claim must not execute");
-        let ClaimApiError::ResponseDecode(message) = error else {
-            panic!("expected decode failure")
-        };
-        assert!(!message.contains("secret-fixture"));
-        request.assert_calls_async(1).await;
+        let error = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap_err();
+        assert!(!error.contains("secret-fixture"));
     }
 }
 
-#[tokio::test]
-async fn api_claim_preserves_template_order_before_explicit_overlay_mounts() {
-    let server = MockServer::start_async().await;
-    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+#[test]
+fn publication_preserves_template_order_before_explicit_overlay_mounts() {
     let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
     let target = format!("/home/user/workspace/generated/user-template/{TEMPLATE_ID}/references");
     let mut overlay = body["storageManifest"]["storageMounts"][0].clone();
@@ -135,22 +94,8 @@ async fn api_claim_preserves_template_order_before_explicit_overlay_mounts() {
     first["beforeMountPaths"] = serde_json::json!(["/missing-optional-volume", target]);
     second["beforeMountPaths"] = serde_json::json!([target]);
     body["contentBundles"]["templates"] = serde_json::json!([first, second]);
-    let request = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path(format!("/api/runners/jobs/{run_id}/claim"));
-            then.status(200).json_body(body);
-        })
-        .await;
-    let response = api_client_for_server(&server)
-        .claim_for_test(&JobCandidate::new(
-            run_id,
-            crate::profile::DEFAULT_PROFILE.to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap();
-    let entries = response.context.storage_manifest.unwrap().storages;
+    let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
+    let entries = response.storage_manifest.unwrap().storages;
     let first_index = entries
         .iter()
         .position(|entry| {
@@ -170,5 +115,4 @@ async fn api_claim_preserves_template_order_before_explicit_overlay_mounts() {
         .position(|entry| entry.mount_path == target)
         .unwrap();
     assert!(first_index < second_index && second_index < overlay_index);
-    request.assert_calls_async(1).await;
 }

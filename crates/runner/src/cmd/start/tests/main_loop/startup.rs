@@ -1,6 +1,6 @@
 use super::super::super::*;
 use async_trait::async_trait;
-use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate};
+use runner_provider::CompletionAuth;
 use runner_supervisor::test_support::ShutdownRecordingRuntime;
 use runner_types::types::HeartbeatState;
 use std::collections::VecDeque;
@@ -13,14 +13,6 @@ struct ShutdownRecordingProvider {
 
 #[async_trait]
 impl runner_provider::JobProvider for ShutdownRecordingProvider {
-    async fn discover(&self) -> Option<JobCandidate> {
-        panic!("publish failure cleanup test does not discover jobs")
-    }
-
-    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
-        panic!("publish failure cleanup test does not claim jobs")
-    }
-
     async fn complete(
         &self,
         _request: runner_types::types::CompleteRequest,

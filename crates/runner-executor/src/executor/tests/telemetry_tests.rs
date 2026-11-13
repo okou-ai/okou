@@ -16,21 +16,19 @@ use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
 use super::super::env::guest_connector_account_context_file_path;
 use super::super::telemetry::{
-    HomeWaitOutcome, RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
+    RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
     record_api_startup_boundaries,
 };
 use super::super::{
-    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming, ExecutionHooks,
-    FinalizingHandoffOutcome, FinalizingHandoffReason, NewSandboxDispatch,
-    RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming, RunnerPreSpawnTiming,
-    SandboxReuseDisposition, SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
+    BlankPoolSelection, BlankPoolSelectionReason, ExecutionHooks, NewSandboxDispatch,
+    RunnerPreSpawnConcurrency, RunnerPreSpawnTiming, SandboxReuseDisposition,
+    SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
     execute_job_with_prepared_notifier,
 };
 use super::support::{
     context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
     test_budget_lease, test_executor_config, test_executor_config_with_startup_api,
 };
-use crate::guest_timezone::GuestTimezoneAssumption;
 use crate::home_mount::ensure_home_drive_mounted;
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
@@ -44,7 +42,6 @@ use crate::telemetry::{
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
-use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
 use runner_types::ids::RunId;
 use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
@@ -67,63 +64,6 @@ fn elapsed_since_api_start_ms_rejects_seconds_shaped_start() {
     let duration = elapsed_since_api_start_ms(1_700_000_000, 1_700_000_001_250);
 
     assert_eq!(duration, None);
-}
-
-#[test]
-fn pre_finalization_deadline_records_bounded_handoff_outcome() {
-    let mut telemetry = new_telemetry();
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
-
-    timing.record_finalizing_handoff(
-        FinalizingHandoffOutcome::PreFinalizationDeadline,
-        Some(FinalizingHandoffReason::PreFinalizationDeadline),
-    );
-    timing
-        .finalizing_diagnostics()
-        .expect("pre-finalization diagnostics")
-        .record(&mut telemetry);
-
-    assert_action_outcome(
-        &telemetry,
-        "runner_claim_finalizing_handoff",
-        false,
-        Some("pre_finalization_deadline"),
-    );
-    assert_lacks_api_claim_timing(&telemetry);
-    assert!(
-        telemetry
-            .pending_ops_with_outcome_snapshot()
-            .iter()
-            .any(|operation| {
-                operation.0 == "runner_claim_finalizing_handoff"
-                    && operation.2.as_deref() == Some("pre_finalization_deadline")
-                    && operation.3.as_deref() == Some("pre_finalization_deadline")
-            })
-    );
-}
-
-#[test]
-fn peer_home_wait_records_its_outcome_and_preserves_the_aggregate() {
-    for outcome in [
-        HomeWaitOutcome::RevalidatedReady,
-        HomeWaitOutcome::WaitDeadlineExpired,
-    ] {
-        let mut telemetry = new_telemetry();
-        let mut timing = RunnerPreSpawnTiming::start_after_claim();
-        timing.record_home_wait(Duration::from_millis(123), outcome);
-        RunnerSpawnTiming::start(Some(timing)).record_claim_to_executor_start(&mut telemetry);
-        assert_action_once_with_duration(&telemetry, "runner_claim_finalizing_wait", 123);
-        assert_action_once_with_duration(&telemetry, "runner_claim_peer_home_wait", 123);
-        assert!(
-            telemetry
-                .pending_ops_with_outcome_snapshot()
-                .iter()
-                .any(|operation| {
-                    operation.0 == "runner_claim_peer_home_wait"
-                        && operation.2.as_deref() == Some(outcome.as_str())
-                })
-        );
-    }
 }
 
 #[test]
@@ -379,20 +319,6 @@ fn assert_reused_proxy_registration_timing(telemetry: &JobTelemetry) {
         registrations[0].1 <= preparation.1,
         "registration is inside preparation: {operations:?}"
     );
-}
-
-fn assert_lacks_api_claim_timing(telemetry: &JobTelemetry) {
-    for action in [
-        "runner_claim_http_request",
-        "runner_claim_request_to_response_headers",
-        "runner_claim_response_body_read",
-        "runner_claim_response_first_body_chunk_wait",
-        "runner_claim_response_body_after_first_chunk",
-        "runner_claim_response_body_attribution",
-        "runner_claim_response_decode",
-    ] {
-        assert_lacks_action(telemetry, action);
-    }
 }
 
 struct ObservedStartSandbox {
@@ -822,11 +748,6 @@ const RUNNER_PRE_SPAWN_PHASE_CASES: &[(RunnerPreSpawnPhase, &str, u64)] = &[
         1,
     ),
     (
-        RunnerPreSpawnPhase::FinalizingWait,
-        "runner_claim_finalizing_wait",
-        2,
-    ),
-    (
         RunnerPreSpawnPhase::DeviceRateLimits,
         "runner_claim_device_rate_limits",
         4,
@@ -879,22 +800,10 @@ fn pre_spawn_timing_with_phases() -> RunnerPreSpawnTiming {
 fn pre_spawn_timing_with_phases_and_concurrency(
     concurrency: &RunnerPreSpawnConcurrency,
 ) -> RunnerPreSpawnTiming {
-    let mut timing = RunnerPreSpawnTiming::start_at(
-        Instant::now(),
-        Some(ApiClaimTiming::new(
-            Duration::from_millis(42),
-            Duration::from_millis(11),
-            Duration::from_micros(7_200),
-            Duration::from_micros(4_700),
-            Duration::from_millis(3),
-            ClaimResponseAttribution::from_body_and_encoding(5000, None),
-        )),
-        concurrency,
-    );
+    let mut timing = RunnerPreSpawnTiming::start_at(Instant::now(), concurrency);
     for &(phase, _, duration_ms) in RUNNER_PRE_SPAWN_PHASE_CASES {
         timing.record_phase(phase, Duration::from_millis(duration_ms));
     }
-    timing.record_finalizing_handoff_outcome(FinalizingHandoffOutcome::Accepted);
     timing.mark_task_enqueued();
     timing
 }
@@ -945,28 +854,6 @@ fn assert_resource_budget_occupancy(
     );
 }
 
-fn pre_spawn_timing_with_exact_reuse_speculation() -> RunnerPreSpawnTiming {
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
-    timing.record_exact_reuse_speculation(ExactReuseSpeculationTiming {
-        unpark: RunnerPreSpawnOperationTiming {
-            duration: Duration::from_millis(3),
-            succeeded: true,
-        },
-        guest_restore: Some(RunnerPreSpawnOperationTiming {
-            duration: Duration::from_millis(41),
-            succeeded: true,
-        }),
-        claim_overlap: Duration::from_millis(39),
-        post_claim_remainder: Duration::from_millis(2),
-        timezone_correction: Some(RunnerPreSpawnOperationTiming {
-            duration: Duration::from_millis(5),
-            succeeded: true,
-        }),
-        timezone_assumption: Some(GuestTimezoneAssumption::Mismatch),
-    });
-    timing
-}
-
 #[tokio::test]
 async fn execute_job_fresh_path_preserves_preparation_telemetry() {
     let dir = tempfile::tempdir().unwrap();
@@ -988,7 +875,6 @@ async fn execute_job_fresh_path_preserves_preparation_telemetry() {
     .await;
 
     assert_lacks_action(&telemetry, "runner_claim_to_executor_start");
-    assert_lacks_api_claim_timing(&telemetry);
     assert_lacks_action(&telemetry, "runner_claim_resume_session_validation");
     assert_lacks_action(&telemetry, "runner_claim_task_schedule_wait");
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
@@ -1028,19 +914,11 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     .await;
 
     for action in [
-        "runner_claim_http_request",
-        "runner_claim_request_to_response_headers",
-        "runner_claim_response_body_read",
-        "runner_claim_response_first_body_chunk_wait",
-        "runner_claim_response_body_after_first_chunk",
-        "runner_claim_response_body_attribution",
-        "runner_claim_response_decode",
         "runner_claim_to_executor_start",
         "runner_executor_start_to_spawn",
         "runner_claim_to_spawn",
         "runner_executor_start_to_agent_ready",
         "runner_claim_to_agent_ready",
-        "runner_claim_finalizing_handoff",
         "runner_fresh_sandbox_prepare",
         "runner_fresh_sandbox_factory_create",
         "runner_fresh_sandbox_proxy_register",
@@ -1064,36 +942,10 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     ] {
         assert_has_action(&telemetry, action);
     }
-    assert_action_once_with_duration(&telemetry, "runner_claim_http_request", 42);
-    assert_action_once_with_duration(&telemetry, "runner_claim_request_to_response_headers", 11);
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_body_read", 7);
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_first_body_chunk_wait", 4);
-    assert_action_once_with_duration(
-        &telemetry,
-        "runner_claim_response_body_after_first_chunk",
-        3,
-    );
-    assert_eq!(
-        telemetry
-            .pending_ops_with_outcome_snapshot()
-            .iter()
-            .filter(|operation| operation.0 == "runner_claim_response_body_attribution")
-            .map(|operation| (operation.2.as_deref(), operation.3.as_deref()))
-            .collect::<Vec<_>>(),
-        vec![(Some("4_16_kib"), Some("absent_or_decoded"))]
-    );
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_decode", 3);
+
     assert_action_duration(&telemetry, "home_drive_mount_guest_exec", 23);
     assert_lacks_action(&telemetry, "home_drive_mount_guest_exec_unavailable");
-    assert!(
-        telemetry
-            .pending_ops_with_outcome_snapshot()
-            .iter()
-            .any(|operation| {
-                operation.0 == "runner_claim_finalizing_handoff"
-                    && operation.2.as_deref() == Some("accepted")
-            })
-    );
+
     for action in FRESH_SANDBOX_FACTORY_STAGE_ACTIONS {
         assert_action_success(&telemetry, action, true);
     }
@@ -1154,11 +1006,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         (8, RunnerPreSpawnConcurrencyBucket::NinePlus),
     ] {
         while held_timings.len() < held_count {
-            held_timings.push(RunnerPreSpawnTiming::start_at(
-                Instant::now(),
-                None,
-                &concurrency,
-            ));
+            held_timings.push(RunnerPreSpawnTiming::start_at(Instant::now(), &concurrency));
         }
         let mut context = minimal_context();
         context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
@@ -1278,51 +1126,6 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
         assert_resource_budget_occupancy(&telemetry, action, expected);
     }
     assert_resource_budget_occupancy(&telemetry, "agent_execute", None);
-}
-
-#[tokio::test]
-async fn execute_job_records_exact_reuse_speculation_timing() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let factory = ObservedMockSandboxFactory::new();
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let (_outcome, telemetry) = execute_job_with_prepared_notifier(
-        &factory,
-        minimal_context(),
-        NewSandboxDispatch {
-            id: SandboxId::new_v4(),
-            reuse_result: SandboxReuseResult::PoolMiss,
-        },
-        &config,
-        &default_params(),
-        RunCancellationSignals::from_hard_token(cancel),
-        ExecutionHooks {
-            sandbox_recovery: None,
-            sandbox_prepared: None,
-            active_input_source: None,
-            pre_spawn_timing: Some(pre_spawn_timing_with_exact_reuse_speculation()),
-        },
-    )
-    .await;
-
-    for (action, duration_ms) in [
-        ("runner_exact_reuse_preclaim_unpark", 3),
-        ("runner_exact_reuse_preclaim_guest_restore", 41),
-        ("runner_exact_reuse_claim_overlap", 39),
-        ("runner_exact_reuse_postclaim_remainder", 2),
-        ("runner_exact_reuse_timezone_correction", 5),
-    ] {
-        assert_action_success(&telemetry, action, true);
-        assert_action_duration(&telemetry, action, duration_ms);
-    }
-    assert_action_success(
-        &telemetry,
-        "runner_exact_reuse_timezone_assumption_mismatch",
-        true,
-    );
-    assert_lacks_action(&telemetry, "runner_exact_reuse_timezone_assumption_match");
-    assert_lacks_action(&telemetry, "runner_exact_reuse_timezone_assumption_unknown");
 }
 
 #[tokio::test]
@@ -1652,12 +1455,6 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 
     assert_reused_proxy_registration_timing(&telemetry);
     for action in [
-        "runner_claim_http_request",
-        "runner_claim_request_to_response_headers",
-        "runner_claim_response_body_read",
-        "runner_claim_response_first_body_chunk_wait",
-        "runner_claim_response_body_after_first_chunk",
-        "runner_claim_response_decode",
         "runner_claim_to_executor_start",
         "runner_executor_start_to_spawn",
         "runner_claim_to_spawn",
@@ -1678,16 +1475,6 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
     ] {
         assert_has_action(&telemetry, action);
     }
-    assert_action_once_with_duration(&telemetry, "runner_claim_http_request", 42);
-    assert_action_once_with_duration(&telemetry, "runner_claim_request_to_response_headers", 11);
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_body_read", 7);
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_first_body_chunk_wait", 4);
-    assert_action_once_with_duration(
-        &telemetry,
-        "runner_claim_response_body_after_first_chunk",
-        3,
-    );
-    assert_action_once_with_duration(&telemetry, "runner_claim_response_decode", 3);
     assert_pre_spawn_phase_actions_succeeded(&telemetry);
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_prepare");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
@@ -1802,25 +1589,13 @@ async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
         assert_eq!(requests.len(), 2);
         let mut expected_actions = Vec::new();
         if with_hooks {
-            expected_actions.extend([
-                "runner_claim_to_executor_start",
-                "runner_claim_http_request",
-                "runner_claim_request_to_response_headers",
-                "runner_claim_response_body_read",
-                "runner_claim_response_first_body_chunk_wait",
-                "runner_claim_response_body_after_first_chunk",
-                "runner_claim_response_body_attribution",
-                "runner_claim_response_decode",
-            ]);
+            expected_actions.extend(["runner_claim_to_executor_start"]);
             expected_actions.extend(
                 RUNNER_PRE_SPAWN_PHASE_CASES
                     .iter()
                     .map(|(_, action, _)| *action),
             );
-            expected_actions.extend([
-                "runner_claim_task_schedule_wait",
-                "runner_claim_finalizing_handoff",
-            ]);
+            expected_actions.extend(["runner_claim_task_schedule_wait"]);
         }
         if api_start_time == Some(api_epoch_ms) {
             expected_actions.push("api_to_sandbox_start");
@@ -2322,18 +2097,13 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
             sandbox_recovery: None,
             sandbox_prepared: None,
             active_input_source: None,
-            pre_spawn_timing: Some(RunnerPreSpawnTiming::start_at(
-                Instant::now(),
-                None,
-                &concurrency,
-            )),
+            pre_spawn_timing: Some(RunnerPreSpawnTiming::start_at(Instant::now(), &concurrency)),
         },
     )
     .await;
 
     assert_action_success(&telemetry, "runner_agent_start_process", false);
     assert_action_success(&telemetry, "agent_execute", false);
-    assert_lacks_api_claim_timing(&telemetry);
     assert_lacks_action(&telemetry, "runner_executor_start_to_spawn");
     assert_lacks_action(&telemetry, "runner_claim_to_spawn");
     assert_lacks_action(&telemetry, "runner_executor_start_to_agent_ready");

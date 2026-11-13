@@ -7,7 +7,7 @@ use api_contracts::generated::{
     types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
 use reqwest::Response;
-use runner_types::types::{ConnectorRuntimeSyncBatchResponse, ExecutionContext, PollResponse};
+use runner_types::types::{ConnectorRuntimeSyncBatchResponse, ExecutionContext};
 use serde::de::DeserializeOwned;
 
 use crate::error::{ProviderError, ProviderResult};
@@ -22,14 +22,9 @@ impl ApiDecodePath for NextSteerableInputResponse {
         &decode_paths::runners::runs::by_run_id::steerable_inputs::next::RESPONSE;
 }
 
-impl ApiDecodePath for PollResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::poll::RESPONSE;
-}
-
 impl ApiDecodePath for ExecutionContext {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::jobs::by_id::claim::RESPONSE;
+        &decode_paths::runners::execution_publication::CONTEXT;
 }
 
 impl ApiDecodePath for ably_subscriber::TokenRequest {

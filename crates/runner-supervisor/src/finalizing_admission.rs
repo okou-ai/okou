@@ -1,10 +1,9 @@
 //! Finalizing-successor wait, handoff, and fallback resource arbitration.
 //!
-//! The Runner composition root owns the provider claim, activation, and executor task.
+//! The Runner composition root owns supplied input, activation, and the executor task.
 //! This module owns the selection policy before activation and returns its owned resource.
 //!
-//! A one-shot physical handoff races predecessor publication and cancellation. Generic sources
-//! keep their API preference deadline. Native-matching sources use that deadline before
+//! A one-shot physical handoff races predecessor publication and cancellation. Sources use the local intake deadline before
 //! finalization, then acceptance grace once finalization and successor waiting have both begun.
 //! Accepted delivery wins a deadline race, while cancellation recovers delivered candidates.
 //! Fallback rechecks source-bound and compatible idle resources around pressure selection and
@@ -51,7 +50,7 @@ pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(
     api_contracts::generated::constants::runners::RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
 );
 
-/// Local source proof carried across the provider claim boundary.
+/// Local producer proof retained after complete-input acceptance.
 pub struct FinalizingAdmission {
     pub predecessor: ActiveRunReuseProof,
     pub deadline: Instant,
@@ -306,7 +305,7 @@ async fn select_finalizing_resource_inner(
 ///
 /// The handoff request is one-shot and is created before observing the predecessor state so a
 /// successor that was claimed early can race publication safely. Generic sources retain their
-/// original API preference deadline, including during finalization. A native-matching source
+/// local admission deadline, including during finalization. A native-matching source
 /// uses that deadline before finalization, then a separate acceptance grace starting when both
 /// finalization and this successor's wait have begun. A late request cannot arrive expired. Only an
 /// unaccepted request expires at either boundary, while an accepted handoff is still received.

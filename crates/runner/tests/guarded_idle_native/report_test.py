@@ -101,7 +101,7 @@ class NativeReportTests(unittest.TestCase):
 
     def test_positive_native_proof_retains_generic_collector_limits(self):
         result = self.validate()
-        self.assertEqual(len(result["cases"]), 12)
+        self.assertEqual(len(result["cases"]), 8)
         self.assertFalse(result["memory_envelope_calibrated"])
         self.assertTrue(result["snapshot_creation_inputs_verified"])
         self.assertFalse(result["bootstrap_provenance_verified"])

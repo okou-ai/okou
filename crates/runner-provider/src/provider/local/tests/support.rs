@@ -10,7 +10,7 @@ pub(super) use super::super::watch::RECONCILE_INTERVAL;
 pub(super) use crate::local_queue;
 use crate::local_queue::JobRequest;
 pub(super) use crate::local_queue::JobResponse;
-pub(super) use crate::provider::{CompletionAuth, JobCandidate, JobProvider};
+pub(super) use crate::provider::{CompletionAuth, JobCandidate, JobProvider, LocalJobSource};
 use crate::run_cancellation::{RunCancellationRegistration, RunCancellationRegistry};
 pub(super) use runner_types::ids::RunId;
 use runner_types::types::CompleteRequest;

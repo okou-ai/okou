@@ -4,10 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use reqwest::Client;
 
-use super::{
-    ConnectionDiagnosticsLayer, ConnectionTimingLayer, DEFAULT_TIMEOUT, ProviderError,
-    ProviderResult, TimedResolver,
-};
+use super::{ConnectionDiagnosticsLayer, DEFAULT_TIMEOUT, ProviderError, ProviderResult};
 
 pub(super) struct ClientPool {
     current: Mutex<Arc<Client>>,
@@ -59,8 +56,6 @@ pub(super) fn build_client() -> ProviderResult<Client> {
         .no_deflate()
         .no_zstd()
         .timeout(DEFAULT_TIMEOUT)
-        .dns_resolver(TimedResolver::default())
-        .connector_layer(ConnectionTimingLayer)
         .connector_layer(ConnectionDiagnosticsLayer)
         .build()
         .map_err(|error| ProviderError::Internal(format!("http client: {error}")))

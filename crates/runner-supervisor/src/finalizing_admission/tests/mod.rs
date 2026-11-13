@@ -144,7 +144,7 @@ async fn released_predecessor_selects_fresh_capacity_without_double_ownership() 
         .await
         .unwrap();
     let mut timing =
-        RunnerPreSpawnTiming::start_at(Instant::now(), None, &RunnerPreSpawnConcurrency::default());
+        RunnerPreSpawnTiming::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default());
     let mut reserved_exact = None;
     let resource = select_finalizing_resource(
         FinalizingSelectionRequest {
@@ -213,7 +213,7 @@ async fn expired_pre_finalization_deadline_uses_fallback_without_releasing_prede
         .await
         .unwrap();
     let mut timing =
-        RunnerPreSpawnTiming::start_at(Instant::now(), None, &RunnerPreSpawnConcurrency::default());
+        RunnerPreSpawnTiming::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default());
     let mut reserved_exact = None;
     let selected = select_finalizing_resource(
         FinalizingSelectionRequest {
@@ -283,7 +283,7 @@ async fn cancelled_successor_does_not_reserve_fallback_capacity() {
         .unwrap();
     cancellation.handle().request_hard_cancellation().await;
     let mut timing =
-        RunnerPreSpawnTiming::start_at(Instant::now(), None, &RunnerPreSpawnConcurrency::default());
+        RunnerPreSpawnTiming::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default());
     let mut reserved_exact = None;
     assert!(
         select_finalizing_resource(
@@ -338,11 +338,8 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
             .register(run_id)
             .await
             .unwrap();
-        let mut timing = RunnerPreSpawnTiming::start_at(
-            Instant::now(),
-            None,
-            &RunnerPreSpawnConcurrency::default(),
-        );
+        let mut timing =
+            RunnerPreSpawnTiming::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default());
         let mut reserved_exact = None;
         let selected = select_finalizing_resource_inner(
             FinalizingSelectionRequest {
@@ -469,11 +466,8 @@ async fn assert_fallback_budget_wakeup_reuses_published(
             .register(run_id)
             .await
             .unwrap();
-        let mut timing = RunnerPreSpawnTiming::start_at(
-            Instant::now(),
-            None,
-            &RunnerPreSpawnConcurrency::default(),
-        );
+        let mut timing =
+            RunnerPreSpawnTiming::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default());
         let mut reserved_exact = None;
         let selected = select_finalizing_resource_with_test_hooks(
             FinalizingSelectionRequest {

@@ -71,10 +71,8 @@ use runner_provider::{JobProvider, RunCancellationRegistry};
 use runner_types::ids::RunId;
 
 mod claim_tasks;
-mod claimed_home_wait;
 pub mod error;
 mod factory_lifecycle;
-mod finalizing_claim;
 mod heartbeat;
 mod home_cache_observation;
 mod home_cache_refresh;
@@ -83,7 +81,6 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
-mod pending_candidate;
 mod prune_idle;
 mod sandbox_recovery;
 pub(crate) mod signals;
@@ -104,14 +101,12 @@ use idle_memory::IdleMemoryReclaimer;
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
-use pending_candidate::PendingCandidates;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
 pub use signals::EarlySignals;
 use signals::{SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task};
 
-const READY_DIRECT_CANDIDATE_DRAIN_LIMIT: usize = 8;
 /// Bounds routine cache-budget and stale-state cleanup without returning full scans to promotions.
 const HOME_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
 /// Bounds authoritative state recovery from missed home-cache observations.
@@ -400,17 +395,6 @@ enum StartLoopEvent {
     RunningJobsDrainEntered,
     DestroyTasksDrainEntered,
     DestroyTasksDrainCompleted,
-    FinalizingHandoffRequested {
-        predecessor_run_id: RunId,
-        successor_run_id: RunId,
-    },
-    FinalizingCapacityWaitEntered {
-        run_id: RunId,
-    },
-    HomeReadinessRecheckCompleted {
-        run_id: RunId,
-        ready: bool,
-    },
     ReservedPreparingCommitted {
         run_id: RunId,
     },
@@ -582,21 +566,6 @@ impl StartLoopTestObserver {
             .any(|event| matches!(event, StartLoopEvent::DestroyTasksDrainCompleted))
     }
 
-    fn notify_finalizing_handoff_requested(
-        &self,
-        predecessor_run_id: RunId,
-        successor_run_id: RunId,
-    ) {
-        self.record(StartLoopEvent::FinalizingHandoffRequested {
-            predecessor_run_id,
-            successor_run_id,
-        });
-    }
-
-    fn notify_finalizing_capacity_wait_entered(&self, run_id: RunId) {
-        self.record(StartLoopEvent::FinalizingCapacityWaitEntered { run_id });
-    }
-
     fn notify_before_idle_pool_ownership_transfer(&self, run_id: RunId) {
         self.record(StartLoopEvent::BeforeIdlePoolOwnershipTransfer { run_id });
     }
@@ -626,22 +595,6 @@ impl StartLoopTestObserver {
         if let Some(gate) = gate {
             gate.enter_and_wait().await;
         }
-    }
-
-    fn active_run_status_was_published(&self, run_id: RunId) -> bool {
-        self.inner
-            .events
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .any(|event| {
-                matches!(
-                    event,
-                    StartLoopEvent::ActiveRunStatusPublished {
-                        run_id: observed_run_id
-                    } if *observed_run_id == run_id
-                )
-            })
     }
 
     fn notify_sandbox_parked_for_reuse(&self, run_id: RunId, reuse_key: String) {
@@ -706,40 +659,6 @@ impl StartLoopTestObserver {
         .await;
     }
 
-    async fn wait_finalizing_handoff_requested(
-        &self,
-        predecessor_run_id: RunId,
-        successor_run_id: RunId,
-        timeout: Duration,
-    ) {
-        self.wait_for(
-            timeout,
-            "finalizing handoff registration",
-            |event| match event {
-                StartLoopEvent::FinalizingHandoffRequested {
-                    predecessor_run_id: observed_predecessor,
-                    successor_run_id: observed_successor,
-                } if *observed_predecessor == predecessor_run_id
-                    && *observed_successor == successor_run_id =>
-                {
-                    Some(())
-                }
-                _ => None,
-            },
-        )
-        .await;
-    }
-
-    async fn wait_finalizing_capacity_wait_entered(&self, run_id: RunId, timeout: Duration) {
-        self.wait_for(timeout, "finalizing capacity wait", |event| match event {
-            StartLoopEvent::FinalizingCapacityWaitEntered {
-                run_id: observed_run_id,
-            } if *observed_run_id == run_id => Some(()),
-            _ => None,
-        })
-        .await
-    }
-
     async fn wait_before_idle_pool_ownership_transfer(&self, run_id: RunId, timeout: Duration) {
         self.wait_for(
             timeout,
@@ -751,17 +670,6 @@ impl StartLoopTestObserver {
                 _ => None,
             },
         )
-        .await
-    }
-
-    async fn wait_sandbox_parked_for_reuse(&self, run_id: RunId, timeout: Duration) -> String {
-        self.wait_for(timeout, "sandbox parked for reuse", |event| match event {
-            StartLoopEvent::SandboxParkedForReuse {
-                run_id: observed_run_id,
-                reuse_key,
-            } if *observed_run_id == run_id => Some(reuse_key.clone()),
-            _ => None,
-        })
         .await
     }
 
@@ -779,7 +687,6 @@ mod start_loop_observer_tests;
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OuterJobPanicPoint {
-    ClaimedWithoutSandbox,
     ClaimedActivation,
     ActiveOrUnknown,
     IdlePoolOwned,
@@ -1087,7 +994,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // branches (heartbeat, lifecycle changes, etc.). Without pinning, heartbeat
     // ticks can cancel discover(), restarting its provider-owned
     // wait from scratch before reconciliation can run. See #8747.
-    let mut discover_fut = Box::pin(provider_state.provider.discover());
+    let local_source = provider_state.provider.clone().local_source();
+    let mut discover_fut = local_source.as_ref().map(|source| source.discover());
 
     let mut current_mode = startup_mode;
     let blank_profiles = runner
@@ -1130,14 +1038,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         budget: Arc::clone(&capacity.budget),
         home_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
-        sandbox_op_reporter,
         #[cfg(test)]
         outer_job_panic: test_hooks.outer_job_panic,
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
     let mut claim_tasks = ClaimTasks::new(AdmissionContext {
-        runner_identity: runner.identity,
         mode_rx: mode_rx.clone(),
         cancel_tokens: provider_state.cancel_tokens.clone(),
         spawn_ctx: spawn_ctx.clone(),
@@ -1197,9 +1103,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         &mode_rx,
     );
     let mut soft_drain = soft_drain::SoftDrain::new();
-    let mut pending_candidates = PendingCandidates::new();
-    let mut prefer_pending_retry = true;
-    let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
         let mode = *mode_rx.borrow_and_update();
@@ -1221,10 +1124,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             if matches!(mode, RunnerMode::Running | RunnerMode::Draining) {
                 heartbeat.request(mode)?;
             }
-        }
-        pending_candidates.clear_if_inactive(mode);
-        if mode != RunnerMode::Running {
-            provider_state.provider.clear_candidate_deferrals().await;
         }
         blank_pool.cancel_if_inactive(mode);
         match mode {
@@ -1294,55 +1193,22 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
-        if !claim_tasks.has_capacity() {
-            for run_id in pending_candidates.release_expired() {
-                provider_state
-                    .provider
-                    .release_candidate_deferral(run_id)
-                    .await;
-            }
-        }
-        // Yield through select between retries so a continuously eligible
-        // pending set cannot hide unrelated discovery behind preparation.
-        if prefer_pending_retry
-            && let Some((candidate, retry)) =
-                pending_candidates.take_retry(mode, claim_tasks.has_capacity())
-        {
-            prefer_pending_retry = false;
-            if candidate.runner_preference().is_none() {
-                provider_state
-                    .provider
-                    .release_candidate_deferral(candidate.run_id())
-                    .await;
-            }
-            claim_tasks.submit(
-                DiscoveredJob { candidate },
-                &runner.profiles,
-                &factories,
-                retry,
-            );
-        }
-        let can_discover = if matches!(mode, RunnerMode::Running) {
-            // A selected finalizing successor can claim against an exact
-            // in-process predecessor without reserving fresh capacity.
+        let can_discover = if local_source.is_some() && matches!(mode, RunnerMode::Running) {
             capacity
                 .budget
                 .can_afford(capacity.min_vcpu, capacity.min_memory_mb)
                 || !shared.idle_pool.lock().await.is_empty()
-                || active_runs.has_reusable_run()
         } else {
             false
         };
         #[cfg(test)]
-        if matches!(mode, RunnerMode::Running) && !can_discover {
+        if local_source.is_some() && matches!(mode, RunnerMode::Running) && !can_discover {
             test_hooks.test_observer.notify_budget_exhausted_reactor();
         }
         let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
         let heartbeat_retry_deadline = heartbeat.retry_deadline().map(Into::into);
-        let pending_retry_deadline =
-            pending_candidates.next_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
             Some(work) = dispatch_rx.recv(), if !claim_tasks.is_preparing() => {
                 claim_tasks.submit_supplied(work, &runner.profiles, &factories);
@@ -1399,28 +1265,19 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = blank_pool_tick.tick() => {
                 blank_pool.request_attempt();
             }
-            // Job discovery via provider (Ably/filesystem wakeups + reconciliation).
+            // Independent local filesystem discovery; remote work arrives through HTTP.
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
-            discovered = &mut discover_fut, if can_discover => {
-                let Some(candidate) = discovered else { break };
-                // Future completed — create a new one for the next discovery.
-                discover_fut = Box::pin(provider_state.provider.discover());
-                let (candidate, retry) = pending_candidates.for_admission(candidate);
-                prefer_pending_retry = true;
-                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories, retry);
-                ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
-            }
-            candidate = provider_state.provider.try_discover_ready(),
-                if can_discover && ready_direct_candidates_left > 0 =>
+            discovered = async { discover_fut.as_mut()?.await },
+                if can_discover && discover_fut.is_some() =>
             {
-                if let Some(candidate) = candidate {
-                    ready_direct_candidates_left -= 1;
-                    let (candidate, retry) = pending_candidates.for_admission(candidate);
-                    prefer_pending_retry = true;
-                    claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories, retry);
-                } else {
-                    ready_direct_candidates_left = 0;
+                if let Some(source) = local_source.as_ref() {
+                    let Some(candidate) = discovered else { break };
+                    discover_fut = Some(source.discover());
+                    claim_tasks.submit(
+                        DiscoveredJob { candidate }, &runner.profiles, &factories,
+                        source.clone(),
+                    );
                 }
             }
             result = claim_tasks.progress(),
@@ -1441,9 +1298,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                if let Some((candidate, retry)) = result.pending_candidate {
-                    pending_candidates.retain(candidate, *mode_rx.borrow(), retry);
-                }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
                     && matches!(live_mode, RunnerMode::Running | RunnerMode::Draining)
@@ -1484,7 +1338,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     }
                     HomeCacheObservationEvent::Refreshed(change) => {
                         let live_mode = *mode_rx.borrow();
-                        pending_candidates.request_retry(live_mode);
                         if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
@@ -1665,22 +1518,17 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = capacity.budget.changed(),
                 if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
             {
-                pending_candidates.request_retry(*mode_rx.borrow());
                 heartbeat.request(*mode_rx.borrow())?;
             }
             _ = idle_pool_changes.changed(),
                 if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
             {
-                pending_candidates.request_retry(*mode_rx.borrow());
                 heartbeat.request(*mode_rx.borrow())?;
             }
-            _ = sleep_until_optional_instant(pending_retry_deadline) =>
-            { prefer_pending_retry = true; }
             // Immediate heartbeat after reusable state changes eliminates the
             // routine-report blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                pending_candidates.request_retry(live_mode);
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
                     RunnerMode::Running => "budget_exhausted",

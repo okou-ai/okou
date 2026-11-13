@@ -12,14 +12,14 @@ use serde::Deserialize;
 use std::{collections::HashSet, path::Path};
 
 #[derive(Deserialize)]
-struct ClaimInputs {
+struct ExecutionInputs {
     #[serde(rename = "contentBundles")]
     packages: ContentBundles,
 }
 
-impl super::ApiDecodePath for ClaimInputs {
+impl super::ApiDecodePath for ExecutionInputs {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &api_contracts::generated::decode_paths::runners::jobs::by_id::claim::RESPONSE;
+        &api_contracts::generated::decode_paths::runners::execution_publication::CONTEXT;
 }
 
 #[derive(Deserialize)]
@@ -147,25 +147,17 @@ fn instruction_reference<'de, D: serde::Deserializer<'de>>(
     BundleReference::deserialize(deserializer).map(Some)
 }
 
-pub(super) fn decode_claim(body: &[u8]) -> Result<ExecutionContext, String> {
-    // Keep scalar decode paths intact: flattening the context into a publication
-    // DTO would erase nested serde_path_to_error locations.
-    let context: ExecutionContext = super::decode_api_json_bytes(body)?;
-    let inputs: ClaimInputs = super::decode_api_json_bytes(body)?;
-    normalize(context, inputs)
-}
-
 /// Normalize the same complete publication without a Claim transport or timing.
 /// Decode errors intentionally contain no supplied values or secret field paths.
 pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, String> {
-    let context = serde_json::from_slice(body).map_err(|_| "Invalid execution context")?;
-    let inputs = serde_json::from_slice(body).map_err(|_| "Invalid content bundles")?;
+    let context = super::decode_api_json_bytes(body).map_err(|_| "Invalid execution context")?;
+    let inputs = super::decode_api_json_bytes(body).map_err(|_| "Invalid content bundles")?;
     normalize(context, inputs)
 }
 
 fn normalize(
     mut context: ExecutionContext,
-    inputs: ClaimInputs,
+    inputs: ExecutionInputs,
 ) -> Result<ExecutionContext, String> {
     let mut paths: HashSet<String> = context
         .storage_manifest
