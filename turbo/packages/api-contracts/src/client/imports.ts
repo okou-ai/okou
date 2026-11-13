@@ -708,6 +708,11 @@ export const clientContractImportManifest = [
         imported: "customConnectorFieldSchema",
       },
       {
+        name: "customConnectorFirewallSchema",
+        source: "validators/custom-connectors",
+        imported: "customConnectorFirewallSchema",
+      },
+      {
         name: "customConnectorHeaderInjectionSchema",
         source: "validators/custom-connectors",
         imported: "customConnectorHeaderInjectionSchema",
