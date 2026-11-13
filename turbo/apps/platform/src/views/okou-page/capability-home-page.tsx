@@ -67,13 +67,18 @@ import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
-import { CapabilityIllustration } from "./capability-illustrations.tsx";
+import {
+  CapabilityGround,
+  CapabilityObjects,
+  CapabilityStage,
+} from "./capability-illustrations.tsx";
 
 /*
  * Each Create and Workflow choice carries `data-art`; its card shows the
- * matching drawing while that choice is hovered or focused. The visibility
- * classes are spelled out in full because Tailwind's scanner only generates
- * classes that appear literally in the source.
+ * matching objects while that choice is hovered or focused, and they enter
+ * each time they are swapped in. The visibility classes are spelled out in
+ * full because Tailwind's scanner only generates classes that appear
+ * literally in the source.
  */
 const CREATE_TASKS = [
   {
@@ -189,8 +194,8 @@ const SCHEDULED_RECOMMENDATIONS = WORKFLOW_RECOMMENDATIONS.filter((item) => {
 });
 
 /**
- * Every capability card shares one anatomy: copy at the top left, its drawing
- * centred in the card's drawing box at the right, and any choices along the
+ * Every capability card shares one anatomy: copy at the top left, its objects
+ * on a faint ground of the card's hue at the right, and its actions along the
  * bottom. The cards are flat tone with no stroke or shadow; the composer stays
  * the one outlined surface on the page.
  */
@@ -200,28 +205,18 @@ const CAPABILITY_CARD =
 function CapabilityCopy({
   title,
   description,
-  heading = false,
   className,
 }: {
   readonly title: string;
   readonly description: string;
-  readonly heading?: boolean;
-  /** The copy column's width, which stops short of the card's drawing box. */
+  /** The copy column's width, which stops short of the card's objects. */
   readonly className: string;
 }) {
-  const Title = heading ? "h2" : "span";
   return (
     <span className={cn("relative z-[2] flex flex-col items-start", className)}>
-      <Title className="flex items-center gap-1 text-lg font-medium leading-7 tracking-tight whitespace-nowrap text-foreground">
+      <h2 className="text-lg font-medium leading-7 tracking-tight whitespace-nowrap text-foreground">
         {title}
-        {!heading && (
-          <ChevronRight
-            aria-hidden
-            strokeWidth={2}
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        )}
-      </Title>
+      </h2>
       {/* Balanced, so a description that wraps never leaves one word alone
           on its last line ("share.", "topics"). */}
       <span className="mt-0.5 text-sm leading-5 text-balance text-muted-foreground">
@@ -231,6 +226,12 @@ function CapabilityCopy({
   );
 }
 
+/**
+ * Find people and Research open their Explore tray from one action, so all
+ * four cards are acted on the same way: from a button along the bottom. The
+ * button takes only the left column, so the objects keep the right column's
+ * full height; hovering it replays them.
+ */
 function ExploreCapabilityCard({
   signals,
   kind,
@@ -241,33 +242,42 @@ function ExploreCapabilityCard({
   const { t } = useTranslation();
   const copy = t(
     ($) => {
-      return $.chat.capabilityHome[kind];
+      return $.chat.capabilityHome;
     },
     { returnObjects: true },
   );
   const openExplore = useSet(signals.taskChips.home.openExplore$);
+  const art = kind === "search" ? "people" : "research";
   return (
-    <button
-      type="button"
-      aria-label={copy.title}
-      className={cn(
-        CAPABILITY_CARD,
-        "min-h-42 transition-[background-color] duration-150 ease-surface [&:hover]:bg-state-hover-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none @2xl:col-span-9",
-      )}
-      onClick={() => {
-        return openExplore(kind);
-      }}
+    <section
+      className={cn(CAPABILITY_CARD, "min-h-42 @2xl:col-span-9")}
+      aria-label={copy[kind].title}
     >
-      <CapabilityIllustration
-        art={kind === "search" ? "people" : "research"}
+      <CapabilityGround card={art} />
+      <CapabilityStage
+        card={art}
         className="motion-safe:animate-capability-art-in"
-      />
+      >
+        <CapabilityObjects art={art} />
+      </CapabilityStage>
       <CapabilityCopy
-        title={copy.title}
-        description={copy.description}
+        title={copy[kind].title}
+        description={copy[kind].description}
         className="max-w-36"
       />
-    </button>
+      <div className="relative z-[2] mt-auto flex pt-4">
+        <Button
+          variant="neutral"
+          size="sm"
+          data-art="explore"
+          onClick={() => {
+            openExplore(kind);
+          }}
+        >
+          {copy.explore}
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -339,20 +349,15 @@ function CapabilityCards({
         className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
         aria-label={copy.create.title}
       >
-        {CREATE_TASKS.map(({ art, visibility }) => {
-          return (
-            <CapabilityIllustration
-              key={art}
-              art={art}
-              className={cn(
-                visibility,
-                "motion-safe:animate-capability-art-in",
-              )}
-            />
-          );
-        })}
+        <CapabilityGround card="create" />
+        <CapabilityStage card="create">
+          {CREATE_TASKS.map(({ art, visibility }) => {
+            return (
+              <CapabilityObjects key={art} art={art} className={visibility} />
+            );
+          })}
+        </CapabilityStage>
         <CapabilityCopy
-          heading
           title={copy.create.title}
           description={copy.create.description}
           className="max-w-70"
@@ -387,20 +392,15 @@ function CapabilityCards({
         className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
         aria-label={tasks.workflow}
       >
-        {WORKFLOW_KINDS.map(({ art, visibility }) => {
-          return (
-            <CapabilityIllustration
-              key={art}
-              art={art}
-              className={cn(
-                visibility,
-                "motion-safe:animate-capability-art-in",
-              )}
-            />
-          );
-        })}
+        <CapabilityGround card="workflow" />
+        <CapabilityStage card="workflow">
+          {WORKFLOW_KINDS.map(({ art, visibility }) => {
+            return (
+              <CapabilityObjects key={art} art={art} className={visibility} />
+            );
+          })}
+        </CapabilityStage>
         <CapabilityCopy
-          heading
           title={tasks.workflow}
           description={copy.workflow.summary}
           className="max-w-33"
