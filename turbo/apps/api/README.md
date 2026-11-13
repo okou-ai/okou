@@ -84,6 +84,11 @@ with query caching disabled. The existing API release remains the only owner of
 database migrations; the Worker deployer never creates, migrates, or seeds a
 Neon branch.
 
+Hyperdrive discovery reads every inventory page before reconciling the exact
+Worker name. Deployments reuse the existing configuration ID even when preview
+configurations fill earlier pages. An unreadable or malformed page stops the
+operation before any deployment or cleanup mutation.
+
 Before the first deployment, configure all three
 `CF_API_GCP_MTLS_<field>_PRODUCTION` variables in the repository or GitHub
 `production` environment, using a separate production certificate/provider and
