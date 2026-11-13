@@ -4936,7 +4936,10 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
-  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const popoverOpen = useGet(signals.connector.popoverOpen$);
+  const remoteAccessDialogOpen = useGet(
+    signals.connector.remoteAccessDialogOpen$,
+  );
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
@@ -4950,7 +4953,7 @@ function ConnectorsPopoverButton({
   );
   return (
     <Popover
-      open={connectorUi.popoverOpen}
+      open={popoverOpen}
       onOpenChange={(open, eventDetails) => {
         if (!open && eventDetails.reason === "outside-press") {
           if (accountMenuOpen) {
@@ -4997,9 +5000,7 @@ function ConnectorsPopoverButton({
         // The modal takes focus during the handoff; ordinary dismissal still
         // returns to this popover's trigger through Base UI.
         finalFocus={
-          connectorUi.remoteAccessDialogOpen || chatPermissions !== null
-            ? false
-            : undefined
+          remoteAccessDialogOpen || chatPermissions !== null ? false : undefined
         }
         side="top"
         align="start"
@@ -5009,7 +5010,7 @@ function ConnectorsPopoverButton({
         collisionAvoidance={{ fallbackAxisSide: "none" }}
         className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
       >
-        {connectorUi.popoverOpen && (
+        {popoverOpen && (
           <ComposerConnectorsPopoverBody
             signals={signals}
             actions={actions}
@@ -6674,7 +6675,10 @@ function ComposerConnectorsSlot({
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
 }) {
-  const connectorUi = useGet(signals.connector.connectorUiState$);
+  const dialogsOpen = useGet(signals.connector.dialogsOpen$);
+  const permissionConnectorSlug = useGet(
+    signals.connector.permissionConnectorSlug$,
+  );
   const triggerElement = useGet(signals.connector.triggerElement$);
   const permissions = useGet(signals.connector.chatAccess.permissions$);
   const permissionSignals = useGet(
@@ -6683,10 +6687,6 @@ function ComposerConnectorsSlot({
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
-  const dialogsOpen =
-    connectorUi.showAddDialog ||
-    connectorUi.selectedConnector !== null ||
-    connectorUi.selectedCustomConnectorId !== null;
   return (
     <>
       <ConnectorsPopoverButton
@@ -6701,10 +6701,10 @@ function ComposerConnectorsSlot({
           signals={permissionSignals}
         />
       )}
-      {connectorUi.permissionConnectorSlug !== null && (
+      {permissionConnectorSlug !== null && (
         <ComposerConnectorPermissionDialogSlot
           signals={signals}
-          connectorSlug={connectorUi.permissionConnectorSlug}
+          connectorSlug={permissionConnectorSlug}
         />
       )}
       {dialogsOpen && (

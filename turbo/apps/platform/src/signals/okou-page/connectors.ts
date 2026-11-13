@@ -121,6 +121,10 @@ export interface ComposerConnectorSignals {
     [ComposerConnectorAuthorizationTarget, boolean, AbortSignal]
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
+  readonly popoverOpen$: Computed<boolean>;
+  readonly remoteAccessDialogOpen$: Computed<boolean>;
+  readonly dialogsOpen$: Computed<boolean>;
+  readonly permissionConnectorSlug$: Computed<ConnectorSlug | null>;
   readonly openAddConnectorsDialog$: Command<void, []>;
   readonly openConnectorPermissions$: Command<void, [BuiltinConnectorBrief]>;
   readonly directoryFinalFocus$: Command<HTMLElement | boolean, []>;
@@ -362,6 +366,36 @@ function createConnectorNavigation(
         set(chatAccess.closeTarget$);
       }
       set(ui.updateConnectorUiState$, { popoverSearch: search });
+    }),
+  };
+}
+
+function createConnectorUiSelectors(
+  connectorUiState$: Computed<ComposerConnectorUiState>,
+): Pick<
+  ComposerConnectorSignals,
+  | "popoverOpen$"
+  | "remoteAccessDialogOpen$"
+  | "dialogsOpen$"
+  | "permissionConnectorSlug$"
+> {
+  return {
+    popoverOpen$: computed((get) => {
+      return get(connectorUiState$).popoverOpen;
+    }),
+    remoteAccessDialogOpen$: computed((get) => {
+      return get(connectorUiState$).remoteAccessDialogOpen;
+    }),
+    dialogsOpen$: computed((get) => {
+      const uiState = get(connectorUiState$);
+      return (
+        uiState.showAddDialog ||
+        uiState.selectedConnector !== null ||
+        uiState.selectedCustomConnectorId !== null
+      );
+    }),
+    permissionConnectorSlug$: computed((get) => {
+      return get(connectorUiState$).permissionConnectorSlug;
     }),
   };
 }
@@ -618,6 +652,7 @@ export function createComposerConnectorSignals(
       authorization$,
     ),
     ...ui,
+    ...createConnectorUiSelectors(ui.connectorUiState$),
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     permissionDrawer,
