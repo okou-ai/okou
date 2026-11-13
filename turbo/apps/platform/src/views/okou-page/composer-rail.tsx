@@ -22,16 +22,31 @@ const RAIL = cn(
   "min-w-0 snap-x snap-mandatory overflow-x-auto scroll-smooth",
   "scroll-pl-14",
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-  // A scroller clips both axes, and on the capability tray a tile lifts off
-  // the row under the pointer. The padding gives the lift room inside the
-  // clip; the matching negative margin keeps the row where it was.
-  "in-data-[slot=capability-tray]:-mt-1 in-data-[slot=capability-tray]:pt-1",
+  // The capability tray scrolls its choices downward in a window of its own,
+  // so there the row is not a scroller: it neither clips nor fades, and the
+  // window owns the snapping, the fade and the room a lifted tile needs.
+  "in-data-[slot=capability-tray]:snap-none in-data-[slot=capability-tray]:overflow-visible",
+  "in-data-[slot=capability-tray]:[-webkit-mask-image:none] in-data-[slot=capability-tray]:[mask-image:none]",
 );
 /**
  * The rail owns each item's frame so that snapping and the entry stagger have
  * exactly one owner; an item fills its frame rather than sizing the rail.
  */
-const RAIL_ITEM_FRAME = "w-(--rail-item-width) shrink-0 snap-start";
+const RAIL_ITEM_FRAME = cn(
+  "w-(--rail-item-width) shrink-0 snap-start",
+  "in-data-[slot=capability-tray]:w-auto",
+);
+/**
+ * On the capability tray the items wrap into rows instead, stretched to fill
+ * the tray while its window scrolls downward. A column may shrink to 88% of
+ * the shelf's item width before the row drops one: four covers then hold down
+ * to a ~1200px window with the sidebar open, where one fewer column would make
+ * each row so tall that the next one sinks entirely into the window's fade.
+ */
+const RAIL_TRACK = cn(
+  "flex w-max items-start gap-3",
+  "in-data-[slot=capability-tray]:grid in-data-[slot=capability-tray]:w-full in-data-[slot=capability-tray]:grid-cols-[repeat(auto-fill,minmax(calc(var(--rail-item-width)*0.88),1fr))] in-data-[slot=capability-tray]:gap-y-4",
+);
 /**
  * Items resolve left to right as the row arrives. The step is capped so a
  * catalog of eighteen still finishes in about a fifth of a second: past the
@@ -117,7 +132,7 @@ export function ComposerRail({
         data-rail={rail}
         className={cn(RAIL, COMPOSER_RAIL_FADE)}
       >
-        <div data-rail-track="" className="flex w-max items-start gap-3">
+        <div data-rail-track="" className={RAIL_TRACK}>
           {items.map((item, index) => {
             return (
               <div

@@ -2,6 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
+import { TRIGGER_EXAMPLES } from "./composer-trigger-examples.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 
 export interface WorkflowRecommendationActions {
@@ -37,18 +38,26 @@ export type WorkflowCoverTone =
 export type WorkflowCoverKind =
   "doc" | "card" | "list" | "check" | "table" | "chart";
 
+/** A source no catalog connector stands for, drawn as a glyph in the mark's tile. */
+export type WorkflowCoverGlyph =
+  "webhook" | "rss" | "calendar-clock" | "repeat";
+
+/** One end of a cover's flow: a catalog connector's mark, or a glyph. */
+export type WorkflowCoverMark =
+  ConnectorSlug | { readonly glyph: WorkflowCoverGlyph };
+
 /**
- * What the shelf cover draws. `sources` are the connectors the workflow reads
- * and `destination` the one it delivers into, the same split the onboarding
- * diagram makes; a workflow that only reads has no destination. `tone` is one
- * of the platform's own colour tokens, chosen so the nine covers spread across
- * the hue circle.
+ * What a shelf cover draws. `sources` are what the workflow reads or waits on
+ * and `destination` the connector it delivers into, the same split the
+ * onboarding diagram makes; a workflow that only reads has no destination.
+ * `tone` is one of the platform's own colour tokens, chosen so the covers on
+ * one shelf spread across the hue circle.
  */
-interface WorkflowRecommendationCover {
+export interface WorkflowShelfCover {
   readonly tone: WorkflowCoverTone;
   readonly kind: WorkflowCoverKind;
-  readonly sources: readonly [ConnectorSlug, ...ConnectorSlug[]];
-  readonly destination: ConnectorSlug | null;
+  readonly sources: readonly [WorkflowCoverMark, ...WorkflowCoverMark[]];
+  readonly destination: WorkflowCoverMark | null;
 }
 
 // Every card's connectors must offer OAuth in the live catalog, the same rule
@@ -160,26 +169,35 @@ export const WORKFLOW_RECOMMENDATIONS = [
   readonly id: string;
   readonly templateId: WorkflowTemplateItem["id"] | null;
   readonly connectors: readonly ConnectorSlug[];
-  readonly cover: WorkflowRecommendationCover;
+  readonly cover: WorkflowShelfCover;
 }[];
 
 export type WorkflowRecommendation = (typeof WORKFLOW_RECOMMENDATIONS)[number];
 export type WorkflowRecommendationId = WorkflowRecommendation["id"];
 
-// The recommendations are fixed, so their lookups are built once, one
-// connector each: drawing a handful of marks must not pull the full connector
-// catalog, which holds thousands of entries and takes most of a second.
+// The recommendations and trigger examples are fixed, so their lookups are
+// built once, one connector each: drawing a handful of marks must not pull the
+// full connector catalog, which holds thousands of entries and takes most of a
+// second.
 const recommendationConnectorItems$ = [
-  ...new Set(
-    WORKFLOW_RECOMMENDATIONS.flatMap((item) => {
+  ...new Set([
+    ...WORKFLOW_RECOMMENDATIONS.flatMap((item) => {
       return item.connectors;
     }),
-  ),
+    ...TRIGGER_EXAMPLES.flatMap(({ cover }) => {
+      return cover.sources.flatMap((mark) => {
+        return typeof mark === "string" ? [mark] : [];
+      });
+    }),
+  ]),
 ].map((connectorSlug) => {
   return connectorCatalogItemBySlug(connectorSlug);
 });
 
-/** The catalog entry of every connector a recommendation names, by slug. */
+/**
+ * The catalog entry of every connector a recommendation names or a trigger
+ * example's cover draws, by slug.
+ */
 export const workflowRecommendationConnectors$ = computed(async (get) => {
   const items = await Promise.all(
     recommendationConnectorItems$.map((item$) => {
