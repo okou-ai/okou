@@ -910,69 +910,56 @@ const deleteOrphanedBrowserChats$ = command(
     const scope = owner
       ? and(eq(windows.orgId, owner.orgId), eq(windows.userId, owner.userId))
       : undefined;
-    const candidates = db.$with("inactive_browser_chats").as(
-      db
-        .select({ id: windows.chatThreadId })
-        .from(windows)
-        .where(and(scope, isNull(windows.instanceId)))
-        .orderBy(windows.updatedAt)
-        .limit(BATCH_SIZE),
-    );
-    const removed = db.$with("deleted_orphaned_browser_chats").as(
-      db
-        .delete(windows)
-        .where(
-          and(
-            scope,
-            isNull(windows.instanceId),
-            orphanedWindow(),
-            inArray(
-              windows.chatThreadId,
-              new QueryBuilder().select().from(candidates),
-            ),
-          ),
-        )
-        .returning({
+    const candidates = await db
+      .select({ id: windows.chatThreadId })
+      .from(windows)
+      .where(and(scope, isNull(windows.instanceId)))
+      .orderBy(windows.updatedAt, windows.chatThreadId)
+      .limit(BATCH_SIZE);
+    signal.throwIfAborted();
+    // Candidate order does not order a batch DELETE/UPDATE's row locks. Commit
+    // each chat independently so overlapping sweeps cannot hold one chat while
+    // waiting for another. Recheck ownership and inactivity after selection.
+    for (const candidate of candidates) {
+      const inactive = and(
+        scope,
+        eq(windows.chatThreadId, candidate.id),
+        isNull(windows.instanceId),
+      );
+      const removed = db.$with("deleted_orphaned_browser_chats").as(
+        db.delete(windows).where(and(inactive, orphanedWindow())).returning({
           screenshotObjectKey: windows.screenshotObjectKey,
           chatThreadId: windows.chatThreadId,
           updatedAt: windows.updatedAt,
         }),
-    );
-    // Rotate retained chats in the same bounded observation batch. Its live
-    // parent predicate is disjoint from deletion, so each row is mutated once.
-    const retained = db.$with("retained_browser_chats").as(
-      db
-        .update(windows)
-        .set({ updatedAt: nowDate() })
-        .where(
-          and(
-            scope,
-            isNull(windows.instanceId),
-            not(orphanedWindow()),
-            inArray(
-              windows.chatThreadId,
-              new QueryBuilder().select().from(candidates),
-            ),
-          ),
+      );
+      // The live-parent predicate is disjoint from deletion in this statement's
+      // snapshot. Retained recovery still rotates through the bounded batch.
+      const retained = db.$with("retained_browser_chats").as(
+        db
+          .update(windows)
+          .set({ updatedAt: nowDate() })
+          .where(and(inactive, not(orphanedWindow())))
+          .returning({ id: windows.chatThreadId }),
+      );
+      // Keep the exact deleted preview and its durable cleanup handoff atomic.
+      await db
+        .with(removed, retained)
+        .insert(browserSessionScreenshotDeletions)
+        .select(
+          new QueryBuilder()
+            .select({
+              objectKey: removed.screenshotObjectKey,
+              chatThreadId: removed.chatThreadId,
+              createdAt: removed.updatedAt,
+            })
+            .from(removed)
+            .where(isNotNull(removed.screenshotObjectKey))
+            .getSQL(),
         )
-        .returning({ id: windows.chatThreadId }),
-    );
-    await db
-      .with(candidates, removed, retained)
-      .insert(browserSessionScreenshotDeletions)
-      .select(
-        new QueryBuilder()
-          .select({
-            objectKey: removed.screenshotObjectKey,
-            chatThreadId: removed.chatThreadId,
-            createdAt: removed.updatedAt,
-          })
-          .from(removed)
-          .where(isNotNull(removed.screenshotObjectKey))
-          .getSQL(),
-      )
-      .onConflictDoNothing();
-    signal.throwIfAborted();
+        .onConflictDoNothing();
+      signal.throwIfAborted();
+    }
   },
 );
 
