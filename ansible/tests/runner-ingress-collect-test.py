@@ -195,22 +195,52 @@ class CollectorTest(unittest.TestCase):
             )
         return content
 
-    def sample(self, runner_id, reachable):
-        return f'vm0_runner_ingress_up{{runner_id="{runner_id}"}} {reachable}\n'
+    def assert_counts(self, content, success, failure):
+        self.assertCountEqual(
+            [line for line in content.splitlines() if not line.startswith("#")],
+            [
+                f"vm0_runner_ingress_success_count {success}",
+                f"vm0_runner_ingress_failure_count {failure}",
+            ],
+        )
+        for outcome in ("success", "failure"):
+            self.assertIn(f"# TYPE vm0_runner_ingress_{outcome}_count gauge\n", content)
 
     def test_managed_targets_are_independent_of_runner_progress(self):
         first, _ = self.runner("serving")
         second, _ = self.runner("draining", mode="draining")
-        dead, _ = self.runner("dead-but-status-remains")
+        self.runner("dead-but-status-remains")
         self.runner("stopped", mode="stopped")
         self.runner("personal", token="vm0_pat_example")
         (self.runners / "prepared").mkdir()
         self.peer.responses = {first: (200, b"ok"), second: (200, b"ok")}
         content = self.run_collector()
-        for runner_id, value in ((first, 1), (second, 1), (dead, 0)):
-            self.assertIn(self.sample(runner_id, value), content)
+        self.assert_counts(content, 2, 1)
         self.assertEqual(len(self.peer.requests), 3)
-        self.assertEqual(content.count("runner_id="), 3)
+
+        # Replacing all identities must update the same two host series, even
+        # when the number of eligible targets and the results change.
+        for round_number in range(3):
+            replacements = {}
+            for name in ("serving", "draining", "dead-but-status-remains"):
+                path = self.runners / name
+                runner_id = str(uuid.uuid4())
+                (path / "runner_id").write_text(runner_id)
+                (path / "heartbeat_generation").write_text(str(round_number + 2))
+                replacements[name] = runner_id
+            (self.runners / "dead-but-status-remains" / "status.json").write_text(
+                json.dumps({"mode": "stopped"})
+            )
+            self.peer.responses = {replacements["serving"]: (200, b"ok")}
+            self.assert_counts(self.run_collector(), 1, 1)
+        self.assertEqual(len(self.peer.requests), 9)
+
+    def test_no_eligible_targets_publish_zero_counts(self):
+        self.runner("stopped", mode="stopped")
+        self.runner("personal", token="vm0_pat_example")
+        (self.runners / "prepared").mkdir()
+        self.assert_counts(self.run_collector(), 0, 0)
+        self.assertEqual(self.peer.requests, [])
 
     def test_strict_responses_do_not_retry_or_follow_redirects(self):
         expected = []
@@ -229,31 +259,31 @@ class CollectorTest(unittest.TestCase):
             expected.append(runner_id)
         content = self.run_collector()
         self.assertEqual(len(self.peer.requests), len(expected))
-        for runner_id in expected:
-            self.assertIn(self.sample(runner_id, 0), content)
+        self.assert_counts(content, 0, len(expected))
 
     def test_tls_failure_and_recovery_replace_the_file(self):
         runner_id, _ = self.runner("serving")
         self.peer.responses[runner_id] = (200, b"ok")
-        self.assertIn(
-            self.sample(runner_id, 0),
+        self.assert_counts(
             self.run_collector(
                 env=dict(self.env, FIXTURE_CA=str(self.ca_dir / "untrusted.pem"))
             ),
+            0,
+            1,
         )
         self.assertEqual(self.peer.requests, [])
-        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        self.assert_counts(self.run_collector(), 1, 0)
 
     def test_stalled_peer_is_bounded_and_the_next_round_recovers(self):
         runner_id, _ = self.runner("serving")
         self.peer.responses[runner_id] = (200, b"ok")
         self.peer.release.clear()
         before = time.monotonic()
-        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        self.assert_counts(self.run_collector(), 0, 1)
         self.assertLess(time.monotonic() - before, 15)
         self.assertEqual(len(self.peer.requests), 1)
         self.peer.release.set()
-        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        self.assert_counts(self.run_collector(), 1, 0)
 
     def test_fast_invocations_preserve_the_file_without_repeating_probes(self):
         runner_id, _ = self.runner("serving")
@@ -330,24 +360,21 @@ class CollectorTest(unittest.TestCase):
             finally:
                 if process.poll() is None:
                     process.kill()
-        self.assertIn(
-            self.sample(runner_id, 0), (self.output / "runner-ingress.prom").read_text()
-        )
-        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        self.assert_counts((self.output / "runner-ingress.prom").read_text(), 0, 1)
+        self.assert_counts(self.run_collector(), 1, 0)
 
     def test_duplicate_identity_does_not_duplicate_requests_or_samples(self):
         runner_id, _ = self.runner("one")
         self.runner("two", runner_id=runner_id)
         self.peer.responses[runner_id] = (200, b"ok")
         content = self.run_collector()
-        self.assertIn(self.sample(runner_id, 0), content)
-        self.assertEqual(content.count("runner_id="), 1)
+        self.assert_counts(content, 0, 1)
         self.assertEqual(len(self.peer.requests), 1)
 
     def test_bad_configuration_never_sends_credentials_or_retains_success(self):
         runner_id, path = self.runner("serving")
         self.peer.responses[runner_id] = (200, b"ok")
-        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        self.assert_counts(self.run_collector(), 1, 0)
         config = path / "runner.yaml"
         original = config.read_text()
         for invalid in (
@@ -355,26 +382,28 @@ class CollectorTest(unittest.TestCase):
             f"server: [\n{TOKEN}",
         ):
             config.write_text(invalid)
-            self.assertIn(self.sample(runner_id, 0), self.run_collector())
+            self.assert_counts(self.run_collector(), 0, 1)
         config.write_text(original)
         config.chmod(0o644)
-        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        self.assert_counts(self.run_collector(), 0, 1)
         config.unlink()
         outside = self.work / "outside.yaml"
         outside.write_text(original)
         outside.chmod(0o600)
         config.symlink_to(outside)
-        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        self.assert_counts(self.run_collector(), 0, 1)
         self.assertEqual(len(self.peer.requests), 1)
 
     def test_root_symlink_replaces_old_healthy_file_without_probing(self):
         runner_id, _ = self.runner("serving")
         self.peer.responses[runner_id] = (200, b"ok")
-        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        self.assert_counts(self.run_collector(), 1, 0)
         alias = self.work / "alias"
         alias.symlink_to(self.runners, target_is_directory=True)
         content = self.run_collector(env=dict(self.env, OKOU_RUNNERS_DIR=str(alias)))
-        self.assertNotIn("runner_id=", content)
+        self.assertEqual(
+            [line for line in content.splitlines() if not line.startswith("#")], []
+        )
         self.assertEqual(len(self.peer.requests), 1)
 
     def test_provisioned_command_and_timer_keep_network_off_the_scrape_cadence(self):
@@ -433,7 +462,7 @@ class CollectorTest(unittest.TestCase):
             'vm0_runner_instances{mode="running"} 1',
             (self.output / "runner-status.prom").read_text(),
         )
-        self.assertIn(self.sample(runner_id, 1), self.run_collector(command=command))
+        self.assert_counts(self.run_collector(command=command), 1, 0)
 
 
 if __name__ == "__main__":

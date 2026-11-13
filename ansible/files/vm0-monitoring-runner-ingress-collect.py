@@ -255,7 +255,7 @@ def collect(runners_dir: Path, hostname: str, deadline: float) -> dict[str, int]
     return results
 
 
-def publish(directory_path: Path, results: dict[str, int]) -> None:
+def publish(directory_path: Path, results: dict[str, int] | None) -> None:
     directory = open_directory(directory_path)
     temporary = f".runner-ingress.{uuid.uuid4().hex}.tmp"
     try:
@@ -267,14 +267,15 @@ def publish(directory_path: Path, results: dict[str, int]) -> None:
         )
         with os.fdopen(descriptor, "w") as output:
             os.fchmod(output.fileno(), 0o644)
-            output.write(
-                "# HELP vm0_runner_ingress_up Authenticated HTTPS Runner health succeeded.\n"
-            )
-            output.write("# TYPE vm0_runner_ingress_up gauge\n")
-            for runner_id, reachable in sorted(results.items()):
+            for outcome, value in (("success", 1), ("failure", 0)):
+                metric = f"vm0_runner_ingress_{outcome}_count"
                 output.write(
-                    f'vm0_runner_ingress_up{{runner_id="{runner_id}"}} {reachable}\n'
+                    f"# HELP {metric} Unique Runner targets with {outcome} in the latest HTTPS health round.\n"
                 )
+                output.write(f"# TYPE {metric} gauge\n")
+                if results is not None:
+                    count = sum(result == value for result in results.values())
+                    output.write(f"{metric} {count}\n")
             output.flush()
             os.fsync(output.fileno())
         os.replace(
@@ -379,7 +380,8 @@ def main() -> None:
             results = collect(runners_dir, args.hostname, deadline)
         except (OSError, ValueError):
             print("Runner ingress discovery unavailable", file=sys.stderr)
-            results = {}
+            # Unavailable discovery is not a successful empty collection.
+            results = None
         publish(textfile_dir, results)
     finally:
         try:

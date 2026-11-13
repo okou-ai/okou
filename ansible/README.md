@@ -106,26 +106,41 @@ overlap and catch-up probes without another service or timer. Lifecycle metrics
 publish before probing; a slow health round can extend that service invocation.
 The existing 15-second Alloy scrape only reads the result.
 
-The collector atomically replaces `runner-ingress.prom` with the single gauge
-`vm0_runner_ingress_up{runner_id="..."}`. A value of 1 requires ordinary TLS
-validation, HTTP 200, the exact `ok` body and unchanged process identity. A value
-of 0 means this round did not establish healthy ingress. The observation checks
-HTTPS/Caddy/Runner routing from the host, not dispatch admission or API-origin
-network policy. Credentials stay in private input files and a curl stdin pipe,
-never in metrics, command arguments, diagnostics or Alloy configuration.
+The collector atomically replaces `runner-ingress.prom` with two host gauges:
+
+- `vm0_runner_ingress_success_count`: unique Runner targets whose authenticated
+  HTTPS health succeeded in the latest round, requiring ordinary TLS validation,
+  HTTP 200, the exact `ok` body and unchanged process identity.
+- `vm0_runner_ingress_failure_count`: unique Runner targets for which that round
+  did not establish healthy ingress, including failed requests and known-target
+  input errors. Conflicting duplicate identities count once as failed.
+
+These are current counts, not cumulative counters; they can decrease each round.
+They use only the existing Alloy `env` and `instance` labels, so Runner replacement
+does not create additional series. UUIDs and generations stay internal to route,
+deduplicate and validate probes. Successful discovery with no eligible targets
+publishes `0/0`; whole-discovery failure publishes no count samples. Neither means
+healthy ingress. The counts do not identify an individual failing Runner.
+
+The observation checks HTTPS/Caddy/Runner routing from the host, not dispatch
+admission or API-origin network policy. Credentials stay in private input files
+and a curl stdin pipe, never in metrics, command arguments, diagnostics or Alloy
+configuration.
 
 Always gate the display on the ingress file's own freshness. Repeated Alloy
-scrapes can keep an old gauge sample current after the collector stops:
+scrapes can keep old count samples current after the collector stops. This query
+applies the guard to both counts:
 
 ```promql
-vm0_runner_ingress_up
+{__name__=~"vm0_runner_ingress_(success|failure)_count"}
 and on (env, instance)
   (time() - node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} < 180)
 and on (env, instance)
   (node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} <= time())
 ```
 
-Missing/stale data must not display as healthy. Normal host provisioning applies
+Missing/stale data, `0/0`, or a zero failure count alone must not display as healthy.
+Normal host provisioning applies
 collector changes through the existing Ansible-tree hash; merged source alone
 does not prove the host was provisioned or Grafana received the new series.
 Run the real-files/curl/TLS fixtures with
