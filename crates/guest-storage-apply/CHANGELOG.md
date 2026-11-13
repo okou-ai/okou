@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.1...guest-storage-apply-v0.32.2) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use owned notification descriptor constructors ([#47098](https://github.com/okou-ai/okou/issues/47098)) ([bf69ae3](https://github.com/okou-ai/okou/commit/bf69ae388ed442b23479f99bbf78bebd2c1723af))
+
 ## [0.32.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.0...guest-storage-apply-v0.32.1) (2026-11-13)
 
 ## [0.32.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.6...guest-storage-apply-v0.32.0) (2026-11-12)

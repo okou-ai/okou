@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.2...runner-rs-v0.249.3) (2026-11-13)
+
+
+### Refactoring
+
+* **python:** bind running restore control validation to its contract ([#47088](https://github.com/okou-ai/okou/issues/47088)) ([078a478](https://github.com/okou-ai/okou/commit/078a478d0e6ba24742343c035684a0a6918d73dc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.1...runner-rs-v0.249.2) (2026-11-13)
 
 ### Release Dependencies
