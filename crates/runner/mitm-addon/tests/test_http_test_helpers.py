@@ -7,8 +7,8 @@ import selectors
 import socket
 import threading
 import urllib.parse
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field
 from http.server import ThreadingHTTPServer
 from types import TracebackType
 from unittest.mock import patch
@@ -30,6 +30,32 @@ class _CapturedRequest:
     path: str
     headers: dict[str, str]
     body: bytes
+
+
+@dataclass
+class _AcceptedHandlers:
+    entered: threading.Event = field(default_factory=threading.Event)
+    threads: list[threading.Thread] = field(default_factory=list)
+    connections: list[socket.socket] = field(default_factory=list)
+
+
+@pytest.fixture
+def accepted_handlers() -> Iterator[_AcceptedHandlers]:
+    observed = _AcceptedHandlers()
+    finish_request = ThreadingHTTPServer.finish_request
+
+    def observe_handler(
+        http_server: ThreadingHTTPServer,
+        connection: socket.socket,
+        address: tuple[str, int],
+    ) -> None:
+        observed.connections.append(connection)
+        observed.threads.append(threading.current_thread())
+        observed.entered.set()
+        finish_request(http_server, connection, address)
+
+    with patch.object(ThreadingHTTPServer, "finish_request", observe_handler):
+        yield observed
 
 
 class _PauseFirstHandlerReacquire:
@@ -256,7 +282,58 @@ def test_threaded_http_server_shutdown_wakes_an_idle_selector() -> None:
         _ = server.api_url
 
 
-def test_threaded_http_server_shutdown_releases_a_blocked_response() -> None:
+@pytest.mark.parametrize(
+    "partial_request",
+    [
+        b"",
+        b"POST /partial HTTP/1.0\r\nContent-Length: 4\r\n",
+        b"POST /partial HTTP/1.0\r\nContent-Length: 4\r\n\r\na",
+    ],
+    ids=["idle-connection", "partial-headers", "partial-body"],
+)
+def test_threaded_http_server_shutdown_aborts_incomplete_requests(
+    partial_request: bytes,
+    accepted_handlers: _AcceptedHandlers,
+) -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="incomplete-http-test-server",
+    )
+    client: socket.socket | None = None
+    try:
+        with server.run():
+            assert server._server is not None
+            client = socket.create_connection(
+                server._server.socket.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS
+            )
+            client.sendall(partial_request)
+            wait_for_event(accepted_handlers.entered, timeout=_THREAD_TIMEOUT_SECONDS)
+            assert server.request_count == 0
+
+        assert all(not handler.is_alive() for handler in accepted_handlers.threads)
+        assert all(connection.fileno() == -1 for connection in accepted_handlers.connections)
+        assert server.requests == ()
+        try:
+            client.sendall(b"bcd")
+            assert client.recv(4096) == b""
+        except ConnectionError:
+            # A closed peer may report either EOF or a reset/broken pipe.
+            pass
+        assert server.requests == ()
+    finally:
+        if client is not None:
+            client.close()
+        for handler in accepted_handlers.threads:
+            handler.join(timeout=_THREAD_TIMEOUT_SECONDS)
+
+    with server.run():
+        assert _post(f"{server.api_url}/recovered") == (204, b"")
+
+
+def test_threaded_http_server_shutdown_releases_a_blocked_response(
+    accepted_handlers: _AcceptedHandlers,
+) -> None:
     server = ThreadedHttpTestServer(
         request_factory=_CapturedRequest,
         default_status=503,
@@ -281,6 +358,8 @@ def test_threaded_http_server_shutdown_releases_a_blocked_response() -> None:
             assert thread.is_alive()
 
         assert release_response.is_set()
+        assert all(not handler.is_alive() for handler in accepted_handlers.threads)
+        assert all(connection.fileno() == -1 for connection in accepted_handlers.connections)
         thread.join_and_raise(timeout=_THREAD_TIMEOUT_SECONDS)
         assert responses == {"blocked": (201, b"released")}
         assert [request.path for request in server.requests] == ["/blocked"]
@@ -290,7 +369,139 @@ def test_threaded_http_server_shutdown_releases_a_blocked_response() -> None:
             thread.join(timeout=_THREAD_TIMEOUT_SECONDS)
 
 
-def test_threaded_http_server_propagates_serving_failure() -> None:
+def test_threaded_http_server_shutdown_aborts_a_blocked_writer(
+    accepted_handlers: _AcceptedHandlers,
+) -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="blocked-writer-http-test-server",
+    )
+    release_response = threading.Event()
+    server.queue_response(200, body=b"x" * (1024 * 1024), release_event=release_response)
+    client = socket.socket()
+    client.settimeout(_THREAD_TIMEOUT_SECONDS)
+    client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    try:
+        with server.run():
+            assert server._server is not None
+            client.connect(server._server.server_address)
+            client.sendall(b"GET /blocked-writer HTTP/1.0\r\n\r\n")
+            assert server.wait_for_request_count(1)
+            [connection] = accepted_handlers.connections
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+            release_response.set()
+            assert client.recv(1) == b"H"
+
+        assert all(not handler.is_alive() for handler in accepted_handlers.threads)
+        assert connection.fileno() == -1
+        assert [request.path for request in server.requests] == ["/blocked-writer"]
+    finally:
+        release_response.set()
+        client.close()
+        for handler in accepted_handlers.threads:
+            handler.join(timeout=_THREAD_TIMEOUT_SECONDS)
+
+
+def test_threaded_http_server_reports_a_handler_that_cannot_stop() -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="uncooperative-http-test-server",
+    )
+    entered = threading.Event()
+    release_handler = threading.Event()
+    handlers: list[threading.Thread] = []
+    connections: list[socket.socket] = []
+
+    def block_handler(connection: socket.socket, address: tuple[str, int]) -> None:
+        del address
+        connections.append(connection)
+        handlers.append(threading.current_thread())
+        entered.set()
+        release_handler.wait()
+
+    client: socket.socket | None = None
+
+    def exercise_server() -> None:
+        nonlocal client
+        with server.run():
+            assert server._server is not None
+            with patch.object(server._server, "finish_request", side_effect=block_handler):
+                client = socket.create_connection(
+                    server._server.socket.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS
+                )
+                wait_for_event(entered, timeout=_THREAD_TIMEOUT_SECONDS)
+
+    try:
+        with pytest.raises(
+            AssertionError, match="HTTP request handler did not finish before timeout"
+        ):
+            exercise_server()
+
+        assert handlers[0].is_alive()
+        with pytest.raises(AssertionError):
+            _ = server.api_url
+    finally:
+        release_handler.set()
+        if client is not None:
+            client.close()
+        for handler in handlers:
+            handler.join(timeout=_THREAD_TIMEOUT_SECONDS)
+
+    assert all(not handler.is_alive() for handler in handlers)
+    assert all(connection.fileno() == -1 for connection in connections)
+
+
+@pytest.mark.parametrize("failure_point", ["__init__", "start"])
+def test_threaded_http_server_closes_connection_after_handler_startup_failure(
+    failure_point: str,
+) -> None:
+    server = ThreadedHttpTestServer(
+        request_factory=_CapturedRequest,
+        default_status=204,
+        thread_name="handler-startup-failure-http-test-server",
+    )
+    failed = threading.Event()
+    connections: list[socket.socket] = []
+    client: socket.socket | None = None
+    try:
+        with server.run():
+            assert server._server is not None
+            http_server = server._server
+            get_request = http_server.get_request
+
+            def observe_connection() -> tuple[socket.socket, tuple[str, int]]:
+                connection, address = get_request()
+                connections.append(connection)
+                return connection, address
+
+            with (
+                patch.object(http_server, "get_request", side_effect=observe_connection),
+                patch.object(http_server, "handle_error", side_effect=lambda *_: failed.set()),
+                patch.object(
+                    threading.Thread,
+                    failure_point,
+                    side_effect=RuntimeError("injected handler startup failure"),
+                ),
+            ):
+                client = socket.create_connection(
+                    http_server.socket.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS
+                )
+                wait_for_event(failed, timeout=_THREAD_TIMEOUT_SECONDS)
+                assert client.recv(1) == b""
+
+        assert len(connections) == 1
+        assert connections[0].fileno() == -1
+        assert server.request_count == 0
+    finally:
+        if client is not None:
+            client.close()
+
+
+def test_threaded_http_server_propagates_serving_failure(
+    accepted_handlers: _AcceptedHandlers,
+) -> None:
     server = ThreadedHttpTestServer(
         request_factory=_CapturedRequest,
         default_status=204,
@@ -299,30 +510,45 @@ def test_threaded_http_server_propagates_serving_failure() -> None:
     failed = threading.Event()
     failure = RuntimeError("injected serving failure")
     listener: socket.socket | None = None
+    client: socket.socket | None = None
 
     def fail_request() -> None:
         failed.set()
         raise failure
 
     def exercise_server() -> None:
-        nonlocal listener
+        nonlocal listener, client
         with server.run():
             assert server._server is not None
             listener = server._server.socket
-            with socket.create_connection(listener.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS):
+            client = socket.create_connection(
+                listener.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS
+            )
+            client.sendall(b"POST /partial HTTP/1.0\r\nContent-Length: 4\r\n\r\na")
+            wait_for_event(accepted_handlers.entered, timeout=_THREAD_TIMEOUT_SECONDS)
+            with (
+                patch.object(ThreadingHTTPServer, "handle_request", side_effect=fail_request),
+                socket.create_connection(listener.getsockname(), timeout=_THREAD_TIMEOUT_SECONDS),
+            ):
                 wait_for_event(failed, timeout=_THREAD_TIMEOUT_SECONDS)
 
-    with (
-        patch.object(ThreadingHTTPServer, "handle_request", side_effect=fail_request),
-        pytest.raises(RuntimeError, match="injected serving failure") as caught,
-    ):
-        exercise_server()
+    try:
+        with pytest.raises(RuntimeError, match="injected serving failure") as caught:
+            exercise_server()
 
-    assert caught.value is failure
-    assert listener is not None
-    assert listener.fileno() == -1
-    with pytest.raises(AssertionError):
-        _ = server.api_url
+        assert caught.value is failure
+        assert listener is not None
+        assert listener.fileno() == -1
+        assert all(not handler.is_alive() for handler in accepted_handlers.threads)
+        assert all(connection.fileno() == -1 for connection in accepted_handlers.connections)
+        assert server.request_count == 0
+        with pytest.raises(AssertionError):
+            _ = server.api_url
+    finally:
+        if client is not None:
+            client.close()
+        for handler in accepted_handlers.threads:
+            handler.join(timeout=_THREAD_TIMEOUT_SECONDS)
 
 
 def test_threaded_http_server_aligns_responses_with_recorded_order():

@@ -5,13 +5,96 @@ from __future__ import annotations
 import contextlib
 import selectors
 import socket
+import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from tests.thread_helpers import ThreadUnderTest
+
+_HANDLER_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+
+
+class _OwnedThreadingHTTPServer(ThreadingHTTPServer):
+    """Cancel socket I/O and join every accepted handler before closing."""
+
+    block_on_close = False
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        handler: type[BaseHTTPRequestHandler],
+    ) -> None:
+        self._handlers: list[tuple[socket.socket, threading.Thread]] = []
+        self._handlers_lock = threading.Lock()
+        self._closing = False
+        self._aborted: set[socket.socket] = set()
+        super().__init__(address, handler)
+
+    def process_request(self, request: socket.socket, client_address: tuple[str, int]) -> None:
+        with self._handlers_lock:
+            if self._closing:
+                self.shutdown_request(request)
+                return
+            self._handlers = [
+                (sock, thread) for sock, thread in self._handlers if thread.is_alive()
+            ]
+            thread = threading.Thread(
+                target=self.process_request_thread,
+                args=(request, client_address),
+                daemon=True,
+            )
+            self._handlers.append((request, thread))
+            try:
+                thread.start()
+            except BaseException:
+                self._handlers.remove((request, thread))
+                # BaseServer closes the accepted socket when process_request fails.
+                raise
+
+    def handle_error(self, request: socket.socket, client_address: tuple[str, int]) -> None:
+        with self._handlers_lock:
+            aborted = request in self._aborted
+        if aborted and isinstance(sys.exception(), ConnectionError):
+            return
+        super().handle_error(request, client_address)
+
+    def server_close(self) -> None:
+        with self._handlers_lock:
+            self._closing = True
+            handlers = tuple(self._handlers)
+        super().server_close()
+        try:
+            # Wake incomplete headers/bodies, but let released responses finish.
+            for connection, _ in handlers:
+                self._shutdown(connection, socket.SHUT_RD)
+            self._join_handlers(handlers)
+            pending = tuple((sock, thread) for sock, thread in handlers if thread.is_alive())
+            with self._handlers_lock:
+                self._aborted.update(sock for sock, _ in pending)
+            for connection, _ in pending:
+                self._shutdown(connection, socket.SHUT_RDWR)
+            self._join_handlers(pending)
+            if any(thread.is_alive() for _, thread in pending):
+                raise AssertionError("HTTP request handler did not finish before timeout")
+        finally:
+            for connection, _ in handlers:
+                connection.close()
+
+    @staticmethod
+    def _shutdown(connection: socket.socket, how: int) -> None:
+        # Completed handlers may already have closed their sockets.
+        with contextlib.suppress(OSError):
+            connection.shutdown(how)
+
+    @staticmethod
+    def _join_handlers(handlers: Sequence[tuple[socket.socket, threading.Thread]]) -> None:
+        deadline = time.monotonic() + _HANDLER_SHUTDOWN_TIMEOUT_SECONDS
+        for _, thread in handlers:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 @dataclass(frozen=True)
@@ -99,9 +182,9 @@ class ThreadedHttpTestServer[Request]:
             def log_message(self, message_format: str, *args: object) -> None:
                 return None
 
-        with ThreadingHTTPServer(("127.0.0.1", 0), _Handler) as server:
-            self._server = server
-            try:
+        try:
+            with _OwnedThreadingHTTPServer(("127.0.0.1", 0), _Handler) as server:
+                self._server = server
                 with contextlib.ExitStack() as stack:
                     shutdown_reader, shutdown_writer = socket.socketpair()
                     stack.callback(shutdown_reader.close)
@@ -139,8 +222,8 @@ class ThreadedHttpTestServer[Request]:
                         # or a synthetic HTTP request in the captured stream.
                         shutdown_writer.sendall(b"\0")
                         thread.join_and_raise(timeout=2.0)
-            finally:
-                self._server = None
+        finally:
+            self._server = None
 
     def _record_request_and_reserve_response(self, request: Request) -> _QueuedResponse:
         with self._condition:
@@ -153,6 +236,8 @@ class ThreadedHttpTestServer[Request]:
     def _handle_request(self, handler: BaseHTTPRequestHandler) -> None:
         content_length = int(handler.headers.get("content-length", "0"))
         body = handler.rfile.read(content_length)
+        if len(body) != content_length:
+            return
         response = self._record_request_and_reserve_response(
             self._request_factory(
                 handler.command,
