@@ -16,17 +16,18 @@ final class MessageArtifactResourceTests: XCTestCase {
     let first = fixture.artifact()
     let second = fixture.artifact("image00002.png")
     let cover = try await fixture.viewer.card(second, thumbnail: true)
+    let thumbnail = try XCTUnwrap(cover.thumbnail)
     fixture.viewer.open(first, images: [first, second])
     let original = try XCTUnwrap(fixture.viewer.preview)
     let firstContent = try await original.store.get(original.value).value
 
     fixture.viewer.navigateImage(
-      1, content: firstContent, previewID: original.id, thumbnail: cover.thumbnail)
+      1, content: firstContent, previewID: original.id, thumbnail: thumbnail)
     let selected = try XCTUnwrap(fixture.viewer.preview)
     let secondContent = try await selected.store.get(selected.value).value
     XCTAssertEqual(secondContent.artifact.id, second.id)
     XCTAssertNotNil(secondContent.file)
-    XCTAssertEqual(selected.thumbnail, cover.thumbnail)
+    XCTAssertEqual(selected.thumbnail, thumbnail)
 
     fixture.viewer.navigateImage(-1, content: secondContent, previewID: original.id)
     XCTAssertEqual(fixture.viewer.preview?.artifact.id, second.id)

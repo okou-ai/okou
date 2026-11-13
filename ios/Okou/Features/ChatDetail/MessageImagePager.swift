@@ -25,8 +25,8 @@ struct MessageImagePager: UIViewRepresentable {
 /// current image and its two adjacent covers; commit selection after paging settles.
 final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
   private let current: MessageImageScrollView
-  private let previous: ImageCover?
-  private let next: ImageCover?
+  private let previousCover: ImageCover?
+  private let nextCover: ImageCover?
   private let currentIndex: Int
   private var viewport: CGSize = .zero
   private var navigation: MessageImageNavigation
@@ -36,8 +36,8 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
     self.navigation = navigation
     current = MessageImageScrollView(
       image: image, accessibilityLabel: String(localized: "Image. Pinch to zoom, or double tap."))
-    previous = navigation.canGoPrevious ? ImageCover(picture: navigation.previous) : nil
-    next = navigation.canGoNext ? ImageCover(picture: navigation.next) : nil
+    previousCover = navigation.canGoPrevious ? ImageCover(picture: navigation.previous) : nil
+    nextCover = navigation.canGoNext ? ImageCover(picture: navigation.next) : nil
     currentIndex = navigation.canGoPrevious ? 1 : 0
     super.init(frame: .zero)
     delegate = self
@@ -47,9 +47,9 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
     showsVerticalScrollIndicator = false
     contentInsetAdjustmentBehavior = .never
     panGestureRecognizer.maximumNumberOfTouches = 1
-    if let previous { addSubview(previous) }
+    if let previousCover { addSubview(previousCover) }
     addSubview(current)
-    if let next { addSubview(next) }
+    if let nextCover { addSubview(nextCover) }
     // A fitted image gives its one-finger pan to the pager; pinch stays with the image.
     current.panGestureRecognizer.isEnabled = false
     current.zoomChanged = { [weak self] ownsPan in
@@ -62,8 +62,8 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
 
   func update(_ navigation: MessageImageNavigation) {
     self.navigation = navigation
-    previous?.update(navigation.previous)
-    next?.update(navigation.next)
+    previousCover?.update(navigation.previous)
+    nextCover?.update(navigation.next)
   }
 
   override func layoutSubviews() {
@@ -72,10 +72,10 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
     viewport = bounds.size
     let width = bounds.width
     let height = bounds.height
-    previous?.frame = CGRect(x: 0, y: 0, width: width, height: height)
+    previousCover?.frame = CGRect(x: 0, y: 0, width: width, height: height)
     current.frame = CGRect(x: CGFloat(currentIndex) * width, y: 0, width: width, height: height)
-    next?.frame = CGRect(x: CGFloat(currentIndex + 1) * width, y: 0, width: width, height: height)
-    let count = currentIndex + 1 + (next == nil ? 0 : 1)
+    nextCover?.frame = CGRect(x: CGFloat(currentIndex + 1) * width, y: 0, width: width, height: height)
+    let count = currentIndex + 1 + (nextCover == nil ? 0 : 1)
     contentSize = CGSize(width: CGFloat(count) * width, height: height)
     setContentOffset(CGPoint(x: CGFloat(currentIndex) * width, y: 0), animated: false)
   }
