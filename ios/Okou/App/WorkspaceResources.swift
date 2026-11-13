@@ -30,8 +30,11 @@ final class WorkspaceResources {
     self.modelBootstrap = modelBootstrap
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let lifetime = lifetime
-    let modelReadiness: (@MainActor () async throws -> Void)? = modelBootstrap.map { bootstrap in
-      { try await bootstrap.wait() }
+    let modelReadiness: (@MainActor () async throws -> Void)?
+    if let modelBootstrap {
+      modelReadiness = { try await modelBootstrap.wait() }
+    } else {
+      modelReadiness = nil
     }
     let service = ChatModelService(client: client)
     let preference = WorkspaceRead(
