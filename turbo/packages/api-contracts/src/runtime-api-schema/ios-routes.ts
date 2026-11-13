@@ -540,6 +540,7 @@ const iosContracts: readonly {
   { id: "ios.mailContract.getDraft", route: mailContract.getDraft },
   { id: "ios.mailContract.sendDraft", route: mailContract.sendDraft },
   { id: "ios.mailContract.deleteDraft", route: mailContract.deleteDraft },
+  // Keep the published selection routes registered for installed iOS clients.
   {
     id: "ios.chatShareSelectionContract.get",
     route: chatShareSelectionContract.get,

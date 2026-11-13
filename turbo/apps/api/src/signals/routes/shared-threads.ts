@@ -1,7 +1,4 @@
 import { chatShareSelectionContract } from "@okouai/api-contracts/contracts/chat-share-selection";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { readChatShareSelection$ } from "../services/chat-share-selection.service";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
@@ -154,33 +151,17 @@ const createVisibleSharedThreadInner$ = command(
   },
 );
 
-const shareSelectionContext$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatSharingSelection, features)) {
-      return null;
-    }
-    return { orgId: auth.orgId, userId: auth.userId };
-  },
-);
-
+// Retain the published selection contract for installed clients. Current clients
+// select visible groups locally and use sharedThreadVisibilityContract.
 const getShareSelection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "private, no-store");
-    const auth = await set(shareSelectionContext$, signal);
-    if (!auth) {
-      return notFound("Chat sharing selection not available");
-    }
+    const auth = get(organizationAuthContext$);
     const selection = await set(
       readChatShareSelection$,
       {
-        ...auth,
+        orgId: auth.orgId,
+        userId: auth.userId,
         ...get(pathParamsOf(chatShareSelectionContract.get)),
       },
       signal,
@@ -193,10 +174,7 @@ const getShareSelection$ = command(
 
 const createSelectedShare$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = await set(shareSelectionContext$, signal);
-    if (!auth) {
-      return notFound("Chat sharing selection not available");
-    }
+    const auth = get(organizationAuthContext$);
     const parsed = await get(bodyResultOf(chatShareSelectionContract.create));
     signal.throwIfAborted();
     if (!parsed.ok) {
@@ -205,7 +183,7 @@ const createSelectedShare$ = command(
     const params = get(pathParamsOf(chatShareSelectionContract.create));
     const selection = await set(
       readChatShareSelection$,
-      { ...auth, ...params },
+      { orgId: auth.orgId, userId: auth.userId, ...params },
       signal,
     );
     if (!selection) {

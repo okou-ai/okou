@@ -5,7 +5,7 @@ import Textual
 /// Presentation revisions include every input that can change a row's measured size.
 enum ConversationCollectionRow: Equatable, Identifiable {
   case earlier
-  case share(ChatMessage, selected: Bool, topSpacing: CGFloat)
+  case share(ChatShareGroup, selected: Bool, topSpacing: CGFloat)
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false, showsActions: Bool = false)
@@ -22,7 +22,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var id: String {
     switch self {
-    case .share(let message, _, _): message.id
+    case .share(let group, _, _): group.id
     case .earlier: "conversation-earlier"
     case .message(let message, _, _, _, _, _, _): message.id
     case .work(let section, _, _, _, _): section.id
@@ -36,7 +36,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var message: ChatMessage? {
     if case .message(let message, _, _, _, _, _, _) = self { return message }
     if case .failure(let message, _, _, _) = self { return message }
-    if case .share(let message, _, _) = self { return message }
+    if case .share(let group, _, _) = self { return group.messages.first }
     return nil
   }
 

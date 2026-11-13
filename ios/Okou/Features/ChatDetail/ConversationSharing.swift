@@ -10,10 +10,10 @@ final class ConversationSharing {
   private let threadID: String
   private let webURL: URL
   private let lifecycleTasks: LifecycleTasks
+  private let history: @MainActor () -> ChatHistory
   private let didFail: @MainActor (Error) -> Void
   private(set) var isSelecting = false
-  private(set) var selection: ChatShareSelection?
-  private(set) var selectedIDs: Set<String> = []
+  private var selectedGroups: [String: ChatShareGroup] = [:]
   var audience: ChatShareAudience = .public
   private(set) var error: String?
   private(set) var isBusy = false
@@ -27,54 +27,56 @@ final class ConversationSharing {
 
   init(
     client: APIClient, threadID: String, webURL: URL, lifecycleTasks: LifecycleTasks,
+    history: @escaping @MainActor () -> ChatHistory,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.client = client
     self.threadID = threadID
     self.webURL = webURL
     self.lifecycleTasks = lifecycleTasks
+    self.history = history
     self.didFail = didFail
   }
 
-  var shareableIDs: Set<String> { Set(selection?.messages.map(\.eventId) ?? []) }
-  var link: URL? { visibility.map { webURL.appending(path: "share/threads/\($0.id)") } }
-
-  @discardableResult
-  func start(answerID: String? = nil) -> Task<Void, Never>? {
-    guard !closed else { return nil }
-    cancel()
-    isSelecting = true
-    return run {
-      let selection = try await self.client.chatShareSelection(threadID: self.threadID)
-      try Task.checkCancellation()
-      self.selection = selection
-      if let answerID {
-        guard let answer = selection.messages.first(where: { $0.eventId == answerID }) else {
-          throw ChatError.invalidContract("This answer is no longer available for sharing.")
-        }
-        self.selectedIDs = Set(answer.turnEventIds)
-      }
+  var groups: [ChatShareGroup] { ChatShareGroup.groups(in: history()) }
+  private var currentSelection: [ChatShareGroup] {
+    let validIDs = Set(groups.flatMap(\.eventIDs))
+    return selectedGroups.values.compactMap { group in
+      let messages = group.messages.filter { validIDs.contains($0.id) }
+      return messages.isEmpty ? nil : ChatShareGroup(id: group.id, messages: messages)
     }
   }
+  var selectedIDs: Set<String> { Set(currentSelection.flatMap(\.eventIDs)) }
+  var selectedCount: Int { currentSelection.count }
+  var link: URL? { visibility.map { webURL.appending(path: "share/threads/\($0.id)") } }
 
-  func toggle(_ message: ChatMessage, messages: [ChatMessage]) {
-    guard !isBusy, shareableIDs.contains(message.id) else { return }
-    var next = selectedIDs
-    if !next.insert(message.id).inserted { next.remove(message.id) }
-    let bytes = messages.filter { next.contains($0.id) }.reduce(0) { $0 + $1.text.utf8.count }
-    guard bytes <= 1_572_864 else {
+  func start() {
+    guard !closed else { return }
+    cancel()
+    isSelecting = true
+  }
+
+  func toggle(_ group: ChatShareGroup) {
+    guard !isBusy, visibility == nil else { return }
+    let storedIDs = Set(selectedGroups[group.id]?.eventIDs ?? [])
+    var next = Dictionary(uniqueKeysWithValues: currentSelection.map { ($0.id, $0) })
+    if Set(group.eventIDs).isSubset(of: storedIDs) {
+      next.removeValue(forKey: group.id)
+    } else {
+      next[group.id] = group
+    }
+    guard next.values.reduce(0, { $0 + $1.textBytes }) <= 1_572_864 else {
       error = String(localized: "The selected messages are too large to share.")
       return
     }
-    selectedIDs = next
+    selectedGroups = next
     attemptID = nil
-    visibility = nil
     error = nil
   }
 
   func clear() {
-    guard !isBusy else { return }
-    selectedIDs = []
+    guard !isBusy, visibility == nil else { return }
+    selectedGroups = [:]
     attemptID = nil
     visibility = nil
     error = nil
@@ -82,8 +84,9 @@ final class ConversationSharing {
 
   @discardableResult
   func create() -> Task<Void, Never>? {
-    guard !isBusy, !selectedIDs.isEmpty else { return nil }
+    guard !isBusy, visibility == nil, !selectedIDs.isEmpty else { return nil }
     let ids = selectedIDs
+    let ordered = groups.flatMap(\.eventIDs).filter { ids.contains($0) }
     let audience = audience
     let id = attemptID ?? UUID().uuidString.lowercased()
     attemptID = id
@@ -103,18 +106,7 @@ final class ConversationSharing {
         self.showsCreatedLink = true
         return
       }
-      let current = try await self.client.chatShareSelection(threadID: self.threadID)
-      try Task.checkCancellation()
-      self.selection = current
-      let valid = Set(current.messages.map(\.eventId))
-      guard ids.isSubset(of: valid) else {
-        self.selectedIDs.formIntersection(valid)
-        self.attemptID = nil
-        throw ChatError.invalidContract(
-          "Selected messages changed. Review your selection and try again.")
-      }
-      let ordered = current.messages.map(\.eventId).filter { ids.contains($0) }
-      let created = try await self.client.createSelectedChatShare(
+      let created = try await self.client.shareThread(
         threadID: self.threadID, eventIDs: ordered, audience: audience, id: id)
       let visibility = try await self.client.chatShareVisibility(id: created)
       try Task.checkCancellation()
@@ -136,13 +128,12 @@ final class ConversationSharing {
   }
 
   func singleAnswerLink(_ answerID: String, audience: ChatShareAudience) async throws -> URL {
-    let selection = try await client.chatShareSelection(threadID: threadID)
-    try Task.checkCancellation()
-    guard let message = selection.messages.first(where: { $0.eventId == answerID }) else {
+    let eventIDs = ChatShareGroup.answerEventIDs(answerID, in: history())
+    guard !eventIDs.isEmpty else {
       throw ChatError.invalidContract("This answer is no longer available for sharing.")
     }
     guard !closed else { throw CancellationError() }
-    let key = ([audience.rawValue] + message.turnEventIds).joined(separator: ":")
+    let key = ([audience.rawValue] + eventIDs).joined(separator: ":")
     let previous = singleAttempt
     let id: String
     if let previous, previous.key == key {
@@ -159,8 +150,8 @@ final class ConversationSharing {
         try Task.checkCancellation()
       }
     } else {
-      _ = try await client.createSelectedChatShare(
-        threadID: threadID, eventIDs: message.turnEventIds, audience: audience, id: id)
+      _ = try await client.shareThread(
+        threadID: threadID, eventIDs: eventIDs, audience: audience, id: id)
       try Task.checkCancellation()
     }
     guard !closed else { throw CancellationError() }
@@ -174,8 +165,7 @@ final class ConversationSharing {
     task = nil
     isBusy = false
     isSelecting = false
-    selection = nil
-    selectedIDs = []
+    selectedGroups = [:]
     attemptID = nil
     singleAttempt = nil
     visibility = nil
