@@ -40,29 +40,23 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   }
 }
 
-/// A value the open composer can change (the chat's model), beside the mic and send as Claude
-/// and ChatGPT place theirs: the value in subheadline medium `foreground`, its detail in
-/// subheadline `muted-foreground` ("GPT 6.1 Sol High"), a step under the 17 pt draft so it
-/// never reads as part of it, and a chevron that says it opens a choice, on the 44 pt action
-/// height. The value keeps its width and the detail gives way first.
+/// A quiet model note above the composer: supporting text, an optional Fast mark and a
+/// disclosure chevron. Its 44 pt target stays separate from the glass input surface.
 struct OkouComposerValueLabel: View {
   let title: String
-  var detail: String?
+  var isFast = false
 
   var body: some View {
     HStack(spacing: OkouSpace.xs) {
       Text(verbatim: title)
-        .font(.okou(.subheadline).weight(.medium))
-        .foregroundStyle(OkouColor.foreground)
+        .font(.okou(.footnote))
         .layoutPriority(1)
-      if let detail {
-        Text(verbatim: detail)
-          .font(.okou(.subheadline))
-          .foregroundStyle(OkouColor.mutedForeground)
+      if isFast {
+        OkouIcon("zap", size: OkouIconSize.badge)
       }
       OkouIcon("chevron-down", size: OkouIconSize.badge)
-        .foregroundStyle(OkouColor.mutedForeground)
     }
+    .foregroundStyle(OkouColor.mutedForeground)
     .lineLimit(1)
     .padding(.horizontal, OkouSpace.sm)
     .frame(minHeight: OkouControl.minimumTarget)
