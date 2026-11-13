@@ -17,7 +17,7 @@ async-trait.workspace = true
 bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
-nix = { workspace = true, features = ["fs", "inotify"] }
+nix = { workspace = true, features = ["fs", "inotify", "socket"] }
 reqwest = { workspace = true, features = ["gzip", "json", "rustls"] }
 hyper.workspace = true
 hyper-util = { workspace = true, features = ["client-legacy", "tokio"] }
