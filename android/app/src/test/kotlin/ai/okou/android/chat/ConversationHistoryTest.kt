@@ -307,6 +307,60 @@ class ConversationHistoryTest {
     }
 
     @Test
+    fun reopeningUnchangedHistoryConfirmsReadStateClearedElsewhere() = runTest {
+        var serverReadAt: String? = null
+        val service =
+            object : Service() {
+                override suspend fun threadDetail(threadId: String) =
+                    ThreadDetail(serverReadAt, false)
+
+                override suspend fun markRead(threadId: String): ReadState {
+                    serverReadAt = CHAT_DATE
+                    return super.markRead(threadId)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            model.setVisible(CHAT_PERSONAL, true)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            service.marked.await()
+            runCurrent()
+            assertEquals(CHAT_DATE, serverReadAt)
+            val previousTranscript = model.uiState.value.transcript
+
+            model.setVisible(CHAT_PERSONAL, false)
+            // The canonical mark-unread endpoint clears this without changing history rows.
+            serverReadAt = null
+            model.setVisible(CHAT_PERSONAL, true)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(previousTranscript, model.uiState.value.transcript)
+            assertNull(serverReadAt)
+            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            runCurrent()
+            assertEquals(CHAT_DATE, serverReadAt)
+            assertEquals(2, service.markCount)
+            model.confirmDisplayed(CHAT_PERSONAL, model.uiState.value.confirmation)
+            runCurrent()
+            assertEquals(2, service.markCount)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
     fun aNewlyDisplayedCheckpointIsMarkedAfterAnOlderReadRequestCompletes() = runTest {
         val firstRead = CompletableDeferred<Unit>()
         val releaseRead = CompletableDeferred<Unit>()

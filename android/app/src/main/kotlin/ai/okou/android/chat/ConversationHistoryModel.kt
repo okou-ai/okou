@@ -90,6 +90,9 @@ class ConversationHistoryModel(
         visible = value
         if (!value) {
             displayedConfirmation = null
+            // Another client can mark unread without changing history's cursor.
+            // Suppress duplicate reads only within this visible visit.
+            lastMarked = null
             readJob?.cancel()
         }
         if (becameVisible) refresh()
