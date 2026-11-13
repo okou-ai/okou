@@ -816,8 +816,8 @@ feature; the catalog shows each one.
   a swipe is never the only way back. Content that scrolls
   sideways (a code block or a table) participates in UIKit's native gesture arbitration.
   UIKit owns the interactive pop and its recognition policy.
-  A page swipe never also taps the row under it. Chat rows keep their actions on the
-  right swipe — Mark as read/unread, Archive.
+  A page swipe never also taps the row under it. Dragging a chat row from left to right
+  reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
 
 ### Sign-in and account
 

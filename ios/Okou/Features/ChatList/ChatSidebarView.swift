@@ -525,11 +525,12 @@ struct ChatSidebarView: View {
       ChatThreadPreview(thread: thread, workspace: store)
     }
     .menuOrder(.fixed)
-    // Chat rows expose read state and archive actions with a right swipe.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
       }
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
       Button {
         Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
       } label: {
