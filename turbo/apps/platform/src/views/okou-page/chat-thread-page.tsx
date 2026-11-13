@@ -5991,21 +5991,9 @@ function shareableEventFromChatEvent(
     : null;
 }
 
-function SelectablePagedGroupRow({
-  group,
-  thread,
-  modelChanges,
-  stackFirstOnPrevious,
-  dateDividers,
-  runWorkSection,
-  statusRow,
-  statusTailEvents,
-}: Parameters<typeof PagedGroupRow>[0]) {
-  const { t } = useTranslation();
+function SelectablePagedGroupRow(props: Parameters<typeof PagedGroupRow>[0]) {
+  const { group, thread, dateDividers, modelChanges } = props;
   const phase = useGet(thread.sharing.phase$);
-  const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
-  const toggle = useSet(thread.sharing.toggle$);
-  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
   const unified = useGet(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection];
   const selectionData = useGet(thread.sharing.selection$);
   const sharing = phase !== "idle";
@@ -6039,7 +6027,30 @@ function SelectablePagedGroupRow({
       : sharing
         ? chatGroupForSharing(group)
         : group;
-  if (sharing && unified && displayGroup.events.length === 0) return null;
+  if (sharing && unified && displayGroup.events.length === 0) {
+    return null;
+  }
+  return <ChatShareSelectionRow {...props} displayGroup={displayGroup} />;
+}
+
+function ChatShareSelectionRow({
+  group,
+  thread,
+  modelChanges,
+  stackFirstOnPrevious,
+  dateDividers,
+  runWorkSection,
+  statusRow,
+  statusTailEvents,
+  displayGroup,
+}: Parameters<typeof PagedGroupRow>[0] & { displayGroup: ChatEventGroup }) {
+  const { t } = useTranslation();
+  const phase = useGet(thread.sharing.phase$);
+  const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
+  const toggle = useSet(thread.sharing.toggle$);
+  const nameLine = useGet(featureSwitch$)[FeatureSwitchKey.ChatReplyNameLine];
+  const unified = useGet(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection];
+  const sharing = phase !== "idle";
   const content = (
     <PagedGroupRow
       group={displayGroup}
@@ -6169,12 +6180,13 @@ function shareGroupSelectionLabel(
   allSelected: boolean,
   singleMessage = false,
 ): string {
-  if (singleMessage)
+  if (singleMessage) {
     return t(($) => {
       return allSelected
         ? $.chat.sharing.deselectMessage
         : $.chat.sharing.selectMessage;
     });
+  }
   return t(($) => {
     return allSelected
       ? $.chat.sharing.deselectGroup

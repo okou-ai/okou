@@ -1320,8 +1320,8 @@ test("Unified sharing selects consecutive prompts independently and shares only 
   await screen.findAllByText("2 selected");
   click(requiredButtonNamed("Create link"));
   await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(requests).toEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
-  expect(clipboard.writes).toEqual([
+  expect(requests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
+  expect(clipboard.writes).toStrictEqual([
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   ]);
 });
@@ -1384,10 +1384,10 @@ test("Unified quick sharing confirms creation before copying and keeps the link 
   const menu = await screen.findByRole("menu", { name: "Share message" });
   click(messageShareItem(menu, "Everyone"));
   await received.promise;
-  expect(clipboard.writes).toEqual([]);
+  expect(clipboard.writes).toStrictEqual([]);
   expect(buttonsNamed("Copied")).toHaveLength(0);
   response.resolve();
   const link = await screen.findByRole("textbox", { name: "Shared chat link" });
   expect(link).toHaveValue(`https://app.okou.ai/share/threads/${sharedId}`);
-  expect(requests).toEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
+  expect(requests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
 });

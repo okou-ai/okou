@@ -163,8 +163,9 @@ const shareSelectionContext$ = command(
       auth.userId,
       signal,
     );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatSharingSelection, features))
+    if (!isFeatureEnabled(FeatureSwitchKey.ChatSharingSelection, features)) {
       return null;
+    }
     return { orgId: auth.orgId, userId: auth.userId };
   },
 );
@@ -173,7 +174,9 @@ const getShareSelection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = await set(shareSelectionContext$, signal);
-    if (!auth) return notFound("Chat sharing selection not available");
+    if (!auth) {
+      return notFound("Chat sharing selection not available");
+    }
     const selection = await set(
       readChatShareSelection$,
       {
@@ -191,17 +194,23 @@ const getShareSelection$ = command(
 const createSelectedShare$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = await set(shareSelectionContext$, signal);
-    if (!auth) return notFound("Chat sharing selection not available");
+    if (!auth) {
+      return notFound("Chat sharing selection not available");
+    }
     const parsed = await get(bodyResultOf(chatShareSelectionContract.create));
     signal.throwIfAborted();
-    if (!parsed.ok) return parsed.response;
+    if (!parsed.ok) {
+      return parsed.response;
+    }
     const params = get(pathParamsOf(chatShareSelectionContract.create));
     const selection = await set(
       readChatShareSelection$,
       { ...auth, ...params },
       signal,
     );
-    if (!selection) return notFound("Chat thread not found");
+    if (!selection) {
+      return notFound("Chat thread not found");
+    }
     const valid = new Set(
       selection.messages.map((message) => {
         return message.eventId;

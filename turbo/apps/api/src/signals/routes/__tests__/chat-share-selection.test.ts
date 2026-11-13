@@ -1,6 +1,6 @@
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { randomUUID } from "node:crypto";
-import { expect, it } from "vitest";
+import { expect } from "vitest";
 import { chatShareSelectionContract } from "@okouai/api-contracts/contracts/chat-share-selection";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -17,7 +17,7 @@ const app = () => {
   return setupApp({ context, routes: sharedThreadRoutes });
 };
 
-it("resolves the final answer with its prompt and shares exactly the selected records", async () => {
+test("resolves the final answer with its prompt and shares exactly the selected records", async () => {
   const { actor, agentId, runnerGroup } =
     await fixture.entitledNativeChatActor();
   await fixture.authDeviceSupport.updateFeatureSwitches(actor, {
@@ -47,9 +47,9 @@ it("resolves the final answer with its prompt and shares exactly the selected re
     selected.body.messages.map((message) => {
       return message.role;
     }),
-  ).toEqual(["user", "assistant"]);
+  ).toStrictEqual(["user", "assistant"]);
   const answer = selected.body.messages[1]!;
-  expect(answer.turnEventIds).toEqual(
+  expect(answer.turnEventIds).toStrictEqual(
     selected.body.messages.map((message) => {
       return message.eventId;
     }),
@@ -77,7 +77,7 @@ it("resolves the final answer with its prompt and shares exactly the selected re
         content: message.content,
       };
     }),
-  ).toEqual([{ role: "assistant", content: "The final itinerary" }]);
+  ).toStrictEqual([{ role: "assistant", content: "The final itinerary" }]);
   await accept(
     app()(chatShareSelectionContract).create({
       params: { threadId: run.threadId },
@@ -92,28 +92,30 @@ it("resolves the final answer with its prompt and shares exactly the selected re
   );
 });
 
-it("keeps selection private to the owner and behind the rollout switch", async () => {
+test("keeps selection private to the owner and behind the rollout switch", async () => {
   const { actor, agentId } = await fixture.entitledNativeChatActor();
   const run = await fixture.sendChatRun(actor, {
     agentId,
     prompt: "Private travel plans",
   });
-  await accept(
+  const disabled = await accept(
     app()(chatShareSelectionContract).get({
       params: { threadId: run.threadId },
       headers: fixture.sessionHeaders(actor),
     }),
     [404],
   );
+  expect(disabled.body.error.code).toBe("NOT_FOUND");
   const other = fixture.bdd.user();
   await fixture.authDeviceSupport.updateFeatureSwitches(other, {
     chatSharingSelection: true,
   });
-  await accept(
+  const denied = await accept(
     app()(chatShareSelectionContract).get({
       params: { threadId: run.threadId },
       headers: fixture.sessionHeaders(other),
     }),
     [404],
   );
+  expect(denied.body.error.code).toBe("NOT_FOUND");
 });

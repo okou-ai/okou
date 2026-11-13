@@ -63,9 +63,8 @@ export interface ChatThreadSharingSignals {
   readonly create$: Command<Promise<void>, [AbortSignal]>;
   /**
    * Share persisted assistant events with the user prompt that precedes them.
-   * The link is copied before the first await so the clipboard write stays
-   * inside the click gesture; the share is created afterwards. Reports copy
-   * and creation failures at the action.
+   * The unified flow confirms creation before copying and retains the link
+   * when clipboard access is denied. The gated legacy flow stays compatible.
    */
   readonly shareMessage$: Command<
     Promise<void>,
@@ -73,10 +72,8 @@ export interface ChatThreadSharingSignals {
   >;
 }
 
-// A visual message group is the only thing the reader can tick, so it is also
-// the unit the selection stores and counts. A single assistant run group can
-// hold a dozen output messages; counting those instead made one click jump the
-// counter from "3 selected" to "13 selected".
+// Legacy selection counts visual groups. Unified selection creates one entry
+// per canonical message, so both flows count the units the reader can tick.
 interface SelectedGroup {
   readonly events: readonly ShareableChatEvent[];
   readonly bytes: number;
@@ -206,17 +203,146 @@ function selectedGroupsFromEvents(
   return selected;
 }
 
+function createSelectionStates() {
+  return {
+    internalPhase$: state<SharedThreadSelectionPhase>("idle"),
+    selection$: state<ChatShareSelection | null>(null),
+    attempt$: state<string | null>(null),
+    internalSelectedGroups$: state<ReadonlyMap<string, SelectedGroup>>(
+      new Map(),
+    ),
+    internalCreatedSharedThreadId$: state<string | null>(null),
+  };
+}
+
+type SelectionStates = ReturnType<typeof createSelectionStates>;
+
+function createUnifiedMessageShareCommand(
+  threadId: string,
+  allChatGroups$: Computed<ChatEventGroup[]>,
+  states: SelectionStates,
+  confirmation: {
+    copiedMessageEventId$: State<string | null>;
+    resetCopied$: ReturnType<typeof resetSignal>;
+  },
+): ChatThreadSharingSignals["shareMessage$"] {
+  const {
+    selection$: selectionState$,
+    internalSelectedGroups$: selectedState$,
+    internalCreatedSharedThreadId$: createdState$,
+    internalPhase$: phaseState$,
+  } = states;
+  const { copiedMessageEventId$, resetCopied$ } = confirmation;
+  const messageAttempt$ = state<{ key: string; id: string } | null>(null);
+  return command(
+    async (
+      { get, set },
+      assistantEventIds: readonly string[],
+      audience: SharedThreadAudience,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const selection = await accept(
+        get(apiClient$)(chatShareSelectionContract).get({
+          params: { threadId },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+      const answer = [...selection.body.messages].reverse().find((message) => {
+        return (
+          message.role === "assistant" &&
+          assistantEventIds.includes(message.eventId)
+        );
+      });
+      if (!answer) {
+        throw new Error("This answer is no longer available for sharing.");
+      }
+      const key = JSON.stringify([audience, answer.turnEventIds]);
+      const previous = get(messageAttempt$);
+      const id = previous?.key === key ? previous.id : crypto.randomUUID();
+      set(messageAttempt$, { key, id });
+      let recovered = false;
+      if (previous?.key === key) {
+        const existing = await accept(
+          get(apiClient$)(sharedThreadVisibilityContract).get({
+            params: { id },
+            fetchOptions: { signal },
+          }),
+          [200, 404],
+          signal,
+        );
+        if (existing.status === 200) {
+          if (existing.body.audience !== audience) {
+            await accept(
+              get(apiClient$)(sharedThreadVisibilityContract).update({
+                params: { id },
+                body: { audience, expectedRevision: existing.body.revision },
+                fetchOptions: { signal },
+              }),
+              [200],
+              signal,
+            );
+          }
+          recovered = true;
+        }
+      }
+      if (!recovered) {
+        await accept(
+          get(apiClient$)(chatShareSelectionContract).create({
+            params: { threadId },
+            body: { id, audience, eventIds: answer.turnEventIds },
+            fetchOptions: { signal },
+          }),
+          [201],
+          signal,
+        );
+      }
+      const copied = await writeToClipboard(sharedThreadUrl(id));
+      signal.throwIfAborted();
+      if (copied) {
+        set(messageAttempt$, null);
+        set(copiedMessageEventId$, answer.eventId);
+        timeout(
+          () => {
+            return set(copiedMessageEventId$, null);
+          },
+          2000,
+          {
+            signal: set(resetCopied$, signal),
+          },
+        );
+      } else {
+        set(selectionState$, selection.body);
+        set(
+          selectedState$,
+          selectedGroupsFromEvents(get(allChatGroups$), answer.turnEventIds),
+        );
+        set(createdState$, id);
+        set(phaseState$, "created");
+        toast.error(
+          i18n.t(($) => {
+            return $.chat.sharing.copyFailed;
+          }),
+        );
+      }
+    },
+  );
+}
+
 function createMessageSharingSignals(
   threadId: string,
   allChatGroups$: Computed<ChatEventGroup[]>,
-  selectionState$: State<ChatShareSelection | null>,
-  selectedState$: State<ReadonlyMap<string, SelectedGroup>>,
-  createdState$: State<string | null>,
-  phaseState$: State<SharedThreadSelectionPhase>,
+  states: SelectionStates,
 ): Pick<ChatThreadSharingSignals, "shareMessage$" | "copiedMessageEventId$"> {
   const copiedMessageEventId$ = state<string | null>(null);
-  const messageAttempt$ = state<{ key: string; id: string } | null>(null);
   const resetCopied$ = resetSignal();
+  const unifiedShare$ = createUnifiedMessageShareCommand(
+    threadId,
+    allChatGroups$,
+    states,
+    { copiedMessageEventId$, resetCopied$ },
+  );
   const shareMessage$ = command(
     async (
       { get, set },
@@ -225,93 +351,7 @@ function createMessageSharingSignals(
       signal: AbortSignal,
     ): Promise<void> => {
       if (get(featureSwitch$)[FeatureSwitchKey.ChatSharingSelection]) {
-        const selection = await accept(
-          get(apiClient$)(chatShareSelectionContract).get({
-            params: { threadId },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        );
-        const answer = [...selection.body.messages]
-          .reverse()
-          .find((message) => {
-            return (
-              message.role === "assistant" &&
-              assistantEventIds.includes(message.eventId)
-            );
-          });
-        if (!answer)
-          throw new Error("This answer is no longer available for sharing.");
-        const key = JSON.stringify([audience, answer.turnEventIds]);
-        const previous = get(messageAttempt$);
-        const id = previous?.key === key ? previous.id : crypto.randomUUID();
-        set(messageAttempt$, { key, id });
-        let recovered = false;
-        if (previous?.key === key) {
-          const existing = await accept(
-            get(apiClient$)(sharedThreadVisibilityContract).get({
-              params: { id },
-              fetchOptions: { signal },
-            }),
-            [200, 404],
-            signal,
-          );
-          if (existing.status === 200) {
-            if (existing.body.audience !== audience) {
-              await accept(
-                get(apiClient$)(sharedThreadVisibilityContract).update({
-                  params: { id },
-                  body: { audience, expectedRevision: existing.body.revision },
-                  fetchOptions: { signal },
-                }),
-                [200],
-                signal,
-              );
-            }
-            recovered = true;
-          }
-        }
-        if (!recovered) {
-          await accept(
-            get(apiClient$)(chatShareSelectionContract).create({
-              params: { threadId },
-              body: { id, audience, eventIds: answer.turnEventIds },
-              fetchOptions: { signal },
-            }),
-            [201],
-            signal,
-          );
-        }
-        const copied = await writeToClipboard(sharedThreadUrl(id));
-        signal.throwIfAborted();
-        if (copied) {
-          set(messageAttempt$, null);
-          set(copiedMessageEventId$, answer.eventId);
-          timeout(
-            () => {
-              return set(copiedMessageEventId$, null);
-            },
-            2000,
-            {
-              signal: set(resetCopied$, signal),
-            },
-          );
-        } else {
-          set(selectionState$, selection.body);
-          set(
-            selectedState$,
-            selectedGroupsFromEvents(get(allChatGroups$), answer.turnEventIds),
-          );
-          set(createdState$, id);
-          set(phaseState$, "created");
-          toast.error(
-            i18n.t(($) => {
-              return $.chat.sharing.copyFailed;
-            }),
-          );
-        }
-        return;
+        return set(unifiedShare$, assistantEventIds, audience, signal);
       }
       const firstEventId = assistantEventIds[0];
       if (firstEventId === undefined) {
@@ -419,12 +459,15 @@ function createShareCommand(
   threadId: string,
   selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
   audience$: Computed<SharedThreadAudience>,
-  internalCreatedSharedThreadId$: State<string | null>,
-  internalPhase$: State<SharedThreadSelectionPhase>,
-  selection$: State<ChatShareSelection | null>,
-  selectedState$: State<ReadonlyMap<string, SelectedGroup>>,
-  attempt$: State<string | null>,
+  states: SelectionStates,
 ): ChatThreadSharingSignals["create$"] {
+  const {
+    internalCreatedSharedThreadId$,
+    internalPhase$,
+    selection$,
+    internalSelectedGroups$: selectedState$,
+    attempt$,
+  } = states;
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const previousAttempt = get(attempt$);
     if (
@@ -543,6 +586,79 @@ function createSharedThreadAudienceSignals() {
   };
 }
 
+function createToggleShareCommand(
+  selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
+  states: SelectionStates,
+): ChatThreadSharingSignals["toggle$"] {
+  const { attempt$, internalSelectedGroups$ } = states;
+  return command(
+    (
+      { get, set },
+      groupKey: string,
+      events: readonly ShareableChatEvent[],
+    ): ToggleSharedThreadSelectionResult => {
+      set(attempt$, null);
+      const selected = get(selectedGroups$);
+      const stored = selected.get(groupKey);
+      // A group that grew while it was selected reads as partially selected,
+      // so ticking it again covers the new messages instead of clearing it.
+      const storedEventIds = new Set(
+        stored?.events.map((event) => {
+          return event.id;
+        }),
+      );
+      const allSelected = events.every((event) => {
+        return storedEventIds.has(event.id);
+      });
+      if (stored !== undefined && allSelected) {
+        const next = new Map(selected);
+        next.delete(groupKey);
+        set(internalSelectedGroups$, next);
+        return "deselected";
+      }
+
+      const next = new Map(selected).set(groupKey, {
+        events,
+        bytes: groupBytes(events),
+      });
+      const selectedBytes = [...next.values()].reduce((total, group) => {
+        return total + group.bytes;
+      }, 0);
+      if (selectedBytes > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES) {
+        return "too-large";
+      }
+      set(internalSelectedGroups$, next);
+      return "selected";
+    },
+  );
+}
+
+function createStartFromMessageCommand(
+  start$: ChatThreadSharingSignals["start$"],
+  states: SelectionStates,
+  allChatGroups$: Computed<ChatEventGroup[]>,
+): ChatThreadSharingSignals["startFromMessage$"] {
+  const { selection$, internalSelectedGroups$ } = states;
+  return command(
+    async ({ get, set }, ids: readonly string[], signal: AbortSignal) => {
+      await set(start$, signal);
+      const answer = get(selection$)
+        ?.messages.slice()
+        .reverse()
+        .find((message) => {
+          return message.role === "assistant" && ids.includes(message.eventId);
+        });
+      if (!answer) {
+        throw new Error("This answer is no longer available for sharing.");
+      }
+      set(
+        internalSelectedGroups$,
+        selectedGroupsFromEvents(get(allChatGroups$), answer.turnEventIds),
+      );
+    },
+  );
+}
+
 export function createChatThreadSharingSignals(
   threadId: string,
   scroll: Pick<
@@ -552,14 +668,15 @@ export function createChatThreadSharingSignals(
   allChatGroups$: Computed<ChatEventGroup[]>,
   closeFeedbackSelection$: Command<void, []>,
 ): ChatThreadSharingSignals {
-  const internalPhase$ = state<SharedThreadSelectionPhase>("idle");
-  const selection$ = state<ChatShareSelection | null>(null);
-  const attempt$ = state<string | null>(null);
+  const states = createSelectionStates();
+  const {
+    internalPhase$,
+    selection$,
+    attempt$,
+    internalSelectedGroups$,
+    internalCreatedSharedThreadId$,
+  } = states;
   const { audience$, changeAudience$ } = createSharedThreadAudienceSignals();
-  const internalSelectedGroups$ = state<ReadonlyMap<string, SelectedGroup>>(
-    new Map(),
-  );
-  const internalCreatedSharedThreadId$ = state<string | null>(null);
   const sharingEventIds$ = computed((get) => {
     // Use the complete transcript: scrolling a selected row out of the render
     // window must not remove it from the share.
@@ -620,83 +737,25 @@ export function createChatThreadSharingSignals(
     return set(scroll.autoScroll$, position, signal);
   });
 
-  const toggle$ = command(
-    (
-      { get, set },
-      groupKey: string,
-      events: readonly ShareableChatEvent[],
-    ): ToggleSharedThreadSelectionResult => {
-      set(attempt$, null);
-      const selected = get(selectedGroups$);
-      const stored = selected.get(groupKey);
-      // A group that grew while it was selected reads as partially selected,
-      // so ticking it again covers the new messages instead of clearing it.
-      const storedEventIds = new Set(
-        stored?.events.map((event) => {
-          return event.id;
-        }),
-      );
-      const allSelected = events.every((event) => {
-        return storedEventIds.has(event.id);
-      });
-      if (stored !== undefined && allSelected) {
-        const next = new Map(selected);
-        next.delete(groupKey);
-        set(internalSelectedGroups$, next);
-        return "deselected";
-      }
-
-      const next = new Map(selected).set(groupKey, {
-        events,
-        bytes: groupBytes(events),
-      });
-      const selectedBytes = [...next.values()].reduce((total, group) => {
-        return total + group.bytes;
-      }, 0);
-      if (selectedBytes > SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES) {
-        return "too-large";
-      }
-      set(internalSelectedGroups$, next);
-      return "selected";
-    },
-  );
+  const toggle$ = createToggleShareCommand(selectedGroups$, states);
 
   const create$ = createShareCommand(
     threadId,
     selectedGroups$,
     audience$,
-    internalCreatedSharedThreadId$,
-    internalPhase$,
-    selection$,
-    internalSelectedGroups$,
-    attempt$,
+    states,
   );
 
   const { shareMessage$, copiedMessageEventId$ } = createMessageSharingSignals(
     threadId,
     allChatGroups$,
-    selection$,
-    internalSelectedGroups$,
-    internalCreatedSharedThreadId$,
-    internalPhase$,
+    states,
   );
 
-  const startFromMessage$ = command(
-    async ({ get, set }, ids: readonly string[], signal: AbortSignal) => {
-      await set(start$, signal);
-      const answer = get(selection$)
-        ?.messages.slice()
-        .reverse()
-        .find((message) => {
-          return message.role === "assistant" && ids.includes(message.eventId);
-        });
-      if (!answer)
-        throw new Error("This answer is no longer available for sharing.");
-      set(
-        internalSelectedGroups$,
-        selectedGroupsFromEvents(get(allChatGroups$), answer.turnEventIds),
-      );
-    },
+  const startFromMessage$ = createStartFromMessageCommand(
+    start$,
+    states,
+    allChatGroups$,
   );
 
   return {

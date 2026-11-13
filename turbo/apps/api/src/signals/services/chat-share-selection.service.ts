@@ -9,6 +9,95 @@ import { projectUserMessageForPublicShare } from "./chat-user-message.service";
 import { readSharedThreadChatEventHistory$ } from "./chat-event-history.service";
 import { ownsSharedThreadSource$ } from "./shared-thread.service";
 
+interface ShareTurn {
+  prompts: string[];
+  answer?: ChatEventRow;
+  complete: boolean;
+}
+
+interface SelectionProjection {
+  messages: ChatShareSelection["messages"];
+  turns: ShareTurn[];
+  byRun: Map<string, ShareTurn>;
+  current?: ShareTurn;
+}
+
+function appendPrompt(
+  projection: SelectionProjection,
+  row: ChatEventRow,
+): void {
+  if (row.runId === null) {
+    return;
+  }
+  const document = canonicalArchivedChatEventUserMessage(row);
+  if (
+    !document ||
+    (!projectUserMessageForPublicShare(document).trim() &&
+      !document.parts.some((part) => {
+        return part.type === "file";
+      }))
+  ) {
+    return;
+  }
+  if (
+    !projection.current ||
+    projection.current.answer ||
+    projection.current.complete
+  ) {
+    if (projection.current?.answer) {
+      projection.current.complete = true;
+    }
+    projection.current = { prompts: [], complete: false };
+    projection.turns.push(projection.current);
+  }
+  projection.current.prompts.push(row.id);
+  projection.byRun.set(row.runId, projection.current);
+  projection.messages.push({
+    eventId: row.id,
+    role: "user",
+    turnEventIds: [row.id],
+  });
+}
+
+function appendAnswer(
+  projection: SelectionProjection,
+  row: ChatEventRow,
+): void {
+  if (!canonicalArchivedChatEventContent(row)?.trim()) {
+    return;
+  }
+  let turn =
+    row.runId === null
+      ? projection.current?.answer?.runId === null ||
+        !projection.current?.answer
+        ? projection.current
+        : undefined
+      : projection.byRun.get(row.runId);
+  if (!turn) {
+    turn = { prompts: [], complete: row.runId === null };
+    projection.turns.push(turn);
+    if (row.runId !== null) {
+      projection.byRun.set(row.runId, turn);
+    }
+  }
+  turn.answer = row;
+  if (row.runId === null) {
+    turn.complete = true;
+  }
+  projection.current = turn;
+}
+
+function finishTurn(projection: SelectionProjection, row: ChatEventRow): void {
+  const turn = row.runId === null ? undefined : projection.byRun.get(row.runId);
+  if (!turn) {
+    return;
+  }
+  if (row.eventType !== "run.completed") {
+    turn.answer = undefined;
+  }
+  turn.complete = true;
+}
+
 /** Selection identity follows confirmed events, never a client's render groups. */
 function projectSelection(
   history: readonly ChatEventRow[],
@@ -18,73 +107,37 @@ function projectSelection(
       return row.revokesEventId ? [row.revokesEventId] : [];
     }),
   );
-  const messages: ChatShareSelection["messages"] = [];
-  interface Turn {
-    prompts: string[];
-    answer?: ChatEventRow;
-    complete: boolean;
-  }
-  const turns: Turn[] = [];
-  const byRun = new Map<string, Turn>();
-  let current: Turn | undefined;
+  const projection: SelectionProjection = {
+    messages: [],
+    turns: [],
+    byRun: new Map(),
+  };
   for (const row of history) {
-    if (revoked.has(row.id)) continue;
-    if (
-      row.eventType === "input.prompt" ||
-      row.eventType === "input.automation"
-    ) {
-      if (row.runId === null) continue;
-      const document = canonicalArchivedChatEventUserMessage(row);
-      if (
-        !document ||
-        (!projectUserMessageForPublicShare(document).trim() &&
-          !document.parts.some((part) => {
-            return part.type === "file";
-          }))
-      )
-        continue;
-      if (!current || current.answer || current.complete) {
-        if (current?.answer) current.complete = true;
-        current = { prompts: [], complete: false };
-        turns.push(current);
+    if (revoked.has(row.id)) {
+      continue;
+    }
+    switch (row.eventType) {
+      case "input.prompt":
+      case "input.automation": {
+        appendPrompt(projection, row);
+        break;
       }
-      current.prompts.push(row.id);
-      byRun.set(row.runId, current);
-      messages.push({ eventId: row.id, role: "user", turnEventIds: [row.id] });
-    } else if (row.eventType === "output.message") {
-      if (!canonicalArchivedChatEventContent(row)?.trim()) continue;
-      let turn =
-        row.runId === null
-          ? current?.answer?.runId === null || !current?.answer
-            ? current
-            : undefined
-          : byRun.get(row.runId);
-      if (!turn) {
-        turn = { prompts: [], complete: row.runId === null };
-        turns.push(turn);
-        if (row.runId !== null) byRun.set(row.runId, turn);
+      case "output.message": {
+        appendAnswer(projection, row);
+        break;
       }
-      turn.answer = row;
-      if (row.runId === null) turn.complete = true;
-      current = turn;
-    } else if (row.eventType === "run.completed") {
-      const turn = row.runId === null ? undefined : byRun.get(row.runId);
-      if (turn) turn.complete = true;
-    } else if (
-      row.eventType === "run.failed" ||
-      row.eventType === "run.cancelled" ||
-      row.eventType === "output.error"
-    ) {
-      const turn = row.runId === null ? undefined : byRun.get(row.runId);
-      if (turn) {
-        turn.answer = undefined;
-        turn.complete = true;
+      case "run.completed":
+      case "run.failed":
+      case "run.cancelled":
+      case "output.error": {
+        finishTurn(projection, row);
+        break;
       }
     }
   }
-  for (const turn of turns) {
+  for (const turn of projection.turns) {
     if (turn.answer && turn.complete) {
-      messages.push({
+      projection.messages.push({
         eventId: turn.answer.id,
         role: "assistant",
         turnEventIds: [...turn.prompts, turn.answer.id],
@@ -96,10 +149,10 @@ function projectSelection(
       return [row.id, index];
     }),
   );
-  messages.sort((a, b) => {
+  projection.messages.sort((a, b) => {
     return (order.get(a.eventId) ?? 0) - (order.get(b.eventId) ?? 0);
   });
-  return { messages };
+  return { messages: projection.messages };
 }
 
 export const readChatShareSelection$ = command(
@@ -108,7 +161,9 @@ export const readChatShareSelection$ = command(
     source: { orgId: string; userId: string; threadId: string },
     signal: AbortSignal,
   ): Promise<ChatShareSelection | null> => {
-    if (!(await set(ownsSharedThreadSource$, source, signal))) return null;
+    if (!(await set(ownsSharedThreadSource$, source, signal))) {
+      return null;
+    }
     const history = await set(
       readSharedThreadChatEventHistory$,
       source.threadId,
