@@ -1,69 +1,35 @@
 package ai.okou.android.chat
 
-import ai.okou.android.api.generated.Agents
-import ai.okou.android.api.generated.ProjectsProjectsItem
+import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
-import android.util.AtomicFile
-import java.io.ByteArrayOutputStream
+import android.content.Context
+import androidx.room.Room
+import androidx.room.deferredTransaction
+import androidx.room.immediateTransaction
+import androidx.room.useReaderConnection
+import androidx.room.useWriterConnection
+import androidx.sqlite.driver.AndroidSQLiteDriver
 import java.io.File
-import java.io.FileNotFoundException
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
-
-const val MAX_CHAT_CACHE_BYTES = 8L * 1024 * 1024
 
 fun chatScopeHash(parts: List<String>): String =
     MessageDigest.getInstance("SHA-256")
         .digest(parts.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
-
-@Serializable
-private data class ChatCacheEnvelope(
-    val format: Int,
-    val scope: String,
-    val authorization: String,
-    val confirmedAt: Long,
-    val checkpoint: ChatCheckpoint,
-    val navigation: CachedChatNavigation = CachedChatNavigation(),
-)
-
-@Serializable
-data class CachedChatNavigation(
-    val agents: Agents? = null,
-    val projects: List<ProjectsProjectsItem>? = null,
-    val projectsEnabled: Boolean = false,
-) {
-    fun validate() {
-        agents?.let { records ->
-            requireChatWire(
-                records.size <= MAX_CHAT_THREADS &&
-                    records.map { it.agentId }.distinct().size == records.size &&
-                    records.count { it.isDefaultAgent } <= 1
-            )
-            records.forEach { requireChatId(it.agentId) }
-        }
-        projects?.let { records ->
-            requireChatWire(
-                records.size <= MAX_CHAT_THREADS &&
-                    records.map { it.id }.distinct().size == records.size
-            )
-            records.forEach {
-                requireChatId(it.id)
-                chatTime(it.createdAt)
-            }
-        }
-    }
-}
 
 data class CachedChats(
     val checkpoint: ChatCheckpoint,
@@ -71,19 +37,37 @@ data class CachedChats(
     val navigation: CachedChatNavigation,
 )
 
-/**
- * Process-owned, private/no-backup confirmed storage. A lease also fences same-scope replacement.
- */
-class ChatCacheStore(
+/** One application-owned Room database. Leases fence consumers, not database lifetime. */
+class ChatCacheStore
+internal constructor(
     private val directory: File,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val dispatcher: CoroutineDispatcher,
+    private val createDatabase: (File) -> ChatCacheDatabase,
 ) {
-    private val lock = Any()
+    constructor(
+        context: Context,
+        directory: File = context.noBackupFilesDir.resolve("chat-list"),
+        dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    ) : this(directory, dispatcher, chatDatabaseFactory(context.applicationContext, dispatcher))
+
+    private val lock = Mutex()
     private val active = AtomicReference<Lease?>()
+    private var database: ChatCacheDatabase? = null
+    private val file = directory.resolve("chats.db")
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = true
         encodeDefaults = true
+    }
+
+    // Called only under the IO mutex. Never open SQLite during construction or on Main.
+    private fun database(): ChatCacheDatabase {
+        database?.let {
+            return it
+        }
+        if (!directory.isDirectory && !directory.mkdirs())
+            throw IOException("Cannot create chat cache")
+        return createDatabase(file).also { database = it }
     }
 
     fun open(identity: WorkspaceIdentity, authorized: () -> Boolean): Lease {
@@ -94,6 +78,16 @@ class ChatCacheStore(
         return replacement
     }
 
+    /** Close the application resource after its consumers stop (also used by test teardown). */
+    suspend fun close() =
+        withContext(Dispatchers.IO) {
+            active.getAndSet(null)?.retired = true
+            lock.withLock {
+                database?.close()
+                database = null
+            }
+        }
+
     inner class Lease
     internal constructor(
         private val key: String,
@@ -101,61 +95,74 @@ class ChatCacheStore(
         private val authorized: () -> Boolean,
     ) : AutoCloseable {
         @Volatile internal var retired = false
+        private var rebuild = false
+
+        private fun current() = !retired && active.get() === this && authorized()
 
         private fun checkCurrent() {
-            val allowed = authorized()
-            if (retired || active.get() !== this || !allowed)
-                throw CancellationException("Chat cache owner retired")
+            if (!current()) throw CancellationException("Chat cache owner retired")
         }
 
         suspend fun load(): CachedChats? =
             withContext(dispatcher) {
-                val context = currentCoroutineContext()
-                synchronized(lock) {
-                    context.ensureActive()
+                lock.withLock {
                     checkCurrent()
-                    val file = AtomicFile(File(directory, "$key.json"))
-                    val bytes =
-                        try {
-                            file.openRead().use { input ->
-                                val output = ByteArrayOutputStream()
-                                val buffer = ByteArray(8192)
-                                while (true) {
-                                    val count = input.read(buffer)
-                                    if (count == -1) break
-                                    if (output.size().toLong() + count > MAX_CHAT_CACHE_BYTES)
-                                        throw IOException("Chat cache exceeds its size budget")
-                                    output.write(buffer, 0, count)
-                                }
-                                output.toByteArray()
+                    if (database == null && !file.exists()) return@withLock null
+                    try {
+                        database().useReaderConnection { connection ->
+                            connection.deferredTransaction {
+                                val dao = database().chats()
+                                val scope = dao.scope(key) ?: return@deferredTransaction null
+                                if (scope.authorization != authorization)
+                                    throw IOException("Chat cache authorization changed")
+                                val archive =
+                                    ChatArchive(
+                                        dao.snapshot(key).map {
+                                            json.decodeFromString<ConfirmedChat>(it.payload)
+                                        }
+                                    )
+                                val events =
+                                    dao.events(key).map {
+                                        json.decodeFromString<ChatEventsEventsItem>(it.payload)
+                                    }
+                                val snapshot =
+                                    ChatCursor(scope.snapshotEventId, scope.snapshotSeqId)
+                                val checkpoint =
+                                    ChatCheckpoint(
+                                        archive,
+                                        snapshot,
+                                        events,
+                                        events.lastOrNull()?.cursor() ?: snapshot,
+                                    )
+                                val navigation =
+                                    CachedChatNavigation(
+                                        agents =
+                                            if (scope.hasAgents)
+                                                dao.agents(key).map {
+                                                    json.decodeFromString(it.payload)
+                                                }
+                                            else null,
+                                        projects =
+                                            if (scope.hasProjects)
+                                                dao.projects(key).map {
+                                                    json.decodeFromString(it.payload)
+                                                }
+                                            else null,
+                                        projectsEnabled = scope.projectsEnabled,
+                                    )
+                                checkpoint.validate()
+                                navigation.validate()
+                                currentCoroutineContext().ensureActive()
+                                checkCurrent()
+                                CachedChats(checkpoint, scope.confirmedAt, navigation)
                             }
-                        } catch (missing: FileNotFoundException) {
-                            if (
-                                directory.exists() &&
-                                    (file.baseFile.exists() ||
-                                        File(directory, "$key.json.bak").exists())
-                            )
-                                throw missing
-                            return@synchronized null
                         }
-                    val value =
-                        json.decodeFromString<ChatCacheEnvelope>(
-                            bytes.decodeToString(throwOnInvalidSequence = true)
-                        )
-                    if (
-                        value.format != 1 ||
-                            value.scope != key ||
-                            value.authorization != authorization ||
-                            value.confirmedAt <= 0
-                    )
-                        throw IOException("Chat cache format or authorization changed")
-                    value.checkpoint.validate()
-                    value.navigation.validate()
-                    context.ensureActive()
-                    checkCurrent()
-                    if (!file.baseFile.setLastModified(System.currentTimeMillis()))
-                        throw IOException("Cannot update chat cache retention")
-                    CachedChats(value.checkpoint, value.confirmedAt, value.navigation)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        rebuild = true
+                        throw error
+                    }
                 }
             }
 
@@ -166,65 +173,139 @@ class ChatCacheStore(
         ) =
             withContext(dispatcher) {
                 checkpoint.validate()
-                checkCurrent()
                 navigation.validate()
-                val bytes =
-                    json
-                        .encodeToString(
-                            ChatCacheEnvelope(
-                                1,
-                                key,
-                                authorization,
-                                confirmedAt,
-                                checkpoint,
-                                navigation,
-                            )
-                        )
-                        .toByteArray(Charsets.UTF_8)
-                if (bytes.size > MAX_CHAT_CACHE_BYTES)
-                    throw IOException("Chat cache exceeds its size budget")
-                val context = currentCoroutineContext()
-                synchronized(lock) {
-                    context.ensureActive()
+                require(confirmedAt > 0)
+                lock.withLock {
                     checkCurrent()
-                    if (!directory.isDirectory && !directory.mkdirs())
-                        throw IOException("Cannot create chat cache")
-                    reserveScope(key)
-                    val file = AtomicFile(File(directory, "$key.json"))
-                    val output = file.startWrite()
-                    try {
-                        output.write(bytes)
-                        context.ensureActive()
-                        checkCurrent()
-                        file.finishWrite(output)
-                        // AtomicFile can log a rename/sync failure rather than throwing it.
-                        // Confirm the committed bytes before reporting persistence success.
-                        val committed =
-                            file.openRead().use { input ->
-                                val saved = ByteArray(bytes.size)
-                                var offset = 0
-                                while (offset < saved.size) {
-                                    val read = input.read(saved, offset, saved.size - offset)
-                                    if (read == -1) break
-                                    offset += read
-                                }
-                                offset == saved.size &&
-                                    input.read() == -1 &&
-                                    saved.contentEquals(bytes)
-                            }
-                        if (!committed)
-                            throw IOException("Chat cache commit could not be confirmed")
-                        // Replacement never waits for disk on Main. The shared IO lock keeps
-                        // the next owner from observing a retired commit before its removal.
+                    val db = database()
+                    val caller = currentCoroutineContext()
+                    var writing = false
+                    var committed = false
+                    // Observe physical commit before leaving this mutex. Check the caller at
+                    // transaction boundaries so cancellation rolls back instead of losing a
+                    // receipt.
+                    withContext(NonCancellable) {
                         try {
-                            checkCurrent()
-                        } catch (cancelled: CancellationException) {
-                            file.delete()
-                            throw cancelled
+                            db.useWriterConnection { connection ->
+                                connection.immediateTransaction {
+                                    caller.ensureActive()
+                                    checkCurrent()
+                                    val dao = db.chats()
+                                    val stored = dao.scope(key)
+                                    val sameAuthorization = stored?.authorization == authorization
+                                    val lastSeqId =
+                                        if (sameAuthorization) {
+                                            dao.lastSeqId(key) ?: checkNotNull(stored).snapshotSeqId
+                                        } else 0
+                                    // Like Web's transaction: a slower sync cannot replace a newer
+                                    // tail.
+                                    if (
+                                        sameAuthorization &&
+                                            !rebuild &&
+                                            lastSeqId > checkpoint.cursor.seqId
+                                    )
+                                        return@immediateTransaction
+                                    writing = true
+                                    val replacement =
+                                        rebuild ||
+                                            !sameAuthorization ||
+                                            stored.snapshotEventId !=
+                                                checkpoint.snapshotCursor.eventId ||
+                                            stored.snapshotSeqId != checkpoint.snapshotCursor.seqId
+                                    dao.putScope(
+                                        ChatScopeRecord(
+                                            key,
+                                            authorization,
+                                            confirmedAt,
+                                            checkpoint.snapshotCursor.eventId,
+                                            checkpoint.snapshotCursor.seqId,
+                                            navigation.agents != null,
+                                            navigation.projects != null,
+                                            navigation.projectsEnabled,
+                                        )
+                                    )
+                                    if (replacement) {
+                                        dao.clearEvents(key)
+                                        dao.clearSnapshot(key)
+                                        dao.putSnapshot(
+                                            checkpoint.archive.chatThreads.mapIndexed {
+                                                position,
+                                                row ->
+                                                ChatSnapshotRecord(
+                                                    key,
+                                                    row.id,
+                                                    position,
+                                                    json.encodeToString(row),
+                                                )
+                                            }
+                                        )
+                                    }
+                                    dao.putEvents(
+                                        checkpoint.events
+                                            .filter { replacement || it.cursor().seqId > lastSeqId }
+                                            .map {
+                                                val cursor = it.cursor()
+                                                ChatEventRecord(
+                                                    key,
+                                                    checkNotNull(cursor.eventId),
+                                                    cursor.seqId,
+                                                    json.encodeToString(it),
+                                                )
+                                            }
+                                    )
+                                    dao.clearAgents(key)
+                                    dao.putAgents(
+                                        navigation.agents.orEmpty().mapIndexed { position, row ->
+                                            ChatAgentRecord(
+                                                key,
+                                                row.agentId,
+                                                position,
+                                                json.encodeToString(row),
+                                            )
+                                        }
+                                    )
+                                    dao.clearProjects(key)
+                                    dao.putProjects(
+                                        navigation.projects.orEmpty().mapIndexed { position, row ->
+                                            ChatProjectRecord(
+                                                key,
+                                                row.id,
+                                                position,
+                                                json.encodeToString(row),
+                                            )
+                                        }
+                                    )
+                                    caller.ensureActive()
+                                    checkCurrent()
+                                }
+                            }
+                            committed = true
+                            rebuild = false
+                        } finally {
+                            // A commit may finish just as its owner retires. Clean up before a new
+                            // lease can read it, even when coroutine cancellation accompanied
+                            // retirement.
+                            if (writing && committed && !current()) {
+                                db.chats().deleteScope(key)
+                            }
                         }
-                    } catch (error: Exception) {
-                        file.failWrite(output)
-                        throw error
+                    }
+                    currentCoroutineContext().ensureActive()
+                    checkCurrent()
+                }
+            }
+
+        suspend fun invalidate() =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock
+                    database().useWriterConnection { connection ->
+                        connection.immediateTransaction {
+                            database().chats().deleteScope(key)
+                            currentCoroutineContext().ensureActive()
+                            checkCurrent()
+                        }
                     }
                 }
             }
@@ -233,38 +314,17 @@ class ChatCacheStore(
             retired = true
             active.compareAndSet(this, null)
         }
-
-        suspend fun invalidate() =
-            withContext(dispatcher) {
-                val context = currentCoroutineContext()
-                synchronized(lock) {
-                    context.ensureActive()
-                    checkCurrent()
-                    val name = "$key.json"
-                    AtomicFile(File(directory, name)).delete()
-                    if (listOf("", ".new", ".bak").any { File(directory, name + it).exists() })
-                        throw IOException("Cannot invalidate chat cache")
-                }
-            }
     }
+}
 
-    /** Called under the IO lock, before publishing a new scope or creating its temporary file. */
-    private fun reserveScope(key: String) {
-        val groups =
-            directory
-                .listFiles()
-                ?.filter { Regex("[0-9a-f]{64}\\.json(?:\\.new|\\.bak)?").matches(it.name) }
-                ?.groupBy { it.name.substringBefore(".json") + ".json" }
-                ?: throw IOException("Cannot inspect chat cache retention")
-        groups.entries
-            .filter { it.key != "$key.json" }
-            .sortedByDescending { (_, files) -> files.maxOf { it.lastModified() } }
-            .drop(3)
-            .forEach { (name, _) ->
-                AtomicFile(File(directory, name)).delete()
-                if (listOf("", ".new", ".bak").any { File(directory, name + it).exists() }) {
-                    throw IOException("Cannot evict an old chat cache scope")
-                }
-            }
-    }
+private fun chatDatabaseFactory(
+    application: Context,
+    dispatcher: CoroutineDispatcher,
+): (File) -> ChatCacheDatabase = { file ->
+    Room.databaseBuilder(application, ChatCacheDatabase::class.java, file.absolutePath)
+        .setDriver(AndroidSQLiteDriver())
+        .setQueryCoroutineContext(dispatcher)
+        // Only rebuildable server data belongs here, never drafts or credentials.
+        .fallbackToDestructiveMigration(dropAllTables = true)
+        .build()
 }

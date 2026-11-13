@@ -1,9 +1,15 @@
 package ai.okou.android
 
+import ai.okou.android.chat.ChatCacheStore
 import java.io.File
+import kotlinx.coroutines.runBlocking
 
-/** Native acceptance restores every cache file it may replace or evict, including timestamps. */
-class ChatCacheSnapshot(private val directory: File) {
+/** Checkpoint/close SQLite before copying files, and restore only after its consumers stop. */
+class ChatCacheSnapshot(private val directory: File, private val cache: ChatCacheStore) {
+    init {
+        runBlocking { cache.close() }
+    }
+
     private val existed = directory.exists()
 
     private data class Saved(val name: String, val bytes: ByteArray, val modified: Long)
@@ -15,6 +21,7 @@ class ChatCacheSnapshot(private val directory: File) {
         }
 
     fun restore() {
+        runBlocking { cache.close() }
         directory.listFiles().orEmpty().forEach { check(it.delete()) }
         if (existed) {
             check(directory.isDirectory || directory.mkdirs())

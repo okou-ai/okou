@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// Matches Web's shared-database/event-log-policy.ts, independently of disk capacity.
+private const val CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD = 100
+
 /** A refresh publishes only a completely checked tail; expiration can rebuild at most once. */
 class ChatListSync(
     private val service: ChatListService,
@@ -15,17 +18,27 @@ class ChatListSync(
 ) {
     suspend fun synchronize(cached: ChatCheckpoint?): ChatCheckpoint =
         withContext(dispatcher) {
-            var state =
-                if (cached == null || cached.events.size > 200) snapshot()
-                else cached.also { it.validate() }
-            try {
-                tail(state)
-            } catch (error: ApiFailure.Http) {
-                if (error.status != 410) throw error
-                state = snapshot()
-                // A second 410 escapes; no retry loop or stale success.
-                tail(state)
-            }
+            val confirmed = tail(cached ?: snapshot(), fromSnapshot = cached == null)
+            if (
+                confirmed.replacement ||
+                    confirmed.checkpoint.events.size <= CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD
+            )
+                return@withContext confirmed.checkpoint
+            // Catch up first. Rebase is optional maintenance, as in Web's metadata event source.
+            val snapshot =
+                try {
+                    snapshot()
+                } catch (error: ApiFailure.Http) {
+                    if (error.status >= 500) return@withContext confirmed.checkpoint
+                    throw error
+                } catch (error: ChatSnapshotUnavailable) {
+                    if (error.status >= 500) return@withContext confirmed.checkpoint
+                    throw error
+                }
+            val rebased = tail(snapshot, fromSnapshot = true).checkpoint
+            // A lagging snapshot must not roll back a tail already confirmed in this refresh.
+            if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) confirmed.checkpoint
+            else rebased
         }
 
     private suspend fun snapshot(): ChatCheckpoint {
@@ -47,15 +60,38 @@ class ChatListSync(
         return ChatCheckpoint(archive, cursor, emptyList(), cursor).also { it.validate() }
     }
 
-    private suspend fun tail(initial: ChatCheckpoint): ChatCheckpoint {
-        var cursor = initial.cursor
-        val events = initial.events.toMutableList()
+    private data class SynchronizedChats(val checkpoint: ChatCheckpoint, val replacement: Boolean)
+
+    private suspend fun tail(initial: ChatCheckpoint, fromSnapshot: Boolean): SynchronizedChats {
+        initial.validate()
+        var state = initial
+        var cursor = state.cursor
+        val events = state.events.toMutableList()
         val identities = events.mapTo(hashSetOf()) { checkNotNull(it.cursor().eventId) }
-        initial.snapshotCursor.eventId?.let { identities.add(it) }
+        state.snapshotCursor.eventId?.let { identities.add(it) }
+        var replacement = fromSnapshot
+        var cursorFromSnapshot = fromSnapshot
+        var rebuilt = false
         repeat(100) {
-            val page = service.chatEvents(cursor.seqId.takeIf { it > 0 })
-            requireChatWire(!page.hasMore || page.events.isNotEmpty())
-            for (event in page.events) {
+            val page =
+                try {
+                    service.chatEvents(cursor.seqId.takeIf { it > 0 })
+                } catch (error: ApiFailure.Http) {
+                    if (error.status != 410 || cursorFromSnapshot || rebuilt) throw error
+                    state = snapshot()
+                    cursor = state.cursor
+                    events.clear()
+                    identities.clear()
+                    state.snapshotCursor.eventId?.let { identities.add(it) }
+                    replacement = true
+                    cursorFromSnapshot = true
+                    rebuilt = true
+                    return@repeat
+                }
+            // Web ignores already covered rows; hasMore still requires actual forward progress.
+            val incoming = page.events.filter { it.cursor().seqId > cursor.seqId }
+            requireChatWire(!page.hasMore || incoming.isNotEmpty())
+            for (event in incoming) {
                 val next = event.cursor()
                 next.validate()
                 requireChatWire(
@@ -65,10 +101,12 @@ class ChatListSync(
                 requireChatWire(events.size <= MAX_CHAT_EVENTS)
                 cursor = next
             }
+            if (incoming.isNotEmpty()) cursorFromSnapshot = false
             if (!page.hasMore)
-                return initial.copy(events = events.toList(), cursor = cursor).also {
-                    it.validate()
-                }
+                return SynchronizedChats(
+                    state.copy(events = events.toList(), cursor = cursor).also { it.validate() },
+                    replacement,
+                )
         }
         throw ApiFailure.IncompatibleResponse()
     }

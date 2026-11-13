@@ -27,15 +27,25 @@ for public staging overrides, provider setup and verification boundaries. Chat
 Send, push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
-Confirmed chat navigation uses a private versioned cache under
-`noBackupFilesDir/chat-list`, excluded from backups. Content and cursor are committed
-together, scoped to API origin/user/workspace and the current authorization snapshot.
-Last-confirmed Agent/Project references keep the scoped list usable after a
-process restart while their network reads are unavailable. Each scope is limited
-to 8 MiB; the four most recently used scopes are retained.
+Confirmed chat navigation follows Web's snapshot/event-log model using an
+application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, excluded
+from backups. Snapshots are stored per thread, and confirmed tail events append
+through transactions with their synchronization position and reference metadata.
+Data is scoped to API origin/user/workspace and the current authorization snapshot;
+an older synchronization cannot replace a newer persisted tail. Last-confirmed
+Agent/Project references keep the scoped list usable after a process restart while
+their network reads are unavailable. Cache display precedes network catch-up;
+tails over 100 events attempt a server-snapshot rebase after catch-up, with optional
+rebase server failures preserving the synchronized result, as on Web.
+There is no fixed per-scope disk budget or scope-count eviction policy. Network
+downloads and individual synchronization work retain separate resource limits.
 Cache/storage failure is visible, and successfully loaded network content remains
-usable. A saved list and the last status refresh do not establish current network
-freshness. Signed URLs, credentials and transient indicators are not persisted.
+usable. The versioned database contains only rebuildable server-confirmed data;
+unsupported local schemas may be recreated, never migrated together with drafts
+or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
+integration. A saved list and the last status refresh do not establish current
+network freshness. Signed archive URLs, credentials and transient indicators are
+not persisted. No local message history or durable draft store is introduced.
 
 ## Prerequisites and Setup
 

@@ -33,7 +33,7 @@ class NativeChatListTest {
         val device = UiDevice.getInstance(instrumentation)
         val previous = app.chatService
         val savedPreferences = app.snapshotApiPreferences()
-        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"))
+        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val fixture = ChatListApiFixture()
         val gate = CountDownLatch(1)
         val flags = fixture.flags

@@ -9,7 +9,7 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.Projects
 
 /** A signed-storage rejection does not revoke the first-party workspace session. */
-class ChatSnapshotUnavailable : Exception("Chat snapshot could not be downloaded")
+class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could not be downloaded")
 
 /** The workspace's canonical read boundary. None of these operations marks a thread read. */
 interface ChatListService {

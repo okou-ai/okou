@@ -12,7 +12,6 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
-import ai.okou.android.chat.MAX_CHAT_CACHE_BYTES
 import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
@@ -22,6 +21,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+private const val MAX_CHAT_SNAPSHOT_BYTES = 8L * 1024 * 1024
 
 data class WorkspaceIdentity(
     val apiOrigin: String,
@@ -74,12 +75,12 @@ class CanonicalWorkspaceSession(
         withContext(Dispatchers.IO) {
             val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
             try {
-                val bytes = transfers.download(address, MAX_CHAT_CACHE_BYTES)
+                val bytes = transfers.download(address, MAX_CHAT_SNAPSHOT_BYTES)
                 archiveJson.decodeFromString<ChatArchive>(
                     bytes.decodeToString(throwOnInvalidSequence = true)
                 )
-            } catch (_: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable()
+            } catch (error: ApiFailure.Http) {
+                throw ChatSnapshotUnavailable(error.status)
             } catch (_: SerializationException) {
                 throw ApiFailure.IncompatibleResponse()
             } catch (_: IllegalArgumentException) {

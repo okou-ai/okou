@@ -16,7 +16,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 
 open class OkouApplication : Application() {
-    val chatCache by lazy { ChatCacheStore(noBackupFilesDir.resolve("chat-list")) }
+    val chatCache by lazy { ChatCacheStore(this) }
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)

@@ -7,14 +7,37 @@ import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.*
 import org.junit.Test
 
 class ChatListSyncTest {
+    private fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
+
+    private fun longTail(): ChatCheckpoint {
+        val events =
+            (1..101).joinToString(",") {
+                chatEventWire(
+                    id = eventId(it),
+                    seq = it.toLong(),
+                    kind = if (it == 1) "created" else "renamed",
+                    title = "Title $it",
+                )
+            }
+        val page = Json.decodeFromString<ChatEvents>("""{"events":[$events],"hasMore":false}""")
+        return ChatCheckpoint(
+            ChatArchive(emptyList()),
+            ChatCursor(),
+            page.events,
+            page.events.last().cursor(),
+        )
+    }
+
     @Test
     fun signedStorageExpirationIsNotAWorkspaceAuthorizationFailure() = runTest {
         ChatListApiFixture().use { fixture ->
@@ -116,7 +139,7 @@ class ChatListSyncTest {
                             )
                         else ->
                             jsonResponse(
-                                """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 16)}],"hasMore":false}"""
+                                """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 16)}],"hasMore":true}"""
                             )
                     }
                 }
@@ -125,6 +148,97 @@ class ChatListSyncTest {
                         .exceptionOrNull() is ApiFailure.IncompatibleResponse
                 )
             }
+        }
+    }
+
+    @Test
+    fun overlapIsIgnoredButTheNewTailStillAdvances() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val cursor = ChatCursor(CHAT_EVENT, 17)
+            val previous = ChatCheckpoint(ChatArchive(emptyList()), cursor, emptyList(), cursor)
+            fixture.events = {
+                jsonResponse(
+                    """{"events":[${chatEventWire()},${chatEventWire(id = eventId(23), seq = 23, kind = "renamed")}],"hasMore":false}"""
+                )
+            }
+            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            assertEquals(listOf(23L), confirmed.events.map { it.cursor().seqId })
+            assertEquals(23L, confirmed.cursor.seqId)
+        }
+    }
+
+    @Test
+    fun largeTailCatchesUpBeforeRebasingAndIncludesEventsAfterTheNewSnapshot() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val previous = longTail()
+            fixture.events = {
+                jsonResponse(
+                    """{"events":[${chatEventWire(id = eventId(102), seq = 102, kind = "renamed", title = "Newest title")}],"hasMore":false}"""
+                )
+            }
+            fixture.snapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${eventId(101)}","latestSeqId":101}"""
+                )
+            }
+            fixture.archive = {
+                jsonResponse(Json.encodeToString(ChatArchive(replayChats(previous))))
+            }
+            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            assertEquals(101L, confirmed.snapshotCursor.seqId)
+            assertEquals(listOf(102L), confirmed.events.map { it.cursor().seqId })
+            assertEquals("Newest title", replayChats(confirmed).single().title)
+            assertEquals(
+                "/api/chat-threads/events?sinceSeqId=101",
+                fixture.server.takeRequest().path,
+            )
+            assertEquals("/api/chat-threads/snapshot", fixture.server.takeRequest().path)
+            assertEquals("/archive", fixture.server.takeRequest().path)
+            assertEquals(
+                "/api/chat-threads/events?sinceSeqId=101",
+                fixture.server.takeRequest().path,
+            )
+        }
+    }
+
+    @Test
+    fun optionalRebaseServerFailureKeepsTheAlreadySynchronizedTail() = runTest {
+        for (failure in listOf("descriptor", "archive")) {
+            ChatListApiFixture().use { fixture ->
+                val previous = longTail()
+                fixture.events = {
+                    jsonResponse(
+                        """{"events":[${chatEventWire(id = eventId(102), seq = 102, kind = "renamed", title = "Newest title")}],"hasMore":false}"""
+                    )
+                }
+                fixture.snapshot = {
+                    if (failure == "descriptor") MockResponse().setResponseCode(503)
+                    else
+                        jsonResponse(
+                            """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${eventId(101)}","latestSeqId":101}"""
+                        )
+                }
+                fixture.archive = { MockResponse().setResponseCode(503) }
+                val confirmed = ChatListSync(fixture.service).synchronize(previous)
+                assertEquals(102L, confirmed.cursor.seqId)
+                assertEquals("Newest title", replayChats(confirmed).single().title)
+                assertEquals(
+                    "/api/chat-threads/events?sinceSeqId=101",
+                    fixture.server.takeRequest().path,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun rebaseAuthorizationFailureIsNotHiddenByTheConfirmedTail() = runTest {
+        ChatListApiFixture().use { fixture ->
+            fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
+            fixture.snapshot = { MockResponse().setResponseCode(401) }
+            val error =
+                runCatching { ChatListSync(fixture.service).synchronize(longTail()) }
+                    .exceptionOrNull()
+            assertTrue(error is ApiFailure.Http && error.status == 401)
         }
     }
 }

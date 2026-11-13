@@ -21,13 +21,17 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.core.app.ApplicationProvider
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -36,6 +40,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -49,6 +54,15 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ChatListModelTest {
     @get:Rule val temporary = TemporaryFolder()
+    private val caches = mutableListOf<ChatCacheStore>()
+
+    private fun cache(directory: File, dispatcher: CoroutineDispatcher = Dispatchers.IO) =
+        ChatCacheStore(ApplicationProvider.getApplicationContext(), directory, dispatcher).also {
+            caches += it
+        }
+
+    @After fun closeCaches() = runBlocking { caches.forEach { it.close() } }
+
     private val identity =
         WorkspaceIdentity("https://api.okou.ai/", "user-a", "session-a", "org-a", "member")
     private val json = Json { ignoreUnknownKeys = true }
@@ -109,7 +123,7 @@ class ChatListModelTest {
         val store = ViewModelStore()
         val gate = CompletableDeferred<ChatEvents>()
         val service = Service().apply { listRead = { gate.await() } }
-        val cache = ChatCacheStore(temporary.newFolder(), dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
         try {
             val model =
                 ViewModelProvider(
@@ -173,7 +187,7 @@ class ChatListModelTest {
         Dispatchers.setMain(dispatcher)
         val oldStore = ViewModelStore()
         val newStore = ViewModelStore()
-        val cache = ChatCacheStore(temporary.newFolder(), dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
         val gate = CompletableDeferred<ChatEvents>()
         try {
             val oldService =
@@ -231,7 +245,7 @@ class ChatListModelTest {
     fun cachedConfirmedDataIsExplicitWhileFreshNetworkIsHeldOrOffline() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        val cache = ChatCacheStore(temporary.newFolder(), dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
         val checkpoint =
             ChatCheckpoint(
                 ai.okou.android.api.generated.ChatArchive(emptyList()),
@@ -292,7 +306,7 @@ class ChatListModelTest {
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
         try {
-            val cache = ChatCacheStore(temporary.newFile(), dispatcher)
+            val cache = cache(temporary.newFile(), dispatcher)
             val model =
                 ViewModelProvider(
                     store,
@@ -326,7 +340,7 @@ class ChatListModelTest {
     fun freshDisabledRolloutRemovesTheRestoredCacheAndCancelsPendingListWork() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        val cache = ChatCacheStore(temporary.newFolder(), dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
         val checkpoint =
             ChatCheckpoint(
                 ai.okou.android.api.generated.ChatArchive(emptyList()),
@@ -380,7 +394,7 @@ class ChatListModelTest {
     fun lateDiskRestoreDoesNotReplaceNetworkConfirmedAgentNames() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        val cache = ChatCacheStore(temporary.newFolder())
+        val cache = cache(temporary.newFolder())
         val checkpoint =
             ChatCheckpoint(
                 ai.okou.android.api.generated.ChatArchive(emptyList()),

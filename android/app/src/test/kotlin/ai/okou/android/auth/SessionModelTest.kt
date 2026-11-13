@@ -80,7 +80,9 @@ class SessionModelTest {
                                 ChatCacheStore(
                                     temporary.newFolder(),
                                     StandardTestDispatcher(testScheduler),
-                                ),
+                                ) {
+                                    error("Signed-out/disabled-list tests must not open SQLite")
+                                },
                             )
                         }
                     },

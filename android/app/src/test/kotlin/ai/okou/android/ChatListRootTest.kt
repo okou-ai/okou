@@ -35,7 +35,7 @@ class ChatListApplication : TestOkouApplication() {
             flags()
         }
         chatService = fixture.service
-        cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"))
+        cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
     }
 }
