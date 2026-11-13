@@ -1,14 +1,11 @@
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
-import { Button, buttonVariants } from "@okouai/ui";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
+import { Button } from "@okouai/ui";
 import {
   SegmentControl,
   SegmentControlItem,
 } from "@okouai/ui/components/ui/segment-control";
 import { useGet, useSet } from "ccstate-react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -244,7 +241,6 @@ function multiGuideImages(
 
 export function FeishuSetupGuide({ step }: { readonly step: FeishuSetupStep }) {
   const { t } = useTranslation();
-  const platform = useGet(feishuPlatform$);
   const images = useGuideImages(step);
   const index = useGet(feishuGuideImageIndex$);
   const image = images[index] ?? images[0];
@@ -259,31 +255,6 @@ export function FeishuSetupGuide({ step }: { readonly step: FeishuSetupStep }) {
       {GUIDE_PRELOAD_SOURCES.map((src) => {
         return <link key={src} rel="preload" as="image" href={src} />;
       })}
-      <div className="flex shrink-0 items-center justify-between gap-4">
-        <h2 className="text-sm font-medium">
-          {t(($) => {
-            return $.connectors.setupGuide.title;
-          })}
-        </h2>
-        <a
-          href={
-            step === "create"
-              ? new URL(
-                  "/page/launcher?from=backend_oneclick",
-                  FEISHU_PLATFORMS[platform].developerConsoleUrl,
-                ).toString()
-              : FEISHU_PLATFORMS[platform].developerConsoleUrl
-          }
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          {t(($) => {
-            return $.connectors.providerSettings[platform].developerConsole;
-          })}
-          <ExternalLink size={14} />
-        </a>
-      </div>
       <FeishuGuideStage image={image} />
       <FeishuGuideControls step={step} images={images} />
     </section>
