@@ -1,7 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
-import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../../signals/email-unsubscribe/email-unsubscribe-signals.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
+import { BrandedErrorPage } from "../components/branded-error-page.tsx";
 
 export function EmailUnsubscribePage() {
   const { t } = useTranslation();
@@ -19,6 +20,19 @@ export function EmailUnsubscribePage() {
   const status = useGet(emailUnsubscribeStatus$);
   const token = useGet(emailUnsubscribeToken$);
   const confirm = useSet(confirmEmailUnsubscribe$);
+
+  if (status !== "done" && (status === "error" || !token)) {
+    return (
+      <BrandedErrorPage
+        title={t(($) => {
+          return $.lifecycle.emailUnsubscribe.errorTitle;
+        })}
+        description={t(($) => {
+          return $.lifecycle.emailUnsubscribe.errorBody;
+        })}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto bg-background pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6">
@@ -39,20 +53,6 @@ export function EmailUnsubscribePage() {
                 },
                 { brandName },
               )}
-            </p>
-          </div>
-        ) : status === "error" || !token ? (
-          <div className="flex flex-col items-center gap-2.5">
-            <AlertCircle size={20} className="text-destructive" />
-            <h1 className="text-lg font-medium text-foreground">
-              {t(($) => {
-                return $.lifecycle.emailUnsubscribe.errorTitle;
-              })}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.lifecycle.emailUnsubscribe.errorBody;
-              })}
             </p>
           </div>
         ) : (
