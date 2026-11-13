@@ -356,6 +356,9 @@ it("lists the active pool and terminal receipts as machine-readable JSON", async
     receipts: [
       {
         id: "a0000000-0000-4000-a000-000000000002",
+        type: item.type,
+        priority: item.priority,
+        content: null,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         state: {
