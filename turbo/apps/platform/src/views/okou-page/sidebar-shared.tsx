@@ -71,10 +71,13 @@ export function ChatThreadStateIndicator({
   if (state === "unread") {
     return <span className="h-2 w-2 rounded-full bg-sky-600" />;
   }
+  // The draft pencil shares the pin's ink: the menu button's muted ramp at
+  // 70%. Lucide's pencil runs corner to corner, so at the same box it reads
+  // larger than the upright pin; it is drawn at 0.8 as iOS does
+  // (`opticalScales` in icons.json), with the stroke widened by 1/0.8 so the
+  // drawn line keeps the shared 1.5 icon weight.
   return (
-    <span className="flex items-center justify-center text-sidebar-foreground">
-      <Pencil className="opacity-35" size={16} />
-    </span>
+    <Pencil className="scale-[0.8] opacity-70" size={16} strokeWidth={1.875} />
   );
 }
 
