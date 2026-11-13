@@ -1,4 +1,5 @@
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import { projectListMotionRef$ } from "../../signals/projects/project-list-motion.ts";
 import {
   draggingProjectThread$,
   endProjectThreadDrag$,
@@ -1874,6 +1875,7 @@ function ChatThreadListRowFrame({
       className={cn(
         "w-full pb-1",
         rowHeight !== null && "absolute left-0 top-0",
+        "motion-safe:group-data-[project-fold-motion]/chat-list:transition-[transform,translate,opacity] motion-safe:group-data-[project-fold-motion]/chat-list:duration-[180ms] motion-safe:group-data-[project-fold-motion]/chat-list:ease-out motion-safe:group-data-[project-fold-motion]/chat-list:starting:opacity-0 motion-safe:group-data-[project-fold-motion=expand]/chat-list:starting:-translate-y-1 motion-safe:group-data-[project-fold-motion=collapse]/chat-list:starting:translate-y-1",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
         drop.targeted && row.projectId === null && "rounded-lg",
@@ -1921,12 +1923,16 @@ function ChatThreadListRowsView({
   const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
   const signal = useGet(rootSignal$);
   const dragEventsRef = useSet(projectThreadDragEventsRef$);
+  const motionRef = useSet(projectListMotionRef$);
   function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
 
   return (
-    <>
+    <div
+      ref={motionRef}
+      className="group/chat-list data-[project-fold-motion]:overflow-clip"
+    >
       <div
         ref={touch ? undefined : dragEventsRef}
         className={cn("w-full", rowHeight !== null && "relative")}
@@ -1967,7 +1973,7 @@ function ChatThreadListRowsView({
         </p>
       )}
       {!touch && <ProjectThreadDragHint />}
-    </>
+    </div>
   );
 }
 
