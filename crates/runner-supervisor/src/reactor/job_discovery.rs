@@ -524,8 +524,8 @@ fn finish_spawn_job_request(
         }) {
         crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
     } else if claimed.is_supplied() {
-        // Direct dispatch has already assigned this Run to us. Inventory is
-        // advisory: check for a ready home without waiting for an unknown owner.
+        // Assigned direct work can check a ready home without waiting for an
+        // unknown owner; advisory inventory need not observe every publication.
         crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
     } else {
         crate::home_image_cache::HomeImagePreparePolicy::SkipCache

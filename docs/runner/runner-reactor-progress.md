@@ -352,6 +352,9 @@ after a later recovery. No pressure-state lock survives IO or provider work.
 - Home-cache watcher work retains its watcher and drained filesystem events.
   Checkout revalidates actual image identity under the entry lock; an inventory
   hint grants no checkout custody.
+  Assigned complete input may still check a ready on-disk entry when the hint
+  is absent, without waiting for an unknown owner. Advisory absence is not proof
+  that a publication is missing.
   Watcher classification does not own an idle-pool or
   status waiter needed by an inline reactor branch. The observation owner admits
   one independent inventory refresh with bounded coalesced dirty keys. Ordinary
