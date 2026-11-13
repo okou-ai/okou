@@ -23,9 +23,9 @@ final class WorkspacePopGestureDelegate: NSObject, UIGestureRecognizerDelegate {
 
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     guard let navigation, navigation.viewControllers.count > 1,
-      navigation.transitionCoordinator == nil,
-      let pan = gestureRecognizer as? UIPanGestureRecognizer
+      navigation.transitionCoordinator == nil
     else { return false }
+    guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: navigation.view)
     let x =
       navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
