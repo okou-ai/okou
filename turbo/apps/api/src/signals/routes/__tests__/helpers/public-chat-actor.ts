@@ -2,6 +2,7 @@ import type { ApiTestUser } from "./api-bdd";
 import { onTestFinished } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../../utils";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockOptionalEnv } from "../../../../lib/env";
 import { createChatEventsFixture } from "./chat-events-fixture";
 import { captureConnectorExternalState } from "./public-connector-actor";
@@ -39,6 +40,7 @@ export async function publicChatActor(
   let previous: (() => void) | undefined;
   let restoreSetupWebhook: (() => void) | undefined;
   let ready = false;
+  const waitingThreads = new Set<string>();
   onTestFinished(() => {
     previous?.();
   });
@@ -56,8 +58,15 @@ export async function publicChatActor(
         options.restoreEnvironment?.();
       }
     },
-    beforeRuns: () => {
-      return options.beforeRuns?.(actor) ?? Promise.resolve();
+    beforeRuns: async () => {
+      // Prevent cleanup from promoting an unfinished fixture's queued input.
+      for (const threadId of waitingThreads) {
+        await fixture.chat.deleteThread(actor, threadId);
+      }
+      if (waitingThreads.size > 0) {
+        await flushWaitUntilForTest();
+      }
+      await options.beforeRuns?.(actor);
     },
     afterRuns: async () => {
       const features = await settleIncludingAbort(() => {
@@ -150,12 +159,18 @@ export async function publicChatActor(
         return fixture.sendWaitingChatInput(...parameters);
       });
     },
-    queueChatRun: (...parameters: Parameters<typeof fixture.queueChatRun>) => {
+    queueChatRun: (
+      queueActor: ApiTestUser,
+      body: Parameters<typeof fixture.queueChatRun>[1],
+    ) => {
       return run(async () => {
-        const waiting = await fixture.queueChatRun(...parameters);
-        owner.rememberClaim(
-          waiting.blocker.runId,
-          waiting.blocker.sandboxToken,
+        const waiting = await fixture.queueChatRun(
+          queueActor,
+          body,
+          (blocker) => {
+            owner.rememberClaim(blocker.runId, blocker.sandboxToken);
+            waitingThreads.add(blocker.threadId);
+          },
         );
         return {
           launch() {
@@ -163,6 +178,7 @@ export async function publicChatActor(
               const launched = await waiting.launch();
               const claim = await fixture.api.executionInput(launched.runId);
               owner.rememberClaim(launched.runId, claim.sandboxToken);
+              waitingThreads.delete(waiting.blocker.threadId);
               return launched;
             });
           },

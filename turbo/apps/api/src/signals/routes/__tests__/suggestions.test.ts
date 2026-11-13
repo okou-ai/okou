@@ -51,7 +51,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { joinAll } from "../../utils";
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 
 type UserMessageDocument = zInfer<typeof userMessageDocumentSchema>;
 const context = testContext();
@@ -193,6 +193,7 @@ async function feedbackContext(
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(fixture.runnerGroup);
   mockEnv("CRON_SECRET", cronSecret);
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", fixture.runnerGroup);
   installWorkflowVolumeS3Fixture(context, fixture.feedbackObjects, {
     bundlesOnly: true,
   });

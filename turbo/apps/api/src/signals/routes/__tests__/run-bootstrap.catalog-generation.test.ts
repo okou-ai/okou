@@ -12,6 +12,8 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { publicRunOwner } from "./helpers/public-run-owner";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 const context = testContext();
 
@@ -25,7 +27,16 @@ async function connectorActor() {
   const runnerGroup = await api.configureRunnerGroup();
   const agents: string[] = [];
   const providerIds: string[] = [];
+  const waitingThreads = new Set<string>();
   const owner = publicRunOwner(context, actor, {
+    beforeRuns: async () => {
+      for (const threadId of waitingThreads) {
+        await createChatFilesBddApi(context).deleteThread(actor, threadId);
+      }
+      if (waitingThreads.size > 0) {
+        await flushWaitUntilForTest();
+      }
+    },
     afterRuns: async () => {
       for (const agentId of agents) {
         await bdd.deleteAgent(actor, agentId);
@@ -115,6 +126,24 @@ async function connectorActor() {
         await api.heartbeatRunner(runnerGroup);
         return await owner.claim(runId);
       },
+      async queue(prompt: string) {
+        const queued = await createChatEventsFixture(context).queueChatRun(
+          actor,
+          { agentId: agent.agentId, prompt, model: "claude-fable-5-1" },
+          (blocker) => {
+            owner.rememberClaim(blocker.runId, blocker.sandboxToken);
+            waitingThreads.add(blocker.threadId);
+          },
+        );
+        return {
+          async launch() {
+            const run = await queued.launch();
+            await owner.claim(run.runId);
+            waitingThreads.delete(queued.blocker.threadId);
+            return run;
+          },
+        };
+      },
       async cancel(runId: string, token: string) {
         await api.requestCancelRun(actor, runId, [200]);
         await createWebhookCallbackApi(context).requestAgentComplete(
@@ -165,8 +194,9 @@ describe("Run connector selection through normal user changes", () => {
       agentId,
     );
     await api.enableAgentConnectors(actor, agentId, ["openai"]);
-    const prepared = await fixture.send("use the prepared connector selection");
+    const queued = await fixture.queue("use the prepared connector selection");
     await api.enableAgentConnectors(actor, agentId, ["runtime"]);
+    const prepared = await queued.launch();
     const claimed = await fixture.claim(prepared.runId);
     expect(claimed.secretConnectorMetadataMap?.RUNTIME_API_KEY).toMatchObject({
       sourceId: runtime.id,

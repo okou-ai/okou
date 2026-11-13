@@ -38,6 +38,8 @@ import { createRouteMocks } from "./helpers/route-test";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
   ...chatEventsRoutes,
@@ -439,6 +441,34 @@ async function runAutomationNow(automationId: string) {
 }
 
 describe("workflow queue", () => {
+  it("does not promote an owned queued input while cleaning up a failed operation", async () => {
+    const owned = await publicChatActor(context, {
+      beforeWorkspaceCleanup: async (actor) => {
+        const listed = await createRunReadsApi(context).requestListLogs(
+          actor,
+          { limit: 20 },
+          [200],
+        );
+        expect(listed.body.data).toHaveLength(1);
+        expect(listed.body.data[0]?.status).toBe("cancelled");
+        expect(
+          (await runsApi.readRunQueue(actor)).body.concurrency.active,
+        ).toBe(0);
+      },
+    });
+    const failure = new Error("Stop before launching the owned queued input");
+    await expect(
+      owned.run(async () => {
+        await owned.queueChatRun(owned.actor, {
+          agentId: owned.agentId,
+          prompt: "Keep this input waiting when the operation fails",
+          model: "claude-fable-5-1",
+        });
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+  });
+
   it("gives separate manual requests distinct stable identities at the same timestamp", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);

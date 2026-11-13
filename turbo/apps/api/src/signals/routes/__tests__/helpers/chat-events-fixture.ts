@@ -625,13 +625,12 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   async function claimChatRun(
-    runnerGroup: string,
+    _runnerGroup: string,
     runId: string,
   ): Promise<{
     readonly claim: RunnerClaim;
     readonly sandboxHeaders: { readonly authorization: string };
   }> {
-    await api.heartbeatRunner(runnerGroup);
     const claim = await api.executionInput(runId);
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,
@@ -752,19 +751,33 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   /** Hold a real Thread input behind an executing Run until the caller launches it. */
-  async function queueChatRun(actor: ApiTestUser, body: ChatRunSendBody) {
+  async function queueChatRun(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    onBlocker?: (receipt: {
+      readonly runId: string;
+      readonly threadId: string;
+      readonly sandboxToken: string;
+    }) => void,
+  ) {
     const blocker = await sendChatRun(actor, {
       agentId: body.agentId,
       model: body.model,
       prompt: "Hold the following input until its configuration is ready",
     });
+    const claim = await api.executionInput(blocker.runId);
+    const receipt = {
+      runId: blocker.runId,
+      threadId: blocker.threadId,
+      sandboxToken: claim.sandboxToken,
+    };
+    onBlocker?.(receipt);
     const waiting = await sendWaitingChatInput(actor, {
       ...body,
       threadId: blocker.threadId,
     });
-    const claim = await api.executionInput(blocker.runId);
     return {
-      blocker: { runId: blocker.runId, sandboxToken: claim.sandboxToken },
+      blocker: receipt,
       async launch() {
         await cancelAndCompleteChatRun(actor, blocker.runId);
         return await waiting.launchedRun();

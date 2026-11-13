@@ -125,8 +125,8 @@ test("selects the onboarded default agent for a public Teams personal message", 
       agentId: fixture.defaultAgentId,
       prompt,
       triggerSource: "teams",
-      status: "pending",
-      startedAt: null,
+      status: "running",
+      startedAt: expect.any(String),
     });
 
     await runs.requestCancelRun(fixture.actor, run.id, [200]);
@@ -141,7 +141,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
       agentId: fixture.defaultAgentId,
       prompt,
       status: "cancelled",
-      startedAt: null,
+      startedAt: run.startedAt,
     });
   });
 });
@@ -204,8 +204,8 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       agentId: fixture.defaultAgentId,
       prompt,
       triggerSource: "teams",
-      status: "pending",
-      startedAt: null,
+      status: "running",
+      startedAt: expect.any(String),
     });
 
     await runs.requestCancelRun(fixture.actor, run.id, [200]);
@@ -220,7 +220,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       agentId: fixture.defaultAgentId,
       prompt,
       status: "cancelled",
-      startedAt: null,
+      startedAt: run.startedAt,
     });
   });
 });
