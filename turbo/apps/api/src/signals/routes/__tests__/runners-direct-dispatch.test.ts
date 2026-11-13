@@ -41,7 +41,6 @@ async function launchFixture() {
 }
 
 test("delivers complete input after binding its process", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
     reply: async (envelope) => {
@@ -85,7 +84,6 @@ test("delivers complete input after binding its process", async () => {
 });
 
 test("fails a Run with no serving process and releases its concurrency slot", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const run = await f.api.createThreadRun(f.actor, {
     agentId: f.agentId,
@@ -99,9 +97,13 @@ test("fails a Run with no serving process and releases its concurrency slot", as
 });
 
 test("persists preparation failure and releases admission before another Run", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   await f.api.registerDirectRunner(f.group);
+  await createBddApi(context).updateAgentInstructions(
+    f.actor,
+    f.agentId,
+    `# Direct preparation ${randomUUID()}`,
+  );
   context.mocks.s3.getSignedUrl.mockRejectedValue(
     new Error("Object signing is unavailable"),
   );
@@ -144,7 +146,6 @@ test("persists preparation failure and releases admission before another Run", a
 });
 
 test("keeps PAT-advertised serving capacity outside the official fleet", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
     maxConcurrent: 1,
@@ -273,7 +274,6 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
 test.each(["lost", "process", "generation", "run"] as const)(
   "retries identical bytes on the same process after a %s response and a later 429",
   async (responseKind) => {
-    await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
     const f = await launchFixture();
     const bytes: string[] = [];
     const identity = await f.api.registerDirectRunner(f.group, {
@@ -340,7 +340,6 @@ test.each(["lost", "process", "generation", "run"] as const)(
 );
 
 test("switches candidates only after a definite refusal", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const visited: string[] = [];
   let rejected = false;
@@ -378,7 +377,6 @@ test("switches candidates only after a definite refusal", async () => {
 });
 
 test("tries every capacity-ranked candidate with the same prepared execution input", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const offers: {
     readonly runnerId: string;
@@ -457,7 +455,6 @@ test.each([
     allocatedMemoryMb: 16_384,
   },
 ])("dispatches to advertised $kind capacity", async (heartbeat) => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const { kind, ...resources } = heartbeat;
   const identity = await f.api.registerDirectRunner(f.group, {
@@ -477,7 +474,6 @@ test.each([
 });
 
 test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const clock = now();
   mockNow(clock);
@@ -543,7 +539,6 @@ test("selects a fresh serving process after stale, unavailable and untrusted-hos
 });
 
 test("launches the following queued input after a definite refusal releases its Thread", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const chat = createChatFilesBddApi(context);
   const clientEventId = randomUUID();
@@ -595,7 +590,6 @@ test("launches the following queued input after a definite refusal releases its 
 });
 
 test("preserves a concurrent cancellation after the process proves it did not accept", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   await f.api.registerDirectRunner(f.group, {
     reply: async (envelope) => {
@@ -624,7 +618,6 @@ test("preserves a concurrent cancellation after the process proves it did not ac
 });
 
 test("definite refusal releases a preselected Run even though startedAt is set", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   await f.api.registerDirectRunner(f.group, {
     reply: (envelope) => {
@@ -648,7 +641,6 @@ test("definite refusal releases a preselected Run even though startedAt is set",
 });
 
 test("waits through short preferred-process 429s before using a roomier candidate", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
     maxConcurrent: 1,
@@ -714,7 +706,6 @@ test("waits through short preferred-process 429s before using a roomier candidat
 });
 
 test("advances when preferred busy pressure outlasts its preference without renewing delivery", async () => {
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const clock = now();
   mockNow(clock);
