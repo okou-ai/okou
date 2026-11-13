@@ -408,8 +408,13 @@ final class NativeProcessTests: XCTestCase {
       Int32(String(contentsOf: fixture.marker, encoding: .utf8)))
     XCTAssertEqual(kill(retiredPID, 0), -1)
     XCTAssertEqual(errno, ESRCH)
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["level"].string, "info")
+    XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "timeout")
+    XCTAssertEqual(event["contexts"]["nativeHelper"]["requestIntent"].string, "permission_refresh")
+    XCTAssertEqual(
+      event["contexts"]["nativeHelper"]["outcome"].string, "expired_during_system_suspension")
   }
 
   func testAwakePermissionRefreshTimeoutStillPropagatesAnError() async throws {
