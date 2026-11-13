@@ -55,7 +55,11 @@ import {
 } from "./composer-task-chips.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
-import { ComposerRail } from "./composer-rail.tsx";
+import {
+  ComposerRail,
+  RAIL_ITEM_ENTER,
+  railItemEnterDelay,
+} from "./composer-rail.tsx";
 import {
   CREATE_TASKS,
   WORKFLOW_KINDS,
@@ -131,19 +135,25 @@ function capabilityGroup(task: HomeTask): HomeCapability {
 }
 
 /**
- * The open tab is the tray's tint with a 16px top radius; each concave corner
- * is a 16px square of that tint with a quarter circle cut out of it, set just
- * outside the tab's foot. The first tab starts at the tray's edge, so it has no
- * left corner to fill -- the tray squares its own corner instead. The left
- * padding of the first tab lines its icon up with the tray's content edge.
+ * The open tab is the tray's tint with a 16px top radius, drawn once by the
+ * list's indicator rather than by each tab, so switching capabilities slides
+ * that one shape from the old tab to the new one instead of cutting between
+ * two. Each concave corner is a 16px square of the tint with a quarter circle
+ * cut out of it, set just outside the shape's foot. On the first tab the left
+ * corner falls outside the list, which clips it, and the tray squares its own
+ * corner instead. The left padding of the first tab lines its icon up with the
+ * tray's content edge.
  */
 const CAPABILITY_TAB = cn(
-  "relative flex h-10 shrink-0 cursor-default items-center gap-2 rounded-t-2xl px-4 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors sm:first:pl-5",
+  "relative flex h-10 shrink-0 cursor-default items-center gap-2 rounded-t-2xl px-4 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none transition-colors duration-300 ease-capability sm:first:pl-5",
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-  "data-active:bg-(--capability-tray) data-active:text-foreground",
-  "data-active:before:absolute data-active:before:right-full data-active:before:bottom-0 data-active:before:size-4 data-active:before:bg-[radial-gradient(circle_at_0_0,transparent_15.5px,var(--capability-tray)_16px)]",
-  "data-active:after:absolute data-active:after:bottom-0 data-active:after:left-full data-active:after:size-4 data-active:after:bg-[radial-gradient(circle_at_100%_0,transparent_15.5px,var(--capability-tray)_16px)]",
-  "first:before:hidden",
+  "data-active:text-foreground",
+);
+const CAPABILITY_TAB_INDICATOR = cn(
+  "absolute top-(--active-tab-top) left-(--active-tab-left) h-(--active-tab-height) w-(--active-tab-width) rounded-t-2xl bg-(--capability-tray)",
+  "before:absolute before:right-full before:bottom-0 before:size-4 before:bg-[radial-gradient(circle_at_0_0,transparent_15.5px,var(--capability-tray)_16px)]",
+  "after:absolute after:bottom-0 after:left-full after:size-4 after:bg-[radial-gradient(circle_at_100%_0,transparent_15.5px,var(--capability-tray)_16px)]",
+  "motion-safe:transition-[left,width] motion-safe:duration-300 motion-safe:ease-capability",
 );
 
 /**
@@ -153,8 +163,17 @@ const CAPABILITY_TAB = cn(
  * needs 4px above and below for that segment's shadow, taken back with a
  * negative margin so the row keeps the 32px of its neighbours.
  */
-const CAPABILITY_TYPE_TABS =
-  "-my-1 h-10 min-w-0 overflow-x-auto bg-transparent px-0 py-1 [scrollbar-width:none]";
+const CAPABILITY_TYPE_TABS = cn(
+  "-my-1 h-10 min-w-0 overflow-x-auto bg-transparent px-0 py-1 [scrollbar-width:none]",
+  RAIL_ITEM_ENTER,
+);
+/**
+ * A type switch hands the raised segment from one type to the next: the old
+ * one's fill and shadow fade out as the new one's fade in, on the same timing
+ * as the choices that follow it, rather than the shadow jumping across.
+ */
+const CAPABILITY_TYPE_TAB =
+  "motion-safe:transition-[color,background-color,box-shadow] motion-safe:duration-200 motion-safe:ease-capability";
 
 /**
  * Create's types and Workflow's kinds switch in the tray's own header, so a
@@ -197,7 +216,11 @@ function CapabilityTabs({
       >
         {WORKFLOW_KINDS.map(({ kind }) => {
           return (
-            <SegmentControlItem key={kind} value={kind}>
+            <SegmentControlItem
+              key={kind}
+              value={kind}
+              className={CAPABILITY_TYPE_TAB}
+            >
               {copy.workflow[kind].shortTitle}
             </SegmentControlItem>
           );
@@ -217,7 +240,11 @@ function CapabilityTabs({
     >
       {CREATE_TASKS.map(({ task }) => {
         return (
-          <SegmentControlItem key={task} value={task}>
+          <SegmentControlItem
+            key={task}
+            value={task}
+            className={CAPABILITY_TYPE_TAB}
+          >
             {tasks[task]}
           </SegmentControlItem>
         );
@@ -254,7 +281,7 @@ function CapabilityViewAll({
       type="button"
       variant="quiet"
       size="sm"
-      className="gap-0.5 pr-2 pl-2.5"
+      className={cn("gap-0.5 pr-2 pl-2.5", RAIL_ITEM_ENTER)}
       onClick={browse}
     >
       {t(($) => {
@@ -315,8 +342,9 @@ export function CapabilityTray({
         })}
         // The last tab's concave corner hangs 16px past it; the end padding
         // keeps the scroller from clipping it.
-        className="flex min-w-0 items-end overflow-x-auto pr-4 [scrollbar-width:none]"
+        className="relative flex min-w-0 items-end overflow-x-auto pr-4 [scrollbar-width:none]"
       >
+        <TabsPrimitive.Indicator className={CAPABILITY_TAB_INDICATOR} />
         {tabs.map(({ id, Icon, label }) => {
           return (
             <TabsPrimitive.Tab key={id} value={id} className={CAPABILITY_TAB}>
@@ -331,12 +359,19 @@ export function CapabilityTray({
         data-slot="capability-tray"
         className={cn(
           "relative flex min-w-0 flex-col gap-4 rounded-t-3xl bg-(--capability-tray) px-4 pt-4 pb-10 outline-none sm:px-5",
+          // The corner squares as the indicator arrives at the first tab and
+          // rounds again as it leaves, on the indicator's own timing.
+          "motion-safe:transition-[border-top-left-radius] motion-safe:duration-300 motion-safe:ease-capability",
           group === "search" && "rounded-tl-none",
         )}
       >
         {selected !== "search" && selected !== "research" && (
           <div className="flex min-w-0 items-center justify-between gap-3">
-            <CapabilityTabs signals={signals} selected={selected} />
+            {/* Keyed by capability, so moving between Create and Workflow
+                brings the other set of types in with the choices under them,
+                while a type switch keeps the control and hands its raised
+                segment over. */}
+            <CapabilityTabs key={group} signals={signals} selected={selected} />
             <div className="flex shrink-0 items-center gap-1">
               <CapabilityViewAll signals={signals} selected={selected} />
               {closeButton}
@@ -402,13 +437,19 @@ function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
   );
 }
 
+/**
+ * An Explore choice. The cards resolve in reading order as their capability
+ * arrives, on the same stagger as the covers on Create and Workflow.
+ */
 function HomeActionCard({
   title,
   Icon,
+  index,
   onClick,
 }: {
   readonly title: string;
   readonly Icon: LucideIcon;
+  readonly index: number;
   readonly onClick: () => void;
 }) {
   return (
@@ -416,13 +457,16 @@ function HomeActionCard({
       variant="quiet"
       iconSize="lg"
       aria-label={title}
+      style={{ animationDelay: railItemEnterDelay(index) }}
       className={surfaceVariants({
         radius: "compact",
         interactive: true,
         // The tray's tint already sets the card apart, so it keeps the
         // surface's white and shadow and lets go of the line.
-        className:
+        className: cn(
           "h-auto min-h-16 min-w-0 justify-start gap-3 border-transparent p-4 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @xl:min-h-28 @xl:flex-col @xl:items-start @xl:justify-between @xl:gap-5",
+          RAIL_ITEM_ENTER,
+        ),
       })}
       onClick={onClick}
     >
@@ -466,19 +510,26 @@ function HomeExploreSuggestions({
       {/* The tab above names the capability, so the header line says what
           it finds instead of naming it twice. */}
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate pl-0.5 text-sm text-muted-foreground">
+        <p
+          key={kind}
+          className={cn(
+            "min-w-0 truncate pl-0.5 text-sm text-muted-foreground",
+            RAIL_ITEM_ENTER,
+          )}
+        >
           {copy[kind].description}
         </p>
         {headerAction}
       </div>
       <CapabilityTrayBody key={kind}>
         <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
-          {suggestions.map(({ id, title, Icon }) => {
+          {suggestions.map(({ id, title, Icon }, index) => {
             return (
               <HomeActionCard
                 key={id}
                 title={title}
                 Icon={Icon}
+                index={index}
                 onClick={() => {
                   detach(
                     prepare(
@@ -633,8 +684,11 @@ function HomeWorkflowSuggestions({
 
 export function CapabilityCloseButton({
   signals,
+  onClose,
 }: {
   readonly signals: ComposerSignals;
+  /** Replaces the plain close, as the home's swap back to its cards does. */
+  readonly onClose?: () => void;
 }) {
   const { t } = useTranslation();
   const close = useSet(signals.taskChips.home.close$);
@@ -648,9 +702,12 @@ export function CapabilityCloseButton({
         return $.chat.capabilityHome.back;
       })}
       className="shrink-0 text-muted-foreground"
-      onClick={() => {
-        detach(close(pageSignal), Reason.DomCallback);
-      }}
+      onClick={
+        onClose ??
+        (() => {
+          detach(close(pageSignal), Reason.DomCallback);
+        })
+      }
     >
       <X aria-hidden />
     </Button>
