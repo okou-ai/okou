@@ -295,7 +295,13 @@ final class FailureRecoveryTests: XCTestCase {
     await conversation.recoverFailure(failure.id, resetUsage: true)
     XCTAssertTrue(fixture.state.value.withLock { $0.resetKeys.isEmpty && $0.sends.isEmpty })
     XCTAssertFalse(conversation.isRecoveringFailure)
-    XCTAssertNotNil(conversation.modelSelection?.error)
+    let selection = try XCTUnwrap(conversation.modelSelection)
+    do {
+      _ = try await models.stateStore.get(selection.metadataValue).value
+      XCTFail("The model settings surface must retain the failed metadata read")
+    } catch {
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
+    }
     fixture.state.value.withLock { $0.metadataStatus = 200 }
     await conversation.modelSelection?.refresh()
     await conversation.recoverFailure(failure.id, resetUsage: true)
