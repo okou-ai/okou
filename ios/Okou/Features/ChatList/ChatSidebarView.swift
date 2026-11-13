@@ -159,6 +159,7 @@ struct ChatSidebarView: View {
     .background { chatNumberShortcuts }
     .background(OkouColor.sidebar)
     .task { await store.projects.activate() }
+    .task { await store.activateDrafts() }
     .onDisappear { projectAction?.cancel() }
     .background {
       OkouNameDialog(
