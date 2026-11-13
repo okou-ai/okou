@@ -87,24 +87,36 @@ ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
 
 ## Ingress monitoring
 
-`provision-monitoring.yml` runs authenticated public HTTPS health after the
-existing Runner status collector, in the same service and timer. It reads the existing private managed
-`runner.yaml`, `runner_id`, `heartbeat_generation` and lifecycle status in each
-version directory; it does not require changes to the Runner executable or
-status format. Running and draining official targets are checked separately.
-Prepared, stopped and nonofficial instances are not targets. The configured
-hostname must match inventory before a credential is sent. Manual credential
-overrides or config drift can make the configured health request unsuccessful;
-the collector does not read live-process credentials.
+`provision-monitoring.yml` installs one Python implementation,
+`vm0-monitoring-runner-collect`, with two independently scheduled roles:
+
+- `status`: the existing lifecycle service/timer collects local state every
+  15 seconds and writes `runner-status.prom`.
+- `ingress --hostname=<inventory hostname>`: a separate oneshot service/timer
+  writes `runner-ingress.prom`. Its timer uses `OnBootSec=15s` for the first
+  activation and `OnUnitInactiveSec=60s` thereafter, including after failure.
+  Enabling it after the boot deadline starts the first round immediately.
+
+systemd prevents another activation of the ingress unit while it is running;
+its processes have a separate 35-second start timeout and kill group. Local
+status collection does not wait for HTTP. Direct script invocation performs one
+diagnostic round; production cadence belongs to the timer, without a Python
+cooldown file or background scheduler.
+
+The ingress role reads the existing private managed `runner.yaml`, `runner_id`,
+`heartbeat_generation` and lifecycle status in each version directory. It does
+not require Runner executable or status format changes. Running and draining
+official targets are checked separately; prepared, stopped and nonofficial
+instances are excluded. Hostname must match inventory before sending a credential.
+Manual credential overrides or config drift can make configured health fail;
+the collector does not read live-process credentials. The status role retains
+its broader lifecycle input contract without requiring private health config.
 
 Each target receives one request per collection, with a ten-second timeout and
 no retries or redirects. Up to four requests run concurrently within a
-30-second collection budget. The existing timer retains its 15-second cadence;
-a private attempt stamp/lock permits an ingress round only at least 60 seconds
-after the previous round finishes, including publication failures. It prevents
-overlap and catch-up probes without another service or timer. Lifecycle metrics
-publish before probing; a slow health round can extend that service invocation.
-The existing 15-second Alloy scrape only reads the result.
+30-second collection budget. A failed health publication does not immediately
+restart its service or block lifecycle output. The existing 15-second Alloy
+scrape only reads the results and never triggers network probes.
 
 The collector atomically replaces `runner-ingress.prom` with two host gauges:
 
@@ -145,5 +157,6 @@ collector changes through the existing Ansible-tree hash; merged source alone
 does not prove the host was provisioned or Grafana received the new series.
 Run the real-files/curl/TLS fixtures with
 `.github/scripts/tests/vm0-monitoring-runner-ingress-collect-test.sh`.
-The Linux fixture requires Python/PyYAML, curl, OpenSSL, a C compiler and
-`systemd-analyze`; its OS fault injector checks interrupted schedule updates.
+The Linux fixture requires Python/PyYAML, curl, OpenSSL and `systemd-analyze`.
+It exercises both modes, strict health/count behavior, isolation during blocked
+HTTP and failure, and verifies the rendered service/timer pairs.

@@ -1,13 +1,11 @@
 #!/usr/bin/python3
-"""Probe managed Runner HTTPS ingress independently of Runner execution."""
+"""Collect local Runner lifecycle or authenticated HTTPS ingress metrics."""
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import fcntl
 import json
-import math
 import os
 import re
 import selectors
@@ -17,20 +15,221 @@ import sys
 import threading
 import time
 import uuid
+from collections import Counter
 from pathlib import Path
 
 import yaml
 
-RUNNERS_DIR = "/var/lib/vm0-runner/runners"
-TEXTFILE_DIR = "/var/lib/vm0-monitoring/textfile-collector"
+SANDBOX_STATES = ("active", "idle", "blank", "preparing", "unknown")
+RUNNER_MODES = ("starting", "running", "draining", "stopping", "unknown")
+STATUS_RESULTS = ("included", "stopped", "invalid")
+STATE_PRECEDENCE = {"blank": -1, "unknown": 0, "preparing": 1, "active": 2, "idle": 3}
+CANONICAL_RUNNERS_DIR_ENV = "OKOU_RUNNERS_DIR"
+DEFAULT_RUNNERS_DIR = "/var/lib/vm0-runner/runners"
+CANONICAL_TEXTFILE_DIR_ENV = "OKOU_MONITORING_TEXTFILE_DIR"
+DEFAULT_TEXTFILE_DIR = "/var/lib/vm0-monitoring/textfile-collector"
+
+
+class InvalidStatus(ValueError):
+    pass
+
+
+def parse_sandbox_entry(entry: object) -> tuple[dict[object, object], str]:
+    if not isinstance(entry, dict):
+        raise InvalidStatus("sandbox entry must be an object")
+
+    value = entry.get("sandbox_id")
+    if not isinstance(value, str):
+        raise InvalidStatus("sandbox_id must be a string")
+
+    try:
+        return entry, str(uuid.UUID(value))
+    except ValueError as error:
+        raise InvalidStatus("sandbox_id must be a UUID") from error
+
+
+def parse_collection(status: dict[object, object], field: str) -> list[object]:
+    value = status.get(field, [])
+    if not isinstance(value, list):
+        raise InvalidStatus(f"{field} must be an array")
+    return value
+
+
+def parse_status_object(content: str) -> tuple[dict[object, object], str]:
+    status = json.loads(content)
+    if not isinstance(status, dict):
+        raise InvalidStatus("status must be an object")
+    mode = status.get("mode")
+    if not isinstance(mode, str) or not mode:
+        raise InvalidStatus("mode must be a non-empty string")
+    return status, mode
+
+
+def parse_status(path: Path) -> tuple[str, list[tuple[str, str]]]:
+    status, mode = parse_status_object(path.read_text(encoding="utf-8"))
+
+    if mode == "stopped":
+        return mode, []
+
+    sandbox_states: list[tuple[str, str]] = []
+    for entry in parse_collection(status, "active_runs"):
+        active_run, sandbox_id = parse_sandbox_entry(entry)
+        if "phase" not in active_run:
+            state = "active"
+        else:
+            phase = active_run["phase"]
+            if not isinstance(phase, str):
+                raise InvalidStatus("active run phase must be a string")
+            state = {"running": "active", "preparing": "preparing"}.get(
+                phase, "unknown"
+            )
+        sandbox_states.append((sandbox_id, state))
+
+    blank_ids = {
+        parse_sandbox_entry(entry)[1]
+        for entry in parse_collection(status, "blank_sandboxes")
+    }
+    for entry in parse_collection(status, "idle_sandboxes"):
+        _, sandbox_id = parse_sandbox_entry(entry)
+        if sandbox_id not in blank_ids:
+            sandbox_states.append((sandbox_id, "idle"))
+    sandbox_states.extend((sandbox_id, "blank") for sandbox_id in blank_ids)
+
+    return mode, sandbox_states
+
+
+def record_state(states: dict[str, str], sandbox_id: str, state: str) -> None:
+    current = states.get(sandbox_id)
+    if current is None or STATE_PRECEDENCE[state] > STATE_PRECEDENCE[current]:
+        states[sandbox_id] = state
+
+
+def collect_status(
+    runners_dir: Path,
+) -> tuple[Counter[str], Counter[str], Counter[str], int]:
+    sandbox_states: dict[str, str] = {}
+    runner_modes: Counter[str] = Counter()
+    status_results: Counter[str] = Counter()
+    collection_success = 1
+
+    if runners_dir.is_symlink():
+        print(f"invalid runners directory symlink: {runners_dir}", file=sys.stderr)
+        return Counter(), runner_modes, status_results, 0
+
+    if not runners_dir.exists():
+        return Counter(), runner_modes, status_results, collection_success
+
+    if not runners_dir.is_dir():
+        print(f"invalid runners directory: {runners_dir}", file=sys.stderr)
+        return Counter(), runner_modes, status_results, 0
+
+    try:
+        runner_dirs = sorted(runners_dir.iterdir(), key=lambda path: path.name)
+    except OSError as error:
+        print(f"cannot scan runners directory {runners_dir}: {error}", file=sys.stderr)
+        return Counter(), runner_modes, status_results, 0
+
+    for runner_dir in runner_dirs:
+        if runner_dir.is_symlink():
+            print(f"invalid runner directory symlink: {runner_dir}", file=sys.stderr)
+            status_results["invalid"] += 1
+            collection_success = 0
+            continue
+        if not runner_dir.is_dir():
+            continue
+
+        status_path = runner_dir / "status.json"
+        if status_path.is_symlink():
+            print(f"invalid status file symlink: {status_path}", file=sys.stderr)
+            status_results["invalid"] += 1
+            collection_success = 0
+            continue
+        if not status_path.exists():
+            continue
+        if not status_path.is_file():
+            print(f"invalid status file: {status_path}", file=sys.stderr)
+            status_results["invalid"] += 1
+            collection_success = 0
+            continue
+
+        try:
+            mode, entries = parse_status(status_path)
+        except (OSError, UnicodeError, json.JSONDecodeError, InvalidStatus) as error:
+            print(f"invalid runner status {status_path}: {error}", file=sys.stderr)
+            status_results["invalid"] += 1
+            collection_success = 0
+            continue
+
+        if mode == "stopped":
+            status_results["stopped"] += 1
+            continue
+
+        status_results["included"] += 1
+        runner_modes[mode if mode in RUNNER_MODES else "unknown"] += 1
+        for sandbox_id, state in entries:
+            record_state(sandbox_states, sandbox_id, state)
+
+    return (
+        Counter(sandbox_states.values()),
+        runner_modes,
+        status_results,
+        collection_success,
+    )
+
+
+def render_status_metrics(
+    sandbox_states: Counter[str],
+    runner_modes: Counter[str],
+    status_results: Counter[str],
+    collection_success: int,
+) -> str:
+    lines = [
+        "# HELP vm0_runner_sandboxes Runner-managed sandboxes by lifecycle state.",
+        "# TYPE vm0_runner_sandboxes gauge",
+    ]
+    lines.extend(
+        f'vm0_runner_sandboxes{{state="{state}"}} {sandbox_states[state]}'
+        for state in SANDBOX_STATES
+    )
+    lines.extend(
+        [
+            "",
+            "# HELP vm0_runner_instances Live runner instances by lifecycle mode.",
+            "# TYPE vm0_runner_instances gauge",
+        ]
+    )
+    lines.extend(
+        f'vm0_runner_instances{{mode="{mode}"}} {runner_modes[mode]}'
+        for mode in RUNNER_MODES
+    )
+    lines.extend(
+        [
+            "",
+            "# HELP vm0_runner_status_files Runner status files by collection result.",
+            "# TYPE vm0_runner_status_files gauge",
+        ]
+    )
+    lines.extend(
+        f'vm0_runner_status_files{{result="{result}"}} {status_results[result]}'
+        for result in STATUS_RESULTS
+    )
+    lines.extend(
+        [
+            "",
+            "# HELP vm0_runner_status_collection_success Whether all runner status inputs were collected successfully.",
+            "# TYPE vm0_runner_status_collection_success gauge",
+            f"vm0_runner_status_collection_success {collection_success}",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 MAX_FILE_BYTES = 1024 * 1024
 MAX_RUNNERS = 128
 PROBE_TIMEOUT = 10
 COLLECTION_TIMEOUT = 30
-PROBE_PERIOD = 60
-ATTEMPT_FILE = ".runner-ingress-attempt"
 ACTIVE_MODES = ("running", "draining")
 
 
@@ -84,10 +283,8 @@ def identity(directory: int) -> tuple[str, int]:
 
 
 def active(directory: int) -> bool:
-    status = json.loads(read_file(directory, "status.json"))
-    if not isinstance(status, dict) or not isinstance(status.get("mode"), str):
-        raise ValueError("invalid status")
-    return status["mode"] in ACTIVE_MODES
+    _, mode = parse_status_object(read_file(directory, "status.json"))
+    return mode in ACTIVE_MODES
 
 
 def request_health(hostname: str, runner_id: str, token: str, deadline: float) -> bool:
@@ -215,7 +412,9 @@ def probe_runner(
             os.close(directory)
 
 
-def collect(runners_dir: Path, hostname: str, deadline: float) -> dict[str, int]:
+def collect_ingress(
+    runners_dir: Path, hostname: str, deadline: float
+) -> dict[str, int]:
     try:
         directory = open_directory(runners_dir)
     except FileNotFoundError:
@@ -255,9 +454,27 @@ def collect(runners_dir: Path, hostname: str, deadline: float) -> dict[str, int]
     return results
 
 
-def publish(directory_path: Path, results: dict[str, int] | None) -> None:
-    directory = open_directory(directory_path)
-    temporary = f".runner-ingress.{uuid.uuid4().hex}.tmp"
+def render_ingress_metrics(results: dict[str, int] | None) -> str:
+    lines = []
+    for outcome, value in (("success", 1), ("failure", 0)):
+        metric = f"vm0_runner_ingress_{outcome}_count"
+        lines.extend(
+            [
+                f"# HELP {metric} Unique Runner targets with {outcome} in the latest HTTPS health round.",
+                f"# TYPE {metric} gauge",
+            ]
+        )
+        if results is not None:
+            count = sum(result == value for result in results.values())
+            lines.append(f"{metric} {count}")
+    return "\n".join(lines) + "\n"
+
+
+def write_metrics(textfile_dir: Path, filename: str, metrics: str) -> None:
+    if not textfile_dir.is_dir():
+        raise FileNotFoundError(f"missing textfile directory: {textfile_dir}")
+    directory = open_directory(textfile_dir)
+    temporary = f".{filename}.{uuid.uuid4().hex}.tmp"
     try:
         descriptor = os.open(
             temporary,
@@ -265,22 +482,12 @@ def publish(directory_path: Path, results: dict[str, int] | None) -> None:
             0o644,
             dir_fd=directory,
         )
-        with os.fdopen(descriptor, "w") as output:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             os.fchmod(output.fileno(), 0o644)
-            for outcome, value in (("success", 1), ("failure", 0)):
-                metric = f"vm0_runner_ingress_{outcome}_count"
-                output.write(
-                    f"# HELP {metric} Unique Runner targets with {outcome} in the latest HTTPS health round.\n"
-                )
-                output.write(f"# TYPE {metric} gauge\n")
-                if results is not None:
-                    count = sum(result == value for result in results.values())
-                    output.write(f"{metric} {count}\n")
+            output.write(metrics)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(
-            temporary, "runner-ingress.prom", src_dir_fd=directory, dst_dir_fd=directory
-        )
+        os.replace(temporary, filename, src_dir_fd=directory, dst_dir_fd=directory)
         os.fsync(directory)
     finally:
         try:
@@ -291,106 +498,42 @@ def publish(directory_path: Path, results: dict[str, int] | None) -> None:
         os.close(directory)
 
 
-def write_schedule(descriptor: int, boot_id: str, not_before: float) -> None:
-    content = json.dumps([boot_id, not_before]).encode("ascii")
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    # Never clear a live reservation before its replacement has been written.
-    # An interrupted shortening can leave invalid JSON, which fails closed.
-    if os.write(descriptor, content) != len(content):
-        raise OSError("incomplete ingress schedule write")
-    os.ftruncate(descriptor, len(content))
-    os.fsync(descriptor)
-
-
-def begin_round(directory_path: Path) -> tuple[int, str, float] | None:
-    directory = open_directory(directory_path)
-    try:
-        descriptor = os.open(
-            ATTEMPT_FILE,
-            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-            0o600,
-            dir_fd=directory,
-        )
-    finally:
-        os.close(directory)
-    try:
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
-            or metadata.st_mode & 0o077
-        ):
-            raise ValueError("unsafe ingress schedule")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(descriptor)
-            return None
-        content = os.read(descriptor, 129)
-        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-        now = time.monotonic()
-        if content:
-            saved = json.loads(content)
-            if (
-                len(content) > 128
-                or not isinstance(saved, list)
-                or len(saved) != 2
-                or not isinstance(saved[0], str)
-                or type(saved[1]) not in (int, float)
-                or not math.isfinite(saved[1])
-            ):
-                raise ValueError("invalid ingress schedule")
-            if saved[0] == boot_id and now < saved[1]:
-                os.close(descriptor)
-                return None
-        # Reserve before network I/O. Even a killed round cannot immediately
-        # retry: all requests have this round's 30-second deadline.
-        deadline = now + COLLECTION_TIMEOUT
-        write_schedule(descriptor, boot_id, deadline + PROBE_PERIOD)
-        return descriptor, boot_id, deadline
-    except BaseException:
-        os.close(descriptor)
-        raise
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--hostname", required=True)
+    modes = parser.add_subparsers(dest="mode", required=True)
+    modes.add_parser("status", help="collect local lifecycle metrics")
+    ingress = modes.add_parser("ingress", help="probe authenticated HTTPS health")
+    ingress.add_argument("--hostname", required=True)
     args = parser.parse_args()
-    labels = args.hostname.split(".")
-    if (
-        len(args.hostname) > 253
-        or len(labels) < 2
-        or not all(
-            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
-            for label in labels
-        )
-    ):
-        parser.error("a canonical inventory hostname is required")
-    runners_dir = Path(os.environ.get("OKOU_RUNNERS_DIR") or RUNNERS_DIR)
-    textfile_dir = Path(os.environ.get("OKOU_MONITORING_TEXTFILE_DIR") or TEXTFILE_DIR)
-    try:
-        slot = begin_round(textfile_dir)
-    except (OSError, ValueError):
-        print("Runner ingress schedule unavailable", file=sys.stderr)
-        raise SystemExit(1) from None
-    if slot is None:
-        return
-    descriptor, boot_id, deadline = slot
-    try:
+    runners_dir = Path(os.environ.get(CANONICAL_RUNNERS_DIR_ENV) or DEFAULT_RUNNERS_DIR)
+    textfile_dir = Path(
+        os.environ.get(CANONICAL_TEXTFILE_DIR_ENV) or DEFAULT_TEXTFILE_DIR
+    )
+    if args.mode == "status":
+        metrics = render_status_metrics(*collect_status(runners_dir))
+        filename = "runner-status.prom"
+    else:
+        labels = args.hostname.split(".")
+        if (
+            len(args.hostname) > 253
+            or len(labels) < 2
+            or not all(
+                re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                for label in labels
+            )
+        ):
+            parser.error("a canonical inventory hostname is required")
         try:
-            results = collect(runners_dir, args.hostname, deadline)
+            results = collect_ingress(
+                runners_dir, args.hostname, time.monotonic() + COLLECTION_TIMEOUT
+            )
         except (OSError, ValueError):
             print("Runner ingress discovery unavailable", file=sys.stderr)
             # Unavailable discovery is not a successful empty collection.
             results = None
-        publish(textfile_dir, results)
-    finally:
-        try:
-            # Publication failure still waits a full period before more probes.
-            write_schedule(descriptor, boot_id, time.monotonic() + PROBE_PERIOD)
-        finally:
-            os.close(descriptor)
+        metrics = render_ingress_metrics(results)
+        filename = "runner-ingress.prom"
+    write_metrics(textfile_dir, filename, metrics)
 
 
 if __name__ == "__main__":
