@@ -1067,13 +1067,15 @@ async function expectStreamingViewer(): Promise<void> {
 
 test("A restarted Browser accepts searches after composition in the initial address field", async () => {
   const activeSession = browserSession();
-  const pausedSession = browserSession({
+  const pausedSession: BrowserSession = {
+    ...activeSession,
     status: "suspended",
+    window: undefined,
     liveUrl: null,
     idleExpiresAt: null,
     suspendedAt: "2026-09-01T10:10:00.000Z",
     suspensionReason: "idle",
-  });
+  };
   const cdpUrl = "wss://cdp.browser-use.com/composition-restart";
   mockBrowserCdp(context, cdpUrl);
   const requested = context.mocks.deferred<void>();
