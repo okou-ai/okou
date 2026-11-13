@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
@@ -41,6 +42,8 @@ fun ConversationRoute(
     // Capture this composition's value: a deferred effect must not read a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val actionColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     // Restored navigation can mount this route before the history resource selects its thread.
     DisposableEffect(model, threadId, state.generation, lifecycle, visible) {
         fun update() =
@@ -85,7 +88,9 @@ fun ConversationRoute(
                     }
                     thread.selectedModel?.let { Text(it) }
                 }
-                TextButton(onClick = model::refresh) { Text(stringResource(R.string.chat_refresh)) }
+                TextButton(onClick = model::refresh, colors = actionColors) {
+                    Text(stringResource(R.string.chat_refresh))
+                }
             }
             if (thread == null || state.phase == HistoryPhase.Loading)
                 item { Text(stringResource(R.string.history_loading)) }
@@ -96,7 +101,7 @@ fun ConversationRoute(
                     HistoryPhase.Failed ->
                         item {
                             Text(stringResource(R.string.history_failed))
-                            TextButton(onClick = model::refresh) {
+                            TextButton(onClick = model::refresh, colors = actionColors) {
                                 Text(stringResource(R.string.retry))
                             }
                         }
@@ -108,7 +113,7 @@ fun ConversationRoute(
                 if (state.readFailed)
                     item {
                         Text(stringResource(R.string.history_read_failed))
-                        TextButton(onClick = model::refresh) {
+                        TextButton(onClick = model::refresh, colors = actionColors) {
                             Text(stringResource(R.string.retry))
                         }
                     }

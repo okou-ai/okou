@@ -255,7 +255,13 @@ private fun ChatListScreen(
                         item(key = "group_${group.project?.id}") {
                             val project = group.project
                             if (project != null)
-                                TextButton(onClick = { toggleProject(project.id) }) {
+                                TextButton(
+                                    onClick = { toggleProject(project.id) },
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                ) {
                                     Text(
                                         project.name,
                                         style = MaterialTheme.typography.titleMedium,
