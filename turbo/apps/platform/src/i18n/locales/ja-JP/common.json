@@ -1658,6 +1658,7 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "フィード",
       "homeCard": {
         "completeTitle": "すべて確認しました",
         "feedback": "提案への操作",

@@ -65,7 +65,7 @@ Use [the source and publishing reference](references/suggestions.md) when comman
 
 ### 1. Inspect
 
-Read all active cards and recent receipts with \`okou suggestion list --all --json\`, following nextAfter through every page. Apply feedback before deciding what to retain or publish. A selected direction is not completion: read the subsequent conversation. Do not create cards after an incomplete inventory or unfinished maintenance pass.
+Read all active cards and recent receipts with \`okou feed list --type suggestion --all --json\`, following nextAfter through every page. Apply feedback before deciding what to retain or publish. A selected direction is not completion: read the subsequent conversation. Do not create cards after an incomplete inventory or unfinished maintenance pass.
 
 ### 2. Verify current outcomes
 

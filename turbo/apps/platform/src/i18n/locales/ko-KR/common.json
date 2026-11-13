@@ -1658,6 +1658,7 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "피드",
       "homeCard": {
         "completeTitle": "모두 확인했어요",
         "feedback": "제안 작업",

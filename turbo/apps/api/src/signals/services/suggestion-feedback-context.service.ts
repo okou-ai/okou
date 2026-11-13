@@ -1,15 +1,18 @@
+import {
+  suggestionFeedbackEvents,
+  retainedSuggestionFeedback,
+} from "./agent-suggestions-lifecycle";
 import { array } from "zod";
 import { computed, type Computed } from "ccstate";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { and, asc, eq, gt } from "drizzle-orm";
-import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
+import { feedItems } from "@okouai/db/schema/feed-item";
 import {
   suggestionFeedbackSchema,
   type SuggestionFeedback,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
-import { retainedSuggestionFeedback } from "./agent-suggestions-lifecycle";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
@@ -98,19 +101,20 @@ export function createSuggestionFeedbackContext(
     for (let page = 0; page < MAX_PAGES; page++) {
       const rows = await get(db$)
         .select({
-          id: agentSuggestions.id,
-          feedbacks: agentSuggestions.feedbacks,
+          id: feedItems.id,
+          feedbacks: suggestionFeedbackEvents,
         })
-        .from(agentSuggestions)
+        .from(feedItems)
         .where(
           and(
-            eq(agentSuggestions.orgId, owner.orgId),
-            eq(agentSuggestions.userId, owner.userId),
+            eq(feedItems.orgId, owner.orgId),
+            eq(feedItems.userId, owner.userId),
+            eq(feedItems.type, "suggestion"),
             retainedSuggestionFeedback(at),
-            after ? gt(agentSuggestions.id, after) : undefined,
+            after ? gt(feedItems.id, after) : undefined,
           ),
         )
-        .orderBy(asc(agentSuggestions.id))
+        .orderBy(asc(feedItems.id))
         .limit(PAGE_SIZE + 1);
       const selected = rows.slice(0, PAGE_SIZE);
       for (const row of selected) {

@@ -324,6 +324,10 @@ export const clientDescriptorManifest = [
     contracts: ["featureSwitchesContract"],
   },
   {
+    module: "feed",
+    contracts: ["feedContract"],
+  },
+  {
     module: "feishu-browser-connect",
     contracts: ["feishuBrowserConnectContract"],
   },
@@ -703,10 +707,6 @@ export const clientDescriptorManifest = [
   {
     module: "ssh-credentials",
     contracts: ["sshCredentialsContract"],
-  },
-  {
-    module: "suggestions",
-    contracts: ["suggestionsContract"],
   },
   {
     module: "tailscale",

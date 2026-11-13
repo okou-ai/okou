@@ -1658,6 +1658,7 @@
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
       "editReason": "修改原因",
+      "feedLabel": "動態",
       "homeCard": {
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",

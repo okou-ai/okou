@@ -1685,6 +1685,7 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "Fil",
       "homeCard": {
         "completeTitle": "Tout est à jour",
         "feedback": "Actions de la suggestion",
