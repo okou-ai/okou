@@ -1,5 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -164,6 +165,19 @@ test("Sent visualization choices are grouped, concise, and only shown when selec
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Okou",
+        },
+        memberships: [],
+      },
+    },
+    featureSwitches: {
+      [FeatureSwitchKey.ChatMessageVisualizationSummary]: true,
+    },
   });
 
   const selectedMessage = await findUserMessage("Create a comparison visual.");
@@ -267,4 +281,35 @@ test("Sent visualization choices are grouped, concise, and only shown when selec
       name: "Charts: Bar chart, Line chart",
     }),
   ).toBeInTheDocument();
+});
+
+test("Visualization preference summaries stay hidden when the switch is off", async () => {
+  const additionalInfo = buildComposerAdditionalInfo(null, "auto", {
+    output: "presentation",
+    charts: ["bar"],
+  });
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [
+      userEventWith(
+        "Create a chart.",
+        "d0000000-0000-4000-a000-000000000070",
+        additionalInfo,
+      ),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatMessageVisualizationSummary]: false,
+    },
+  });
+
+  const message = await findUserMessage("Create a chart.");
+  expect(message).not.toHaveTextContent("Presentation");
+  expect(
+    message.querySelector("[data-structured-visualization-preferences]"),
+  ).toBeNull();
 });

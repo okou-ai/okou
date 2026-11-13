@@ -47,6 +47,7 @@ export enum FeatureSwitchKey {
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
   ChatReplyNameLine = "chatReplyNameLine",
+  ChatMessageVisualizationSummary = "_chatMessageVisualizationSummary",
   ChatActionFollowups = "chatActionFollowups",
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",

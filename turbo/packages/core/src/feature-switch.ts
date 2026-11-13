@@ -199,6 +199,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatMessageVisualizationSummary]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat visualization summaries",
+    description:
+      "Show selected output formats and chart types on user messages.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",

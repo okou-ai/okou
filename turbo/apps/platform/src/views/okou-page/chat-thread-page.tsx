@@ -7203,10 +7203,12 @@ function UserMessageView({
   threadId,
   document,
   elevatedFileIds,
+  showVisualizationPreferences,
 }: {
   threadId: string;
   document: UserMessageRenderDocument;
   elevatedFileIds: ReadonlySet<string>;
+  showVisualizationPreferences: boolean;
 }) {
   const partOccurrences = new Map<string, number>();
   const agentRunSourceTitle = document.parts.find((renderPart) => {
@@ -7220,7 +7222,10 @@ function UserMessageView({
       );
     },
   );
-  if (bodyParts.length === 0 && !document.visualizationPreferences) {
+  if (
+    bodyParts.length === 0 &&
+    !(showVisualizationPreferences && document.visualizationPreferences)
+  ) {
     return null;
   }
   const renderedParts: ReactNode[] = [];
@@ -7269,7 +7274,7 @@ function UserMessageView({
   return (
     <div data-structured-user-message="" className="whitespace-pre-wrap">
       {renderedParts}
-      {document.visualizationPreferences ? (
+      {showVisualizationPreferences && document.visualizationPreferences ? (
         <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
           <UserMessageVisualizationPreferences
             preferences={document.visualizationPreferences}
@@ -7303,6 +7308,8 @@ function UserMessageContent({
   /** Sits directly left of the bubble, for example the pending spinner. */
   leading?: ReactNode;
 }) {
+  const showVisualizationPreferences =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatMessageVisualizationSummary];
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
   // without an id cannot be matched to a document part, so they stay inline.
@@ -7315,7 +7322,8 @@ function UserMessageContent({
     }),
   );
   const hasBody =
-    document.visualizationPreferences !== undefined ||
+    (showVisualizationPreferences &&
+      document.visualizationPreferences !== undefined) ||
     document.parts.some((renderPart) => {
       return (
         !isUserMessageHiddenPart(renderPart.part) &&
@@ -7342,6 +7350,7 @@ function UserMessageContent({
                 threadId={threadId}
                 document={document}
                 elevatedFileIds={elevatedFileIds}
+                showVisualizationPreferences={showVisualizationPreferences}
               />
             </div>
           </ChatUserMessageBubble>
