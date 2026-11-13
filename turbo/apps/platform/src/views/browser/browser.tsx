@@ -668,9 +668,11 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
 
 function BrowserAddressInput({
   signals,
+  canSubmit,
   navigating,
 }: {
   readonly signals: BrowserSignals;
+  readonly canSubmit: boolean;
   readonly navigating: boolean;
 }) {
   const { t } = useTranslation();
@@ -737,6 +739,13 @@ function BrowserAddressInput({
           beginEdit("interaction");
           return;
         }
+        if (event.key === "Enter" && (!canSubmit || navigating)) {
+          // A disabled submit button suppresses the form's implicit Enter.
+          // Keep keyboard feedback while input/navigation is unavailable.
+          event.preventDefault();
+          notifySubmission(navigating ? "opening" : "preparing");
+          return;
+        }
         if (event.key === "Escape") {
           event.preventDefault();
           // Select the reset value after React commits the controlled input.
@@ -791,7 +800,11 @@ function BrowserAddress({
           }
         }}
       >
-        <BrowserAddressInput signals={signals} navigating={navigating} />
+        <BrowserAddressInput
+          signals={signals}
+          canSubmit={canSubmit}
+          navigating={navigating}
+        />
         <IconButton
           type="submit"
           className="size-8"

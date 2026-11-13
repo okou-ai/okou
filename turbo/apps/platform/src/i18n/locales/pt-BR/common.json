@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Digite uma URL",
     "authorizationRequired": "O navegador na nuvem não está ativado para esta conversa",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",

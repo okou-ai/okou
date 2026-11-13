@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL を入力",
     "authorizationRequired": "このチャットではクラウドブラウザーが有効になっていません",
     "blankPage": {
       "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",

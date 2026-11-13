@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Introduce una URL",
     "authorizationRequired": "El navegador en la nube no está habilitado para este chat",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aquí mientras trabaja. Introduce una URL arriba para navegar por tu cuenta.",

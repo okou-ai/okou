@@ -1408,7 +1408,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Enter a URL",
     "authorizationRequired": "Cloud browser is not enabled for this chat",
     "blankPage": {
       "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",

@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Masukkan URL",
     "authorizationRequired": "Browser cloud belum diaktifkan untuk chat ini",
     "blankPage": {
       "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",

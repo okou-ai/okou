@@ -1408,7 +1408,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL eingeben",
     "authorizationRequired": "Cloud-Browser ist für diesen Chat nicht aktiviert",
     "blankPage": {
       "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",

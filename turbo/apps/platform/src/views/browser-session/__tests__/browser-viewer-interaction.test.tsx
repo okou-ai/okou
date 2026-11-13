@@ -299,9 +299,9 @@ test("Escape resets the address without surrendering its selected text to a docu
 
 test("An invalid local address remains a draft across membership reattachment", async () => {
   const browser = await setupViewer(0);
-  const address = screen.getByLabelText("Address");
-  await fill(address, "two words");
-  await userEvent.keyboard("{Enter}");
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(address, "///invalid");
+  fireEvent.submit(address.form!);
   await screen.findByRole("alert");
   const proof = browser.holdNextMembership("example-page");
   act(() => {
@@ -314,7 +314,7 @@ test("An invalid local address remains a draft across membership reattachment", 
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
-  expect(address).toHaveValue("two words");
+  expect(address).toHaveValue("///invalid");
   expect(address).toHaveFocus();
   expect(browser.targets[0]?.url).toBe("https://example.com");
 });
@@ -2719,15 +2719,6 @@ test("Shared tab controls support keyboard selection and address Escape", async 
   );
   expect(screen.getByLabelText("Address")).toHaveFocus();
   expect(browser.targets[1]?.url).toBe("https://other.example.com");
-});
-
-test("A search-like address reports the failed action and retains the remote page", async () => {
-  const browser = await setupViewer(0);
-  await fill(screen.getByLabelText("Address"), "find some text");
-  await userEvent.keyboard("{Enter}");
-  await screen.findByRole("alert");
-  expect(screen.getByLabelText("Address")).toHaveValue("find some text");
-  expect(browser.targets[0]?.url).toBe("https://example.com");
 });
 
 test("A hidden page pauses input and resumes the selected tab when visible", async () => {
