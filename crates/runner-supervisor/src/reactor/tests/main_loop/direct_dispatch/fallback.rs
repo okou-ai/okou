@@ -17,6 +17,7 @@ const IMAGE_BYTES: u64 = 1024 * 1024;
 enum Available {
     Retained,
     BlankAndHome,
+    BlankAndHomeLateRetained,
     LateHome,
     UnadvertisedHomeOnBlank,
     UnadvertisedHomeOnFresh,
@@ -57,6 +58,11 @@ async fn supplied_fallback_keeps_selected_home_source_through_blank_activation()
 }
 
 #[tokio::test]
+async fn supplied_blank_keeps_its_selected_home_when_another_vm_parks_before_activation() {
+    assert_fallback(Available::BlankAndHomeLateRetained).await;
+}
+
+#[tokio::test]
 async fn supplied_fallback_reuses_blank_when_home_is_unavailable() {
     assert_fallback(Available::Blank).await;
 }
@@ -88,15 +94,20 @@ async fn assert_fallback(available: Available) {
     let rootfs_hash = profiles["vm0/default"].rootfs_hash.clone();
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 8, 16384, 2, overrides.clone());
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let budget = config.capacity.budget.clone();
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
-    // A separate producer does not share the receiver's in-process notifications.
+    // An independent producer does not share receiver notifications.
     let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
     let key = "thread:supplied-home-fallback";
     let cached_home = matches!(
         available,
-        Available::Retained | Available::BlankAndHome | Available::ReplacedHome | Available::Home
+        Available::Retained
+            | Available::BlankAndHome
+            | Available::BlankAndHomeLateRetained
+            | Available::ReplacedHome
+            | Available::Home
     );
     // Match the old Claim's finalizing-to-home fixture: real published bytes
     // and a controlled producer transition, with the successor entering by HTTP.
@@ -131,6 +142,7 @@ async fn assert_fallback(available: Available) {
         available,
         Available::Retained
             | Available::BlankAndHome
+            | Available::BlankAndHomeLateRetained
             | Available::LateHome
             | Available::UnadvertisedHomeOnBlank
             | Available::ReplacedHome
@@ -171,8 +183,8 @@ async fn assert_fallback(available: Available) {
     peer.allow_health();
     wait_status_mode(&env._temp_dir.path().join("status.json"), "running", WAIT).await;
     if ordinary {
-        // A completed producer need not remain in ActiveRuns, and advisory
-        // inventory can miss a real publication after its watch is invalidated.
+        // Publication remains on disk after its producer exits and the
+        // receiver's advisory watcher loses its directory.
         let moved = cache_dir.with_extension("moved");
         tokio::fs::rename(&cache_dir, &moved).await.unwrap();
         tokio::fs::rename(&moved, &cache_dir).await.unwrap();
@@ -195,23 +207,60 @@ async fn assert_fallback(available: Available) {
             .await;
     }
     if matches!(available, Available::LateHome) {
-        // Use the old Claim fixture's real watcher-loss lifecycle. Publication
-        // is available on disk even though its advisory inventory is stale.
+        // Publish on disk after the advisory watcher loses its directory.
         let moved = cache_dir.with_extension("moved");
         tokio::fs::rename(&cache_dir, &moved).await.unwrap();
         tokio::fs::rename(&moved, &cache_dir).await.unwrap();
         seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", IMAGE_BYTES, source)
             .await;
     }
+    let transfer_guard = if matches!(available, Available::BlankAndHomeLateRetained) {
+        Some(
+            env.cancel_tokens
+                .handle(run_id)
+                .await
+                .unwrap()
+                .transfer_guard()
+                .await,
+        )
+    } else {
+        None
+    };
+    let mut inventory_changes = env.idle_pool.lock().await.subscribe_changes();
     if let Some(producer) = &producer {
         assert!(producer.reuse_publisher().publish_no_exact_sandbox());
     }
+    if transfer_guard.is_some() {
+        // The finalizing task reserves the blank before acquiring this transfer
+        // guard. Observe that ownership transition, then publish competing reuse.
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if env.idle_pool.lock().await.is_empty() {
+                    break;
+                }
+                inventory_changes.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        seed_idle_pool_with_overrides(
+            &env.idle_pool,
+            &budget,
+            &overrides,
+            key,
+            "vm0/default",
+            2,
+            4096,
+        )
+        .await;
+    }
+    drop(transfer_guard);
     if matches!(available, Available::ReplacedHome) {
         unpark.wait_entered(1, WAIT).await.unwrap();
         let before = env.handle.heartbeat_count();
         publish_replacement_home(&cache, &paths, key).await;
-        // The unrelated sentinel's heartbeat is a causal barrier after the
-        // cache replacement has refreshed inventory, without a timing sleep.
+        // The sentinel heartbeat is a causal barrier after cache replacement
+        // has refreshed inventory, without relying on elapsed time.
         let sentinel = "thread:source-binding-refresh-barrier";
         let sentinel_source =
             seed_home_cache_state(&cache, &paths, sentinel, "vm0/default", IMAGE_BYTES).await;
@@ -228,7 +277,7 @@ async fn assert_fallback(available: Available) {
             .await,
             "inventory must observe publication before blank activation resumes"
         );
-        // The controlled race is over; terminal cleanup also unparks this VM.
+        // Terminal cleanup also unparks this VM after the controlled race.
         unpark.release_many(usize::MAX);
     }
     execution.wait_entered(1, WAIT).await.unwrap();
@@ -268,6 +317,7 @@ async fn assert_fallback(available: Available) {
         "available VM capacity must be reused before creating a fresh VM"
     );
     drop(producer);
+    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, runner).await;
     wait_cancel_token_removed(&env.cancel_tokens, run_id, WAIT).await;
@@ -277,8 +327,7 @@ async fn assert_fallback(available: Available) {
 async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str) {
     let source = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
-    // Model a different retained sandbox publishing its own active home,
-    // using the same public lease/publication path as the executor.
+    // Use the executor's real lease/publication path for the competing home.
     let lease = cache
         .lease_active(HomeImageLeaseRequest {
             identity: HomeImageLeaseIdentity {

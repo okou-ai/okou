@@ -342,6 +342,7 @@ pub(super) async fn prepare_admitted_job(
                 reservation,
                 ReservedActivationRequest {
                     run_id,
+                    required_home_source_run_id: None,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
