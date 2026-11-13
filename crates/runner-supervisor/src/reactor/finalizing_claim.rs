@@ -286,6 +286,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     };
     let cancellation_handle = cancellation.handle();
     let mut activation_transfer_guard = None;
+    let mut selected_home_source_run_id = None;
     let ready = match activation {
         FinalizingActivation::Fresh(active_lease) => ReadyClaimedResource {
             reuse_entry: None,
@@ -323,7 +324,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 .await);
             }
             activation_transfer_guard = Some(transfer_guard);
-            let required_home_source_run_id = (reservation.kind() == IdleSandboxKind::Blank
+            selected_home_source_run_id = (reservation.kind() == IdleSandboxKind::Blank
                 && ctx.home_cache_snapshot.has_source_home_hint(
                     &admission.reuse_key,
                     &profile_name,
@@ -334,7 +335,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 reservation,
                 ReservedActivationRequest {
                     run_id,
-                    required_home_source_run_id,
+                    required_home_source_run_id: selected_home_source_run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,
@@ -401,13 +402,17 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         .reuse_entry
         .as_ref()
         .is_none_or(|entry| entry.kind() == IdleSandboxKind::Blank);
-    let required_home_source_run_id = (home_fallback
-        && ctx.home_cache_snapshot.has_source_home_hint(
-            &admission.reuse_key,
-            &profile_name,
-            admission.source_run_id,
-        ))
-    .then_some(admission.source_run_id);
+    // Inventory can change while unpark awaits. Keep a source already selected
+    // before activation; checkout revalidates it under the cache entry lock.
+    let required_home_source_run_id = if home_fallback {
+        selected_home_source_run_id.or_else(|| {
+            ctx.home_cache_snapshot
+                .has_source_home_hint(&admission.reuse_key, &profile_name, admission.source_run_id)
+                .then_some(admission.source_run_id)
+        })
+    } else {
+        None
+    };
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
             required_home_source_run_id,

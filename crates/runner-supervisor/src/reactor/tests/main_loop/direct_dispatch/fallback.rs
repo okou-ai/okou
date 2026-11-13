@@ -1,7 +1,12 @@
 use super::*;
-use crate::home_image_cache::HomeImageCache;
+use crate::home_image_cache::{
+    HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+};
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
-use crate::reactor::tests::support::{seed_home_cache_state, seed_idle_pool_with_overrides};
+use crate::reactor::tests::support::{
+    seed_home_cache_state, seed_home_cache_state_for_run, seed_idle_pool_with_overrides,
+    wait_heartbeat_matching_after,
+};
 use runner_host::paths::RunnerPaths;
 use sandbox::{HomeDriveSeedImage, SandboxId};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
@@ -12,6 +17,8 @@ const IMAGE_BYTES: u64 = 1024 * 1024;
 enum Available {
     Retained,
     BlankAndHome,
+    LateHome,
+    ReplacedHome,
     Blank,
     Home,
     Neither,
@@ -25,6 +32,16 @@ async fn supplied_fallback_reuses_retained_sandbox_before_blank_and_home() {
 #[tokio::test]
 async fn supplied_fallback_combines_available_blank_and_home() {
     assert_fallback(Available::BlankAndHome).await;
+}
+
+#[tokio::test]
+async fn supplied_fallback_reuses_home_published_after_intake_without_an_inventory_hint() {
+    assert_fallback(Available::LateHome).await;
+}
+
+#[tokio::test]
+async fn supplied_fallback_keeps_selected_home_source_through_blank_activation() {
+    assert_fallback(Available::ReplacedHome).await;
 }
 
 #[tokio::test]
@@ -46,6 +63,10 @@ async fn assert_fallback(available: Available) {
     let execution = MockLifecycleGate::new();
     let overrides = Arc::new(MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(execution.clone());
+    let unpark = MockLifecycleGate::new();
+    if matches!(available, Available::ReplacedHome) {
+        overrides.set_unpark_lifecycle_gate(unpark.clone());
+    }
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let rootfs_hash = profiles["vm0/default"].rootfs_hash.clone();
@@ -57,7 +78,7 @@ async fn assert_fallback(available: Available) {
     let key = "thread:supplied-home-fallback";
     let cached_home = matches!(
         available,
-        Available::Retained | Available::BlankAndHome | Available::Home
+        Available::Retained | Available::BlankAndHome | Available::ReplacedHome | Available::Home
     );
     // Match the old Claim's finalizing-to-home fixture: real published bytes
     // and a controlled producer transition, with the successor entering by HTTP.
@@ -66,7 +87,8 @@ async fn assert_fallback(available: Available) {
     } else {
         RunId::new_v4()
     };
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache.clone());
+    let cache_dir = config.paths.home.home_image_cache_dir();
     let producer = env
         .active_runs
         .register(source, Some(key.into()), "vm0/default".into());
@@ -88,7 +110,11 @@ async fn assert_fallback(available: Available) {
     };
     let blank = if matches!(
         available,
-        Available::Retained | Available::BlankAndHome | Available::Blank
+        Available::Retained
+            | Available::BlankAndHome
+            | Available::LateHome
+            | Available::ReplacedHome
+            | Available::Blank
     ) {
         let id = SandboxId::new_v4();
         let candidate = ParkedIdleCandidate::blank(
@@ -137,9 +163,48 @@ async fn assert_fallback(available: Available) {
     env.start_observer
         .wait_finalizing_handoff_requested(source, run_id, WAIT)
         .await;
+    if matches!(available, Available::LateHome) {
+        // Use the old Claim fixture's real watcher-loss lifecycle. Publication
+        // is available on disk even though its advisory inventory is stale.
+        let moved = cache_dir.with_extension("moved");
+        tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+        tokio::fs::rename(&moved, &cache_dir).await.unwrap();
+        seed_home_cache_state_for_run(&cache, &paths, key, "vm0/default", IMAGE_BYTES, source)
+            .await;
+    }
     assert!(producer.reuse_publisher().publish_no_exact_sandbox());
+    if matches!(available, Available::ReplacedHome) {
+        unpark.wait_entered(1, WAIT).await.unwrap();
+        let before = env.handle.heartbeat_count();
+        publish_replacement_home(&cache, &paths, key).await;
+        // The unrelated sentinel's heartbeat is a causal barrier after the
+        // cache replacement has refreshed inventory, without a timing sleep.
+        let sentinel = "thread:source-binding-refresh-barrier";
+        let sentinel_source =
+            seed_home_cache_state(&cache, &paths, sentinel, "vm0/default", IMAGE_BYTES).await;
+        assert!(
+            wait_heartbeat_matching_after(&env.handle, before, WAIT, |heartbeat| {
+                heartbeat.held_home_states.iter().any(|state| {
+                    state.reuse_key == sentinel
+                        && state
+                            .home_caches
+                            .iter()
+                            .any(|home| home.source_run_id == sentinel_source)
+                })
+            })
+            .await,
+            "inventory must observe publication before blank activation resumes"
+        );
+        // The controlled race is over; terminal cleanup also unparks this VM.
+        unpark.release_many(usize::MAX);
+    }
     execution.wait_entered(1, WAIT).await.unwrap();
-    if cached_home && retained.is_none() {
+    if matches!(available, Available::ReplacedHome) {
+        assert!(
+            overrides.home_drive_replacements().is_empty(),
+            "a selected source must not silently accept another producer's home"
+        );
+    } else if (cached_home || matches!(available, Available::LateHome)) && retained.is_none() {
         let drive = if blank.is_some() {
             overrides.home_drive_replacements().last().cloned()
         } else {
@@ -172,4 +237,43 @@ async fn assert_fallback(available: Available) {
     shutdown(&env, runner).await;
     wait_cancel_token_removed(&env.cancel_tokens, run_id, WAIT).await;
     wait_budget_count(&budget, 0, WAIT).await;
+}
+
+async fn publish_replacement_home(cache: &HomeImageCache, paths: &RunnerPaths, key: &str) {
+    let source = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    // Model a different retained sandbox publishing its own active home,
+    // using the same public lease/publication path as the executor.
+    let lease = cache
+        .lease_active(HomeImageLeaseRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: source,
+                sandbox_id,
+                profile_name: "vm0/default",
+                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                reuse_key: Some(key),
+                working_dir: "/home/user/workspace",
+                image_size_bytes: IMAGE_BYTES,
+            },
+            home_drive_available: true,
+        })
+        .await;
+    let image = paths.active_home_image(&sandbox_id);
+    tokio::fs::create_dir_all(image.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&image, vec![0x5a; IMAGE_BYTES as usize])
+        .await
+        .unwrap();
+    assert!(
+        lease
+            .promote(
+                source,
+                HomeCacheTerminalStatus::Success,
+                "2026-11-13T15:20:00Z".into(),
+                &crate::storage_fingerprints::StorageFingerprints::default(),
+            )
+            .await
+            .unwrap()
+    );
 }
