@@ -23,6 +23,7 @@ only_rules:
   - okou_global_mutable_state
   - okou_storage_boundaries
   - okou_task_lifecycle
+  - okou_discarded_throwing_task
 
 included:
   - Okou

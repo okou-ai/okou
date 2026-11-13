@@ -9,22 +9,23 @@ underlying ownership contracts. Setup commands belong in the
 
 ## Enforced Boundaries
 
-| Rule                         | Contract                                                                                                                                                                                | Web counterpart                                                   |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `okou_render_effects`        | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
-| `okou_stable_graph`          | Construct graph definitions at the owner, not inside graph callbacks, UI actions, or repeatedly invoked operation methods.                                                              | `no-command-in-command` and signal identity guidance              |
-| `okou_private_atoms`         | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
-| `okou_accessor_escape`       | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.                                   | `no-accessor-escape`, `no-getter-setter-params`                   |
-| `okou_native_requests`       | Raw URLSession operations and method references belong at their transport definition sites.                                                                                             | `no-direct-fetch`                                                 |
-| `okou_resource_failures`     | Preserve failures inside Computed/computedTask/Command/asyncCommand; reject optional try and unfiltered empty outcomes, plus cancellation catches that return successful resource data. | Error-swallowing helper restrictions and cancellation propagation |
-| `okou_test_synchronization`  | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
-| `okou_check_after_await`     | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
-| `okou_resource_cancellation` | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
-| `okou_subscription_teardown` | Release original CCState subscriptions and block-based notification tokens at teardown and before replacing a stored handle or dictionary slot.                                         | Native lifecycle ownership                                        |
-| `okou_import_boundaries`     | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
-| `okou_global_mutable_state`  | Keep stored file-level variables and mutable type storage out of production sources; retain computed properties, immutable constants and instance-owned state.                          | `no-package-variable` with Swift value semantics                  |
-| `okou_storage_boundaries`    | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
-| `okou_task_lifecycle`        | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
+| Rule                           | Contract                                                                                                                                                                                | Web counterpart                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `okou_render_effects`          | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
+| `okou_stable_graph`            | Construct graph definitions at the owner, not inside graph callbacks, UI actions, or repeatedly invoked operation methods.                                                              | `no-command-in-command` and signal identity guidance              |
+| `okou_private_atoms`           | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
+| `okou_accessor_escape`         | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.                                   | `no-accessor-escape`, `no-getter-setter-params`                   |
+| `okou_native_requests`         | Raw URLSession operations and method references belong at their transport definition sites.                                                                                             | `no-direct-fetch`                                                 |
+| `okou_resource_failures`       | Preserve failures inside Computed/computedTask/Command/asyncCommand; reject optional try and unfiltered empty outcomes, plus cancellation catches that return successful resource data. | Error-swallowing helper restrictions and cancellation propagation |
+| `okou_test_synchronization`    | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
+| `okou_check_after_await`       | Check cancellation or current owner identity after suspension before a direct graph or owner-state write.                                                                               | `signal-check-await`                                              |
+| `okou_resource_cancellation`   | Newly constructed resource Tasks connect to evaluation cancellation; retained original Tasks have explicit owner teardown.                                                              | `require-client-signal` and lifecycle ownership                   |
+| `okou_subscription_teardown`   | Release original CCState subscriptions and block-based notification tokens at teardown and before replacing a stored handle or dictionary slot.                                         | Native lifecycle ownership                                        |
+| `okou_import_boundaries`       | Keep Ably/Clerk imports at native adapters and provider-test entry points; preserve Domain/Data dependency direction.                                                                   | `no-restricted-imports`                                           |
+| `okou_global_mutable_state`    | Keep stored file-level variables and mutable type storage out of production sources; retain computed properties, immutable constants and instance-owned state.                          | `no-package-variable` with Swift value semantics                  |
+| `okou_storage_boundaries`      | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
+| `okou_task_lifecycle`          | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
+| `okou_discarded_throwing_task` | Do not explicitly discard a newly constructed Task whose visible errors escape its operation; retain a result owner or handle those errors inside the Task.                             | `no-floating-promises` and `no-void-statement`                    |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -71,6 +72,18 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   by rethrowing the original error remain valid.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
+- Explicit `_ = Task { ... }` assignments and wildcard declarations such as
+  `let _ = Task { ... }` cannot discard a Task with a visibly escaping `try` or
+  `throw`. The same check covers direct `Task.init`, `Task.immediate`, and
+  `Task.detached` construction, qualified spellings, and grouped expressions.
+  A complete internal catch handles its `do` body; a filtered catch does not
+  establish that all errors are handled. Errors thrown by any catch handler
+  still need an owner unless a surrounding internal catch receives them.
+  A catch around Task creation does not receive the Task's later failures.
+  Nonthrowing work, internally handled errors, and closures captured by `Result`
+  retain their native contracts. Retained, returned, transferred, and awaited
+  Tasks keep their separate result/lifetime obligations. Other failure and
+  force-operation rules continue to apply.
 - Tests await observable completion or an owned gate. Fixed sleep durations,
   including local constant aliases, and constant-bounded `for` loops with
   `Task.yield()` are checked. Forwarding a duration through an injected clock,
@@ -203,6 +216,11 @@ Resource-failure checks recognize explicit caught-error tests, native cancellati
 flags and direct URL-error comparisons. Error aliases, arbitrary helper predicates,
 switch-based cancellation handling and indirect recovery still require review.
 Allowing a throwing recovery expression does not prove its cancellation ownership.
+Discarded-Task checks inspect only direct native Task construction with an inline
+operation closure and an explicit discard. They separate nested closures, local
+functions and type/accessor bodies from the operation's error scope. Cross-file
+factories, aliases, helper implementations, and whether a retained/transferred
+Task is eventually observed still require review.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
 Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,

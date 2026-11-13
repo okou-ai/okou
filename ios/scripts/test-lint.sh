@@ -81,6 +81,13 @@ for path in "${production_paths[@]}"; do
   rm "$fixture/$path/GlobalState.swift"
 done
 grep -F 'okou_global_mutable_state' "$test_root/lint.log" >/dev/null
+printf 'func start() { _ = Task { throw CancellationError() } }\n' > "$fixture/Okou/DiscardedTask.swift"
+if run_lint; then
+  echo 'An explicitly discarded throwing Task passed the configured lint entry point.' >&2
+  exit 1
+fi
+grep -F 'okou_discarded_throwing_task' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/DiscardedTask.swift"
 for path in "${test_paths[@]}"; do
   printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
 done
