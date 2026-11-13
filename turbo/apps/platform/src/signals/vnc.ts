@@ -481,6 +481,21 @@ export const vncProfile$ = computed((get) => {
 export const vncTransport$ = computed((get) => {
   return get(editor$).transport;
 });
+export const vncDestinationHost$ = computed((get) => {
+  return get(editor$).destinationHost;
+});
+export const vncLoopbackHost$ = computed((get) => {
+  return get(editor$).loopbackHost;
+});
+export const vncTrust$ = computed((get) => {
+  return get(editor$).trust;
+});
+export const vncCaBundle$ = computed((get) => {
+  return get(editor$).caBundle;
+});
+export const vncAuthenticationReplacement$ = computed((get) => {
+  return get(editor$).replace;
+});
 export const vncDirectDestinationHost$ = computed((get) => {
   const editor = get(editor$);
   return editor.transport === "direct" ? editor.destinationHost : null;

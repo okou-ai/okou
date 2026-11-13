@@ -62,6 +62,11 @@ import {
   vncDialog$,
   vncProfile$,
   vncTransport$,
+  vncDestinationHost$,
+  vncLoopbackHost$,
+  vncTrust$,
+  vncCaBundle$,
+  vncAuthenticationReplacement$,
   vncCredentialSelection$,
   vncCredentials$,
   mountVncSecret$,
@@ -157,7 +162,7 @@ export function VncDisplayNameField({
 }) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
-  const editor = useGet(vncEditor$);
+  const destinationHost = useGet(vncDestinationHost$);
   if (!connection && setup?.fromComputer && setup.protocol === "vnc") {
     return (
       <details className="text-sm">
@@ -176,7 +181,7 @@ export function VncDisplayNameField({
             })}
             aria-describedby="vnc-connection-name-help"
             placeholder={
-              editor.destinationHost ||
+              destinationHost ||
               t(($) => {
                 return $.remoteControlSetup.namePlaceholder;
               })
@@ -222,15 +227,15 @@ export function VncEndpointFields({
   readonly connection: VncConnectionResponse | null;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const transport = useGet(vncTransport$);
+  const loopbackHost = useGet(vncLoopbackHost$);
+  const destinationHost = useGet(vncDestinationHost$);
   const chooseLoopback = useSet(chooseVncLoopbackHost$);
   const editDestination = useSet(editVncDestinationHost$);
-  const apple =
-    requiresVncProtectiveRoute(editor.profile) && editor.transport === "ssh";
+  const apple = requiresVncProtectiveRoute(profile) && transport === "ssh";
   const privateDirect =
-    !apple &&
-    editor.transport === "direct" &&
-    isPrivateVncLiteral(editor.destinationHost);
+    !apple && transport === "direct" && isPrivateVncLiteral(destinationHost);
   const loopbackItems = [
     { value: "127.0.0.1", label: "127.0.0.1" },
     { value: "::1", label: "::1" },
@@ -247,7 +252,7 @@ export function VncEndpointFields({
             </label>
             <Select
               items={loopbackItems}
-              value={editor.loopbackHost}
+              value={loopbackHost}
               onValueChange={(value, details) => {
                 if (value !== "127.0.0.1" && value !== "::1") {
                   details.cancel();
@@ -278,14 +283,14 @@ export function VncEndpointFields({
                   return $.remoteControlSetup.deviceAddress;
                 })}
               </label>
-              <RemoteAddressHelp route={editor.transport} />
+              <RemoteAddressHelp route={transport} />
             </div>
             <Input
               id="vnc-destination-host"
               name="host"
               required
               maxLength={VNC_HOST_MAX_LENGTH}
-              value={editor.destinationHost}
+              value={destinationHost}
               onChange={(event) => {
                 editDestination(event.currentTarget.value);
               }}
@@ -1232,7 +1237,9 @@ function VncCertificateNameField() {
 
 export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const trust = useGet(vncTrust$);
+  const caBundle = useGet(vncCaBundle$);
   const choose = useSet(chooseVncTrust$);
   const editCaBundle = useSet(editVncCaBundle$);
   const trustItems = [
@@ -1249,10 +1256,10 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       }),
     },
   ];
-  if (isRsaAesProfile(editor.profile)) {
+  if (isRsaAesProfile(profile)) {
     return <VncRsaPinFields disabled={disabled} />;
   }
-  if (requiresVncProtectiveRoute(editor.profile)) {
+  if (requiresVncProtectiveRoute(profile)) {
     return null;
   }
   return (
@@ -1265,7 +1272,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       </label>
       <Select
         items={trustItems}
-        value={editor.trust}
+        value={trust}
         onValueChange={(value, details) => {
           if (value !== "system" && value !== "custom_ca") {
             details.cancel();
@@ -1293,7 +1300,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
           return $.remoteConnectionHelp.certificateTrust;
         })}
       </p>
-      {editor.trust === "custom_ca" && (
+      {trust === "custom_ca" && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-ca-bundle">
             {t(($) => {
@@ -1306,7 +1313,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
             required
             maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
             aria-describedby="vnc-ca-help"
-            value={editor.caBundle}
+            value={caBundle}
             onChange={(event) => {
               editCaBundle(event.currentTarget.value);
             }}
@@ -1691,10 +1698,11 @@ export function VncCredentialFields({
   readonly connectionLogin?: boolean;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const replace = useGet(vncAuthenticationReplacement$);
   const setup = useGet(remoteSetup$);
   const guided = connectionLogin || (setup !== null && !credential);
-  const method = savedVncAuthenticationMethod(credential, editor.profile);
+  const method = savedVncAuthenticationMethod(credential, profile);
   return (
     <div className="grid gap-5">
       {guided ? (
@@ -1724,7 +1732,7 @@ export function VncCredentialFields({
       {showMethodSelection && !credential && (
         <VncAuthenticationMethodSelector
           disabled={disabled}
-          profile={editor.profile}
+          profile={profile}
         />
       )}
       {credential && connectionLogin && (
@@ -1751,12 +1759,9 @@ export function VncCredentialFields({
         </div>
       )}
       {credential && !connectionLogin && (
-        <VncAuthenticationReplacement
-          disabled={disabled}
-          replace={editor.replace}
-        />
+        <VncAuthenticationReplacement disabled={disabled} replace={replace} />
       )}
-      {(!credential || editor.replace || connectionLogin) && (
+      {(!credential || replace || connectionLogin) && (
         <VncAuthenticationInputs
           credential={credential}
           method={method}
