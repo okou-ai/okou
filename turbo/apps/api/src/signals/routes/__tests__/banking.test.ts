@@ -69,7 +69,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   // Webhook automations require a Team workspace.
   await api.grantProEntitlement(actor, {
     tier: args.triggerSource === "automation-event" ? "team" : "pro",
@@ -95,7 +95,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
           prompt: "banking precondition",
         });
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.claimRunnerJob(run.runId);
+  const claim = await api.executionInput(run.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the Banking Runner claim to include OKOU_TOKEN");

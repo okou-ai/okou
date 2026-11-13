@@ -209,7 +209,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       string,
       {
         actor: ApiTestUser;
-        claim: Awaited<ReturnType<typeof runsApi.claimRunnerJob>>;
+        claim: Awaited<ReturnType<typeof runsApi.executionInput>>;
       }
     >();
     const scenario = createPublicComputerUseScenario(context, {

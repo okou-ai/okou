@@ -943,7 +943,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
     );
     if (previousPrivateAccount) {
       const runs = createRunsApi(context);
-      runs.configureRunnerGroup();
+      await runs.configureRunnerGroup();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       server.use(

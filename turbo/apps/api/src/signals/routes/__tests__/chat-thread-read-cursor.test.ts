@@ -51,8 +51,8 @@ async function createCursorFixture(): Promise<CursorFixture> {
   };
 }
 
-function prepareChatRuntime(): void {
-  runs.configureRunnerGroup();
+async function prepareChatRuntime(): Promise<void> {
+  await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   chatCallbacks.acceptChatObjectStorage();
@@ -66,7 +66,7 @@ function prepareChatRuntime(): void {
  * clears the thread's unread indicator.
  */
 async function createUnreadCursorFixture(): Promise<CursorFixture> {
-  prepareChatRuntime();
+  await prepareChatRuntime();
   const actor = bdd.user();
   await runs.grantProEntitlement(actor);
   // The Run must still be active when it is cancelled, so it uses Fable,

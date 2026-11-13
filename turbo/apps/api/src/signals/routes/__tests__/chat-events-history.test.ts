@@ -301,7 +301,9 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     expect(secondRun.prompt).toBe("follow-up question");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
 
-    await cancelChatRun(actor, second.runId);
+    await cancelChatRun(actor, second.runId, {
+      authorization: `Bearer ${(await api.executionInput(second.runId)).sandboxToken}`,
+    });
 
     await chat.renameThread(actor, first.threadId, "Manual Migration Title");
     const third = await sendChatRun(actor, {
@@ -313,7 +315,9 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       readThreadTitleFromEvents(actor, first.threadId),
     ).resolves.toBe("Manual Migration Title");
     expect(titleRequests).toBe(1);
-    await cancelChatRun(actor, third.runId);
+    await cancelChatRun(actor, third.runId, {
+      authorization: `Bearer ${(await api.executionInput(third.runId)).sandboxToken}`,
+    });
 
     const recommendedFollowupQueueEventId = randomUUID();
     const recommendedFollowupRequest = {

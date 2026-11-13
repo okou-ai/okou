@@ -1271,7 +1271,13 @@ permanent retention of two cache generations, an actual API claim-loss race,
 calibrated physical relief, full residency, bootstrap provenance or production
 activation. Parent aggregate acceptance remains separate.
 
-## Real API competing claims (#41467)
+## Historical real API competing claims (#41467)
+
+This section describes pre-direct-dispatch producer artifacts and their retained
+evidence format. The current API no longer creates claimable Runner jobs; its
+competing-Claim bridge and launch command have been retired. Current direct
+dispatch tests and legacy native Claim-loss tests cover separate boundaries,
+not a joint deployed acceptance result.
 
 `native_real_api_competing_claims_preserve_both_owners` composes two independent
 native guarded preparations with the production authenticated claim route and
@@ -1306,15 +1312,16 @@ cluster system identifier, binary/version, data directory, migration receipt,
 source manifest and native input hashes in an owner-only `producer.json` with
 format `native-real-api-producer-v1`.
 
-From the API workspace, under an owned private mount namespace with native
-privileges, run `pnpm test:native-competing-claims`. Supply
-`OKOU_TEST_REAL_API_INPUTS` pointing to a bounded owned JSON containing `root`
+The original API workspace launcher required native privileges under an owned
+private mount namespace and `OKOU_TEST_REAL_API_INPUTS` pointing to a bounded owned JSON containing `root`
 (a new results directory with `producer.json`), `driver` (the frozen
 `real_api_driver.py` here), `sourceSha`, `databaseUrl` (the owned cluster), and
 `producerFile` (the same producer receipt). The driver documents its frozen input
-paths in code and refuses source/input changes. It uses unchanged P1 duration,
+paths in code and refuses source/input changes. It used unchanged P1 duration,
 sampling, headroom, log and cleanup guards. Failed cases retain original evidence
-and uncertain ownership; diagnose them before starting a new invocation.
+and uncertain ownership. Reproduce old-API/native compatibility only with matched
+original producer artifacts, rather than fabricating legacy queue rows in the
+current API database. The reader commands below inspect retained evidence.
 Disk preflight reserves four complete profile-sized Home images for the two
 original owners and their saved-home verification; existing rootfs and snapshot
 inputs are already allocated. This is a fixture capacity check, not a measured

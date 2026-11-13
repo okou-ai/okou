@@ -561,12 +561,13 @@ export class ApiDispatchTimingCollector {
   }
 }
 
-/** Publish runtime preparation only after the Claim wins durable ownership. */
-export function recordClaimPreparationTimings(args: {
+/** Publish actual preparation intervals with their acquisition boundary. */
+export function recordExecutionPreparationTimings(args: {
   readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly records: readonly ApiDispatchTimingRecord[];
+  readonly phase: "claim" | "dispatch";
 }): void {
   const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
   recordSandboxOperations(
@@ -582,7 +583,7 @@ export function recordClaimPreparationTimings(args: {
           ...record.dimensions,
           runner_group: args.runnerGroup,
           profile: args.profile,
-          preparation_phase: "claim",
+          preparation_phase: args.phase,
           span_kind: record.spanKind,
           ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
         },

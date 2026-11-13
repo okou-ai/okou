@@ -799,7 +799,7 @@ describe("live chat VNC Run inventory", () => {
     expect(response.body.error.code).toBe("VNC_UNAVAILABLE");
   });
 
-  it.each(["pending", "completed", "cancelled", "failed"] as const)(
+  it.each(["completed", "cancelled", "failed"] as const)(
     "rejects inventory for a %s Run despite an enabled host default",
     async (status) => {
       const value = owner();
@@ -809,10 +809,8 @@ describe("live chat VNC Run inventory", () => {
       );
       await api.enableDefault(value, "vnc", connection.body.id);
       const f = await publicRuns.start(value);
-      if (status !== "pending") {
-        const runtime = await publicRuns.claim(f, vncRunnerHeaders);
-        await publicRuns.finish(runtime, status);
-      }
+      const runtime = await publicRuns.claim(f, vncRunnerHeaders);
+      await publicRuns.finish(runtime, status);
       api.authenticate(f);
       const unavailableInventory = await accept(
         inventory().list({ headers: token(f) }),

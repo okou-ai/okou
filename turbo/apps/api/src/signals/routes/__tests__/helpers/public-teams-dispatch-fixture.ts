@@ -36,6 +36,7 @@ interface OwnedTeamsDispatch {
   readonly kmsKeyId: string | undefined;
   readonly storageBucket: string;
   readonly notices: string[];
+  readonly sandboxTokens: Map<string, string>;
   defaultAgentId: string | null;
 }
 
@@ -139,9 +140,16 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         if (run.status === "pending" || run.status === "running") {
           await runs.requestCancelRun(fixture.actor, run.id, [200]);
         }
+        const token = fixture.sandboxTokens.get(run.id);
+        if (token && !["completed", "failed", "timeout"].includes(run.status)) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            { runId: run.id, exitCode: 137, error: "Run cancelled" },
+            { authorization: `Bearer ${token}` },
+            [200],
+          );
+        }
       }
       await flushWaitUntilForTest();
-      // These scenarios never claim a Runner; cancellation needs no ACK.
       await removeTeamsForTest(context.signal, fixture.installation);
       await flushWaitUntilForTest();
       await deleteFeatureSwitchesForUser(context, {
@@ -201,6 +209,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         kmsKeyId: env("SECRETS_KMS_KEY_ID"),
         storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
         notices: [],
+        sandboxTokens: new Map(),
         defaultAgentId: null,
       };
       // Register the UUID owner before onboarding, billing, or installation.
@@ -212,8 +221,19 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
           { displayName: "Teams dispatch" },
         );
       }
+      await runs.configureRunnerGroup({
+        reply(envelope) {
+          const input = envelope.executionContext;
+          fixture.sandboxTokens.set(input.runId, input.sandboxToken);
+          return HttpResponse.json({
+            runnerId: envelope.runnerId,
+            heartbeatGeneration: envelope.heartbeatGeneration,
+            runId: input.runId,
+            disposition: "accepted",
+          });
+        },
+      });
       if (options.paidNative) {
-        runs.configureRunnerGroup();
         await runs.grantProEntitlement(fixture.actor, {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,

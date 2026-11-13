@@ -157,7 +157,7 @@ async function firewallRun(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   const agents: string[] = [];
   const modelAccounts = new Set<string>();
   codexAccounts.owned.set(actor.userId, modelAccounts);
@@ -275,7 +275,7 @@ async function withPublicFirewallRun(
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const subscription = await fixture.fund();
     await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
     const agent = await bdd.createAgent(fixture.actor, {
@@ -289,7 +289,7 @@ async function withPublicFirewallRun(
     });
     fixture.registerRun(run.runId);
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(run.runId);
+    const claim = await runsApi.executionInput(run.runId);
     fixture.registerClaim(run.runId, claim.sandboxToken);
     await scenario(
       { authorization: `Bearer ${claim.sandboxToken}` },
@@ -996,7 +996,7 @@ describe("FW-3: billable firewall lease", () => {
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const granted = await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -1008,7 +1008,7 @@ describe("FW-3: billable firewall lease", () => {
       prompt: "billable auth across a subscription deletion",
     });
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(run.runId);
+    const claim = await runsApi.executionInput(run.runId);
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
@@ -1069,7 +1069,7 @@ describe("FW-3: billable firewall lease", () => {
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     // The credit expiry is the subscription period end plus one month, so a
     // period that ended two months ago yields a pro org whose entire balance
     // is expired but unsettled.
@@ -1087,7 +1087,7 @@ describe("FW-3: billable firewall lease", () => {
     });
 
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(run.runId);
+    const claim = await runsApi.executionInput(run.runId);
     const denied = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       {

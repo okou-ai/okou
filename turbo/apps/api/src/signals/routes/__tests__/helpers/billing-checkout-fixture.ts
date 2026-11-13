@@ -271,7 +271,7 @@ export function createBillingCheckoutFixture() {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await createAuthDeviceSupportApi(context).initializePreferences(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {

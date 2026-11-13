@@ -237,7 +237,7 @@ async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  api.configureRunnerGroup();
+  await api.configureRunnerGroup();
 }
 
 async function connectGoogleCalendarAccount(
@@ -388,7 +388,7 @@ describe("workflows", () => {
       displayName: "Workflow Runner Agent",
       visibility: "private",
     });
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
 
     const created = await createWorkflow(actor, {
       agentId: agent.agentId,
@@ -424,7 +424,7 @@ describe("workflows", () => {
     ).resolves.toStrictEqual([run.runId]);
 
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     expect(claim.cliAgentType).toBe("codex");
     expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.ANTHROPIC_MODEL).toBeUndefined();
@@ -1843,7 +1843,7 @@ describe("workflows", () => {
       kind: "event",
       eventType: "webhook-received",
     });
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     api.acceptTelemetryIngest();
     onTestFinished(async () => {
       await automationRuns.cleanup(actor);
@@ -3146,7 +3146,7 @@ describe("workflow owner profile cancellation", () => {
 test("promotes a queued workflow after failure and completes it with a real Runner claim", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",
@@ -3176,7 +3176,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
   await api.heartbeatRunner(runnerGroup);
-  const firstClaim = await api.claimRunnerJob(first.runId);
+  const firstClaim = await api.executionInput(first.runId);
   await webhooks.requestAgentComplete(
     { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
@@ -3194,7 +3194,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   }
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
   await api.heartbeatRunner(runnerGroup);
-  const nextClaim = await api.claimRunnerJob(next.runId);
+  const nextClaim = await api.executionInput(next.runId);
   const sessionId = `workflow-session-${next.runId}`;
   await webhooks.requestAgentComplete(
     {

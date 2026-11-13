@@ -58,7 +58,7 @@ async function visibleUploadedFiles(args: {
 }
 
 async function seedSendableContext() {
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   let restoreInvoice: (() => void) | undefined;
   const fixture = createPublicTelegramActor(
     context,
@@ -99,7 +99,7 @@ async function seedSendableContext() {
     return runsApi.heartbeatRunner(runnerGroup);
   });
   const claim = await fixture.run(async () => {
-    const accepted = await runsApi.claimRunnerJob(sent.runId);
+    const accepted = await runsApi.executionInput(sent.runId);
     fixture.rememberClaim(sent.runId, accepted.sandboxToken);
     return accepted;
   });

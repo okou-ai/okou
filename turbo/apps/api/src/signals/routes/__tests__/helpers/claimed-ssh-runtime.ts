@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { expect } from "vitest";
 
-import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
+import type { TestContext } from "../../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
-import { runnersRoutes } from "../../runners";
 import { createBddApi } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
@@ -21,7 +18,7 @@ interface RuntimeOptions {
   readonly agentId?: string;
   readonly group?: string;
   readonly runnerIdentity?: {
-    readonly runnerId: ReturnType<typeof randomUUID>;
+    readonly runnerId: string;
     readonly heartbeatGeneration: number;
   };
 }
@@ -37,7 +34,10 @@ export function createClaimedSshRuntimeApi(
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const paidOrganizations = new Set<string>();
-  const active = new Map<string, Owner>();
+  const active = new Map<
+    string,
+    { readonly owner: Owner; readonly sandboxToken: string | null }
+  >();
 
   async function runtime(owner: Owner, runtimeOptions: RuntimeOptions = {}) {
     bdd.acceptAgentStorageWrites();
@@ -64,44 +64,33 @@ export function createClaimedSshRuntimeApi(
           visibility: "public",
         })
       ).agentId;
-    const group = runtimeOptions.group ?? runs.configureRunnerGroup();
+    const group =
+      runtimeOptions.group ??
+      (await runs.configureRunnerGroup({ registerRunner: false }));
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", group);
+    const candidate = runtimeOptions.runnerIdentity ?? {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.registerDirectRunner(group, {
+      runnerIdentity: candidate,
+      heartbeatAuthorization: options.runnerHeaders.authorization,
+    });
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId,
       prompt: "Use my configured SSH hosts",
       model: "claude-sonnet-5-5",
     });
-    active.set(runId, owner);
-    const runnerIdentity = runtimeOptions.runnerIdentity ?? {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
+    active.set(runId, { owner, sandboxToken: null });
+    const input = await runs.executionInput(runId);
+    active.set(runId, { owner, sandboxToken: input.sandboxToken });
+    const selected = runs.dispatchedRun(runId);
+    const runnerIdentity = {
+      runnerId: selected.runnerId,
+      heartbeatGeneration: selected.heartbeatGeneration,
     };
-    await runs.requestHeartbeatRunnerAs(
-      options.runnerHeaders.authorization,
-      [200],
-      {
-        group,
-        runnerId: runnerIdentity.runnerId,
-        snapshotGeneration: runnerIdentity.heartbeatGeneration,
-      },
-    );
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: options.runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
-    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    const sandboxToken = input.sandboxToken;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!sandboxToken || !agentToken) {
       throw new Error("Expected the claim's sandbox and Agent credentials");
     }
@@ -165,17 +154,29 @@ export function createClaimedSshRuntimeApi(
 
   // Register in the owning describe so cancellation finishes before context teardown.
   async function cleanup() {
-    for (const [runId, owner] of active) {
+    for (const [runId, { owner, sandboxToken }] of active) {
       options.authenticate(owner);
       useSecretKmsProbe();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      await runs.requestCancelRun(
-        bdd.user({ ...owner, orgRole: "org:member" }),
-        runId,
-        [200],
-      );
-      active.delete(runId);
+      const actor = bdd.user({ ...owner, orgRole: "org:member" });
+      const current = await runs.readRun(actor, runId);
+      if (!["completed", "failed", "timeout"].includes(current.status)) {
+        await runs.requestCancelRun(actor, runId, [200]);
+        if (sandboxToken === null) {
+          await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+            status: "cancelled",
+            startedAt: null,
+          });
+        } else {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            { runId, exitCode: 137 },
+            { authorization: `Bearer ${sandboxToken}` },
+            [200],
+          );
+        }
+      }
       await flushWaitUntilForTest();
+      active.delete(runId);
     }
     paidOrganizations.clear();
   }

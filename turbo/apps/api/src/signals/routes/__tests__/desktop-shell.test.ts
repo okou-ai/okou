@@ -214,6 +214,7 @@ describe("Desktop Shell command pipeline", () => {
           if (!blockingRunId) {
             throw new Error("Expected a blocking Run in the chat");
           }
+          await scenario.claimExisting(actor, blockingRunId);
         }
         const nextEventId = randomUUID();
         if (pick === "queued") {

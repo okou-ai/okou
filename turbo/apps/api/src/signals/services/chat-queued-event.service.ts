@@ -48,9 +48,6 @@ export interface QueueFirstRunAssociation {
   readonly threadId: string;
   readonly eventId: string;
 }
-export type QueueFirstRunClaimResult =
-  | { readonly kind: "claimed"; readonly createdAt: Date }
-  | { readonly kind: "lost" };
 
 const queuedChatEvent = alias(chatEvents, "queued_chat_event");
 const queuedChatEventRevoker = alias(chatEvents, "queued_chat_event_revoker");

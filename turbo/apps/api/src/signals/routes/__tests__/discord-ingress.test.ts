@@ -29,6 +29,7 @@ import { discordGatewayRoutes } from "../discord-gateway";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
@@ -56,6 +57,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const runsApi = createRunsApi(context);
+const { cancelAndCompleteChatRun } = createChatEventsFixture(context);
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   mockDiscordMemberships(context, [actor]);
   await removePublicDiscordBinding(context, actor.fixture);
@@ -588,7 +590,7 @@ describe("canonical Discord ingress", () => {
         chat.readThreadMetadata(actor.actor, guildThread.id),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       const firstRun = await launchedRun(actor, guildThread.id);
-      await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+      await cancelAndCompleteChatRun(actor.actor, firstRun.runId);
       await flushWaitUntilForTest();
 
       await preferences.updatePreferences(
@@ -1234,7 +1236,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected Discord run launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
 
     expect(claim.appendSystemPrompt).toContain(
       "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
@@ -1941,7 +1943,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the main DM thread");
     }
     const originalDmRun = await launchedRun(actor, originalDm.id);
-    await runsApi.requestCancelRun(actor.actor, originalDmRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, originalDmRun.runId);
     await flushWaitUntilForTest();
     createRouteMocks(context).clerk.session(
       actor.userId,
@@ -1988,11 +1990,11 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the next DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(nextInput.runId);
+    const claim = await runsApi.executionInput(nextInput.runId);
     expect(claim.prompt).toBe(nextDm.content);
     expect(claim.modelUsageProvider).toBe("claude-opus-5-5");
     expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
-    await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, nextInput.runId);
   });
 
   it("keeps the same DM thread when its connected sender moves to a new physical channel", async () => {
@@ -2011,7 +2013,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the original DM thread");
     }
     const firstRun = await launchedRun(actor, thread.id);
-    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, firstRun.runId);
     await flushWaitUntilForTest();
 
     const channelId = uniqueDiscordSnowflake();
@@ -2049,9 +2051,9 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the current DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.prompt).toBe(next.content);
-    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
   it("updates the main DM thread model without changing the member default", async () => {
@@ -2071,7 +2073,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the main DM thread");
     }
     const firstRun = await launchedRun(actor, thread.id);
-    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, firstRun.runId);
     await flushWaitUntilForTest();
 
     await createBddIntegrationApi(context).configureNativeSubscriptionModels(
@@ -2132,10 +2134,10 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the DM input to launch with its stored model");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.modelUsageProvider).toBe("gpt-6-astra");
     expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
-    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
   it("pins a busy main DM and captures a web send model before the next pick", async () => {
@@ -2195,17 +2197,17 @@ describe("canonical Discord ingress", () => {
       serviceTier: "priority",
     });
 
-    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, firstRun.runId);
     await flushWaitUntilForTest();
     const input = currentInputs(await events(actor, thread.id))[1];
     if (!input?.runId) {
       throw new Error("Expected the queued web input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.modelUsageProvider).toBe("gpt-6-astra");
     expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
-    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
   it("keeps another organization's DM replies out of a newly selected organization's run", async () => {
@@ -2580,7 +2582,7 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected run with canonical file input");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.claimRunnerJob(input.runId);
+    const claim = await runsApi.executionInput(input.runId);
     expect(claim.prompt).toContain("[Web file] notes.txt");
     expect(claim.appendSystemPrompt).toContain("private-history-1:");
     expect(claim.appendSystemPrompt).not.toContain("private-history-25:");
@@ -2649,7 +2651,7 @@ describe("canonical Discord ingress", () => {
     expect(waitingInput?.runId).toBeUndefined();
 
     // Freeing the slot picks the waiting thread and launches its input.
-    await runsApi.requestCancelRun(actor.actor, activeRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, activeRun.runId);
     await flushWaitUntilForTest();
     const waitingRun = await launchedRun(actor, waitingThread.id);
     expect(waitingRun.prompt).toBe("@Okou wait for an org run slot");
@@ -2659,7 +2661,7 @@ describe("canonical Discord ingress", () => {
         return message.content.includes("concurrent run limit");
       }),
     ).toHaveLength(1);
-    await runsApi.requestCancelRun(actor.actor, waitingRun.runId, [200]);
+    await cancelAndCompleteChatRun(actor.actor, waitingRun.runId);
   });
 
   it("suppresses input and delivery when the sender disconnects during context import", async () => {

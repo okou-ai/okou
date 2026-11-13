@@ -15,10 +15,7 @@ import {
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
-import type {
-  RunnerPreference,
-  RunnerCancellationMode,
-} from "@okouai/api-contracts/contracts/runners";
+import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 
 import { env } from "../../lib/env";
@@ -755,46 +752,4 @@ export async function publishActiveInputToRunnerGroup(
   const channel = ablyClient().channels.get(`runner-group:${group}`);
   await channel.publish("active-input", { runId });
   L.debug(`Published active input ${runId} to runner-group:${group}`);
-}
-
-/** Publish an available runner job to the matching runner group. */
-export async function publishRunnerJobNotification(args: {
-  readonly group: string;
-  readonly runId: string;
-  readonly profile: string;
-  readonly runnerPreference: RunnerPreference;
-  readonly metadata?: {
-    /** Raw key required for runner-local reuse matching; it stays on the internal runner-group channel. */
-    readonly reuseKey: string | null;
-    readonly cliAgentSessionId: string | null;
-  };
-}): Promise<boolean> {
-  const published = await tapError(
-    (async () => {
-      const channel = ablyClient().channels.get(`runner-group:${args.group}`);
-      await channel.publish("job", {
-        runId: args.runId,
-        profile: args.profile,
-        ...(args.metadata?.reuseKey
-          ? { reuseKey: args.metadata.reuseKey }
-          : {}),
-        ...(args.metadata?.cliAgentSessionId
-          ? { cliAgentSessionId: args.metadata.cliAgentSessionId }
-          : {}),
-        runnerPreference: args.runnerPreference,
-      });
-      L.debug(
-        `Published job ${args.runId} to runner-group:${args.group} (broadcast)`,
-      );
-      return true;
-    })(),
-    (error) => {
-      L.warn("Failed to publish runner job notification", {
-        group: args.group,
-        runId: args.runId,
-        error,
-      });
-    },
-  );
-  return published ?? false;
 }

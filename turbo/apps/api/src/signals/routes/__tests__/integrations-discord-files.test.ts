@@ -1061,7 +1061,7 @@ describe("Canonical Discord file publication and delivery", () => {
       runs.acceptTelemetryIngest();
       await runs.grantProEntitlement(fixture.actor);
       await runs.ensurePersonalSubscriptionModel(fixture.actor);
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await runs.heartbeatRunner(runnerGroup);
       const agent = await bdd.createAgent(fixture.actor, {
         displayName: "File delivery identity test",
@@ -1070,7 +1070,7 @@ describe("Canonical Discord file publication and delivery", () => {
         agentId: agent.agentId,
         prompt: "Create a report",
       });
-      const claim = await runs.claimRunnerJob(sent.runId);
+      const claim = await runs.executionInput(sent.runId);
       const token = claim.platformEnvironment.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected the Runner claim to issue an Okou run token");
@@ -1479,7 +1479,7 @@ describe("Canonical Discord file publication and delivery", () => {
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(fixture.actor);
     await runs.ensurePersonalSubscriptionModel(fixture.actor);
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.heartbeatRunner(runnerGroup);
     const agent = await bdd.createAgent(fixture.actor, {
       displayName: "Discord file source test",
@@ -1488,7 +1488,7 @@ describe("Canonical Discord file publication and delivery", () => {
       agentId: agent.agentId,
       prompt: "Create a report for Discord",
     });
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const token = claim.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Runner claim to issue an Okou run token");
@@ -1563,7 +1563,7 @@ describe("Canonical Discord file publication and delivery", () => {
       href: `https://discord.com/channels/${connected.guildId}/${provider.guildChannelId}/${source.id}`,
     });
     await runs.heartbeatRunner(connected.runnerGroup);
-    const claim = await runs.claimRunnerJob(input.runId);
+    const claim = await runs.executionInput(input.runId);
     const token = claim.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Runner claim to issue an Okou run token");

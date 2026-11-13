@@ -83,7 +83,7 @@ import {
 } from "./billing-payment-method.service";
 import { restoreSubscription$ } from "./billing-restore.service";
 import { publishBillingChangedForOrg$ } from "./billing-realtime.service";
-import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
+import { pickOrgQueuedChatThreads$ } from "./pick-chat-run.service";
 import {
   CONCURRENCY_SUBSCRIPTION_PURPOSE,
   isConcurrencyPriceId,

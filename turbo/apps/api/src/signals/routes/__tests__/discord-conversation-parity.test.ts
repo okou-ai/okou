@@ -88,7 +88,7 @@ async function claimMessage(
   await runsApi.heartbeatRunner(actor.runnerGroup);
   return {
     runId: input.runId,
-    claim: await runsApi.claimRunnerJob(input.runId),
+    claim: await runsApi.executionInput(input.runId),
   };
 }
 

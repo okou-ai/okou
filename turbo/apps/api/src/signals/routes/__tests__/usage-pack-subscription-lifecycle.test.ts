@@ -1848,6 +1848,8 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
   it("preserves debt for a returning legacy Pro subscriber after its old billing period", async () => {
     const tier = "pro";
+    // Clock-shifted Runner heartbeats prune the global serving fleet.
+    await setupApp({ context, routes: billingStatusRoutes, isolatePg: true });
     // Fix the calendar: the old period ends April 15 and its monthly credit
     // expires exactly on May 15, independently of CI's current month length.
     mockNow(new Date("2035-05-15T00:00:00.000Z"));
@@ -1921,6 +1923,8 @@ describe("usage pack subscription Stripe lifecycle", () => {
   });
 
   it("preserves debt after a one-time credit purchase has expired", async () => {
+    // Clock-shifted Runner heartbeats prune the global serving fleet.
+    await setupApp({ context, routes: billingStatusRoutes, isolatePg: true });
     const fixture = await checkoutUsagePackLifecycle(
       `user_${randomUUID()}`,
       20,

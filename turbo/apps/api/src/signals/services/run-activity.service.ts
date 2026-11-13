@@ -23,7 +23,7 @@ import {
   publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { settleIncludingAbort } from "../utils";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
+import { scheduleReleasedSlotPicks$ } from "./pick-chat-run.service";
 import { runSlotReleasePlan } from "./agent-run-terminal-transition.service";
 
 const log = logger("api:run-activity");
