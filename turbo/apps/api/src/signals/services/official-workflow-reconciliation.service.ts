@@ -2394,7 +2394,7 @@ function structureTransitionResult(
     if (!eligible) {
       return {
         kind: "failed",
-        message: "Webhook automations require a Team or Custom workspace",
+        message: "Webhook automations require a Team workspace",
       };
     }
     if (!row.webhookPresent && !args.preparation?.webhookCredentials) {

@@ -442,9 +442,6 @@ function monthlyCreditsForTier(tier: OrgTier): number {
     case "limited-free-1": {
       return 0;
     }
-    case "custom": {
-      return 0;
-    }
     case "pro": {
       return 20_000;
     }
@@ -1968,10 +1965,7 @@ function isReplaceablePlanSubscription(args: {
 }): boolean {
   const subscription = args.subscription;
   const currentTier = tierFromSubscription(subscription);
-  const replacesTier =
-    (args.targetTier === "team" && currentTier === "pro") ||
-    (args.targetTier === "custom" &&
-      (currentTier === "pro" || currentTier === "team"));
+  const replacesTier = args.targetTier === "team" && currentTier === "pro";
   return (
     subscription.id !== args.newSubscriptionId &&
     (subscription.status === "active" || subscription.status === "trialing") &&
@@ -1984,7 +1978,7 @@ async function replacedPlanSubscriptionIdsForCustomer(args: {
   readonly newSubscriptionId: string;
   readonly targetTier: BillingSubscriptionTier;
 }): Promise<readonly string[]> {
-  if (args.targetTier !== "team" && args.targetTier !== "custom") {
+  if (args.targetTier !== "team") {
     return [];
   }
 
@@ -2182,7 +2176,7 @@ async function subscriptionInvoiceDetails(
   }
 
   const credits = usagePackPlan ? 0 : monthlyCreditsForTier(tier);
-  if (credits <= 0 && tier !== "custom" && !usagePackPlan) {
+  if (credits <= 0 && !usagePackPlan) {
     L.warn("no credits to grant for tier", {
       tier,
       invoiceId: invoice.id,
@@ -2565,13 +2559,7 @@ const handleInvoicePaid$ = command(
     );
     signal.throwIfAborted();
     const invoiceLines = invoice.lines?.data ?? [];
-    const hasCustomPlanInvoiceLine = invoiceLines.some((line) => {
-      const priceId = invoiceLinePriceId(line);
-      return priceId
-        ? tierForKnownPlanPrice({ id: priceId }) === "custom"
-        : false;
-    });
-    if (usagePackResult.handled && !hasCustomPlanInvoiceLine) {
+    if (usagePackResult.handled) {
       const concurrencyResult = await set(
         handleConcurrencyInvoicePaid$,
         invoice,
@@ -2606,8 +2594,7 @@ const handleInvoicePaid$ = command(
       return priceId ? tierForKnownPlanPrice({ id: priceId }) !== null : false;
     });
     const shouldHandlePlanInvoice =
-      hasPlanInvoiceLine &&
-      (!usagePackResult.handled || hasCustomPlanInvoiceLine);
+      hasPlanInvoiceLine && !usagePackResult.handled;
     const componentDrainOrgId = usagePackResult.orgId;
     const planDrainOrgId = shouldHandlePlanInvoice
       ? await set(
@@ -2775,22 +2762,11 @@ function legacyPlanPublication(args: Omit<LegacyPlanPublication, "orgId">) {
     trialEnd < previousTrialEnd;
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
   const planTier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
-  const metadataOrgId = subscription.metadata?.orgId;
   return {
     planItem,
     planTier,
     trialEnd: trialShortened ? trialEnd : null,
-    target:
-      planTier === "custom" && metadataOrgId
-        ? or(
-            eq(orgMetadata.stripeSubscriptionId, subscription.id),
-            and(
-              eq(orgMetadata.orgId, metadataOrgId),
-              eq(orgMetadata.tier, "custom"),
-              isNull(orgMetadata.stripeSubscriptionId),
-            ),
-          )
-        : eq(orgMetadata.stripeSubscriptionId, subscription.id),
+    target: eq(orgMetadata.stripeSubscriptionId, subscription.id),
     values: {
       ...(planTier
         ? { tier: planTier, stripeSubscriptionId: subscription.id }
@@ -3400,12 +3376,7 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
     }
 
     const orgIds = new Set<string>();
-    // A snapshot is current state, not a creation event. The strict usage-pack
-    // creation path intentionally rejects an invalid initial shape, but that is
-    // wrong for reconciliation: a valid Custom subscription can currently have
-    // no usage-pack items because their removal webhook was missed. Bind any
-    // unrecorded main plan first, then let the update projection deactivate or
-    // repair the usage-pack component from current Stripe truth.
+    // Bind an unrecorded main plan before projecting the current subscription snapshot.
     for (const orgId of await set(
       handleSubscriptionCreatedLegacy$,
       subscription,
@@ -3710,8 +3681,7 @@ const paidPlanOrgIdForSubscriptionOwned$ = command(
       .from(orgMetadata)
       .where(eq(orgMetadata.stripeSubscriptionId, subscriptionId))
       .limit(1);
-    return row &&
-      (row.tier === "pro" || row.tier === "team" || row.tier === "custom")
+    return row && (row.tier === "pro" || row.tier === "team")
       ? row.orgId
       : null;
   },

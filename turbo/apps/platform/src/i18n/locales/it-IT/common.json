@@ -1214,11 +1214,6 @@
       "cancellationNotice": "Il tuo piano {{plan}} è stato annullato e terminerà il {{date}}.",
       "compare": "Confronta i piani",
       "compareAll": "Confronta tutti i piani",
-      "custom": {
-        "name": "Personalizzato"
-      },
-      "customAccess": "Accesso personalizzato con {{value}} esecuzioni simultanee",
-      "customCancellationNotice": "Il tuo piano personalizzato terminerà il {{date}}.",
       "downgrade": "Passa a un piano inferiore",
       "downgradeNotice": "Il piano {{currentPlan}} passerà a {{targetPlan}} il {{date}}.",
       "downgradesOn": "Passa a {{plan}} il {{date}}",
@@ -5276,7 +5271,6 @@
       "inUse_other": "{{active}} di {{limit}} slot in uso"
     },
     "tiers": {
-      "custom": "Personalizzato",
       "free": "Gratuito",
       "pro": "Pro",
       "team": "Team"
@@ -7339,7 +7333,7 @@
           "adminHint": "Chiedi a un amministratore dell'area di lavoro di eseguire l'aggiornamento.",
           "benefitDescription": "Crea endpoint firmati che avviano flussi di lavoro da sistemi esterni.",
           "benefitTitle": "Automazione sicura del flusso di lavoro in entrata",
-          "description": "Le automazioni Webhook richiedono un'area di lavoro Team o Personalizzata.",
+          "description": "Le automazioni Webhook richiedono un'area di lavoro Team.",
           "title": "Aggiornamento per le automazioni webhook",
           "upgradeAction": "Passa a Team"
         },

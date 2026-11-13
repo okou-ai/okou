@@ -1214,11 +1214,6 @@
       "cancellationNotice": "Tu plan {{plan}} ha sido cancelado y terminará el {{date}}.",
       "compare": "Comparar planes",
       "compareAll": "Compara todos los planes",
-      "custom": {
-        "name": "Personalizado"
-      },
-      "customAccess": "Acceso personalizado con ejecuciones concurrentes {{value}}",
-      "customCancellationNotice": "Tu plan personalizado terminará en {{date}}.",
       "downgrade": "Cambiar a un plan inferior",
       "downgradeNotice": "Tu plan cambiará de {{currentPlan}} a {{targetPlan}} el {{date}}.",
       "downgradesOn": "Cambio a {{plan}} el {{date}}",
@@ -5276,7 +5271,6 @@
       "inUse_other": "{{active}} de {{limit}} cupos en uso"
     },
     "tiers": {
-      "custom": "Personalizado",
       "free": "Gratis",
       "pro": "Pro",
       "team": "Equipo"
@@ -7339,7 +7333,7 @@
           "adminHint": "Pide a un administrador de espacio de trabajo que actualice.",
           "benefitDescription": "Crea endpoints firmados que inicien flujos de trabajo desde sistemas externos.",
           "benefitTitle": "Automatización segura de flujos de trabajo entrantes",
-          "description": "Las automatizaciones de Webhook requieren un espacio de trabajo en equipo o personalizado.",
+          "description": "Las automatizaciones de Webhook requieren un espacio de trabajo Team.",
           "title": "Actualizar para usar automatizaciones de webhooks",
           "upgradeAction": "Actualizar a Team"
         },

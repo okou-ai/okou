@@ -76,7 +76,7 @@ import {
 } from "./archived-billing-components";
 
 const L = logger("CronBillingEntitlements");
-const PAID_TIERS = ["pro", "team", "custom"] as const;
+const PAID_TIERS = ["pro", "team"] as const;
 const ENTITLEMENT_PERIOD_REFRESH_STATUSES = ["active", "trialing"] as const;
 const PAYMENT_FAILED_SUBSCRIPTION_STATUSES = ["past_due", "unpaid"] as const;
 const PAYMENT_FAILURE_DOWNGRADE_GRACE_MS = 24 * 60 * 60 * 1000;

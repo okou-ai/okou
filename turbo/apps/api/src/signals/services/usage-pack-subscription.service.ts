@@ -131,7 +131,6 @@ import {
   activeUsagePackPlanPriceId,
   activeUsagePackPriceId,
   isUsagePackPlanPriceId,
-  tierForKnownPlanPrice,
   tierForKnownPriceId,
   type SubscriptionCheckoutTier,
   usagePackUsdForKnownPriceId,
@@ -324,7 +323,6 @@ export interface UsagePackInvoiceInput {
 interface ValidatedSubscriptionShape {
   readonly tier: SubscriptionCheckoutTier;
   readonly planPriceId: string;
-  readonly projectsOrgPlan: boolean;
   readonly periodStart: Date | null;
   readonly periodEnd: Date;
   readonly packageQuantities: ReadonlyMap<string, number>;
@@ -333,7 +331,6 @@ interface ValidatedSubscriptionShape {
 interface UsagePackBasePlanShape {
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
-  readonly projectsOrgPlan: boolean;
 }
 
 type InspectedSubscriptionShape =
@@ -1886,63 +1883,9 @@ function usagePackSubscriptionWillCancel(
   );
 }
 
-function subscriptionHasCustomPlan(
-  subscription: UsagePackSubscriptionInput,
-): boolean {
-  return subscription.items.data.some((item) => {
-    return tierForKnownPlanPrice(item.price) === "custom";
-  });
-}
-
-function customSubscriptionRemovedUsagePacks(
-  subscription: UsagePackSubscriptionInput,
-): boolean {
-  const hasUsagePack = subscription.items.data.some((item) => {
-    return usagePackUsdForKnownPriceId(item.price.id) !== null;
-  });
-  return subscriptionHasCustomPlan(subscription) && !hasUsagePack;
-}
-
 function inspectUsagePackBasePlan(
-  context: UsagePackContext,
   subscription: UsagePackSubscriptionInput,
 ): InspectedValue<UsagePackBasePlanShape> {
-  const customPlanItems = subscription.items.data.filter((item) => {
-    return tierForKnownPlanPrice(item.price) === "custom";
-  });
-  if (customPlanItems.length > 1) {
-    return {
-      valid: false,
-      reason: `expected at most one Custom base plan, received ${customPlanItems.length}`,
-    };
-  }
-  const customPlanItem = customPlanItems[0];
-  if (customPlanItem) {
-    const quantity = customPlanItem.quantity ?? 1;
-    if (quantity !== 1) {
-      return {
-        valid: false,
-        reason: `Custom base plan quantity must be one, received ${quantity}`,
-      };
-    }
-    if (
-      tierForKnownPriceId(context.subscription.stripePlanPriceId) !==
-      context.subscription.tier
-    ) {
-      return {
-        valid: false,
-        reason: "local usage pack base plan is not recognized",
-      };
-    }
-    return {
-      valid: true,
-      value: {
-        tier: context.subscription.tier,
-        priceId: context.subscription.stripePlanPriceId,
-        projectsOrgPlan: false,
-      },
-    };
-  }
   const planItems = subscription.items.data.filter((item) => {
     return isUsagePackPlanPriceId(item.price.id);
   });
@@ -1975,7 +1918,6 @@ function inspectUsagePackBasePlan(
     value: {
       tier,
       priceId: planItem.price.id,
-      projectsOrgPlan: true,
     },
   };
 }
@@ -2118,7 +2060,7 @@ function inspectUsagePackSubscriptionShape(
   context: UsagePackContext,
   subscription: UsagePackSubscriptionInput,
 ): InspectedSubscriptionShape {
-  const basePlan = inspectUsagePackBasePlan(context, subscription);
+  const basePlan = inspectUsagePackBasePlan(subscription);
   if (!basePlan.valid) {
     return basePlan;
   }
@@ -2139,7 +2081,6 @@ function inspectUsagePackSubscriptionShape(
     shape: {
       tier: basePlan.value.tier,
       planPriceId: basePlan.value.priceId,
-      projectsOrgPlan: basePlan.value.projectsOrgPlan,
       periodStart: packages.value.periodStart,
       periodEnd: packages.value.periodEnd,
       packageQuantities: packages.value.quantities,
@@ -2429,7 +2370,6 @@ const publishUsagePackCheckoutState$ = command(
           and(
             eq(orgMetadata.orgId, args.orgId),
             eq(orgMetadata.stripeSubscriptionId, subscription.id),
-            shape.projectsOrgPlan ? undefined : sql`false`,
             exists(db.select({ id: published.id }).from(published)),
           ),
         )
@@ -2590,20 +2530,10 @@ const handleUsagePackSubscriptionChanged$ = command(
     const currentSubscription = (await getStripeClient().subscriptions.retrieve(
       eventSubscription.id,
     )) as UsagePackSubscriptionInput;
-    const removedUsagePacksFromCustom =
-      invalidShape === "deactivate" &&
-      customSubscriptionRemovedUsagePacks(currentSubscription);
-    if (removedUsagePacksFromCustom) {
-      await set(
-        reconcileUsagePackAllocationChangeSubscriptionDeleted$,
-        currentSubscription,
-      );
-    } else {
-      await set(
-        reconcileUsagePackAllocationChangeSubscription$,
-        currentSubscription,
-      );
-    }
+    await set(
+      reconcileUsagePackAllocationChangeSubscription$,
+      currentSubscription,
+    );
     const context = await set(
       loadUsagePackContextOwned$,
       usagePackSubscriptionId,
@@ -2617,24 +2547,6 @@ const handleUsagePackSubscriptionChanged$ = command(
       context,
       currentSubscription,
     );
-    if (removedUsagePacksFromCustom && !inspected.valid) {
-      await set(
-        deactivateInvalidUsagePackSubscription$,
-        context,
-        currentSubscription,
-        inspected.reason,
-        "canceled",
-      );
-      L.debug("usage pack component removed from Custom subscription", {
-        usagePackSubscriptionId,
-        stripeSubscriptionId: currentSubscription.id,
-      });
-      return {
-        handled: true,
-        orgId: context.subscription.orgId,
-        subscription: currentSubscription,
-      };
-    }
     if (
       invalidShape === "deactivate" &&
       (currentSubscription.status === "canceled" ||
@@ -3173,15 +3085,11 @@ const prepareUsagePackPlanActivation$ = command(
       shape,
       nowDate(),
     );
-    const [owner] = shape.projectsOrgPlan
-      ? await readDb
-          .select({ orgId: orgPlanEntitlements.orgId })
-          .from(orgPlanEntitlements)
-          .where(
-            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
-          )
-          .limit(1)
-      : [];
+    const [owner] = await readDb
+      .select({ orgId: orgPlanEntitlements.orgId })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id))
+      .limit(1);
     signal.throwIfAborted();
     const entitlement = activationEntitlementValues(args, shape, owner?.orgId);
     return { orgId, subscription, guard, counts, shape, values, entitlement };
@@ -3218,7 +3126,6 @@ const commitUsagePackPlanActivation$ = command(
             eq(orgMetadata.orgId, orgId),
             eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
             orgAcceptsSubscriptionWhere(args.subscription.id, values.updatedAt),
-            shape.projectsOrgPlan ? undefined : sql`false`,
             exists(db.select({ id: activated.id }).from(activated)),
           ),
         )
@@ -3247,11 +3154,7 @@ const commitUsagePackPlanActivation$ = command(
             .as("pending_snapshot_count"),
         })
         .from(activated)
-        .where(
-          shape.projectsOrgPlan
-            ? exists(db.select({ orgId: installed.orgId }).from(installed))
-            : undefined,
-        ),
+        .where(exists(db.select({ orgId: installed.orgId }).from(installed))),
     );
     const publishedCount = db.$with("activated_usage_pack_pending_count").as(
       (counts.before === counts.after
@@ -3283,7 +3186,7 @@ const commitUsagePackPlanActivation$ = command(
           .select({
             committed: sql`(CASE
               WHEN ${rootCount} <> 1 THEN 'usage_pack_activation_root'
-              WHEN ${shape.projectsOrgPlan} AND ${orgCount} <> 1 THEN 'usage_pack_activation_org'
+              WHEN ${orgCount} <> 1 THEN 'usage_pack_activation_org'
               WHEN NOT (${countPublished}) THEN 'usage_pack_activation_count'
               ELSE '1' END)::int`.mapWith(pgIntegerDecoder),
           })
@@ -3498,7 +3401,7 @@ const commitUsagePackFulfillment$ = command(
           .set(projection.values)
           .where(eq(usagePackSubscriptions.id, subscription.id));
       }
-      if (projection.advance && args.shape.projectsOrgPlan) {
+      if (projection.advance) {
         const orgs = await tx
           .update(orgMetadata)
           .set(projection.orgValues)

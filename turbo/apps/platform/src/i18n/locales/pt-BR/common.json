@@ -1214,11 +1214,6 @@
       "cancellationNotice": "Seu plano {{plan}} foi cancelado e terminará em {{date}}.",
       "compare": "Comparar planos",
       "compareAll": "Comparar todos os planos",
-      "custom": {
-        "name": "Personalizado"
-      },
-      "customAccess": "Acesso personalizado com {{value}} execuções simultâneas",
-      "customCancellationNotice": "Seu plano personalizado terminará em {{date}}.",
       "downgrade": "Fazer downgrade",
       "downgradeNotice": "Seu plano {{currentPlan}} passará para {{targetPlan}} em {{date}}.",
       "downgradesOn": "Passa para {{plan}} em {{date}}",
@@ -5276,7 +5271,6 @@
       "inUse_other": "{{active}} de {{limit}} slots em uso"
     },
     "tiers": {
-      "custom": "Personalizado",
       "free": "Grátis",
       "pro": "Pro",
       "team": "Team"
@@ -7339,7 +7333,7 @@
           "adminHint": "Peça a um administrador do espaço de trabalho para fazer o upgrade.",
           "benefitDescription": "Crie endpoints assinados que iniciam fluxos de trabalho a partir de sistemas externos.",
           "benefitTitle": "Automação segura de entrada para fluxos de trabalho",
-          "description": "As automações de webhook exigem um espaço de trabalho Team ou Custom.",
+          "description": "As automações de webhook exigem um espaço de trabalho Team.",
           "title": "Faça upgrade para usar automações de webhook",
           "upgradeAction": "Fazer upgrade para Team"
         },

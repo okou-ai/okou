@@ -1214,11 +1214,6 @@
       "cancellationNotice": "Votre abonnement {{plan}} a été annulé et prendra fin le {{date}}.",
       "compare": "Comparer les forfaits",
       "compareAll": "Comparer tous les forfaits",
-      "custom": {
-        "name": "Personnalisé"
-      },
-      "customAccess": "Accès personnalisé avec {{value}} exécutions concurrentes",
-      "customCancellationNotice": "Votre forfait personnalisé prendra fin le {{date}}.",
       "downgrade": "Rétrograder",
       "downgradeNotice": "Votre plan {{currentPlan}} rétrogradera vers {{targetPlan}} le {{date}}.",
       "downgradesOn": "Rétrogradations vers {{plan}} le {{date}}",
@@ -5276,7 +5271,6 @@
       "inUse_other": "{{active}} sur {{limit}} emplacements utilisés"
     },
     "tiers": {
-      "custom": "Personnalisé",
       "free": "Gratuit",
       "pro": "Pro",
       "team": "Team"
@@ -7339,7 +7333,7 @@
           "adminHint": "Demandez à un administrateur d'espace de travail de mettre à niveau.",
           "benefitDescription": "Créez des points de terminaison signés qui déclenchent des workflows depuis des systèmes externes.",
           "benefitTitle": "Automatisation des workflows entrants sécurisée",
-          "description": "Les automatisations par webhook nécessitent un espace de travail Équipe ou Personnalisé.",
+          "description": "Les automatisations par webhook nécessitent un espace de travail Équipe.",
           "title": "Mettez à niveau pour les automatisations par webhook",
           "upgradeAction": "Passer à Équipe"
         },
