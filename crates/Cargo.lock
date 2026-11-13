@@ -2276,6 +2276,7 @@ dependencies = [
  "guest-contracts",
  "libc",
  "process-control-ipc",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
@@ -3647,6 +3648,7 @@ dependencies = [
  "guest-contracts",
  "libc",
  "proptest",
+ "rustix",
  "serde",
  "serde_json",
 ]
@@ -4426,6 +4428,7 @@ version = "0.5.2"
 dependencies = [
  "libc",
  "runner-rpc-proto",
+ "rustix",
  "serde_json",
  "tempfile",
  "tokio",

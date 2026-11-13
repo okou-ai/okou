@@ -171,21 +171,16 @@ async fn emit(output: &mut (impl AsyncWrite + Unpin), response: &Response) -> io
 
 #[cfg(target_os = "linux")]
 async fn connect_vsock() -> io::Result<UnixStream> {
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
+    use std::os::fd::AsRawFd;
 
-    // SAFETY: valid socket constants; ownership is adopted only on success.
-    let raw = unsafe {
-        libc::socket(
-            libc::AF_VSOCK,
-            libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
-            0,
-        )
-    };
-    if raw < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: this descriptor was just created and has exactly one owner.
-    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    let fd = socket_with(
+        AddressFamily::VSOCK,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+        None,
+    )
+    .map_err(io::Error::from)?;
     let address = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,
         svm_reserved1: 0,
