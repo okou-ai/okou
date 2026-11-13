@@ -13,7 +13,11 @@ class HistoryProjectionTest {
         type: String,
         run: String? = HISTORY_RUN,
         payload: String = "null",
-    ) = HistoryEvent.decode(historyEventWire(id, seq, type = type, run = run, payload = payload))
+        revoke: String? = null,
+    ) =
+        HistoryEvent.decode(
+            historyEventWire(id, seq, type = type, run = run, payload = payload, revoke = revoke)
+        )
 
     private fun input(id: String, seq: Long, run: String? = HISTORY_RUN) =
         event(
@@ -108,5 +112,45 @@ class HistoryProjectionTest {
         assertTrue(result.messages.last().queued)
         assertEquals(HistoryExecution.Running, result.execution)
         assertEquals(HistoryExecution.Queued, transcript(waiting).execution)
+    }
+
+    @Test
+    fun internalInputsDoNotBecomeUserTurnsAndAutomationErrorsRemainVisible() {
+        val scheduled =
+            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Scheduled work"}]}}"""
+        val result =
+            transcript(
+                input("request", 1),
+                event(
+                    "budget",
+                    2,
+                    "input.budget",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Internal time budget"}]}}""",
+                ),
+                event("reply", 3, "output.message", payload = """{"content":"Result"}"""),
+                event("completed", 4, "run.completed"),
+                event("automation", 5, "input.automation", null, scheduled),
+                event(
+                    "automation-rejected",
+                    6,
+                    "input.rejected",
+                    null,
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Scheduled work"}]},"error":"Automation unavailable"}""",
+                    revoke = "automation",
+                ),
+                event(
+                    "automation-error",
+                    7,
+                    "output.error",
+                    null,
+                    """{"error":"Automation unavailable"}""",
+                ),
+            )
+        assertEquals(
+            listOf("request", "reply", "completed", "automation-error"),
+            result.messages.map { it.id },
+        )
+        assertEquals("Automation unavailable", result.messages.last().blocks.single().text)
     }
 }

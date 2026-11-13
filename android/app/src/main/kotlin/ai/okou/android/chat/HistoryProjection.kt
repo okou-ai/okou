@@ -54,6 +54,8 @@ internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive
 fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     checkpoint.validate()
     val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
+    val automationInputs =
+        checkpoint.rows.filter { it.type == "input.automation" }.mapTo(hashSetOf()) { it.id }
     val rows = checkpoint.rows.filter { it.id !in revoked }
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
     val cancellations =
@@ -69,9 +71,16 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         rows
             .filter { it.type == "input.automation" && it.id in pending }
             .mapTo(hashSetOf()) { it.id }
+    // Match Web's transcript visibility without discarding the underlying confirmed rows.
+    val visible =
+        rows.filterNot {
+            it.type == "control.revoke" ||
+                it.type == "input.budget" ||
+                (it.type == "input.rejected" && it.revokesId in automationInputs)
+        }
     // Like Web, place an older run's late event with its run; queued inputs come last.
     val turns = linkedMapOf<String, MutableList<HistoryEvent>>()
-    for (row in rows) turns
+    for (row in visible) turns
         .getOrPut(
             if (row.id in queued) "queued:${row.id}"
             else row.runId?.let { "run:$it" } ?: "event:${row.id}"
@@ -81,13 +90,9 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         .add(row)
     val ordered =
         turns.values.filter { it.none { row -> row.id in queued } }.flatten() +
-            rows
+            visible
                 .filter { it.id in queued }
-                .sortedWith(
-                    compareBy<HistoryEvent> { it.type != "input.prompt" }
-                        .thenBy { it.createdAt }
-                        .thenBy { it.id }
-                )
+                .sortedWith(compareBy<HistoryEvent> { it.createdAt }.thenBy { it.id })
     val messages =
         ordered.mapNotNull { row ->
             val payload = row.payload
@@ -96,7 +101,6 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 when (row.type) {
                     "input.prompt",
                     "input.rejected",
-                    "input.budget",
                     "input.automation" -> {
                         val document = payload?.get("userMessage")
                         if (

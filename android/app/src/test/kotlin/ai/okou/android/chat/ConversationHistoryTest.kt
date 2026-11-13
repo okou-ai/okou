@@ -592,10 +592,7 @@ class ConversationHistoryTest {
                     HistoryCursor(HISTORY_LAST_EVENT, 17),
                 )
             )
-        assertEquals(
-            listOf("More budget", "Final answer"),
-            content.messages.flatMap { it.blocks }.map { it.text },
-        )
+        assertEquals(listOf("Final answer"), content.messages.flatMap { it.blocks }.map { it.text })
         val usage = row(type = "usage.recorded", payload = """{"usage":{"futureMetric":5}}""")
         assertEquals(
             "{\"futureMetric\":5}",
