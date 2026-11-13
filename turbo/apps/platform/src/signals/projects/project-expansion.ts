@@ -57,7 +57,7 @@ export const expandProject$ = command(
       return;
     }
     if (!previous[id]) {
-      set(animateProjectFold$, id);
+      set(animateProjectFold$, id, true);
     }
     set(setProjectExpansion$, { ...previous, [id]: true });
   },
@@ -65,12 +65,12 @@ export const expandProject$ = command(
 export const collapseProject$ = command(({ get, set }, id: string) => {
   const previous = get(expansion$);
   if (previous[id]) {
-    set(animateProjectFold$, id);
+    set(animateProjectFold$, id, false);
   }
   set(setProjectExpansion$, { ...previous, [id]: false });
 });
 export const toggleProject$ = command(({ get, set }, id: string) => {
   const previous = get(expansion$);
-  set(animateProjectFold$, id);
+  set(animateProjectFold$, id, !previous[id]);
   set(setProjectExpansion$, { ...previous, [id]: !previous[id] });
 });

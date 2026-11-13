@@ -3,7 +3,7 @@ import { timeout } from "signal-timers";
 import { onRef } from "../utils.ts";
 
 interface MountedProjectList {
-  readonly animate: (projectId: string) => void;
+  readonly animate: (projectId: string, expanded: boolean) => void;
 }
 
 const mountedLists$ = state<ReadonlyMap<HTMLElement, MountedProjectList>>(
@@ -26,7 +26,7 @@ export const projectListMotionRef$ = onRef(
       delete root.dataset.projectFoldMotion;
     }
     const list: MountedProjectList = {
-      animate(projectId) {
+      animate(projectId, expanded) {
         if (
           reducedMotion.matches ||
           !root.querySelector(
@@ -37,7 +37,7 @@ export const projectListMotionRef$ = onRef(
         }
         revision += 1;
         const currentRevision = revision;
-        root.dataset.projectFoldMotion = "";
+        root.dataset.projectFoldMotion = expanded ? "expand" : "collapse";
         // Match the rows' 180ms transition, allowing one frame for the commit.
         // No business state or virtual-list measurement waits for this timer.
         timeout(
@@ -70,8 +70,10 @@ export const projectListMotionRef$ = onRef(
   }),
 );
 
-export const animateProjectFold$ = command(({ get }, projectId: string) => {
-  for (const list of get(mountedLists$).values()) {
-    list.animate(projectId);
-  }
-});
+export const animateProjectFold$ = command(
+  ({ get }, projectId: string, expanded: boolean) => {
+    for (const list of get(mountedLists$).values()) {
+      list.animate(projectId, expanded);
+    }
+  },
+);
