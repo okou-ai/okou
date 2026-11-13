@@ -80,20 +80,10 @@ export function BrowserSessionSidebar({
       data-browser-session-sidebar
       className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0"
     >
-      {refined ? null : (
-        <div className="flex min-h-14 shrink-0 items-center gap-1 border-b border-border/60 px-4">
-          <span className="min-w-0 flex-1 text-sm font-medium">
-            {t(($) => {
-              return $.browserSession.title;
-            })}
-          </span>
-          {actions}
-        </div>
-      )}
       <div className="flex min-h-0 flex-1 flex-col">
         <BrowserSessionPanel
           signals={signals}
-          actions={refined ? actions : undefined}
+          actions={actions}
           overlay={refined ? overlay : undefined}
         />
       </div>
