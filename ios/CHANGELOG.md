@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.39.0](https://github.com/okou-ai/okou/compare/ios-v0.38.0...ios-v0.39.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** approve ssh access from native chat cards ([#46878](https://github.com/okou-ai/okou/issues/46878)) ([249aa82](https://github.com/okou-ai/okou/commit/249aa82f481613ecc2997f79e69feb0199c441ee))
+
+
+### Bug Fixes
+
+* **ios:** coordinate initial model reads with realtime subscriptions ([#46881](https://github.com/okou-ai/okou/issues/46881)) ([4a6f9b1](https://github.com/okou-ai/okou/commit/4a6f9b1aa7ec4a3eac13d79ba82b206a894deee9))
+* **ios:** detect explicitly discarded throwing tasks ([#46880](https://github.com/okou-ai/okou/issues/46880)) ([aa363ad](https://github.com/okou-ai/okou/commit/aa363adfba0a32b88b0be27a74d2d621319ad4d2))
+* **ios:** split chat row actions by swipe direction ([#46933](https://github.com/okou-ai/okou/issues/46933)) ([1a2cce6](https://github.com/okou-ai/okou/commit/1a2cce6b851ba7ebf4c78a587eafc3d4ec87c0f4))
+
+
+### Refactoring
+
+* **ios:** share conversation model selection reads ([#46931](https://github.com/okou-ai/okou/issues/46931)) ([7ae7bf8](https://github.com/okou-ai/okou/commit/7ae7bf8c3bd98fd5d1c6952ce4835af6436ff59a))
+
 ## [0.38.0](https://github.com/okou-ai/okou/compare/ios-v0.37.0...ios-v0.38.0) (2026-11-12)
 
 
