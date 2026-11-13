@@ -37,6 +37,7 @@ import {
   Minimize2,
   Pencil,
   Play,
+  RotateCw,
   Video,
   X,
 } from "lucide-react";
@@ -56,7 +57,7 @@ import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type {
   TextPreviewComputed,
@@ -2035,7 +2036,122 @@ function ComposerMediaPreviewButton({
   );
 }
 
-type AttachmentPreviewHost = Pick<ComposerSignals, "openAttachmentPreview$">;
+type AttachmentPreviewHost = Pick<
+  ComposerSignals,
+  "openAttachmentPreview$" | "retryAnnotatedCopy$"
+>;
+
+/** The original's upload progress, in the chip's top-left corner. */
+function UploadProgressRing({
+  filename,
+  percent,
+}: {
+  filename: string;
+  percent: number;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span
+      role="progressbar"
+      aria-label={t(
+        ($) => {
+          return $.chat.attachments.loadingFile;
+        },
+        { filename },
+      )}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+    >
+      <svg
+        viewBox="0 0 12 12"
+        className="h-2.5 w-2.5 -rotate-90"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle
+          cx="6"
+          cy="6"
+          r="4"
+          strokeWidth="2"
+          className="stroke-muted-foreground/20"
+        />
+        <circle
+          cx="6"
+          cy="6"
+          r="4"
+          pathLength="100"
+          strokeWidth="2"
+          strokeDasharray="100"
+          strokeDashoffset={100 - percent}
+          className="stroke-primary"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * The marked-up copy the agent reads, made after the editor has closed.
+ *
+ * Send stays disabled until it exists, so the chip says why while it is being
+ * made, and offers the retry that pressing "Attach marks" again used to be when
+ * the editor waited on it. A cancelled copy is not a failure: it was replaced
+ * by newer marks or its attachment is going away.
+ */
+function AnnotatedCopyStatus({
+  attachment,
+  previewHost,
+}: {
+  attachment: ChatAttachment;
+  previewHost: AttachmentPreviewHost;
+}) {
+  const { t } = useTranslation();
+  const copy = useLoadable(attachment.annotatedCopy$);
+  const retry = useSet(previewHost.retryAnnotatedCopy$);
+  const pageSignal = useGet(pageSignal$);
+  if (copy.state === "loading") {
+    return (
+      <span
+        role="progressbar"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.annotation.preparingCopy;
+          },
+          { filename: attachment.filename },
+        )}
+        className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+      >
+        <Loader2
+          size={10}
+          className="animate-spin text-muted-foreground"
+          aria-hidden
+        />
+      </span>
+    );
+  }
+  if (copy.state === "hasError" && !isAbortError(copy.error)) {
+    return (
+      <IconTooltipButton
+        type="button"
+        onClick={() => {
+          detach(retry(attachment, pageSignal), Reason.DomCallback);
+        }}
+        className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.annotation.retryCopy;
+          },
+          { filename: attachment.filename },
+        )}
+      >
+        <RotateCw size={9} aria-hidden />
+      </IconTooltipButton>
+    );
+  }
+  return null;
+}
 
 /** Draws the draft's current marks over its previewed image. */
 function DraftAnnotationMarks({
@@ -2106,44 +2222,18 @@ function AttachmentChip({
         </span>
       )}
       {uploading && (
-        <span
-          role="progressbar"
-          aria-label={t(
-            ($) => {
-              return $.chat.attachments.loadingFile;
-            },
-            { filename: attachment.filename },
-          )}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={uploadPercent}
-          className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
-        >
-          <svg
-            viewBox="0 0 12 12"
-            className="h-2.5 w-2.5 -rotate-90"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              cx="6"
-              cy="6"
-              r="4"
-              strokeWidth="2"
-              className="stroke-muted-foreground/20"
-            />
-            <circle
-              cx="6"
-              cy="6"
-              r="4"
-              pathLength="100"
-              strokeWidth="2"
-              strokeDasharray="100"
-              strokeDashoffset={100 - uploadPercent}
-              className="stroke-primary"
-            />
-          </svg>
-        </span>
+        <UploadProgressRing
+          filename={attachment.filename}
+          percent={uploadPercent}
+        />
+      )}
+      {/* The copy waits on the original, so the upload ring keeps this corner
+          until the original has finished. */}
+      {!uploading && isImage && (
+        <AnnotatedCopyStatus
+          attachment={attachment}
+          previewHost={previewHost}
+        />
       )}
       <IconTooltipButton
         type="button"

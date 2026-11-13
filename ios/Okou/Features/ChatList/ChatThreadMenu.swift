@@ -5,7 +5,8 @@ import SwiftUI
 @MainActor
 struct ChatThreadMenu {
   enum Action: Hashable {
-    case pin, movePinUp, movePinDown, rename, moveToProject, status, mute, markUnread, archive
+    case share, pin, movePinUp, movePinDown, rename, moveToProject, status, mute, markUnread,
+      archive
     case setStatus(String?)
   }
 
@@ -24,6 +25,8 @@ struct ChatThreadMenu {
   let moveToProject: (ChatThread) -> Void
   /// The sidebar's neighbouring pins; nil where this chat's pin cannot be reordered.
   var pinNeighbors: ChatSidebarPresentation.PinNeighbors?
+  /// A sidebar may finish the row's exit before invoking the workspace-owned mutation.
+  var archive: ((ChatThread) -> Void)?
 
   private var thread: ChatThread? {
     workspace.list.threads.first { $0.id == threadID }
@@ -43,6 +46,14 @@ struct ChatThreadMenu {
         title: pinned ? String(localized: "Unpin chat") : String(localized: "Pin chat"),
         icon: pinned ? "pin-off" : "pin", enabled: available && list.canPin(threadID))
     ]
+    if workspace.selectedConversation?.thread.id == threadID,
+      workspace.selectedConversation?.sharingEnabled == true
+    {
+      items.append(
+        Item(
+          action: .share, title: String(localized: "Share chat"), icon: "share-2",
+          enabled: available))
+    }
     if pinned, let pinNeighbors {
       items += [
         Item(
@@ -108,6 +119,7 @@ struct ChatThreadMenu {
       (items + statusItems).contains(where: { $0.action == action && $0.enabled })
     else { return }
     switch action {
+    case .share: workspace.selectedConversation?.startSharing()
     case .pin: await workspace.list.togglePinned(threadID)
     case .movePinUp:
       guard let above = pinNeighbors?.above else { return }
@@ -125,7 +137,11 @@ struct ChatThreadMenu {
     case .mute: await workspace.setMuted(threadID, muted: !thread.isMuted)
     case .markUnread: await workspace.setRead(thread, read: false)
     case .archive:
-      await workspace.setArchived(threadID, archived: !thread.isArchived, leaveDetail: true)
+      if let archive {
+        archive(thread)
+      } else {
+        await workspace.setArchived(threadID, archived: !thread.isArchived, leaveDetail: true)
+      }
     }
   }
 

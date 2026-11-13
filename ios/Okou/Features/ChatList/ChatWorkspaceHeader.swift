@@ -12,17 +12,30 @@ struct ChatWorkspaceHeader: View {
   var body: some View {
     let hasUnread = store.list.hasUnreadThreads
     HStack(spacing: OkouSpace.sm) {
-      Button(action: openSidebar) {
-        OkouToolbarIcon("menu")
-          .modifier(OkouUnreadBadge(isVisible: hasUnread))
-          .modifier(OkouGlassControl(shape: .circle))
-      }
-      .accessibilityLabel("Open sidebar")
-      .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))
-      .accessibilityIdentifier("open-sidebar")
-      Spacer(minLength: OkouSpace.sm)
-      if let threadID = store.selectedThreadID {
-        ChatThreadMoreButton(store: store, threadID: threadID)
+      if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
+        Text("\(sharing.selectedIDs.count) selected").font(.okou(.headline))
+          .accessibilityIdentifier("chat-sharing-count")
+        Spacer()
+        Button {
+          sharing.cancel()
+        } label: {
+          OkouToolbarIcon("x").modifier(OkouGlassControl(shape: .circle))
+        }
+        .accessibilityLabel("Cancel selection")
+        .accessibilityIdentifier("chat-sharing-cancel")
+      } else {
+        Button(action: openSidebar) {
+          OkouToolbarIcon("menu")
+            .modifier(OkouUnreadBadge(isVisible: hasUnread))
+            .modifier(OkouGlassControl(shape: .circle))
+        }
+        .accessibilityLabel("Open sidebar")
+        .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))
+        .accessibilityIdentifier("open-sidebar")
+        Spacer(minLength: OkouSpace.sm)
+        if let threadID = store.selectedThreadID {
+          ChatThreadMoreButton(store: store, threadID: threadID)
+        }
       }
     }
     .buttonStyle(.plain)

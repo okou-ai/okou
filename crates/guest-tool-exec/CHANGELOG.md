@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.72](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.71...guest-tool-exec-v0.3.72) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate raw socket creation to owned apis ([#47077](https://github.com/okou-ai/okou/issues/47077)) ([355af4a](https://github.com/okou-ai/okou/commit/355af4a8b3e17e8fc02b8caf5b4cad30eb94e0cd))
+
+## [0.3.71](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.70...guest-tool-exec-v0.3.71) (2026-11-13)
+
 ## [0.3.70](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.69...guest-tool-exec-v0.3.70) (2026-11-12)
 
 ## [0.3.69](https://github.com/okou-ai/okou/compare/guest-tool-exec-v0.3.68...guest-tool-exec-v0.3.69) (2026-11-11)

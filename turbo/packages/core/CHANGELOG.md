@@ -1,5 +1,37 @@
 # Changelog
 
+## [8.837.0](https://github.com/okou-ai/okou/compare/core-v8.836.2...core-v8.837.0) (2026-11-13)
+
+
+### Features
+
+* align web and ios chat message sharing ([#47059](https://github.com/okou-ai/okou/issues/47059)) ([971a42f](https://github.com/okou-ai/okou/commit/971a42fa47c06591adb653265a8ce4055c40b266))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.0
+
+## [8.836.2](https://github.com/okou-ai/okou/compare/core-v8.836.1...core-v8.836.2) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.61.0
+
+## [8.836.1](https://github.com/okou-ai/okou/compare/core-v8.836.0...core-v8.836.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.60.0
+
 ## [8.836.0](https://github.com/okou-ai/okou/compare/core-v8.835.2...core-v8.836.0) (2026-11-13)
 
 

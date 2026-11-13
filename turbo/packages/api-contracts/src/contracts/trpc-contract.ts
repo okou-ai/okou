@@ -233,7 +233,7 @@ export type ServerInferResponseBody<R extends AppRoute, Status extends number> =
     ? Body
     : undefined;
 
-function isNoBody(value: unknown): value is NoBodyMarker {
+export function isNoBody(value: unknown): value is NoBodyMarker {
   return typeof value === "object" && value !== null && noBodySymbol in value;
 }
 

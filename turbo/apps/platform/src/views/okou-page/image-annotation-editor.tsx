@@ -1442,6 +1442,10 @@ function EditorStage({
             src={url}
             alt={filename}
             draggable={false}
+            // The preview has already loaded this exact URL. Decoding it in
+            // step with the window keeps the stage from painting a frame
+            // empty, which is the blink the hand-off is meant to remove.
+            decoding="sync"
             // The fit bounds are the stage's own box, so 100% zoom shows the
             // whole image and zooming grows the layout box the stage scrolls.
             style={{
@@ -1526,11 +1530,11 @@ function AnnotationSurface({
   const bindPanel = useSet(signals.bindAnnotationPanel$);
   const bindShortcuts = useSet(signals.bindAnnotationShortcuts$);
   const panelElement = useSet(signals.annotationPanelElement$);
+  // Never gates the window: the preview this replaces is gone the moment the
+  // pencil is pressed, so a frame without the editor is a frame with no modal
+  // at all. The URL is the preview's own, already resolved, and arrives on the
+  // next tick.
   const resolvedUrl = useLastResolved(signals.annotationResourceUrl$);
-
-  if (!resolvedUrl) {
-    return null;
-  }
 
   return (
     <TooltipProvider delay={300}>
@@ -1556,6 +1560,10 @@ function AnnotationSurface({
           maxWidth={1440}
           height={1000}
           surface="canvas"
+          // The editor only opens from the preview, which is the same window
+          // behind the same backdrop and leaves without an exit. Fading this
+          // one in from nothing made the modal blink out and back.
+          animateOpen={false}
           // The panel takes the opening focus rather than the first control in
           // the header, so the tool letters and ink digits reach the editor
           // instead of the composer it opened over — and so no button looks
@@ -1575,11 +1583,15 @@ function AnnotationSurface({
             data-testid="image-annotation-panel"
           >
             <EditorHeader filename={target.filename} signals={signals} />
-            <EditorStage
-              filename={target.filename}
-              signals={signals}
-              url={resolvedUrl}
-            />
+            {resolvedUrl ? (
+              <EditorStage
+                filename={target.filename}
+                signals={signals}
+                url={resolvedUrl}
+              />
+            ) : (
+              <div className="min-h-0 flex-1 bg-muted/30" />
+            )}
             <EditorFooter signals={signals} />
           </div>
         </DialogContent>

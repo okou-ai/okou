@@ -3,9 +3,10 @@
 use std::io;
 use std::mem::{size_of, size_of_val, zeroed};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 
 use nix::libc;
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, socket};
 use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
 use tokio::time::Instant as TimerInstant;
@@ -65,18 +66,13 @@ fn set_option<T>(fd: &OwnedFd, level: i32, option: i32, value: &T) -> io::Result
 fn open() -> io::Result<OwnedFd> {
     // Start with protocol 0 so no traffic is delivered before the rejecting
     // filter and timestamp option are installed.
-    let raw = unsafe {
-        libc::socket(
-            libc::AF_PACKET,
-            libc::SOCK_DGRAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
-            0,
-        )
-    };
-    if raw == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: socket returned a new descriptor, now owned exactly once.
-    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    let fd = socket(
+        AddressFamily::Packet,
+        SockType::Datagram,
+        SockFlag::SOCK_CLOEXEC | SockFlag::SOCK_NONBLOCK,
+        None,
+    )
+    .map_err(io::Error::from)?;
     install_filter(&fd, &[])?;
     set_option(&fd, libc::SOL_SOCKET, libc::SO_TIMESTAMPNS, &1i32)?;
     set_option(&fd, libc::SOL_SOCKET, libc::SO_RCVBUF, &(256 * 1024i32))?;

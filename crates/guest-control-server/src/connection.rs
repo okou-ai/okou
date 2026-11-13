@@ -155,15 +155,16 @@ impl ConnectionPrograms {
 /// Connect to vsock (Linux only - this binary runs inside Firecracker VM)
 #[cfg(target_os = "linux")]
 pub fn connect_vsock() -> io::Result<UnixStream> {
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
+    use std::os::fd::AsRawFd;
 
-    // SAFETY: Creating a vsock socket with valid constants. fd is checked for errors below.
-    let fd = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fd is a newly created socket and ownership is adopted exactly once.
-    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let fd = socket_with(
+        AddressFamily::VSOCK,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .map_err(io::Error::from)?;
 
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,

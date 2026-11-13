@@ -458,18 +458,12 @@ final class WorkspaceStore {
     async let accessRefresh: Void = refreshComputerAuthorizations(batch)
     async let modelRefresh: Void = refreshModels(batch)
     async let projectRefresh: Void = refreshProjects(batch)
+    async let indicatorsRefresh: Void = refreshIndicators(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       async let drafts: Void = refreshDrafts()
-      await list.refresh()
+      await list.refresh(includingIndicators: false)
       await drafts
-    } else if batch.contains(.readCursor)
-      || batch.contains(where: {
-        if case .history = $0 { return true }
-        return false
-      })
-    {
-      await list.refreshIndicators()
     }
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await historyRefresh
@@ -479,6 +473,7 @@ final class WorkspaceStore {
     await accessRefresh
     await modelRefresh
     await projectRefresh
+    await indicatorsRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -508,6 +503,14 @@ final class WorkspaceStore {
       await modelStore.refresh(batch)
     } else if full || batch.contains(.realtimeResume) {
       do { try resources.invalidate(batch) } catch { handle(error) }
+    }
+  }
+
+  private func refreshIndicators(_ batch: Set<ChatInvalidation>) async {
+    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.indicators)
+      || batch.contains(.readCursor)
+    {
+      await list.refreshIndicators()
     }
   }
 

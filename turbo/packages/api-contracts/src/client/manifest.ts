@@ -122,6 +122,10 @@ export const clientDescriptorManifest = [
     contracts: ["chatRemoteAccessContract"],
   },
   {
+    module: "chat-share-selection",
+    contracts: ["chatShareSelectionContract"],
+  },
+  {
     module: "chat-thread-activity-summary",
     contracts: ["chatThreadActivitySummaryContract"],
   },
@@ -322,6 +326,10 @@ export const clientDescriptorManifest = [
   {
     module: "feature-switches",
     contracts: ["featureSwitchesContract"],
+  },
+  {
+    module: "feed",
+    contracts: ["feedContract"],
   },
   {
     module: "feishu-browser-connect",
@@ -703,10 +711,6 @@ export const clientDescriptorManifest = [
   {
     module: "ssh-credentials",
     contracts: ["sshCredentialsContract"],
-  },
-  {
-    module: "suggestions",
-    contracts: ["suggestionsContract"],
   },
   {
     module: "tailscale",

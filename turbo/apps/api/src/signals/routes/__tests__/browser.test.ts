@@ -1112,8 +1112,7 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
             },
           };
         }
-        // The external provider executes the JavaScript actually sent by apply,
-        // including the legacy writer on the red-before-green baseline.
+        // The external provider executes the JavaScript actually sent by apply.
         const value: unknown = runInNewContext(
           `(${declaration}).apply(control, args)`,
           {

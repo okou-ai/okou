@@ -1,0 +1,151 @@
+{
+  "snapshotEmpty": {
+    "url": "https://storage.example/history",
+    "expiresInSeconds": 60,
+    "lastEventId": null,
+    "lastSeqId": 0
+  },
+  "snapshotWarm": {
+    "url": "https://storage.example/history",
+    "expiresInSeconds": 60,
+    "lastEventId": "44444444-4444-4444-8444-444444444444",
+    "lastSeqId": 37
+  },
+  "page": {
+    "rows": [
+      {
+        "id": "input",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "runId": null,
+        "revokesEventId": null,
+        "contextType": "web",
+        "contextId": null,
+        "runEventSequenceNumber": null,
+        "runEventId": null,
+        "seqId": 17,
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "eventType": "input.prompt",
+        "payload": {
+          "userMessage": {
+            "version": 1,
+            "parts": [
+              {
+                "type": "text",
+                "text": "Hello"
+              },
+              {
+                "type": "attachment",
+                "metadata": {
+                  "arbitrary": [
+                    null,
+                    true,
+                    7
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "output",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "runId": null,
+        "revokesEventId": null,
+        "contextType": null,
+        "contextId": null,
+        "runEventSequenceNumber": null,
+        "runEventId": null,
+        "seqId": 23,
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "eventType": "output.message",
+        "payload": {
+          "content": "Reply",
+          "userMessage": null
+        }
+      },
+      {
+        "id": "failed",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "runId": null,
+        "revokesEventId": null,
+        "contextType": null,
+        "contextId": null,
+        "runEventSequenceNumber": null,
+        "runEventId": null,
+        "seqId": 29,
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "eventType": "run.failed",
+        "failureReason": "runner_failed",
+        "payload": {
+          "error": "Failed"
+        }
+      },
+      {
+        "id": "revoke",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "runId": null,
+        "revokesEventId": "input",
+        "contextType": null,
+        "contextId": null,
+        "runEventSequenceNumber": null,
+        "runEventId": null,
+        "seqId": 32,
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "eventType": "control.revoke",
+        "payload": null
+      },
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "runId": null,
+        "revokesEventId": null,
+        "contextType": null,
+        "contextId": null,
+        "runEventSequenceNumber": null,
+        "runEventId": null,
+        "seqId": 37,
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "eventType": "usage.recorded",
+        "payload": {
+          "usage": {
+            "input": 42,
+            "nested": [
+              "future",
+              null
+            ]
+          }
+        }
+      }
+    ],
+    "cursor": {
+      "lastEventId": "44444444-4444-4444-8444-444444444444",
+      "lastSeqId": 37
+    },
+    "hasMore": false
+  },
+  "pageEmpty": {
+    "rows": [],
+    "cursor": {
+      "lastEventId": null,
+      "lastSeqId": 0
+    },
+    "hasMore": false
+  },
+  "queryCold": {
+    "sinceSeqId": 0,
+    "limit": 50
+  },
+  "queryWarm": {
+    "sinceSeqId": 37,
+    "sinceEventId": "44444444-4444-4444-8444-444444444444",
+    "limit": 12.5
+  },
+  "detail": {
+    "lastReadAt": null,
+    "cancellationRecoveryPending": false
+  },
+  "readState": {
+    "lastReadAt": "2026-11-13T00:00:00.000Z"
+  }
+}

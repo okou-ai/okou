@@ -13,6 +13,69 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1128.0](https://github.com/okou-ai/okou/compare/app-v0.1127.0...app-v0.1128.0) (2026-11-13)
+
+
+### Features
+
+* align web and ios chat message sharing ([#47059](https://github.com/okou-ai/okou/issues/47059)) ([971a42f](https://github.com/okou-ai/okou/commit/971a42fa47c06591adb653265a8ce4055c40b266))
+
+
+### Bug Fixes
+
+* **app:** hand image annotation off without a blink and attach marks at once ([#47054](https://github.com/okou-ai/okou/issues/47054)) ([8d3eaf7](https://github.com/okou-ai/okou/commit/8d3eaf711d9c61acd2bb5e842a6dd4eaed69614a))
+* **app:** round the inset picture corners in the home capability art ([#47075](https://github.com/okou-ai/okou/issues/47075)) ([0c6f63b](https://github.com/okou-ai/okou/commit/0c6f63bbd239364d6b6385bd1778d518c8c0615e))
+* **platform:** clarify project new chat tooltip ([#47079](https://github.com/okou-ai/okou/issues/47079)) ([57acb19](https://github.com/okou-ai/okou/commit/57acb193be149a36c2dff1069e7e6249c95a6f0f))
+* **platform:** draw the sidebar draft pencil with the pin's ink and optical size ([#47076](https://github.com/okou-ai/okou/issues/47076)) ([13f8a27](https://github.com/okou-ai/okou/commit/13f8a27660312452457256ede0f65820672443a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.0
+    * @okouai/core bumped to 8.837.0
+    * @okouai/ui bumped to 1.21.14
+
+## [0.1127.0](https://github.com/okou-ai/okou/compare/app-v0.1126.0...app-v0.1127.0) (2026-11-13)
+
+
+### Features
+
+* introduce typed feed items under suggestions rollout ([#47053](https://github.com/okou-ai/okou/issues/47053)) ([e052b90](https://github.com/okou-ai/okou/commit/e052b90b3ed950ce46c7fc51235e87c1c3034164))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.61.0
+    * @okouai/core bumped to 8.836.2
+    * @okouai/ui bumped to 1.21.13
+
+## [0.1126.0](https://github.com/okou-ai/okou/compare/app-v0.1125.0...app-v0.1126.0) (2026-11-13)
+
+
+### Features
+
+* **app:** add home capabilities to composer menus ([#47026](https://github.com/okou-ai/okou/issues/47026)) ([d94a2a0](https://github.com/okou-ai/okou/commit/d94a2a02ca5a35cfc41315bd0de9728564a0d245))
+
+
+### Bug Fixes
+
+* **app:** align approved error page layouts and credit icon ([#47027](https://github.com/okou-ai/okou/issues/47027)) ([a54050d](https://github.com/okou-ai/okou/commit/a54050da6ba63e410040130fcc92ee03cef6842e))
+* **app:** prioritize unread project indicators over active chats ([#47052](https://github.com/okou-ai/okou/issues/47052)) ([cbfd8fb](https://github.com/okou-ai/okou/commit/cbfd8fb32d4920b8d012a21c109709674bb07d06))
+* **platform:** separate project folding from home navigation ([#47047](https://github.com/okou-ai/okou/issues/47047)) ([7d877c5](https://github.com/okou-ai/okou/commit/7d877c54b7e57a97e5fe8aaa2cada23bcc7efe52))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.60.0
+    * @okouai/core bumped to 8.836.1
+    * @okouai/ui bumped to 1.21.12
+
 ## [0.1125.0](https://github.com/okou-ai/okou/compare/app-v0.1124.0...app-v0.1125.0) (2026-11-13)
 
 

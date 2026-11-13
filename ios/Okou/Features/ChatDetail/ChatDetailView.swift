@@ -43,6 +43,18 @@ struct ChatDetailView: View {
   }
   private var rows: [ConversationCollectionRow] {
     let items = conversation.visibleItems
+    if conversation.sharing.isSelecting, conversation.sharing.selection != nil {
+      let sharing = conversation.sharing
+      let shareableIDs = sharing.shareableIDs
+      var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
+      rows += items.compactMap { item in
+        guard let message = item.message, shareableIDs.contains(message.id) else {
+          return nil
+        }
+        return .share(message, selected: sharing.selectedIDs.contains(message.id), topSpacing: 16)
+      }
+      return rows
+    }
     var result: [ConversationCollectionRow] = []
     if conversation.hasEarlierMessages {
       result.append(.earlier)
@@ -85,7 +97,8 @@ struct ChatDetailView: View {
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory,
-            showsActions: !isWorkHistory && pendingRetry == nil && endsTurn(at: index, in: items))
+            showsActions: !conversation.sharing.isSelecting && !isWorkHistory
+              && pendingRetry == nil && endsTurn(at: index, in: items))
         )
       case .usage(let runID):
         result.append(.usage(runID: runID))
@@ -252,6 +265,7 @@ struct ChatDetailView: View {
       if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
+      conversation.cancelSharing()
       scrolling.deactivate()
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
@@ -273,6 +287,13 @@ struct ChatDetailView: View {
       MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(isPresented: $conversation.sharing.showsCreatedLink) {
+      ChatSharingCreatedView(sharing: conversation.sharing)
+        .presentationDetents([.medium, .large])
+    }
+    .onChange(of: conversation.sharing.isSelecting) { _, _ in
+      if let position = scrolling.scroll.captureReadingPosition() { scrolling.reveal(position) }
+    }
     .sheet(item: $usageDetails) { selection in
       ConversationRunUsageDetails(
         usage: conversation.runUsage, runID: selection.id,
@@ -320,29 +341,34 @@ struct ChatDetailView: View {
           .padding(.horizontal, OkouSpace.lg)
           .padding(.bottom, OkouSpace.xs)
         }
-        ChatComposerView(
-          draft: $conversation.draft,
-          isBusy: conversation.isSending || conversation.isStopping
-            || conversation.isRecoveringFailure,
-          showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-          error: conversation.error,
-          attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-          attachments: conversation.attachmentDraft,
-          draftState: conversation.composer,
-          submit: {
-            if history.canStop && !conversation.composer.hasContent {
-              await conversation.stop()
-            } else {
-              await scrolling.send()
-              await didSend?()
-            }
-          }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-          connectorSelection: conversation.modelSelection?.connectors,
-          mentionSource: mentionSource,
-          workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
-          sendTransition: scrolling.sendTransition,
-          placeholder: agentName.map { String(localized: "Message \($0)") }
-        )
+        if conversation.sharing.isSelecting {
+          ChatSharingFooter(sharing: conversation.sharing)
+        } else {
+          ChatComposerView(
+            draft: $conversation.draft,
+            isBusy: conversation.isSending || conversation.isStopping
+              || conversation.isRecoveringFailure,
+            showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
+            error: conversation.error,
+            attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+            attachments: conversation.attachmentDraft,
+            draftState: conversation.composer,
+            submit: {
+              if history.canStop && !conversation.composer.hasContent {
+                await conversation.stop()
+              } else {
+                await scrolling.send()
+                await didSend?()
+              }
+            }, refresh: { await conversation.refresh() },
+            modelSelection: conversation.modelSelection,
+            connectorSelection: conversation.modelSelection?.connectors,
+            mentionSource: mentionSource,
+            workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
+            sendTransition: scrolling.sendTransition,
+            placeholder: agentName.map { String(localized: "Message \($0)") }
+          )
+        }
       }
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -370,6 +396,29 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .share(let message, let selected, let topSpacing):
+      HStack(alignment: .top, spacing: OkouSpace.xs) {
+        OkouSelectionButton(isSelected: selected) {
+          conversation.sharing.toggle(message, messages: conversation.messages)
+        }
+        .disabled(conversation.sharing.isBusy)
+        .accessibilityLabel(message.role == .user ? "Select question" : "Select answer")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("chat-sharing-select-\(message.id)")
+        messageRow(
+          message, showsAvatar: true, pendingRetry: nil, isSending: false,
+          isWorkHistory: false, showsActions: false, loadsAttachments: anchor != nil)
+      }
+      .padding(OkouSpace.sm)
+      .background(
+        selected ? OkouColor.stateSelected : .clear,
+        in: RoundedRectangle(cornerRadius: OkouRadius.chat)
+      )
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+      }
+      .padding(.horizontal, OkouSpace.sm)
+      .padding(.top, topSpacing)
     case .failure(let message, let state, let topSpacing, let providerMessage):
       AssistantFailureRecoveryCard(
         failure: state.failure, conversation: conversation, providerMessage: providerMessage
@@ -526,7 +575,9 @@ struct ChatDetailView: View {
           shareLink: { audience in
             let id = try await conversation.shareAnswer(message.id, audience: audience)
             return conversation.webURL.appending(path: "share/threads/\(id)")
-          }
+          },
+          selectMessages: conversation.sharingEnabled
+            ? { conversation.startSharing(answerID: message.id) } : nil
         )
         // The answer's text is inset 6 pt; the first glyph sits on that edge.
         .padding(.leading, OkouSpace.six)

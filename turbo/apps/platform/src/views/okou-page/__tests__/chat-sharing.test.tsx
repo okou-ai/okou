@@ -1,3 +1,4 @@
+import { chatShareSelectionContract } from "@okouai/api-contracts/contracts/chat-share-selection";
 import {
   sharedThreadVisibilityContract,
   type SharedThreadAudience,
@@ -1259,4 +1260,184 @@ test("A visibility share fails without publishing when its API is unavailable", 
   expect(
     screen.queryByRole("textbox", { name: "Shared chat link" }),
   ).not.toBeInTheDocument();
+});
+
+test("Unified sharing selects consecutive prompts independently and shares only the checked records", async () => {
+  context.mocks.api(chatShareSelectionContract.get, ({ respond }) => {
+    return respond(200, {
+      messages: [
+        {
+          eventId: PROMPT_EVENT_ID,
+          role: "user",
+          turnEventIds: [PROMPT_EVENT_ID],
+        },
+        {
+          eventId: FOLLOW_UP_PROMPT_EVENT_ID,
+          role: "user",
+          turnEventIds: [FOLLOW_UP_PROMPT_EVENT_ID],
+        },
+        {
+          eventId: ANSWER_EVENT_ID,
+          role: "assistant",
+          turnEventIds: [
+            PROMPT_EVENT_ID,
+            FOLLOW_UP_PROMPT_EVENT_ID,
+            ANSWER_EVENT_ID,
+          ],
+        },
+      ],
+    });
+  });
+  const requests: string[][] = [];
+  context.mocks.api(chatShareSelectionContract.create, ({ body, respond }) => {
+    requests.push(body.eventIds);
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await startSharingBackToBackPrompts({
+    [FeatureSwitchKey.ChatSharingSelection]: true,
+  });
+  const first = within(selectableGroupForText(PROMPT)).getByRole("checkbox", {
+    name: "Select message",
+  });
+  const second = within(selectableGroupForText(FOLLOW_UP_PROMPT)).getByRole(
+    "checkbox",
+    { name: "Select message" },
+  );
+  click(first);
+  await waitFor(() => {
+    expect(first).toBeChecked();
+    expect(second).not.toBeChecked();
+    expect(
+      requiredButtonNamed("Create link").closest("footer"),
+    ).toHaveTextContent("1 selected");
+  });
+  click(
+    within(selectableGroupForText(ANSWER)).getByRole("checkbox", {
+      name: "Select message",
+    }),
+  );
+  await screen.findAllByText("2 selected");
+  click(requiredButtonNamed("Create link"));
+  await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(requests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
+});
+
+test("Unified quick sharing confirms creation before copying and keeps the link after clipboard denial", async () => {
+  mockConversation();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new Error("Clipboard permission denied"),
+  );
+  const response = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
+  let sharedId = SHARED_THREAD_ID;
+  const requests: string[][] = [];
+  context.mocks.api(chatShareSelectionContract.get, ({ respond }) => {
+    return respond(200, {
+      messages: [
+        {
+          eventId: PROMPT_EVENT_ID,
+          role: "user",
+          turnEventIds: [PROMPT_EVENT_ID],
+        },
+        {
+          eventId: ANSWER_EVENT_ID,
+          role: "assistant",
+          turnEventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
+        },
+      ],
+    });
+  });
+  context.mocks.api(
+    chatShareSelectionContract.create,
+    async ({ body, respond }) => {
+      sharedId = body.id;
+      requests.push(body.eventIds);
+      received.resolve();
+      await response.promise;
+      return respond(201, { id: sharedId });
+    },
+  );
+  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
+    return respond(200, {
+      id: sharedId,
+      audience: "public",
+      revision: null,
+      organization: { id: "org", name: "Test workspace" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatSharingSelection]: true },
+  });
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
+  click(requiredButtonNamed("Share message"));
+  const menu = await screen.findByRole("menu", { name: "Share message" });
+  click(messageShareItem(menu, "Everyone"));
+  await received.promise;
+  expect(clipboard.writes).toStrictEqual([]);
+  expect(buttonsNamed("Copied")).toHaveLength(0);
+  response.resolve();
+  const link = await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(link).toHaveValue(`https://app.okou.ai/share/threads/${sharedId}`);
+  expect(requests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
+});
+
+test("Unified turn preselection retains a prompt outside the loaded history page", async () => {
+  mockConversation(
+    standardConversation().filter((event) => {
+      return event.role === "assistant";
+    }),
+  );
+  context.mocks.api(chatShareSelectionContract.get, ({ respond }) => {
+    return respond(200, {
+      messages: [
+        {
+          eventId: PROMPT_EVENT_ID,
+          role: "user",
+          turnEventIds: [PROMPT_EVENT_ID],
+        },
+        {
+          eventId: ANSWER_EVENT_ID,
+          role: "assistant",
+          turnEventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
+        },
+      ],
+    });
+  });
+  const requests: string[][] = [];
+  context.mocks.api(chatShareSelectionContract.create, ({ body, respond }) => {
+    requests.push(body.eventIds);
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  context.mocks.browser.clipboardWriteText();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatSharingSelection]: true },
+  });
+  await screen.findByText(ANSWER);
+  click(requiredButtonNamed("Share message"));
+  const menu = await screen.findByRole("menu", { name: "Share message" });
+  const selectMessages = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Select messages…";
+  });
+  expect(selectMessages).toBeDefined();
+  click(selectMessages!);
+  await screen.findAllByText("2 selected");
+  click(requiredButtonNamed("Create link"));
+  await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(requests[0]).toHaveLength(2);
+  expect(requests[0]).toContain(PROMPT_EVENT_ID);
+  expect(requests[0]).toContain(ANSWER_EVENT_ID);
 });

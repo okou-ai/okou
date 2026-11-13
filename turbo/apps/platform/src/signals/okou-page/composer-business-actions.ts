@@ -114,24 +114,24 @@ export function createComposerDraftActions(
   );
   const confirmAttachmentAnnotations$ = command(
     async (
-      { set },
+      { get, set },
       attachment: ChatAttachment,
       annotations: ImageAnnotation | null,
       signal: AbortSignal,
     ): Promise<void> => {
-      // Persist the marks and their derivative together after a successful
-      // upload. On failure, still save the marks as a missing-copy draft while
-      // preserving the actual rejection for the caller and the attachment chip.
-      // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-      await withCleanup(
-        set(attachment.confirmAnnotations$, annotations, signal),
-        () => {
-          if (!signal.aborted) {
-            return set(saveDraft$, signal);
-          }
-          return undefined;
-        },
-      );
+      // The marks are stored on this call and the editor closes on it, so the
+      // copy is still uploading while the user can already leave the chat.
+      // Save the marks now, as the missing-copy draft a restore rebuilds, so a
+      // cancelled upload does not take them with it. Either failure stops the
+      // operation; a failed copy is also the chip's to show and retry.
+      const copy = set(attachment.confirmAnnotations$, annotations, signal);
+      await Promise.all([set(saveDraft$, signal), copy]);
+      signal.throwIfAborted();
+      // Then once more to record the finished copy, so a reload does not
+      // flatten and upload it again.
+      if (get(attachment.annotatedFileId$) !== null) {
+        await set(saveDraft$, signal);
+      }
     },
   );
   return {

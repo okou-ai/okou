@@ -1,12 +1,13 @@
 import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { Command } from "commander";
-import { string, uuid } from "zod";
+import { object, string, uuid } from "zod";
 import {
+  feedItemTypeSchema,
   suggestionCreateSchema,
   suggestionUpdateSchema,
   type Suggestion,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import {
   createSuggestion,
   updateSuggestion,
@@ -28,7 +29,7 @@ function printSuggestion(item: Suggestion, json?: boolean) {
   console.log(
     json
       ? JSON.stringify(item)
-      : `${item.id}  priority=${item.priority}  ${item.title}\nEdit: okou suggestion update ${item.id} --file suggestion.json`,
+      : `${item.id}  priority=${item.priority}  ${item.content.title}\nEdit: okou feed update ${item.id} --file suggestion.json`,
   );
 }
 function jsonError(
@@ -49,6 +50,7 @@ function jsonError(
 }
 interface CreateOptions {
   readonly file?: string;
+  readonly type?: string;
   readonly text?: string;
   readonly background?: string;
   readonly id?: string;
@@ -67,12 +69,13 @@ function textDraft(text: string) {
     draftAttachments: null,
   };
 }
-export function createSuggestionCommand() {
-  const suggestionCommand = new Command("suggestion").description(
-    "Manage your next-step suggestions from Okou",
+export function createFeedCommand() {
+  const feedCommand = new Command("feed").description(
+    "Manage typed feed items from Okou",
   );
-  suggestionCommand
+  feedCommand
     .command("identity")
+    .requiredOption("--type <type>", "Feed item type (suggestion)")
     .description(
       "Derive a stable UUID for one source object/event and next action",
     )
@@ -83,7 +86,12 @@ export function createSuggestionCommand() {
     .option("--json", "Output JSON")
     .action(
       withErrorHandler(
-        async (options: { readonly key: string; readonly json?: boolean }) => {
+        async (options: {
+          readonly key: string;
+          readonly type: string;
+          readonly json?: boolean;
+        }) => {
+          feedItemTypeSchema.parse(options.type);
           const key = string().trim().min(1).max(2048).parse(options.key);
           // UUID v5 with a fixed Okou suggestion namespace; this never publishes an item.
           const bytes = createHash("sha1")
@@ -100,8 +108,9 @@ export function createSuggestionCommand() {
         jsonError,
       ),
     );
-  suggestionCommand
+  feedCommand
     .command("list")
+    .option("--type <type>", "Filter by feed item type (suggestion)")
     .description(
       "Read active suggestions and recent consumed/removed identities",
     )
@@ -116,38 +125,49 @@ export function createSuggestionCommand() {
         async (options: {
           readonly json?: boolean;
           readonly all?: boolean;
+          readonly type?: string;
           readonly after?: string;
         }) => {
           if (options.after && !options.all)
             throw new Error("Use --after with --all.");
-          const data = await listSuggestions(options);
+          const data = await listSuggestions({
+            ...options,
+            type:
+              options.type === undefined
+                ? undefined
+                : feedItemTypeSchema.parse(options.type),
+          });
           if (options.json) console.log(JSON.stringify(data));
-          else if (data.suggestions.length === 0)
+          else if (data.items.length === 0)
             console.log(
-              "No active suggestions. Create one with: okou suggestion create --file suggestion.json",
+              "No active suggestions. Create one with: okou feed create --file suggestion.json",
             );
           else
-            for (const item of data.suggestions)
+            for (const item of data.items)
               console.log(
-                `${item.id}  priority=${item.priority}  ${item.title}`,
+                `${item.id}  priority=${item.priority}  ${item.content.title}`,
               );
           if (!options.json && "nextAfter" in data && data.nextAfter) {
             console.log(
-              `Continue with: okou suggestion list --all --after ${data.nextAfter} --json`,
+              `Continue with: okou feed list --all --after ${data.nextAfter} --json`,
             );
           }
         },
         jsonError,
       ),
     );
-  suggestionCommand
+  feedCommand
     .command("create")
+    .option(
+      "--type <type>",
+      "Feed item type; required here or in the input file",
+    )
     .description(
       "Publish a suggestion; reuse its UUID and exact file when retrying",
     )
     .option(
       "--file <path>",
-      "JSON containing id, title, rationale, priority, action options and a complete neutral customOption draft",
+      "JSON containing id, type, priority and nested suggestion content (title, rationale, options and customOption)",
     )
     .option("--text <text>", "Text converted to the normal composer document")
     .option(
@@ -191,14 +211,16 @@ export function createSuggestionCommand() {
           throw new Error(
             "Provide --background with the complete neutral context, or use --file suggestion.json.",
           );
-        const body = suggestionCreateSchema.parse(
-          options.file
-            ? await readInput(options.file)
-            : {
-                id: options.id,
+        const input = options.file
+          ? object({ type: feedItemTypeSchema.optional() })
+              .passthrough()
+              .parse(await readInput(options.file))
+          : {
+              id: options.id,
+              priority: Number(options.priority ?? "0"),
+              content: {
                 title: options.title,
                 rationale: options.rationale ?? "",
-                priority: Number(options.priority ?? "0"),
                 customOption: {
                   id: "custom",
                   threadId: null,
@@ -226,11 +248,23 @@ export function createSuggestionCommand() {
                   },
                 ],
               },
-        );
+            };
+        const fileType = "type" in input ? input.type : undefined;
+        if (
+          options.type !== undefined &&
+          fileType !== undefined &&
+          options.type !== fileType
+        ) {
+          throw new Error("The --type value must match the input file type.");
+        }
+        const body = suggestionCreateSchema.parse({
+          ...input,
+          type: feedItemTypeSchema.parse(options.type ?? fileType),
+        });
         printSuggestion(await createSuggestion(body), options.json);
       }, jsonError),
     );
-  suggestionCommand
+  feedCommand
     .command("update")
     .description("Update an active suggestion's content or priority")
     .argument("<id>", "Suggestion UUID")
@@ -266,7 +300,7 @@ export function createSuggestionCommand() {
         },
       ),
     );
-  suggestionCommand
+  feedCommand
     .command("delete")
     .description("Withdraw an active suggestion")
     .argument("<id>", "Suggestion UUID")
@@ -278,7 +312,7 @@ export function createSuggestionCommand() {
           console.log(
             options.json
               ? JSON.stringify({ id, removed: true })
-              : `Suggestion withdrawn. Inspect the pool: okou suggestion list --json`,
+              : `Suggestion withdrawn. Inspect the pool: okou feed list --json`,
           );
         },
         (error, _id, options) => {
@@ -286,6 +320,6 @@ export function createSuggestionCommand() {
         },
       ),
     );
-  return suggestionCommand;
+  return feedCommand;
 }
-export const suggestionCommand = createSuggestionCommand();
+export const feedCommand = createFeedCommand();
