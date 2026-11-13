@@ -25,15 +25,11 @@ import org.robolectric.annotation.Config
 class ChatListApplication : TestOkouApplication() {
     lateinit var fixture: ChatListApiFixture
     lateinit var cacheSnapshot: ChatCacheSnapshot
-    val flagsGate = CountDownLatch(1)
+    val responseGate = CountDownLatch(1)
 
     override fun onCreate() {
         fixture = ChatListApiFixture()
-        val flags = fixture.flags
-        fixture.flags = {
-            flagsGate.await()
-            flags()
-        }
+        fixture.beforeResponse = { responseGate.await() }
         chatService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
@@ -66,7 +62,7 @@ class ChatListRootTest {
     @After
     fun close() {
         val app = compose.activity.application as ChatListApplication
-        app.flagsGate.countDown()
+        app.responseGate.countDown()
         compose.activityRule.scenario.close()
         compose.waitUntil(10_000) { chatJob?.isCompleted != false }
         try {
@@ -83,7 +79,7 @@ class ChatListRootTest {
             jsonResponse("""{"error":{"code":"NOT_FOUND","message":"Project not found"}}""")
                 .setResponseCode(404)
         }
-        app.flagsGate.countDown()
+        app.responseGate.countDown()
         compose.waitUntil(10_000) {
             compose
                 .onAllNodesWithText("Some Okou or Project information is unavailable.")
@@ -106,7 +102,7 @@ class ChatListRootTest {
             )
         }
         app.fixture.archive = { okhttp3.mockwebserver.MockResponse().setResponseCode(403) }
-        app.flagsGate.countDown()
+        app.responseGate.countDown()
         compose.waitUntil(10_000) {
             compose
                 .onAllNodesWithText("Could not load chats. Check your connection and try again.")
@@ -131,7 +127,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Loading chats…").assertExists()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
-        (compose.activity.application as ChatListApplication).flagsGate.countDown()
+        (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithText("Home").performClick()
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))

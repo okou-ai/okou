@@ -31,11 +31,10 @@ fun chatEventWire(
 /** Only the external HTTP boundary is substituted; native owners/codec/cache/transport are real. */
 class ChatListApiFixture : Closeable {
     val server = MockWebServer()
+    @Volatile var beforeResponse: () -> Unit = {}
     @Volatile
     var flags: () -> MockResponse = {
-        jsonResponse(
-            """{"switches":{},"effectiveSwitches":{"androidChatList":true,"projects":true}}"""
-        )
+        jsonResponse("""{"switches":{},"effectiveSwitches":{"projects":true}}""")
     }
     @Volatile
     var snapshot: () -> MockResponse = {
@@ -75,8 +74,9 @@ class ChatListApiFixture : Closeable {
     init {
         server.dispatcher =
             object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest): MockResponse =
-                    when (request.requestUrl?.encodedPath) {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    beforeResponse()
+                    return when (request.requestUrl?.encodedPath) {
                         "/api/feature-switches" -> flags()
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
@@ -86,6 +86,7 @@ class ChatListApiFixture : Closeable {
                         "/archive" -> archive()
                         else -> MockResponse().setResponseCode(404)
                     }
+                }
             }
         server.start()
         identity =

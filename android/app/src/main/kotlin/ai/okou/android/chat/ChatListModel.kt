@@ -39,10 +39,9 @@ enum class ChatListSource {
 }
 
 data class ChatListUiState(
-    val enabled: Boolean? = null,
-    val rolloutPhase: ChatReadPhase = ChatReadPhase.Loading,
-    val rolloutSource: ChatListSource? = null,
     val projectsEnabled: Boolean = false,
+    val projectsSettingsPhase: ChatReadPhase = ChatReadPhase.Idle,
+    val projectsSettingsSource: ChatListSource? = null,
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
     val confirmedAt: Long? = null,
@@ -64,11 +63,7 @@ private data class PendingChatCacheWrite(
     val confirmedAt: Long,
     val navigation: CachedChatNavigation,
     val revision: Long,
-) : ChatCacheChange
-
-private sealed interface ChatCacheChange
-
-private data class InvalidateChatCache(val revision: Long) : ChatCacheChange
+)
 
 /** Workspace-retained HTTP observations; no row collector owns synchronization or durable state. */
 class ChatListModel(
@@ -86,13 +81,13 @@ class ChatListModel(
     private val sync = ChatListSync(service, dispatcher)
     private var checkpoint: ChatCheckpoint? = null
     private var cacheRead = false
-    private var rolloutJob: Job? = null
+    private var projectsSettingsJob: Job? = null
     private var restoreJob: Job? = null
     private var listJob: Job? = null
     private var agentsJob: Job? = null
     private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
-    private val writes = MutableStateFlow<ChatCacheChange?>(null)
+    private val writes = MutableStateFlow<PendingChatCacheWrite?>(null)
     private var writeRevision = 0L
 
     init {
@@ -101,15 +96,7 @@ class ChatListModel(
             writes.collectLatest { pending ->
                 if (pending != null) {
                     try {
-                        when (pending) {
-                            is PendingChatCacheWrite ->
-                                cache.save(
-                                    pending.checkpoint,
-                                    pending.confirmedAt,
-                                    pending.navigation,
-                                )
-                            is InvalidateChatCache -> cache.invalidate()
-                        }
+                        cache.save(pending.checkpoint, pending.confirmedAt, pending.navigation)
                         currentCoroutineContext().ensureActive()
                         if (current()) mutable.value = mutable.value.copy(cacheUnavailable = false)
                     } catch (cancelled: CancellationException) {
@@ -127,7 +114,7 @@ class ChatListModel(
         val confirmed = checkpoint ?: return
         val state = mutable.value
         val time = state.confirmedAt ?: return
-        if (!current() || state.enabled != true) return
+        if (!current()) return
         writes.value =
             PendingChatCacheWrite(
                 confirmed,
@@ -145,66 +132,48 @@ class ChatListModel(
 
     private suspend fun requireCurrent() {
         currentCoroutineContext().ensureActive()
-        if (!current() || mutable.value.enabled != true)
-            throw CancellationException("Chat owner retired")
+        if (!current()) throw CancellationException("Chat owner retired")
     }
 
     fun selectFilter(value: ChatListFilter) {
-        if (current() && mutable.value.enabled == true)
-            mutable.value = mutable.value.copy(filter = value)
+        if (current()) mutable.value = mutable.value.copy(filter = value)
     }
 
     fun refresh() {
-        if (!current() || rolloutJob?.isActive == true) return
+        if (!current()) return
         restoreCache()
-        mutable.value = mutable.value.copy(rolloutPhase = ChatReadPhase.Loading)
-        rolloutJob =
+        refreshList()
+        refreshMetadata()
+        refreshIndicators()
+    }
+
+    private fun refreshProjectsSettings() {
+        if (!current() || projectsSettingsJob?.isActive == true) return
+        mutable.value = mutable.value.copy(projectsSettingsPhase = ChatReadPhase.Loading)
+        projectsSettingsJob =
             viewModelScope.launch {
                 try {
                     val flags = service.featureSwitches().effectiveSwitches
                     currentCoroutineContext().ensureActive()
                     if (!current()) return@launch
-                    val enabled = flags["androidChatList"] == true
                     val projects = flags["projects"] == true
-                    if (!enabled) {
-                        restoreJob?.cancel()
-                        listJob?.cancel()
-                        agentsJob?.cancel()
-                        projectsJob?.cancel()
-                        indicatorsJob?.cancel()
-                        checkpoint = null
-                        writes.value = InvalidateChatCache(++writeRevision)
-                        cacheRead = false
-                        mutable.value =
-                            ChatListUiState(
-                                enabled = false,
-                                rolloutPhase = ChatReadPhase.Ready,
-                                rolloutSource = ChatListSource.Network,
-                            )
-                    } else {
-                        if (!projects) projectsJob?.cancel()
-                        mutable.value =
-                            mutable.value.copy(
-                                enabled = true,
-                                rolloutSource = ChatListSource.Network,
-                                rolloutPhase = ChatReadPhase.Ready,
-                                projectsEnabled = projects,
-                                projects = if (projects) mutable.value.projects else emptyList(),
-                                projectsSource =
-                                    if (projects) mutable.value.projectsSource else null,
-                                projectsPhase =
-                                    if (projects) mutable.value.projectsPhase
-                                    else ChatReadPhase.Idle,
-                            )
-                        queueSave()
-                        refreshList()
-                        refreshMetadata()
-                        refreshIndicators()
-                    }
+                    if (!projects) projectsJob?.cancel()
+                    mutable.value =
+                        mutable.value.copy(
+                            projectsSettingsSource = ChatListSource.Network,
+                            projectsSettingsPhase = ChatReadPhase.Ready,
+                            projectsEnabled = projects,
+                            projects = if (projects) mutable.value.projects else emptyList(),
+                            projectsSource = if (projects) mutable.value.projectsSource else null,
+                            projectsPhase =
+                                if (projects) mutable.value.projectsPhase else ChatReadPhase.Idle,
+                        )
+                    queueSave()
+                    refreshProjects()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    fail(error) { it.copy(rolloutPhase = ChatReadPhase.Failed) }
+                    fail(error) { it.copy(projectsSettingsPhase = ChatReadPhase.Failed) }
                 }
             }
     }
@@ -218,19 +187,18 @@ class ChatListModel(
                     val saved = cache.load() ?: return@launch
                     val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
                     currentCoroutineContext().ensureActive()
-                    if (!current() || mutable.value.enabled == false) return@launch
+                    if (!current()) return@launch
                     val state = mutable.value
-                    val networkRollout = state.rolloutSource == ChatListSource.Network
+                    val networkSettings = state.projectsSettingsSource == ChatListSource.Network
                     val projectGroups =
-                        if (networkRollout) state.projectsEnabled
+                        if (networkSettings) state.projectsEnabled
                         else saved.navigation.projectsEnabled
                     val restoreList = state.source != ChatListSource.Network
                     if (restoreList) checkpoint = saved.checkpoint
                     mutable.value =
                         state.copy(
-                            enabled = true,
-                            rolloutSource =
-                                if (networkRollout) ChatListSource.Network
+                            projectsSettingsSource =
+                                if (networkSettings) ChatListSource.Network
                                 else ChatListSource.Cache,
                             projectsEnabled = projectGroups,
                             threads = if (restoreList) threads else state.threads,
@@ -255,29 +223,24 @@ class ChatListModel(
                                 else saved.navigation.projects?.let { ChatListSource.Cache },
                         )
                     if (
-                        networkRollout ||
+                        networkSettings ||
                             state.source == ChatListSource.Network ||
                             state.agentsSource == ChatListSource.Network ||
                             state.projectsSource == ChatListSource.Network
                     )
                         queueSave()
-                    if (!networkRollout) {
-                        refreshList()
-                        refreshMetadata()
-                        refreshIndicators()
-                    }
+                    refreshProjects()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
                     currentCoroutineContext().ensureActive()
-                    if (current() && mutable.value.enabled != false)
-                        mutable.value = mutable.value.copy(cacheUnavailable = true)
+                    if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                 }
             }
     }
 
     fun refreshList() {
-        if (!current() || mutable.value.enabled != true || listJob?.isActive == true) return
+        if (!current() || listJob?.isActive == true) return
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         listJob =
             viewModelScope.launch {
@@ -306,7 +269,8 @@ class ChatListModel(
     }
 
     fun refreshMetadata() {
-        if (!current() || mutable.value.enabled != true) return
+        if (!current()) return
+        refreshProjectsSettings()
         if (agentsJob?.isActive != true) {
             mutable.value = mutable.value.copy(agentsPhase = ChatReadPhase.Loading)
             agentsJob =
@@ -329,7 +293,11 @@ class ChatListModel(
                     }
                 }
         }
-        if (mutable.value.projectsEnabled && projectsJob?.isActive != true) {
+        refreshProjects()
+    }
+
+    private fun refreshProjects() {
+        if (current() && mutable.value.projectsEnabled && projectsJob?.isActive != true) {
             mutable.value = mutable.value.copy(projectsPhase = ChatReadPhase.Loading)
             projectsJob =
                 viewModelScope.launch {
@@ -382,7 +350,7 @@ class ChatListModel(
     }
 
     fun refreshIndicators() {
-        if (!current() || mutable.value.enabled != true || indicatorsJob?.isActive == true) return
+        if (!current() || indicatorsJob?.isActive == true) return
         mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
         indicatorsJob =
             viewModelScope.launch {

@@ -1,7 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.HomeModel
-import ai.okou.android.HomeScreen
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import androidx.compose.foundation.layout.Arrangement
@@ -37,18 +35,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun ChatListRoute(model: ChatListModel, home: HomeModel) {
+fun ChatListRoute(model: ChatListModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    if (state.enabled == false) HomeScreen(home)
-    else
-        ChatListScreen(
-            state,
-            model::refresh,
-            model::refreshList,
-            model::refreshMetadata,
-            model::refreshIndicators,
-            model::selectFilter,
-        )
+    ChatListScreen(
+        state,
+        model::refresh,
+        model::refreshList,
+        model::refreshMetadata,
+        model::refreshIndicators,
+        model::selectFilter,
+    )
 }
 
 @Composable
@@ -72,10 +68,12 @@ private fun ChatListScreen(
             chatListGroups(state)
         }
     val metadataPending =
-        state.agentsPhase == ChatReadPhase.Loading ||
+        state.projectsSettingsPhase == ChatReadPhase.Loading ||
+            state.agentsPhase == ChatReadPhase.Loading ||
             state.projectsEnabled && state.projectsPhase == ChatReadPhase.Loading
     val metadataFailed =
-        state.agentsPhase == ChatReadPhase.Failed ||
+        state.projectsSettingsPhase == ChatReadPhase.Failed ||
+            state.agentsPhase == ChatReadPhase.Failed ||
             state.projectsEnabled && state.projectsPhase == ChatReadPhase.Failed
     val knownProjects =
         remember(state.projectsEnabled, state.projects) {
@@ -97,106 +95,87 @@ private fun ChatListScreen(
                     style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.semantics { heading() },
                 )
+                ChatAction(R.string.chat_refresh, refresh, state.listPhase != ChatReadPhase.Loading)
+            }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(ChatListFilter.entries) { filter ->
+                        FilterChip(
+                            selected = state.filter == filter,
+                            onClick = { selectFilter(filter) },
+                            label = { Text(stringResource(filter.label())) },
+                        )
+                    }
+                }
+            }
+            if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
+            if (state.listPhase == ChatReadPhase.Loading)
+                item {
+                    ChatNotice(
+                        if (state.confirmedAt == null) R.string.chat_loading
+                        else R.string.chat_refreshing
+                    )
+                }
+            if (state.listPhase == ChatReadPhase.Failed)
+                item {
+                    ChatNotice(
+                        if (state.confirmedAt == null) R.string.chat_load_failed
+                        else R.string.chat_refresh_failed
+                    )
+                    ChatAction(R.string.retry, retryList)
+                }
+            if (state.cacheUnavailable) item { ChatNotice(R.string.chat_cache_unavailable) }
+            if (metadataPending) item { ChatNotice(R.string.chat_metadata_loading) }
+            if (
+                state.agentsSource == ChatListSource.Cache ||
+                    state.projectsSource == ChatListSource.Cache
+            )
+                item { ChatNotice(R.string.chat_metadata_cached) }
+            if (metadataFailed || missingDefault)
+                item {
+                    ChatNotice(R.string.chat_metadata_unavailable)
+                    ChatAction(R.string.retry, retryMetadata)
+                }
+            item {
+                ChatNotice(
+                    when (state.indicatorsPhase) {
+                        ChatReadPhase.Ready -> R.string.chat_status_observed
+                        ChatReadPhase.Failed -> R.string.chat_status_unavailable
+                        else -> R.string.chat_status_loading
+                    }
+                )
                 ChatAction(
-                    R.string.chat_refresh,
-                    refresh,
-                    state.rolloutPhase != ChatReadPhase.Loading,
+                    R.string.chat_refresh_status,
+                    refreshIndicators,
+                    state.indicatorsPhase != ChatReadPhase.Loading,
                 )
             }
-            if (state.enabled == null) {
-                item {
-                    ChatNotice(
-                        if (state.rolloutPhase == ChatReadPhase.Failed) R.string.chat_load_failed
-                        else R.string.chat_loading
-                    )
-                    if (state.rolloutPhase == ChatReadPhase.Failed)
-                        ChatAction(R.string.retry, refresh)
-                }
-            } else {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(ChatListFilter.entries) { filter ->
-                            FilterChip(
-                                selected = state.filter == filter,
-                                onClick = { selectFilter(filter) },
-                                label = { Text(stringResource(filter.label())) },
+            if (state.confirmedAt != null) {
+                groups.forEach { group ->
+                    if (group.project != null || group.threads.isNotEmpty()) {
+                        item(key = "group_${group.project?.id}") {
+                            Text(
+                                group.project?.name
+                                    ?: stringResource(R.string.chat_outside_projects),
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.semantics { heading() },
                             )
+                            if (group.threads.isEmpty())
+                                Text(stringResource(R.string.chat_project_empty))
                         }
+                        items(group.threads, key = { it.id }) { thread -> ChatRow(thread, state) }
                     }
                 }
-                if (state.rolloutPhase == ChatReadPhase.Failed)
-                    item { ChatNotice(R.string.chat_refresh_failed) }
-                if (state.source == ChatListSource.Cache) item { ChatNotice(R.string.chat_cached) }
-                if (state.listPhase == ChatReadPhase.Loading)
-                    item {
-                        ChatNotice(
-                            if (state.confirmedAt == null) R.string.chat_loading
-                            else R.string.chat_refreshing
-                        )
-                    }
-                if (state.listPhase == ChatReadPhase.Failed)
-                    item {
-                        ChatNotice(
-                            if (state.confirmedAt == null) R.string.chat_load_failed
-                            else R.string.chat_refresh_failed
-                        )
-                        ChatAction(R.string.retry, retryList)
-                    }
-                if (state.cacheUnavailable) item { ChatNotice(R.string.chat_cache_unavailable) }
-                if (metadataPending) item { ChatNotice(R.string.chat_metadata_loading) }
                 if (
-                    state.agentsSource == ChatListSource.Cache ||
-                        state.projectsSource == ChatListSource.Cache
-                )
-                    item { ChatNotice(R.string.chat_metadata_cached) }
-                if (metadataFailed || missingDefault)
-                    item {
-                        ChatNotice(R.string.chat_metadata_unavailable)
-                        ChatAction(R.string.retry, retryMetadata)
-                    }
-                item {
-                    ChatNotice(
-                        when (state.indicatorsPhase) {
-                            ChatReadPhase.Ready -> R.string.chat_status_observed
-                            ChatReadPhase.Failed -> R.string.chat_status_unavailable
-                            else -> R.string.chat_status_loading
-                        }
-                    )
-                    ChatAction(
-                        R.string.chat_refresh_status,
-                        refreshIndicators,
-                        state.indicatorsPhase != ChatReadPhase.Loading,
-                    )
-                }
-                if (state.confirmedAt != null) {
-                    groups.forEach { group ->
-                        if (group.project != null || group.threads.isNotEmpty()) {
-                            item(key = "group_${group.project?.id}") {
-                                Text(
-                                    group.project?.name
-                                        ?: stringResource(R.string.chat_outside_projects),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.semantics { heading() },
-                                )
-                                if (group.threads.isEmpty())
-                                    Text(stringResource(R.string.chat_project_empty))
-                            }
-                            items(group.threads, key = { it.id }) { thread ->
-                                ChatRow(thread, state)
-                            }
-                        }
-                    }
-                    if (
-                        groups.all { it.threads.isEmpty() } &&
-                            !metadataPending &&
-                            !metadataFailed &&
-                            !missingDefault &&
-                            state.listPhase == ChatReadPhase.Ready &&
-                            (state.filter != ChatListFilter.Unread ||
-                                state.indicatorsPhase == ChatReadPhase.Ready)
-                    ) {
-                        item { ChatNotice(R.string.chat_empty) }
-                    }
+                    groups.all { it.threads.isEmpty() } &&
+                        !metadataPending &&
+                        !metadataFailed &&
+                        !missingDefault &&
+                        state.listPhase == ChatReadPhase.Ready &&
+                        (state.filter != ChatListFilter.Unread ||
+                            state.indicatorsPhase == ChatReadPhase.Ready)
+                ) {
+                    item { ChatNotice(R.string.chat_empty) }
                 }
             }
         }

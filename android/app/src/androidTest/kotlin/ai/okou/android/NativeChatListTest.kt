@@ -36,11 +36,7 @@ class NativeChatListTest {
         val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val fixture = ChatListApiFixture()
         val gate = CountDownLatch(1)
-        val flags = fixture.flags
-        fixture.flags = {
-            gate.await()
-            flags()
-        }
+        fixture.beforeResponse = { gate.await() }
         app.chatService = fixture.service
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null

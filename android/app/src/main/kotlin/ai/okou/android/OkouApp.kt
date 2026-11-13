@@ -43,14 +43,13 @@ private enum class Destination(val route: String, val label: Int, val icon: Int)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OkouApp(
-    home: HomeModel,
     appearance: AppearanceUiState,
     selectMode: (AppearanceMode) -> Unit,
     retryAppearance: () -> Unit,
     account: @Composable () -> Unit = {},
     workspacePreferences: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
-    homeContent: @Composable () -> Unit = { HomeScreen(home) },
+    homeContent: @Composable () -> Unit,
 ) {
     val navigation = rememberNavController()
     val entry by navigation.currentBackStackEntryAsState()
@@ -59,7 +58,7 @@ fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
     val navigate: (Destination) -> Unit = { destination ->
         if (entry?.destination?.route != destination.route) {
-            // The navigation action hands focus away from the editor to its destination.
+            // Navigation hands focus to the destination and dismisses any open input method.
             focus.clearFocus()
             keyboard?.hide()
             navigation.navigate(destination.route) {

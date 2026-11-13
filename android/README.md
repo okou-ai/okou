@@ -6,8 +6,7 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. After authoritative
 membership and workspace bootstrap, the application provides **Home and Settings** destinations,
-the native chat list when the server-effective `androidChatList` rollout is enabled
-(otherwise the editable local draft preview), and device-local Light/Dark/Follow system
+the native chat list, and device-local Light/Dark/Follow system
 appearance. Compact windows use bottom navigation; wider windows use a rail.
 Home remains usable while Preferences DataStore loads or reports an IO error;
 Settings exposes loading, saving and retry states. Appearance is confirmed from
@@ -18,9 +17,8 @@ Web color palettes and the languages allowed by canonical `supportedLocales`.
 Palette/language preferences synchronize through the member/workspace API;
 Light/Dark/Follow system remains device-local and independent.
 
-The workspace presentation owner retains native text, selection and IME state
-across navigation and configuration changes; previews are independent immutable
-text snapshots. Switching account/workspace or signing out retires that owner.
+The workspace presentation owner retains chat-list state across navigation and
+configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
 by default; see [native authentication](AUTHENTICATION.md)
 for public staging overrides, provider setup and verification boundaries. Chat
@@ -144,10 +142,9 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 ### Instrumented Android Tests
 
 The `androidTest` suite launches the real Activity and uses UI Automator to
-exercise platform keyboard/insets and Back, retained editor/caret state,
-appearance restoration with a new Activity owner, native system bars and live
-platform night-mode changes, plus palette/language changes and retained editing
-through native app-language recreation. The existing JVM/Robolectric tests retain the
+exercise chat-list navigation and Back, appearance restoration with a new Activity
+owner, native system bars and live platform night-mode changes, plus palette/language
+changes through native app-language recreation. The existing JVM/Robolectric tests retain the
 broader state/error/localization matrix.
 
 On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
@@ -187,7 +184,7 @@ CI retains these outputs and the Gradle execution log for seven days in
 ## Components and Authority
 
 - `app`: native Activity, Home/Settings routes, retained presentation owners,
-  pure preview snapshots, local preference storage and the shared native theme.
+  confirmed chat-list storage, local preferences and the shared native theme.
   Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
@@ -197,11 +194,10 @@ single sources of truth, derivation, semantic actions and async ownership using
 native Kotlin/Jetpack APIs. TS runtime/API parity is not required. The app uses
 ordinary ViewModel actions and collectAsStateWithLifecycle rather than a custom
 Store, dependency graph, command visitor or cancellation signal.
-DraftPreviewStateHolderTest covers validation, verbatim snapshots and owner
-isolation. AppearanceModelTest exercises real presentation/decoding against the
+AppearanceModelTest exercises real presentation/decoding against the
 DataStore IO boundary, including read/write recovery, confirmation ordering,
 cancellation and actual file-backed reopen. OkouAppTest and MainActivityTest
-exercise real routes, native editor selection, back/configuration retention,
+exercise real routes, chat filters, back/configuration retention,
 appearance and adaptive navigation. LocalizedResourcesTest verifies native
 locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.

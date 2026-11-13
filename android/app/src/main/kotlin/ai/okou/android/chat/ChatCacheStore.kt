@@ -295,21 +295,6 @@ internal constructor(
                 }
             }
 
-        suspend fun invalidate() =
-            withContext(dispatcher) {
-                lock.withLock {
-                    checkCurrent()
-                    if (database == null && !file.exists()) return@withLock
-                    database().useWriterConnection { connection ->
-                        connection.immediateTransaction {
-                            database().chats().deleteScope(key)
-                            currentCoroutineContext().ensureActive()
-                            checkCurrent()
-                        }
-                    }
-                }
-            }
-
         override fun close() {
             retired = true
             active.compareAndSet(this, null)

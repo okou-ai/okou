@@ -73,9 +73,7 @@ class ChatListModelTest {
         )
 
     private inner class Service : TestChatService() {
-        var flagsRead: suspend () -> FeatureSwitches = {
-            FeatureSwitches(emptyMap(), mapOf("androidChatList" to true))
-        }
+        var flagsRead: suspend () -> FeatureSwitches = { FeatureSwitches(emptyMap(), emptyMap()) }
         var agentRead: suspend () -> Agents = {
             listOf(
                 AgentsItem(
@@ -286,7 +284,7 @@ class ChatListModelTest {
                 "Personal chat",
                 chatListGroups(model.uiState.value).last().threads.single().title,
             )
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.rolloutPhase)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsSettingsPhase)
             assertEquals(ChatListSource.Cache, model.uiState.value.agentsSource)
             gate.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
@@ -337,31 +335,14 @@ class ChatListModelTest {
     }
 
     @Test
-    fun freshDisabledRolloutRemovesTheRestoredCacheAndCancelsPendingListWork() = runTest {
+    fun heldProjectsSettingsDoNotBlockTheListAndFailureRetainsConfirmedContent() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val cache = cache(temporary.newFolder(), dispatcher)
-        val checkpoint =
-            ChatCheckpoint(
-                ai.okou.android.api.generated.ChatArchive(emptyList()),
-                ChatCursor(),
-                page().events,
-                ChatCursor(CHAT_EVENT, 17),
-            )
         val store = ViewModelStore()
         val flags = CompletableDeferred<FeatureSwitches>()
-        val list = CompletableDeferred<ChatEvents>()
         try {
-            cache
-                .open(identity) { true }
-                .use {
-                    it.save(checkpoint, 1234, CachedChatNavigation(agents = Service().agents()))
-                }
-            val service =
-                Service().apply {
-                    flagsRead = { flags.await() }
-                    listRead = { list.await() }
-                }
+            val service = Service().apply { flagsRead = { flags.await() } }
             val model =
                 ViewModelProvider(
                     store,
@@ -373,17 +354,25 @@ class ChatListModelTest {
                 )[ChatListModel::class.java]
             model.refresh()
             runCurrent()
-            assertEquals(ChatListSource.Cache, model.uiState.value.source)
-            flags.complete(FeatureSwitches(emptyMap(), mapOf("androidChatList" to false)))
+            assertEquals(ChatListSource.Network, model.uiState.value.source)
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            flags.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
-            assertEquals(false, model.uiState.value.enabled)
-            assertTrue(model.uiState.value.threads.isEmpty())
-            assertEquals(ChatListSource.Network, model.uiState.value.rolloutSource)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsSettingsPhase)
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
             store.clear()
-            cache.open(identity) { true }.use { assertNull(it.load()) }
+            cache
+                .open(identity) { true }
+                .use {
+                    assertEquals(
+                        "Personal chat",
+                        replayChats(checkNotNull(it.load()).checkpoint).single().title,
+                    )
+                }
         } finally {
             flags.complete(FeatureSwitches(emptyMap(), emptyMap()))
-            list.complete(page())
             store.clear()
             runCurrent()
             Dispatchers.resetMain()

@@ -1,6 +1,5 @@
 package ai.okou.android.auth
 
-import ai.okou.android.HomeModel
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
@@ -15,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -38,7 +39,6 @@ data class ReadyWorkspace(
     val identity: WorkspaceIdentity,
     val organization: Organization,
     val preferences: MemberPreferencesModel,
-    val home: HomeModel,
     val chats: ChatListModel,
 )
 
@@ -56,6 +56,7 @@ class SessionModel(
     private val factory: WorkspaceSessionFactory,
     private val apiOrigin: String,
     private val chatCache: ChatCacheStore,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -152,9 +153,6 @@ class SessionModel(
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
                     presentation = store
-                    val home =
-                        ViewModelProvider(store, viewModelFactory { initializer { HomeModel() } })[
-                            HomeModel::class.java]
                     val preferences =
                         ViewModelProvider(
                             store,
@@ -184,6 +182,7 @@ class SessionModel(
                                         onFailure = { error ->
                                             workspaceFailure(ticket, snapshot, error)
                                         },
+                                        dispatcher = dispatcher,
                                     )
                                 }
                             },
@@ -193,7 +192,7 @@ class SessionModel(
                             generation,
                             SessionStage.Ready,
                             memberships,
-                            ReadyWorkspace(identity, data.organization, preferences, home, chats),
+                            ReadyWorkspace(identity, data.organization, preferences, chats),
                         )
                     chats.refresh()
                 } catch (cancelled: CancellationException) {

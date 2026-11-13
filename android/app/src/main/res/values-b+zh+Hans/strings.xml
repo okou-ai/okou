@@ -3,12 +3,6 @@
     <string name="home">首页</string>
     <string name="settings">设置</string>
     <string name="back">返回</string>
-    <string name="home_title">为下一个灵感留出空间</string>
-    <string name="home_description">撰写草稿，并在此设备上预览。</string>
-    <string name="draft_label">草稿</string>
-    <string name="draft_hint">你在想什么？</string>
-    <string name="local_preview">预览草稿</string>
-    <string name="preview_title">预览</string>
     <string name="appearance">外观</string>
     <string name="appearance_description">选择 Okou 在此设备上的外观。</string>
     <string name="appearance_system">跟随系统</string>
@@ -21,9 +15,6 @@
     <string name="appearance_read_failed">无法加载外观设置，请重试。</string>
     <string name="appearance_write_failed">无法保存外观设置，请重试。</string>
     <string name="retry">重试</string>
-    <plurals name="draft_lines">
-        <item quantity="other">%1$d 行</item>
-    </plurals>
     <string name="auth_welcome">欢迎使用 Okou</string>
     <string name="auth_restoring">正在恢复登录状态…</string>
     <string name="auth_preparing_workspace">正在准备工作区…</string>

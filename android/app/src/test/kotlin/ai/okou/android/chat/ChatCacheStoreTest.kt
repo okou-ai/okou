@@ -366,7 +366,7 @@ class ChatCacheStoreTest {
     }
 
     @Test
-    fun largeSnapshotSpansCursorWindowsAndInvalidatingOneScopeKeepsOtherScopes() = runTest {
+    fun largeSnapshotSpansCursorWindowsAndScopesRemainIndependent() = runTest {
         val root = temporary.newFolder()
         val store = cache(root)
         val row = replayChats(checkpoint()).single()
@@ -393,8 +393,6 @@ class ChatCacheStoreTest {
                         saved == expected
                     }
                 )
-                it.invalidate()
-                assertNull(it.load())
             }
         store
             .open(identity.copy(workspaceId = "org-b")) { true }

@@ -63,13 +63,12 @@ fun SessionRoot(
         if (state.stage == SessionStage.Ready && ready != null) {
             key(ready.identity, state.generation) {
                 OkouApp(
-                    ready.home,
                     appearance,
                     selectAppearance,
                     retryAppearance,
                     account = { WorkspaceActions(state, chooseWorkspace, signOut) },
                     workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
-                    homeContent = { ChatListRoute(ready.chats, ready.home) },
+                    homeContent = { ChatListRoute(ready.chats) },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {

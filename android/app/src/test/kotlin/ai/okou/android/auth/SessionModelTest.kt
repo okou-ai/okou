@@ -2,6 +2,7 @@ package ai.okou.android.auth
 
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestChatService
+import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
@@ -15,6 +16,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -31,8 +33,13 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
 class SessionModelTest {
     @get:Rule val temporary = TemporaryFolder()
 
@@ -59,9 +66,16 @@ class SessionModelTest {
         configure: (Resource) -> Unit = {},
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
         val resources = mutableListOf<Resource>()
+        val cache =
+            ChatCacheStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
         try {
             val model =
                 ViewModelProvider(
@@ -77,12 +91,8 @@ class SessionModelTest {
                                     }
                                 },
                                 "https://api.okou.ai/",
-                                ChatCacheStore(
-                                    temporary.newFolder(),
-                                    StandardTestDispatcher(testScheduler),
-                                ) {
-                                    error("Signed-out/disabled-list tests must not open SQLite")
-                                },
+                                cache,
+                                dispatcher,
                             )
                         }
                     },
@@ -90,6 +100,7 @@ class SessionModelTest {
             block(model, resources)
         } finally {
             store.clear()
+            cache.close()
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -164,13 +175,13 @@ class SessionModelTest {
     }
 
     @Test
-    fun lateTokenCannotEscapeAReplacedWorkspaceAndOldDraftIsDiscarded() {
+    fun lateTokenCannotEscapeAReplacedWorkspaceAndOldListStateIsDiscarded() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
         check(auth) { model, resources ->
             runCurrent()
             val original = requireNotNull(model.uiState.value.ready)
-            original.home.editDraft(androidx.compose.ui.text.input.TextFieldValue("Private A"))
+            original.chats.selectFilter(ai.okou.android.chat.ChatListFilter.Muted)
             auth.tokenAction = { withContext(NonCancellable) { token.await() } }
             val request = async { runCatching { resources.first().tokens.token() } }
             runCurrent()
@@ -180,8 +191,11 @@ class SessionModelTest {
             runCurrent()
             assertTrue(resources.first().closed)
             val next = requireNotNull(model.uiState.value.ready)
-            assertNotSame(original.home, next.home)
-            assertEquals("", next.home.draft.text)
+            assertNotSame(original.chats, next.chats)
+            assertEquals(
+                ai.okou.android.chat.ChatListFilter.Recent,
+                next.chats.uiState.value.filter,
+            )
             token.complete("old-token")
             runCurrent()
             assertTrue(request.await().exceptionOrNull() is CancellationException)

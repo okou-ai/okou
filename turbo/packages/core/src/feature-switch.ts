@@ -46,14 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.AndroidChatList]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Android chat list",
-    description:
-      "Browse confirmed chats and Projects in the native Android app.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
     displayName: "Remote host chat approval",

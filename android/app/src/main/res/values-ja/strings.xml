@@ -3,12 +3,6 @@
     <string name="home">ホーム</string>
     <string name="settings">設定</string>
     <string name="back">戻る</string>
-    <string name="home_title">次のアイデアをここから</string>
-    <string name="home_description">下書きを作成し、このデバイスでプレビューできます。</string>
-    <string name="draft_label">下書き</string>
-    <string name="draft_hint">どんなことを考えていますか？</string>
-    <string name="local_preview">下書きをプレビュー</string>
-    <string name="preview_title">プレビュー</string>
     <string name="appearance">外観</string>
     <string name="appearance_description">このデバイスでの Okou の外観を選択します。</string>
     <string name="appearance_system">システム設定に従う</string>
@@ -21,9 +15,6 @@
     <string name="appearance_read_failed">外観を読み込めませんでした。もう一度お試しください。</string>
     <string name="appearance_write_failed">外観を保存できませんでした。もう一度お試しください。</string>
     <string name="retry">再試行</string>
-    <plurals name="draft_lines">
-        <item quantity="other">%1$d 行</item>
-    </plurals>
     <string name="auth_welcome">Okou へようこそ</string>
     <string name="auth_restoring">ログイン状態を復元しています…</string>
     <string name="auth_preparing_workspace">ワークスペースを準備しています…</string>
