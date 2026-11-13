@@ -98,6 +98,7 @@ import codex_model_catalog_validation as catalog_validation
 import content_encoding
 import flow_metadata
 import http_header_syntax
+import stream_capture
 from runtime_url_parsing import split_runtime_url
 from thread_pool import start_thread_pool
 
@@ -779,14 +780,15 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
     state.downstream_stream = downstream
 
     def capture_and_stream(chunk: bytes) -> bytes | Iterable[bytes]:
-        if state.capture is not None and not state.capture_overflow:
-            remaining = catalog_validation.MAX_ENTRY_BYTES - len(state.capture)
-            if len(chunk) <= remaining:
-                state.capture.extend(chunk)
-            else:
-                state.capture.extend(chunk[:remaining])
-                state.capture_overflow = True
-                _bypass_response(flow, state, "response_size")
+        if (
+            state.capture is not None
+            and not state.capture_overflow
+            and stream_capture.append_captured_chunk(
+                state.capture, chunk, limit=catalog_validation.MAX_ENTRY_BYTES
+            )
+        ):
+            state.capture_overflow = True
+            _bypass_response(flow, state, "response_size")
         return downstream(chunk)
 
     state.wrapper_stream = capture_and_stream
