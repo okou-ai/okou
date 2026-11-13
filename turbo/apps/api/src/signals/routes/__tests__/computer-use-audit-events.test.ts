@@ -8,14 +8,14 @@ import type {
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 
 const context = testContext();
 
-const STARTED_AT_MS = Date.parse("2026-09-18T13:00:00.000Z");
+const STARTED_AT_MS = now();
 const CASE_TIMEOUT_MS = 30_000;
 
 /** Fails immediately when the operation terminates before its expected gate. */

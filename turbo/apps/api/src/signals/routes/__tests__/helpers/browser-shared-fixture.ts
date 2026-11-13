@@ -16,7 +16,7 @@ import { publicChatActor } from "./public-chat-actor";
 import { createNativeWindowProvider } from "./browser-native-window";
 import { TEST_BROWSER_EXTENSION } from "../../../../__tests__/browser-extension";
 
-export const START = Date.parse("2026-10-25T14:00:00.000Z");
+export const START = now();
 export const MINUTE = 60_000;
 export const PROVIDER_URL = "https://api.browser-use.com/api/v3";
 
