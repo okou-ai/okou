@@ -180,11 +180,15 @@ function selectedGroupsFromEvents(
   groups: readonly ChatEventGroup[],
   ids: readonly string[],
 ): ReadonlyMap<string, SelectedGroup> {
-  const chosen = new Set(ids);
+  // Keep canonical order and prompts outside the loaded history page.
+  // The API validates snapshot size and eligibility for every selected ID.
   const selected = new Map<string, SelectedGroup>();
+  for (const id of ids) {
+    selected.set(id, { events: [{ id, text: "" }], bytes: 0 });
+  }
   for (const group of groups) {
     for (const event of group.events) {
-      if (chosen.has(event.id)) {
+      if (selected.has(event.id)) {
         const events = [
           {
             id: event.id,

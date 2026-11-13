@@ -1391,3 +1391,49 @@ test("Unified quick sharing confirms creation before copying and keeps the link 
   expect(link).toHaveValue(`https://app.okou.ai/share/threads/${sharedId}`);
   expect(requests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
 });
+
+test("Unified turn preselection retains a prompt outside the loaded history page", async () => {
+  mockConversation(
+    standardConversation().filter((event) => {
+      return event.role === "assistant";
+    }),
+  );
+  context.mocks.api(chatShareSelectionContract.get, ({ respond }) => {
+    return respond(200, {
+      messages: [
+        {
+          eventId: PROMPT_EVENT_ID,
+          role: "user",
+          turnEventIds: [PROMPT_EVENT_ID],
+        },
+        {
+          eventId: ANSWER_EVENT_ID,
+          role: "assistant",
+          turnEventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
+        },
+      ],
+    });
+  });
+  const requests: string[][] = [];
+  context.mocks.api(chatShareSelectionContract.create, ({ body, respond }) => {
+    requests.push(body.eventIds);
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  context.mocks.browser.clipboardWriteText();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ChatSharingSelection]: true },
+  });
+  await screen.findByText(ANSWER);
+  click(requiredButtonNamed("Share message"));
+  const menu = await screen.findByRole("menu", { name: "Share message" });
+  click(within(menu).getByRole("menuitem", { name: "Select messages…" }));
+  await screen.findAllByText("2 selected");
+  click(requiredButtonNamed("Create link"));
+  await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(requests[0]).toHaveLength(2);
+  expect(requests[0]).toContain(PROMPT_EVENT_ID);
+  expect(requests[0]).toContain(ANSWER_EVENT_ID);
+});
