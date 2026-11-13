@@ -164,7 +164,9 @@ import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
 import * as connectorCatalogSchema from "./runtime/connector-catalog";
 import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
-import * as browserSessionSchema from "./schema/browser-session";
+import * as browserAuthorizationRequestSchema from "./schema/browser-authorization-request";
+import * as browserUserActionRequestSchema from "./schema/browser-user-action-request";
+import * as browserScreenshotDeletionSchema from "./schema/browser-screenshot-deletion";
 import * as browserOwnerSchema from "./schema/browser-owner";
 import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
@@ -343,7 +345,9 @@ export const schema = {
   ...connectorCatalogSchema,
   ...officialWorkflowCatalogSchema,
   ...mailDraftSchema,
-  ...browserSessionSchema,
+  ...browserAuthorizationRequestSchema,
+  ...browserUserActionRequestSchema,
+  ...browserScreenshotDeletionSchema,
   ...browserOwnerSchema,
   ...browserChatSessionSchema,
   ...presentationTemplateSchema,

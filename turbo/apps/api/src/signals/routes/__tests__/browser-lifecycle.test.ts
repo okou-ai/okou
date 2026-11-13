@@ -25,14 +25,14 @@ import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, view, renew } = createSharedBrowserFixtures(context);
+const { fixture, view, renew } = createBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);

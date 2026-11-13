@@ -5,14 +5,13 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { browserRoutes } from "../browser";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   START,
   MINUTE,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, profileProvider, open, view } =
-  createSharedBrowserFixtures(context);
+const { fixture, profileProvider, open, view } = createBrowserFixtures(context);
 
 test.each(["https:", "wss:"] as const)(
   "a mounted viewer renews only its current chat window through %s without input evidence",

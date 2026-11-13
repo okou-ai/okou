@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { and, asc, eq, notExists } from "drizzle-orm";
 import { uuid } from "zod";
-import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-session";
+import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-screenshot-deletion";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 

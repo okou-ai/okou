@@ -4,10 +4,10 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { browserRoutes } from "../browser";
-import { createSharedBrowserFixtures } from "./helpers/browser-shared-fixture";
+import { createBrowserFixtures } from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, open } = createSharedBrowserFixtures(context);
+const { fixture, open } = createBrowserFixtures(context);
 const display = Object.freeze({ width: 390, height: 600, dpr: 3 });
 
 function openViewer(threadId: string, initialDisplay?: BrowserDisplaySize) {

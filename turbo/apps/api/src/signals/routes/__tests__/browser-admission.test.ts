@@ -10,14 +10,14 @@ import { browserRoutes } from "../browser";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, view } = createSharedBrowserFixtures(context);
+const { fixture, view } = createBrowserFixtures(context);
 type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);

@@ -16,14 +16,14 @@ import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createRouteMocks } from "./helpers/route-test";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, profileProvider } = createSharedBrowserFixtures(context);
+const { fixture, profileProvider } = createBrowserFixtures(context);
 const chat = createChatFilesBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 type Fixture = Awaited<ReturnType<typeof fixture>>;
