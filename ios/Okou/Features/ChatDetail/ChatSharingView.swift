@@ -89,7 +89,7 @@ struct ChatSharingCreatedView: View {
       Form {
         Section {
           if let link = sharing.link {
-            LabeledContent("Link ready", value: "\(sharing.selectedCount) messages")
+            LabeledContent("Link ready", value: "\(sharing.selectedCount) selected")
             Text(link.absoluteString).font(.okou(.footnote)).textSelection(.enabled)
             Menu {
               Button("Anyone with the link", okouSymbol: "globe") {
