@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 import UIKit
@@ -35,6 +36,7 @@ struct ChatSettingsView: View {
   @Binding var accountError: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
+  @Environment(\.scenePhase) private var scenePhase
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
   @Environment(\.composerPreferences) private var preferences
@@ -56,6 +58,9 @@ struct ChatSettingsView: View {
           }
         } header: {
           Text("Workspace").okouSectionHeader()
+        }
+        StoreProvider(store.settingsResources.store) {
+          SettingsBillingSection(workspace: store)
         }
         Section {
           Button {
@@ -194,6 +199,12 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
+      .task { await store.loadSettingsBilling() }
+      .onChange(of: scenePhase) { _, current in
+        if current == .active {
+          Task { await store.refreshSettingsBilling() }
+        }
+      }
     }
   }
 

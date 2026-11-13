@@ -55,6 +55,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.SshChatApproval,
+    FeatureSwitchKey.IosSettingsBilling,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewToolbar,
     FeatureSwitchKey.UserNotifications,

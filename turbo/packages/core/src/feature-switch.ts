@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IosSettingsBilling]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS billing settings",
+    description:
+      "Show the current plan and a web billing management link in iOS Settings.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
     displayName: "Remote host chat approval",

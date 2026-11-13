@@ -29,3 +29,13 @@ export const setupLegacySettingsRedirect$ = command(({ get, set }) => {
     replace: true,
   });
 });
+
+export const setupBillingSettingsRedirect$ = command(({ get, set }) => {
+  const params = new URLSearchParams(get(searchParams$));
+  params.delete("tab");
+  params.set("settings", "billing");
+  set(detachedNavigateTo$, ROUTES.agents, {
+    searchParams: params,
+    replace: true,
+  });
+});

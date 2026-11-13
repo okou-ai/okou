@@ -115,7 +115,10 @@ import { setupSkeletonPage$, setupErrorPage$ } from "./skeleton-page-setup.ts";
 import { hideAppSkeleton$ } from "./app-skeleton.ts";
 import { setupRedeemCampaignPage$ } from "./redeem-campaign/redeem-campaign-page-setup.ts";
 import { updatePage$ } from "./react-router.ts";
-import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
+import {
+  setupBillingSettingsRedirect$,
+  setupLegacySettingsRedirect$,
+} from "./okou-page/settings/legacy-settings-redirect.ts";
 import { NotFoundPage } from "../views/not-found-page.tsx";
 import { setupSharedArtifact$ } from "./shared-artifact.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
@@ -487,6 +490,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.settings,
     setup: setupAuthPageWrapper(setupLegacySettingsRedirect$),
+  },
+  {
+    path: ROUTES.settingsBilling,
+    setup: setupAuthPageWrapper(setupBillingSettingsRedirect$),
   },
   {
     path: ROUTES.lab,

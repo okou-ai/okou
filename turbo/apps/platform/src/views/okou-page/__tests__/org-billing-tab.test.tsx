@@ -294,6 +294,12 @@ async function openBillingTab(path = "/?settings=billing"): Promise<void> {
   });
 }
 
+test("The iOS billing management link opens the existing Billing settings", async () => {
+  mockBillingStory();
+  await openBillingTab("/settings/billing");
+  expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
+});
+
 function inAppBillingPreviewFields() {
   return {
     supportsInAppPreview: true as const,
