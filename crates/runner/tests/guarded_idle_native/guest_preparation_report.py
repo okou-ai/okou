@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared strict original custody; each operation supplies its own wire contract."""
+"""Shared strict original custody; operations supply wire and control validation."""
 from dataclasses import dataclass
 import hashlib
 import json
@@ -23,6 +23,7 @@ from snapshot_report import exact
 class Contract:
     name: str
     wire: Callable[..., int]
+    validate_running_control: Callable[..., None] | None = None
 
     def field(self, restore, final_exec, quiesce):
         return {"FixedRestore": restore, "RunningRestore": restore, "FinalExec": final_exec, "Quiesce": quiesce}[self.name]
@@ -179,8 +180,10 @@ def validate(directory, contract):
     allow = not case.startswith("RunningRestore-deny-")
     control_fields = [{}, {}, {}]
     if is_running:
-        import running_restore_report
-        running_restore_report.control_records(waiting.get("running_control"), lost.get("running_control"),
+        check_running_control = contract.validate_running_control
+        if check_running_control is None:
+            raise ValueError("running restore contract has no control validator")
+        check_running_control(waiting.get("running_control"), lost.get("running_control"),
             joined.get("running_control"), captured["request"], joined.get("response"), allow, directory)
         control_fields = [{"running_control":v["running_control"]} for v in (waiting,lost,joined)]
     if terminal:
