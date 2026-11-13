@@ -19,7 +19,7 @@ export function MyOkouAvatarButton({
   return (
     <IconButton
       type="button"
-      className="group/avatar size-auto shrink-0 rounded-xl"
+      className="group/avatar size-fit shrink-0 rounded-xl"
       aria-label={t(($) => {
         return $.myOkou.title;
       })}
