@@ -366,6 +366,10 @@ install_packages() {
     redis-server \
     gh
 
+  # Package hooks may run tmpfiles before creating the postgres user. Apply the
+  # directory rules after APT completes; guests boot without systemd-tmpfiles.
+  systemd-tmpfiles --create postgresql-common.conf
+
   test "$(/usr/bin/node --version)" = "v${NODE_VERSION}"
 
   # Clean up third-party APT sources (no longer needed at runtime)
