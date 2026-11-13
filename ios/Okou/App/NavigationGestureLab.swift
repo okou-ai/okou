@@ -12,51 +12,55 @@
     @State private var draft = ""
 
     var body: some View {
-      WorkspaceNavigation(sidebar: sidebar, list: {
-        VStack(spacing: 24) {
-          Text(verbatim: "Gesture lab sidebar").accessibilityIdentifier("lab-sidebar")
-          Text(verbatim: probe.policy)
-          Button("Open chat") { sidebar.setOpen(false) }
-            .accessibilityIdentifier("lab-open-chat")
-          log
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(OkouColor.background)
-      }, chat: {
-        VStack(spacing: 0) {
-          HStack {
-            Button("Chats") { sidebar.setOpen(true) }
-              .accessibilityIdentifier("lab-open-sidebar")
-            Spacer()
-            Text(verbatim: probe.policy).font(.caption)
+      WorkspaceNavigation(
+        sidebar: sidebar,
+        list: {
+          VStack(spacing: 24) {
+            Text(verbatim: "Gesture lab sidebar").accessibilityIdentifier("lab-sidebar")
+            Text(verbatim: probe.policy)
+            Button("Open chat") { sidebar.setOpen(false) }
+              .accessibilityIdentifier("lab-open-chat")
+            log
           }
-          .padding()
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
           .background(OkouColor.background)
-          ConversationCollectionView(
-            rows: fixture.rows, markdown: fixture.markdown,
-            renderContext: { _ in
-              MessageRenderPlan.Context(
-                webURL: fixture.baseURL, action: nil, permissionsEnabled: false, artifacts: nil)
-            },
-            anchor: fixture.anchor, scroll: fixture.scroll, followsBottom: false,
-            phaseChanged: { probe.record("phase \(String(describing: $0))") },
-            metricsChanged: { _ in }, rowsPresented: { _ in }, refresh: {}
-          ) { row, _ in
-            if let message = row.message {
-              MessageBodyView(
-                text: message.text, baseURL: fixture.baseURL, markdown: fixture.markdown)
-                .padding(20)
+        },
+        chat: {
+          VStack(spacing: 0) {
+            HStack {
+              Button("Chats") { sidebar.setOpen(true) }
+                .accessibilityIdentifier("lab-open-sidebar")
+              Spacer()
+              Text(verbatim: probe.policy).font(.caption)
             }
+            .padding()
+            .background(OkouColor.background)
+            ConversationCollectionView(
+              rows: fixture.rows, markdown: fixture.markdown,
+              renderContext: { _ in
+                MessageRenderPlan.Context(
+                  webURL: fixture.baseURL, action: nil, permissionsEnabled: false, artifacts: nil)
+              },
+              anchor: fixture.anchor, scroll: fixture.scroll, followsBottom: false,
+              phaseChanged: { probe.record("phase \(String(describing: $0))") },
+              metricsChanged: { _ in }, rowsPresented: { _ in }, refresh: {}
+            ) { row, _ in
+              if let message = row.message {
+                MessageBodyView(
+                  text: message.text, baseURL: fixture.baseURL, markdown: fixture.markdown)
+                  .padding(20)
+              }
+            }
+            .accessibilityIdentifier("lab-transcript")
+            TextField("Unsent draft", text: $draft)
+              .textFieldStyle(.roundedBorder)
+              .padding(.horizontal)
+              .accessibilityIdentifier("lab-draft")
+            log
           }
-          .accessibilityIdentifier("lab-transcript")
-          TextField("Unsent draft", text: $draft)
-            .textFieldStyle(.roundedBorder)
-            .padding(.horizontal)
-            .accessibilityIdentifier("lab-draft")
-          log
-        }
-        .background(OkouColor.background)
-      }, gestureLab: probe)
+          .background(OkouColor.background)
+        }, gestureLab: probe
+      )
       .onChange(of: sidebar.isOpen) { _, open in probe.record("sidebar \(open)") }
       .onChange(of: sidebar.isTransitioning) { _, active in probe.record("transition \(active)") }
     }
@@ -112,7 +116,9 @@
     }
 
     static func fromEnvironment() -> NavigationGestureLabProbe? {
-      guard ProcessInfo.processInfo.environment["OKOU_GESTURE_LAB_POLICY"] != nil else { return nil }
+      guard ProcessInfo.processInfo.environment["OKOU_GESTURE_LAB_POLICY"] != nil else {
+        return nil
+      }
       return NavigationGestureLabProbe()
     }
 
@@ -127,17 +133,19 @@
       self.navigation = navigation
       if policy == "native-visible" { navigation.setNavigationBarHidden(false, animated: false) }
       let recognizers = [
-        navigation.interactivePopGestureRecognizer, navigation.interactiveContentPopGestureRecognizer,
+        navigation.interactivePopGestureRecognizer,
+        navigation.interactiveContentPopGestureRecognizer,
       ].compactMap { $0 }
       for (index, recognizer) in recognizers.enumerated() {
         let original = recognizer.delegate
-        record("install \(index) original=\(String(describing: original))")
+        let originalName = original.map { String(describing: type(of: $0)) } ?? "nil"
+        record("install \(index) original=\(originalName)")
         if policy == "baseline" {
           recognizer.delegate = nil
-        } else if policy == "proxy" || policy == "proxy-simultaneous" {
+        } else if ["proxy", "proxy-simultaneous", "minimal-simultaneous"].contains(policy) {
           let proxy = NavigationGestureLabDelegate(
-            navigation: navigation, original: original, probe: self,
-            simultaneous: policy == "proxy-simultaneous")
+            navigation: navigation, original: policy == "minimal-simultaneous" ? nil : original,
+            probe: self, simultaneous: policy != "proxy")
           proxies.append(proxy)
           recognizer.delegate = proxy
         }
@@ -159,7 +167,8 @@
         return nil
       }
       guard let scroll = find(root) else { return "no collection" }
-      return "decel=\(scroll.isDecelerating) drag=\(scroll.isDragging) pan=\(scroll.panGestureRecognizer.state.rawValue) y=\(Int(scroll.contentOffset.y))"
+      return "decel=\(scroll.isDecelerating) drag=\(scroll.isDragging)"
+        + " pan=\(scroll.panGestureRecognizer.state.rawValue) y=\(Int(scroll.contentOffset.y))"
     }
   }
 
@@ -182,7 +191,8 @@
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      let allowed = (navigation?.viewControllers.count ?? 0) > 1
+      let allowed =
+        (navigation?.viewControllers.count ?? 0) > 1
         && navigation?.transitionCoordinator == nil
       probe?.record("shouldBegin=\(allowed) \(probe?.scrollStatus() ?? "")")
       return allowed
@@ -192,8 +202,9 @@
       _ gestureRecognizer: UIGestureRecognizer,
       shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-      let native = original?.gestureRecognizer?(
-        gestureRecognizer, shouldRecognizeSimultaneouslyWith: otherGestureRecognizer) ?? false
+      let native =
+        original?.gestureRecognizer?(
+          gestureRecognizer, shouldRecognizeSimultaneouslyWith: otherGestureRecognizer) ?? false
       guard simultaneous, let scroll = otherGestureRecognizer.view as? UIScrollView,
         otherGestureRecognizer === scroll.panGestureRecognizer,
         scroll.contentSize.width <= scroll.bounds.width + 1
@@ -202,13 +213,38 @@
       return true
     }
 
-    override func responds(to selector: Selector!) -> Bool {
-      super.responds(to: selector) || original?.responds(to: selector) == true
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+      original?.gestureRecognizer?(gestureRecognizer, shouldReceive: touch) ?? true
     }
 
-    override func forwardingTarget(for selector: Selector!) -> Any? {
-      if original?.responds(to: selector) == true { return original }
-      return super.forwardingTarget(for: selector)
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress
+    ) -> Bool {
+      original?.gestureRecognizer?(gestureRecognizer, shouldReceive: press) ?? true
+    }
+
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldReceive event: UIEvent
+    ) -> Bool {
+      original?.gestureRecognizer?(gestureRecognizer, shouldReceive: event) ?? true
+    }
+
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      original?.gestureRecognizer?(
+        gestureRecognizer, shouldRequireFailureOf: otherGestureRecognizer) ?? false
+    }
+
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      original?.gestureRecognizer?(
+        gestureRecognizer, shouldBeRequiredToFailBy: otherGestureRecognizer) ?? false
     }
   }
 #endif
