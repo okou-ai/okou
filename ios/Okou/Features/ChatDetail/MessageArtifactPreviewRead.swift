@@ -155,6 +155,9 @@ final class MessageArtifactPreviewRead: Identifiable {
         artifact: resolved.artifact, images: group, contentURL: resolved.contentURL,
         htmlExpiresAt: resolved.expiresAt)
     }
+    if resolved.artifact.kind == .video {
+      return Content(artifact: resolved.artifact, images: group, contentURL: resolved.contentURL)
+    }
     let kind = resolved.artifact.kind
     let isText = [.markdown, .text, .json, .csv].contains(kind)
     let (downloaded, file) = try await service.download(
