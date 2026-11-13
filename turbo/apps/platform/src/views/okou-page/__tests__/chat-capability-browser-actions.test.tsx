@@ -192,11 +192,9 @@ function managedBrowserSession(args: {
     viewerUrl: `https://browser.example.test/view/${RUN_THREAD_ID}`,
     liveUrl: args.liveUrl,
     screenshotUrl: args.screenshotUrl,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
     ...(args.status === "active"
       ? {
-          screen: { width: 1440, height: 900, resizable: true },
           window: {
             instanceId: "20000000-0000-4000-a000-000000001108",
             primaryWindowId: 0,

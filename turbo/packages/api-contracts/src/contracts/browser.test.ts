@@ -14,7 +14,6 @@ function browserResponse() {
       viewerUrl: `https://app.okou.ai/browsers/${threadId}`,
       liveUrl: "https://live.browser.example",
       screenshotUrl: null,
-      proxyCountryCode: null,
       timeoutMinutes: 240,
       idleExpiresAt: "2026-07-30T01:10:00.000Z",
       suspendedAt: null,

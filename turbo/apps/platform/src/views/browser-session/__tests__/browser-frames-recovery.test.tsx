@@ -67,7 +67,6 @@ async function setupSplitViewer() {
     viewerUrl: `https://viewer.example/browsers/${threadId}`,
     liveUrl: "https://viewer.example/live",
     screenshotUrl: null,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
