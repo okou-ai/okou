@@ -232,8 +232,21 @@ final class ThreadListStore {
               refreshAgain = true
               continue
             }
+            #if STAGING
+              // Diagnostic-only comparison; the released merge remains the default.
+              let perfStart = ProcessInfo.processInfo.systemUptime
+              let perfIndexed = ProcessInfo.processInfo.environment["OKOU_PERF_INDEXED_MERGE"] == "1"
+              let perfPrevious =
+                perfIndexed ? Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) }) : [:]
+            #endif
             for index in result.indices {
-              let held = threads.first { $0.id == result[index].id }
+              #if STAGING
+                let held =
+                  perfIndexed ? perfPrevious[result[index].id]
+                  : threads.first { $0.id == result[index].id }
+              #else
+                let held = threads.first { $0.id == result[index].id }
+              #endif
               let unreadAt =
                 revision == readRevision && cachedUnread != nil
                 ? cachedUnread?.unreadAt[result[index].id] : held?.unreadAt
@@ -246,6 +259,11 @@ final class ThreadListStore {
                 result[index].indicator = nil
               }
             }
+            #if STAGING
+              let perfMS = (ProcessInfo.processInfo.systemUptime - perfStart) * 1_000
+              Logger(subsystem: "ai.okou.ios", category: "IOSPerf").notice(
+                "merge count=\(result.count) indexed=\(perfIndexed) ms=\(perfMS)")
+            #endif
             if revision == readRevision, let cachedUnread,
               cachedUnread.revision > appliedIndicatorsRevision
             {

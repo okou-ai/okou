@@ -162,127 +162,122 @@ struct ChatComposerView: View {
       }
 
       let inputID = attachments.inputID
-      VStack(alignment: .trailing, spacing: 0) {
-        // Keep the model note mounted while the editor and keyboard expand or collapse.
-        if let modelSelection {
-          ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-            .disabled(needsUpgrade)
-            .opacity(showsModelPicker ? 1 : 0)
-            .allowsHitTesting(showsModelPicker)
-            .accessibilityHidden(!showsModelPicker)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: showsModelPicker ? nil : 0, alignment: .bottom)
-            .clipped()
-        }
-        // Retired native editors must leave immediately. Fading a first responder
-        // through a draft reset can restart keyboard avoidance during the send flight.
-        OkouComposerSurface(isExpanded: expandsInput) {
-          Group {
-            if let state = draftState {
-              ChatFeedbackComposer(
-                state: state, inputID: inputID, isFocused: $isFocused,
-                acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
-                returnKeyPreference: returnKeyPreference,
-                canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
-              )
-              .id(inputID)
-              .transition(.identity)
-              .disabled(!state.document.isSupported)
-            } else {
-              ChatComposerTextInput(
-                text: $draft, isFocused: $isFocused,
-                acceptsImages: !isBusy && !needsUpgrade,
-                isCurrent: { attachments.inputID == inputID },
-                pasteImages: attachments.importPastedImages,
-                placeholder: resolvedPlaceholder,
-                returnKeyPreference: returnKeyPreference,
-                canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
-              )
-              .id(inputID)
-              .transition(.identity)
-            }
-          }
-          .accessibilityIdentifier("message-input")
-        } leading: {
-          HStack(spacing: 0) {
-            Button {
-              showsAddSheet = true
-            } label: {
-              OkouToolbarIcon("plus")
-                .frame(width: actionSize, height: actionSize)
-                .overlay(alignment: .topTrailing) {
-                  if connectorSelection?.uncertain == true {
-                    OkouIcon("circle-alert", size: OkouIconSize.badge)
-                      .foregroundStyle(OkouStatusColor.warning)
-                  }
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add attachments and tools")
-            .accessibilityValue(
-              connectorSelection?.uncertain == true
-                ? "Confirm connector settings before sending" : ""
+      // Retired native editors must leave immediately. Fading a first responder
+      // through a draft reset can restart keyboard avoidance during the send flight.
+      OkouComposerSurface(isExpanded: expandsInput) {
+        Group {
+          if let state = draftState {
+            ChatFeedbackComposer(
+              state: state, inputID: inputID, isFocused: $isFocused,
+              acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+              returnKeyPreference: returnKeyPreference,
+              canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
             )
-            .disabled(isBusy || needsUpgrade)
+            .id(inputID)
+            .transition(.identity)
+            .disabled(!state.document.isSupported)
+          } else {
+            ChatComposerTextInput(
+              text: $draft, isFocused: $isFocused,
+              acceptsImages: !isBusy && !needsUpgrade,
+              isCurrent: { attachments.inputID == inputID },
+              pasteImages: attachments.importPastedImages,
+              placeholder: resolvedPlaceholder,
+              returnKeyPreference: returnKeyPreference,
+              canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
+            )
+            .id(inputID)
+            .transition(.identity)
           }
-        } trailing: {
-          HStack(spacing: OkouSpace.xs) {
-            // The mic and send are already side by side when the text editor opens.
-            if let voice = draftState?.voice {
-              ComposerVoiceInputButton(voice: voice)
-                .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
-                .opacity(showsVoiceInput ? 1 : 0)
-                .allowsHitTesting(showsVoiceInput)
-                .accessibilityHidden(!showsVoiceInput)
-            }
-            if !replacesSendWithMic {
-              Button(action: performPrimaryAction) {
-                Group {
-                  if showsProgress {
-                    ProgressView()
-                      .controlSize(.small)
-                      .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
+        }
+        .accessibilityIdentifier("message-input")
+      } leading: {
+        HStack(spacing: 0) {
+          Button {
+            showsAddSheet = true
+          } label: {
+            OkouToolbarIcon("plus")
+              .frame(width: actionSize, height: actionSize)
+              .overlay(alignment: .topTrailing) {
+                if connectorSelection?.uncertain == true {
+                  OkouIcon("circle-alert", size: OkouIconSize.badge)
+                    .foregroundStyle(OkouStatusColor.warning)
+                }
+              }
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Add attachments and tools")
+          .accessibilityValue(
+            connectorSelection?.uncertain == true ? "Confirm connector settings before sending" : ""
+          )
+          .disabled(isBusy || needsUpgrade)
+        }
+      } trailing: {
+        HStack(spacing: OkouSpace.xs) {
+          // The chat's model, only while the composer is open, where the next message is written.
+          // Keep controls mounted so they enter with the moving toolbar, not at its final position.
+          if let modelSelection {
+            ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+              .disabled(needsUpgrade)
+              .opacity(showsModelPicker ? 1 : 0)
+              .allowsHitTesting(showsModelPicker)
+              .accessibilityHidden(!showsModelPicker)
+          }
+          // The mic and send are already side by side when the text editor opens.
+          if let voice = draftState?.voice {
+            ComposerVoiceInputButton(voice: voice)
+              .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
+              .opacity(showsVoiceInput ? 1 : 0)
+              .allowsHitTesting(showsVoiceInput)
+              .accessibilityHidden(!showsVoiceInput)
+          }
+          if !replacesSendWithMic {
+            Button(action: performPrimaryAction) {
+              Group {
+                if showsProgress {
+                  ProgressView()
+                    .controlSize(.small)
+                    .tint(showsStop ? OkouColor.interruptForeground : OkouColor.primaryForeground)
+                } else {
+                  if showsStop {
+                    OkouIcon("square", size: OkouIconSize.inline)
                   } else {
-                    if showsStop {
-                      OkouIcon("square", size: OkouIconSize.inline)
-                    } else {
-                      OkouToolbarIcon("arrow-up")
-                    }
+                    OkouToolbarIcon("arrow-up")
                   }
                 }
-                .font(.okou(size: 16, weight: .semibold))
-                .foregroundStyle(
-                  showsStop
-                    ? OkouColor.interruptForeground
-                    : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
               }
-              .buttonStyle(.glassProminent)
-              .buttonBorderShape(.circle)
-              .tint(
-                showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
-              )
-              .disabled(!canPerformPrimaryAction)
-              .accessibilityLabel(showsStop ? "Stop" : "Send message")
-              .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
-              .frame(width: actionSize, height: actionSize)
-              .contentShape(Circle())
-              .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
+              .font(.okou(size: 16, weight: .semibold))
+              .foregroundStyle(
+                showsStop
+                  ? OkouColor.interruptForeground
+                  : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
             }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .tint(
+              showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
+            )
+            .disabled(!canPerformPrimaryAction)
+            .accessibilityLabel(showsStop ? "Stop" : "Send message")
+            .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+            .frame(width: actionSize, height: actionSize)
+            .contentShape(Circle())
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
           }
         }
-        .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
-          guard let editor = draftState?.editor else { return nil }
-          let content: ComposerSuggestionPresentation.Content
-          if editor.workflows.query != nil {
-            content = .workflows(editor.workflows)
-          } else if editor.mentionQuery != nil {
-            content = .chats(editor)
-          } else {
-            return nil
-          }
-          return ComposerSuggestionPresentation.Presentation(
-            bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
+      }
+      .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
+        guard let editor = draftState?.editor else { return nil }
+        let content: ComposerSuggestionPresentation.Content
+        if editor.workflows.query != nil {
+          content = .workflows(editor.workflows)
+        } else if editor.mentionQuery != nil {
+          content = .chats(editor)
+        } else {
+          return nil
         }
+        return ComposerSuggestionPresentation.Presentation(
+          bounds: bounds, content: content, isDisabled: isBusy || needsUpgrade)
       }
       .animation(
         reduceMotion ? nil : sendTransition?.composerAnimation ?? .easeInOut(duration: 0.22),

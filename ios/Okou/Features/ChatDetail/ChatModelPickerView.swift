@@ -2,9 +2,9 @@ import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-/// A quiet model note above the open composer. Fast uses a small lightning mark; effort
-/// stays in the model sheet. The composer presents that sheet so it stays open while the
-/// keyboard goes down under it.
+/// The chat's model in the open composer, beside the mic: its name, its thinking effort (and
+/// Fast) quieter, and a chevron (`OkouComposerValueLabel`). The composer presents the model
+/// sheet, so the sheet stays open while the keyboard goes down under it.
 struct ChatModelPickerButton: View {
   let selection: ChatModelSelectionStore
   let action: () -> Void
@@ -68,12 +68,21 @@ private struct ChatModelPickerButtonContent: View {
     return parts.joined(separator: " · ")
   }
 
+  /// Effort and Fast after the name, quieter than it ("GPT 6.1 Sol High").
+  private var detail: String? {
+    var parts: [String] = []
+    if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
+    if selection.selection.serviceTier == "priority" { parts.append(String(localized: "Fast")) }
+    if parts.isEmpty { return nil }
+    return parts.joined(separator: " ")
+  }
+
   var body: some View {
     Button(action: action) {
       OkouComposerValueLabel(
         title: configuration.map { $0.catalog.name(selection.selection.model) }
           ?? String(localized: "Model settings"),
-        isFast: selection.selection.serviceTier == "priority")
+        detail: detail)
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("chat-model-picker")
