@@ -1,5 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Input,
   Textarea,
@@ -28,8 +29,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { VncNetworkFields } from "./vnc-network-fields.tsx";
 
-export function useKerberosProfileItems() {
-  const { t } = useTranslation();
+export function kerberosProfileItems(t: TFunction<"common">) {
   return [
     {
       value: "qemu_kerberos_ticket",
@@ -50,6 +50,11 @@ export function useKerberosProfileItems() {
       }),
     },
   ];
+}
+
+export function useKerberosProfileItems() {
+  const { t } = useTranslation();
+  return kerberosProfileItems(t);
 }
 
 export function KerberosCredentialInputs({
