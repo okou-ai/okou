@@ -360,10 +360,10 @@ test("Attaching marks closes the editor at once and blocks sending until the cop
   drawBox(surface);
   click(await findNamedButton("Attach marks"));
 
-  expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
   expect(
     screen.getByTestId("composer-attachment-mark-count"),
   ).toHaveTextContent("1");
+  expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
   await expect(
     screen.findByLabelText("Preparing the marked-up copy of billing-page.png"),
   ).resolves.toBeInTheDocument();

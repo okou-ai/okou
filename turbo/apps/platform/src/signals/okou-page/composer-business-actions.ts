@@ -122,21 +122,13 @@ export function createComposerDraftActions(
       // The marks are stored on this call and the editor closes on it, so the
       // copy is still uploading while the user can already leave the chat.
       // Save the marks now, as the missing-copy draft a restore rebuilds, so a
-      // cancelled upload does not take them with it.
+      // cancelled upload does not take them with it. Either failure stops the
+      // operation; a failed copy is also the chip's to show and retry.
       const copy = set(attachment.confirmAnnotations$, annotations, signal);
-      const [, copied] = await Promise.allSettled([
-        set(saveDraft$, signal),
-        copy,
-      ]);
+      await Promise.all([set(saveDraft$, signal), copy]);
       signal.throwIfAborted();
-      // A failed copy is the chip's to show and retry; the first save has
-      // already written the marks without it.
-      if (copied?.status === "rejected") {
-        throw copied.reason;
-      }
       // Then once more to record the finished copy, so a reload does not
-      // flatten and upload it again. This save supersedes the first, so the
-      // first one's outcome no longer decides what the draft holds.
+      // flatten and upload it again.
       if (get(attachment.annotatedFileId$) !== null) {
         await set(saveDraft$, signal);
       }
