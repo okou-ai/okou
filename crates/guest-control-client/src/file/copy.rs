@@ -255,18 +255,13 @@ fn secure_copy_temp_file(file: &tokio::fs::File, path: &Path) -> io::Result<()> 
 }
 
 fn fstat_copy_temp_file(file: &tokio::fs::File, path: &Path) -> io::Result<nix::libc::stat> {
-    let mut stat = std::mem::MaybeUninit::<nix::libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live fd.
-    let result = unsafe { nix::libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::other(format!(
+    nix::sys::stat::fstat(file).map_err(|error| {
+        io::Error::other(format!(
             "stat copy temp file {}: {}",
             path.display(),
-            io::Error::last_os_error()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    Ok(unsafe { stat.assume_init() })
+            io::Error::from(error)
+        ))
+    })
 }
 
 async fn write_copy_stream_event(

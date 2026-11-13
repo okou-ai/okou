@@ -13,6 +13,9 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v4", "serde"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }
 
