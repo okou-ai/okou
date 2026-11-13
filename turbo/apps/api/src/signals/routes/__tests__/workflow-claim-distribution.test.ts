@@ -4,10 +4,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
+  workflowVisibilityContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -20,6 +22,8 @@ import {
   requireOrgId,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -269,6 +273,84 @@ test("re-evaluates private/public precedence without exposing another member's p
       ?.toString(),
   ).toContain("private body");
   await finish(run.runId, claim.sandboxToken);
+});
+
+test("withholds a prepared Workflow after its owner withdraws sharing", async () => {
+  const { actor, agent, group } = await fixture();
+  const owner = publicRunOwner(context, actor);
+  await owner.run(async () => {
+    const author = bdd.user({ orgId: actor.orgId });
+    const workflow = await createWorkflow(author, agent.agentId, {
+      visibility: "public",
+      instruction: "Content whose sharing can be withdrawn by its author",
+    });
+    const kms = holdCurrentSecretKms(context.signal);
+    const clientEventId = randomUUID();
+    const sent = await chatFixture.chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "Use the available workflows",
+        clientEventId,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the workflow user's prompt to be accepted");
+    }
+    const revocation = await settleIncludingAbort(async () => {
+      await kms.entered;
+      await accept(
+        setupApp({ context, routes: workflowsRoutes })(
+          workflowVisibilityContract,
+        ).demote({
+          headers: headers(author),
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+      await accept(
+        detailClient().get({
+          headers: headers(actor),
+          params: { workflowId: workflow.id },
+        }),
+        [404],
+      );
+    });
+    kms.release();
+    if (!revocation.ok) {
+      throw revocation.error;
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chatFixture.chat.listThreadEvents(
+      actor,
+      sent.body.threadId,
+    );
+    const runId = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    })?.runId;
+    if (!runId) {
+      throw new Error("Expected the admitted prompt to identify its Run");
+    }
+    await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+      status: "failed",
+    });
+    expect(runs.receivedDispatches(group)).toHaveLength(0);
+    expect((await runs.readRunQueue(actor)).body.concurrency.active).toBe(0);
+
+    const next = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      threadId: sent.body.threadId,
+      prompt: "Continue with the remaining authorized workflows",
+    });
+    const execution = await owner.claim(next.runId);
+    expect(
+      execution.contentBundles.skills.some((skill) => {
+        return skill.mountPath.endsWith(`/${workflow.name}`);
+      }),
+    ).toBeFalsy();
+    await finish(next.runId, execution.sandboxToken);
+  });
 });
 
 test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {

@@ -10,6 +10,7 @@ import type { UnacceptedRunOwner } from "./agent-run-terminal-transition.service
 import { agentInstructionsSelectionSql } from "./agent-instructions-claim.service";
 import {
   workflowClaimSelectionSql,
+  workflowReferencesAuthorizedCondition,
   type WorkflowClaimInput,
 } from "./workflow-claim.service";
 
@@ -19,6 +20,7 @@ export interface DirectRunTarget extends UnacceptedRunOwner {
 
 export interface DirectRunSourceAuthorization {
   readonly workflows: WorkflowClaimInput;
+  readonly workflowIds: readonly string[];
   readonly singleAgent: boolean;
 }
 
@@ -49,6 +51,7 @@ export const selectDirectRunOwner$ = command(
       ), ${agentInstructionsSelectionSql(sql`${args.sourceAuthorization.singleAgent}`)},
         ${workflowClaimSelectionSql(args.sourceAuthorization.workflows)}
       SELECT 1 FROM workflow_admission
+      WHERE ${workflowReferencesAuthorizedCondition(args.sourceAuthorization.workflows, args.sourceAuthorization.workflowIds)}
     )`;
     const changed = db.$with("direct_selected_run").as(
       db

@@ -1,4 +1,14 @@
-import { and, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  inArray,
+  isNull,
+  notInArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   object as zObject,
   uuid as zUuid,
@@ -115,6 +125,36 @@ export function workflowClaimInput(
   };
 }
 
+function workflowEligibilitySql(input: WorkflowClaimInput): SQL {
+  const protectedPaths = input.selection?.protectedMountPaths ?? [];
+  return sql`${eq(workflows.orgId, sql`locked_run."orgId"`)}
+    AND ${eq(workflows.agentId, sql`locked_run."agentId"`)}
+    AND ${eq(agents.orgId, sql`locked_run."orgId"`)}
+    AND (${eq(agents.visibility, "public")} OR ${eq(agents.owner, sql`locked_run."userId"`)})
+    AND ${isNull(workflows.officialDefinitionName)}
+    AND (${eq(workflows.visibility, "public")} OR ${eq(workflows.ownerUserId, sql`locked_run."userId"`)})
+    AND ${notInArray(workflows.name, [...SEED_SKILLS])}
+    AND NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`;
+}
+
+/** Recheck the captured sources, without choosing a new slug winner or payload. */
+export function workflowReferencesAuthorizedCondition(
+  input: WorkflowClaimInput,
+  workflowIds: readonly string[],
+): SQL {
+  return eq(
+    new QueryBuilder()
+      .select({ count: count() })
+      .from(workflows)
+      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .crossJoin(sql`locked_run`)
+      .where(
+        and(inArray(workflows.id, workflowIds), workflowEligibilitySql(input)),
+      ),
+    workflowIds.length,
+  );
+}
+
 /**
  * Data only: consumed by the existing successful Run/thread claim statement.
  * The outgoing Stage 1 writer commits body + reservation before its package.
@@ -124,23 +164,7 @@ export function workflowClaimInput(
 export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
   const selection = input.selection;
   const automationId = selection?.automationId ?? null;
-  const protectedPaths = selection?.protectedMountPaths ?? [];
-  const eligible = and(
-    eq(workflows.orgId, sql`locked_run."orgId"`),
-    eq(workflows.agentId, sql`locked_run."agentId"`),
-    eq(agents.orgId, sql`locked_run."orgId"`),
-    or(
-      eq(agents.visibility, "public"),
-      eq(agents.owner, sql`locked_run."userId"`),
-    ),
-    isNull(workflows.officialDefinitionName),
-    or(
-      eq(workflows.visibility, "public"),
-      eq(workflows.ownerUserId, sql`locked_run."userId"`),
-    ),
-    notInArray(workflows.name, [...SEED_SKILLS]),
-    sql`NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`,
-  );
+  const eligible = workflowEligibilitySql(input);
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
         ${workflows.contentBundle} AS "contentBundle"

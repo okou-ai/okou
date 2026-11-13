@@ -186,6 +186,9 @@ export const prepareDirectRun$ = command(
       executionContext: publication.responseBody,
       sourceAuthorization: {
         workflows: packages.selection,
+        workflowIds: packages.row.workflows.map((workflow) => {
+          return workflow.id;
+        }),
         singleAgent: context.featureFlags?.singleAgent === true,
       },
       contextSnapshot: {
