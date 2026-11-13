@@ -9,7 +9,6 @@ import pathlib
 import batch_aba_report as batch
 import progress_report as foreground
 import later_parking_report as later
-import pressure_report as pressure
 import report
 import status_failure_report as failure
 from cleanup_report import accounting, coverage, supplied_policy
@@ -56,7 +55,7 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
         "speculative required data/lease/accounting did not join")
     polled = batch.clock(status.get("status_wait_polled_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
     before, after = status.get("status_waits_before"), status.get("status_waits_after")
-    if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
+    if not failure.status_wait_advanced(before, after):
         raise ValueError("speculative final status wait not positively observed")
     if foreground.heartbeat(status.get("heartbeat"), sequence+1, polled, events[4]["monotonic_ns"], (0,0)) != runner:
         raise ValueError("speculative final heartbeat changed Runner identity")
