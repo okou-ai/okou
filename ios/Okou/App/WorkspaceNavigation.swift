@@ -69,7 +69,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     }
 
     func uninstallPopGestures() {
-      popGestures.forEach { $0.uninstall() }
+      for popGesture in popGestures {
+        popGesture.uninstall()
+      }
       popGestures.removeAll()
     }
 
