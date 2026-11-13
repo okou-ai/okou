@@ -153,7 +153,7 @@ const CAPABILITY_TAB_INDICATOR = cn(
   "absolute top-(--active-tab-top) left-(--active-tab-left) h-(--active-tab-height) w-(--active-tab-width) rounded-t-2xl bg-(--capability-tray)",
   "before:absolute before:right-full before:bottom-0 before:size-4 before:bg-[radial-gradient(circle_at_0_0,transparent_15.5px,var(--capability-tray)_16px)]",
   "after:absolute after:bottom-0 after:left-full after:size-4 after:bg-[radial-gradient(circle_at_100%_0,transparent_15.5px,var(--capability-tray)_16px)]",
-  "transition-[left,width] duration-300 ease-capability motion-reduce:transition-none",
+  "motion-safe:transition-[left,width] motion-safe:duration-300 motion-safe:ease-capability",
 );
 
 /**
@@ -173,7 +173,7 @@ const CAPABILITY_TYPE_TABS = cn(
  * as the choices that follow it, rather than the shadow jumping across.
  */
 const CAPABILITY_TYPE_TAB =
-  "transition-[color,background-color,box-shadow] duration-200 ease-capability motion-reduce:transition-none";
+  "motion-safe:transition-[color,background-color,box-shadow] motion-safe:duration-200 motion-safe:ease-capability";
 
 /**
  * Create's types and Workflow's kinds switch in the tray's own header, so a
@@ -361,7 +361,7 @@ export function CapabilityTray({
           "relative flex min-w-0 flex-col gap-4 rounded-t-3xl bg-(--capability-tray) px-4 pt-4 pb-10 outline-none sm:px-5",
           // The corner squares as the indicator arrives at the first tab and
           // rounds again as it leaves, on the indicator's own timing.
-          "transition-[border-top-left-radius] duration-300 ease-capability motion-reduce:transition-none",
+          "motion-safe:transition-[border-top-left-radius] motion-safe:duration-300 motion-safe:ease-capability",
           group === "search" && "rounded-tl-none",
         )}
       >
