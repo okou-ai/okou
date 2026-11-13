@@ -10,6 +10,11 @@ import type {
 
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import {
+  ATOM_CUSTOM_CONNECTOR_DEFAULT_POLICIES,
+  ATOM_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
+  ATOM_CUSTOM_CONNECTOR_PERMISSIONS,
+} from "./atom-custom-connector-permissions";
+import {
   FEISHU_CUSTOM_CONNECTOR_DEFAULT_POLICIES,
   FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
   FEISHU_CUSTOM_CONNECTOR_PERMISSIONS,
@@ -32,7 +37,10 @@ export interface CustomConnectorPermissionBundle {
 export function customConnectorPermissionBundleDependencySlug(
   ref: string,
 ): ConnectorSlug | null {
-  if (ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF) {
+  if (
+    ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF ||
+    ref === ATOM_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF
+  ) {
     return null;
   }
   const match = PERMISSION_BUNDLE_REF_PATTERN.exec(ref);
@@ -44,6 +52,19 @@ export async function loadCustomConnectorPermissionBundle(args: {
   readonly catalog: ConnectorServerFirewallMetadataCatalog;
   readonly ref: CustomConnectorPermissionBundleRef;
 }): Promise<CustomConnectorPermissionBundle | null> {
+  if (args.ref === ATOM_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF) {
+    return {
+      ref: args.ref,
+      connectorSlug: "atom",
+      permissionNames: new Set(
+        ATOM_CUSTOM_CONNECTOR_PERMISSIONS.map((permission) => {
+          return permission.name;
+        }),
+      ),
+      permissions: [...ATOM_CUSTOM_CONNECTOR_PERMISSIONS],
+      defaultPolicies: ATOM_CUSTOM_CONNECTOR_DEFAULT_POLICIES,
+    };
+  }
   if (args.ref === FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF) {
     return {
       ref: args.ref,

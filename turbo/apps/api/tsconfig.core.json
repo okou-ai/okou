@@ -282,6 +282,7 @@
     "src/signals/services/execution-storage-cache-read.service.ts",
     "src/signals/services/execution-storage.service.ts",
     "src/signals/services/feature-switches.service.ts",
+    "src/signals/services/atom-custom-connector-permissions.ts",
     "src/signals/services/feishu-custom-connector-permissions.ts",
     "src/signals/services/firewall-network-policy.service.ts",
     "src/signals/services/gmail-automation-account.service.ts",

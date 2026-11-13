@@ -20,6 +20,7 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { connectorCatalogCurrentWhere } from "./connector-catalog-slug-source.service";
+import { ATOM_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF } from "./atom-custom-connector-permissions";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { customConnectorRuntimeStorageReadPlan } from "./custom-connector-credential-access.service";
 import { userFeatureSwitchRowCondition } from "./feature-switch-scope";
@@ -383,6 +384,10 @@ function customRuntimeSnapshotReadPlan(args: CustomRuntimeSnapshotInput) {
           ne(
             definitions.permissionBundleRef,
             FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
+          ),
+          ne(
+            definitions.permissionBundleRef,
+            ATOM_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
           ),
           sql`${dependencySlug} COLLATE "C" ~ '^[a-z0-9][a-z0-9-]{0,63}$'`,
         ),
