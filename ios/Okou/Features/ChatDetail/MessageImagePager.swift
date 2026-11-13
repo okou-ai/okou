@@ -82,6 +82,7 @@ final class MessageImagePagingView: UIScrollView, UIScrollViewDelegate {
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { selectSettledPage() }
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { selectSettledPage() }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
     if !decelerate { selectSettledPage() }
