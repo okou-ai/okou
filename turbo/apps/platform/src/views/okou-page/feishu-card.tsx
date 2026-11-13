@@ -15,12 +15,22 @@ import {
   Loader2,
   Plus,
   Settings,
+  Check,
+  Eye,
+  EyeOff,
+  X,
 } from "lucide-react";
 import {
   FEISHU_OAUTH_SCOPES,
   FEISHU_TENANT_SCOPES,
 } from "@okouai/api-contracts/validators/feishu-connect";
-import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
+import {
+  surfaceVariants,
+  Button,
+  buttonVariants,
+  cn,
+  IconButton,
+} from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -41,20 +51,8 @@ import { useTranslation } from "react-i18next";
 
 import { i18n } from "../../i18n/index.ts";
 import {
-  platformFeishuAppCreatedCredentialsImg,
   platformFeishuAppIconImg,
-  platformFeishuAvailabilitySettingsAllMembersImg,
-  platformFeishuCreateEnterpriseCustomAppImg,
-  platformFeishuEncryptionStrategyImg,
-  platformFeishuEventRequestUrlImg,
-  platformFeishuEventSubscriptionModeImg,
-  platformFeishuPermissionsScopesBatchImportMenuImg,
-  platformFeishuPermissionsScopesBatchImportReviewImg,
-  platformFeishuSecuritySettingsRedirectUrlImg,
-  platformFeishuVersionAvailabilityEditImg,
-  platformFeishuVersionManagementCreateVersionImg,
   platformLarkAddBotFeatureImg,
-  platformLarkCreateAppForAgentImg,
 } from "../../lib/static-assets.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { brandName$ } from "../../signals/branding.ts";
@@ -63,6 +61,8 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
   feishuPlatform$,
+  feishuRevealedCredentials$,
+  toggleFeishuCredentialVisibility$,
   advanceFeishuSetupStep$,
   checkFeishuAppIdAvailable$,
   closeFeishuDialog$,
@@ -89,34 +89,11 @@ import {
 } from "../../signals/okou-page/feishu.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
+import { OkouLogomark } from "../components/okou-logomark.tsx";
+import { FeishuSetupGuide } from "./feishu-setup-guide.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 
 const feishuIconImg = settingsIconAssetUrl("lark");
-const FEISHU_CREATE_GUIDE_IMAGES = {
-  feishu: {
-    src: platformFeishuCreateEnterpriseCustomAppImg,
-    width: 1234,
-    height: 998,
-  },
-  lark: {
-    src: platformLarkCreateAppForAgentImg,
-    width: 1274,
-    height: 1118,
-  },
-} as const;
-const FEISHU_GUIDE_IMAGE_SOURCES = [
-  platformFeishuAppCreatedCredentialsImg,
-  platformFeishuEncryptionStrategyImg,
-  platformFeishuSecuritySettingsRedirectUrlImg,
-  platformFeishuPermissionsScopesBatchImportMenuImg,
-  platformFeishuPermissionsScopesBatchImportReviewImg,
-  platformFeishuEventSubscriptionModeImg,
-  platformFeishuEventRequestUrlImg,
-  platformFeishuVersionManagementCreateVersionImg,
-  platformFeishuVersionAvailabilityEditImg,
-  platformFeishuAvailabilitySettingsAllMembersImg,
-] as const;
-
 type FeishuDialogData = FeishuBotInstallation;
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -192,40 +169,6 @@ function FeishuGuideImage({
   );
 }
 
-interface FeishuGuideImageItem {
-  readonly src: string;
-  readonly alt: string;
-  readonly label: string;
-  readonly width: number;
-  readonly height: number;
-}
-
-function FeishuGuideImages({
-  images,
-}: {
-  images: readonly [FeishuGuideImageItem, ...FeishuGuideImageItem[]];
-}) {
-  return (
-    <div className="space-y-4">
-      {images.map((image) => {
-        return (
-          <figure key={image.src} className="space-y-2">
-            <FeishuGuideImage
-              src={image.src}
-              alt={image.alt}
-              width={image.width}
-              height={image.height}
-            />
-            <figcaption className="text-xs text-muted-foreground">
-              {image.label}
-            </figcaption>
-          </figure>
-        );
-      })}
-    </div>
-  );
-}
-
 type FeishuCredentialField = keyof FeishuSetupInput;
 
 const FEISHU_SETUP_STEPS = [
@@ -243,40 +186,60 @@ function FeishuSetupProgress({ step }: { step: FeishuSetupStep }) {
   const platform = useGet(feishuPlatform$);
   const currentIndex = FEISHU_SETUP_STEPS.indexOf(step);
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-1.5">
-        {FEISHU_SETUP_STEPS.map((item, index) => {
-          return (
-            <div
-              key={item}
-              className={
-                index <= currentIndex
-                  ? "h-1 flex-1 rounded-full bg-foreground"
-                  : "h-1 flex-1 rounded-full bg-muted"
-              }
-            />
-          );
-        })}
-      </div>
-      <div className="grid grid-cols-7 gap-2 text-xs">
-        {FEISHU_SETUP_STEPS.map((item, index) => {
-          return (
-            <div
-              key={item}
-              className={
-                index <= currentIndex
-                  ? "truncate font-medium text-foreground"
-                  : "truncate text-muted-foreground"
-              }
+    <ol
+      aria-label={t(
+        ($) => {
+          return $.onboarding.common.stepProgress;
+        },
+        {
+          current: currentIndex + 1,
+          total: FEISHU_SETUP_STEPS.length,
+        },
+      )}
+      className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-4 sm:justify-center sm:gap-5 sm:px-6 md:py-5"
+    >
+      {FEISHU_SETUP_STEPS.map((item, index) => {
+        return (
+          <li
+            key={item}
+            aria-current={index === currentIndex ? "step" : undefined}
+            className="flex min-w-0 items-center gap-2 text-xs sm:text-sm"
+          >
+            <span
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full border border-surface-border text-xs text-muted-foreground",
+                index === currentIndex &&
+                  "border-foreground bg-foreground text-background",
+                index < currentIndex && "bg-gray-50",
+              )}
+            >
+              {index < currentIndex ? (
+                <Check size={13} aria-hidden />
+              ) : (
+                index + 1
+              )}
+            </span>
+            <span
+              className={cn(
+                index === currentIndex
+                  ? "font-medium text-foreground"
+                  : "hidden text-muted-foreground sm:inline",
+              )}
             >
               {t(($) => {
                 return $.connectors.providerSettings[platform].steps[item];
               })}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            </span>
+            {index < FEISHU_SETUP_STEPS.length - 1 ? (
+              <span
+                aria-hidden
+                className="ml-2 hidden h-px w-4 bg-divider lg:block"
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -298,30 +261,56 @@ function FeishuCredentialInput({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   const updateForm = useSet(updateFeishuSetupForm$);
+  const revealedFields = useGet(feishuRevealedCredentials$);
+  const toggleVisibility = useSet(toggleFeishuCredentialVisibility$);
+  const revealed = revealedFields.includes(field);
   const id = `feishu-${field}`;
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <Input
-        id={id}
-        type={field === "appId" ? "text" : "password"}
-        value={form[field]}
-        disabled={saving || readOnly}
-        required
-        autoComplete="off"
-        placeholder={
-          readOnly && field !== "appId"
-            ? t(($) => {
-                return $.connectors.providerSettings[platform].configured;
-              })
-            : placeholder
-        }
-        onChange={(event) => {
-          updateForm({ [field]: event.target.value });
-        }}
-      />
+      <div className="relative">
+        <Input
+          id={id}
+          type={field === "appId" || revealed ? "text" : "password"}
+          className={field === "appId" ? undefined : "pr-11"}
+          value={form[field]}
+          disabled={saving || readOnly}
+          required
+          autoComplete="off"
+          placeholder={
+            readOnly && field !== "appId"
+              ? t(($) => {
+                  return $.connectors.providerSettings[platform].configured;
+                })
+              : placeholder
+          }
+          onChange={(event) => {
+            updateForm({ [field]: event.target.value });
+          }}
+        />
+        {field !== "appId" ? (
+          <IconButton
+            aria-label={t(
+              ($) => {
+                return revealed
+                  ? $.connectors.setupGuide.hideSecret
+                  : $.connectors.setupGuide.showSecret;
+              },
+              { label },
+            )}
+            aria-pressed={revealed}
+            disabled={saving || readOnly}
+            className="absolute right-0 top-0"
+            onClick={() => {
+              return toggleVisibility(field);
+            }}
+          >
+            {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+          </IconButton>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -338,7 +327,7 @@ function FeishuAppCredentialFields({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-6">
       <FeishuCredentialInput
         field="appId"
         label={t(($) => {
@@ -374,7 +363,7 @@ function FeishuEventCredentialFields({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-6">
       <FeishuCredentialInput
         field="encryptKey"
         label={t(($) => {
@@ -417,17 +406,16 @@ function FeishuCreateStep() {
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  const createImage = FEISHU_CREATE_GUIDE_IMAGES[platform];
   const iconFilename = `${brandName.toLowerCase()}-${platform}-app-icon.png`;
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].create.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].create
@@ -454,16 +442,6 @@ function FeishuCreateStep() {
             { brandName },
           )}
         </p>
-        <div className="mt-4">
-          <FeishuGuideImage
-            src={createImage.src}
-            width={createImage.width}
-            height={createImage.height}
-            alt={t(($) => {
-              return $.connectors.providerSettings[platform].create.imageAlt;
-            })}
-          />
-        </div>
       </div>
       <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
         <div>
@@ -545,29 +523,18 @@ function FeishuCredentialsStep({
   const platform = useGet(feishuPlatform$);
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].credentials.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].credentials
               .description;
           })}
         </p>
-        <div className="mt-4">
-          <FeishuGuideImage
-            src={platformFeishuAppCreatedCredentialsImg}
-            width={1190}
-            height={1076}
-            alt={t(($) => {
-              return $.connectors.providerSettings[platform].credentials
-                .imageAlt;
-            })}
-          />
-        </div>
       </div>
       <FeishuAppCredentialFields
         form={form}
@@ -591,12 +558,12 @@ function FeishuTokensStep({
   const platform = useGet(feishuPlatform$);
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].tokens.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].tokens
@@ -617,16 +584,6 @@ function FeishuTokensStep({
               .descriptionAfter;
           })}
         </p>
-        <div className="mt-4">
-          <FeishuGuideImage
-            src={platformFeishuEncryptionStrategyImg}
-            width={2356}
-            height={1184}
-            alt={t(($) => {
-              return $.connectors.providerSettings[platform].tokens.imageAlt;
-            })}
-          />
-        </div>
       </div>
       <FeishuEventCredentialFields
         form={form}
@@ -642,13 +599,13 @@ function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
   const platform = useGet(feishuPlatform$);
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-medium text-foreground">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
             {t(($) => {
               return $.connectors.providerSettings[platform].events.title;
             })}
-          </span>
+          </h2>
           <SetupStatus complete={data?.callbackVerified ?? false}>
             {data?.callbackVerified
               ? t(($) => {
@@ -671,38 +628,6 @@ function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
           </code>
           ).
         </p>
-        <div className="mt-4">
-          <FeishuGuideImages
-            images={[
-              {
-                src: platformFeishuEventSubscriptionModeImg,
-                width: 2562,
-                height: 1296,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].events
-                    .subscriptionAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].events
-                    .subscriptionLabel;
-                }),
-              },
-              {
-                src: platformFeishuEventRequestUrlImg,
-                width: 2442,
-                height: 1278,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].events
-                    .requestAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].events
-                    .requestLabel;
-                }),
-              },
-            ]}
-          />
-        </div>
       </div>
       <div className="flex gap-2">
         <Input
@@ -740,12 +665,12 @@ function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].redirect.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].redirect
@@ -770,14 +695,6 @@ function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
           )}
         </p>
       </div>
-      <FeishuGuideImage
-        src={platformFeishuSecuritySettingsRedirectUrlImg}
-        width={3190}
-        height={1220}
-        alt={t(($) => {
-          return $.connectors.providerSettings[platform].redirect.imageAlt;
-        })}
-      />
       <div className="flex gap-2">
         <Input
           aria-label={t(($) => {
@@ -815,50 +732,18 @@ function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
   );
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].permissions.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].permissions
               .description;
           })}
         </p>
-        <div className="mt-4">
-          <FeishuGuideImages
-            images={[
-              {
-                src: platformFeishuPermissionsScopesBatchImportMenuImg,
-                width: 1209,
-                height: 838,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].permissions
-                    .menuAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].permissions
-                    .menuLabel;
-                }),
-              },
-              {
-                src: platformFeishuPermissionsScopesBatchImportReviewImg,
-                width: 838,
-                height: 893,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].permissions
-                    .reviewAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].permissions
-                    .reviewLabel;
-                }),
-              },
-            ]}
-          />
-        </div>
       </div>
       <div className="rounded-lg border border-border p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -877,14 +762,20 @@ function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
             />
           ) : null}
         </div>
-        <div className="rounded-md bg-muted/40 p-3">
+        <details className="rounded-xl bg-gray-50 p-3">
+          <summary className="flex cursor-default list-none items-center justify-between gap-2 rounded-lg text-xs text-muted-foreground hover:text-foreground">
+            {t(($) => {
+              return $.connectors.setupGuide.permissionsJson;
+            })}
+            <ChevronRight size={14} aria-hidden />
+          </summary>
           <code
-            className="whitespace-pre-wrap break-words text-xs text-foreground"
+            className="mt-3 block max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-xs text-foreground"
             data-testid="feishu-scope-import-json"
           >
             {scopeImportJson}
           </code>
-        </div>
+        </details>
         <p
           role="note"
           className="mt-3 text-sm text-amber-600 dark:text-amber-400"
@@ -903,64 +794,64 @@ function FeishuPublishStep() {
   const platform = useGet(feishuPlatform$);
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 font-medium text-foreground">
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
           {t(($) => {
             return $.connectors.providerSettings[platform].publish.title;
           })}
-        </div>
+        </h2>
         <p className="leading-relaxed">
           {t(($) => {
             return $.connectors.providerSettings[platform].publish.description;
           })}
         </p>
-        <div className="mt-4">
-          <FeishuGuideImages
-            images={[
-              {
-                src: platformFeishuVersionManagementCreateVersionImg,
-                width: 3822,
-                height: 1708,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .createVersionAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .createVersionLabel;
-                }),
-              },
-              {
-                src: platformFeishuVersionAvailabilityEditImg,
-                width: 3046,
-                height: 1780,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .editAvailabilityAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .editAvailabilityLabel;
-                }),
-              },
-              {
-                src: platformFeishuAvailabilitySettingsAllMembersImg,
-                width: 1630,
-                height: 544,
-                alt: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .allMembersAlt;
-                }),
-                label: t(($) => {
-                  return $.connectors.providerSettings[platform].publish
-                    .allMembersLabel;
-                }),
-              },
-            ]}
-          />
-        </div>
       </div>
     </div>
+  );
+}
+
+function FeishuSetupHelp({ step }: { readonly step: FeishuSetupStep }) {
+  const { t } = useTranslation();
+  const platform = useGet(feishuPlatform$);
+  const question =
+    step === "publish"
+      ? t(($) => {
+          return $.connectors.providerSettings[platform].faq.approvalQuestion;
+        })
+      : step === "events" || step === "tokens"
+        ? t(($) => {
+            return $.connectors.providerSettings[platform].faq
+              .challengeQuestion;
+          })
+        : step === "create"
+          ? t(($) => {
+              return $.connectors.providerSettings[platform].faq
+                .botFeatureQuestion;
+            })
+          : null;
+  if (!question) {
+    return null;
+  }
+  const answer =
+    step === "publish"
+      ? t(($) => {
+          return $.connectors.providerSettings[platform].faq.approvalAnswer;
+        })
+      : step === "create"
+        ? t(($) => {
+            return $.connectors.providerSettings[platform].faq.botFeatureAnswer;
+          })
+        : t(($) => {
+            return $.connectors.providerSettings[platform].faq.challengeAnswer;
+          });
+  return (
+    <details className="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+      <summary className="flex cursor-default list-none items-start gap-2 rounded-lg py-1 hover:text-foreground">
+        <ChevronRight size={14} className="mt-0.5 shrink-0" />
+        {question}
+      </summary>
+      <p className="mt-3 pl-5 leading-relaxed">{answer}</p>
+    </details>
   );
 }
 
@@ -1149,7 +1040,7 @@ function FeishuSetupWizardFooter({
     readOnly,
   });
   return (
-    <DialogFooter className="mt-5 shrink-0 border-t border-border pt-5">
+    <footer className="sticky bottom-0 order-3 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-5 py-5 md:static md:px-8 lg:px-12">
       <Button
         type="button"
         variant="outline"
@@ -1167,14 +1058,19 @@ function FeishuSetupWizardFooter({
           </span>
         )}
       </Button>
-      <Button type="submit" disabled={!canContinue}>
+      <Button
+        type="submit"
+        variant="secondary"
+        className="min-w-28 bg-foreground text-background hover:bg-foreground/90"
+        disabled={!canContinue}
+      >
         {saving ? <Loader2 size={16} className="animate-spin" /> : null}
         {continueLabel}
         {(step !== "tokens" || readOnly) && step !== "publish" ? (
           <ArrowRight size={16} />
         ) : null}
       </Button>
-    </DialogFooter>
+    </footer>
   );
 }
 
@@ -1187,6 +1083,7 @@ function FeishuSetupWizard({
   readOnly: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const step = useGet(feishuSetupStep$);
   const form = useGet(feishuSetupForm$);
   const advanceStep = useSet(advanceFeishuSetupStep$);
@@ -1237,28 +1134,54 @@ function FeishuSetupWizard({
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-      <div className="shrink-0 pb-5">
-        <FeishuSetupProgress step={step} />
+      <FeishuSetupProgress step={step} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[minmax(0,1.18fr)_minmax(0,1fr)] md:overflow-hidden">
+        <FeishuSetupGuide step={step} />
+        <div className="contents md:flex md:min-h-0 md:flex-col md:border-l md:border-border">
+          <div
+            id="feishu-setup-fields"
+            className="order-1 px-5 py-7 md:min-h-0 md:flex-1 md:overflow-y-auto md:px-8 md:py-9 lg:px-12"
+          >
+            <p className="mb-3 hidden text-xs text-muted-foreground md:block">
+              {t(
+                ($) => {
+                  return $.onboarding.common.stepProgress;
+                },
+                {
+                  current: FEISHU_SETUP_STEPS.indexOf(step) + 1,
+                  total: FEISHU_SETUP_STEPS.length,
+                },
+              )}
+            </p>
+            <a
+              href="#feishu-setup-reference"
+              className="mb-5 inline-flex text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
+            >
+              {t(($) => {
+                return $.connectors.setupGuide.viewReference;
+              })}
+            </a>
+            <FeishuSetupStepContent
+              step={step}
+              data={data}
+              form={form}
+              saving={saving}
+              readOnly={readOnly}
+            />
+            <FeishuSetupHelp step={step} />
+          </div>
+          <FeishuSetupWizardFooter
+            step={step}
+            data={data}
+            saving={saving}
+            checkingAppId={appIdCheckLoadable.state === "loading"}
+            canContinue={canContinue}
+            readOnly={readOnly}
+            onClose={onClose}
+            onBack={goBack}
+          />
+        </div>
       </div>
-      <div className="-mr-3 min-h-0 flex-1 overflow-y-auto pr-3 [scrollbar-gutter:stable]">
-        <FeishuSetupStepContent
-          step={step}
-          data={data}
-          form={form}
-          saving={saving}
-          readOnly={readOnly}
-        />
-      </div>
-      <FeishuSetupWizardFooter
-        step={step}
-        data={data}
-        saving={saving}
-        checkingAppId={appIdCheckLoadable.state === "loading"}
-        canContinue={canContinue}
-        readOnly={readOnly}
-        onClose={onClose}
-        onBack={goBack}
-      />
     </form>
   );
 }
@@ -1804,32 +1727,27 @@ function FeishuSetupDialog({
       }}
     >
       <DialogContent
-        maxWidth="2xl"
-        height={800}
-        contentClassName="flex flex-col overflow-hidden"
-        closeLabel={t(($) => {
-          return $.connectors.actions.close;
-        })}
+        mode="fullscreen"
+        surface="canvas"
+        scrollable={false}
+        showCloseButton={false}
+        contentClassName="flex min-h-0 flex-col gap-0 overflow-hidden p-0"
         initialFocus={false}
       >
-        <link
-          rel="preload"
-          as="image"
-          href={FEISHU_CREATE_GUIDE_IMAGES[platform].src}
-        />
-        {FEISHU_GUIDE_IMAGE_SOURCES.map((src) => {
-          return <link key={src} rel="preload" as="image" href={src} />;
-        })}
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-          {platform === "lark" ? (
-            <p className="text-xs text-muted-foreground">
-              {t(($) => {
-                return $.connectors.providerSettings.lark.guideReference;
-              })}
-            </p>
-          ) : null}
+        <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-4 space-y-0 border-b border-border px-5 py-4 md:px-8">
+          <div className="flex min-w-0 items-center gap-4">
+            <OkouLogomark className="size-7 shrink-0 text-foreground" />
+            <DialogTitle className="text-sm font-medium">{title}</DialogTitle>
+          </div>
+          <DialogDescription className="sr-only">
+            {description}
+          </DialogDescription>
+          <Button type="button" variant="quiet" onClick={close}>
+            <X size={16} />
+            {t(($) => {
+              return $.connectors.actions.close;
+            })}
+          </Button>
         </DialogHeader>
         <FeishuDialogBody data={data} isAdmin={isAdmin} onClose={close} />
       </DialogContent>

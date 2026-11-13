@@ -4234,6 +4234,21 @@
       "redirectDescription": "Continuerai su {{connector}} per autorizzare {{brandName}}.",
       "redirectTitle": "Reindirizzamento a {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Torna ai campi",
+      "enlarge": "Ingrandisci schermata",
+      "fullImage": "Schermata completa",
+      "hideSecret": "Nascondi {{label}}",
+      "imageArea": "Area della schermata",
+      "imageProgress": "Immagine {{current}} di {{total}}",
+      "images": "Schermate di riferimento",
+      "keyArea": "Area principale",
+      "permissionReference": "La schermata mostra dove importare. Usa il JSON completo copiato a destra.",
+      "permissionsJson": "Visualizza JSON dei permessi",
+      "showSecret": "Mostra {{label}}",
+      "title": "Guida alla configurazione",
+      "viewReference": "Visualizza guida alla configurazione"
+    },
     "toasts": {
       "connected": "{{connector}} connesso"
     }

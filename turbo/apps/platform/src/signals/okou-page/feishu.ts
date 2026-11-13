@@ -39,6 +39,51 @@ const internalSetupForm$ = state<FeishuSetupInput>({
   verificationToken: "",
   encryptKey: "",
 });
+const internalGuideImageIndex$ = state(0);
+const internalGuideFocused$ = state(true);
+const internalGuideExpanded$ = state(false);
+const internalRevealedCredentials$ = state<readonly (keyof FeishuSetupInput)[]>(
+  [],
+);
+
+export const feishuGuideImageIndex$ = computed((get) => {
+  return get(internalGuideImageIndex$);
+});
+export const feishuGuideFocused$ = computed((get) => {
+  return get(internalGuideFocused$);
+});
+export const feishuGuideExpanded$ = computed((get) => {
+  return get(internalGuideExpanded$);
+});
+export const feishuRevealedCredentials$ = computed((get) => {
+  return get(internalRevealedCredentials$);
+});
+export const setFeishuGuideImageIndex$ = command(({ set }, index: number) => {
+  set(internalGuideImageIndex$, index);
+});
+export const setFeishuGuideFocused$ = command(({ set }, focused: boolean) => {
+  set(internalGuideFocused$, focused);
+});
+export const setFeishuGuideExpanded$ = command(({ set }, expanded: boolean) => {
+  set(internalGuideExpanded$, expanded);
+});
+export const toggleFeishuCredentialVisibility$ = command(
+  ({ set }, field: keyof FeishuSetupInput) => {
+    set(internalRevealedCredentials$, (fields) => {
+      return fields.includes(field)
+        ? fields.filter((item) => {
+            return item !== field;
+          })
+        : [...fields, field];
+    });
+  },
+);
+const resetFeishuSetupPresentation$ = command(({ set }) => {
+  set(internalGuideImageIndex$, 0);
+  set(internalGuideFocused$, true);
+  set(internalGuideExpanded$, false);
+  set(internalRevealedCredentials$, []);
+});
 const FEISHU_SETUP_STEP_ORDER = [
   "create",
   "credentials",
@@ -198,6 +243,7 @@ export const openFeishuDialog$ = command(
     },
   ) => {
     const { step, installationId, ...formDefaults } = initial;
+    set(resetFeishuSetupPresentation$);
     set(internalDialogExisting$, installationId !== undefined);
     set(internalDialogInstallationId$, installationId ?? null);
     set(internalSetupStep$, step);
@@ -219,6 +265,7 @@ export const completeFeishuDialogClose$ = command(({ get, set }) => {
   if (get(internalDialogOpen$)) {
     return;
   }
+  set(resetFeishuSetupPresentation$);
   set(internalSetupForm$, (previous) => {
     return {
       ...previous,
@@ -230,6 +277,7 @@ export const completeFeishuDialogClose$ = command(({ get, set }) => {
 });
 
 export const advanceFeishuSetupStep$ = command(({ set }) => {
+  set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
     const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
     return FEISHU_SETUP_STEP_ORDER[index + 1] ?? step;
@@ -237,6 +285,7 @@ export const advanceFeishuSetupStep$ = command(({ set }) => {
 });
 
 export const goBackFeishuSetupStep$ = command(({ set }) => {
+  set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
     const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
     return index > 0 ? (FEISHU_SETUP_STEP_ORDER[index - 1] ?? step) : step;
@@ -454,6 +503,7 @@ export const startFeishuSettingsRealtime$ = command(
 );
 
 export const resetFeishuSettingsUi$ = command(({ set }) => {
+  set(resetFeishuSetupPresentation$);
   set(internalDialogOpen$, false);
   set(internalDialogExisting$, false);
   set(internalDialogInstallationId$, null);

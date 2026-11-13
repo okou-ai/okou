@@ -4165,6 +4165,21 @@
       "redirectDescription": "Anda akan melanjutkan ke {{connector}} untuk mengizinkan {{brandName}}.",
       "redirectTitle": "Mengarahkan ke {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Kembali ke kolom",
+      "enlarge": "Perbesar tangkapan layar",
+      "fullImage": "Tangkapan layar lengkap",
+      "hideSecret": "Sembunyikan {{label}}",
+      "imageArea": "Area tangkapan layar",
+      "imageProgress": "Gambar {{current}} dari {{total}}",
+      "images": "Tangkapan layar referensi",
+      "keyArea": "Area utama",
+      "permissionReference": "Tangkapan layar menunjukkan lokasi impor. Gunakan JSON lengkap yang disalin di sebelah kanan.",
+      "permissionsJson": "Lihat JSON izin",
+      "showSecret": "Tampilkan {{label}}",
+      "title": "Panduan penyiapan",
+      "viewReference": "Lihat panduan penyiapan"
+    },
     "toasts": {
       "connected": "{{connector}} terhubung"
     }

@@ -4180,6 +4180,21 @@
       "redirectDescription": "Sie fahren mit {{connector}} fort, um {{brandName}} zu autorisieren.",
       "redirectTitle": "Weiterleitung zu {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Zurück zu den Feldern",
+      "enlarge": "Screenshot vergrößern",
+      "fullImage": "Vollständiger Screenshot",
+      "hideSecret": "{{label}} ausblenden",
+      "imageArea": "Screenshot-Bereich",
+      "imageProgress": "Bild {{current}} von {{total}}",
+      "images": "Referenz-Screenshots",
+      "keyArea": "Wichtiger Bereich",
+      "permissionReference": "Der Screenshot zeigt den Importort. Verwende das vollständige rechts kopierte JSON.",
+      "permissionsJson": "Berechtigungs-JSON anzeigen",
+      "showSecret": "{{label}} anzeigen",
+      "title": "Einrichtungshilfe",
+      "viewReference": "Einrichtungshilfe anzeigen"
+    },
     "toasts": {
       "connected": "{{connector}} verbunden"
     }

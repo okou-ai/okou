@@ -4165,6 +4165,21 @@
       "redirectDescription": "{{connector}}에서 {{brandName}} 권한을 승인합니다.",
       "redirectTitle": "{{connector}}로 리디렉션 중…"
     },
+    "setupGuide": {
+      "backToFields": "입력으로 돌아가기",
+      "enlarge": "스크린샷 확대",
+      "fullImage": "전체 스크린샷",
+      "hideSecret": "{{label}} 숨기기",
+      "imageArea": "스크린샷 영역",
+      "imageProgress": "이미지 {{current}} / {{total}}",
+      "images": "참고 스크린샷",
+      "keyArea": "주요 영역",
+      "permissionReference": "스크린샷은 가져오기 위치를 보여줍니다. 오른쪽에서 복사한 전체 JSON을 사용하세요.",
+      "permissionsJson": "권한 JSON 보기",
+      "showSecret": "{{label}} 표시",
+      "title": "설정 가이드",
+      "viewReference": "설정 가이드 보기"
+    },
     "toasts": {
       "connected": "{{connector}} 연결됨"
     }

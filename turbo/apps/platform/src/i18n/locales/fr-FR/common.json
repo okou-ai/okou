@@ -4234,6 +4234,21 @@
       "redirectDescription": "Vous continuerez sur {{connector}} pour autoriser {{brandName}}.",
       "redirectTitle": "Redirection vers {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Retour aux champs",
+      "enlarge": "Agrandir la capture",
+      "fullImage": "Capture complète",
+      "hideSecret": "Masquer {{label}}",
+      "imageArea": "Zone de la capture",
+      "imageProgress": "Image {{current}} sur {{total}}",
+      "images": "Captures de référence",
+      "keyArea": "Zone principale",
+      "permissionReference": "La capture indique où importer. Utilisez le JSON complet copié à droite.",
+      "permissionsJson": "Voir le JSON des autorisations",
+      "showSecret": "Afficher {{label}}",
+      "title": "Guide de configuration",
+      "viewReference": "Voir le guide de configuration"
+    },
     "toasts": {
       "connected": "{{connector}} connecté"
     }
