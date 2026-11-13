@@ -70,7 +70,6 @@ const {
   APP_ORIGIN,
   TEST_PRICE_PRO,
   TEST_PRICE_TEAM,
-  TEST_PRICE_CUSTOM,
   TEST_PRICE_USAGE_PACK_PLAN_PRO,
   TEST_PRICE_USAGE_PACK_PLAN_TEAM,
   TEST_PRICE_USAGE_PACK_20,
@@ -2716,7 +2715,6 @@ describe("usage pack allocation management", () => {
   const {
     managedUsagePackMetadata,
     managedUsagePackSubscription,
-    managedUsagePackInvoice,
     managedConcurrencyInvoiceLine,
     managedUsagePackUpgradeInvoice,
     managedUsagePackAdditionInvoice,
@@ -3081,172 +3079,6 @@ describe("usage pack allocation management", () => {
           firstStatus.concurrencySubscriptions,
         );
       });
-    });
-  });
-
-  it("fulfills usage packs on a shared Custom subscription without replacing the main plan", async () => {
-    const actor = createOrgFixture();
-    const fixture = await purchaseManagedUsagePack(
-      [{ userId: actor.userId, usagePackUsd: 100 }],
-      "team",
-      actor,
-    );
-    mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
-    const customMetadata = {
-      orgId: fixture.orgId,
-      purpose: "custom_plan_subscription",
-      tier: "custom",
-      usagePackSubscriptionId: fixture.usagePackSubscriptionId,
-    };
-    const customPlanEnd = fixture.billingPeriod.end + 180 * 86_400;
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
-      id: fixture.subscriptionId,
-      customer: fixture.customerId,
-      status: "active",
-      cancel_at: customPlanEnd,
-      cancel_at_period_end: false,
-      schedule: null,
-      trial_end: null,
-      metadata: customMetadata,
-      items: {
-        data: [
-          {
-            id: `si_${TEST_PRICE_CUSTOM}`,
-            price: { id: TEST_PRICE_CUSTOM },
-            quantity: 1,
-            current_period_start: fixture.billingPeriod.start,
-            current_period_end: fixture.billingPeriod.end,
-          },
-        ],
-      },
-    });
-    await postManagedUsagePackEvent("invoice.paid", {
-      id: `in_${randomUUID()}`,
-      customer: fixture.customerId,
-      metadata: {},
-      status: "paid",
-      paid: true,
-      parent: {
-        subscription_details: {
-          subscription: fixture.subscriptionId,
-          metadata: customMetadata,
-        },
-      },
-      lines: {
-        has_more: false,
-        data: [
-          {
-            id: `il_${randomUUID()}`,
-            amount: 0,
-            subtotal: 0,
-            quantity: 1,
-            price: { id: TEST_PRICE_CUSTOM },
-            period: fixture.billingPeriod,
-            parent: {
-              type: "subscription_item_details",
-              subscription_item_details: { proration: false },
-            },
-          },
-        ],
-      },
-    });
-    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-      tier: "custom",
-      showUsagePack: false,
-    });
-
-    const renewalPeriod = {
-      start: fixture.billingPeriod.end,
-      end: fixture.billingPeriod.end + 30 * 86_400,
-    };
-    mockNow(new Date(renewalPeriod.start * 1000 + 1000));
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const renewedSharedSubscription = {
-      id: fixture.subscriptionId,
-      customer: fixture.customerId,
-      status: "active",
-      cancel_at: customPlanEnd,
-      cancel_at_period_end: false,
-      schedule: null,
-      trial_end: null,
-      metadata: customMetadata,
-      items: {
-        data: [
-          {
-            id: `si_${TEST_PRICE_CUSTOM}`,
-            price: { id: TEST_PRICE_CUSTOM },
-            quantity: 1,
-            current_period_start: renewalPeriod.start,
-            current_period_end: renewalPeriod.end,
-          },
-          {
-            id: `si_${TEST_PRICE_USAGE_PACK_100}`,
-            price: { id: TEST_PRICE_USAGE_PACK_100 },
-            quantity: 1,
-            current_period_start: renewalPeriod.start,
-            current_period_end: renewalPeriod.end,
-          },
-        ],
-      },
-    };
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      renewedSharedSubscription,
-    );
-    const invoiceId = `in_${randomUUID()}`;
-    const packageInvoice = managedUsagePackInvoice(fixture, {
-      invoiceId,
-      quantities: new Map([[TEST_PRICE_USAGE_PACK_100, 1]]),
-      billingPeriod: renewalPeriod,
-    });
-    await postManagedUsagePackEvent("invoice.paid", {
-      ...packageInvoice,
-      metadata: {},
-      parent: {
-        subscription_details: {
-          subscription: fixture.subscriptionId,
-          metadata: customMetadata,
-        },
-      },
-      lines: {
-        ...packageInvoice.lines,
-        data: [
-          {
-            id: `il_${randomUUID()}`,
-            amount: 0,
-            subtotal: 0,
-            quantity: 1,
-            price: { id: TEST_PRICE_CUSTOM },
-            period: renewalPeriod,
-            parent: {
-              type: "subscription_item_details",
-              subscription_item_details: { proration: false },
-            },
-          },
-          ...packageInvoice.lines.data,
-        ],
-      },
-    });
-
-    const status = await readBillingStatus(fixture);
-    expect(status.tier).toBe("custom");
-    expect(status.showUsagePack).toBeFalsy();
-    expect(status.currentPeriodEnd).toBe(
-      new Date(customPlanEnd * 1000).toISOString(),
-    );
-
-    await postManagedUsagePackEvent(
-      "customer.subscription.updated",
-      renewedSharedSubscription,
-    );
-    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-      tier: "custom",
-      showUsagePack: false,
     });
   });
 

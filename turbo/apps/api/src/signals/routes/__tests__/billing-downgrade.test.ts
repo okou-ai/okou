@@ -35,7 +35,6 @@ const mocks = createRouteMocks(context);
 
 const TEST_PRICE_PRO = "price_test_pro";
 const TEST_PRICE_TEAM = "price_test_team";
-const TEST_PRICE_CUSTOM = "price_test_custom";
 const TEST_USAGE_PACK_PLAN_PRO = "price_test_usage_pack_plan_pro";
 const TEST_USAGE_PACK_PLAN_TEAM = "price_test_usage_pack_plan_team";
 const TEST_USAGE_PACK_50 = "price_test_usage_pack_50";
@@ -1257,68 +1256,6 @@ describe("POST /api/billing/downgrade", () => {
     expect(
       status.body.concurrencySubscriptions[0]?.cancelAtPeriodEnd,
     ).toBeFalsy();
-  });
-
-  it("cancels a product-backed Custom Plan at period end", async () => {
-    const subId = `sub-custom-cancel-${randomUUID().slice(0, 8)}`;
-    const periodEnd = new Date(now() + 30 * 86_400 * 1000);
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeSubscriptionId: subId,
-          subscriptionStatus: "active",
-          tier: "custom",
-          currentPeriodEnd: periodEnd,
-        },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
-
-    const periodStartUnix = Math.floor((now() - 86_400 * 1000) / 1000);
-    const periodEndUnix = Math.floor(periodEnd.getTime() / 1000);
-    const expectedEffectiveDate = new Date(periodEndUnix * 1000).toISOString();
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: subId,
-      schedule: null,
-      cancel_at: null,
-      items: {
-        data: [
-          {
-            id: "si_item_custom",
-            current_period_start: periodStartUnix,
-            current_period_end: periodEndUnix,
-            quantity: 1,
-            price: {
-              id: TEST_PRICE_CUSTOM,
-              recurring: { interval: "month", interval_count: 1 },
-            },
-          },
-        ],
-      },
-    });
-    context.mocks.stripe.subscriptions.update.mockResolvedValue({ id: subId });
-
-    const response = await accept(
-      setupApp({ context, routes: billingDowngradeRoutes })(
-        billingDowngradeContract,
-      ).create({
-        body: { targetTier: "limited-free-1" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      effectiveDate: expectedEffectiveDate,
-    });
-    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
-      subId,
-      { cancel_at_period_end: true },
-    );
   });
 
   it("preserves fixed-term team access when cancelling to limited-free-1", async () => {

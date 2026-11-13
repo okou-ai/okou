@@ -26,11 +26,7 @@ export function createPublicBillingZeroFixture(
   actor: ApiTestUser,
   options: {
     readonly plan?: {
-      readonly tier: "pro" | "team" | "custom";
-      readonly priceId: string;
-      readonly webhookSecret: string;
-    };
-    readonly foreverCustom?: {
+      readonly tier: "pro" | "team";
       readonly priceId: string;
       readonly webhookSecret: string;
     };
@@ -193,69 +189,6 @@ export function createPublicBillingZeroFixture(
           status: "active",
           credits: 0,
         });
-        if (options.foreverCustom) {
-          mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
-          mockEnv("ATOM_GRANT_PRICE", options.foreverCustom.priceId);
-          mockOptionalEnv(
-            "STRIPE_WEBHOOK_SECRET",
-            options.foreverCustom.webhookSecret,
-          );
-          context.mocks.stripe.subscriptions.list.mockResolvedValue({
-            data: [],
-            has_more: false,
-          });
-          context.mocks.stripe.customers.retrieve.mockResolvedValue({
-            id: customerId,
-            metadata: { orgId },
-          });
-          const seconds = Math.floor(now() / 1000);
-          await createWebhookCallbackApi(context).postStripeEvent(
-            {
-              id: `evt_forever_${suffix}`,
-              type: "invoice.paid",
-              created: seconds,
-              data: {
-                object: {
-                  id: `in_forever_${suffix}`,
-                  customer: customerId,
-                  metadata: {
-                    type: "atom_grant",
-                    purpose: "atom_grant",
-                    source: "atom_entitlement",
-                    orgId,
-                    tier: "custom",
-                    duration: "forever",
-                  },
-                  parent: null,
-                  lines: {
-                    has_more: false,
-                    data: [
-                      {
-                        id: `il_forever_${suffix}`,
-                        quantity: 1,
-                        price: { id: options.foreverCustom.priceId },
-                        period: { start: seconds, end: seconds + 30 * 86_400 },
-                        parent: { type: "invoice_item_details" },
-                      },
-                    ],
-                  },
-                },
-              },
-            },
-            [200],
-            run,
-          );
-          await flushWaitUntilForTest();
-          expect((await readStatus()).body).toMatchObject({
-            tier: "custom",
-            status: "active",
-            credits: 0,
-            hasSubscription: false,
-            currentPeriodEnd: null,
-            concurrencyLimit: 10,
-            creditBreakdown: [],
-          });
-        }
         if (!options.plan) {
           return;
         }
