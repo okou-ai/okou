@@ -38,9 +38,9 @@
 //! when there is no executor to emit ordinary job telemetry.
 //!
 //! When no direct or published exact resource is available, fallback first retries matching idle
-//! reuse, including generationless non-success publication, then consumes retiring idle capacity,
-//! and finally uses fresh budget capacity. Generic reuse grants no exact-history authority. A
-//! fresh fallback still attempts home-cache checkout, but skips its transient-contention
+//! reuse, including generationless non-success publication, then compatible blanks, retiring idle
+//! capacity, and fresh budget capacity. Generic reuse grants no exact-history authority. A
+//! blank or fresh fallback still attempts home-cache checkout, but skips its transient-contention
 //! retry when the predecessor state proves that a live or transferred sandbox retains the entry.
 //! Retiring leases are retained while the loop waits for capacity. The wait observes both budget
 //! availability and idle-pool changes: either can make the next exact or fresh-resource attempt
@@ -89,6 +89,7 @@ use crate::finalizing_admission::{
 };
 use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
+use crate::idle_pool::IdleSandboxKind;
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
 use runner_provider::ClaimedJob;
@@ -235,7 +236,6 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         }
     };
 
-    let fresh_fallback = matches!(&resource, FinalizingResource::Fresh(_));
     let active_run_guard = ctx.active_runs.register(
         run_id,
         claimed.context().reuse_key().map(str::to_owned),
@@ -286,6 +286,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     };
     let cancellation_handle = cancellation.handle();
     let mut activation_transfer_guard = None;
+    let mut selected_home_source_run_id = None;
     let ready = match activation {
         FinalizingActivation::Fresh(active_lease) => ReadyClaimedResource {
             reuse_entry: None,
@@ -323,11 +324,18 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 .await);
             }
             activation_transfer_guard = Some(transfer_guard);
+            selected_home_source_run_id = (reservation.kind() == IdleSandboxKind::Blank
+                && ctx.home_cache_snapshot.has_source_home_hint(
+                    &admission.reuse_key,
+                    &profile_name,
+                    admission.source_run_id,
+                ))
+            .then_some(admission.source_run_id);
             match activate_reserved_idle(
                 reservation,
                 ReservedActivationRequest {
                     run_id,
-                    required_home_source_run_id: None,
+                    required_home_source_run_id: selected_home_source_run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,
@@ -390,13 +398,21 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             }
         }
     };
-    let required_home_source_run_id = (ready.reuse_entry.is_none()
-        && ctx.home_cache_snapshot.has_source_home_hint(
-            &admission.reuse_key,
-            &profile_name,
-            admission.source_run_id,
-        ))
-    .then_some(admission.source_run_id);
+    let home_fallback = ready
+        .reuse_entry
+        .as_ref()
+        .is_none_or(|entry| entry.kind() == IdleSandboxKind::Blank);
+    // Inventory can change while unpark awaits. Keep a source already selected
+    // before activation; checkout revalidates it under the cache entry lock.
+    let required_home_source_run_id = if home_fallback {
+        selected_home_source_run_id.or_else(|| {
+            ctx.home_cache_snapshot
+                .has_source_home_hint(&admission.reuse_key, &profile_name, admission.source_run_id)
+                .then_some(admission.source_run_id)
+        })
+    } else {
+        None
+    };
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
             required_home_source_run_id,
@@ -436,8 +452,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         }
     };
     drop(activation_transfer_guard);
-    if fresh_fallback {
-        let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_policy();
+    if home_fallback {
+        let (predecessor_state, lock_policy) = admission.fallback_home_prepare_policy();
         request.job_profile.home_image_prepare_policy = lock_policy;
         if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(

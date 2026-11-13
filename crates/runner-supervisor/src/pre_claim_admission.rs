@@ -180,8 +180,8 @@ pub(crate) enum SuppliedAdmission {
     Unknown,
 }
 
-/// Ordinary local admission for complete work. No discovery preference wait,
-/// speculative Claim overlap, or remote input acquisition participates here.
+/// Local resource admission for complete work, including a known producer's handoff.
+/// No remote discovery, speculative Claim overlap or input acquisition participates here.
 pub(crate) async fn admit_supplied(
     context: runner_types::types::ExecutionContext,
     request: PreClaimRequest<'_>,
@@ -197,23 +197,57 @@ pub(crate) async fn admit_supplied(
     if ctx.cancel_tokens.handle(run_id).await.is_some() {
         return SuppliedAdmission::Unknown;
     }
-    let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
-        &request.candidate,
-        request.profile_name,
-        request.job_vcpu,
-        request.job_memory,
-        request.device_rate_limits,
-        AdmissionReusePolicy::Compatible { allow_blank: true },
-        ctx,
-    )
-    .await
-    else {
-        return SuppliedAdmission::Rejected;
+    // Public completion can precede the local producer's sandbox/home publication.
+    // This is execution-state handoff, independent of retired acquisition advice.
+    let finalizing = context
+        .native_continuation
+        .as_ref()
+        .filter(|native| native.session_id.is_some())
+        .and_then(|native| native.generation_run_id.as_deref())
+        .and_then(|source| source.parse::<RunId>().ok())
+        .filter(|source| *source != run_id)
+        .and_then(|source_run_id| {
+            let reuse_key = context.reuse_key()?;
+            let predecessor = ctx.active_runs.finalizing_predecessor(
+                source_run_id,
+                reuse_key,
+                request.profile_name,
+            )?;
+            Some(FinalizingAdmission {
+                predecessor,
+                deadline: deadline.into_std(),
+                reuse_key: reuse_key.to_owned(),
+                source_run_id,
+                // Native authority is revalidated from the bound context.
+                native_generation_run_id: None,
+            })
+        });
+    let (resource, blank_pool_selection) = if let Some(finalizing) = finalizing {
+        (AdmittedResource::Finalizing(finalizing), None)
+    } else {
+        let Some((resource, selection)) = acquire_local_admission_resource(
+            &request.candidate,
+            request.profile_name,
+            request.job_vcpu,
+            request.job_memory,
+            request.device_rate_limits,
+            AdmissionReusePolicy::Compatible { allow_blank: true },
+            ctx,
+        )
+        .await
+        else {
+            return SuppliedAdmission::Rejected;
+        };
+        let resource = match resource {
+            AcquiredResource::Fresh(lease) => AdmittedResource::Fresh(lease),
+            AcquiredResource::Reusable(reservation) => AdmittedResource::Reusable(reservation),
+        };
+        (resource, selection)
     };
     let cancellation = match ctx.cancel_tokens.register(run_id).await {
         Ok(registration) => registration,
         Err(_) => {
-            rollback_untracked_resource(resource.into(), ctx).await;
+            rollback_admitted_resource(resource, run_id, request.home_disk_mb, ctx).await;
             return SuppliedAdmission::Unknown;
         }
     };
@@ -221,19 +255,15 @@ pub(crate) async fn admit_supplied(
         Ok(claimed) if claimed.context().run_id == run_id => claimed,
         _ => {
             cancellation.unregister().await;
-            rollback_untracked_resource(resource.into(), ctx).await;
+            rollback_admitted_resource(resource, run_id, request.home_disk_mb, ctx).await;
             return SuppliedAdmission::Rejected;
         }
     };
     if *ctx.mode_rx.borrow() != RunnerMode::Running || tokio::time::Instant::now() >= deadline {
         cancellation.unregister().await;
-        rollback_untracked_resource(resource.into(), ctx).await;
+        rollback_admitted_resource(resource, run_id, request.home_disk_mb, ctx).await;
         return SuppliedAdmission::Rejected;
     }
-    let resource = match resource {
-        AcquiredResource::Fresh(lease) => AdmittedResource::Fresh(lease),
-        AcquiredResource::Reusable(reservation) => AdmittedResource::Reusable(reservation),
-    };
     let _ = admission_ready.send(());
     SuppliedAdmission::Admitted(Box::new(AdmittedClaim {
         claimed,
