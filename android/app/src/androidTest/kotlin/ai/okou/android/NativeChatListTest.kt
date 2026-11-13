@@ -51,6 +51,17 @@ class NativeChatListTest {
                 device.findObject(selector.packageName(app.packageName)).click()
             }
             fun clickText(value: String) = click(UiSelector().text(value))
+            fun revealText(value: String) {
+                // A collapsed Project can make the entire list fit without a scrollable node.
+                if (!device.hasObject(By.pkg(app.packageName).text(value))) {
+                    assertTrue(
+                        UiScrollable(UiSelector().packageName(app.packageName).scrollable(true))
+                            .setAsVerticalList()
+                            .scrollTextIntoView(value)
+                    )
+                }
+                text(value)
+            }
             text(app.getString(R.string.chat_list_title))
             scenario.onActivity { activity ->
                 chatJob =
@@ -70,16 +81,9 @@ class NativeChatListTest {
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(app.getString(R.string.chat_status_observed))
-            val list = UiScrollable(UiSelector().scrollable(true)).setAsVerticalList()
-            assertTrue(list.scrollTextIntoView("Research Okou"))
-            text("Research Okou")
+            revealText("Research Okou")
             scenario.recreate()
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollTextIntoView("Research Okou")
-            )
-            text("Research Okou")
+            revealText("Research Okou")
             assertNotNull(device.findObject(By.text("Project chat")))
             clickText("Project chat")
             text(app.getString(R.string.history_completed))
@@ -93,12 +97,7 @@ class NativeChatListTest {
             assertTrue(
                 device.wait(Until.gone(By.text(app.getString(R.string.history_sidebar))), 10_000)
             )
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollTextIntoView("Project chat")
-            )
-            text("Project chat")
+            revealText("Project chat")
             clickText("Research")
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -107,18 +106,9 @@ class NativeChatListTest {
             assertTrue(
                 device.wait(Until.gone(By.text(app.getString(R.string.history_sidebar))), 10_000)
             )
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollTextIntoView("Research")
-            )
+            revealText("Research")
             clickText("Research")
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollTextIntoView("Project chat")
-            )
-            text("Project chat")
+            revealText("Project chat")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
