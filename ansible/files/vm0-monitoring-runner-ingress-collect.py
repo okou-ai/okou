@@ -294,9 +294,11 @@ def publish(directory_path: Path, results: dict[str, int] | None) -> None:
 def write_schedule(descriptor: int, boot_id: str, not_before: float) -> None:
     content = json.dumps([boot_id, not_before]).encode("ascii")
     os.lseek(descriptor, 0, os.SEEK_SET)
-    os.ftruncate(descriptor, 0)
+    # Never clear a live reservation before its replacement has been written.
+    # An interrupted shortening can leave invalid JSON, which fails closed.
     if os.write(descriptor, content) != len(content):
         raise OSError("incomplete ingress schedule write")
+    os.ftruncate(descriptor, len(content))
     os.fsync(descriptor)
 
 

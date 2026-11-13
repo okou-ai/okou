@@ -145,3 +145,5 @@ collector changes through the existing Ansible-tree hash; merged source alone
 does not prove the host was provisioned or Grafana received the new series.
 Run the real-files/curl/TLS fixtures with
 `.github/scripts/tests/vm0-monitoring-runner-ingress-collect-test.sh`.
+The Linux fixture requires Python/PyYAML, curl, OpenSSL, a C compiler and
+`systemd-analyze`; its OS fault injector checks interrupted schedule updates.

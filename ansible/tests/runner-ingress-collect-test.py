@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import ssl
 import subprocess
 import tempfile
@@ -314,6 +315,36 @@ class CollectorTest(unittest.TestCase):
         )
         self.assertEqual(skipped.returncode, 0, skipped.stderr)
         self.assertEqual(len(self.peer.requests), 2)
+
+    def test_interrupted_schedule_update_cannot_repeat_the_probe(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        fault = self.work / "clear-state-crash.so"
+        subprocess.run(
+            [
+                "cc",
+                "-shared",
+                "-fPIC",
+                str(ROOT / "ansible/tests/runner-ingress-clear-state-crash.c"),
+                "-o",
+                str(fault),
+                "-ldl",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        # Inject process death if an OS truncate clears existing state. A safe
+        # update can complete normally without encountering that crash point.
+        result = subprocess.run(
+            self.command,
+            env=dict(self.env, LD_PRELOAD=str(fault)),
+            capture_output=True,
+            timeout=15,
+        )
+        self.assertIn(result.returncode, (0, -signal.SIGKILL))
+        self.assertNotIn(TOKEN.encode(), result.stdout + result.stderr)
+        self.assert_counts(self.run_collector(force_due=False), 1, 0)
+        self.assertEqual(len(self.peer.requests), 1)
 
     def test_overlapping_invocation_does_not_start_another_probe(self):
         runner_id, _ = self.runner("serving")
