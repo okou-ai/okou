@@ -333,13 +333,36 @@ describe("v4 connector catalog reader", () => {
   });
 
   it.each([
+    "?login",
+    "?tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f",
+    "?token=public-mode",
+  ])("retains the complete MCP endpoint query %s", (query) => {
+    const artifact = publishedCatalog();
+    const connector = requiredConnector(artifact, "plaud-mcp");
+    connector.mcp = {
+      transport: "streamable-http",
+      endpoint: `https://mcp.plaud.ai/mcp${query}`,
+    };
+
+    const accepted = requiredConnector(decode(artifact), "plaud-mcp");
+    expect(accepted.mcp).toStrictEqual(connector.mcp);
+    expect(connectorCatalogFirewallConfig(accepted)?.apis[0]?.base).toBe(
+      "https://mcp.plaud.ai/mcp",
+    );
+    const payload: unknown = JSON.parse(
+      connectorCatalogEntryPayload(accepted).toString("utf8"),
+    );
+    expect(payload).toMatchObject({ mcp: connector.mcp });
+  });
+
+  it.each([
     "http://mcp.example.com/mcp",
     "https://user:secret@mcp.example.com/mcp",
-    "https://mcp.example.com/mcp?token=value",
     "https://mcp.example.com/mcp#fragment",
     "https://127.0.0.1/mcp",
     "https://mcp.internal/mcp",
     "https://mcp.example.com/{tenant}",
+    "https://mcp.example.com/mcp?tenant={tenant}",
   ])("rejects unsafe MCP endpoints: %s", (endpoint) => {
     const artifact = publishedCatalog();
     requiredConnector(artifact, "plaud-mcp").mcp = {

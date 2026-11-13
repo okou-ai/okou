@@ -32,6 +32,7 @@ import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
   automaticMcpRuntimeFirewallAuthKind,
 } from "./mcp-auth";
+import { mcpEndpointFirewallBase } from "./mcp-endpoint";
 
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
 
@@ -410,7 +411,7 @@ function validateMcpFirewall(
     connector.firewall.kind !== "generated" ||
     connector.firewall.config.apis.length !== 1 ||
     api === undefined ||
-    api.base !== connector.mcp.endpoint ||
+    api.base !== mcpEndpointFirewallBase(connector.mcp.endpoint) ||
     api.auth.base !== undefined ||
     api.hostPolicy !== undefined
   ) {

@@ -4,6 +4,7 @@ export function automaticMcpCatalogFixture(
   variant:
     | "none"
     | "oauth"
+    | "query"
     | "static-headers"
     | "declared-scopes"
     | "provider-prompt"
@@ -25,6 +26,7 @@ export function automaticMcpCatalogFixture(
     slug,
     methodId: "smart-connect",
     endpoint: connector.mcp.endpoint,
+    firewallBase: api.base,
     firewallAuthHeaders,
     target: { kind: "builtin" as const, connectorSlug: slug },
   };
