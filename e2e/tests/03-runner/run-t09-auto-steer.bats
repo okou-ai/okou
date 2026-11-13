@@ -53,7 +53,7 @@ run_auto_steer() {
         "$RUNNER_AGENT_ID" \
         "$thread_id" \
         "$run_id" \
-        "Now reply with only the word: $after_complete_prompt" \
+        "Now reply with a different word: $after_complete_prompt" \
         "$after_complete_prompt" \
         150)" || return 1
     successor_run_id="$(jq -er '.runId' <<< "$successor_result")" || return 1
