@@ -38,7 +38,8 @@ export const projectListMotionRef$ = onRef(
         revision += 1;
         const currentRevision = revision;
         root.dataset.projectFoldMotion = expanded ? "expand" : "collapse";
-        // Match the rows' 180ms transition, allowing one frame for the commit.
+        // Match --duration-disclosure's 500ms spring settling window, allowing
+        // one frame for the commit.
         // No business state or virtual-list measurement waits for this timer.
         timeout(
           () => {
@@ -46,7 +47,7 @@ export const projectListMotionRef$ = onRef(
               stop();
             }
           },
-          220,
+          540,
           { signal },
         );
       },

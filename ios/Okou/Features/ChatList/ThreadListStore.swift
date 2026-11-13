@@ -232,8 +232,9 @@ final class ThreadListStore {
               refreshAgain = true
               continue
             }
+            let previous = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
             for index in result.indices {
-              let held = threads.first { $0.id == result[index].id }
+              let held = previous[result[index].id]
               let unreadAt =
                 revision == readRevision && cachedUnread != nil
                 ? cachedUnread?.unreadAt[result[index].id] : held?.unreadAt

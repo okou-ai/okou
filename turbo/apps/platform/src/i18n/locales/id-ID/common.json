@@ -1188,11 +1188,6 @@
       "cancellationNotice": "Paket {{plan}} Anda telah dibatalkan dan akan berakhir pada {{date}}.",
       "compare": "Bandingkan paket",
       "compareAll": "Bandingkan semua paket",
-      "custom": {
-        "name": "Kustom"
-      },
-      "customAccess": "Akses kustom dengan {{value}} eksekusi concurrent",
-      "customCancellationNotice": "Paket kustom Anda akan berakhir pada {{date}}.",
       "downgrade": "Turunkan",
       "downgradeNotice": "Paket {{currentPlan}} Anda akan diturunkan ke {{targetPlan}} pada {{date}}.",
       "downgradesOn": "Turun ke {{plan}} pada {{date}}",
@@ -5198,7 +5193,6 @@
       "inUse_other": "{{active}} dari {{limit}} slot digunakan"
     },
     "tiers": {
-      "custom": "Kustom",
       "free": "Gratis",
       "pro": "Pro",
       "team": "Tim"
@@ -7239,7 +7233,7 @@
           "adminHint": "Minta admin ruang kerja untuk upgrade.",
           "benefitDescription": "Buat endpoint bertanda tangan yang memulai alur kerja dari sistem eksternal.",
           "benefitTitle": "Otomatisasi alur kerja masuk yang aman",
-          "description": "Otomatisasi webhook memerlukan ruang kerja Team atau Custom.",
+          "description": "Otomatisasi webhook memerlukan ruang kerja Team.",
           "title": "Upgrade untuk otomatisasi webhook",
           "upgradeAction": "Upgrade ke Team"
         },

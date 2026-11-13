@@ -18,7 +18,7 @@ import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 const CREDITS_EXHAUSTED_SURVEY_REWARD = 200;
 
 const REWARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const PAID_TIERS = ["pro", "team", "custom"] as const;
+const PAID_TIERS = ["pro", "team"] as const;
 
 interface RecordBillingSurveyArgs {
   readonly orgId: string;

@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-server"
-version = "0.24.103"
+version = "0.24.104"
 edition.workspace = true
 
 [dependencies]
@@ -21,6 +21,7 @@ guest-control-proto.workspace = true
 test-support = []
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["fs", "std"] }
 cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 

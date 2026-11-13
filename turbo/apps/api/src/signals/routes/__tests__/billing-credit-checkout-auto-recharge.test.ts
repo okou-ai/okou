@@ -73,8 +73,7 @@ describe("credit checkout auto-recharge ownership", () => {
       [400],
     );
     expect(response.body.error).toStrictEqual({
-      message:
-        "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+      message: "Auto-recharge is only available for Pro or Team workspaces",
       code: "BAD_REQUEST",
     });
     await expect(readAutoRecharge()).resolves.toStrictEqual({

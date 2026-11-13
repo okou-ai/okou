@@ -704,12 +704,15 @@ private struct ChatSidebarThreadLabel: View {
       } else {
         .none
       }
-    if showsStatusColumn {
-      OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing) {
-        OkouChatStatusMark(emoji: row.emoji)
+    Group {
+      if showsStatusColumn {
+        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing) {
+          OkouChatStatusMark(emoji: row.emoji)
+        }
+      } else {
+        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing)
       }
-    } else {
-      OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing)
     }
+    .task { await workspace.activateDrafts() }
   }
 }

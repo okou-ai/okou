@@ -3172,7 +3172,7 @@ test("Offer a Team upgrade to a Pro workspace administrator", async () => {
   );
   expect(upgradeTitle).toBeInTheDocument();
   expect(
-    screen.getByText("Webhook automations require a Team or Custom workspace."),
+    screen.getByText("Webhook automations require a Team workspace."),
   ).toBeInTheDocument();
   expect(buttonByText("Upgrade to Team")).toBeInTheDocument();
 });
@@ -3288,7 +3288,7 @@ test("Handle a plan restriction discovered while creating a webhook", async () =
     return respond(402, {
       error: {
         code: "TEAM_REQUIRED",
-        message: "Webhook automations require a Team or Custom workspace",
+        message: "Webhook automations require a Team workspace",
       },
     });
   });
@@ -3354,7 +3354,7 @@ test("Explain a plan restriction when enabling an existing webhook", async () =>
     return respond(402, {
       error: {
         code: "TEAM_REQUIRED",
-        message: "Webhook automations require a Team or Custom workspace",
+        message: "Webhook automations require a Team workspace",
       },
     });
   });

@@ -1568,7 +1568,7 @@ test.each([false, true])(
       return query === "(display-mode: standalone)";
     });
     mockBrowserApi(active ? liveBrowserSession() : null);
-    await openConversation(completedConversationEvents(), true);
+    await openConversation(completedConversationEvents());
     await expectConversationReady();
 
     click(buttonByName("More actions"));
@@ -1602,6 +1602,18 @@ test.each([false, true])(
       within(sidebar).findByDisplayValue("https://example.com"),
     ).resolves.toBeEnabled();
 
+    const tabRow = within(sidebar)
+      .getByLabelText("New tab")
+      .closest("[data-browser-toolbar]");
+    const standaloneLink = within(sidebar).getByLabelText(
+      "Open this browser in a new page",
+    );
+    expect(tabRow).toContainElement(standaloneLink);
+    expect(standaloneLink).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
+    expect(standaloneLink).toHaveAttribute("target", "_blank");
+    expect(tabRow).toContainElement(
+      buttonByName("Close cloud browser", sidebar),
+    );
     click(buttonByName("Close cloud browser", sidebar));
     await waitFor(() => {
       expect(sidebar).not.toBeInTheDocument();

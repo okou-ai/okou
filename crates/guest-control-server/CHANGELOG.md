@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.104](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.103...guest-control-server-v0.24.104) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use owned notification descriptor constructors ([#47098](https://github.com/okou-ai/okou/issues/47098)) ([bf69ae3](https://github.com/okou-ai/okou/commit/bf69ae388ed442b23479f99bbf78bebd2c1723af))
+
 ## [0.24.103](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.102...guest-control-server-v0.24.103) (2026-11-13)
 
 

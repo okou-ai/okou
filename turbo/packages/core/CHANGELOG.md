@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.838.0](https://github.com/okou-ai/okou/compare/core-v8.837.0...core-v8.838.0) (2026-11-13)
+
+
+### Features
+
+* **app:** roll out the compact cloud browser header ([#47092](https://github.com/okou-ai/okou/issues/47092)) ([98ce97f](https://github.com/okou-ai/okou/commit/98ce97f96793753ad2276df83e96e8264d900d5c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.1
+
 ## [8.837.0](https://github.com/okou-ai/okou/compare/core-v8.836.2...core-v8.837.0) (2026-11-13)
 
 

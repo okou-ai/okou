@@ -113,8 +113,7 @@ export const updateAutoRechargeConfig$ = command(
       if (capabilities?.autoRechargeAllowed !== true) {
         return {
           ok: false,
-          error:
-            "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+          error: "Auto-recharge is only available for Pro or Team workspaces",
         };
       }
       if (threshold === undefined || amount === undefined) {

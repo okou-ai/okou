@@ -12,7 +12,12 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import type { HomeExploreKind } from "../../signals/okou-page/composer-home.ts";
+import type {
+  HomeExploreKind,
+  HomeSwap,
+} from "../../signals/okou-page/composer-home.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./composer.tsx";
 import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -62,6 +67,25 @@ function CapabilityCopy({
 }
 
 /**
+ * The home's cards and its tray replace each other through one swap, so the
+ * change animates as a whole: see `swap$`.
+ */
+function useHomeSwap(signals: ComposerSignals): (change: HomeSwap) => void {
+  const swap = useSet(signals.taskChips.home.swap$);
+  const pageSignal = useGet(pageSignal$);
+  return (change) => {
+    detach(swap(change, pageSignal), Reason.DomCallback);
+  };
+}
+
+/**
+ * The greeting is the one thing on both sides of the swap, so it carries a
+ * view transition name: the browser glides it between its row above the cards
+ * and its row above the tray instead of cutting from one to the other.
+ */
+const GREETING_ROW = "flex min-h-14 [view-transition-name:capability-greeting]";
+
+/**
  * Find people and Research open their Explore tray from one action, so all
  * four cards are acted on the same way: from a button along the bottom. The
  * button takes only the left column, so the objects keep the right column's
@@ -81,7 +105,7 @@ function ExploreCapabilityCard({
     },
     { returnObjects: true },
   );
-  const openExplore = useSet(signals.taskChips.home.openExplore$);
+  const swap = useHomeSwap(signals);
   const art = kind === "search" ? "people" : "research";
   return (
     <section
@@ -106,7 +130,7 @@ function ExploreCapabilityCard({
           size="sm"
           data-art="explore"
           onClick={() => {
-            openExplore(kind);
+            swap({ kind: "explore", explore: kind });
           }}
         >
           {copy.explore}
@@ -162,8 +186,7 @@ function CapabilityCards({
     },
     { returnObjects: true },
   );
-  const openTask = useSet(signals.taskChips.openTask$);
-  const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
+  const swap = useHomeSwap(signals);
   // Explore takes the top row in halves. Below it the row runs 5:4, which still
   // fits Create's five choices on one line and gives Workflow the width its
   // wide flow drawing needs. On the first home of the session the rows rise in
@@ -206,7 +229,7 @@ function CapabilityCards({
                 size="sm"
                 data-art={art}
                 onClick={() => {
-                  openTask(task);
+                  swap({ kind: "task", task });
                 }}
               >
                 {tasks[task]}
@@ -250,7 +273,7 @@ function CapabilityCards({
                 data-art={art}
                 aria-label={copy.workflow[kind].title}
                 onClick={() => {
-                  openWorkflow(kind);
+                  swap({ kind: "workflow", workflow: kind });
                 }}
               >
                 {copy.workflow[kind].shortTitle}
@@ -279,7 +302,15 @@ export function CapabilityHomeContent({
 }) {
   const selected = useGet(signals.taskChips.home.task$);
   const focusEditor = useSet(signals.editor.focus$);
-  const closeButton = <CapabilityCloseButton signals={signals} />;
+  const swap = useHomeSwap(signals);
+  const closeButton = (
+    <CapabilityCloseButton
+      signals={signals}
+      onClose={() => {
+        swap({ kind: "close" });
+      }}
+    />
+  );
   const open = selected !== null;
   return (
     <main
@@ -320,7 +351,7 @@ export function CapabilityHomeContent({
             {heading !== undefined && (
               // A waiting suggestion speaks in the greeting's own line, so
               // showing it never pushes the cards or the composer down.
-              <div className="flex min-h-14 items-center">{heading}</div>
+              <div className={cn(GREETING_ROW, "items-center")}>{heading}</div>
             )}
             <CapabilityCards signals={signals} entrance={entrance} />
             <CapabilityHomeCompliance
@@ -333,7 +364,12 @@ export function CapabilityHomeContent({
         ) : (
           <>
             {heading !== undefined && (
-              <div className="row-start-2 flex min-h-14 min-w-0 shrink-0 items-center">
+              <div
+                className={cn(
+                  GREETING_ROW,
+                  "row-start-2 min-w-0 shrink-0 items-center",
+                )}
+              >
                 {heading}
               </div>
             )}

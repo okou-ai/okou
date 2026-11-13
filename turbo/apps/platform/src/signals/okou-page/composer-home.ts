@@ -18,6 +18,16 @@ export type HomeWorkflowKind = "scheduled" | "triggers" | "advanced";
 export type HomeExploreKind = "search" | "research";
 export type HomeCapability = HomeExploreKind | "create" | "workflow";
 
+/** What a capability card or the tray's close control swaps the home to. */
+export type HomeSwap =
+  | { readonly kind: "explore"; readonly explore: HomeExploreKind }
+  | { readonly kind: "task"; readonly task: ComposerTask }
+  | { readonly kind: "workflow"; readonly workflow: HomeWorkflowKind }
+  | { readonly kind: "close" };
+
+/** The view transition type the home's cards-to-tray swap runs under. */
+const HOME_SWAP_TRANSITION = "capability-home";
+
 /** A source action waits for its own mounted composer before restoring reading intent. */
 function createCapabilityLayoutSignals() {
   const root$ = state<{
@@ -111,8 +121,80 @@ function createPrepareExploreCommand(
   });
 }
 
+/**
+ * The capability cards and the tray replace each other in one column, and the
+ * greeting moves between two rows when they do. Where the browser can, the
+ * swap runs as one view transition: the column cross-fades while the
+ * greeting, the one thing on both sides, glides to its new row instead of
+ * jumping there. Only the state change runs inside the transition; closing
+ * still finishes its layout and draft work after the new page is captured.
+ */
+function createHomeSwapCommand(
+  home: {
+    readonly openExplore$: Command<void, [HomeExploreKind]>;
+    readonly openWorkflow$: Command<void, [HomeWorkflowKind]>;
+    readonly close$: Command<Promise<void>, [AbortSignal]>;
+  },
+  openTask$: Command<void, [ComposerTask]>,
+) {
+  return command(async ({ set }, change: HomeSwap, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    let closing: Promise<void> | undefined;
+    const update = () => {
+      signal.throwIfAborted();
+      switch (change.kind) {
+        case "explore": {
+          set(home.openExplore$, change.explore);
+          break;
+        }
+        case "task": {
+          set(openTask$, change.task);
+          break;
+        }
+        case "workflow": {
+          set(home.openWorkflow$, change.workflow);
+          break;
+        }
+        case "close": {
+          closing = set(home.close$, signal);
+          break;
+        }
+      }
+    };
+    if (
+      "startViewTransition" in document &&
+      CSS.supports("selector(:active-view-transition-type(a))")
+    ) {
+      await document.startViewTransition({
+        update,
+        types: [HOME_SWAP_TRANSITION],
+      }).updateCallbackDone;
+    } else {
+      update();
+    }
+    await closing;
+  });
+}
+
 /** Discovery and its injected prompts are local to each composer. */
 export function createComposerHomeSignals(
+  selectedTask$: Computed<ComposerTask | null>,
+  openTask$: Command<void, [ComposerTask]>,
+  selectTask$: Command<void, [ComposerTask | null]>,
+  actions: WorkflowRecommendationActions,
+  closeWorkflow$: Command<void, []>,
+) {
+  const home = createHomeDiscoverySignals(
+    selectedTask$,
+    openTask$,
+    selectTask$,
+    actions,
+    closeWorkflow$,
+  );
+  return { ...home, swap$: createHomeSwapCommand(home, openTask$) };
+}
+
+function createHomeDiscoverySignals(
   selectedTask$: Computed<ComposerTask | null>,
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,

@@ -686,8 +686,7 @@ describe("PUT /api/billing/auto-recharge", () => {
 
       expect(response.body).toStrictEqual({
         error: {
-          message:
-            "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+          message: "Auto-recharge is only available for Pro or Team workspaces",
           code: "BAD_REQUEST",
         },
       });

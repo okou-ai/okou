@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.32.1"
+version = "0.32.2"
 edition.workspace = true
 
 [dependencies]
@@ -19,6 +19,9 @@ sha2.workspace = true
 hex = { workspace = true, features = ["alloc"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 guest-telemetry.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event", "fs", "std"] }
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }

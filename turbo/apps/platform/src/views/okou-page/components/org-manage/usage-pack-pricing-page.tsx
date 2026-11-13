@@ -149,7 +149,7 @@ function canCheckoutUsagePackPlan(
   currentTier: BillingTier,
   targetTier: UsagePackPlanTier,
 ): boolean {
-  if (!checkoutAllowed || currentTier === "custom") {
+  if (!checkoutAllowed) {
     return false;
   }
   if (currentTier === targetTier) {
@@ -165,9 +165,6 @@ function usagePackPlanAction(
   managedTier: UsagePackPlanTier | null,
   targetTier: UsagePackPlanTier,
 ): PlanSelectionAction {
-  if (currentTier === "custom") {
-    return "unavailable";
-  }
   if (managedTier === targetTier) {
     return "manage";
   }
@@ -3058,11 +3055,9 @@ function migrationPlanComparisonRows({
 
 function UsagePackMigrationPlanSelectionPage({
   configuration,
-  currentTier,
   onSelect,
 }: {
   readonly configuration: UsagePackMigrationConfiguration | null;
-  readonly currentTier: BillingTier;
   readonly onSelect: (tier: UsagePackPlanTier) => void;
 }) {
   const setMemberUsageSelections = useSet(setMemberUsageSelections$);
@@ -3072,9 +3067,6 @@ function UsagePackMigrationPlanSelectionPage({
   const resolveAction = (
     targetTier: UsagePackPlanTier,
   ): PlanSelectionAction => {
-    if (currentTier === "custom") {
-      return "unavailable";
-    }
     return configuration
       ? usagePackPlanAction(
           false,
@@ -3301,14 +3293,12 @@ function UsagePackMigrationPage({
 }
 
 export function UsagePackMigrationContent({
-  currentTier,
   migration,
   migrationOpen,
   migrationTargetTier,
   onBack,
   onSelect,
 }: {
-  readonly currentTier: BillingTier;
   readonly migration: UsagePackMigrationStateResponse;
   readonly migrationOpen: boolean;
   readonly migrationTargetTier: UsagePackPlanTier | null;
@@ -3370,7 +3360,6 @@ export function UsagePackMigrationContent({
       ) : (
         <UsagePackMigrationPlanSelectionPage
           configuration={migration.configuration ?? null}
-          currentTier={currentTier}
           onSelect={onSelect}
         />
       )}

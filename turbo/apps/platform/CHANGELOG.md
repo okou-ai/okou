@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1129.0](https://github.com/okou-ai/okou/compare/app-v0.1128.0...app-v0.1129.0) (2026-11-13)
+
+
+### Features
+
+* **app:** animate the home capability tray open, close and tab switches ([#47082](https://github.com/okou-ai/okou/issues/47082)) ([4ba0e24](https://github.com/okou-ai/okou/commit/4ba0e24b989f5a02b49caa0628e6839fce8037eb))
+* **app:** roll out the compact cloud browser header ([#47092](https://github.com/okou-ai/okou/issues/47092)) ([98ce97f](https://github.com/okou-ai/okou/commit/98ce97f96793753ad2276df83e96e8264d900d5c))
+
+
+### Bug Fixes
+
+* **app:** match project folding to the ios disclosure spring ([#47063](https://github.com/okou-ai/okou/issues/47063)) ([4e7eaaa](https://github.com/okou-ai/okou/commit/4e7eaaae0aca75c174cd62766c82d7e6ddfc7029))
+
+
+### Refactoring
+
+* **billing:** remove retired custom plan contracts ([#47020](https://github.com/okou-ai/okou/issues/47020)) ([84cfbb9](https://github.com/okou-ai/okou/commit/84cfbb9a93416818bc36ed5fa1645e1db3a31571))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.1
+    * @okouai/core bumped to 8.838.0
+    * @okouai/ui bumped to 1.21.15
+
 ## [0.1128.0](https://github.com/okou-ai/okou/compare/app-v0.1127.0...app-v0.1128.0) (2026-11-13)
 
 

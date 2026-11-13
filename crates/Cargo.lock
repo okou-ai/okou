@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.78"
+version = "0.109.79"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2087,7 +2087,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.187"
+version = "0.1.188"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.103"
+version = "0.24.104"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.174"
+version = "0.12.175"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.89"
+version = "0.20.90"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.32.1"
+version = "0.32.2"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2235,6 +2235,7 @@ dependencies = [
  "linux-mountinfo",
  "proptest",
  "roxmltree 0.21.2",
+ "rustix",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -4089,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.2"
+version = "0.249.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4163,7 +4164,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.27"
+version = "0.21.28"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4236,7 +4237,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.99"
+version = "0.17.100"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4446,7 +4447,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.10.19"
+version = "0.10.20"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4491,7 +4492,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.25.1"
+version = "0.25.2"
 dependencies = [
  "api-contracts",
  "async-trait",

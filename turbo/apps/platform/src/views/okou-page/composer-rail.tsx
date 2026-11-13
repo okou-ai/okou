@@ -57,10 +57,10 @@ const RAIL_TRACK = cn(
  * to, and a `var()` written into the token resolves against `:root`, where the
  * per-item value does not exist - the token would bake in its own fallback.
  */
-const RAIL_ITEM_ENTER = "motion-safe:animate-composer-rail-item-in";
+export const RAIL_ITEM_ENTER = "motion-safe:animate-composer-rail-item-in";
 const RAIL_ITEM_ENTER_STEP_MS = 28;
 const RAIL_ITEM_ENTER_CAP = 7;
-function railItemEnterDelay(index: number): string {
+export function railItemEnterDelay(index: number): string {
   return `${String(Math.min(index, RAIL_ITEM_ENTER_CAP) * RAIL_ITEM_ENTER_STEP_MS)}ms`;
 }
 /**
