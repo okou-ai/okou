@@ -72,6 +72,12 @@
             .accessibilityLabel("Email address")
           Toggle("Example preference", isOn: $enabled).tint(OkouColor.primary400)
         }
+        OkouCatalogSection("Message selection") {
+          HStack {
+            OkouSelectionButton(isSelected: false) {}.accessibilityLabel("Unselected message")
+            OkouSelectionButton(isSelected: true) {}.accessibilityLabel("Selected message")
+          }
+        }
         OkouCatalogSection("Value picker") {
           Picker("Thinking effort", selection: .constant("high")) {
             Text("Medium").tag("medium")

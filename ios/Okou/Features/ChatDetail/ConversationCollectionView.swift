@@ -5,6 +5,7 @@ import Textual
 /// Presentation revisions include every input that can change a row's measured size.
 enum ConversationCollectionRow: Equatable, Identifiable {
   case earlier
+  case share(ChatMessage, selected: Bool, topSpacing: CGFloat)
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false, showsActions: Bool = false)
@@ -21,6 +22,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var id: String {
     switch self {
+    case .share(let message, _, _): message.id
     case .earlier: "conversation-earlier"
     case .message(let message, _, _, _, _, _, _): message.id
     case .work(let section, _, _, _, _): section.id
@@ -34,12 +36,13 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var message: ChatMessage? {
     if case .message(let message, _, _, _, _, _, _) = self { return message }
     if case .failure(let message, _, _, _) = self { return message }
+    if case .share(let message, _, _) = self { return message }
     return nil
   }
 
   var isMessageContent: Bool {
     switch self {
-    case .message, .failure, .work: true
+    case .message, .failure, .work, .share: true
     case .earlier, .footer, .followups, .usage: false
     }
   }
@@ -47,7 +50,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var readingContentTopSpacing: CGFloat? {
     switch self {
     case .message(_, _, let spacing, _, _, _, _), .work(_, _, _, let spacing, _),
-      .failure(_, _, let spacing, _):
+      .failure(_, _, let spacing, _), .share(_, _, let spacing):
       spacing
     case .usage: 0
     case .earlier, .footer, .followups: nil

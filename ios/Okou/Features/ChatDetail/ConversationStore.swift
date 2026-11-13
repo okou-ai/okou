@@ -148,9 +148,42 @@ final class ConversationStore {
   private let sync: ChatSync
   private let readResources: ConversationReadResources
   private let commands: ChatCommands
+  private var quickShare: (id: UUID, task: Task<String, Error>)?
+  @ObservationIgnored lazy var sharing = ConversationSharing(
+    client: commands.approvalClient, threadID: thread.id, webURL: webURL,
+    lifecycleTasks: lifecycleTasks, didFail: didFail)
+  var sharingEnabled: Bool {
+    modelSelection?.models.configuration?.switches["chatSharingSelection"] == true
+  }
+
+  func startSharing(answerID: String? = nil) {
+    guard sharingEnabled, !closed else { return }
+    quickShare?.task.cancel()
+    composer.editor.dismissKeyboard()
+    sharing.start(answerID: answerID)
+  }
+
+  func cancelSharing() {
+    quickShare?.task.cancel()
+    sharing.cancel()
+  }
+
   /// Shares one answer together with the request that led to it, as the web does for a
   /// single message: the answer's event plus the user's prompts directly before its turn.
   func shareAnswer(_ messageID: String, audience: ChatShareAudience) async throws -> String {
+    if sharingEnabled {
+      quickShare?.task.cancel()
+      let id = UUID()
+      let task = Task { @MainActor [sharing] in
+        let link = try await sharing.singleAnswerLink(messageID, audience: audience)
+        try Task.checkCancellation()
+        return link.lastPathComponent
+      }
+      quickShare = (id, task)
+      lifecycleTasks.track(task)
+      defer { if quickShare?.id == id { quickShare = nil } }
+      return try await task.value
+    }
     guard let index = items.firstIndex(where: { $0.id == messageID }) else {
       throw ChatError.invalidContract("This message is no longer available.")
     }
@@ -762,6 +795,8 @@ final class ConversationStore {
   }
 
   func close() {
+    quickShare?.task.cancel()
+    sharing.close()
     closed = true
     streamStop?()
     streamStop = nil
