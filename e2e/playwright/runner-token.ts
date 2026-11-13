@@ -18,6 +18,7 @@ import {
 import { seedPreviewBypassCookie } from "./lib/preview-bypass";
 import { signInRunnerWithDiagnostics } from "./lib/runner-sign-in";
 import { fillStripeCheckout } from "./lib/stripe-checkout";
+import { observeStripeCheckout } from "./lib/stripe-checkout-observation";
 
 const RUNNER_CREDENTIAL_CONCURRENCY = 2;
 
@@ -213,6 +214,7 @@ async function preparePaidRunner(
     outputDirectory,
     vercelAutomationBypassSecret,
   } = options;
+  const checkoutObservation = await observeStripeCheckout(page);
   try {
     const memberId = await page.evaluate(() => window.Clerk?.user?.id);
     if (!memberId) {
@@ -226,7 +228,11 @@ async function preparePaidRunner(
       vercelAutomationBypassSecret,
     });
     await page.goto(checkoutUrl, { waitUntil: "domcontentloaded" });
-    await fillStripeCheckout(page);
+    const formLocation = await fillStripeCheckout(page);
+    console.log("Runner Checkout submit click returned", {
+      target: target.fileName,
+      formLocation,
+    });
     await page.waitForURL((url) => url.origin === new URL(appUrl).origin, {
       timeout: 180_000,
       waitUntil: "domcontentloaded",
@@ -264,6 +270,7 @@ async function preparePaidRunner(
         page,
         target.fileName,
         outputDirectory,
+        checkoutObservation.snapshot(),
       );
     } catch (diagnosticError: unknown) {
       console.error("Unable to capture paid onboarding diagnostics", {
@@ -275,6 +282,8 @@ async function preparePaidRunner(
       });
     }
     throw error;
+  } finally {
+    checkoutObservation.dispose();
   }
 }
 
