@@ -706,7 +706,7 @@ feature; the catalog shows each one.
   while dictating. On the home screen it is the next new chat's model; in a chat, that
   chat's. The composer presents the model sheet, and keeps itself open under it,
   so the sheet survives the keyboard going down and the keyboard comes back after it. The
-  composer's only leading control is `+`, which opens **Add to
+  composer's leading control is `+`, which opens **Add to
   chat** (`ComposerAddSheet`, after Manus and Claude): a sideways strip of 88 pt tiles —
   `OkouActionTile` Camera, then the latest photos as `OkouMediaThumbnail`s once the reader
   lets Okou see the library — where photos are picked with `OkouSelectionMark` (an open
@@ -716,6 +716,11 @@ feature; the catalog shows each one.
   uncertain) and Clear draft. A connector uncertainty badge stays on `+`; opening the
   sheet never enables service access. The camera, pickers and connectors open once the
   sheet has gone.
+- **A new chat's selected project sits beside `+` in the bottom toolbar**, as on Web,
+  rather than in a banner above the input. Its folder, single-line name and remove mark
+  form one 44 pt target. Long names truncate before the mic and send controls; VoiceOver
+  retains the full name. A selected project keeps the composer expanded when the keyboard
+  closes so its context stays visible without overlapping the editor.
 - **The model sheet** (`ChatModelPickerView`) follows ChatGPT's Configure sheet as a short
   form, the way Calendar's new event drills into Repeat and Alert:
   - the form: one card with Model (the drafted model's name, which opens the model list),
