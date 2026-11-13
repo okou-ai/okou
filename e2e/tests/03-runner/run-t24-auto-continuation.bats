@@ -60,7 +60,7 @@ assert_auto_route() {
     local successor_expected="${expected}_NEXT"
     run runner_chat_send_after_completion \
         "$AGENT_ID" "$THREAD_ID" "$RUN_ID" \
-        "Now reply with a different word: append _NEXT to your previous word." "$successor_expected" 180
+        "Append the literal suffix _NEXT to your entire previous assistant reply, keeping every original character unchanged. Reply with only the resulting string." "$successor_expected" 180
     assert_success
     successor_result="$output"
     successor_run_id="$(runner_chat_field "$successor_result" '.runId')"
