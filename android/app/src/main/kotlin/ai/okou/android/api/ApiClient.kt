@@ -12,7 +12,8 @@ import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
-import ai.okou.android.api.generated.Projects
+import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import java.io.Closeable
@@ -117,20 +118,12 @@ class ApiClient(
                             .build()
                     )
                 }
-                .addInterceptor { chain ->
-                    val response = chain.proceed(chain.request())
-                    if (response.isSuccessful) {
-                        response
-                            .newBuilder()
-                            .body(checkNotNull(response.body).bounded(MAX_API_RESPONSE_BYTES))
-                            .build()
-                    } else response
-                }
                 .build()
         api =
             Retrofit.Builder()
                 .baseUrl(origin)
                 .client(http)
+                .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
                 .create(CanonicalApi::class.java)
@@ -146,7 +139,9 @@ class ApiClient(
 
     suspend fun agents(): Agents = execute { api.agents(it) }
 
-    suspend fun projects(): Projects = execute { api.projects(it) }
+    suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
+
+    suspend fun projectEvents(since: Long): ProjectEvents = execute { api.projectEvents(it, since) }
 
     suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
 
@@ -184,7 +179,6 @@ class ApiClient(
             } catch (error: IOException) {
                 currentCoroutineContext().ensureActive()
                 error.httpRejection()?.let { reject(it) }
-                if (error is ResponseLimitExceeded) throw ApiFailure.IncompatibleResponse(error)
                 throw ApiFailure.Network(error)
             }
         }

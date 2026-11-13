@@ -120,9 +120,12 @@ Use Android's storage owners and choose the location by data lifetime. Structure
 server-confirmed chat data uses Room/SQLite, with Web's snapshot, event replay,
 cursor and consistency rules as its semantic reference. Keep one lazy database
 owner per application process; run IO off Main and commit related records in a
-transaction. Store snapshots as per-entity rows rather than one large archive row
-that can exceed Android's CursorWindow. Export Room schemas through its Gradle
-plugin. A disposable-cache rebuild policy must never cover user-authored drafts
+transaction. Store snapshots as per-entity rows so tail appends do not rewrite an
+entire archive. Use the AndroidX bundled SQLite driver to avoid CursorWindow's
+per-row limit. Native response decoding must not add data-size/count limits that
+reject legitimate canonical data Web can read; use streaming and cursor progress
+checks. Export Room schemas through its Gradle plugin. A disposable-cache rebuild
+policy must never cover user-authored drafts
 or other data that cannot be recovered from the server.
 
 Resolve paths through Context, never hard-code device paths. Keep offline cache

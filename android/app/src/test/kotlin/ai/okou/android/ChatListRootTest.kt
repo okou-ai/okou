@@ -138,6 +138,7 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
         compose.activityRule.scenario.recreate()
+        awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
         compose.onNodeWithText("No chats in this view.").assertExists()
     }

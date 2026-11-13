@@ -10,7 +10,6 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
-import ai.okou.android.api.generated.ProjectsProjectsItem
 import ai.okou.android.chatEventWire
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
@@ -138,7 +137,7 @@ class ChatReplayTest {
                 projectsEnabled = true,
                 projects =
                     listOf(
-                        ProjectsProjectsItem(
+                        ConfirmedProject(
                             CHAT_PROJECT,
                             "Research",
                             "2026-11-13T00:00:00Z",

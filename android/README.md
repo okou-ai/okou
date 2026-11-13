@@ -25,20 +25,27 @@ for public staging overrides, provider setup and verification boundaries. Chat
 Send, push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
-Confirmed chat navigation follows Web's snapshot/event-log model using an
+Confirmed chat and Project navigation follows Web's snapshot/event-log model using an
 application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, excluded
-from backups. Snapshots are stored per thread, and confirmed tail events append
-through transactions with their synchronization position and reference metadata.
+from backups. AndroidX's bundled SQLite driver avoids CursorWindow's single-row
+limit. Chat threads and Projects have independent snapshots, event tails and
+cursors. Snapshots are stored per entity, and confirmed tail events append through
+transactions with their synchronization position. Network lists await persistence
+and readback before publication; a storage failure leaves the network result usable
+with a visible cache warning.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 Agent/Project references keep the scoped list usable after a process restart while
 their network reads are unavailable. Cache display precedes network catch-up;
-tails over 100 events attempt a server-snapshot rebase after catch-up, with optional
-rebase server failures preserving the synchronized result, as on Web.
-There is no fixed per-scope disk budget or scope-count eviction policy. Network
-downloads and individual synchronization work retain separate resource limits.
-Cache/storage failure is visible, and successfully loaded network content remains
-usable. The versioned database contains only rebuildable server-confirmed data;
+chat tails over 100 events attempt a server-snapshot rebase after catch-up, with
+optional rebase server failures preserving the synchronized result, as on Web.
+Project tails retain their event identities. A zero cursor refreshes the snapshot;
+an expired cursor rebuilds from the server and resumes catch-up. A freshly loaded
+snapshot that immediately expires or a page that makes no progress fails the read.
+There are no fixed response-byte, row-count, page-count or per-scope disk limits.
+JSON decoding and Room work run off Main; canonical responses and signed archives
+are decoded from streams without a full response byte-array/String copy.
+The versioned database contains only rebuildable server-confirmed data;
 unsupported local schemas may be recreated, never migrated together with drafts
 or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
 integration. A saved list and the last status refresh do not establish current
@@ -355,7 +362,8 @@ unrepresented values still fail generation. This is a typed reader boundary,
 not a second implementation of Zod's complete validation/transform runtime.
 
 Retrofit query support is limited to canonical scalar fields; omitted optional
-values stay absent from the URL. Query defaults/compositions, path parameters and
+values stay absent from the URL. Server-defaulted scalars use explicit arguments.
+Query compositions, path parameters and
 non-200 success binding support require a future actual consumer before expansion.
 
 Regenerate from the repository root with the Turbo workspace dependencies installed:
@@ -414,8 +422,9 @@ reads after authorization. Native UI renders while responses remain pending;
 protected data/actions stay behind their actual prerequisites.
 
 The client returns typed HTTP/network/incompatible-response failures, propagates
-coroutine cancellation, limits success bodies to 1 MiB and error envelopes to
-64 KiB after gzip decompression, and closes responses. Error status remains
+coroutine cancellation, streams successful JSON responses without an application
+size cutoff, limits error envelopes to 64 KiB after gzip decompression, and closes
+responses. Error status remains
 available when its envelope is malformed/oversized. Unknown fields permit additive
 responses; required nullable fields and enum values retain the generated reader's contract.
 JSON field types follow Kotlin serialization semantics rather than recreating
@@ -450,8 +459,9 @@ failures, including `503 Retry-After: 0`. A lost response is not remote rollback
 operation owners decide retry/readback. `SignedTransferClient` owns a separate
 HTTP client without the token provider, cookies or API/client headers. It accepts
 signed HTTPS download/upload URLs, rejects credential-header injection and
-redirects, and requires a download byte limit. Large file/streaming/resume owners
-should add their own bounded file APIs with the actual feature.
+redirects, and supports both explicit-limit byte downloads and stream consumers.
+The chat/Project archive readers use streaming JSON. File/resume owners should add
+their own file APIs with the actual feature.
 
 Release network policy requires HTTPS. Debug permits cleartext only for
 `localhost`, `127.0.0.1` and `::1`, for local transport fixtures/development.

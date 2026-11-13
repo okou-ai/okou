@@ -18,9 +18,6 @@ import kotlinx.serialization.Serializable
 
 typealias ConfirmedChat = ChatArchiveChatThreadsItem
 
-internal const val MAX_CHAT_THREADS = 10_000
-internal const val MAX_CHAT_EVENTS = 10_000
-
 internal fun requireChatWire(valid: Boolean) {
     if (!valid) throw ApiFailure.IncompatibleResponse()
 }
@@ -43,9 +40,6 @@ data class ChatCheckpoint(
     fun validate() {
         snapshotCursor.validate()
         cursor.validate()
-        requireChatWire(
-            archive.chatThreads.size <= MAX_CHAT_THREADS && events.size <= MAX_CHAT_EVENTS
-        )
         val threads = HashSet<String>()
         archive.chatThreads.forEach { row ->
             requireChatId(row.id)
@@ -277,7 +271,6 @@ fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
         rows[id] = updated.copy(updatedAt = event.createdAt)
     }
     checkpoint.events.forEach(::apply)
-    requireChatWire(rows.size <= MAX_CHAT_THREADS)
     val ranks =
         rows.values
             .filter { it.pinnedAt != null }

@@ -43,8 +43,14 @@ internal interface CanonicalApi {
     @GET("/api/agents")
     suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
 
-    @GET("/api/projects")
-    suspend fun `projects`(@Header("Authorization") token: String): Response<Projects>
+    @GET("/api/projects/snapshot")
+    suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
+
+    @GET("/api/projects/events")
+    suspend fun `projectEvents`(
+        @Header("Authorization") token: String,
+        @Query("sinceSeqId") `querySinceSeqId`: Long,
+    ): Response<ProjectEvents>
 
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>

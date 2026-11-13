@@ -124,7 +124,8 @@ private fun ChatListScreen(
                     )
                     ChatAction(R.string.retry, retryList)
                 }
-            if (state.cacheUnavailable) item { ChatNotice(R.string.chat_cache_unavailable) }
+            if (state.cacheUnavailable || state.projectCacheUnavailable)
+                item { ChatNotice(R.string.chat_cache_unavailable) }
             if (metadataPending) item { ChatNotice(R.string.chat_metadata_loading) }
             if (
                 state.agentsSource == ChatListSource.Cache ||

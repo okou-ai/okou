@@ -64,10 +64,14 @@ class ChatListApiFixture : Closeable {
     @Volatile
     var projects: () -> MockResponse = {
         jsonResponse(
-            """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}]}"""
+            """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
         )
     }
     @Volatile var archive: () -> MockResponse = { jsonResponse("""{"chatThreads":[]}""") }
+    @Volatile
+    var projectEvents: (RecordedRequest) -> MockResponse = {
+        jsonResponse("""{"events":[],"hasMore":false}""")
+    }
     val identity: WorkspaceIdentity
     val service: CanonicalWorkspaceSession
 
@@ -82,7 +86,8 @@ class ChatListApiFixture : Closeable {
                         "/api/chat-threads/events" -> events(request)
                         "/api/indicators" -> indicators()
                         "/api/agents" -> agents()
-                        "/api/projects" -> projects()
+                        "/api/projects/snapshot" -> projects()
+                        "/api/projects/events" -> projectEvents(request)
                         "/archive" -> archive()
                         else -> MockResponse().setResponseCode(404)
                     }

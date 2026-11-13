@@ -20,7 +20,6 @@ internal data class ChatScopeRecord(
     val snapshotEventId: String?,
     val snapshotSeqId: Long,
     val hasAgents: Boolean,
-    val hasProjects: Boolean,
     val projectsEnabled: Boolean,
 )
 
@@ -85,13 +84,22 @@ internal data class ChatAgentRecord(
     val payload: String,
 )
 
+@Entity(tableName = "project_scopes")
+internal data class ProjectScopeRecord(
+    @PrimaryKey val scope: String,
+    val authorization: String,
+    val confirmedAt: Long,
+    val snapshotEventId: String?,
+    val snapshotSeqId: Long,
+)
+
 @Entity(
-    tableName = "chat_projects",
+    tableName = "project_snapshot",
     primaryKeys = ["scope", "id"],
     foreignKeys =
         [
             ForeignKey(
-                entity = ChatScopeRecord::class,
+                entity = ProjectScopeRecord::class,
                 parentColumns = ["scope"],
                 childColumns = ["scope"],
                 onDelete = ForeignKey.CASCADE,
@@ -102,6 +110,27 @@ internal data class ChatProjectRecord(
     val scope: String,
     val id: String,
     val position: Int,
+    val payload: String,
+)
+
+@Entity(
+    tableName = "project_events",
+    primaryKeys = ["scope", "id"],
+    indices = [Index(value = ["scope", "seqId"], unique = true)],
+    foreignKeys =
+        [
+            ForeignKey(
+                entity = ProjectScopeRecord::class,
+                parentColumns = ["scope"],
+                childColumns = ["scope"],
+                onDelete = ForeignKey.CASCADE,
+            )
+        ],
+)
+internal data class ProjectEventRecord(
+    val scope: String,
+    val id: String,
+    val seqId: Long,
     val payload: String,
 )
 
@@ -140,13 +169,32 @@ internal interface ChatCacheDao {
 
     @Insert suspend fun putAgents(values: List<ChatAgentRecord>)
 
-    @Query("SELECT * FROM chat_projects WHERE scope = :scope ORDER BY position")
+    @Query("SELECT * FROM project_snapshot WHERE scope = :scope ORDER BY position")
     suspend fun projects(scope: String): List<ChatProjectRecord>
 
-    @Query("DELETE FROM chat_projects WHERE scope = :scope")
+    @Query("DELETE FROM project_snapshot WHERE scope = :scope")
     suspend fun clearProjects(scope: String)
 
     @Insert suspend fun putProjects(values: List<ChatProjectRecord>)
+
+    @Query("SELECT * FROM project_scopes WHERE scope = :scope")
+    suspend fun projectScope(scope: String): ProjectScopeRecord?
+
+    @Upsert suspend fun putProjectScope(value: ProjectScopeRecord)
+
+    @Query("DELETE FROM project_scopes WHERE scope = :scope")
+    suspend fun deleteProjectScope(scope: String)
+
+    @Query("SELECT * FROM project_events WHERE scope = :scope ORDER BY seqId")
+    suspend fun projectEvents(scope: String): List<ProjectEventRecord>
+
+    @Query("SELECT MAX(seqId) FROM project_events WHERE scope = :scope")
+    suspend fun lastProjectSeqId(scope: String): Long?
+
+    @Query("DELETE FROM project_events WHERE scope = :scope")
+    suspend fun clearProjectEvents(scope: String)
+
+    @Insert suspend fun putProjectEvents(values: List<ProjectEventRecord>)
 }
 
 @Database(
@@ -157,6 +205,8 @@ internal interface ChatCacheDao {
             ChatEventRecord::class,
             ChatAgentRecord::class,
             ChatProjectRecord::class,
+            ProjectScopeRecord::class,
+            ProjectEventRecord::class,
         ],
     version = 1,
     exportSchema = true,

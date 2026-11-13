@@ -10,7 +10,8 @@ import ai.okou.android.api.generated.AgentsItem
 import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
-import ai.okou.android.api.generated.ProjectsProjectsItem
+import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -19,7 +20,7 @@ import androidx.room.Room
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
-import androidx.sqlite.driver.AndroidSQLiteDriver
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
@@ -80,9 +81,58 @@ class ChatCacheStoreTest {
                         AgentsItemVisibility.PRIVATE,
                     )
                 ),
-            projects = listOf(ProjectsProjectsItem(CHAT_PROJECT, "Research", CHAT_DATE, CHAT_DATE)),
             projectsEnabled = true,
         )
+
+    @Test
+    fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {
+        val root = temporary.newFolder()
+        val store = cache(root)
+        val snapshot =
+            ProjectCheckpoint(
+                ProjectArchive(
+                    listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
+                    null,
+                    0,
+                )
+            )
+        val renamed =
+            snapshot.copy(
+                events =
+                    json
+                        .decodeFromString<ProjectEvents>(
+                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                        )
+                        .events
+            )
+        store
+            .open(identity) { true }
+            .use {
+                it.saveProjects(snapshot, 1234)
+                it.saveProjects(renamed, 2345)
+                it.saveProjects(snapshot, 1234)
+                assertNull(it.load())
+            }
+        store.close()
+        cache(root)
+            .open(identity.copy(sessionId = "renewed")) { true }
+            .use {
+                val saved = checkNotNull(it.loadProjects())
+                assertEquals(renamed, saved.checkpoint)
+                assertEquals(2345L, saved.confirmedAt)
+                assertEquals("After", replayProjects(saved.checkpoint).single().name)
+            }
+        store
+            .open(identity.copy(workspaceId = "other")) { true }
+            .use { assertNull(it.loadProjects()) }
+        store
+            .open(identity.copy(authorizationScope = "restricted")) { true }
+            .use {
+                assertTrue(runCatching { it.loadProjects() }.exceptionOrNull() is IOException)
+                it.saveProjects(snapshot, 3456)
+                assertEquals(snapshot, checkNotNull(it.loadProjects()).checkpoint)
+            }
+    }
 
     @Test
     fun fullTailCursorAndReferencesReopenTogetherAndRetainDeferredProjectMembership() = runTest {
@@ -256,7 +306,7 @@ class ChatCacheStoreTest {
         val entered = CompletableDeferred<Unit>()
         val release = CountDownLatch(1)
         val holdInsert = AtomicBoolean(false)
-        val native = AndroidSQLiteDriver()
+        val native = BundledSQLiteDriver()
         val driver =
             object : SQLiteDriver by native {
                 override fun open(fileName: String): SQLiteConnection {
@@ -366,7 +416,7 @@ class ChatCacheStoreTest {
     }
 
     @Test
-    fun largeSnapshotSpansCursorWindowsAndScopesRemainIndependent() = runTest {
+    fun largeSnapshotAndLargeIndividualRowsReopenWithoutDroppingOtherScopes() = runTest {
         val root = temporary.newFolder()
         val store = cache(root)
         val row = replayChats(checkpoint()).single()
@@ -374,7 +424,7 @@ class ChatCacheStoreTest {
             (1..300).map {
                 row.copy(
                     id = "${it.toString().padStart(8, '0')}-0000-4000-8000-000000000000",
-                    title = "Title $it " + "x".repeat(12_000),
+                    title = "Title $it " + "x".repeat(if (it == 1) 3 * 1024 * 1024 else 12_000),
                 )
             }
         val snapshot = ChatCheckpoint(ChatArchive(rows), ChatCursor(), emptyList(), ChatCursor())

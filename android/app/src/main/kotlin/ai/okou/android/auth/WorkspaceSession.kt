@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.chat.ChatListService
@@ -17,12 +18,12 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-
-private const val MAX_CHAT_SNAPSHOT_BYTES = 8L * 1024 * 1024
 
 data class WorkspaceIdentity(
     val apiOrigin: String,
@@ -67,18 +68,22 @@ class CanonicalWorkspaceSession(
 
     override suspend fun agents() = api.agents()
 
-    override suspend fun projects() = api.projects()
+    override suspend fun projectSnapshot() = api.projectSnapshot()
+
+    override suspend fun projectEvents(since: Long) = api.projectEvents(since)
 
     override suspend fun featureSwitches() = api.featureSwitches()
 
-    override suspend fun chatArchive(url: String): ChatArchive =
+    override suspend fun chatArchive(url: String): ChatArchive = archive(url)
+
+    override suspend fun projectArchive(url: String): ProjectArchive = archive(url)
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend inline fun <reified T> archive(url: String): T =
         withContext(Dispatchers.IO) {
             val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
             try {
-                val bytes = transfers.download(address, MAX_CHAT_SNAPSHOT_BYTES)
-                archiveJson.decodeFromString<ChatArchive>(
-                    bytes.decodeToString(throwOnInvalidSequence = true)
-                )
+                transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
             } catch (error: ApiFailure.Http) {
                 throw ChatSnapshotUnavailable(error.status)
             } catch (_: SerializationException) {

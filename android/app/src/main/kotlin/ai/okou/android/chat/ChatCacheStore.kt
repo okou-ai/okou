@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEventsEventsItem
+import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
 import android.content.Context
 import androidx.room.Room
@@ -9,7 +11,7 @@ import androidx.room.deferredTransaction
 import androidx.room.immediateTransaction
 import androidx.room.useReaderConnection
 import androidx.room.useWriterConnection
-import androidx.sqlite.driver.AndroidSQLiteDriver
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -36,6 +38,8 @@ data class CachedChats(
     val confirmedAt: Long,
     val navigation: CachedChatNavigation,
 )
+
+data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
 
 /** One application-owned Room database. Leases fence consumers, not database lifetime. */
 class ChatCacheStore
@@ -96,6 +100,7 @@ internal constructor(
     ) : AutoCloseable {
         @Volatile internal var retired = false
         private var rebuild = false
+        private var rebuildProjects = false
 
         private fun current() = !retired && active.get() === this && authorized()
 
@@ -142,12 +147,6 @@ internal constructor(
                                                     json.decodeFromString(it.payload)
                                                 }
                                             else null,
-                                        projects =
-                                            if (scope.hasProjects)
-                                                dao.projects(key).map {
-                                                    json.decodeFromString(it.payload)
-                                                }
-                                            else null,
                                         projectsEnabled = scope.projectsEnabled,
                                     )
                                 checkpoint.validate()
@@ -166,6 +165,48 @@ internal constructor(
                 }
             }
 
+        suspend fun loadProjects(): CachedProjects? =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock null
+                    try {
+                        database().useReaderConnection { connection ->
+                            connection.deferredTransaction {
+                                val dao = database().chats()
+                                val scope = dao.projectScope(key) ?: return@deferredTransaction null
+                                if (scope.authorization != authorization)
+                                    throw IOException("Project cache authorization changed")
+                                val checkpoint =
+                                    ProjectCheckpoint(
+                                        ProjectArchive(
+                                            dao.projects(key).map {
+                                                json.decodeFromString<ConfirmedProject>(it.payload)
+                                            },
+                                            scope.snapshotEventId,
+                                            scope.snapshotSeqId,
+                                        ),
+                                        dao.projectEvents(key).map {
+                                            json.decodeFromString<ProjectEventsEventsItem>(
+                                                it.payload
+                                            )
+                                        },
+                                    )
+                                replayProjects(checkpoint)
+                                currentCoroutineContext().ensureActive()
+                                checkCurrent()
+                                CachedProjects(checkpoint, scope.confirmedAt)
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        rebuildProjects = true
+                        throw error
+                    }
+                }
+            }
+
         suspend fun save(
             checkpoint: ChatCheckpoint,
             confirmedAt: Long,
@@ -175,125 +216,148 @@ internal constructor(
                 checkpoint.validate()
                 navigation.validate()
                 require(confirmedAt > 0)
-                lock.withLock {
-                    checkCurrent()
-                    val db = database()
-                    val caller = currentCoroutineContext()
-                    var writing = false
-                    var committed = false
-                    // Observe physical commit before leaving this mutex. Check the caller at
-                    // transaction boundaries so cancellation rolls back instead of losing a
-                    // receipt.
-                    withContext(NonCancellable) {
-                        try {
-                            db.useWriterConnection { connection ->
-                                connection.immediateTransaction {
-                                    caller.ensureActive()
-                                    checkCurrent()
-                                    val dao = db.chats()
-                                    val stored = dao.scope(key)
-                                    val sameAuthorization = stored?.authorization == authorization
-                                    val lastSeqId =
-                                        if (sameAuthorization) {
-                                            dao.lastSeqId(key) ?: checkNotNull(stored).snapshotSeqId
-                                        } else 0
-                                    // Like Web's transaction: a slower sync cannot replace a newer
-                                    // tail.
-                                    if (
-                                        sameAuthorization &&
-                                            !rebuild &&
-                                            lastSeqId > checkpoint.cursor.seqId
-                                    )
-                                        return@immediateTransaction
-                                    writing = true
-                                    val replacement =
-                                        rebuild ||
-                                            !sameAuthorization ||
-                                            stored.snapshotEventId !=
-                                                checkpoint.snapshotCursor.eventId ||
-                                            stored.snapshotSeqId != checkpoint.snapshotCursor.seqId
-                                    dao.putScope(
-                                        ChatScopeRecord(
-                                            key,
-                                            authorization,
-                                            confirmedAt,
-                                            checkpoint.snapshotCursor.eventId,
-                                            checkpoint.snapshotCursor.seqId,
-                                            navigation.agents != null,
-                                            navigation.projects != null,
-                                            navigation.projectsEnabled,
-                                        )
-                                    )
-                                    if (replacement) {
-                                        dao.clearEvents(key)
-                                        dao.clearSnapshot(key)
-                                        dao.putSnapshot(
-                                            checkpoint.archive.chatThreads.mapIndexed {
-                                                position,
-                                                row ->
-                                                ChatSnapshotRecord(
-                                                    key,
-                                                    row.id,
-                                                    position,
-                                                    json.encodeToString(row),
-                                                )
-                                            }
-                                        )
-                                    }
-                                    dao.putEvents(
-                                        checkpoint.events
-                                            .filter { replacement || it.cursor().seqId > lastSeqId }
-                                            .map {
-                                                val cursor = it.cursor()
-                                                ChatEventRecord(
-                                                    key,
-                                                    checkNotNull(cursor.eventId),
-                                                    cursor.seqId,
-                                                    json.encodeToString(it),
-                                                )
-                                            }
-                                    )
-                                    dao.clearAgents(key)
-                                    dao.putAgents(
-                                        navigation.agents.orEmpty().mapIndexed { position, row ->
-                                            ChatAgentRecord(
-                                                key,
-                                                row.agentId,
-                                                position,
-                                                json.encodeToString(row),
-                                            )
-                                        }
-                                    )
-                                    dao.clearProjects(key)
-                                    dao.putProjects(
-                                        navigation.projects.orEmpty().mapIndexed { position, row ->
-                                            ChatProjectRecord(
-                                                key,
-                                                row.id,
-                                                position,
-                                                json.encodeToString(row),
-                                            )
-                                        }
-                                    )
-                                    caller.ensureActive()
-                                    checkCurrent()
-                                }
+                persist(clear = { it.deleteScope(key) }, saved = { rebuild = false }) { dao ->
+                    val stored = dao.scope(key)
+                    val sameAuthorization = stored?.authorization == authorization
+                    val lastSeqId =
+                        if (sameAuthorization)
+                            dao.lastSeqId(key) ?: checkNotNull(stored).snapshotSeqId
+                        else 0
+                    if (sameAuthorization && !rebuild && lastSeqId > checkpoint.cursor.seqId)
+                        return@persist false
+                    val replacement =
+                        rebuild ||
+                            !sameAuthorization ||
+                            stored.snapshotEventId != checkpoint.snapshotCursor.eventId ||
+                            stored.snapshotSeqId != checkpoint.snapshotCursor.seqId
+                    dao.putScope(
+                        ChatScopeRecord(
+                            key,
+                            authorization,
+                            confirmedAt,
+                            checkpoint.snapshotCursor.eventId,
+                            checkpoint.snapshotCursor.seqId,
+                            navigation.agents != null,
+                            navigation.projectsEnabled,
+                        )
+                    )
+                    if (replacement) {
+                        dao.clearEvents(key)
+                        dao.clearSnapshot(key)
+                        dao.putSnapshot(
+                            checkpoint.archive.chatThreads.mapIndexed { position, row ->
+                                ChatSnapshotRecord(key, row.id, position, json.encodeToString(row))
                             }
-                            committed = true
-                            rebuild = false
-                        } finally {
-                            // A commit may finish just as its owner retires. Clean up before a new
-                            // lease can read it, even when coroutine cancellation accompanied
-                            // retirement.
-                            if (writing && committed && !current()) {
-                                db.chats().deleteScope(key)
-                            }
-                        }
+                        )
                     }
-                    currentCoroutineContext().ensureActive()
-                    checkCurrent()
+                    dao.putEvents(
+                        checkpoint.events
+                            .filter { replacement || it.cursor().seqId > lastSeqId }
+                            .map {
+                                val cursor = it.cursor()
+                                ChatEventRecord(
+                                    key,
+                                    checkNotNull(cursor.eventId),
+                                    cursor.seqId,
+                                    json.encodeToString(it),
+                                )
+                            }
+                    )
+                    dao.clearAgents(key)
+                    dao.putAgents(
+                        navigation.agents.orEmpty().mapIndexed { position, row ->
+                            ChatAgentRecord(key, row.agentId, position, json.encodeToString(row))
+                        }
+                    )
+                    true
                 }
             }
+
+        suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long) =
+            withContext(dispatcher) {
+                checkpoint.validate()
+                require(confirmedAt > 0)
+                persist(
+                    clear = { it.deleteProjectScope(key) },
+                    saved = { rebuildProjects = false },
+                ) { dao ->
+                    val stored = dao.projectScope(key)
+                    val sameAuthorization = stored?.authorization == authorization
+                    val lastSeqId =
+                        if (sameAuthorization)
+                            dao.lastProjectSeqId(key) ?: checkNotNull(stored).snapshotSeqId
+                        else 0
+                    if (
+                        sameAuthorization && !rebuildProjects && lastSeqId > checkpoint.cursor.seqId
+                    )
+                        return@persist false
+                    val replacement =
+                        rebuildProjects ||
+                            !sameAuthorization ||
+                            stored.snapshotEventId != checkpoint.snapshotCursor.eventId ||
+                            stored.snapshotSeqId != checkpoint.snapshotCursor.seqId
+                    dao.putProjectScope(
+                        ProjectScopeRecord(
+                            key,
+                            authorization,
+                            confirmedAt,
+                            checkpoint.snapshotCursor.eventId,
+                            checkpoint.snapshotCursor.seqId,
+                        )
+                    )
+                    if (replacement) {
+                        dao.clearProjectEvents(key)
+                        dao.clearProjects(key)
+                        dao.putProjects(
+                            checkpoint.archive.projects.mapIndexed { position, row ->
+                                ChatProjectRecord(key, row.id, position, json.encodeToString(row))
+                            }
+                        )
+                    }
+                    dao.putProjectEvents(
+                        checkpoint.events
+                            .filter { replacement || it.seqId > lastSeqId }
+                            .map {
+                                ProjectEventRecord(key, it.id, it.seqId, json.encodeToString(it))
+                            }
+                    )
+                    true
+                }
+            }
+
+        /** Both datasets observe physical commit/rollback before a replacement lease can read. */
+        private suspend fun persist(
+            clear: suspend (ChatCacheDao) -> Unit,
+            saved: () -> Unit,
+            write: suspend (ChatCacheDao) -> Boolean,
+        ) {
+            lock.withLock {
+                checkCurrent()
+                val db = database()
+                val caller = currentCoroutineContext()
+                var writing = false
+                var committed = false
+                withContext(NonCancellable) {
+                    try {
+                        db.useWriterConnection { connection ->
+                            connection.immediateTransaction {
+                                caller.ensureActive()
+                                checkCurrent()
+                                writing = write(db.chats())
+                                caller.ensureActive()
+                                checkCurrent()
+                            }
+                        }
+                        committed = true
+                        saved()
+                    } finally {
+                        if (writing && committed && !current()) clear(db.chats())
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                checkCurrent()
+            }
+        }
 
         override fun close() {
             retired = true
@@ -307,7 +371,8 @@ private fun chatDatabaseFactory(
     dispatcher: CoroutineDispatcher,
 ): (File) -> ChatCacheDatabase = { file ->
     Room.databaseBuilder(application, ChatCacheDatabase::class.java, file.absolutePath)
-        .setDriver(AndroidSQLiteDriver())
+        // Native statements avoid CursorWindow's per-row limit for canonical metadata.
+        .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(dispatcher)
         // Only rebuildable server data belongs here, never drafts or credentials.
         .fallbackToDestructiveMigration(dropAllTables = true)

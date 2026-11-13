@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "1689fe6d7495fd2a72a06a5be5deeb9b",
+    "identityHash": "5df948c95c629592e88b02c1d78529d4",
     "entities": [
       {
         "tableName": "chat_scopes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `authorization` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `snapshotEventId` TEXT, `snapshotSeqId` INTEGER NOT NULL, `hasAgents` INTEGER NOT NULL, `hasProjects` INTEGER NOT NULL, `projectsEnabled` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `authorization` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `snapshotEventId` TEXT, `snapshotSeqId` INTEGER NOT NULL, `hasAgents` INTEGER NOT NULL, `projectsEnabled` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
         "fields": [
           {
             "fieldPath": "scope",
@@ -44,12 +44,6 @@
             "notNull": true
           },
           {
-            "fieldPath": "hasProjects",
-            "columnName": "hasProjects",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
             "fieldPath": "projectsEnabled",
             "columnName": "projectsEnabled",
             "affinity": "INTEGER",
@@ -58,7 +52,9 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": ["scope"]
+          "columnNames": [
+            "scope"
+          ]
         }
       },
       {
@@ -92,15 +88,22 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": ["scope", "id"]
+          "columnNames": [
+            "scope",
+            "id"
+          ]
         },
         "foreignKeys": [
           {
             "table": "chat_scopes",
             "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
-            "columns": ["scope"],
-            "referencedColumns": ["scope"]
+            "columns": [
+              "scope"
+            ],
+            "referencedColumns": [
+              "scope"
+            ]
           }
         ]
       },
@@ -135,13 +138,19 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": ["scope", "id"]
+          "columnNames": [
+            "scope",
+            "id"
+          ]
         },
         "indices": [
           {
             "name": "index_chat_thread_events_scope_seqId",
             "unique": true,
-            "columnNames": ["scope", "seqId"],
+            "columnNames": [
+              "scope",
+              "seqId"
+            ],
             "orders": [],
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_thread_events_scope_seqId` ON `${TABLE_NAME}` (`scope`, `seqId`)"
           }
@@ -151,8 +160,12 @@
             "table": "chat_scopes",
             "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
-            "columns": ["scope"],
-            "referencedColumns": ["scope"]
+            "columns": [
+              "scope"
+            ],
+            "referencedColumns": [
+              "scope"
+            ]
           }
         ]
       },
@@ -187,21 +200,28 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": ["scope", "id"]
+          "columnNames": [
+            "scope",
+            "id"
+          ]
         },
         "foreignKeys": [
           {
             "table": "chat_scopes",
             "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
-            "columns": ["scope"],
-            "referencedColumns": ["scope"]
+            "columns": [
+              "scope"
+            ],
+            "referencedColumns": [
+              "scope"
+            ]
           }
         ]
       },
       {
-        "tableName": "chat_projects",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `chat_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "tableName": "project_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `project_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "scope",
@@ -230,22 +250,132 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": ["scope", "id"]
+          "columnNames": [
+            "scope",
+            "id"
+          ]
         },
         "foreignKeys": [
           {
-            "table": "chat_scopes",
+            "table": "project_scopes",
             "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
-            "columns": ["scope"],
-            "referencedColumns": ["scope"]
+            "columns": [
+              "scope"
+            ],
+            "referencedColumns": [
+              "scope"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "project_scopes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `authorization` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `snapshotEventId` TEXT, `snapshotSeqId` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authorization",
+            "columnName": "authorization",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAt",
+            "columnName": "confirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotEventId",
+            "columnName": "snapshotEventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "snapshotSeqId",
+            "columnName": "snapshotSeqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "scope"
+          ]
+        }
+      },
+      {
+        "tableName": "project_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `seqId` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `project_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seqId",
+            "columnName": "seqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "scope",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_project_events_scope_seqId",
+            "unique": true,
+            "columnNames": [
+              "scope",
+              "seqId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_project_events_scope_seqId` ON `${TABLE_NAME}` (`scope`, `seqId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "project_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "scope"
+            ],
+            "referencedColumns": [
+              "scope"
+            ]
           }
         ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1689fe6d7495fd2a72a06a5be5deeb9b')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5df948c95c629592e88b02c1d78529d4')"
     ]
   }
 }

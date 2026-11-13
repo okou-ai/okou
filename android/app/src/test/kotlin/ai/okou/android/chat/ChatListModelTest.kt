@@ -13,7 +13,6 @@ import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
-import ai.okou.android.api.generated.Projects
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -25,6 +24,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -88,7 +88,6 @@ class ChatListModelTest {
                 )
             )
         }
-        var projectRead: suspend () -> Projects = { Projects(emptyList()) }
         var listRead: suspend () -> ChatEvents = { page() }
         var statusRead: suspend () -> Indicators = {
             Indicators(
@@ -108,8 +107,6 @@ class ChatListModelTest {
         override suspend fun chatEvents(since: Long?) = listRead()
 
         override suspend fun agents() = agentRead()
-
-        override suspend fun projects() = projectRead()
 
         override suspend fun indicators() = statusRead()
     }
@@ -293,6 +290,64 @@ class ChatListModelTest {
         } finally {
             gate.complete(page())
             store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun networkListBecomesVisibleOnlyAfterTheDiskWriteAndReadbackComplete() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder())
+        val store = ViewModelStore()
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val holdWrite = AtomicBoolean(false)
+        var owner: Job? = null
+        try {
+            val service = Service().apply { listRead = { page().also { holdWrite.set(true) } } }
+            val authorized = {
+                if (
+                    Thread.currentThread().name.startsWith("DefaultDispatcher") &&
+                        holdWrite.compareAndSet(true, false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+                true
+            }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, authorized, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            owner = model.viewModelScope.coroutineContext[Job]
+            model.refreshList()
+            entered.await()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertNull(model.uiState.value.source)
+            assertTrue(model.uiState.value.threads.isEmpty())
+            release.countDown()
+            val published = model.uiState.first { it.listPhase == ChatReadPhase.Ready }
+            assertEquals(ChatListSource.Network, published.source)
+            assertEquals("Personal chat", published.threads.single().title)
+            store.clear()
+            owner?.join()
+            cache
+                .open(identity) { true }
+                .use {
+                    assertEquals(published.confirmedAt, it.load()?.confirmedAt)
+                    assertEquals(published.threads, replayChats(checkNotNull(it.load()).checkpoint))
+                }
+        } finally {
+            release.countDown()
+            store.clear()
+            owner?.join()
             runCurrent()
             Dispatchers.resetMain()
         }

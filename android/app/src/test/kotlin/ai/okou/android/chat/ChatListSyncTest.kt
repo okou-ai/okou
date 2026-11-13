@@ -241,4 +241,82 @@ class ChatListSyncTest {
             assertTrue(error is ApiFailure.Http && error.status == 401)
         }
     }
+
+    @Test
+    fun emptyCachedCursorReloadsCompactedSnapshotBeyondFormerSizeAndRowCutoffs() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val row =
+                Json.decodeFromString<ChatArchive>(
+                        """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","title":"Saved","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                    )
+                    .chatThreads
+                    .single()
+            val rows =
+                (1..10_001).map {
+                    row.copy(id = eventId(it), title = "Title $it " + "x".repeat(900))
+                }
+            fixture.snapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                )
+            }
+            fixture.archive = { jsonResponse(Json.encodeToString(ChatArchive(rows))) }
+            fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
+            val empty =
+                ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), emptyList(), ChatCursor())
+            val confirmed = ChatListSync(fixture.service).synchronize(empty)
+            assertEquals(10_001, replayChats(confirmed).size)
+            assertEquals(rows.last().title, confirmed.archive.chatThreads.last().title)
+            assertEquals(17L, confirmed.cursor.seqId)
+        }
+    }
+
+    @Test
+    fun catchesUpMoreThanOneHundredPagesWhenEveryPageAdvances() = runTest {
+        ChatListApiFixture().use { fixture ->
+            fixture.events = { request ->
+                val seq = (request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0) + 1
+                jsonResponse(
+                    """{"events":[${chatEventWire(id = eventId(seq), seq = seq.toLong(), kind = if (seq == 1) "created" else "renamed", title = "Title $seq")}],"hasMore":${seq < 101}}"""
+                )
+            }
+            val confirmed = ChatListSync(fixture.service).synchronize(null)
+            assertEquals(101L, confirmed.cursor.seqId)
+            assertEquals("Title 101", replayChats(confirmed).single().title)
+        }
+    }
+
+    @Test
+    fun cursorCanRebuildAgainAfterRealProgressLikeWeb() = runTest {
+        ChatListApiFixture().use { fixture ->
+            var snapshotSeq = 20
+            fixture.snapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"${eventId(snapshotSeq)}","latestSeqId":$snapshotSeq}"""
+                )
+            }
+            val original = longTail().archive.copy(chatThreads = replayChats(longTail()))
+            fixture.archive = { jsonResponse(Json.encodeToString(original)) }
+            fixture.events = { request ->
+                when (val seq = request.requestUrl?.queryParameter("sinceSeqId")?.toInt()) {
+                    17 -> MockResponse().setResponseCode(410)
+                    21 -> {
+                        snapshotSeq = 40
+                        MockResponse().setResponseCode(410)
+                    }
+                    else -> {
+                        val next = checkNotNull(seq) + 1
+                        jsonResponse(
+                            """{"events":[${chatEventWire(id = eventId(next), seq = next.toLong(), kind = "renamed", title = "Title $next")}],"hasMore":${next == 21}}"""
+                        )
+                    }
+                }
+            }
+            val cursor = ChatCursor(CHAT_EVENT, 17)
+            val previous = ChatCheckpoint(original, cursor, emptyList(), cursor)
+            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            assertEquals(41L, confirmed.cursor.seqId)
+            assertEquals("Title 41", replayChats(confirmed).single().title)
+        }
+    }
 }

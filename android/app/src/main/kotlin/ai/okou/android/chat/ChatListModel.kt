@@ -3,7 +3,6 @@ package ai.okou.android.chat
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.Indicators
-import ai.okou.android.api.generated.ProjectsProjectsItem
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,8 +14,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 enum class ChatReadPhase {
@@ -47,22 +47,16 @@ data class ChatListUiState(
     val confirmedAt: Long? = null,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
+    val projectCacheUnavailable: Boolean = false,
     val agents: Agents = emptyList(),
     val agentsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val agentsSource: ChatListSource? = null,
-    val projects: List<ProjectsProjectsItem> = emptyList(),
+    val projects: List<ConfirmedProject> = emptyList(),
     val projectsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val projectsSource: ChatListSource? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Recent,
-)
-
-private data class PendingChatCacheWrite(
-    val checkpoint: ChatCheckpoint,
-    val confirmedAt: Long,
-    val navigation: CachedChatNavigation,
-    val revision: Long,
 )
 
 /** Workspace-retained HTTP observations; no row collector owns synchronization or durable state. */
@@ -79,54 +73,65 @@ class ChatListModel(
     @Volatile private var retired = false
     private val cache = cacheStore.open(identity) { current() }
     private val sync = ChatListSync(service, dispatcher)
-    private var checkpoint: ChatCheckpoint? = null
+    private var confirmed: CachedChats? = null
+    private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
     private var projectsSettingsJob: Job? = null
     private var restoreJob: Job? = null
+    private var projectsRestoreJob: Job? = null
     private var listJob: Job? = null
     private var agentsJob: Job? = null
     private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
-    private val writes = MutableStateFlow<PendingChatCacheWrite?>(null)
-    private var writeRevision = 0L
+    private val writes = Mutex()
+    private val projectSync = ProjectSync(service, dispatcher)
 
-    init {
-        // A single latest-snapshot writer owns persistence from both list and reference reads.
-        viewModelScope.launch {
-            writes.collectLatest { pending ->
-                if (pending != null) {
-                    try {
-                        cache.save(pending.checkpoint, pending.confirmedAt, pending.navigation)
-                        currentCoroutineContext().ensureActive()
-                        if (current()) mutable.value = mutable.value.copy(cacheUnavailable = false)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        currentCoroutineContext().ensureActive()
-                        if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
-                    }
-                }
+    private fun navigation() =
+        mutable.value.let { state ->
+            CachedChatNavigation(
+                agents = state.agents.takeIf { state.agentsSource != null },
+                projectsEnabled = state.projectsEnabled,
+            )
+        }
+
+    /** Await commit and readback before a new network list becomes visible, as on Web. */
+    private suspend fun persistChats(readBack: Boolean = false): CachedChats? =
+        writes.withLock {
+            val saved = confirmed ?: return@withLock null
+            requireCurrent()
+            val refs = navigation()
+            try {
+                cache.save(saved.checkpoint, saved.confirmedAt, refs)
+                val disk = if (readBack) cache.load() else null
+                requireCurrent()
+                mutable.value = mutable.value.copy(cacheUnavailable = false)
+                if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId)
+                    disk
+                else saved.copy(navigation = refs)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                requireCurrent()
+                mutable.value = mutable.value.copy(cacheUnavailable = true)
+                saved.copy(navigation = refs)
             }
         }
-    }
 
-    private fun queueSave() {
-        val confirmed = checkpoint ?: return
-        val state = mutable.value
-        val time = state.confirmedAt ?: return
-        if (!current()) return
-        writes.value =
-            PendingChatCacheWrite(
-                confirmed,
-                time,
-                CachedChatNavigation(
-                    agents = state.agents.takeIf { state.agentsSource != null },
-                    projects = state.projects.takeIf { state.projectsSource != null },
-                    projectsEnabled = state.projectsEnabled,
-                ),
-                ++writeRevision,
-            )
-    }
+    private suspend fun persistProjects(saved: CachedProjects): CachedProjects =
+        try {
+            cache.saveProjects(saved.checkpoint, saved.confirmedAt)
+            val disk = cache.loadProjects()
+            requireCurrent()
+            mutable.value = mutable.value.copy(projectCacheUnavailable = false)
+            if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId) disk
+            else saved
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            requireCurrent()
+            mutable.value = mutable.value.copy(projectCacheUnavailable = true)
+            saved
+        }
 
     private fun current() = !retired && authorized()
 
@@ -168,8 +173,9 @@ class ChatListModel(
                             projectsPhase =
                                 if (projects) mutable.value.projectsPhase else ChatReadPhase.Idle,
                         )
-                    queueSave()
+                    showCachedProjects()
                     refreshProjects()
+                    persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -186,24 +192,21 @@ class ChatListModel(
                 try {
                     val saved = cache.load() ?: return@launch
                     val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
-                    currentCoroutineContext().ensureActive()
-                    if (!current()) return@launch
+                    requireCurrent()
                     val state = mutable.value
                     val networkSettings = state.projectsSettingsSource == ChatListSource.Network
-                    val projectGroups =
-                        if (networkSettings) state.projectsEnabled
-                        else saved.navigation.projectsEnabled
-                    val restoreList = state.source != ChatListSource.Network
-                    if (restoreList) checkpoint = saved.checkpoint
+                    confirmed = saved
                     mutable.value =
                         state.copy(
                             projectsSettingsSource =
                                 if (networkSettings) ChatListSource.Network
                                 else ChatListSource.Cache,
-                            projectsEnabled = projectGroups,
-                            threads = if (restoreList) threads else state.threads,
-                            confirmedAt = if (restoreList) saved.confirmedAt else state.confirmedAt,
-                            source = if (restoreList) ChatListSource.Cache else state.source,
+                            projectsEnabled =
+                                if (networkSettings) state.projectsEnabled
+                                else saved.navigation.projectsEnabled,
+                            threads = threads,
+                            confirmedAt = saved.confirmedAt,
+                            source = ChatListSource.Cache,
                             agents =
                                 if (state.agentsSource == ChatListSource.Network) state.agents
                                 else saved.navigation.agents.orEmpty(),
@@ -211,25 +214,10 @@ class ChatListModel(
                                 if (state.agentsSource == ChatListSource.Network)
                                     ChatListSource.Network
                                 else saved.navigation.agents?.let { ChatListSource.Cache },
-                            projects =
-                                if (!projectGroups) emptyList()
-                                else if (state.projectsSource == ChatListSource.Network)
-                                    state.projects
-                                else saved.navigation.projects.orEmpty(),
-                            projectsSource =
-                                if (!projectGroups) null
-                                else if (state.projectsSource == ChatListSource.Network)
-                                    ChatListSource.Network
-                                else saved.navigation.projects?.let { ChatListSource.Cache },
                         )
-                    if (
-                        networkSettings ||
-                            state.source == ChatListSource.Network ||
-                            state.agentsSource == ChatListSource.Network ||
-                            state.projectsSource == ChatListSource.Network
-                    )
-                        queueSave()
-                    refreshProjects()
+                    showCachedProjects()
+                    if (networkSettings || state.agentsSource == ChatListSource.Network)
+                        persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -237,6 +225,36 @@ class ChatListModel(
                     if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                 }
             }
+        projectsRestoreJob =
+            viewModelScope.launch {
+                try {
+                    val saved = cache.loadProjects() ?: return@launch
+                    requireCurrent()
+                    confirmedProjects = saved
+                    showCachedProjects()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    if (current())
+                        mutable.value = mutable.value.copy(projectCacheUnavailable = true)
+                }
+            }
+    }
+
+    private suspend fun showCachedProjects() {
+        val saved = confirmedProjects ?: return
+        if (
+            !current() ||
+                !mutable.value.projectsEnabled ||
+                mutable.value.projectsSource == ChatListSource.Network
+        )
+            return
+        val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
+        requireCurrent()
+        if (mutable.value.projectsEnabled && mutable.value.projectsSource != ChatListSource.Network)
+            mutable.value =
+                mutable.value.copy(projects = rows, projectsSource = ChatListSource.Cache)
     }
 
     fun refreshList() {
@@ -247,19 +265,21 @@ class ChatListModel(
                 try {
                     restoreJob?.join()
                     requireCurrent()
-                    val confirmed = sync.synchronize(checkpoint)
-                    val threads = withContext(dispatcher) { replayChats(confirmed) }
+                    val checkpoint = sync.synchronize(confirmed?.checkpoint)
+                    withContext(dispatcher) { replayChats(checkpoint) }
                     requireCurrent()
-                    val time = System.currentTimeMillis()
-                    checkpoint = confirmed
+                    confirmed = CachedChats(checkpoint, System.currentTimeMillis(), navigation())
+                    val saved = checkNotNull(persistChats(readBack = true))
+                    val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
+                    requireCurrent()
+                    confirmed = saved
                     mutable.value =
                         mutable.value.copy(
                             threads = threads,
-                            confirmedAt = time,
+                            confirmedAt = saved.confirmedAt,
                             source = ChatListSource.Network,
                             listPhase = ChatReadPhase.Ready,
                         )
-                    queueSave()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -285,7 +305,7 @@ class ChatListModel(
                                 agentsPhase = ChatReadPhase.Ready,
                                 agentsSource = ChatListSource.Network,
                             )
-                        queueSave()
+                        persistChats()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
@@ -302,32 +322,23 @@ class ChatListModel(
             projectsJob =
                 viewModelScope.launch {
                     try {
-                        val result = service.projects().projects
-                        val ordered =
-                            withContext(dispatcher) {
-                                requireChatWire(
-                                    result.size <= MAX_CHAT_THREADS &&
-                                        result.map { it.id }.distinct().size == result.size
-                                )
-                                val times =
-                                    result.associate {
-                                        requireChatId(it.id)
-                                        it.id to chatTimestamp(it.createdAt)
-                                    }
-                                result.sortedWith(
-                                    compareBy<ProjectsProjectsItem> { times[it.id] }
-                                        .thenBy { it.id }
-                                )
-                            }
+                        projectsRestoreJob?.join()
                         requireCurrent()
+                        val checkpoint = projectSync.synchronize(confirmedProjects?.checkpoint)
+                        withContext(dispatcher) { replayProjects(checkpoint) }
+                        requireCurrent()
+                        val saved =
+                            persistProjects(CachedProjects(checkpoint, System.currentTimeMillis()))
+                        val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
+                        requireCurrent()
+                        confirmedProjects = saved
                         if (mutable.value.projectsEnabled)
                             mutable.value =
                                 mutable.value.copy(
-                                    projects = ordered,
+                                    projects = rows,
                                     projectsPhase = ChatReadPhase.Ready,
                                     projectsSource = ChatListSource.Network,
                                 )
-                        queueSave()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
@@ -341,7 +352,7 @@ class ChatListModel(
                                         projectsSource = null,
                                         projectsPhase = ChatReadPhase.Failed,
                                     )
-                                queueSave()
+                                persistChats()
                             }
                         } else fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
                     }
@@ -356,11 +367,6 @@ class ChatListModel(
             viewModelScope.launch {
                 try {
                     val result = service.indicators()
-                    requireChatWire(
-                        result.agents.size <= MAX_CHAT_THREADS &&
-                            result.threads.size <= MAX_CHAT_THREADS &&
-                            result.unreadAt.size <= MAX_CHAT_THREADS
-                    )
                     requireCurrent()
                     mutable.value =
                         mutable.value.copy(

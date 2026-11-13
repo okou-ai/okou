@@ -56,7 +56,8 @@ mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
-sqlite-framework = { module = "androidx.sqlite:sqlite-framework", version.ref = "sqlite" }
+sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
+sqlite-host = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

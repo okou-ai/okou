@@ -538,15 +538,80 @@ data class AgentsItem(
 
 typealias Agents = List<AgentsItem>
 
+@Serializable(with = ProjectSnapshotSerializer::class) sealed interface ProjectSnapshot
+
 @Serializable
-data class ProjectsProjectsItem(
+data class ProjectSnapshotVariant1ProjectsItem(
     val `id`: String,
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
 )
 
-@Serializable data class Projects(val `projects`: List<ProjectsProjectsItem>)
+@Serializable
+data class ProjectSnapshotVariant1(
+    val `projects`: List<ProjectSnapshotVariant1ProjectsItem>,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
+) : ProjectSnapshot
+
+@Serializable
+data class ProjectSnapshotVariant2(
+    val `url`: String,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
+) : ProjectSnapshot
+
+object ProjectSnapshotSerializer : KSerializer<ProjectSnapshot> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ProjectSnapshot")
+
+    override fun deserialize(decoder: Decoder): ProjectSnapshot {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ProjectSnapshot")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ProjectSnapshot")
+        val matches = listOf(value.containsKey("projects"), value.containsKey("url"))
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ProjectSnapshot variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ProjectSnapshotVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ProjectSnapshotVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ProjectSnapshot variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ProjectSnapshot) {
+        when (value) {
+            is ProjectSnapshotVariant1 ->
+                encoder.encodeSerializableValue(ProjectSnapshotVariant1.serializer(), value)
+            is ProjectSnapshotVariant2 ->
+                encoder.encodeSerializableValue(ProjectSnapshotVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable
+enum class ProjectEventsEventsItemKind {
+    @SerialName("created") CREATED,
+    @SerialName("renamed") RENAMED,
+    @SerialName("deleted") DELETED,
+}
+
+@Serializable
+data class ProjectEventsEventsItem(
+    val `id`: String,
+    val `seqId`: Long,
+    val `projectId`: String,
+    val `kind`: ProjectEventsEventsItemKind,
+    val `name`: String?,
+    val `createdAt`: String,
+)
+
+@Serializable
+data class ProjectEvents(val `events`: List<ProjectEventsEventsItem>, val `hasMore`: Boolean)
 
 @Serializable
 data class FeatureSwitches(
@@ -613,3 +678,18 @@ data class ChatArchiveChatThreadsItem(
 )
 
 @Serializable data class ChatArchive(val `chatThreads`: List<ChatArchiveChatThreadsItem>)
+
+@Serializable
+data class ProjectArchiveProjectsItem(
+    val `id`: String,
+    val `name`: String,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable
+data class ProjectArchive(
+    val `projects`: List<ProjectArchiveProjectsItem>,
+    val `latestEventId`: String?,
+    val `latestSeqId`: Long,
+)

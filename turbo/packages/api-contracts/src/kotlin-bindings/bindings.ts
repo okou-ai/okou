@@ -9,6 +9,7 @@ import {
 } from "../contracts/chat-threads";
 import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
+import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 
 export interface KotlinRouteBinding {
@@ -42,7 +43,16 @@ const chatReadBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadsContract.indicators,
   },
   { name: "agents", response: "Agents", route: agentsMainContract.list },
-  { name: "projects", response: "Projects", route: projectsContract.list },
+  {
+    name: "projectSnapshot",
+    response: "ProjectSnapshot",
+    route: projectsContract.snapshot,
+  },
+  {
+    name: "projectEvents",
+    response: "ProjectEvents",
+    route: projectsContract.events,
+  },
   {
     name: "featureSwitches",
     response: "FeatureSwitches",
@@ -116,6 +126,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ChatArchive",
     schema: chatThreadSnapshotArchiveSchema,
+    direction: "input",
+  },
+  {
+    name: "ProjectArchive",
+    schema: projectSnapshotArchiveSchema,
     direction: "input",
   },
 ];

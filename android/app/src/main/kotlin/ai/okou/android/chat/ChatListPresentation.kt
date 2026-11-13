@@ -1,9 +1,8 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.generated.IndicatorsThreadsValue
-import ai.okou.android.api.generated.ProjectsProjectsItem
 
-data class ChatListGroup(val project: ProjectsProjectsItem?, val threads: List<ConfirmedChat>)
+data class ChatListGroup(val project: ConfirmedProject?, val threads: List<ConfirmedChat>)
 
 /** Known Projects span agents; the inbox outside them uses the actual default agent. */
 fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {

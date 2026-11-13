@@ -128,7 +128,7 @@ describe("selected Kotlin chat readers", () => {
     expect(source).not.toContain("PolymorphicSerializer");
   });
 
-  it("binds canonical optional coerced scalar queries with distinct argument names", () => {
+  it("binds optional queries and keeps server-defaulted scalars explicit", () => {
     const response = object({ value: string() });
     const files = renderKotlinFiles({
       types: [{ name: "Fixture", schema: response, direction: "output" }],
@@ -142,6 +142,7 @@ describe("selected Kotlin chat readers", () => {
             query: object({
               sinceSeqId: coerce.number().int().positive().optional(),
               token: string().optional(),
+              after: coerce.number().int().nonnegative().default(0),
             }),
             responses: { 200: response },
           },
@@ -154,13 +155,15 @@ describe("selected Kotlin chat readers", () => {
     expect(files.get("CanonicalApi.kt")).toContain(
       '@Query("token") `queryToken`: String? = null',
     );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      '@Query("after") `queryAfter`: Long',
+    );
   });
 
   it("rejects unsupported queries, route/DTO mismatches and unsafe packages before output", () => {
     for (const query of [
       object({ values: array(string()) }),
       union([object({ first: string() }), object({ second: number() })]),
-      object({ limit: number().default(50) }),
       object({ cursor: string(), Cursor: string() }),
     ]) {
       const response = object({ value: string() });

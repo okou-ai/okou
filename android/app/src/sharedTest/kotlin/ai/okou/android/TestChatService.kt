@@ -6,7 +6,9 @@ import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
-import ai.okou.android.api.generated.Projects
+import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.chat.ChatListService
 import kotlinx.serialization.json.Json
 
@@ -27,5 +29,13 @@ open class TestChatService : ChatListService {
 
     override suspend fun agents(): Agents = emptyList()
 
-    override suspend fun projects(): Projects = error("Unexpected projects request")
+    override suspend fun projectSnapshot() =
+        Json.decodeFromString<ProjectSnapshot>(
+            """{"projects":[],"latestEventId":null,"latestSeqId":0}"""
+        )
+
+    override suspend fun projectArchive(url: String): ProjectArchive =
+        error("Unexpected archive request")
+
+    override suspend fun projectEvents(since: Long) = ProjectEvents(emptyList(), false)
 }
