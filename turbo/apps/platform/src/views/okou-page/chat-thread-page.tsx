@@ -125,7 +125,6 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
-  OkouAvatar,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -338,6 +337,7 @@ import {
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
+import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { setBillingSubPage$ } from "../../signals/okou-page/settings/workspace-settings-state.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
@@ -5826,7 +5826,7 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   return singleAgent && thread.agentId === defaultId ? (
     // One per reply; only the replies on screen draw frames, so a long
     // transcript stays cheap.
-    <OkouAvatar size={36} className="size-7 @[900px]:size-9" />
+    <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );
