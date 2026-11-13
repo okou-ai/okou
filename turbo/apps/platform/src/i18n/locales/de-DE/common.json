@@ -5169,7 +5169,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Startseite von {{name}} öffnen",
+    "openHome": "Neuer Chat in {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",

@@ -5151,7 +5151,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "{{name}} 홈 열기",
+    "openHome": "{{name}}에서 새 채팅",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",

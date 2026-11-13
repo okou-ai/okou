@@ -5151,7 +5151,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "{{name}} のホームを開く",
+    "openHome": "{{name}} で新しいチャット",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",

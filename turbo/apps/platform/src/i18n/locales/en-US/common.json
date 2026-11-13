@@ -5167,7 +5167,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Open {{name}} homepage",
+    "openHome": "New chat in {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
