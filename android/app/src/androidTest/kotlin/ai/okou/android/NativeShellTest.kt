@@ -109,6 +109,14 @@ class NativeShellTest {
                     }
                     .click()
             }
+            fun dismissRestoredPicker(firstChoice: Int) {
+                // The restored selection may be offscreen; the first choice identifies the picker.
+                fun option() =
+                    By.pkg(app.packageName).checkable(true).hasDescendant(label(firstChoice))
+                await("Restored preference picker is open") { device.hasObject(option()) }
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                await("Preference picker is dismissed") { !device.hasObject(option()) }
+            }
             launch()
             click(R.string.settings)
             select("Default")
@@ -124,9 +132,9 @@ class NativeShellTest {
             launch()
             click(R.string.settings)
             select("藍色地平線")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.palette_default)
             select("繁體中文")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.language_en_us)
         }
 
     private fun launch() {
