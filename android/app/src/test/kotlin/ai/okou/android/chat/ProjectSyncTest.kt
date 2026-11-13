@@ -31,7 +31,7 @@ class ProjectSyncTest {
                     """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
                 )
             }
-            val confirmed = ProjectSync(fixture.service).synchronize(null)
+            val confirmed = ProjectSync(fixture.service).synchronize(null).checkpoint
             assertEquals(23L, confirmed.cursor.seqId)
             val project = replayProjects(confirmed).single()
             assertEquals("After", project.name)
@@ -43,19 +43,54 @@ class ProjectSyncTest {
                 )
             }
             assertTrue(
-                replayProjects(ProjectSync(fixture.service).synchronize(confirmed)).isEmpty()
+                replayProjects(ProjectSync(fixture.service).synchronize(confirmed).checkpoint)
+                    .isEmpty()
             )
         }
     }
 
     @Test
-    fun emptyProjectCursorLoadsAFreshSnapshotInsteadOfMissingCompactedProjects() = runTest {
+    fun validZeroCursorCatchesUpWithoutDependingOnAnotherSnapshot() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val cached =
+                ProjectCheckpoint(
+                    ProjectArchive(
+                        listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
+                        null,
+                        0,
+                    )
+                )
+            fixture.projects = { MockResponse().setResponseCode(503) }
+            fixture.projectEvents = {
+                jsonResponse(
+                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}"""
+                )
+            }
+            val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
+            assertEquals("After", replayProjects(confirmed).single().name)
+            assertEquals("/api/projects/events?sinceSeqId=0", fixture.server.takeRequest().path)
+        }
+    }
+
+    @Test
+    fun compactedZeroCursorRebuildsFromTheServerInsteadOfMissingProjects() = runTest {
         ChatListApiFixture().use { fixture ->
             val cached = ProjectCheckpoint(ProjectArchive(emptyList(), null, 0))
-            val confirmed = ProjectSync(fixture.service).synchronize(cached)
+            fixture.projects = {
+                jsonResponse(
+                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                )
+            }
+            fixture.projectEvents = { request ->
+                if (request.requestUrl?.queryParameter("sinceSeqId") == "0")
+                    MockResponse().setResponseCode(410)
+                else jsonResponse("""{"events":[],"hasMore":false}""")
+            }
+            val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
             assertEquals("Research", replayProjects(confirmed).single().name)
-            assertEquals("/api/projects/snapshot", fixture.server.takeRequest().path)
             assertEquals("/api/projects/events?sinceSeqId=0", fixture.server.takeRequest().path)
+            assertEquals("/api/projects/snapshot", fixture.server.takeRequest().path)
+            assertEquals("/api/projects/events?sinceSeqId=17", fixture.server.takeRequest().path)
         }
     }
 
@@ -82,7 +117,7 @@ class ProjectSyncTest {
                     }
                 }
                 val cached = ProjectCheckpoint(ProjectArchive(emptyList(), CHAT_EVENT, 17))
-                val confirmed = ProjectSync(fixture.service).synchronize(cached)
+                val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
                 assertEquals(61L, confirmed.cursor.seqId)
                 assertEquals(name, replayProjects(confirmed).single().name)
                 fixture.projectEvents = { MockResponse().setResponseCode(410) }

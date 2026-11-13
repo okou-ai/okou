@@ -162,6 +162,7 @@ class ChatListModel(
                     currentCoroutineContext().ensureActive()
                     if (!current()) return@launch
                     val projects = flags["projects"] == true
+                    val changed = projects != mutable.value.projectsEnabled
                     if (!projects) projectsJob?.cancel()
                     mutable.value =
                         mutable.value.copy(
@@ -175,7 +176,7 @@ class ChatListModel(
                         )
                     showCachedProjects()
                     refreshProjects()
-                    persistChats()
+                    if (changed || mutable.value.cacheUnavailable) persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -216,8 +217,7 @@ class ChatListModel(
                                 else saved.navigation.agents?.let { ChatListSource.Cache },
                         )
                     showCachedProjects()
-                    if (networkSettings || state.agentsSource == ChatListSource.Network)
-                        persistChats()
+                    if (navigation() != saved.navigation) persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -265,11 +265,19 @@ class ChatListModel(
                 try {
                     restoreJob?.join()
                     requireCurrent()
-                    val checkpoint = sync.synchronize(confirmed?.checkpoint)
+                    val previous = confirmed
+                    val result = sync.synchronize(previous?.checkpoint)
+                    val checkpoint = result.checkpoint
                     withContext(dispatcher) { replayChats(checkpoint) }
                     requireCurrent()
-                    confirmed = CachedChats(checkpoint, System.currentTimeMillis(), navigation())
-                    val saved = checkNotNull(persistChats(readBack = true))
+                    val saved =
+                        if (!result.changed && previous != null && !mutable.value.cacheUnavailable)
+                            previous
+                        else {
+                            confirmed =
+                                CachedChats(checkpoint, System.currentTimeMillis(), navigation())
+                            checkNotNull(persistChats(readBack = true))
+                        }
                     val threads = withContext(dispatcher) { replayChats(saved.checkpoint) }
                     requireCurrent()
                     confirmed = saved
@@ -299,13 +307,15 @@ class ChatListModel(
                         val result = service.agents()
                         withContext(dispatcher) { CachedChatNavigation(agents = result).validate() }
                         requireCurrent()
+                        val changed =
+                            mutable.value.agentsSource == null || result != mutable.value.agents
                         mutable.value =
                             mutable.value.copy(
                                 agents = result,
                                 agentsPhase = ChatReadPhase.Ready,
                                 agentsSource = ChatListSource.Network,
                             )
-                        persistChats()
+                        if (changed || mutable.value.cacheUnavailable) persistChats()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
@@ -324,11 +334,22 @@ class ChatListModel(
                     try {
                         projectsRestoreJob?.join()
                         requireCurrent()
-                        val checkpoint = projectSync.synchronize(confirmedProjects?.checkpoint)
+                        val previous = confirmedProjects
+                        val result = projectSync.synchronize(previous?.checkpoint)
+                        val checkpoint = result.checkpoint
                         withContext(dispatcher) { replayProjects(checkpoint) }
                         requireCurrent()
                         val saved =
-                            persistProjects(CachedProjects(checkpoint, System.currentTimeMillis()))
+                            if (
+                                !result.changed &&
+                                    previous != null &&
+                                    !mutable.value.projectCacheUnavailable
+                            )
+                                previous
+                            else
+                                persistProjects(
+                                    CachedProjects(checkpoint, System.currentTimeMillis())
+                                )
                         val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
                         requireCurrent()
                         confirmedProjects = saved
@@ -352,7 +373,6 @@ class ChatListModel(
                                         projectsSource = null,
                                         projectsPhase = ChatReadPhase.Failed,
                                     )
-                                persistChats()
                             }
                         } else fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
                     }

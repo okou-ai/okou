@@ -16,33 +16,34 @@ class ChatListSync(
     private val service: ChatListService,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    suspend fun synchronize(cached: ChatCheckpoint?): ChatCheckpoint =
+    suspend fun synchronize(cached: ChatCheckpoint?): MetadataSyncResult<ChatCheckpoint> =
         withContext(dispatcher) {
             // Like Web, an empty cursor needs a fresh snapshot: the server may have
             // compacted creations since an earlier empty cache was written.
             val useCache = cached != null && cached.cursor.seqId > 0
             val confirmed =
                 tail(if (useCache) checkNotNull(cached) else snapshot(), fromSnapshot = !useCache)
+            val result = MetadataSyncResult(confirmed.checkpoint, confirmed.changed)
             if (
                 confirmed.replacement ||
                     confirmed.checkpoint.events.size <= CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD
             )
-                return@withContext confirmed.checkpoint
+                return@withContext result
             // Catch up first. Rebase is optional maintenance, as in Web's metadata event source.
             val snapshot =
                 try {
                     snapshot()
                 } catch (error: ApiFailure.Http) {
-                    if (error.status >= 500) return@withContext confirmed.checkpoint
+                    if (error.status >= 500) return@withContext result
                     throw error
                 } catch (error: ChatSnapshotUnavailable) {
-                    if (error.status >= 500) return@withContext confirmed.checkpoint
+                    if (error.status >= 500) return@withContext result
                     throw error
                 }
             val rebased = tail(snapshot, fromSnapshot = true).checkpoint
             // A lagging snapshot must not roll back a tail already confirmed in this refresh.
-            if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) confirmed.checkpoint
-            else rebased
+            if (rebased.cursor.seqId < confirmed.checkpoint.cursor.seqId) result
+            else MetadataSyncResult(rebased, changed = true)
         }
 
     private suspend fun snapshot(): ChatCheckpoint {
@@ -64,7 +65,11 @@ class ChatListSync(
         return ChatCheckpoint(archive, cursor, emptyList(), cursor).also { it.validate() }
     }
 
-    private data class SynchronizedChats(val checkpoint: ChatCheckpoint, val replacement: Boolean)
+    private data class SynchronizedChats(
+        val checkpoint: ChatCheckpoint,
+        val replacement: Boolean,
+        val changed: Boolean,
+    )
 
     private suspend fun tail(initial: ChatCheckpoint, fromSnapshot: Boolean): SynchronizedChats {
         initial.validate()
@@ -109,6 +114,7 @@ class ChatListSync(
         return SynchronizedChats(
             state.copy(events = events.toList(), cursor = cursor).also { it.validate() },
             replacement,
+            changed = replacement || cursor != initial.cursor,
         )
     }
 }

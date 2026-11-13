@@ -30,17 +30,20 @@ application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, exclu
 from backups. AndroidX's bundled SQLite driver avoids CursorWindow's single-row
 limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
-transactions with their synchronization position. Network lists await persistence
-and readback before publication; a storage failure leaves the network result usable
-with a visible cache warning.
+transactions with their synchronization position. Changed network datasets await
+persistence and readback before publication. Unchanged catch-up reuses the confirmed
+dataset without another disk transaction; changed Agent/settings references still
+persist independently. A storage failure leaves the network result usable with a
+visible cache warning, and a later refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 Agent/Project references keep the scoped list usable after a process restart while
 their network reads are unavailable. Cache display precedes network catch-up;
 chat tails over 100 events attempt a server-snapshot rebase after catch-up, with
 optional rebase server failures preserving the synchronized result, as on Web.
-Project tails retain their event identities. A zero cursor refreshes the snapshot;
-an expired cursor rebuilds from the server and resumes catch-up. A freshly loaded
+Project tails retain their event identities. Chat's absent cursor refreshes its
+snapshot; Project's valid zero cursor continues through events. An expired cursor
+rebuilds from the server and resumes catch-up. A freshly loaded
 snapshot that immediately expires or a page that makes no progress fails the read.
 There are no fixed response-byte, row-count, page-count or per-scope disk limits.
 JSON decoding and Room work run off Main; canonical responses and signed archives

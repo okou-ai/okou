@@ -74,11 +74,12 @@ class ProjectSync(
     private val service: ChatListService,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    suspend fun synchronize(cached: ProjectCheckpoint?): ProjectCheckpoint =
+    suspend fun synchronize(cached: ProjectCheckpoint?): MetadataSyncResult<ProjectCheckpoint> =
         withContext(dispatcher) {
-            val useCache = cached != null && cached.cursor.seqId > 0
-            var state = if (useCache) checkNotNull(cached) else snapshot()
-            var cursorFromSnapshot = !useCache
+            // Project's zero sequence is a valid cached cursor, unlike chat's absent cursor.
+            var state = cached ?: snapshot()
+            var replacement = cached == null
+            var cursorFromSnapshot = replacement
             state.validate()
             val identities = state.events.mapTo(hashSetOf()) { it.id }
             state.snapshotCursor.eventId?.let(identities::add)
@@ -93,6 +94,7 @@ class ProjectSync(
                         state = snapshot()
                         identities.clear()
                         state.snapshotCursor.eventId?.let(identities::add)
+                        replacement = true
                         cursorFromSnapshot = true
                         continue
                     }
@@ -109,7 +111,8 @@ class ProjectSync(
                 if (incoming.isNotEmpty()) cursorFromSnapshot = false
                 hasMore = page.hasMore
             }
-            state.also { it.validate() }
+            state.validate()
+            MetadataSyncResult(state, changed = replacement || state.cursor != cached?.cursor)
         }
 
     private suspend fun snapshot(): ProjectCheckpoint {

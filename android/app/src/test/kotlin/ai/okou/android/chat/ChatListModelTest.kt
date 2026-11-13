@@ -1,8 +1,10 @@
 package ai.okou.android.chat
 
 import ai.okou.android.CHAT_AGENT
+import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_PERSONAL
+import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.Agents
@@ -13,6 +15,8 @@ import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -20,6 +24,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
@@ -62,6 +67,12 @@ class ChatListModelTest {
         }
 
     @After fun closeCaches() = runBlocking { caches.forEach { it.close() } }
+
+    private fun execute(root: File, sql: String) {
+        BundledSQLiteDriver().open(root.resolve("chats.db").path).use { connection ->
+            connection.prepare(sql).use { it.step() }
+        }
+    }
 
     private val identity =
         WorkspaceIdentity("https://api.okou.ai/", "user-a", "session-a", "org-a", "member")
@@ -289,6 +300,145 @@ class ChatListModelTest {
             assertEquals(ChatListSource.Cache, model.uiState.value.source)
         } finally {
             gate.complete(page())
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun unchangedRefreshAvoidsDiskWritesAndAnUnsavedUpdateRetriesPersistence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        try {
+            val service = Service()
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+            val initial = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, initial.listPhase)
+            assertFalse(initial.cacheUnavailable)
+            execute(
+                root,
+                "CREATE TRIGGER fail_chat_write BEFORE INSERT ON chat_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
+            )
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.cacheUnavailable)
+            assertEquals(initial.confirmedAt, model.uiState.value.confirmedAt)
+            service.listRead = {
+                json.decodeFromString<ChatEvents>(
+                    """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}"""
+                )
+            }
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals("Updated", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.cacheUnavailable)
+            execute(root, "DROP TRIGGER fail_chat_write")
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals("Updated", model.uiState.value.threads.single().title)
+            assertFalse(model.uiState.value.cacheUnavailable)
+            service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
+            service.flagsRead = { FeatureSwitches(emptyMap(), mapOf("projects" to true)) }
+            model.refreshMetadata()
+            advanceUntilIdle()
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.load())
+                    assertEquals(23L, saved.checkpoint.cursor.seqId)
+                    assertEquals("Updated", replayChats(saved.checkpoint).single().title)
+                    assertEquals("Updated Okou", saved.navigation.agents?.single()?.displayName)
+                    assertTrue(saved.navigation.projectsEnabled)
+                }
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun unchangedProjectsSkipDiskButRetryAnEarlierFailedCommit() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        var page = ProjectEvents(emptyList(), false)
+        val service =
+            object : TestChatService() {
+                override suspend fun featureSwitches() =
+                    FeatureSwitches(emptyMap(), mapOf("projects" to true))
+
+                override suspend fun projectSnapshot() =
+                    json.decodeFromString<ProjectSnapshot>(
+                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
+                    )
+
+                override suspend fun projectEvents(since: Long) = page
+            }
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals("Before", model.uiState.value.projects.single().name)
+            assertFalse(model.uiState.value.projectCacheUnavailable)
+            execute(
+                root,
+                "CREATE TRIGGER fail_project_write BEFORE INSERT ON project_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
+            )
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.projectsPhase)
+            assertFalse(model.uiState.value.projectCacheUnavailable)
+            page =
+                json.decodeFromString<ProjectEvents>(
+                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}"""
+                )
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals("After", model.uiState.value.projects.single().name)
+            assertTrue(model.uiState.value.projectCacheUnavailable)
+            execute(root, "DROP TRIGGER fail_project_write")
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals("After", model.uiState.value.projects.single().name)
+            assertFalse(model.uiState.value.projectCacheUnavailable)
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.loadProjects())
+                    assertEquals(17L, saved.checkpoint.cursor.seqId)
+                    assertEquals("After", replayProjects(saved.checkpoint).single().name)
+                }
+        } finally {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()

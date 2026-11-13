@@ -70,7 +70,7 @@ class ChatListSyncTest {
                         """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Renamed chat")}],"hasMore":false}"""
                     )
                 }
-                val confirmed = ChatListSync(fixture.service).synchronize(null)
+                val confirmed = ChatListSync(fixture.service).synchronize(null).checkpoint
                 assertEquals(23L, confirmed.cursor.seqId)
                 val row = replayChats(confirmed).single()
                 assertEquals("Renamed chat", row.title)
@@ -94,7 +94,7 @@ class ChatListSyncTest {
     fun explicitEmptyScopeOmitsTheZeroCursor() = runTest {
         ChatListApiFixture().use { fixture ->
             fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
-            val confirmed = ChatListSync(fixture.service).synchronize(null)
+            val confirmed = ChatListSync(fixture.service).synchronize(null).checkpoint
             assertTrue(replayChats(confirmed).isEmpty())
             assertEquals(ChatCursor(), confirmed.cursor)
             assertEquals("/api/chat-threads/snapshot", fixture.server.takeRequest().path)
@@ -119,7 +119,7 @@ class ChatListSyncTest {
             assertEquals("/api/chat-threads/snapshot", fixture.server.takeRequest().path)
             assertEquals("/api/chat-threads/events", fixture.server.takeRequest().path)
             fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
-            val restored = ChatListSync(fixture.service).synchronize(previous)
+            val restored = ChatListSync(fixture.service).synchronize(previous).checkpoint
             assertEquals(ChatCursor(CHAT_EVENT, 17), restored.cursor)
         }
     }
@@ -161,7 +161,7 @@ class ChatListSyncTest {
                     """{"events":[${chatEventWire()},${chatEventWire(id = eventId(23), seq = 23, kind = "renamed")}],"hasMore":false}"""
                 )
             }
-            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
             assertEquals(listOf(23L), confirmed.events.map { it.cursor().seqId })
             assertEquals(23L, confirmed.cursor.seqId)
         }
@@ -184,7 +184,7 @@ class ChatListSyncTest {
             fixture.archive = {
                 jsonResponse(Json.encodeToString(ChatArchive(replayChats(previous))))
             }
-            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
             assertEquals(101L, confirmed.snapshotCursor.seqId)
             assertEquals(listOf(102L), confirmed.events.map { it.cursor().seqId })
             assertEquals("Newest title", replayChats(confirmed).single().title)
@@ -219,7 +219,7 @@ class ChatListSyncTest {
                         )
                 }
                 fixture.archive = { MockResponse().setResponseCode(503) }
-                val confirmed = ChatListSync(fixture.service).synchronize(previous)
+                val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
                 assertEquals(102L, confirmed.cursor.seqId)
                 assertEquals("Newest title", replayChats(confirmed).single().title)
                 assertEquals(
@@ -264,7 +264,7 @@ class ChatListSyncTest {
             fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
             val empty =
                 ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), emptyList(), ChatCursor())
-            val confirmed = ChatListSync(fixture.service).synchronize(empty)
+            val confirmed = ChatListSync(fixture.service).synchronize(empty).checkpoint
             assertEquals(10_001, replayChats(confirmed).size)
             assertEquals(rows.last().title, confirmed.archive.chatThreads.last().title)
             assertEquals(17L, confirmed.cursor.seqId)
@@ -280,7 +280,7 @@ class ChatListSyncTest {
                     """{"events":[${chatEventWire(id = eventId(seq), seq = seq.toLong(), kind = if (seq == 1) "created" else "renamed", title = "Title $seq")}],"hasMore":${seq < 101}}"""
                 )
             }
-            val confirmed = ChatListSync(fixture.service).synchronize(null)
+            val confirmed = ChatListSync(fixture.service).synchronize(null).checkpoint
             assertEquals(101L, confirmed.cursor.seqId)
             assertEquals("Title 101", replayChats(confirmed).single().title)
         }
@@ -314,7 +314,7 @@ class ChatListSyncTest {
             }
             val cursor = ChatCursor(CHAT_EVENT, 17)
             val previous = ChatCheckpoint(original, cursor, emptyList(), cursor)
-            val confirmed = ChatListSync(fixture.service).synchronize(previous)
+            val confirmed = ChatListSync(fixture.service).synchronize(previous).checkpoint
             assertEquals(41L, confirmed.cursor.seqId)
             assertEquals("Title 41", replayChats(confirmed).single().title)
         }

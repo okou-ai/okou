@@ -158,7 +158,8 @@ class ChatCacheStoreTest {
                             """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23)}],"hasMore":false}"""
                         )
                     }
-                    val confirmed = ChatListSync(fixture.service).synchronize(saved.checkpoint)
+                    val confirmed =
+                        ChatListSync(fixture.service).synchronize(saved.checkpoint).checkpoint
                     assertEquals(CHAT_PROJECT, replayChats(confirmed).single().projectId)
                     assertEquals(CHAT_PERSONAL, replayChats(confirmed).single().id)
                     lease.save(confirmed, 2345, saved.navigation)
