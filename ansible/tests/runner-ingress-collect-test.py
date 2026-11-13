@@ -1,0 +1,360 @@
+"""Run the production collector with real private files, curl and a TLS peer."""
+
+import configparser
+import http.server
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import ssl
+import subprocess
+import tempfile
+import threading
+import time
+import unittest
+import uuid
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "ansible/files/vm0-monitoring-runner-ingress-collect.py"
+HOST = "runner-ingress.test"
+TOKEN = "vm0_official_" + "a" * 64
+
+
+class HealthHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        pass
+
+    def do_GET(self):
+        runner_id = self.path.split("/")[2]
+        with self.server.lock:
+            self.server.requests.append((self.path, self.headers.get("Authorization")))
+        self.server.received.set()
+        self.server.release.wait(20)
+        status, body = self.server.responses.get(runner_id, (503, b""))
+        if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+            status, body = 401, b""
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        if status == 302:
+            self.send_header("Location", f"https://{HOST}{self.path}")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except OSError:
+            pass
+
+
+class CollectorTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.certificates = tempfile.TemporaryDirectory(prefix="runner-ingress-ca-")
+        cls.ca_dir = Path(cls.certificates.name)
+        cls.certificate = cls.ca_dir / "cert.pem"
+        cls.key = cls.ca_dir / "key.pem"
+        for name in ("cert", "untrusted"):
+            subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-keyout",
+                    str(cls.ca_dir / f"{name}-key.pem"),
+                    "-out",
+                    str(cls.ca_dir / f"{name}.pem"),
+                    "-days",
+                    "1",
+                    "-subj",
+                    f"/CN={HOST}",
+                    "-addext",
+                    f"subjectAltName=DNS:{HOST}",
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        cls.key = cls.ca_dir / "cert-key.pem"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.certificates.cleanup()
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="runner-ingress-collector-")
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name)
+        self.runners = self.work / "runners"
+        self.output = self.work / "textfile"
+        self.binary = self.work / "bin"
+        for directory in (self.runners, self.output, self.binary):
+            directory.mkdir(mode=0o700)
+        self.peer = http.server.ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler)
+        self.peer.daemon_threads = True
+        self.peer.responses = {}
+        self.peer.requests = []
+        self.peer.lock = threading.Lock()
+        self.peer.received = threading.Event()
+        self.peer.release = threading.Event()
+        self.peer.release.set()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.certificate, self.key)
+        self.peer.socket = context.wrap_socket(self.peer.socket, server_side=True)
+        self.thread = threading.Thread(target=self.peer.serve_forever)
+        self.thread.start()
+        self.addCleanup(self.close_peer)
+        self.arguments = self.work / "curl-arguments.jsonl"
+        # The external-command fixture changes only DNS/dial address and its CA.
+        # Actual production URL, request flags, credential pipe and curl remain.
+        wrapper = self.binary / "curl"
+        wrapper.write_text(
+            "#!/usr/bin/python3\nimport json, os, sys\n"
+            f"with open({str(self.arguments)!r}, 'a') as output:\n"
+            "    output.write(json.dumps({'pid':os.getpid(),'argv':sys.argv[1:]})+'\\n')\n"
+            f"dial = {f'{HOST}:443:127.0.0.1:{self.peer.server_port}'!r}\n"
+            f"ca = os.environ.get('FIXTURE_CA', {str(self.certificate)!r})\n"
+            "os.execv('/usr/bin/curl', ['curl', *sys.argv[1:-1], '--connect-to', dial, '--cacert', ca, sys.argv[-1]])\n"
+        )
+        wrapper.chmod(0o755)
+        self.env = dict(
+            os.environ,
+            PATH=f"{self.binary}:/usr/bin:/bin",
+            OKOU_RUNNERS_DIR=str(self.runners),
+            OKOU_MONITORING_TEXTFILE_DIR=str(self.output),
+        )
+        self.command = ["/usr/bin/python3", "-I", "-B", str(SCRIPT), "--hostname", HOST]
+
+    def close_peer(self):
+        self.peer.release.set()
+        self.peer.shutdown()
+        self.thread.join()
+        self.peer.server_close()
+
+    def runner(self, name, *, mode="running", token=TOKEN, runner_id=None):
+        path = self.runners / name
+        path.mkdir(mode=0o700)
+        runner_id = runner_id or str(uuid.uuid4())
+        files = {
+            "runner_id": runner_id,
+            "heartbeat_generation": "1",
+            "status.json": json.dumps({"mode": mode}),
+            "runner.yaml": yaml.safe_dump(
+                {
+                    "hostname": HOST,
+                    "base_dir": str(path),
+                    "server": {"token": token, "url": "https://api.example.org"},
+                }
+            ),
+        }
+        for name, content in files.items():
+            file = path / name
+            file.write_text(content)
+            file.chmod(0o600)
+        return runner_id, path
+
+    def run_collector(self, *, env=None, command=None):
+        result = subprocess.run(
+            command or self.command,
+            env=env or self.env,
+            capture_output=True,
+            text=True,
+            timeout=35,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        content = (self.output / "runner-ingress.prom").read_text()
+        self.assertNotIn(TOKEN, content + result.stdout + result.stderr)
+        self.assertEqual(
+            (self.output / "runner-ingress.prom").stat().st_mode & 0o777, 0o644
+        )
+        self.assertEqual(
+            sorted(path.name for path in self.output.iterdir()), ["runner-ingress.prom"]
+        )
+        for line in (
+            self.arguments.read_text().splitlines() if self.arguments.exists() else []
+        ):
+            invocation = json.loads(line)
+            self.assertNotIn(TOKEN, str(invocation["argv"]))
+            self.assertFalse(
+                Path(f"/proc/{invocation['pid']}").exists(), "curl was not reaped"
+            )
+        return content
+
+    def sample(self, runner_id, reachable):
+        return f'vm0_runner_ingress_up{{runner_id="{runner_id}"}} {reachable}\n'
+
+    def test_managed_targets_are_independent_of_runner_progress(self):
+        first, _ = self.runner("serving")
+        second, _ = self.runner("draining", mode="draining")
+        dead, _ = self.runner("dead-but-status-remains")
+        self.runner("stopped", mode="stopped")
+        self.runner("personal", token="vm0_pat_example")
+        (self.runners / "prepared").mkdir()
+        self.peer.responses = {first: (200, b"ok"), second: (200, b"ok")}
+        content = self.run_collector()
+        for runner_id, value in ((first, 1), (second, 1), (dead, 0)):
+            self.assertIn(self.sample(runner_id, value), content)
+        self.assertEqual(len(self.peer.requests), 3)
+        self.assertEqual(content.count("runner_id="), 3)
+
+    def test_strict_responses_do_not_retry_or_follow_redirects(self):
+        expected = []
+        for index, outcome in enumerate(
+            (
+                (302, b"ok"),
+                (401, b""),
+                (502, b""),
+                (200, b"no"),
+                (200, b"okay"),
+                (200, b"o"),
+            )
+        ):
+            runner_id, _ = self.runner(str(index))
+            self.peer.responses[runner_id] = outcome
+            expected.append(runner_id)
+        content = self.run_collector()
+        self.assertEqual(len(self.peer.requests), len(expected))
+        for runner_id in expected:
+            self.assertIn(self.sample(runner_id, 0), content)
+
+    def test_tls_failure_and_recovery_replace_the_file(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.assertIn(
+            self.sample(runner_id, 0),
+            self.run_collector(
+                env=dict(self.env, FIXTURE_CA=str(self.ca_dir / "untrusted.pem"))
+            ),
+        )
+        self.assertEqual(self.peer.requests, [])
+        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+
+    def test_stalled_peer_is_bounded_and_the_next_round_recovers(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.peer.release.clear()
+        before = time.monotonic()
+        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        self.assertLess(time.monotonic() - before, 15)
+        self.assertEqual(len(self.peer.requests), 1)
+        self.peer.release.set()
+        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+
+    def test_restart_during_request_cannot_inherit_success(self):
+        runner_id, path = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.peer.release.clear()
+        with subprocess.Popen(
+            self.command, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ) as process:
+            try:
+                self.assertTrue(self.peer.received.wait(5))
+                (path / "heartbeat_generation").write_text("2")
+                self.peer.release.set()
+                stdout, stderr = process.communicate(timeout=15)
+                self.assertEqual(process.returncode, 0, stderr)
+                self.assertNotIn(TOKEN.encode(), stdout + stderr)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+        self.assertIn(
+            self.sample(runner_id, 0), (self.output / "runner-ingress.prom").read_text()
+        )
+        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+
+    def test_duplicate_identity_does_not_duplicate_requests_or_samples(self):
+        runner_id, _ = self.runner("one")
+        self.runner("two", runner_id=runner_id)
+        self.peer.responses[runner_id] = (200, b"ok")
+        content = self.run_collector()
+        self.assertIn(self.sample(runner_id, 0), content)
+        self.assertEqual(content.count("runner_id="), 1)
+        self.assertEqual(len(self.peer.requests), 1)
+
+    def test_bad_configuration_never_sends_credentials_or_retains_success(self):
+        runner_id, path = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        config = path / "runner.yaml"
+        original = config.read_text()
+        for invalid in (
+            original.replace(HOST, "other.example.org"),
+            f"server: [\n{TOKEN}",
+        ):
+            config.write_text(invalid)
+            self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        config.write_text(original)
+        config.chmod(0o644)
+        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        config.unlink()
+        outside = self.work / "outside.yaml"
+        outside.write_text(original)
+        outside.chmod(0o600)
+        config.symlink_to(outside)
+        self.assertIn(self.sample(runner_id, 0), self.run_collector())
+        self.assertEqual(len(self.peer.requests), 1)
+
+    def test_root_symlink_replaces_old_healthy_file_without_probing(self):
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.assertIn(self.sample(runner_id, 1), self.run_collector())
+        alias = self.work / "alias"
+        alias.symlink_to(self.runners, target_is_directory=True)
+        content = self.run_collector(env=dict(self.env, OKOU_RUNNERS_DIR=str(alias)))
+        self.assertNotIn("runner_id=", content)
+        self.assertEqual(len(self.peer.requests), 1)
+
+    def test_provisioned_command_and_timer_keep_network_off_the_scrape_cadence(self):
+        playbook = yaml.safe_load(
+            (ROOT / "ansible/playbooks/provision-monitoring.yml").read_text()
+        )
+        copies = {
+            task["copy"].get("dest"): task["copy"]
+            for task in playbook[0]["tasks"]
+            if "copy" in task
+        }
+        service = configparser.ConfigParser(interpolation=None)
+        timer = configparser.ConfigParser(interpolation=None)
+        service.optionxform = str
+        timer.optionxform = str
+        prefix = "/etc/systemd/system/vm0-monitoring-runner-ingress-collect"
+        service.read_string(
+            copies[prefix + ".service"]["content"].replace(
+                "{{ inventory_hostname }}", HOST
+            )
+        )
+        timer.read_string(copies[prefix + ".timer"]["content"])
+        self.assertEqual(timer["Timer"]["OnUnitInactiveSec"], "60s")
+        self.assertEqual(timer["Timer"]["OnActiveSec"], "60s")
+        self.assertEqual(
+            timer["Timer"]["Unit"], "vm0-monitoring-runner-ingress-collect.service"
+        )
+        self.assertEqual(service["Service"]["KillMode"], "control-group")
+        self.assertEqual(service["Service"]["TimeoutStartSec"], "45s")
+        installed = self.binary / "vm0-monitoring-runner-ingress-collect"
+        shutil.copyfile(SCRIPT, installed)
+        command = shlex.split(service["Service"]["ExecStart"])
+        command[3] = str(installed)
+        unit_file = self.work / "vm0-monitoring-runner-ingress-collect.service"
+        service["Service"]["ExecStart"] = shlex.join(command)
+        with unit_file.open("w") as output:
+            service.write(output)
+        timer_file = self.work / "vm0-monitoring-runner-ingress-collect.timer"
+        with timer_file.open("w") as output:
+            timer.write(output)
+        verified = subprocess.run(
+            ["systemd-analyze", "verify", "--man=no", str(unit_file), str(timer_file)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        runner_id, _ = self.runner("serving")
+        self.peer.responses[runner_id] = (200, b"ok")
+        self.assertIn(self.sample(runner_id, 1), self.run_collector(command=command))
+
+
+if __name__ == "__main__":
+    unittest.main()

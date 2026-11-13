@@ -84,3 +84,47 @@ Ansible, passwordless sudo and a running systemd instance.
 ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
   -e 'ansible_user=ubuntu'
 ```
+
+## Ingress monitoring
+
+`provision-monitoring.yml` installs an independent root oneshot collector for
+authenticated public HTTPS health. It reads the existing private managed
+`runner.yaml`, `runner_id`, `heartbeat_generation` and lifecycle status in each
+version directory; it does not require changes to the Runner executable or
+status format. Running and draining official targets are checked separately.
+Prepared, stopped and nonofficial instances are not targets. The configured
+hostname must match inventory before a credential is sent. Manual credential
+overrides or config drift can make the configured health request unsuccessful;
+the collector does not read live-process credentials.
+
+Each target receives one request per collection, with a ten-second timeout and
+no retries or redirects. Up to four requests run concurrently within a
+30-second collection budget. The timer waits 60 seconds after the collector
+finishes, plus up to ten seconds of randomized delay, so failures never cause
+overlapping or catch-up probes. The existing 15-second Alloy scrape only reads
+the result; it does not issue health requests.
+
+The collector atomically replaces `runner-ingress.prom` with the single gauge
+`vm0_runner_ingress_up{runner_id="..."}`. A value of 1 requires ordinary TLS
+validation, HTTP 200, the exact `ok` body and unchanged process identity. A value
+of 0 means this round did not establish healthy ingress. The observation checks
+HTTPS/Caddy/Runner routing from the host, not dispatch admission or API-origin
+network policy. Credentials stay in private input files and a curl stdin pipe,
+never in metrics, command arguments, diagnostics or Alloy configuration.
+
+Always gate the display on the ingress file's own freshness. Repeated Alloy
+scrapes can keep an old gauge sample current after the collector stops:
+
+```promql
+vm0_runner_ingress_up
+and on (env, instance)
+  (time() - node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} < 180)
+and on (env, instance)
+  (node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} <= time())
+```
+
+Missing/stale data must not display as healthy. Normal host provisioning applies
+collector changes through the existing Ansible-tree hash; merged source alone
+does not prove the host was provisioned or Grafana received the new series.
+Run the real-files/curl/TLS fixtures with
+`.github/scripts/tests/vm0-monitoring-runner-ingress-collect-test.sh`.
