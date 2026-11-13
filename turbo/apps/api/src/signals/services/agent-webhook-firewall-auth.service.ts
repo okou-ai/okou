@@ -71,6 +71,7 @@ import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
   automaticMcpRuntimeFirewallAuthKind,
 } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import { mcpEndpointFirewallBase } from "@okouai/connectors/connector-catalog/artifacts/mcp-endpoint";
 import {
   parseBasicAuthTemplates,
   replaceBasicAuthTemplates,
@@ -5335,7 +5336,10 @@ function requestedAutomaticMcpCatalogAuth(args: {
   }
   const mcpEndpoint =
     args.snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint;
-  if (matchedBase !== mcpEndpoint) {
+  if (
+    mcpEndpoint === undefined ||
+    matchedBase !== mcpEndpointFirewallBase(mcpEndpoint)
+  ) {
     return null;
   }
   const currentCatalogApi = args.snapshot.serverFirewalls
