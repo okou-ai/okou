@@ -2161,6 +2161,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
+ "nix",
  "process-control-ipc",
  "process-launch",
  "rustix",
@@ -2291,6 +2292,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
+ "nix",
  "tempfile",
 ]
 
@@ -3659,6 +3661,7 @@ name = "process-launch"
 version = "0.1.6"
 dependencies = [
  "libc",
+ "nix",
  "rustix",
  "tempfile",
  "tokio",
