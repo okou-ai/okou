@@ -7459,6 +7459,7 @@ export function registerSharedFeishuConversationTests(): void {
     const {
       own,
       claimRun,
+      ownFeishuRun,
       cancelPlan,
       connectContract,
       reset,
@@ -7935,19 +7936,14 @@ export function registerSharedFeishuConversationTests(): void {
       );
 
       // Freeing a slot picks the waiting thread and launches its message.
-      await own(() => {
-        return runsApi.requestCancelRun(actor, firstRun.id, [200]);
-      });
-      await own(flushWaitUntilForTest);
+      await claimRun(firstRun.id);
+      await ownFeishuRun(actor, firstRun.id)();
       const pickedRun = await findRun(actor, prompts[2]);
-      expect(pickedRun.status).toBe("pending");
-      await own(() => {
-        return runsApi.requestCancelRun(actor, pickedRun.id, [200]);
-      });
-      await own(() => {
-        return runsApi.requestCancelRun(actor, secondRun.id, [200]);
-      });
-      await own(flushWaitUntilForTest);
+      expect(pickedRun.status).toBe("running");
+      await claimRun(pickedRun.id);
+      await ownFeishuRun(actor, pickedRun.id)();
+      await claimRun(secondRun.id);
+      await ownFeishuRun(actor, secondRun.id)();
       const client = setupApp({ context, routes: feishuConnectRoutes })(
         connectContract,
       );

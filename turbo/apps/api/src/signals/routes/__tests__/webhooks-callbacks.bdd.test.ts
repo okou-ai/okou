@@ -3051,7 +3051,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
 
     const pickedRunId = await waitForPickedThreadRun(actor, queuedThreadId);
-    expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
+    expect((await runs.readRun(actor, pickedRunId)).status).toBe("running");
     const drained = await runs.readRunQueue(actor);
     expect(drained.body.concurrency.tier).toBe("team");
     expect(drained.body.concurrency.active).toBe(4);
@@ -3205,10 +3205,16 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       body: { allowed: true, count: 0, limit: 10 },
     });
 
-    await runs.requestCancelRun(actor, first.runId, [200]);
-    await runs.requestCancelRun(actor, second.runId, [200]);
-    await runs.requestCancelRun(actor, third.runId, [200]);
-    await runs.requestCancelRun(actor, pickedRunId, [200]);
+    for (const runId of [first.runId, second.runId, third.runId, pickedRunId]) {
+      const claim = await runs.executionInput(runId);
+      await runs.requestCancelRun(actor, runId, [200]);
+      await api.requestAgentComplete(
+        { runId, exitCode: 137, error: "Run cancelled" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    }
+    await flushWaitUntilForTest();
     const settled = await runs.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
@@ -3596,7 +3602,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     // full, so both queued inputs start runs.
     for (const threadId of queuedThreadIds) {
       const pickedRunId = await waitForPickedThreadRun(actor, threadId);
-      expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
+      expect((await runs.readRun(actor, pickedRunId)).status).toBe("running");
     }
     const after = await runs.readRunQueue(actor);
     expect(after.body.concurrency.limit).toBe(5);
@@ -5018,7 +5024,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       agentId: agent.agentId,
       prompt: "survive until teardown",
     });
-    expect(run.status).toBe("pending");
+    expect(run.status).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.executionInput(run.runId);
     await gh.installGithubApp(actor, agent.agentId, {
@@ -5249,7 +5255,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const queue = await runs.readRunQueue(peer);
     expect(queue.body.concurrency.active).toBe(2);
     await expect(runs.readRun(peer, peerRunId)).resolves.toMatchObject({
-      status: "pending",
+      status: "running",
     });
     expect(queue.body.concurrency.memberUsage).toContainEqual(
       expect.objectContaining({ userId: peer.userId, active: 2 }),
@@ -5769,7 +5775,8 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       agentId: agent.agentId,
       prompt: "banned user cleanup run",
     });
-    expect(run.status).toBe("pending");
+    expect(run.status).toBe("running");
+    const claim = await runs.executionInput(run.runId);
 
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [],
@@ -5792,7 +5799,15 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     );
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
 
-    const queue = await runs.readRunQueue(banned);
-    expect(queue.body.concurrency.active).toBe(0);
+    const stopping = await runs.readRunQueue(banned);
+    expect(stopping.body.concurrency.active).toBe(1);
+    await api.requestAgentComplete(
+      { runId: run.runId, exitCode: 137, error: "Run cancelled" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const stopped = await runs.readRunQueue(banned);
+    expect(stopped.body.concurrency.active).toBe(0);
   });
 });

@@ -218,6 +218,8 @@ describe("private Runner VNC authority", () => {
   }
 
   it("rejects native snapshots and failure reasons for a Direct VNC route", async () => {
+    // Historical-clock heartbeats prune the fleet across groups.
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     for (const type of ["cloudflare_access", "tailscale"] as const) {
@@ -245,6 +247,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("records bounded owner evidence, recovers and ignores reordered, duplicate and future VNC observations", async () => {
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     await expect(observations(f)).resolves.toStrictEqual([]);
@@ -303,6 +306,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("isolates VNC observations by owner, configuration generation and deletion", async () => {
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     const other = await claimedFixture();
@@ -342,6 +346,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("ignores delayed evidence when a deleted VNC ID is recreated", async () => {
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     const handoff = await accept(
@@ -409,6 +414,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("rejects secret-bearing and non-connection observation payloads without reflecting their values", async () => {
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     for (const invalid of [
@@ -445,6 +451,7 @@ describe("private Runner VNC authority", () => {
   it.each(["rfb", "kdc"] as const)(
     "hides old %s carrier evidence and accepts its successor despite clock skew",
     async (route) => {
+      await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
       mockNow(new Date("2026-10-14T00:00:30.000Z"));
       const f = await claimedFixture();
       const sshApi = setupApp({ context, routes: sshConnectionsRoutes })(
@@ -585,6 +592,7 @@ describe("private Runner VNC authority", () => {
   );
 
   it("does not record VNC evidence after chat authority is revoked or membership is lost", async () => {
+    await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     await api.setDefault(f, "vnc", f.connectionId, false);

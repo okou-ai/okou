@@ -295,7 +295,9 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
         throw new Error("Expected the queued run-scoped request to succeed");
       }
 
-      await cancelChatRun(actor, immediateRunId);
+      await cancelChatRun(actor, immediateRunId, {
+        authorization: `Bearer ${(await api.executionInput(immediateRunId)).sandboxToken}`,
+      });
       await flushWaitUntilForTest();
       const promotedMessages = await waitForThreadMessages(
         actor,
@@ -333,7 +335,9 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
         }),
       );
 
-      await cancelChatRun(actor, promoted.runId);
+      await cancelChatRun(actor, promoted.runId, {
+        authorization: `Bearer ${(await api.executionInput(promoted.runId)).sandboxToken}`,
+      });
       await cancelChatRun(actor, caller.runId, callerClaim.sandboxHeaders);
     });
   }, 90_000);
