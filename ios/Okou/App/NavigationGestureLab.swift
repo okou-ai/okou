@@ -147,12 +147,12 @@
           "proxy", "proxy-simultaneous", "minimal-simultaneous", "direction-simultaneous",
           "direction-priority",
         ].contains(policy) {
+          let simultaneous = policy.hasSuffix("simultaneous")
+          let direction = policy.hasPrefix("direction-")
           let proxy = NavigationGestureLabDelegate(
             navigation: navigation, original: policy == "minimal-simultaneous" ? nil : original,
-            probe: self,
-            simultaneous: ["proxy-simultaneous", "minimal-simultaneous", "direction-simultaneous"]
-              .contains(policy),
-            direction: policy.hasPrefix("direction-"), priority: policy == "direction-priority")
+            probe: self, simultaneous: simultaneous, direction: direction,
+            priority: policy == "direction-priority")
           proxies.append(proxy)
           recognizer.delegate = proxy
         }
@@ -207,7 +207,8 @@
         && navigation?.transitionCoordinator == nil
       if direction, let pan = gestureRecognizer as? UIPanGestureRecognizer {
         let velocity = pan.velocity(in: navigation?.view)
-        let x = navigation?.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let x =
+          navigation?.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
           ? -velocity.x : velocity.x
         allowed = allowed && x > abs(velocity.y)
       }
