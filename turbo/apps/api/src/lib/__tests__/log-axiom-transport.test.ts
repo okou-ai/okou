@@ -47,7 +47,7 @@ import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
 import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
-import { createSharedBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-shared-fixture";
+import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
 import { withRequestRuntime } from "../request-runtime";
@@ -148,7 +148,7 @@ test("keeps private provider details out of native window failure logs", async (
     isolatePg: true,
   });
   const cron = app(cronBrowserReconcileContract);
-  const { fixture, open } = createSharedBrowserFixtures(context);
+  const { fixture, open } = createBrowserFixtures(context);
   const f = await fixture();
   await f.owned.run(async () => {
     const chat = await f.start();
@@ -172,7 +172,7 @@ test("keeps private provider details out of native window failure logs", async (
     expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
     const warning = context.mocks.axiomLogging.warn.mock.calls
       .filter(([message]) => {
-        return message === "Shared Browser window reconciliation failed";
+        return message === "Browser window reconciliation failed";
       })
       .at(-1);
     const record = object({})
@@ -184,7 +184,7 @@ test("keeps private provider details out of native window failure logs", async (
       phase: "check-native-window",
       errorKind: "cdp",
       errorCode: -32_602,
-      context: "SharedBrowserReconcile",
+      context: "BrowserReconcile",
     });
     const serialized = JSON.stringify(warning);
     expect(serialized).not.toContain(privateDetail);

@@ -27,7 +27,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-user-action-request";
 import {
   and,
   type SQLWrapper,
@@ -84,7 +84,7 @@ const TERMINAL_STATES: readonly BrowserUserActionState[] = [
 
 type RequestRow = typeof browserUserActionRequests.$inferSelect;
 
-function sharedInputWindowCondition(
+function inputWindowCondition(
   owner: {
     readonly orgId: string;
     readonly userId: string;
@@ -120,7 +120,7 @@ function sharedInputWindowCondition(
 
 const storedInputWindow = sql`${browserUserActionRequests.payload}->'target'->'window'`;
 
-function storedSharedInputIsLive(at: Date) {
+function storedInputIsLive(at: Date) {
   return exists(
     new QueryBuilder()
       .select({ id: browserChatSessions.chatThreadId })
@@ -465,7 +465,7 @@ const requestHasLiveBrowser$ = command(
     const [live] = await db
       .select({ id: browserChatSessions.chatThreadId })
       .from(browserChatSessions)
-      .where(sharedInputWindowCondition(row, payload.target.window, now));
+      .where(inputWindowCondition(row, payload.target.window, now));
     return live !== undefined;
   },
 );
@@ -484,7 +484,7 @@ const touchExactProvider$ = command(
         expiresAt: sql`least(greatest(${browserChatSessions.expiresAt}, ${sql.param(new Date(leaseTime.getTime() + IDLE_LEASE_MS), browserChatSessions.expiresAt)}::timestamp), (${new QueryBuilder().select({ timeoutAt: browserOwnerProfiles.timeoutAt }).from(browserOwnerProfiles).where(eq(browserOwnerProfiles.instanceId, payload.target.window.instanceId))}))`,
         updatedAt: leaseTime,
       })
-      .where(sharedInputWindowCondition(row, payload.target.window, leaseTime))
+      .where(inputWindowCondition(row, payload.target.window, leaseTime))
       .returning({ id: browserChatSessions.chatThreadId });
     signal.throwIfAborted();
     return touched !== undefined;
@@ -578,7 +578,7 @@ const convertClosedBrowserUserActions$ = command(
       .where(
         and(
           inArray(browserUserActionRequests.status, ["pending", "applying"]),
-          not(storedSharedInputIsLive(now)),
+          not(storedInputIsLive(now)),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -662,7 +662,7 @@ const deleteExpiredBrowserUserActions$ = command(
           inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
           isNotNull(browserUserActionRequests.completedAt),
           lte(browserUserActionRequests.completedAt, cutoff),
-          not(storedSharedInputIsLive(nowDate())),
+          not(storedInputIsLive(nowDate())),
         ),
       )
       .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -856,7 +856,7 @@ const resolveBrowserUserActionLifetime$ = command(
   ): Promise<ServiceResult<BrowserUserActionLifetime>> => {
     const db = get(db$);
     const now = nowDate();
-    const [shared] = await db
+    const [browser] = await db
       .select({
         instanceId: browserOwnerProfiles.instanceId,
         providerSessionId: browserOwnerProfiles.providerSessionId,
@@ -884,15 +884,15 @@ const resolveBrowserUserActionLifetime$ = command(
       );
     signal.throwIfAborted();
     if (
-      !shared ||
-      shared.status !== "active" ||
-      !shared.providerSessionId ||
-      shared.timeoutAt <= now ||
-      !shared.window ||
-      shared.window.state !== "active" ||
-      shared.window.primaryWindowId === null ||
-      shared.window.expiresAt === null ||
-      shared.window.expiresAt <= now
+      !browser ||
+      browser.status !== "active" ||
+      !browser.providerSessionId ||
+      browser.timeoutAt <= now ||
+      !browser.window ||
+      browser.window.state !== "active" ||
+      browser.window.primaryWindowId === null ||
+      browser.window.expiresAt === null ||
+      browser.window.expiresAt <= now
     ) {
       return conflict(
         "The current chat has no live shared Browser window",
@@ -900,10 +900,10 @@ const resolveBrowserUserActionLifetime$ = command(
       );
     }
     const live = {
-      providerSessionId: shared.providerSessionId,
+      providerSessionId: browser.providerSessionId,
       window: {
-        instanceId: shared.instanceId,
-        primaryWindowId: shared.window.primaryWindowId,
+        instanceId: browser.instanceId,
+        primaryWindowId: browser.window.primaryWindowId,
       },
     };
 

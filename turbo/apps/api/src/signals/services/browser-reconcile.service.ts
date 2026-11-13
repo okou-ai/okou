@@ -1,7 +1,7 @@
 import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-session";
+import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-screenshot-deletion";
 import { command } from "ccstate";
 import {
   browserChatWindow,
@@ -43,13 +43,13 @@ import {
   type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import {
-  captureSharedSnapshot$,
-  sharedBrowserLifetime,
-  sharedSnapshotPublication,
-} from "./browser-shared-snapshot.service";
+  captureBrowserSnapshot$,
+  browserLifetime,
+  browserSnapshotPublication,
+} from "./browser-snapshot.service";
 
 const BATCH_SIZE = 20;
-const L = logger("SharedBrowserReconcile");
+const L = logger("BrowserReconcile");
 type Profile = typeof profiles.$inferSelect;
 type Window = BrowserChatWindow;
 interface Owner {
@@ -111,7 +111,7 @@ function nativeHealthErrorClass(error: unknown) {
 }
 
 /** Never pass provider messages, validation input or SQL to the logger. */
-function sharedWindowFailure(error: unknown) {
+function browserWindowFailure(error: unknown) {
   if (error instanceof BrowserUseWindowHealthError) {
     return {
       errorKind: error.phase === "validation" ? "validation" : "transport",
@@ -225,7 +225,7 @@ function needsWindowRetirement(
   );
 }
 
-type SharedWindowObservation =
+type BrowserWindowObservation =
   | {
       readonly kind: "gone";
       readonly providerStatus: "missing" | "stopped";
@@ -238,11 +238,11 @@ type SharedWindowObservation =
     };
 
 /** Remote observation cannot turn independently expired usage into live usage. */
-async function observeSharedWindow(
+async function observeBrowserWindow(
   target: Candidate,
   progress: RetirementProgress,
   signal: AbortSignal,
-): Promise<SharedWindowObservation> {
+): Promise<BrowserWindowObservation> {
   const { profile, window } = target;
   progress.phase = "find-provider";
   if (!profile.providerSessionId) {
@@ -310,7 +310,7 @@ async function observeSharedWindow(
   };
 }
 
-const claimSharedWindowRetirement$ = command(
+const claimBrowserWindowRetirement$ = command(
   async (
     { set },
     target: Candidate & {
@@ -326,13 +326,13 @@ const claimSharedWindowRetirement$ = command(
       userId: profile.userId,
       chatThreadId: current.chatThreadId,
     };
-    const identity = sharedBrowserLifetime(owner, profile, current);
+    const identity = browserLifetime(owner, profile, current);
     const db = set(writeDb$);
     progress.phase = "prepare-snapshot";
     const capture =
       !nativeMissing && target.threadId !== null && connection !== null
         ? await set(
-            captureSharedSnapshot$,
+            captureBrowserSnapshot$,
             { owner, window: current, ...connection, purpose: "retirement" },
             signal,
           )
@@ -346,7 +346,7 @@ const claimSharedWindowRetirement$ = command(
       .set({
         state: "closing",
         updatedAt: at,
-        ...(capture ? sharedSnapshotPublication(capture).set : {}),
+        ...(capture ? browserSnapshotPublication(capture).set : {}),
       })
       .where(
         and(
@@ -399,7 +399,7 @@ const claimSharedWindowRetirement$ = command(
   },
 );
 
-const markSharedProviderGone$ = command(
+const markBrowserProviderGone$ = command(
   async (
     { set },
     profile: Profile,
@@ -437,7 +437,7 @@ const markSharedProviderGone$ = command(
   },
 );
 
-const retireSharedWindow$ = command(
+const retireBrowserWindow$ = command(
   async (
     { get, set },
     target: Candidate,
@@ -450,7 +450,7 @@ const retireSharedWindow$ = command(
       userId: profile.userId,
       chatThreadId: target.window.chatThreadId,
     };
-    const identity = sharedBrowserLifetime(owner, profile, target.window);
+    const identity = browserLifetime(owner, profile, target.window);
     progress.phase = "read-window";
     const [currentRow] = await get(db$)
       .select({
@@ -468,7 +468,7 @@ const retireSharedWindow$ = command(
     if (!current) {
       return null;
     }
-    const observed = await observeSharedWindow(
+    const observed = await observeBrowserWindow(
       { ...target, window: current },
       progress,
       signal,
@@ -477,7 +477,7 @@ const retireSharedWindow$ = command(
     if (observed.kind === "gone") {
       progress.phase = "mark-provider-gone";
       await set(
-        markSharedProviderGone$,
+        markBrowserProviderGone$,
         profile,
         observed.providerStatus,
         signal,
@@ -498,7 +498,7 @@ const retireSharedWindow$ = command(
     const { connection, nativeMissing } = observed;
     if (current.state === "active") {
       const closing = await set(
-        claimSharedWindowRetirement$,
+        claimBrowserWindowRetirement$,
         { ...target, window: current, connection, nativeMissing },
         progress,
         signal,
@@ -565,7 +565,7 @@ const retireSharedWindow$ = command(
   },
 );
 
-const stopEmptySharedBrowser$ = command(
+const stopEmptyBrowser$ = command(
   async (
     { set },
     candidate: Profile,
@@ -621,10 +621,10 @@ const stopEmptySharedBrowser$ = command(
         signal,
       );
       if (confirmed && confirmed.status !== "stopped") {
-        throw new Error("Shared Browser provider stop is not confirmed");
+        throw new Error("Browser provider stop is not confirmed");
       }
     }
-    const stopped = db.$with("stopped_shared_browser").as(
+    const stopped = db.$with("stopped_browser").as(
       db
         .update(profiles)
         .set({
@@ -641,7 +641,7 @@ const stopEmptySharedBrowser$ = command(
         )
         .returning({ id: profiles.id, instanceId: profiles.instanceId }),
     );
-    const closed = db.$with("closed_shared_browser_windows").as(
+    const closed = db.$with("closed_browser_windows").as(
       db
         .update(windows)
         .set({
@@ -672,7 +672,7 @@ const stopEmptySharedBrowser$ = command(
   },
 );
 
-const recoverSharedCreations$ = command(
+const recoverBrowserCreations$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     let errors = 0;
     let stopped = 0;
@@ -713,16 +713,14 @@ const recoverSharedCreations$ = command(
           .returning();
         signal.throwIfAborted();
         if (bound) {
-          stopped += (await set(stopEmptySharedBrowser$, bound, signal))
-            ? 1
-            : 0;
+          stopped += (await set(stopEmptyBrowser$, bound, signal)) ? 1 : 0;
         }
       })();
       const recovered = await settleIncludingAbort(recoveryWork);
       signal.throwIfAborted();
       if (!recovered.ok) {
         errors += 1;
-        L.warn("Shared Browser creation could not be reconciled", {
+        L.warn("Browser creation could not be reconciled", {
           instanceId: candidate.instanceId,
         });
       }
@@ -737,7 +735,7 @@ const recoverSharedCreations$ = command(
   },
 );
 
-function sharedBrowserStopCondition(
+function browserStopCondition(
   owner: Owner | null,
   closedInstances: readonly string[],
   at: Date,
@@ -771,7 +769,7 @@ function sharedBrowserStopCondition(
   );
 }
 
-const reconcileSharedWindows$ = command(
+const reconcileBrowserWindows$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     const rows = await get(db$)
       .select({
@@ -818,7 +816,7 @@ const reconcileSharedWindows$ = command(
       // Each candidate owns its diagnostic progress, including concurrent sweeps.
       const progress: RetirementProgress = { phase: "read-window" };
       const result = await settleIncludingAbort(
-        set(retireSharedWindow$, row, progress, signal),
+        set(retireBrowserWindow$, row, progress, signal),
       );
       signal.throwIfAborted();
       if (result.ok) {
@@ -828,18 +826,18 @@ const reconcileSharedWindows$ = command(
       } else {
         errors += 1;
         // Preserve the original failure even if timestamp rotation also fails.
-        L.warn("Shared Browser window reconciliation failed", {
+        L.warn("Browser window reconciliation failed", {
           instanceId: row.profile.instanceId,
           primaryWindowId: row.window.primaryWindowId,
           phase: progress.phase,
-          ...sharedWindowFailure(result.error),
+          ...browserWindowFailure(result.error),
         });
         await set(writeDb$)
           .update(windows)
           .set({ updatedAt: nowDate() })
           .where(
             and(
-              sharedBrowserLifetime(
+              browserLifetime(
                 {
                   orgId: row.profile.orgId,
                   userId: row.profile.userId,
@@ -857,14 +855,14 @@ const reconcileSharedWindows$ = command(
     const empty = await get(db$)
       .select()
       .from(profiles)
-      .where(sharedBrowserStopCondition(owner, [...closedInstances], nowDate()))
+      .where(browserStopCondition(owner, [...closedInstances], nowDate()))
       .orderBy(profiles.updatedAt)
       .limit(BATCH_SIZE);
     signal.throwIfAborted();
     let stopped = 0;
     for (const candidate of empty) {
       const result = await settleIncludingAbort(
-        set(stopEmptySharedBrowser$, candidate, signal),
+        set(stopEmptyBrowser$, candidate, signal),
       );
       signal.throwIfAborted();
       if (result.ok) {
@@ -876,7 +874,7 @@ const reconcileSharedWindows$ = command(
           .set({ updatedAt: nowDate() })
           .where(and(exactProfile(candidate), eq(profiles.status, "stopping")));
         signal.throwIfAborted();
-        L.warn("Shared Browser provider stop could not be confirmed", {
+        L.warn("Browser provider stop could not be confirmed", {
           instanceId: candidate.instanceId,
         });
       }
@@ -950,11 +948,11 @@ const deleteOrphanedBrowserChats$ = command(
 );
 
 /** Independent creation recovery cannot hold up existing windows or their final stop. */
-export const reconcileSharedBrowsers$ = command(
+export const reconcileBrowsers$ = command(
   async ({ set }, owner: Owner | null, signal: AbortSignal) => {
     const [creation, windows] = await joinAll([
-      set(recoverSharedCreations$, owner, signal),
-      set(reconcileSharedWindows$, owner, signal),
+      set(recoverBrowserCreations$, owner, signal),
+      set(reconcileBrowserWindows$, owner, signal),
     ]);
     signal.throwIfAborted();
     await set(deleteOrphanedBrowserChats$, owner, signal);

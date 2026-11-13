@@ -20,7 +20,7 @@ export const START = now();
 export const MINUTE = 60_000;
 export const PROVIDER_URL = "https://api.browser-use.com/api/v3";
 
-export function createSharedBrowserFixtures(context: TestContext) {
+export function createBrowserFixtures(context: TestContext) {
   function profileProvider(
     beforeResponse?: () => Promise<void>,
     cdpProtocol: "https:" | "wss:" = "https:",

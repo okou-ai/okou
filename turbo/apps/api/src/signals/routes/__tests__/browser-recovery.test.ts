@@ -13,15 +13,15 @@ import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
 const { fixture, profileProvider, open, view, renew } =
-  createSharedBrowserFixtures(context);
+  createBrowserFixtures(context);
 type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 function client() {

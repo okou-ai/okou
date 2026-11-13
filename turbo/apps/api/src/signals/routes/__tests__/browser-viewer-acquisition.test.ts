@@ -10,14 +10,14 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, open, view, renew } = createSharedBrowserFixtures(context);
+const { fixture, open, view, renew } = createBrowserFixtures(context);
 const chatApi = createChatFilesBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ viewer: "native" as const });

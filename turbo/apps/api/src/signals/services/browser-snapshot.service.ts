@@ -25,7 +25,7 @@ interface SnapshotOwner {
   readonly chatThreadId: string;
 }
 
-export function sharedBrowserLifetime(
+export function browserLifetime(
   owner: SnapshotOwner,
   profile: Profile,
   window: Pick<Window, "primaryWindowId">,
@@ -53,14 +53,14 @@ export function sharedBrowserLifetime(
     ),
   );
 }
-export interface SharedSnapshotCapture {
+export interface BrowserSnapshotCapture {
   readonly previousValue: string | null;
   readonly encryptedTabUrls: string;
   readonly capturedAt: Date;
 }
 
 /** Capture before retirement; the winning SQL claim owns publication. */
-export const captureSharedSnapshot$ = command(
+export const captureBrowserSnapshot$ = command(
   async (
     { get },
     args: BrowserUseNativeConnection & {
@@ -69,7 +69,7 @@ export const captureSharedSnapshot$ = command(
       readonly purpose: "active" | "retirement";
     },
     signal: AbortSignal,
-  ): Promise<SharedSnapshotCapture | null> => {
+  ): Promise<BrowserSnapshotCapture | null> => {
     const { owner, window } = args;
     const t = windows;
     const [previous] = await get(db$)
@@ -133,7 +133,7 @@ export const captureSharedSnapshot$ = command(
 );
 
 /** Publish independent capture fields without touching the binding twice. */
-export function sharedSnapshotPublication(capture: SharedSnapshotCapture) {
+export function browserSnapshotPublication(capture: BrowserSnapshotCapture) {
   const publication = browserCapturePublication({
     value: windows.encryptedTabUrls,
     updatedAt: windows.tabUrlsCapturedAt,
@@ -149,7 +149,7 @@ export function sharedSnapshotPublication(capture: SharedSnapshotCapture) {
   };
 }
 
-export const saveSharedSnapshot$ = command(
+export const saveBrowserSnapshot$ = command(
   async (
     { set },
     args: BrowserUseNativeConnection & {
@@ -160,7 +160,7 @@ export const saveSharedSnapshot$ = command(
     signal: AbortSignal,
   ) => {
     const capture = await set(
-      captureSharedSnapshot$,
+      captureBrowserSnapshot$,
       { ...args, purpose: "active" },
       signal,
     );
@@ -170,7 +170,7 @@ export const saveSharedSnapshot$ = command(
     }
     const { owner, profile, window } = args;
     const captureOwner = and(
-      sharedBrowserLifetime(owner, profile, window),
+      browserLifetime(owner, profile, window),
       // Once retirement starts, a later capture may see only partly closed
       // pages. It must not overwrite the complete pre-retirement snapshot.
       eq(windows.state, "active"),
@@ -186,7 +186,7 @@ export const saveSharedSnapshot$ = command(
           ),
       ),
     );
-    const publication = sharedSnapshotPublication(capture);
+    const publication = browserSnapshotPublication(capture);
     const saved = await set(writeDb$)
       .update(windows)
       .set(publication.set)

@@ -17,14 +17,14 @@ import { installBrowserWindowContentCommands } from "./helpers/browser-native-wi
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture } = createSharedBrowserFixtures(context);
+const { fixture } = createBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Chat = Awaited<ReturnType<Fixture["start"]>>;
