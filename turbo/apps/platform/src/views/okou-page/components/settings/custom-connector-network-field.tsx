@@ -187,12 +187,16 @@ function ConnectorNetworkSelect({
   onChange,
   disabled,
   retryOnOpen,
+  loading,
+  loadingLabel,
 }: {
   readonly items: readonly { readonly value: string; readonly label: string }[];
   readonly configId: string;
   readonly onChange: (id: string) => void;
   readonly disabled: boolean;
   readonly retryOnOpen: boolean;
+  readonly loading: boolean;
+  readonly loadingLabel: string;
 }) {
   const reload = useSet(invalidateCloudflareAccess$);
   return (
@@ -217,13 +221,21 @@ function ConnectorNetworkSelect({
         className="w-full"
         aria-describedby="custom-connector-cloudflare-description"
       >
-        <SelectValue />
+        <SelectValue>
+          {loading ? (
+            <LoadingSkeleton variant="text" label={loadingLabel} />
+          ) : undefined}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {items.map((item) => {
           return (
             <SelectItem key={item.value} value={item.value}>
-              {item.label}
+              {loading && item.label === loadingLabel ? (
+                <LoadingSkeleton variant="text" label={loadingLabel} />
+              ) : (
+                item.label
+              )}
             </SelectItem>
           );
         })}
@@ -316,21 +328,15 @@ export function CustomConnectorNetworkField({
       </summary>
       <div className="mt-2 grid gap-2">
         <ConnectorNetworkLabel enabled={enabled} />
-        {enabled && loading ? (
-          <LoadingSkeleton
-            variant="text"
-            className="h-9 w-full"
-            label={missingLabel}
-          />
-        ) : (
-          <ConnectorNetworkSelect
-            items={items}
-            configId={configId}
-            onChange={onChange}
-            disabled={disabled}
-            retryOnOpen={loadFailed}
-          />
-        )}
+        <ConnectorNetworkSelect
+          items={items}
+          configId={configId}
+          onChange={onChange}
+          disabled={disabled}
+          retryOnOpen={loadFailed}
+          loading={enabled && loading}
+          loadingLabel={missingLabel}
+        />
         <ConnectorNetworkDescription
           enabled={enabled}
           unavailable={selection.state === "unavailable"}

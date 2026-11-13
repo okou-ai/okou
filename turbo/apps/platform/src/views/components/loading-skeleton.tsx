@@ -1,4 +1,4 @@
-import { Skeleton, cn } from "@okouai/ui";
+import { Skeleton, cn, surfaceVariants } from "@okouai/ui";
 
 /** Content-shaped placeholders with a single accessible loading announcement. */
 export function LoadingSkeleton({
@@ -57,8 +57,7 @@ export function LoadingSkeleton({
               key={index}
               className={cn(
                 "flex items-center gap-3",
-                variant === "cards" &&
-                  "rounded-xl border border-surface-border p-4",
+                variant === "cards" && surfaceVariants({ className: "p-4" }),
               )}
             >
               <Skeleton className="size-9 shrink-0" />
