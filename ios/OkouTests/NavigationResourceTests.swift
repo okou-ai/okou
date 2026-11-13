@@ -120,7 +120,8 @@ final class NavigationResourceTests: XCTestCase {
       await gate.wait()
       return navigationAgents(name: "Shared assistant")
     }
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let first = ThreadListStore(
@@ -219,7 +220,8 @@ final class NavigationResourceTests: XCTestCase {
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "navigation-user", workspaceID: "reload-workspace")
     let sync = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     let list = ThreadListStore(
       client: fixture.client, sync: sync,
       commands: ChatCommands(client: fixture.client, sync: sync),
@@ -253,7 +255,8 @@ final class NavigationResourceTests: XCTestCase {
       guard request.url?.path == "/api/agents" else { throw URLError(.unsupportedURL) }
       return navigationAgents(name: "Confirmed assistant")
     }
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     defer { resources.close() }
     let confirmed = try await resources.store.get(resources.navigation).value
     XCTAssertEqual(confirmed.first?.displayName, "Confirmed assistant")
@@ -279,7 +282,8 @@ final class NavigationResourceTests: XCTestCase {
       }
       return navigationAgents(name: "Retired assistant")
     }
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     let retired = expectation(description: "A mounted resource observes retirement")
     let subscription = try resources.store.watch(resources.navigation) {
       do {

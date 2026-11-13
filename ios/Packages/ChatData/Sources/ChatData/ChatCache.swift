@@ -205,6 +205,49 @@ public actor ChatCache {
     }
   }
 
+  func loadProjectSnapshot() throws -> ProjectSnapshot? {
+    try withDatabase { try readProjectSnapshot($0) }
+  }
+
+  func commitProjectSnapshot(
+    _ snapshot: ProjectSnapshot, replacing cursor: ChatCacheCursor?
+  ) throws -> ProjectSnapshot {
+    try Task.checkCancellation()
+    try snapshot.validate()
+    let data = try JSONEncoder().encode(snapshot)
+    return try withDatabase { database in
+      try database.transaction {
+        if let current = try readProjectSnapshot(database), current.cursor != cursor,
+          current.latestSeqId >= snapshot.latestSeqId
+        {
+          return current
+        }
+        let write = try database.prepare(
+          "INSERT OR REPLACE INTO project_sync (id, snapshot) VALUES (1, ?)")
+        try write.bind(data, at: 1)
+        try write.run()
+        return snapshot
+      }
+    }
+  }
+
+  private func readProjectSnapshot(_ database: SQLiteDatabase) throws -> ProjectSnapshot? {
+    let query = try database.prepare("SELECT snapshot FROM project_sync WHERE id = 1")
+    guard try query.step() else { return nil }
+    let data = try query.blob(at: 0)
+    do {
+      let snapshot = try JSONDecoder().decode(ProjectSnapshot.self, from: data)
+      try snapshot.validate()
+      return snapshot
+    } catch {
+      // An unreadable cache is not a Project list. Rebuild from the canonical
+      // snapshot instead of inventing a cursor for the unversioned warm display.
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error("Invalid cached Project baseline: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
   public func loadIndicators() throws -> CachedChatIndicators? {
     try withDatabase { try readIndicatorState($0).snapshot }
   }
@@ -661,6 +704,13 @@ extension SQLiteDatabase {
     try execute(
       """
       CREATE TABLE IF NOT EXISTS project_list (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot BLOB NOT NULL
+      )
+      """)
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS project_sync (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         snapshot BLOB NOT NULL
       )

@@ -68,12 +68,16 @@ final class ChatProjectsTests: XCTestCase {
   func testProjectNamesSurviveReopeningTheWorkspaceCache() async throws {
     let record = Self.record
     let fixture = ChatHTTPFixture { request in
-      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects/snapshot" else {
         throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(body: "{\"projects\":[\(record)]}")
+      return ChatHTTPResponse(
+        body: "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[\(record)]}")
     }
-    let projects = try await ChatProjects(client: fixture.client).list()
+    let projects = try await ChatSync(client: fixture.client).projectList()
     let directory = CacheTestDirectory(owner: self)
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "project-reader", workspaceID: "scope")

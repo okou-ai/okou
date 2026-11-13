@@ -161,6 +161,9 @@ private final class SidebarProjectionFixture: Sendable {
     let state = LockedServer()
     self.state = state
     http = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
       switch request.url?.path {
       case "/api/agents":
         return ChatHTTPResponse(
@@ -168,7 +171,7 @@ private final class SidebarProjectionFixture: Sendable {
             [{"agentId":"\(Self.agent)","displayName":"Okou","isDefaultAgent":true},
             {"agentId":"\(Self.otherAgent)","displayName":"Research","isDefaultAgent":false}]
             """)
-      case "/api/projects":
+      case "/api/projects/snapshot":
         let server = state.value.withLock { $0 }
         if server.failProjects {
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
@@ -176,7 +179,7 @@ private final class SidebarProjectionFixture: Sendable {
         // The newer Project comes first here; the sidebar still lists the older one first.
         return ChatHTTPResponse(
           body: """
-            {"projects":[\(Self.projectRecord(Self.id(201), name: "Empty", createdAt: Self.timestamp)),
+            {"latestEventId":null,"latestSeqId":0,"projects":[\(Self.projectRecord(Self.id(201), name: "Empty", createdAt: Self.timestamp)),
             \(Self.projectRecord(Self.project, name: server.name))]}
             """)
       case "/api/projects/\(Self.project)":

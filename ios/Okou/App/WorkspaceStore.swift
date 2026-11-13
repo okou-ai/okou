@@ -173,10 +173,12 @@ final class WorkspaceStore {
       try context.set(selectedThread, value)
     }
     self.client = client
+    let sync = sharedSync ?? ChatSync(client: client, cache: cache)
+    self.sync = sync
     self.modelBootstrap = modelBootstrap
     self.createRealtime = createRealtime
     resources = WorkspaceResources(
-      client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
       lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
@@ -186,8 +188,6 @@ final class WorkspaceStore {
     self.measurementScope = measurementScope
     self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
-    let sync = sharedSync ?? ChatSync(client: client, cache: cache)
-    self.sync = sync
     let commands = ChatCommands(client: client, sync: sync)
     self.commands = commands
     self.webURL = webURL
