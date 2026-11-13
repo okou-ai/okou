@@ -235,15 +235,16 @@ final class ThreadListStore {
             #if STAGING
               // Diagnostic-only comparison; the released merge remains the default.
               let perfStart = ProcessInfo.processInfo.systemUptime
-              let perfIndexed = ProcessInfo.processInfo.environment["OKOU_PERF_INDEXED_MERGE"] == "1"
+              let perfIndexed =
+                ProcessInfo.processInfo.environment["OKOU_PERF_INDEXED_MERGE"] == "1"
               let perfPrevious =
                 perfIndexed ? Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) }) : [:]
             #endif
             for index in result.indices {
               #if STAGING
                 let held =
-                  perfIndexed ? perfPrevious[result[index].id]
-                  : threads.first { $0.id == result[index].id }
+                  perfIndexed
+                  ? perfPrevious[result[index].id] : threads.first { $0.id == result[index].id }
               #else
                 let held = threads.first { $0.id == result[index].id }
               #endif
