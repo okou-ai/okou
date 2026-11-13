@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.67.8](https://github.com/okou-ai/okou/compare/api-v2.67.7...api-v2.67.8) (2026-11-13)
+
+
+### Refactoring
+
+* **billing:** retire atom and custom plan issuance ([#47016](https://github.com/okou-ai/okou/issues/47016)) ([d193291](https://github.com/okou-ai/okou/commit/d193291916805888cf1f4952e249d65021f642b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.1
+    * @okouai/core bumped to 8.836.0
+    * @okouai/db bumped to 2.34.5
+    * @okouai/pi-agent-runtime bumped to 1.51.117
+
 ## [2.67.7](https://github.com/okou-ai/okou/compare/api-v2.67.6...api-v2.67.7) (2026-11-13)
 
 

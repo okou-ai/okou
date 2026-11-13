@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.836.0](https://github.com/okou-ai/okou/compare/core-v8.835.2...core-v8.836.0) (2026-11-13)
+
+
+### Features
+
+* **connectors:** enable custom connector cloudflare access for staff ([#47024](https://github.com/okou-ai/okou/issues/47024)) ([13dd6f3](https://github.com/okou-ai/okou/commit/13dd6f3356edb2f199f1407c9c8285a48ae0797d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.1
+
 ## [8.835.2](https://github.com/okou-ai/okou/compare/core-v8.835.1...core-v8.835.2) (2026-11-13)
 
 
