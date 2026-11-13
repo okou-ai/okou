@@ -16,14 +16,14 @@ final class ChatIndicatorRefreshTests: XCTestCase {
     XCTAssertEqual(workspace.list.threads.first?.indicator, .active)
     let initialIndicatorReads = fixture.reads("/api/indicators")
 
-    fixture.values.withLock { $0.title = "Renamed remotely" }
+    fixture.state.values.withLock { $0.title = "Renamed remotely" }
     await workspace.refresh([.threadList])
     XCTAssertEqual(workspace.list.threads.first?.title, "Renamed remotely")
     XCTAssertEqual(workspace.list.threads.first?.indicator, .active)
     XCTAssertEqual(fixture.reads("/api/indicators"), initialIndicatorReads)
     let listReads = fixture.reads("/api/chat-threads/events")
 
-    fixture.values.withLock { $0.indicator = "unread" }
+    fixture.state.values.withLock { $0.indicator = "unread" }
     await workspace.refresh([.indicators])
     XCTAssertTrue(workspace.list.threads.first?.isUnread == true)
     XCTAssertEqual(workspace.list.unreadAgentIDs, [fixture.agentID])
@@ -87,18 +87,21 @@ private final class IndicatorListFixture: Sendable {
     var indicator = "active"
     var requests: [String: Int] = [:]
   }
-  let values = Mutex(Values())
+  final class State: Sendable {
+    let values = Mutex(Values())
+  }
+  let state = State()
   let threadID = UUID().uuidString.lowercased()
   let agentID = UUID().uuidString.lowercased()
   let http: ChatHTTPFixture
 
   init(beforeRead: @escaping @Sendable (String) async -> Void = { _ in }) {
-    let values = values
+    let state = state
     let threadID = threadID
     let agentID = agentID
     http = ChatHTTPFixture { request in
       let path = request.url!.path
-      let current = values.withLock { value in
+      let current = state.values.withLock { value in
         value.requests[path, default: 0] += 1
         return (value.title, value.indicator)
       }
@@ -126,7 +129,7 @@ private final class IndicatorListFixture: Sendable {
     }
   }
 
-  func reads(_ path: String) -> Int { values.withLock { $0.requests[path, default: 0] } }
+  func reads(_ path: String) -> Int { state.values.withLock { $0.requests[path, default: 0] } }
 
   @MainActor
   func workspace() -> WorkspaceStore {
