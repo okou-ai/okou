@@ -239,6 +239,14 @@ native paste bridge with an in-process item provider; it does not establish the
 system clipboard's custom-type round trip or its latency. Record that acceptance
 separately, without treating a late correct result as meeting a missed deadline.
 
+For mixed-image clipboard changes, also verify a system paste containing text
+and two PNG images over selected draft text. Check one text replacement, both
+attachments, retained focus, and the sent message. CI supplies data-only PNG/text
+item providers to the real native paste and image-import/upload paths; it does
+not establish the system pasteboard's image delivery. Keep data representations
+in this CI case so that a file-only fixture cannot hide an importer compatibility
+failure.
+
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps

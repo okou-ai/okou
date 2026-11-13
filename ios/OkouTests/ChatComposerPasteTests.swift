@@ -58,8 +58,7 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(input.text, expectedNativeText)
   }
 
-  func testSystemPasteUploadsMixedImagesAndReplacesSelectedTextOnce() async throws {
-    preserveNativePasteboard(for: self)
+  func testMixedDataProvidersUploadImagesAndReplaceSelectedTextOnce() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
@@ -71,13 +70,24 @@ final class ChatComposerPasteTests: XCTestCase {
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 7, length: 3)
     let png = imageData()
-    // This is the test device's pasteboard; no host clipboard or logged-in device is used.
-    UIPasteboard.general.setItems(
-      [
-        [UTType.utf8PlainText.identifier: Data("pasted".utf8), UTType.png.identifier: png],
-        [UTType.png.identifier: png],
-      ], options: [.localOnly: true])
-    input.paste(nil)
+    // Keep PNG byte representations so the production importer must materialize each image.
+    let providers = (0..<2).map { _ in
+      let provider = NSItemProvider()
+      provider.registerDataRepresentation(
+        forTypeIdentifier: UTType.png.identifier, visibility: .all
+      ) { completion in
+        completion(png, nil)
+        return nil
+      }
+      return provider
+    }
+    providers[0].registerDataRepresentation(
+      forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all
+    ) { completion in
+      completion(Data("pasted".utf8), nil)
+      return nil
+    }
+    input.paste(itemProviders: providers)
     try await waitForBusinessResult(
       message: "Mixed paste not ready: draft=\(conversation.draft), "
         + "items=\(conversation.attachmentDraft.items.count), "
