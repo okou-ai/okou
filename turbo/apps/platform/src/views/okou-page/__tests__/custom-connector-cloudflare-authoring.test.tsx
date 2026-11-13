@@ -487,9 +487,7 @@ test("A collapsed requirement distinguishes pending, failed and unavailable look
     name: "Loading Cloudflare Access…",
   });
   expect(
-    within(settings.field).getByRole("status", {
-      name: "Loading Cloudflare Access…",
-    }),
+    within(settings.field).getByLabelText("Loading Cloudflare Access…"),
   ).toBeInTheDocument();
   await fill(within(dialog).getByLabelText("Display name"), "Draft kept");
   response.resolve();
