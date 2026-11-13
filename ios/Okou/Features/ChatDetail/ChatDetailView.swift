@@ -47,9 +47,12 @@ struct ChatDetailView: View {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
       let selectedIDs = sharing.selectedIDs
+      let canSelect = !sharing.isBusy && sharing.visibility == nil
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }.map {
-        .share($0, selected: Set($0.eventIDs).isSubset(of: selectedIDs), topSpacing: 16)
+        .share(
+          $0, selected: Set($0.eventIDs).isSubset(of: selectedIDs), enabled: canSelect,
+          topSpacing: 16)
       }
       return rows
     }
@@ -394,14 +397,14 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
-    case .share(let group, let selected, let topSpacing):
+    case .share(let group, let selected, let enabled, let topSpacing):
       let partial =
         !selected && !Set(group.eventIDs).isDisjoint(with: conversation.sharing.selectedIDs)
       HStack(alignment: .top, spacing: OkouSpace.xs) {
         OkouSelectionButton(isSelected: selected, isIndeterminate: partial) {
           conversation.sharing.toggle(group)
         }
-        .disabled(conversation.sharing.isBusy || conversation.sharing.visibility != nil)
+        .disabled(!enabled)
         .accessibilityLabel(
           group.messages.first?.role == .user ? "Select question" : "Select answer"
         )
