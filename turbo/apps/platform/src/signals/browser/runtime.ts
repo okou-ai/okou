@@ -29,7 +29,10 @@ import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
-import { addressSubmission } from "./navigation/submission.ts";
+import {
+  addressSubmission,
+  completeAddressHost,
+} from "./navigation/submission.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
   NavigationFault,
@@ -1349,11 +1352,27 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     return submission?.kind ?? null;
   });
   const composingState$ = state(false);
+  const completionArmed$ = state(false);
   const addressComposing$ = computed((get) => {
     return get(composingState$);
   });
   const composeAddress$ = command(({ set }, composing: boolean) => {
     set(composingState$, composing);
+    set(completionArmed$, false);
+  });
+  const armAddressCompletion$ = command(({ set }, armed: boolean) => {
+    set(completionArmed$, armed);
+  });
+  const completeAddress$ = command(({ get, set }) => {
+    const armed = get(completionArmed$);
+    set(completionArmed$, false);
+    if (!armed || get(composingState$)) {
+      return;
+    }
+    const url = completeAddressHost(get(model.address$));
+    if (url) {
+      set(model.editAddress$, url);
+    }
   });
   const noticeState$ = state<AddressSubmitNotice | null>(null);
   const addressSubmitNotice$ = computed((get) => {
@@ -1435,6 +1454,8 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     addressSubmissionKind$,
     addressComposing$,
     composeAddress$,
+    completeAddress$,
+    armAddressCompletion$,
     navigate$,
     canSubmitAddress$,
     addressSubmitNotice$,

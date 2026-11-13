@@ -117,6 +117,8 @@ export interface BrowserSignals {
   readonly addressSubmissionKind$: Computed<"navigate" | "search" | null>;
   readonly addressComposing$: Computed<boolean>;
   readonly composeAddress$: Command<void, [boolean]>;
+  readonly completeAddress$: Command<void, []>;
+  readonly armAddressCompletion$: Command<void, [boolean]>;
   readonly canSubmitAddress$: Computed<boolean>;
   readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
   readonly notifyAddressSubmit$: Command<

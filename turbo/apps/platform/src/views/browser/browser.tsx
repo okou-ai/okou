@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -48,6 +48,7 @@ import {
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import { addressPaste } from "../../signals/browser/input/address-paste.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
@@ -661,6 +662,30 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
   );
 }
 
+function pasteAddress(event: ClipboardEvent<HTMLInputElement>) {
+  const pasted = event.clipboardData.getData("text/plain");
+  const text = addressPaste(pasted);
+  if (text === pasted) {
+    return;
+  }
+  // Native insertion retains undo history; assigning a controlled value does not.
+  // Sanitize before the single-line input discards clipboard line breaks.
+  event.preventDefault();
+  event.currentTarget.ownerDocument.execCommand("insertText", false, text);
+}
+
+function trackAddressControl(
+  event: KeyboardEvent<HTMLInputElement>,
+  arm: (armed: boolean) => void,
+) {
+  if (event.key === "Control" && !event.repeat) {
+    arm(true);
+  } else if (event.ctrlKey && !["Control", "Enter"].includes(event.key)) {
+    // Copy/paste/select-all consumes this Control gesture in Chromium.
+    arm(false);
+  }
+}
+
 function BrowserAddressInput({
   signals,
   canSubmit,
@@ -680,6 +705,9 @@ function BrowserAddressInput({
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
   const kind = useGet(signals.addressSubmissionKind$);
   const compose = useSet(signals.composeAddress$);
+  const composing = useGet(signals.addressComposing$);
+  const complete = useSet(signals.completeAddress$);
+  const armCompletion = useSet(signals.armAddressCompletion$);
   return (
     <Input
       ref={addressRef}
@@ -700,9 +728,11 @@ function BrowserAddressInput({
       spellCheck={false}
       aria-busy={navigating}
       onFocus={() => {
+        armCompletion(false);
         beginEdit("focus");
       }}
       onPointerDown={() => {
+        armCompletion(false);
         beginEdit("interaction");
       }}
       onBeforeInput={() => {
@@ -723,8 +753,11 @@ function BrowserAddressInput({
         notifySubmission(null);
         edit(event.currentTarget.value);
       }}
+      onPaste={pasteAddress}
       onKeyDown={(event) => {
+        trackAddressControl(event, armCompletion);
         if (
+          composing ||
           event.nativeEvent.isComposing ||
           event.nativeEvent.keyCode === 229
         ) {
@@ -741,6 +774,21 @@ function BrowserAddressInput({
           notifySubmission(navigating ? "opening" : "preparing");
           return;
         }
+        if (
+          event.key === "Enter" &&
+          event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          // Complete the typed host, then use the same form/navigation owner as Enter.
+          event.preventDefault();
+          flushSync(() => {
+            complete();
+          });
+          event.currentTarget.form?.requestSubmit();
+          return;
+        }
         if (event.key === "Escape") {
           event.preventDefault();
           // Select the reset value after React commits the controlled input.
@@ -751,6 +799,11 @@ function BrowserAddressInput({
           event.currentTarget.select();
         } else if (event.key !== "Enter") {
           beginEdit("interaction");
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === "Control") {
+          armCompletion(false);
         }
       }}
     />

@@ -1,27 +1,271 @@
-import { navigationAddress } from "../input/address.ts";
+import { parse as parseDomain } from "tldts";
 
-/** Classify submitted input without consulting history or requesting suggestions. */
+// Chromium's desktop handled protocols, plus its explicit mailto allowance.
+// OS/profile-registered external handlers are not available to this web input.
+const browserSchemes = Object.freeze([
+  "http",
+  "https",
+  "ws",
+  "wss",
+  "file",
+  "about",
+  "blob",
+  "filesystem",
+  "chrome",
+  "chrome-untrusted",
+  "chrome-search",
+  "chrome-extension",
+  "chrome-distiller",
+  "devtools",
+  "isolated-app",
+  "data",
+  "javascript",
+  "view-source",
+  "mailto",
+]);
+
+function knownSuffix(host: string): boolean {
+  return (
+    host.includes(".") &&
+    parseDomain(host, {
+      allowPrivateDomains: false,
+      extractHostname: false,
+      validateHostname: false,
+    }).isIcann === true
+  );
+}
+
+function localHost(host: string): boolean {
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    ["example", "test", "local", "internal"].some((suffix) => {
+      return host.endsWith("." + suffix);
+    })
+  );
+}
+
+interface ParsedAddress {
+  readonly url: URL;
+  readonly authority: string;
+  readonly path: string;
+  readonly hostPort: boolean;
+  readonly explicit: boolean;
+}
+
+function inputScheme(
+  value: string,
+  authority: string,
+  hostPort: boolean,
+): string | null {
+  const match = /^([a-z][a-z\d+.-]*):/i.exec(value);
+  if (!match || hostPort || match[1]!.includes(".")) {
+    return null;
+  }
+  const scheme = match[1]!.toLowerCase();
+  if (browserSchemes.includes(scheme)) {
+    return scheme;
+  }
+  const userInfo = authority.slice(0, authority.lastIndexOf("@"));
+  if (
+    authority.includes("@") &&
+    userInfo.includes(":") &&
+    !/\s/u.test(userInfo)
+  ) {
+    return null;
+  }
+  return scheme;
+}
+
+function parseAddress(text: string): ParsedAddress | null {
+  const value = text.replace(/^(https?|wss?|file|about|chrome);/i, "$1:");
+  const withoutPrefix = value.startsWith("//") ? value.slice(2) : value;
+  const authority = withoutPrefix.split(/[/?#\\]/, 1)[0]!;
+  const path = withoutPrefix.slice(authority.length).split(/[?#]/, 1)[0]!;
+  const hostPort = /^[^:]+:\d+$/.test(authority);
+  const scheme = inputScheme(value, authority, hostPort);
+  if (scheme && !browserSchemes.includes(scheme)) {
+    return null;
+  }
+  // Chrome searches JavaScript-prefixed text that does not look like code.
+  if (scheme === "javascript" && /^javascript:[^;=()."]*$/i.test(value)) {
+    return null;
+  }
+  const candidate = scheme
+    ? value
+    : "http:" + (value.startsWith("//") ? value : "//" + value);
+  return URL.canParse(candidate)
+    ? {
+        url: new URL(candidate),
+        authority,
+        path,
+        hostPort,
+        explicit: scheme !== null || value.startsWith("//"),
+      }
+    : null;
+}
+
+function normalizeHost(url: URL): string | null {
+  // FixupHost removes leading dots and retains at most one trailing dot.
+  const host = url.hostname.replace(/^\.+/, "").replace(/\.{2,}$/, ".");
+  if (
+    !host ||
+    host.includes("..") ||
+    host.replace(/\.$/, "").endsWith(".invalid") ||
+    (!host.startsWith("[") && !/^[a-z\d_.-]+$/i.test(host))
+  ) {
+    return null;
+  }
+  url.hostname = host;
+  return host.replace(/\.$/, "");
+}
+
+function originalHost(input: ParsedAddress): string {
+  return input.authority
+    .slice(input.authority.lastIndexOf("@") + 1)
+    .replace(/:\d+$/, "");
+}
+
+function ipIntent(input: ParsedAddress, host: string): boolean | null {
+  if (host.startsWith("[")) {
+    return true;
+  }
+  if (!/^\d+(?:\.\d+){3}$/.test(host)) {
+    return null;
+  }
+  // Chrome does not navigate source-only 0.x.x.x addresses, except 0.0.0.0.
+  if (host.startsWith("0.") && host !== "0.0.0.0") {
+    return false;
+  }
+  return (
+    input.explicit ||
+    /[/\\]$/.test(input.path) ||
+    /^\d{1,3}(?:\.\d{1,3}){3}\.?$/.test(originalHost(input))
+  );
+}
+
+function nonHostComponents(input: ParsedAddress): number {
+  const { url, path, hostPort } = input;
+  return (
+    Number(Boolean(url.username)) +
+    Number(Boolean(url.password)) +
+    Number(hostPort || Boolean(url.port)) +
+    Number(Boolean(path)) +
+    Number(url.search.length > 1) +
+    Number(url.hash.length > 1)
+  );
+}
+
+function navigationIntent(input: ParsedAddress, host: string): boolean {
+  const ip = ipIntent(input, host);
+  if (ip !== null) {
+    return ip;
+  }
+  if (input.explicit) {
+    return true;
+  }
+  const userInfo = input.authority.slice(0, input.authority.lastIndexOf("@"));
+  if (input.authority.includes("@") && /\s/u.test(userInfo)) {
+    return false;
+  }
+  if (/[/\\]$/.test(input.path) || nonHostComponents(input) > 1) {
+    return true;
+  }
+  if (input.url.username || input.url.password) {
+    return false;
+  }
+  return (
+    input.hostPort ||
+    Boolean(input.url.port) ||
+    knownSuffix(host) ||
+    localHost(host)
+  );
+}
+
+function completedURL(input: ParsedAddress, host: string): URL {
+  const { url } = input;
+  if (knownSuffix(host) || host.startsWith("[")) {
+    return url;
+  }
+  const ip = /^\d+(?:\.\d+){3}$/.test(host);
+  const domain = (ip && !input.explicit ? originalHost(input) : host).replace(
+    /^\.+|\.+$/g,
+    "",
+  );
+  url.hostname =
+    (domain.startsWith("www.") ? domain : "www." + domain) + ".com";
+  return url;
+}
+
+/** Mirror the profile-independent URL intent rules in Chromium AutocompleteInput. */
+function addressURL(text: string, completeHost: boolean): URL | null {
+  const input = parseAddress(text);
+  if (!input) {
+    return null;
+  }
+  const { url } = input;
+  if (
+    !url.hostname ||
+    !["http:", "https:", "ws:", "wss:"].includes(url.protocol)
+  ) {
+    return completeHost ? null : url;
+  }
+  const host = normalizeHost(url);
+  if (!host) {
+    return null;
+  }
+  if (completeHost) {
+    return completedURL(input, host);
+  }
+  return navigationIntent(input, host) ? url : null;
+}
+
+function submittedText(input: string): string | null {
+  const text = input.trim();
+  if (
+    !text ||
+    text.startsWith("\\") ||
+    (text.startsWith("/") && !text.startsWith("//")) ||
+    text.startsWith("///")
+  ) {
+    return null;
+  }
+  for (const char of text) {
+    if (char < " " || char === "\u007f") {
+      return null;
+    }
+  }
+  return text;
+}
+
+/** Classify submission without querying history, DNS, or suggestion providers. */
 export function addressSubmission(input: string): {
   readonly kind: "navigate" | "search";
   readonly url: string;
 } | null {
-  const url = navigationAddress(input);
-  if (url) {
-    return { kind: "navigate", url };
+  const text = submittedText(input);
+  if (!text) {
+    return null;
   }
-  const text = input.trim();
-  if (
-    !text ||
-    /^[a-z][\w+.-]*:/i.test(text) ||
-    text.startsWith("/") ||
-    text.startsWith("\\") ||
-    Array.from(text).some((char) => {
-      return char < " " || char === "\u007f";
-    })
-  ) {
+  const forceQuery = text.startsWith("?");
+  const url = forceQuery ? null : addressURL(text, false);
+  if (url) {
+    // HTTPS upgrading and fallback belong to Chrome's native navigation stack.
+    return { kind: "navigate", url: url.href };
+  }
+  const query = forceQuery ? text.slice(1).trimStart() : text;
+  if (!query) {
     return null;
   }
   const searchUrl = new URL("https://www.google.com/search");
-  searchUrl.searchParams.set("q", text);
+  searchUrl.searchParams.set("q", query);
   return { kind: "search", url: searchUrl.href };
+}
+
+/** Ctrl+Enter asks for a .com URL, without accepting a suggestion or changing tabs. */
+export function completeAddressHost(input: string): string | null {
+  const text = submittedText(input);
+  return text && !text.startsWith("?")
+    ? (addressURL(text, true)?.href ?? null)
+    : null;
 }

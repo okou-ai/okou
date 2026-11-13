@@ -154,6 +154,11 @@ test("Composition confirmation does not submit a search", async () => {
     keyCode: 229,
     isComposing: true,
   });
+  fireEvent.keyDown(address, {
+    key: "Enter",
+    ctrlKey: true,
+    isComposing: false,
+  });
   fireEvent.submit(address.form!);
   expect(address).toHaveValue("季度报告");
   fireEvent.compositionEnd(address);
@@ -198,5 +203,142 @@ test("Google search keeps Unicode and reserved characters in a single query para
     expect(address).toHaveValue(
       "https://www.google.com/search?q=%E5%AD%A3%E5%BA%A6%E6%8A%A5%E5%91%8A+%26+revenue+%2B+20%25+%232026",
     );
+  });
+});
+
+// Representative deterministic cases from Chromium's AutocompleteInput/URLFixer tests.
+test.each([
+  ["site:example.com", "https://www.google.com/search?q=site%3Aexample.com"],
+  [
+    "filetype:pdf annual report",
+    "https://www.google.com/search?q=filetype%3Apdf+annual+report",
+  ],
+  ["custom:report", "https://www.google.com/search?q=custom%3Areport"],
+  [
+    "custom://reports/",
+    "https://www.google.com/search?q=custom%3A%2F%2Freports%2F",
+  ],
+  ["report.pdf", "https://www.google.com/search?q=report.pdf"],
+  ["java.awt.event", "https://www.google.com/search?q=java.awt.event"],
+  ["?example.com", "https://www.google.com/search?q=example.com"],
+  ["user@example.com", "https://www.google.com/search?q=user%40example.com"],
+  ["user@example.com/path", "http://user@example.com/path"],
+  ["intranet/", "http://intranet/"],
+  ["//intranet/path", "http://intranet/path"],
+  ["example.invalid/", "https://www.google.com/search?q=example.invalid%2F"],
+  ["intranet/path", "https://www.google.com/search?q=intranet%2Fpath"],
+  ["intranet/path?q=1", "http://intranet/path?q=1"],
+  ["foo:80", "http://foo/"],
+  ["foo:99999", "https://www.google.com/search?q=foo%3A99999"],
+  ["localhost:8080/path", "http://localhost:8080/path"],
+  ["foo.localhost", "http://foo.localhost/"],
+  ["printer.local", "http://printer.local/"],
+  ["127.0.0.1", "http://127.0.0.1/"],
+  ["127.0.1", "https://www.google.com/search?q=127.0.1"],
+  ["[2001:db8::2]", "http://[2001:db8::2]/"],
+  [
+    "https;//example.com/report?q=1#total",
+    "https://example.com/report?q=1#total",
+  ],
+  ["https:/example.com", "https://example.com/"],
+  ["..example.com..", "http://example.com./"],
+  [String.raw`example.com\report`, "http://example.com/report"],
+  [
+    "例子.中国/季度报告",
+    "http://xn--fsqu00a.xn--fiqs8s/%E5%AD%A3%E5%BA%A6%E6%8A%A5%E5%91%8A",
+  ],
+])("The address bar resolves Chromium input %s", async (text, expected) => {
+  const { address } = await openViewer();
+  await fill(address, text);
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(expected);
+  });
+});
+
+test.each([
+  ["acmeportal", "http://www.acmeportal.com/"],
+  [
+    "www.acmeportal/report?q=a#summary",
+    "http://www.acmeportal.com/report?q=a#summary",
+  ],
+  ["example.co.uk/report", "http://example.co.uk/report"],
+  ["annual report", "https://www.google.com/search?q=annual+report"],
+  ["site:example.com", "https://www.google.com/search?q=site%3Aexample.com"],
+])(
+  "Ctrl+Enter completes eligible Chromium host input %s",
+  async (text, expected) => {
+    const { address } = await openViewer();
+    await fill(address, text);
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => {
+      expect(address).toHaveValue(expected);
+    });
+  },
+);
+
+test.each([
+  [
+    "https://example.com/a-\nreport?q=1",
+    "https://example.com/a-report?q=1",
+    "https://example.com/a-report?q=1",
+  ],
+  [
+    "1600 Amphitheatre Parkway\nMountain View, CA",
+    "1600 Amphitheatre Parkway Mountain View, CA",
+    "https://www.google.com/search?q=1600+Amphitheatre+Parkway+Mountain+View%2C+CA",
+  ],
+  [
+    " java\r\nscript:JavaScript:alert(0) ",
+    "alert(0)",
+    "https://www.google.com/search?q=alert%280%29",
+  ],
+  [
+    "https://example.com/?q=javascript:alert(0)",
+    "https://example.com/?q=javascript:alert(0)",
+    "https://example.com/?q=javascript:alert(0)",
+  ],
+])(
+  "Pasted address text is sanitized before submission: %s",
+  async (pasted, cleaned, expected) => {
+    const { address } = await openViewer();
+    await fill(address, "replace me");
+    address.select();
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", pasted);
+    await userEvent.paste(clipboardData);
+    expect(address).toHaveValue(cleaned);
+    expect(address.selectionStart).toBe(cleaned.length);
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue(expected);
+    });
+  },
+);
+
+test("Sanitized paste replaces the selected address text and retains its caret", async () => {
+  const { address } = await openViewer();
+  await fill(address, "first old last");
+  address.setSelectionRange(6, 9);
+  const clipboardData = new DataTransfer();
+  clipboardData.setData("text/plain", "javascript:javascript:NEW");
+  await userEvent.paste(clipboardData);
+  expect(address).toHaveValue("first NEW last");
+  expect(address.selectionStart).toBe(9);
+  expect(address.selectionEnd).toBe(9);
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=first+NEW+last",
+    );
+  });
+});
+
+test("A consumed Control gesture submits the query without adding a domain suffix", async () => {
+  const { address } = await openViewer();
+  await fill(address, "acmeportal");
+  await userEvent.keyboard("{Control>}a{Enter}{/Control}");
+  await waitFor(() => {
+    expect(address).toHaveValue("https://www.google.com/search?q=acmeportal");
   });
 });

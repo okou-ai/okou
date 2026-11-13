@@ -1596,8 +1596,11 @@ test("A duplicate marker during creation never takes over the other caller's pag
 
 test.each([
   ["[::1]:8080/path", "http://[::1]:8080/path"],
-  ["例子.测试/你好", "http://xn--fsqu00a.xn--0zwm56d/%E4%BD%A0%E5%A5%BD"],
-  ["custom:payload", "custom:payload"],
+  [
+    "https://例子.测试/你好",
+    "https://xn--fsqu00a.xn--0zwm56d/%E4%BD%A0%E5%A5%BD",
+  ],
+  ["mailto:user@example.com", "mailto:user@example.com"],
 ])(
   "The address field normalizes %s for the remote page",
   async (address, expected) => {
