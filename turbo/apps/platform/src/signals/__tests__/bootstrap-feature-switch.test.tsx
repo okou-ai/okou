@@ -1,11 +1,12 @@
 import { testContext } from "./test-helpers.ts";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
+import { pathname } from "../location.ts";
 
 const context = testContext();
 test("A signed-out page does not load workspace features", async () => {
@@ -39,8 +40,8 @@ test("Routes wait for authoritative workspace features", async () => {
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
       return respond(200, {
-        switches: {},
-        effectiveSwitches: {},
+        switches: { [FeatureSwitchKey.SingleAgent]: false },
+        effectiveSwitches: { [FeatureSwitchKey.SingleAgent]: false },
       });
     },
   );
@@ -58,4 +59,17 @@ test("Routes wait for authoritative workspace features", async () => {
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
+});
+
+test("A new member without overrides enters My Okou without a Lab action", async () => {
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches: {}, effectiveSwitches: {} });
+  });
+  await setupPage({ context, path: "/agents" });
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  expect(
+    screen.queryByRole("heading", { name: "Agents" }),
+  ).not.toBeInTheDocument();
 });

@@ -104,7 +104,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "My Okou",
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.OkouAnimatedAvatar]: {

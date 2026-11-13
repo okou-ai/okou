@@ -214,7 +214,7 @@ try {
   // This collision is checked after copies/relinks/events were attempted: all
   // those writes and the journal must roll back, not merely fail preflight.
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, { beforeMillis: migration.when + 1 }),
     /Staff Project identity belongs to another owner/u,
   );
   assert.equal(await preserved(), before);
@@ -254,7 +254,8 @@ try {
     false,
   );
   await sql`DELETE FROM projects WHERE id=${collision}`;
-  await applyPendingMigrations(sql);
+  // Exercise this migration's preservation contract independently of later rollouts.
+  await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
   assert.equal(await preserved(), before);
   const copies =
     await sql`SELECT * FROM workflows WHERE agent_id=${target} ORDER BY name`;
@@ -385,7 +386,7 @@ try {
     );
   };
   const committed = await counts();
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, { beforeMillis: migration.when + 1 });
   assert.equal(await counts(), committed);
   assert.equal(await preserved(), before);
   console.log(

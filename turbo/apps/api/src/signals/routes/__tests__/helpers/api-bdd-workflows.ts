@@ -30,6 +30,7 @@ import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { now } from "../../../../lib/time";
 import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowsRoutes } from "../../workflows";
+import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -152,6 +153,7 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
         readonly maxAutonomyBudget?: number;
+        readonly singleAgent?: boolean;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -170,6 +172,15 @@ export function createWorkflowsBddApi(context: TestContext) {
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,
       });
+      if (!actor.orgId) {
+        throw new Error("Expected a workflow workspace");
+      }
+      // Existing workflow fixtures model the retained multi-Agent cohort.
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { singleAgent: options.singleAgent ?? false },
+      );
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);
       }
@@ -187,6 +198,14 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly visibility?: "public" | "private";
       } = {},
     ): Promise<{ readonly agentId: string }> {
+      if (!actor.orgId) {
+        throw new Error("Expected a legacy Agent workspace");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { singleAgent: false },
+      );
       bdd.acceptAgentStorageWrites();
       const agent = await bdd.createAgent(actor, {
         displayName: options.displayName ?? "Workflow Automation Agent",

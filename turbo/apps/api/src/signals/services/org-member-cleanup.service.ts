@@ -3,10 +3,12 @@ import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { nowDate } from "../../lib/time";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -85,6 +87,43 @@ const cleanupMemberMessageIntegrations$ = command(
     await set(deleteDiscordOrgMemberData$, args, signal);
     await set(deleteWechatOwnerData$, { kind: "owner", ...args }, signal);
     await set(deleteEmailOwnerData$, { kind: "owner", ...args }, signal);
+    signal.throwIfAborted();
+  },
+);
+
+const deleteMemberInitialization$ = command(
+  async ({ set }, args: OrgMemberCleanupInput, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const deleted = db.$with("deleted_member_initialization").as(
+      db
+        .delete(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.userId, args.userId),
+            eq(orgMembersMetadata.orgId, args.orgId),
+          ),
+        )
+        .returning({ userId: orgMembersMetadata.userId }),
+    );
+    // Commit both changes together so a fresh initialization cannot inherit
+    // the departed membership's rollout opt-out. Keep every unrelated key.
+    await db
+      .with(deleted)
+      .update(userFeatureSwitches)
+      .set({
+        switches: sql`${userFeatureSwitches.switches} - ${FeatureSwitchKey.SingleAgent}`,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          // Consume the delete before taking feature-row locks, matching the
+          // preservation migration's metadata-then-switch lock order.
+          gte(db.select({ count: count() }).from(deleted), 0),
+          eq(userFeatureSwitches.orgId, args.orgId),
+          eq(userFeatureSwitches.userId, args.userId),
+          sql`${userFeatureSwitches.switches} ? ${FeatureSwitchKey.SingleAgent}`,
+        ),
+      );
     signal.throwIfAborted();
   },
 );
@@ -220,14 +259,7 @@ export const cleanupOrgMemberResources$ = command(
       );
     signal.throwIfAborted();
 
-    await db
-      .delete(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.userId, args.userId),
-          eq(orgMembersMetadata.orgId, args.orgId),
-        ),
-      );
+    await set(deleteMemberInitialization$, args, signal);
     signal.throwIfAborted();
 
     await db
