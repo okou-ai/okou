@@ -45,6 +45,12 @@ class NativeChatListTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(device.wait(Until.findObject(By.text(value)), 10_000))
+            // Resolve Compose's replaceable virtual descendants at tap time, not before it.
+            fun clickText(value: String) =
+                assertTrue(
+                    "Native control clicked: $value",
+                    device.findObject(UiSelector().packageName(app.packageName).text(value)).click(),
+                )
             text(app.getString(R.string.chat_list_title))
             scenario.onActivity { activity ->
                 chatJob =
@@ -59,10 +65,15 @@ class NativeChatListTest {
                         .coroutineContext[Job]
             }
             text(app.getString(R.string.chat_loading))
-            checkNotNull(
-                    device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
-                )
-                .click()
+            assertTrue(
+                device
+                    .findObject(
+                        UiSelector()
+                            .packageName(app.packageName)
+                            .description(app.getString(R.string.settings))
+                    )
+                    .click()
+            )
             text(app.getString(R.string.appearance))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -78,7 +89,7 @@ class NativeChatListTest {
             )
             text("Research Okou")
             assertNotNull(device.findObject(By.text("Project chat")))
-            text("Project chat").click()
+            clickText("Project chat")
             text(app.getString(R.string.history_completed))
             assertTrue(
                 UiScrollable(UiSelector().scrollable(true))
@@ -86,22 +97,22 @@ class NativeChatListTest {
                     .scrollIntoView(UiSelector().textContains("Native history"))
             )
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
-            text(app.getString(R.string.history_sidebar)).click()
+            clickText(app.getString(R.string.history_sidebar))
             assertTrue(
                 UiScrollable(UiSelector().scrollable(true))
                     .setAsVerticalList()
                     .scrollTextIntoView("Research")
             )
-            text("Research").click()
+            clickText("Research")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
-            text(app.getString(R.string.history_sidebar)).click()
+            clickText(app.getString(R.string.history_sidebar))
             assertTrue(
                 UiScrollable(UiSelector().scrollable(true))
                     .setAsVerticalList()
                     .scrollTextIntoView("Research")
             )
-            text("Research").click()
+            clickText("Research")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
