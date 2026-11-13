@@ -283,7 +283,9 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       expect(getAction("button", "Back")).toBeDisabled();
     });
     expect(getAction("button", "Done")).toBeDisabled();
-    expect(pathname()).toMatch(new RegExp(`^${provider.settingsPath}/setup/`));
+    expect(pathname()).toBe(
+      `${provider.settingsPath}/setup/${INSTALLATION_ID}`,
+    );
     completion.resolve();
     await expect(
       screen.findByText(`${provider.name} bot installed successfully`),
