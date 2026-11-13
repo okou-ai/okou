@@ -100,7 +100,6 @@ import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.servic
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import type { AdmittedRunLaunch } from "./direct-run-preparation.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
   prepareRunnerReusePreference$,
   type RunnerReusePreparation,
@@ -131,7 +130,6 @@ import type {
   QueuedUserMessage,
   QueuedUserMessageContextType,
   QueueFirstRunAssociation,
-  QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
 import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
@@ -241,11 +239,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { runCreateBodySchema } from "@okouai/api-contracts/contracts/run-routes";
-import {
-  type CreateRunResponse,
-  type RunStatus,
-  unifiedRunRequestSchema,
-} from "@okouai/api-contracts/contracts/runs";
+import { unifiedRunRequestSchema } from "@okouai/api-contracts/contracts/runs";
 import {
   type FeatureSwitchContext,
   isFeatureEnabled,
@@ -1199,7 +1193,7 @@ type RunnerInputResult =
 type PendingClaimRun = {
   readonly kind: "pending";
   readonly runId: string;
-  readonly activation: PendingRunActivation;
+  readonly apiStartTime: number;
   readonly context: ThreadRunContext;
 };
 
@@ -4034,8 +4028,8 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  // Record the committed result and its activation metadata only after the
-  // pending transaction returns. This command does no launch preparation.
+  // Record the committed result only after pending publication returns.
+  // This command does no launch preparation.
   const recordRunCommit$ = command(
     (
       _store,
@@ -4059,20 +4053,17 @@ export function createThreadClaimRunObjects(
         });
         return { kind: "passed" };
       }
-      const result = committedAtomicLaunchResponse({
+      recordAtomicLaunchTiming({
         createArgs: { ...input.args, body: input.context.body },
         committed: committed.result,
         transactionReturnedAt: committed.transactionReturnedAt,
         timing: timing.run,
         phaseTiming: timing.phase,
       });
-      if (!result.pendingActivation) {
-        throw new Error("Pending run is missing activation metadata");
-      }
       return {
         kind: "pending",
-        runId: result.body.runId,
-        activation: result.pendingActivation,
+        runId: committed.result.run.id,
+        apiStartTime: input.args.apiStartTime,
         context,
       };
     },
@@ -4199,7 +4190,7 @@ export function createThreadClaimRunObjects(
         {
           runId: pending.runId,
         },
-        pending.activation.apiStartTime,
+        pending.apiStartTime,
       );
     },
   );
@@ -4410,7 +4401,6 @@ type LaunchRunStatus = "pending" | "failed";
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly run: RunRecord;
-  readonly admittedAt: Date;
 }
 
 interface PreparedRunnerLaunch {
@@ -4440,9 +4430,7 @@ type AtomicLaunchCommitResult =
       readonly kind: "pending";
       readonly run: RunRecord;
       readonly runnerInput: RunnerLaunchInput;
-      readonly admittedAt: Date;
       readonly admittedLaunch: AdmittedRunLaunch;
-      readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
       readonly reusePreparation?: RunnerReusePreparation;
       readonly publicationReturnedAt: number;
     }
@@ -4928,7 +4916,6 @@ interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
 }
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
   readonly kind: "admitted";
-  readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
 }
 
 class ChatThreadBindingChanged extends Error {
@@ -4938,27 +4925,13 @@ class ChatThreadBindingChanged extends Error {
   }
 }
 
-function createdRunResponse(
-  run: RunRecord,
-  dispatchResult: { readonly status: RunStatus },
-): Extract<CreateRunRouteResult, { readonly status: 201 }> {
-  return {
-    status: 201,
-    body: {
-      runId: run.id,
-      status: dispatchResult.status,
-      createdAt: run.createdAt.toISOString(),
-    },
-  };
-}
-
-function committedAtomicLaunchResponse(args: {
+function recordAtomicLaunchTiming(args: {
   readonly createArgs: PendingRunArguments;
   readonly committed: CommittedAtomicLaunchResult;
   readonly transactionReturnedAt: number;
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
-}): Extract<CreateRunRouteResult, { readonly status: 201 }> {
+}): void {
   args.phaseTiming.checkpoint(
     "api_dispatch_phase_commit",
     args.transactionReturnedAt,
@@ -4975,27 +4948,6 @@ function committedAtomicLaunchResponse(args: {
       ? { triggerSource: args.createArgs.body.triggerSource }
       : {}),
   });
-  const dispatchTimingsRegisteredAt = now();
-  const pendingActivation: PendingRunActivation = {
-    apiStartTime: args.createArgs.apiStartTime,
-    chatThreadId: args.createArgs.chatThreadId,
-    run: args.committed.admittedLaunch,
-    timing: {
-      activationOrigin: "direct",
-      commitReturnedAt: args.transactionReturnedAt,
-      dispatchTimingsRegisteredAt,
-    },
-  };
-  const response = createdRunResponse(args.committed.run, {
-    status: "pending",
-  });
-  return args.committed.queueFirstClaim
-    ? {
-        ...response,
-        queueFirstClaim: args.committed.queueFirstClaim,
-        pendingActivation,
-      }
-    : { ...response, pendingActivation };
 }
 // --- Thread-private implementation: connector context ---
 
@@ -5672,18 +5624,6 @@ interface AgentRunMetadata {
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 
-type QueueFirstRunClaimed = Extract<
-  QueueFirstRunClaimResult,
-  { readonly kind: "claimed" }
->;
-
-type CreateRunSuccessResult = {
-  readonly status: 201;
-  readonly body: CreateRunResponse;
-  readonly queueFirstClaim?: QueueFirstRunClaimed;
-  readonly pendingActivation?: PendingRunActivation;
-};
-
 type ApiErrorResponse<Status extends number, Code extends string> = {
   readonly status: Status;
   readonly body: {
@@ -5694,8 +5634,8 @@ type ApiErrorResponse<Status extends number, Code extends string> = {
   };
 };
 
-type CreateRunRouteResult =
-  | CreateRunSuccessResult
+type CreateRunErrorResult =
+  | ThreadModelError
   | ApiErrorResponse<400, "BAD_REQUEST">
   | ApiErrorResponse<403, "FORBIDDEN">
   | ApiErrorResponse<404, "NOT_FOUND">
@@ -5709,9 +5649,6 @@ type CreateRunRouteResult =
       503,
       "PROVIDER_UNAVAILABLE" | "MODEL_PROVIDER_UNAVAILABLE"
     >;
-
-type CreateRunErrorResult =
-  Exclude<CreateRunRouteResult, { readonly status: 201 }> | ThreadModelError;
 
 /** The model-selection facts of one run that its model environment reads. */
 interface RunModelProviderArgs {
@@ -5764,7 +5701,6 @@ function pendingLaunchCommitResult(
       persisted.run.createdAt,
       reusePreparation,
     ),
-    queueFirstClaim: admission.queueFirstClaim,
     reusePreparation,
     publicationReturnedAt,
   };
@@ -5831,7 +5767,6 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     kind: literal("pending"),
     runId: string(),
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
-    admittedAt: pgTimestampWithoutTimezoneToDateSchema,
     boundThreadId: string().nullable(),
     billingAttributionId: string().nullable(),
   }),
@@ -5875,7 +5810,6 @@ function pendingAtomicLaunchResult(
       "pending",
       row.createdAt,
     ),
-    admittedAt: row.admittedAt,
   };
 }
 
@@ -5948,7 +5882,6 @@ function pendingAtomicLaunchPlan(
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
-      (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "admittedAt",
       ${nullableReturnedCteId(context.updatedThread)} AS "boundThreadId"
     FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
@@ -6148,9 +6081,6 @@ export const commitPreparedPendingLaunch$ = command(
       kind: "admitted",
       validatedThreadSession: admission.validatedThreadSession,
       validatedAccountIdentity: admission.validatedAccountIdentity,
-      queueFirstClaim: queueFirst
-        ? { kind: "claimed", createdAt: queueFirst.input.createdAt }
-        : undefined,
     };
     const prepared = pendingLaunchRowsPlan(args, accepted, {
       claim,
