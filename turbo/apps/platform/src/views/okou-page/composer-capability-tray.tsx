@@ -180,8 +180,9 @@ function CapabilityTabs({
     },
     { returnObjects: true },
   );
-  const openTask = useSet(signals.taskChips.openTask$);
-  const openWorkflow = useSet(signals.taskChips.home.openWorkflow$);
+  const openTask = useSet(signals.taskChips.home.openCreation$);
+  const openWorkflow = useSet(signals.taskChips.home.selectWorkflowKind$);
+  const pageSignal = useGet(pageSignal$);
   const workflowKind = useGet(signals.taskChips.home.workflowKind$);
   if (selected === "workflow") {
     return (
@@ -191,7 +192,7 @@ function CapabilityTabs({
         aria-label={tasks.workflow}
         value={workflowKind}
         onValueChange={(kind: HomeWorkflowKind) => {
-          openWorkflow(kind);
+          detach(openWorkflow(kind, pageSignal), Reason.DomCallback);
         }}
       >
         {WORKFLOW_KINDS.map(({ kind }) => {
@@ -211,7 +212,7 @@ function CapabilityTabs({
       aria-label={copy.create.title}
       value={selected}
       onValueChange={(task: ComposerTask) => {
-        openTask(task);
+        detach(openTask(task, pageSignal), Reason.DomCallback);
       }}
     >
       {CREATE_TASKS.map(({ task }) => {
@@ -290,6 +291,7 @@ export function CapabilityTray({
   const { t } = useTranslation();
   const tabs = useComposerCapabilities(signals) ?? [];
   const open = useSet(signals.taskChips.home.openCapability$);
+  const pageSignal = useGet(pageSignal$);
   const group = capabilityGroup(selected);
   // The shared root and panel carry Base UI's tab semantics and keyboard
   // model; the list and its tabs are drawn here because the shared
@@ -299,7 +301,7 @@ export function CapabilityTray({
     <Tabs
       value={group}
       onValueChange={(value: HomeCapability) => {
-        open(value);
+        detach(open(value, pageSignal), Reason.DomCallback);
       }}
       className={cn(
         "flex min-w-0 flex-col motion-safe:animate-capability-tray-in",
@@ -399,7 +401,6 @@ function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
     </ScrollArea.Root>
   );
 }
-
 
 function HomeActionCard({
   title,

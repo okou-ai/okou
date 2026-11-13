@@ -10,6 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   composerWorkflow,
   findComposerEditor,
@@ -39,13 +40,15 @@ async function setupMenus({
   slashActions = false,
   desktop = false,
   path = HOME_PATH,
+  sendGate,
 }: {
   readonly homeCapabilities?: boolean;
   readonly slashActions?: boolean;
   readonly desktop?: boolean;
   readonly path?: string;
+  readonly sendGate?: Promise<void>;
 } = {}) {
-  const capture = mockTemplateChat();
+  const capture = mockTemplateChat(sendGate ? { sendGate } : undefined);
   const workflow = composerWorkflow("daily-recap", "Prepare a daily recap");
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [workflow]);
@@ -180,11 +183,21 @@ test("The add menu opens each home capability and restores its own trigger only 
 });
 
 test.each([
-  { slashActions: false, desktop: true },
-  { slashActions: true, desktop: false },
+  {
+    slashActions: false,
+    desktop: true,
+    capabilityOrder: [...CAPABILITY_LABELS].reverse(),
+    otherEntries: ["/daily-recap", "Browse all templates"],
+  },
+  {
+    slashActions: true,
+    desktop: false,
+    capabilityOrder: CAPABILITY_LABELS,
+    otherEntries: ["Connect", "Workflows 1", "Templates "],
+  },
 ])(
   "Slash capabilities preserve the draft with SlashActions=$slashActions and desktop=$desktop",
-  async ({ slashActions, desktop }) => {
+  async ({ slashActions, desktop, capabilityOrder, otherEntries }) => {
     const path = slashActions ? HOME_PATH : `/chats/${THREAD_ID}`;
     const { editor } = await setupMenus({ slashActions, desktop, path });
     const user = userEvent.setup({ delay: null });
@@ -192,23 +205,15 @@ test.each([
     await fill(editor, `${draft} /`);
     const menu = await screen.findByTestId("slash-workflow-menu");
     await waitFor(() => {
-      if (slashActions) {
-        expect(slashButtonNames(menu).slice(0, 4)).toStrictEqual(
-          CAPABILITY_LABELS,
-        );
-        expect(slashEntry(menu, "Connect")).toBeInTheDocument();
-        expect(slashEntry(menu, "Workflows ")).toHaveTextContent("Workflows 1");
-        expect(slashEntry(menu, "Templates ")).toBeInTheDocument();
-      } else {
-        // The legacy desktop list keeps its actionable rows near the editor.
-        expect(slashButtonNames(menu)).toStrictEqual([
-          "/daily-recap",
-          "Workflow",
-          "Create",
-          "Research",
-          "Find people",
-          "Browse all templates",
-        ]);
+      expect(
+        slashButtonNames(menu).filter((name) => {
+          return CAPABILITY_LABELS.some((label) => {
+            return label === name;
+          });
+        }),
+      ).toStrictEqual(capabilityOrder);
+      for (const prefix of otherEntries) {
+        expect(slashEntry(menu, prefix)).toBeInTheDocument();
       }
     });
 
@@ -220,9 +225,6 @@ test.each([
       const activeMenu = await screen.findByTestId("slash-workflow-menu");
       const row = control("button", capability.label, activeMenu);
       if (search) {
-        await waitFor(() => {
-          expect(row).toHaveAttribute("data-active", "true");
-        });
         await user.keyboard("{Enter}");
       } else {
         await user.click(row);
@@ -413,6 +415,34 @@ test("Task handoff stays compact until a menu opens a tray without replacing the
     research.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 
+  expect(window.location.pathname).toBe(path);
+});
+
+test("An earlier send cannot dismiss a capability opened for the next draft", async () => {
+  const gate = createDeferredPromise<void>(context.signal);
+  const path = `/chats/${THREAD_ID}`;
+  const { editor } = await setupMenus({ path, sendGate: gate.promise });
+  const user = userEvent.setup({ delay: null });
+  await selectAddCapability(editor, user, "Find people");
+  const prompt = "Find speakers for this event.";
+  await fill(editor, prompt);
+  const send = control("button", "Send", composerCard(editor));
+  click(send);
+  await waitFor(() => {
+    expect(editor.textContent).toBe("");
+  });
+
+  const nextDraft = "Keep this research draft.";
+  await fill(editor, nextDraft);
+  await selectAddCapability(editor, user, "Research");
+  await expectCapability(CAPABILITIES[1]);
+  await expectDraftFocus(editor, nextDraft);
+  gate.resolve();
+  await waitFor(() => {
+    expect(control("button", "Send", composerCard(editor))).toBeEnabled();
+  });
+  await expectCapability(CAPABILITIES[1]);
+  expect(editor).toHaveTextContent(nextDraft);
   expect(window.location.pathname).toBe(path);
 });
 

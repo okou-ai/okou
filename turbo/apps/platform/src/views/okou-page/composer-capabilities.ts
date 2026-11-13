@@ -5,6 +5,8 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { HomeCapability } from "../../signals/okou-page/composer-home.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 
 /*
  * Each Create and Workflow choice carries `data-art`; its card shows the
@@ -71,6 +73,7 @@ export function useComposerCapabilities(signals: ComposerSignals) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
   const open = useSet(signals.taskChips.home.openCapability$);
   const focusEditor = useSet(signals.editor.focus$);
+  const pageSignal = useGet(pageSignal$);
   const copy = t(
     ($) => {
       return $.chat.capabilityHome;
@@ -80,10 +83,13 @@ export function useComposerCapabilities(signals: ComposerSignals) {
   const workflow = t(($) => {
     return $.chat.taskChips.tasks.workflow;
   });
+  const activate = async (capability: HomeCapability) => {
+    await open(capability, pageSignal);
+    focusEditor();
+  };
   const run = (capability: HomeCapability) => {
     return () => {
-      open(capability);
-      focusEditor();
+      detach(activate(capability), Reason.DomCallback);
     };
   };
   return enabled

@@ -75,7 +75,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
 

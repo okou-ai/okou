@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ChatComposerFooter, ChatPageLayout } from "./chat-page-layout.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, ChevronRight, Compass } from "lucide-react";
+import { ArrowUpRight, Compass } from "lucide-react";
 import {
   Button,
   buttonVariants,
@@ -13,7 +13,7 @@ import {
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { HomeExploreKind } from "../../signals/okou-page/composer-home.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";

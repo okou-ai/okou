@@ -26,7 +26,6 @@ import {
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
 import { useComposerCapabilities } from "./composer-capabilities.ts";
-import { ComposerCapabilityTray } from "./composer-capability-tray.tsx";
 import {
   ComposerProjectControl,
   useComposerProjectMenuItem,
@@ -75,7 +74,12 @@ import {
   findWorkflowTemplateItem,
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
-import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
+import {
+  ElapsedTime,
+  getShortcutLabel,
+  RequestCommit,
+  ScrollBar,
+} from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
@@ -324,6 +328,7 @@ interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
   readonly layout?: ComposerLayout;
+  readonly discovery?: ReactNode;
 }
 
 interface ComposerComputerUseHost {
@@ -5716,7 +5721,7 @@ function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
   const groups = useComposerAddMenuGroups(signals);
   return (
     <>
-      <ComposerAddMenu groups={groups} />
+      <ComposerAddMenu signals={signals.addMenu} groups={groups} />
       {/* Menu.Item owns keyboard activation through showPicker(). Keep its
           input outside the popup so selection survives the menu closing. */}
       <ComposerFileInput signals={signals} />
@@ -7079,10 +7084,11 @@ export function ChatComposer({
   signals,
   showPendingItems = true,
   layout = "default",
+  discovery,
 }: ChatComposerProps) {
-  const setImageAnnotationLifecycleRef = useSet(
-    signals.setImageAnnotationLifecycleRef$,
-  );
+  const setLifecycleRef = useSet(signals.setLifecycleRef$);
+  const layoutRequest = useGet(signals.taskChips.home.layout.request$);
+  const commitLayout = useSet(signals.taskChips.home.layout.commit$);
   return (
     <>
       {(!signals.threadId || signals.editor.forwardComposer) && (
@@ -7092,16 +7098,22 @@ export function ChatComposer({
           itself: the model-scope notice and the pending-items strip are its
           siblings at exactly this width, and a control that reads a width it is
           not inside reads the window instead. */}
-      <div
-        ref={setImageAnnotationLifecycleRef}
-        className="@container/composer relative flex w-full min-w-0 flex-col"
+      <RequestCommit
+        request={layoutRequest}
+        commitKey="composer-capability"
+        onCommit={commitLayout}
       >
-        <ComposerNoticeSlot signals={signals} />
-        {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
-        {layout !== "home" && <ComposerCapabilityTray signals={signals} />}
-        <ComposerCard signals={signals} layout={layout} />
-        <ImageAnnotationEditor signals={signals.imageAnnotation} />
-      </div>
+        <div
+          ref={setLifecycleRef}
+          className="@container/composer relative flex w-full min-w-0 flex-col"
+        >
+          <ComposerNoticeSlot signals={signals} />
+          {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
+          {discovery}
+          <ComposerCard signals={signals} layout={layout} />
+          <ImageAnnotationEditor signals={signals.imageAnnotation} />
+        </div>
+      </RequestCommit>
     </>
   );
 }

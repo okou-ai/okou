@@ -1,4 +1,6 @@
-import { useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useSet } from "ccstate-react";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Plus, type LucideIcon } from "lucide-react";
 import {
@@ -70,13 +72,16 @@ export type ComposerAddMenuGroup = readonly [
  * uses elsewhere, so a description line would only restate it.
  */
 export function ComposerAddMenu({
+  signals,
   groups,
 }: {
+  readonly signals: ComposerSignals["addMenu"];
   /** Rendered in order, separated by a rule. */
   readonly groups: readonly ComposerAddMenuGroup[];
 }) {
   const { t } = useTranslation();
-  const restoreFocus = useRef(true);
+  const restoreFocus = useSet(signals.restoreFocus$);
+  const setRestoreFocus = useSet(signals.setRestoreFocus$);
   const label = t(($) => {
     return $.chat.composer.add;
   });
@@ -84,7 +89,7 @@ export function ComposerAddMenu({
     <DropdownMenu
       onOpenChange={(open) => {
         if (open) {
-          restoreFocus.current = true;
+          setRestoreFocus(true);
         }
       }}
     >
@@ -108,9 +113,7 @@ export function ComposerAddMenu({
         sideOffset={8}
         aria-label={label}
         className="w-56"
-        finalFocus={() => {
-          return restoreFocus.current;
-        }}
+        finalFocus={restoreFocus}
       >
         {/* Flat on purpose: Base UI reads its items from the popup's own
             children, so a wrapper element per group would sit between them and
@@ -146,7 +149,7 @@ export function ComposerAddMenu({
                 <DropdownMenuItem
                   key={item.id}
                   onClick={() => {
-                    restoreFocus.current = item.onSelect() !== false;
+                    setRestoreFocus(item.onSelect() !== false);
                   }}
                 >
                   <ComposerAddMenuRowLabel item={item} />
