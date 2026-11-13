@@ -66,20 +66,6 @@ function projectToggle(name: string, projectId = launchId) {
   return button(`Show or hide chats in ${name}`, projectRows(projectId));
 }
 
-function projectLink(name: string, projectId = launchId) {
-  const link = projectRows(projectId)
-    .flatMap((row) => {
-      return queryAllByRoleFast("link", row);
-    })
-    .find((item) => {
-      return item.textContent?.trim() === name;
-    });
-  if (!link) {
-    throw new Error(`Project link ${name} not found`);
-  }
-  return link;
-}
-
 function threadLink(threadId: string) {
   return document.querySelector<HTMLAnchorElement>(
     `[data-sidebar-chat-thread-id="${threadId}"]`,
@@ -396,7 +382,7 @@ test("A pinned chat moves past another Agent's pin in the same Project", async (
   });
 });
 
-test("Double-clicking a Project's name opens its page and leaves its chats unfolded", async () => {
+test("Clicking an expanded, unselected Project title folds its chats and keeps the current conversation", async () => {
   const ordinary = continuityThread(306, 1, "Ordinary chat");
   const member = {
     ...continuityThread(306, 2, "Launch planning"),
@@ -407,10 +393,12 @@ test("Double-clicking a Project's name opens its page and leaves its chats unfol
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 
-  await userEvent.setup({ delay: null }).dblClick(projectLink("Launch"));
-  await waitFor(() => {
-    expect(location.pathname).toBe(`/projects/${launchId}`);
-  });
+  click(button("Launch", projectRows()));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+
+  click(button("Launch", projectRows()));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  expect(threadLink(ordinary.id)).toHaveAttribute("aria-current", "page");
 });
