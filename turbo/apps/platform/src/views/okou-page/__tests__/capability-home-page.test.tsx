@@ -385,6 +385,47 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   expect(capture.runPrompts).toStrictEqual([]);
 });
 
+test("Scheduled leads with its two starters, then the workflows that run on a clock", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupHome();
+  click(button("Scheduled tasks", capabilities()));
+  const scheduled = await screen.findByRole("region", {
+    name: "Schedule a task",
+  });
+  expect(
+    queryAllByRoleFast("button", scheduled)
+      .map((item) => {
+        return item.textContent?.trim();
+      })
+      .filter(Boolean),
+  ).toStrictEqual([
+    "Run once at a set time",
+    "Repeat on a schedule",
+    "Start your day with a clear plan",
+    "Wrap up your week clearly",
+    "See how your business is doing",
+    "Know when competitors change",
+  ]);
+  // A recommendation prepares the same draft here as on the Advanced shelf.
+  click(button("Start your day with a clear plan", scheduled));
+  expect(editor).toHaveTextContent("Help me set up a morning brief");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
+  expect(capture.runPrompts).toStrictEqual([]);
+});
+
+test("A trigger's cover is named by its title and described by its flow", async () => {
+  mockTemplateChat();
+  await setupHome();
+  click(button("Triggers", capabilities()));
+  const triggers = await screen.findByRole("region", { name: "Triggers" });
+  expect(button("Email replies", triggers)).toHaveAccessibleDescription(
+    "Gmail: Email starred → Extract requests → Draft reply",
+  );
+  // The flow is no longer printed across the cover.
+  expect(within(triggers).queryByText("Email starred")).toBeNull();
+  expect(within(triggers).queryByText("Draft reply")).toBeNull();
+});
+
 test.each([
   { title: "News digest", source: "RSS", event: "Keyword match" },
   { title: "X watchlist", source: "X", event: "New post" },

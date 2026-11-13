@@ -17,6 +17,7 @@ import {
   WORKFLOW_RECOMMENDATIONS,
   workflowRecommendationConnectors$,
   type WorkflowRecommendation,
+  type WorkflowShelfCover,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -65,34 +66,29 @@ function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
 
 /**
  * One cover on the shelf, the same tile every other type's shelf carries: the
- * art in its own box, one line of caption under it. The description, the
- * connector names and the steps live in the dialog the tile opens.
+ * art in its own box, one line of caption under it. Nothing else is written on
+ * the tile; the steps live in the dialog a recommendation opens, and a trigger
+ * names its flow in `description` for assistive tech.
  */
 export function WorkflowTile({
-  item,
+  title,
+  cover,
+  description,
   onSelect,
 }: {
-  readonly item: WorkflowRecommendation;
-  readonly onSelect: (item: WorkflowRecommendation) => void;
+  readonly title: string;
+  readonly cover: WorkflowShelfCover;
+  readonly description?: string;
+  readonly onSelect: () => void;
 }) {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.workflows.items;
-    },
-    {
-      returnObjects: true,
-    },
-  )[item.id];
   return (
     <Button
       type="button"
       variant="quiet"
       data-slot="workflow-recommendation-tile"
+      aria-description={description}
       className={cn(RAIL_TILE, "w-full")}
-      onClick={() => {
-        onSelect(item);
-      }}
+      onClick={onSelect}
     >
       <span
         className={cn(
@@ -100,9 +96,9 @@ export function WorkflowTile({
           RAIL_TILE_ART,
         )}
       >
-        <WorkflowCover item={item} />
+        <WorkflowCover cover={cover} />
       </span>
-      <span className={RAIL_TILE_CAPTION}>{copy.title}</span>
+      <span className={RAIL_TILE_CAPTION}>{title}</span>
     </Button>
   );
 }
@@ -332,7 +328,8 @@ export function ComposerWorkflowRecommendations({
           return (
             <WorkflowTile
               key={item.id}
-              item={item}
+              title={copy.items[item.id].title}
+              cover={item.cover}
               onSelect={() => {
                 open(item.id);
               }}

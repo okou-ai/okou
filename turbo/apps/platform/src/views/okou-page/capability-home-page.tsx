@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -6,7 +7,6 @@ import {
   ArrowUpRight,
   BookOpenCheck,
   Building2,
-  CalendarClock,
   ChartNoAxesCombined,
   ChevronRight,
   Compass,
@@ -17,7 +17,6 @@ import {
   Network,
   Package,
   Podcast,
-  Repeat2,
   Route,
   Search,
   Shapes,
@@ -31,6 +30,7 @@ import {
   Button,
   buttonVariants,
   cn,
+  ScrollBar,
   SegmentControl,
   SegmentControlItem,
   surfaceVariants,
@@ -47,7 +47,14 @@ import type {
   HomeWorkflowKind,
 } from "../../signals/okou-page/composer-home.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
-import { WORKFLOW_RECOMMENDATIONS } from "../../signals/okou-page/composer-workflow-recommendations.ts";
+import { TRIGGER_EXAMPLES } from "../../signals/okou-page/composer-trigger-examples.ts";
+import {
+  WORKFLOW_RECOMMENDATIONS,
+  type WorkflowRecommendation,
+  type WorkflowRecommendationDraft,
+  type WorkflowRecommendationId,
+  type WorkflowShelfCover,
+} from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
@@ -61,10 +68,7 @@ import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
-import {
-  TRIGGER_EXAMPLES,
-  TriggerSuggestionCover,
-} from "./trigger-suggestion-cover.tsx";
+import { CAPABILITY_TRAY_FADE_Y } from "./scroll-fade.ts";
 import { CapabilityIllustration } from "./capability-illustrations.tsx";
 
 /*
@@ -144,10 +148,45 @@ const RESEARCH_SUGGESTIONS = [
   { id: "tools", Icon: SlidersHorizontal },
 ] as const;
 
+/**
+ * The two ways to start a scheduled task, drawn as the same shelf covers as
+ * the workflows beside them: a clock glyph for the mark, since no connector
+ * stands for a schedule.
+ */
 const SCHEDULE_SUGGESTIONS = [
-  { id: "once", Icon: CalendarClock },
-  { id: "recurring", Icon: Repeat2 },
-] as const;
+  {
+    id: "once",
+    cover: {
+      tone: "chart-orange",
+      kind: "doc",
+      sources: [{ glyph: "calendar-clock" }],
+      destination: null,
+    },
+  },
+  {
+    id: "recurring",
+    cover: {
+      tone: "chart-green",
+      kind: "check",
+      sources: [{ glyph: "repeat" }],
+      destination: null,
+    },
+  },
+] as const satisfies readonly {
+  readonly id: string;
+  readonly cover: WorkflowShelfCover;
+}[];
+
+/**
+ * The recommendations that run on a clock. Scheduled offers them after its
+ * two starters; Advanced keeps them too, as the shelf of every workflow.
+ */
+const SCHEDULED_RECOMMENDATIONS = [
+  "morning",
+  "weekly",
+  "metrics",
+  "competitors",
+] as const satisfies readonly WorkflowRecommendationId[];
 
 /**
  * Every capability card shares one anatomy: copy at the top left, its drawing
@@ -680,17 +719,57 @@ function CapabilityTray({
             kind={selected}
             headerAction={closeButton}
           />
-        ) : selected === "workflow" ? (
-          <HomeWorkflowSuggestions signals={signals} />
         ) : (
-          <ComposerTaskTemplates
-            signals={signals}
-            selected={selected}
-            headerless
-          />
+          <CapabilityTrayBody key={selected}>
+            {selected === "workflow" ? (
+              <HomeWorkflowSuggestions signals={signals} />
+            ) : (
+              <ComposerTaskTemplates
+                signals={signals}
+                selected={selected}
+                headerless
+              />
+            )}
+          </CapabilityTrayBody>
         )}
       </TabsContent>
     </Tabs>
+  );
+}
+
+/**
+ * The tray's choices, in one window that keeps the same height for every
+ * capability and type, so switching between them changes what is in the tray
+ * and never moves the greeting above it. 240px is what Find people's two rows
+ * of cards take; a catalog taller than that scrolls down inside the window
+ * instead of running sideways, with the next row left in view under the fade
+ * to say there is more. Each type opens at its top, so the window is keyed by
+ * the type it shows.
+ *
+ * The window bleeds through the tray's padding and puts it back inside, so the
+ * overlay scrollbar sits in the tray's gutter rather than over the covers.
+ * The 4px above and below are the room a cover lifts into under the pointer
+ * and a card's shadow needs, kept inside the clip. Rows snap to their tops,
+ * and the window keeps its scroll to itself at either end.
+ */
+function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
+  return (
+    <ScrollArea.Root
+      // `group` so the viewport's fade can read the root's own
+      // `data-overflow-y-*`.
+      className="group relative -mx-4 -mt-1 sm:-mx-5"
+    >
+      <ScrollArea.Viewport
+        data-slot="scroll-area-viewport"
+        className={cn(
+          "h-61 snap-y snap-proximity scroll-pt-1 overscroll-contain px-4 py-1 focus:outline-none sm:px-5",
+          CAPABILITY_TRAY_FADE_Y,
+        )}
+      >
+        <ScrollArea.Content>{children}</ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar />
+    </ScrollArea.Root>
   );
 }
 
@@ -720,53 +799,6 @@ function HomeActionCard({
     >
       <Icon strokeWidth={1.8} className="text-muted-foreground" aria-hidden />
       <span className="min-w-0 text-sm font-medium leading-6">{title}</span>
-    </Button>
-  );
-}
-
-function HomeSuggestionCard({
-  title,
-  preview,
-  description,
-  titlePosition = "bottom",
-  onClick,
-}: {
-  readonly title: string;
-  readonly preview: ReactNode;
-  readonly description?: string;
-  readonly titlePosition?: "top" | "bottom";
-  readonly onClick: () => void;
-}) {
-  const caption = (
-    <span
-      className={cn(
-        "flex flex-col px-2",
-        titlePosition === "top" ? "pt-2 pb-3" : "min-h-14 pt-3 pb-2",
-      )}
-    >
-      <span
-        className={cn(
-          "text-sm font-medium leading-6",
-          titlePosition === "top" && "truncate",
-        )}
-      >
-        {title}
-      </span>
-    </span>
-  );
-  return (
-    <Button
-      variant="quiet"
-      aria-label={title}
-      aria-description={description}
-      className="h-auto min-w-0 flex-col items-stretch justify-start gap-0 rounded-xl border border-transparent bg-card p-2 text-left whitespace-normal text-foreground shadow-surface hover:border-foreground/25 hover:bg-card hover:text-foreground active:bg-card [&>span>svg]:size-full"
-      onClick={onClick}
-    >
-      {titlePosition === "top" && caption}
-      <span className="block aspect-video w-full overflow-hidden rounded-lg border border-surface-border/60">
-        {preview}
-      </span>
-      {titlePosition === "bottom" && caption}
     </Button>
   );
 }
@@ -810,133 +842,43 @@ function HomeExploreSuggestions({
         </p>
         {headerAction}
       </div>
-      <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
-        {suggestions.map(({ id, title, Icon }) => {
-          return (
-            <HomeActionCard
-              key={id}
-              title={title}
-              Icon={Icon}
-              onClick={() => {
-                detach(
-                  prepare(
-                    t(
-                      ($) => {
-                        return $.chat.capabilityHome[kind].prompt;
-                      },
-                      { task: title },
+      <CapabilityTrayBody key={kind}>
+        <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
+          {suggestions.map(({ id, title, Icon }) => {
+            return (
+              <HomeActionCard
+                key={id}
+                title={title}
+                Icon={Icon}
+                onClick={() => {
+                  detach(
+                    prepare(
+                      t(
+                        ($) => {
+                          return $.chat.capabilityHome[kind].prompt;
+                        },
+                        { task: title },
+                      ),
+                      pageSignal,
                     ),
-                    pageSignal,
-                  ),
-                  Reason.DomCallback,
-                );
-              }}
-            />
-          );
-        })}
-      </div>
+                    Reason.DomCallback,
+                  );
+                }}
+              />
+            );
+          })}
+        </div>
+      </CapabilityTrayBody>
     </section>
   );
 }
 
-function HomeAutomationSuggestions({
-  signals,
-  kind,
-}: {
-  readonly signals: ComposerSignals;
-  readonly kind: "scheduled" | "triggers";
-}) {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.capabilityHome;
-    },
-    { returnObjects: true },
-  );
-  const prepareWorkflow = useSet(signals.taskChips.home.prepareWorkflow$);
-  const pageSignal = useGet(pageSignal$);
-  const suggestions =
-    kind === "scheduled"
-      ? SCHEDULE_SUGGESTIONS.map(({ id, Icon }) => {
-          const title = copy.workflow.scheduled.items[id];
-          return {
-            id,
-            title,
-            Icon,
-            prompt: t(
-              ($) => {
-                return $.chat.capabilityHome.workflow.scheduled.prompt;
-              },
-              {
-                task: title,
-              },
-            ),
-          };
-        })
-      : TRIGGER_EXAMPLES.map((example) => {
-          const { id, source, mode } = example;
-          const steps = copy.workflow.triggers.items[id];
-          return {
-            id,
-            title: steps.title,
-            preview: <TriggerSuggestionCover example={example} />,
-            description: `${source}: ${steps.event} → ${steps.action} → ${steps.result}`,
-            prompt: t(
-              ($) => {
-                return mode === "monitor"
-                  ? $.chat.capabilityHome.workflow.triggers.monitorPrompt
-                  : $.chat.capabilityHome.workflow.triggers.eventPrompt;
-              },
-              {
-                task: steps.title,
-                source,
-                event: steps.event,
-                action: steps.action,
-                result: steps.result,
-              },
-            ),
-          };
-        });
-  return (
-    <div
-      className={cn(
-        "grid gap-3 @xl:grid-cols-2",
-        kind === "triggers" && "@2xl:grid-cols-3",
-      )}
-    >
-      {suggestions.map((suggestion) => {
-        const { id, title, prompt } = suggestion;
-        const onClick = () => {
-          detach(
-            prepareWorkflow({ template: null, prompt }, pageSignal),
-            Reason.DomCallback,
-          );
-        };
-        if ("Icon" in suggestion) {
-          return (
-            <HomeActionCard
-              key={id}
-              title={title}
-              Icon={suggestion.Icon}
-              onClick={onClick}
-            />
-          );
-        }
-        return (
-          <HomeSuggestionCard
-            key={id}
-            title={title}
-            preview={suggestion.preview}
-            description={suggestion.description}
-            titlePosition="top"
-            onClick={onClick}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
+/**
+ * The Workflow tray's kinds, every one as the same shelf covers. Scheduled
+ * leads with its two starters and then offers the recommendations that run on
+ * a clock; Triggers draws each source over what it leaves behind; Advanced
+ * keeps the whole recommendation shelf.
+ */
 function HomeWorkflowSuggestions({
   signals,
 }: {
@@ -960,6 +902,93 @@ function HomeWorkflowSuggestions({
   const kind = useGet(signals.taskChips.home.workflowKind$);
   const prepareWorkflow = useSet(signals.taskChips.home.prepareWorkflow$);
   const pageSignal = useGet(pageSignal$);
+  const prepare = (draft: WorkflowRecommendationDraft) => {
+    detach(prepareWorkflow(draft, pageSignal), Reason.DomCallback);
+  };
+  const recommendationTile = (item: WorkflowRecommendation) => {
+    return (
+      <WorkflowTile
+        key={item.id}
+        title={recommendations[item.id].title}
+        cover={item.cover}
+        onSelect={() => {
+          prepare({
+            template: item.templateId
+              ? localizedWorkflowTemplate(
+                  findWorkflowTemplateItem(item.templateId)!,
+                )
+              : null,
+            prompt: recommendations[item.id].prompt,
+          });
+        }}
+      />
+    );
+  };
+  const tiles =
+    kind === "advanced"
+      ? WORKFLOW_RECOMMENDATIONS.map(recommendationTile)
+      : kind === "scheduled"
+        ? [
+            ...SCHEDULE_SUGGESTIONS.map(({ id, cover }) => {
+              const title = copy.workflow.scheduled.items[id];
+              return (
+                <WorkflowTile
+                  key={id}
+                  title={title}
+                  cover={cover}
+                  onSelect={() => {
+                    prepare({
+                      template: null,
+                      prompt: t(
+                        ($) => {
+                          return $.chat.capabilityHome.workflow.scheduled
+                            .prompt;
+                        },
+                        { task: title },
+                      ),
+                    });
+                  }}
+                />
+              );
+            }),
+            ...SCHEDULED_RECOMMENDATIONS.flatMap((id) => {
+              const item = WORKFLOW_RECOMMENDATIONS.find((candidate) => {
+                return candidate.id === id;
+              });
+              return item ? [recommendationTile(item)] : [];
+            }),
+          ]
+        : TRIGGER_EXAMPLES.map(({ id, source, mode, cover }) => {
+            const steps = copy.workflow.triggers.items[id];
+            return (
+              <WorkflowTile
+                key={id}
+                title={steps.title}
+                cover={cover}
+                description={`${source}: ${steps.event} → ${steps.action} → ${steps.result}`}
+                onSelect={() => {
+                  prepare({
+                    template: null,
+                    prompt: t(
+                      ($) => {
+                        return mode === "monitor"
+                          ? $.chat.capabilityHome.workflow.triggers
+                              .monitorPrompt
+                          : $.chat.capabilityHome.workflow.triggers.eventPrompt;
+                      },
+                      {
+                        task: steps.title,
+                        source,
+                        event: steps.event,
+                        action: steps.action,
+                        result: steps.result,
+                      },
+                    ),
+                  });
+                }}
+              />
+            );
+          });
   const title =
     kind === "scheduled"
       ? copy.workflow.scheduled.setupTitle
@@ -968,36 +997,12 @@ function HomeWorkflowSuggestions({
   // section keeps its name for assistive tech without a second visible title.
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-5">
-      {kind === "advanced" ? (
-        <ComposerRail
-          rail="home:advanced-workflows"
-          itemWidth={200}
-          items={WORKFLOW_RECOMMENDATIONS.map((item) => {
-            return (
-              <WorkflowTile
-                key={item.id}
-                item={item}
-                onSelect={() => {
-                  const template = item.templateId
-                    ? localizedWorkflowTemplate(
-                        findWorkflowTemplateItem(item.templateId)!,
-                      )
-                    : null;
-                  detach(
-                    prepareWorkflow(
-                      { template, prompt: recommendations[item.id].prompt },
-                      pageSignal,
-                    ),
-                    Reason.DomCallback,
-                  );
-                }}
-              />
-            );
-          })}
-        />
-      ) : (
-        <HomeAutomationSuggestions signals={signals} kind={kind} />
-      )}
+      <ComposerRail
+        key={kind}
+        rail={`home:${kind}-workflows`}
+        itemWidth={200}
+        items={tiles}
+      />
     </section>
   );
 }

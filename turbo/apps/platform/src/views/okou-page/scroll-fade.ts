@@ -116,3 +116,20 @@ export const SCROLL_FADE_Y_END_SM = [
   "sm:[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
   "sm:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
 ].join(" ");
+
+/**
+ * `SCROLL_FADE_Y_WHEN_OVERFLOWING` for the capability tray's fixed window,
+ * whose rows are covers rather than list rows. The bottom dissolve is the
+ * 56px the cover rail used sideways before the tray scrolled downward: deep
+ * enough that the next row reads as "more below", not as covers cut flat. The
+ * top keeps 24px, so a row that has snapped to the top only softens its upper
+ * edge instead of losing half its picture.
+ */
+export const CAPABILITY_TRAY_FADE_Y = [
+  "group-data-[overflow-y-start]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_24px)]",
+  "group-data-[overflow-y-start]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_24px)]",
+  "group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_56px),transparent_100%)]",
+  "group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_56px),transparent_100%)]",
+  "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_24px,#000_calc(100%_-_56px),transparent_100%)]",
+  "group-data-[overflow-y-start]:group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_24px,#000_calc(100%_-_56px),transparent_100%)]",
+].join(" ");
