@@ -5139,7 +5139,7 @@
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
-    "deleteDescription": "聊天及其历史记录会保留，并返回原来 Agent 的列表。",
+    "deleteDescription": "仅删除 Project，聊天及其历史记录会保留。",
     "deleteError": "无法删除 Project",
     "deleteProject": "删除 Project",
     "deleteTitle": "删除 Project？",
