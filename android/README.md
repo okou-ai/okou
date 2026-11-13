@@ -169,9 +169,11 @@ Compile/package the suite without starting a device:
 ```
 
 Use an isolated test emulator. The fixture snapshots/restores app preferences,
-platform night mode, app locale, fixture API preferences and keyboard settings, scopes its UI Automation shell
-permissions, and closes its Activity owners on success and failure. It does not
-contact a backend. A new Activity owner is not a process-death restoration test.
+platform night mode, app locale, fixture API preferences and chat-list cache,
+scopes its UI Automation shell permissions, and closes its Activity owners on
+success and failure. Fixtures use a local HTTP server or external-service adapters
+without contacting a live backend. A new Activity owner is not a process-death
+restoration test.
 
 Managed-device HTML reports are under `app/build/reports/androidTests/`, with
 JUnit results/logcat under `app/build/outputs/androidTest-results/`. Official
