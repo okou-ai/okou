@@ -14,12 +14,15 @@ final class WorkspaceResources {
   let reloadNavigation: Command<Void, Void>
   let projectList: Computed<Task<[ChatProject], Error>>
   let reloadProjects: Command<Void, Void>
+  let sidebarDraftThreadIDs: Computed<Task<Set<String>, Error>>
+  let reloadSidebarDrafts: Command<Void, Void>
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
+  private let sidebarDrafts: WorkspaceRead<Set<String>>
   private let billing: WorkspaceRead<WorkspaceBilling>
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
@@ -74,6 +77,12 @@ final class WorkspaceResources {
     self.projects = projects
     projectList = projects.value
     reloadProjects = projects.reload
+    let sidebarDrafts = WorkspaceRead(
+      "sidebar drafts", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: ChatDraftRepository(client: client).threadIDs)
+    self.sidebarDrafts = sidebarDrafts
+    sidebarDraftThreadIDs = sidebarDrafts.value
+    reloadSidebarDrafts = sidebarDrafts.reload
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -132,6 +141,10 @@ final class WorkspaceResources {
     try store.set(invalidateReads, changes)
   }
 
+  func retrySidebarDrafts() throws {
+    try sidebarDrafts.retryFailed(in: store)
+  }
+
   func prepareSettings() throws {
     try store.set(billing.reload)
   }
@@ -151,6 +164,7 @@ final class WorkspaceResources {
     features.close()
     agents.close()
     projects.close()
+    sidebarDrafts.close()
     billing.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")

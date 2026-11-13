@@ -175,6 +175,7 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { store.close() }
     store.setPhase(.active)
     await store.refresh()
+    await store.activateDrafts()
     XCTAssertTrue(store.hasDraft(storeThreadID))
     XCTAssertTrue(store.hasDraft(otherID))
 
