@@ -110,7 +110,7 @@ test.each([
   { framework: "codex", root: "/home/user/.codex/skills" },
   { framework: "pi", root: "/home/user/.pi/agent/skills" },
 ] as const)(
-  "pins complete $framework Workflow bundles at claim, including Workflows added while queued",
+  "pins complete $framework Workflow bundles at dispatch, including Workflows added while queued",
   async ({ framework, root }) => {
     const { actor, agent, group, s3 } = await fixture(framework);
     const workflow = await createWorkflow(actor, agent.agentId, {
@@ -137,9 +137,9 @@ test.each([
     const second = await createWorkflow(actor, agent.agentId, {
       instruction: "newly available",
     });
+    context.mocks.s3.send.mockClear();
     const run = await queued.launch();
     await runs.heartbeatRunner(group);
-    context.mocks.s3.send.mockClear();
     const claim = await runs.executionInput(run.runId);
     expect(claim.cliAgentType).toBe(framework);
     expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
