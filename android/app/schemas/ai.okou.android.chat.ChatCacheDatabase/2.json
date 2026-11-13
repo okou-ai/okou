@@ -1,0 +1,445 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "da2175cb7ef206571588f475564151b2",
+    "entities": [
+      {
+        "tableName": "chat_scopes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `authorization` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `snapshotEventId` TEXT, `snapshotSeqId` INTEGER NOT NULL, `hasAgents` INTEGER NOT NULL, `projectsEnabled` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authorization",
+            "columnName": "authorization",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAt",
+            "columnName": "confirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotEventId",
+            "columnName": "snapshotEventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "snapshotSeqId",
+            "columnName": "snapshotSeqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasAgents",
+            "columnName": "hasAgents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "projectsEnabled",
+            "columnName": "projectsEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope"]
+        }
+      },
+      {
+        "tableName": "chat_thread_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `chat_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "id"]
+        },
+        "foreignKeys": [
+          {
+            "table": "chat_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope"],
+            "referencedColumns": ["scope"]
+          }
+        ]
+      },
+      {
+        "tableName": "chat_thread_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `seqId` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `chat_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seqId",
+            "columnName": "seqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "id"]
+        },
+        "indices": [
+          {
+            "name": "index_chat_thread_events_scope_seqId",
+            "unique": true,
+            "columnNames": ["scope", "seqId"],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_thread_events_scope_seqId` ON `${TABLE_NAME}` (`scope`, `seqId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "chat_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope"],
+            "referencedColumns": ["scope"]
+          }
+        ]
+      },
+      {
+        "tableName": "chat_agents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `chat_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "id"]
+        },
+        "foreignKeys": [
+          {
+            "table": "chat_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope"],
+            "referencedColumns": ["scope"]
+          }
+        ]
+      },
+      {
+        "tableName": "project_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `project_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "id"]
+        },
+        "foreignKeys": [
+          {
+            "table": "project_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope"],
+            "referencedColumns": ["scope"]
+          }
+        ]
+      },
+      {
+        "tableName": "project_scopes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `authorization` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `snapshotEventId` TEXT, `snapshotSeqId` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authorization",
+            "columnName": "authorization",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAt",
+            "columnName": "confirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotEventId",
+            "columnName": "snapshotEventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "snapshotSeqId",
+            "columnName": "snapshotSeqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope"]
+        }
+      },
+      {
+        "tableName": "project_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `id` TEXT NOT NULL, `seqId` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `id`), FOREIGN KEY(`scope`) REFERENCES `project_scopes`(`scope`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seqId",
+            "columnName": "seqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "id"]
+        },
+        "indices": [
+          {
+            "name": "index_project_events_scope_seqId",
+            "unique": true,
+            "columnNames": ["scope", "seqId"],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_project_events_scope_seqId` ON `${TABLE_NAME}` (`scope`, `seqId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "project_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope"],
+            "referencedColumns": ["scope"]
+          }
+        ]
+      },
+      {
+        "tableName": "history_scopes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `threadId` TEXT NOT NULL, `authorization` TEXT NOT NULL, `eventVersion` INTEGER NOT NULL, `confirmedAt` INTEGER NOT NULL, `eventId` TEXT, `seqId` INTEGER NOT NULL, PRIMARY KEY(`scope`, `threadId`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "threadId",
+            "columnName": "threadId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authorization",
+            "columnName": "authorization",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventVersion",
+            "columnName": "eventVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAt",
+            "columnName": "confirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "seqId",
+            "columnName": "seqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "threadId"]
+        }
+      },
+      {
+        "tableName": "history_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `threadId` TEXT NOT NULL, `id` TEXT NOT NULL, `seqId` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`scope`, `threadId`, `id`), FOREIGN KEY(`scope`, `threadId`) REFERENCES `history_scopes`(`scope`, `threadId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "threadId",
+            "columnName": "threadId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seqId",
+            "columnName": "seqId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["scope", "threadId", "id"]
+        },
+        "indices": [
+          {
+            "name": "index_history_events_scope_threadId_seqId",
+            "unique": true,
+            "columnNames": ["scope", "threadId", "seqId"],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_history_events_scope_threadId_seqId` ON `${TABLE_NAME}` (`scope`, `threadId`, `seqId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "history_scopes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": ["scope", "threadId"],
+            "referencedColumns": ["scope", "threadId"]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'da2175cb7ef206571588f475564151b2')"
+    ]
+  }
+}

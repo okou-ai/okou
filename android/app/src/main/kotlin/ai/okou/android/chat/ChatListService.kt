@@ -14,7 +14,7 @@ import ai.okou.android.api.generated.ProjectSnapshot
 class ChatSnapshotUnavailable(val status: Int) : Exception("Chat snapshot could not be downloaded")
 
 /** The workspace's canonical read boundary. None of these operations marks a thread read. */
-interface ChatListService {
+interface ChatListService : ConversationHistoryService {
     suspend fun chatSnapshot(): ChatSnapshot
 
     suspend fun chatArchive(url: String): ChatArchive

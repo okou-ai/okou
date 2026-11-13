@@ -59,7 +59,10 @@ class NativeChatListTest {
                         .coroutineContext[Job]
             }
             text(app.getString(R.string.chat_loading))
-            text(app.getString(R.string.settings)).click()
+            checkNotNull(
+                    device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
+                )
+                .click()
             text(app.getString(R.string.appearance))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -75,6 +78,28 @@ class NativeChatListTest {
             )
             text("Research Okou")
             assertNotNull(device.findObject(By.text("Project chat")))
+            text("Project chat").click()
+            text(app.getString(R.string.history_completed))
+            assertTrue(
+                UiScrollable(UiSelector().scrollable(true))
+                    .setAsVerticalList()
+                    .scrollIntoView(UiSelector().textContains("Native history"))
+            )
+            assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
+            text(app.getString(R.string.history_sidebar)).click()
+            assertTrue(
+                UiScrollable(UiSelector().scrollable(true))
+                    .setAsVerticalList()
+                    .scrollTextIntoView("Research")
+            )
+            text("Research").click()
+            text(app.getString(R.string.chat_list_title))
+            text("Research").click()
+            text(app.getString(R.string.chat_list_title))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text(app.getString(R.string.history_sidebar))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text("Project chat")
         } catch (error: Throwable) {
             failures.add(error)
             try {

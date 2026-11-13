@@ -14,6 +14,25 @@ import kotlinx.serialization.json.Json
 
 /** Empty external workspace data for shell/preferences tests. */
 open class TestChatService : ChatListService {
+    override suspend fun historySnapshot(
+        threadId: String
+    ): ai.okou.android.api.generated.HistorySnapshot = error("Unexpected history request")
+
+    override suspend fun historyArchive(url: String): List<ai.okou.android.chat.HistoryEvent> =
+        error("Unexpected history archive")
+
+    override suspend fun historyRows(
+        threadId: String,
+        cursor: ai.okou.android.chat.HistoryCursor,
+    ): ai.okou.android.chat.HistoryPage = error("Unexpected history tail")
+
+    override suspend fun threadDetail(
+        threadId: String
+    ): ai.okou.android.api.generated.ThreadDetail = error("Unexpected thread detail")
+
+    override suspend fun markRead(threadId: String): ai.okou.android.api.generated.ReadState =
+        error("Unexpected mark read")
+
     override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), emptyMap())
 
     override suspend fun chatSnapshot() =

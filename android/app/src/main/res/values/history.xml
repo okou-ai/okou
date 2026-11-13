@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">Conversations</string>
+    <string name="history_loading">Loading conversation…</string>
+    <string name="history_failed">Could not refresh this conversation. Try again.</string>
+    <string name="history_missing">This conversation was deleted or is unavailable.</string>
+    <string name="history_read_failed">Could not confirm read status. Refresh to retry.</string>
+    <string name="history_empty">No messages yet.</string>
+    <string name="history_you">You</string>
+    <string name="history_work">Work</string>
+    <string name="history_work_steps">Response steps: %1$d</string>
+    <string name="history_queued">Queued</string>
+    <string name="history_rejected">Not sent</string>
+    <string name="history_unsupported">This content is shown in its original form.</string>
+    <string name="history_reference">Reference</string>
+    <string name="history_completed">Completed</string>
+    <string name="history_cancelled">Stopped</string>
+    <string name="history_run_failed">Failed</string>
+    <string name="history_idle">History</string>
+    <string name="history_running">Running</string>
+    <string name="history_stopping">Stopping</string>
+</resources>

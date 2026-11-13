@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">首页</string>
     <string name="settings">设置</string>
     <string name="back">返回</string>
     <string name="appearance">外观</string>

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">Beranda</string>
     <string name="settings">Setelan</string>
     <string name="back">Kembali</string>
     <string name="appearance">Tampilan</string>

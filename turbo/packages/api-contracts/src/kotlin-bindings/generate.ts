@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isNoBody } from "../contracts/trpc-contract";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../contracts/chat-event-schema-version";
 import {
   CLIENT_TYPE_ANDROID,
   CLIENT_TYPE_HEADER,
@@ -176,7 +177,9 @@ export function renderKotlinFiles(
         .map(([name, value]) => {
           return `    const val ${name} = ${quote(value)}`;
         })
-        .join("\n")}\n}\n`,
+        .join(
+          "\n",
+        )}\n    const val CHAT_EVENT_SCHEMA_VERSION = ${CURRENT_CHAT_EVENT_SCHEMA_VERSION}\n}\n`,
     ],
   ]);
 }

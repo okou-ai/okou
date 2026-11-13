@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">会话</string>
+    <string name="history_loading">正在加载会话…</string>
+    <string name="history_failed">无法刷新会话，请重试。</string>
+    <string name="history_missing">此会话已删除或不可用。</string>
+    <string name="history_read_failed">无法确认已读状态，请刷新重试。</string>
+    <string name="history_empty">暂无消息。</string>
+    <string name="history_you">你</string>
+    <string name="history_work">工作记录</string>
+    <string name="history_work_steps">响应步骤：%1$d</string>
+    <string name="history_queued">排队中</string>
+    <string name="history_rejected">未发送</string>
+    <string name="history_unsupported">此内容以原始形式显示。</string>
+    <string name="history_reference">引用</string>
+    <string name="history_completed">已完成</string>
+    <string name="history_cancelled">已停止</string>
+    <string name="history_run_failed">失败</string>
+    <string name="history_idle">历史记录</string>
+    <string name="history_running">运行中</string>
+    <string name="history_stopping">正在停止</string>
+</resources>

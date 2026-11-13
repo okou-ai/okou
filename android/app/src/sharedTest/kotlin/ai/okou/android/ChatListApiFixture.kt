@@ -28,10 +28,56 @@ fun chatEventWire(
 ): String =
     """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread","agentId":"$agent","title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
 
+const val HISTORY_LAST_EVENT = "88888888-8888-4888-8888-888888888888"
+const val HISTORY_RUN = "99999999-9999-4999-8999-999999999999"
+
+fun historyEventWire(
+    id: String = HISTORY_LAST_EVENT,
+    seq: Long = 37,
+    thread: String = CHAT_PERSONAL,
+    type: String = "output.message",
+    payload: String = "{\"content\":\"**Native history** reply\"}",
+    run: String? = HISTORY_RUN,
+    revoke: String? = null,
+): String =
+    """{"id":"$id","chatThreadId":"$thread","runId":${run?.let { "\"$it\"" } ?: "null"},"revokesEventId":${revoke?.let { "\"$it\"" } ?: "null"},"contextType":"web","contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":$seq,"createdAt":"$CHAT_DATE","eventType":"$type","payload":$payload}"""
+
 /** Only the external HTTP boundary is substituted; native owners/codec/cache/transport are real. */
 class ChatListApiFixture : Closeable {
     val server = MockWebServer()
     @Volatile var beforeResponse: () -> Unit = {}
+    @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
+    val readRequests = java.util.concurrent.atomic.AtomicInteger()
+    @Volatile
+    var historyDetail: () -> MockResponse = {
+        jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":false}""")
+    }
+    @Volatile
+    var historySnapshot: () -> MockResponse = {
+        jsonResponse(
+                """{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"Not archived"}}"""
+            )
+            .setResponseCode(404)
+    }
+    @Volatile var historyArchive: () -> MockResponse = { MockResponse().setBody("") }
+    @Volatile
+    var historyRows: (RecordedRequest) -> MockResponse = { request ->
+        val thread = checkNotNull(request.requestUrl).pathSegments[2]
+        val cold = request.requestUrl?.queryParameter("sinceSeqId") == "0"
+        val input =
+            historyEventWire(
+                "input",
+                17,
+                thread,
+                "input.prompt",
+                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
+            )
+        val output = historyEventWire("output", 23, thread)
+        val complete = historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null")
+        jsonResponse(
+            """{"rows":[${if (cold) "$input,$output,$complete" else ""}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+        )
+    }
     @Volatile
     var flags: () -> MockResponse = {
         jsonResponse("""{"switches":{},"effectiveSwitches":{"projects":true}}""")
@@ -80,6 +126,25 @@ class ChatListApiFixture : Closeable {
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     beforeResponse()
+                    val segments = request.requestUrl?.pathSegments.orEmpty()
+                    if (
+                        segments.size >= 3 &&
+                            segments[0] == "api" &&
+                            segments[1] == "chat-threads" &&
+                            segments[2] in setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+                    ) {
+                        beforeHistoryResponse(request)
+                        return when (segments.getOrNull(3)) {
+                            "event-snapshot" -> historySnapshot()
+                            "event-rows" -> historyRows(request)
+                            "mark-read" -> {
+                                readRequests.incrementAndGet()
+                                jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                            }
+                            null -> historyDetail()
+                            else -> MockResponse().setResponseCode(404)
+                        }
+                    }
                     return when (request.requestUrl?.encodedPath) {
                         "/api/feature-switches" -> flags()
                         "/api/chat-threads/snapshot" -> snapshot()
@@ -89,6 +154,7 @@ class ChatListApiFixture : Closeable {
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)
                         "/archive" -> archive()
+                        "/history-archive" -> historyArchive()
                         else -> MockResponse().setResponseCode(404)
                     }
                 }

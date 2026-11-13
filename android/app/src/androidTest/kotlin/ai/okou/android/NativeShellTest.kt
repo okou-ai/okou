@@ -118,7 +118,7 @@ class NativeShellTest {
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            click(R.string.home)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
             closeActivity()
             launch()
@@ -147,7 +147,10 @@ class NativeShellTest {
 
     private fun label(id: Int): BySelector = By.pkg(app.packageName).text(app.getString(id))
 
-    private fun click(id: Int) = text(id).click()
+    private fun click(id: Int) =
+        if (id == R.string.settings)
+            checkNotNull(device.wait(Until.findObject(By.desc(app.getString(id))), WAIT)).click()
+        else text(id).click()
 
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =

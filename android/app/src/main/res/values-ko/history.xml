@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">대화</string>
+    <string name="history_loading">대화 불러오는 중…</string>
+    <string name="history_failed">대화를 새로고침하지 못했습니다. 다시 시도하세요.</string>
+    <string name="history_missing">삭제되었거나 사용할 수 없는 대화입니다.</string>
+    <string name="history_read_failed">읽음 상태를 확인하지 못했습니다. 새로고침하여 다시 시도하세요.</string>
+    <string name="history_empty">아직 메시지가 없습니다.</string>
+    <string name="history_you">나</string>
+    <string name="history_work">작업</string>
+    <string name="history_work_steps">응답 단계: %1$d</string>
+    <string name="history_queued">대기 중</string>
+    <string name="history_rejected">전송되지 않음</string>
+    <string name="history_unsupported">이 콘텐츠는 원래 형식으로 표시됩니다.</string>
+    <string name="history_reference">참조</string>
+    <string name="history_completed">완료</string>
+    <string name="history_cancelled">중지됨</string>
+    <string name="history_run_failed">실패</string>
+    <string name="history_idle">기록</string>
+    <string name="history_running">실행 중</string>
+    <string name="history_stopping">중지 중</string>
+</resources>
