@@ -14,6 +14,7 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
 import {
   createBddApi,
   expectApiError,
@@ -551,7 +552,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       throw new Error("Expected released capacity to launch the queued input");
     }
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    const pickedInput = await api.executionInput(picked.runId);
     await api.requestCancelRun(actor, picked.runId, [200]);
+    await finishCancelledRun(picked.runId, pickedInput.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -895,13 +898,13 @@ describe("RUN-01: run admission boundaries", () => {
         return outcome.kind !== "rejected";
       }),
     ).toBeTruthy();
-    const pending = await reads.requestListLogs(
+    const running = await reads.requestListLogs(
       actor,
-      { status: "pending", limit: 50 },
+      { status: "running", limit: 50 },
       [200],
     );
     expect(
-      pending.body.data
+      running.body.data
         .map((run) => {
           return run.id;
         })
@@ -2076,7 +2079,12 @@ describe("RUN-04: agent run telemetry families", () => {
 | sort by _time desc
 | limit 1`,
         startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+        endTime: new Date(
+          Math.max(
+            runCreatedAtMs,
+            Date.parse((await api.readRun(actor, agentRun.runId)).startedAt!),
+          ) + HOUR_MS,
+        ).toISOString(),
       },
     };
     expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
@@ -2608,18 +2616,19 @@ describe("RUN-04: agent run telemetry families", () => {
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
       sandboxStartupPath: null,
-      runnerHostname: null,
-      runnerVersion: "0.234.18",
+      runnerHostname: `runner-${api.dispatchedRun(runId).runnerId}.okou.app`,
+      runnerVersion: null,
       runnerId: expect.any(String),
       runnerHeartbeatGeneration: 1,
     });
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
       sandboxStartupPath: null,
-      runnerHostname: null,
+      runnerHostname: `runner-${api.dispatchedRun(bareRun.runId).runnerId}.okou.app`,
       runnerVersion: null,
-      runnerId: null,
-      runnerHeartbeatGeneration: null,
+      runnerId: api.dispatchedRun(bareRun.runId).runnerId,
+      runnerHeartbeatGeneration: api.dispatchedRun(bareRun.runId)
+        .heartbeatGeneration,
     });
 
     const memberRunner = await api.requestRunRunner(member, runId, [404]);
@@ -2859,22 +2868,49 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     await owned.run(async () => {
-      const pendingRun = await owned.sendChatRun(actor, {
-        agentId,
-        prompt: "pending detail run",
-      });
+      const kms = holdCurrentSecretKms(context.signal);
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          clientEventId,
+          prompt: "pending detail run",
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the pending detail input");
+      }
+      await kms.entered;
+      const messages = await chat.listThreadEvents(actor, sent.body.threadId);
+      const pendingRunId = messages.events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!pendingRunId) {
+        throw new Error("Expected a durable pending Run");
+      }
       const pendingDetail = await reads.requestReadLogById(
         actor,
-        pendingRun.runId,
+        pendingRunId,
         [200],
       );
       expect(pendingDetail.body).toMatchObject({
-        id: pendingRun.runId,
+        id: pendingRunId,
         status: "pending",
         sessionId: null,
         completedAt: null,
       });
-      await api.requestCancelRun(actor, pendingRun.runId, [200]);
+      kms.release();
+      await flushWaitUntilForTest();
+      const prepared = await api.executionInput(pendingRunId);
+      await api.requestCancelRun(actor, pendingRunId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: pendingRunId, exitCode: 137, error: "Run cancelled" },
+        sandboxHeaders(prepared.sandboxToken),
+        [200],
+      );
+      await flushWaitUntilForTest();
 
       const failedRun = await owned.sendChatRun(actor, {
         agentId,
@@ -2930,7 +2966,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(detail.body).toMatchObject({
       id: run.runId,
       framework: "claude-code",
-      status: "pending",
+      status: "running",
       prompt: "read a retained run snapshot",
     });
   });

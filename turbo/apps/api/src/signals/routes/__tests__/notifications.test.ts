@@ -60,7 +60,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
     model: "claude-fable-5-1",
     prompt: "Notify me about a useful update",
   });
-  expect(run).toMatchObject({ status: "pending" });
+  expect(run).toMatchObject({ status: "running" });
   const claim = await runs.executionInput(run.runId);
   mockClerkUsers(context, [
     {

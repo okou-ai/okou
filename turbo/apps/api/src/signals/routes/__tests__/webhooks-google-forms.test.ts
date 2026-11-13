@@ -52,7 +52,6 @@ const TOPIC_NAME = "projects/vm0-ai-488909/topics/forms-events";
 const AUDIENCE = "https://api.okou.ai/api/webhooks/google-forms";
 const PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-const RUNNER_GROUP = "vm0/google-forms-webhook-test";
 const SEED_CURSOR = "2026-08-05T09:30:00.123456Z";
 const RESPONSE_CREATE_TIME = "2026-08-05T10:00:00.654000Z";
 const RESPONSE_SUBMITTED_TIME = "2026-08-05T10:00:00.654321Z";
@@ -110,8 +109,8 @@ function signedGoogleIdToken(): string {
   return `${signedContent}.${signature.toString("base64url")}`;
 }
 
-function configureEnvironment(): void {
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", RUNNER_GROUP);
+async function configureEnvironment(): Promise<void> {
+  await runs.configureRunnerGroup();
   mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", TOPIC_NAME);
   mockOptionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE", AUDIENCE);
   mockOptionalEnv(
@@ -353,7 +352,7 @@ async function useNativeHarnessForFormsFixture(
 }
 
 async function setupGoogleFormsAutomation() {
-  configureEnvironment();
+  await configureEnvironment();
   const formsApi = configureFormsApi();
   const { actor } = await workflows.setupWorkflowOrg();
   await useNativeHarnessForFormsFixture(actor);
@@ -973,7 +972,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!runId) {
       throw new Error("Expected a dispatched Google Forms workflow run");
     }
-    await runs.heartbeatRunner(RUNNER_GROUP);
     const claim = await runs.executionInput(runId);
     const eventContext = eventContextFromAgentPrompt(claim.prompt);
     expect(eventContext).toStrictEqual({
@@ -1029,7 +1027,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!runId) {
         throw new Error("Expected a running Forms workflow");
       }
-      await runs.heartbeatRunner(RUNNER_GROUP);
       const claim = await runs.executionInput(runId);
       const connection = await connectors.readDefaultBuiltinAccount(
         actor,
@@ -1188,7 +1185,7 @@ describe("Google Forms Pub/Sub webhook", () => {
   });
 
   it("routes a shared-form notification by watch id without fanout", async () => {
-    configureEnvironment();
+    await configureEnvironment();
     const formsApi = configureFormsApi();
     const createdAutomations: {
       readonly chatThreadId: string;
@@ -1304,7 +1301,7 @@ describe("Google Forms Pub/Sub webhook", () => {
   async function setupGoogleFormsMultiAccountAutomations(
     chatAccountAccess = false,
   ) {
-    configureEnvironment();
+    await configureEnvironment();
     const formsApi = configureFormsApi([
       "google-forms-access-token",
       "google-forms-second-access-token",
@@ -1814,7 +1811,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!secondRunId) {
       throw new Error("Expected a second-account Google Forms run");
     }
-    await runs.heartbeatRunner(RUNNER_GROUP);
     const claim = await runs.executionInput(secondRunId);
     expect(
       Object.values(claim.secretConnectorMetadataMap ?? {}),
@@ -2168,7 +2164,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       ) {
         throw new Error("Expected both repaired Google Forms workflow runs");
       }
-      await runs.heartbeatRunner(RUNNER_GROUP);
       for (const runId of runIds) {
         if (!runId) {
           throw new Error("Expected a repaired Google Forms workflow run");

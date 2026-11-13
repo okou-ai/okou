@@ -454,13 +454,13 @@ describe("thin MCP Web adapters", () => {
         agentId: f.agentId,
         prompt: "observe indicator transitions",
       });
-      expect(run.status).toBe("pending");
+      expect(run.status).toBe("running");
       const before = await chat.readThread(f.actor, run.threadId);
       expect(before.lastReadAt).toBeNull();
 
-      const pending = await mcp.call(token(), "get_chat_indicators");
-      expect(pending.isError).not.toBeTruthy();
-      expect(indicatorsSchema.parse(body(pending))).toStrictEqual({
+      const initial = await mcp.call(token(), "get_chat_indicators");
+      expect(initial.isError).not.toBeTruthy();
+      expect(indicatorsSchema.parse(body(initial))).toStrictEqual({
         agents: { [f.agentId]: "active" },
         threads: { [run.threadId]: "active" },
         unreadAt: {},
@@ -471,7 +471,7 @@ describe("thin MCP Web adapters", () => {
       expect((await runs.readRun(f.actor, run.runId)).status).toBe("running");
       const running = await mcp.call(token(), "get_chat_indicators");
       expect(running.isError).not.toBeTruthy();
-      expect(body(running)).toStrictEqual(body(pending));
+      expect(body(running)).toStrictEqual(body(initial));
 
       const cancelled = await mcp.call(token(), "cancel_run", {
         runId: run.runId,

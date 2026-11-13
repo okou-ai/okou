@@ -29,6 +29,7 @@ import { discordGatewayRoutes } from "../discord-gateway";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
@@ -56,6 +57,15 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const runsApi = createRunsApi(context);
+async function acknowledgeCancelledRun(runId: string) {
+  const input = await runsApi.executionInput(runId);
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    { runId, exitCode: 137, error: "Run cancelled" },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
 const track = createFixtureTracker<ConnectedDiscordActor>(async (actor) => {
   mockDiscordMemberships(context, [actor]);
   await removePublicDiscordBinding(context, actor.fixture);
@@ -1942,6 +1952,7 @@ describe("canonical Discord ingress", () => {
     }
     const originalDmRun = await launchedRun(actor, originalDm.id);
     await runsApi.requestCancelRun(actor.actor, originalDmRun.runId, [200]);
+    await acknowledgeCancelledRun(originalDmRun.runId);
     await flushWaitUntilForTest();
     createRouteMocks(context).clerk.session(
       actor.userId,
@@ -2012,6 +2023,7 @@ describe("canonical Discord ingress", () => {
     }
     const firstRun = await launchedRun(actor, thread.id);
     await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await acknowledgeCancelledRun(firstRun.runId);
     await flushWaitUntilForTest();
 
     const channelId = uniqueDiscordSnowflake();
@@ -2072,6 +2084,7 @@ describe("canonical Discord ingress", () => {
     }
     const firstRun = await launchedRun(actor, thread.id);
     await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await acknowledgeCancelledRun(firstRun.runId);
     await flushWaitUntilForTest();
 
     await createBddIntegrationApi(context).configureNativeSubscriptionModels(
@@ -2196,6 +2209,7 @@ describe("canonical Discord ingress", () => {
     });
 
     await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await acknowledgeCancelledRun(firstRun.runId);
     await flushWaitUntilForTest();
     const input = currentInputs(await events(actor, thread.id))[1];
     if (!input?.runId) {
@@ -2650,6 +2664,7 @@ describe("canonical Discord ingress", () => {
 
     // Freeing the slot picks the waiting thread and launches its input.
     await runsApi.requestCancelRun(actor.actor, activeRun.runId, [200]);
+    await acknowledgeCancelledRun(activeRun.runId);
     await flushWaitUntilForTest();
     const waitingRun = await launchedRun(actor, waitingThread.id);
     expect(waitingRun.prompt).toBe("@Okou wait for an org run slot");

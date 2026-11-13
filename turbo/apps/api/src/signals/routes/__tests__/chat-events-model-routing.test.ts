@@ -212,7 +212,10 @@ describe("CHAT-02: model-first routing", () => {
       expect.objectContaining({ revokesEventId: clientEventId }),
     );
 
-    await cancelChatRun(actor, active.runId);
+    const activeInput = await api.executionInput(active.runId);
+    await cancelChatRun(actor, active.runId, {
+      authorization: `Bearer ${activeInput.sandboxToken}`,
+    });
     const { picked } = await waitForPickedInput(
       actor,
       thread.id,

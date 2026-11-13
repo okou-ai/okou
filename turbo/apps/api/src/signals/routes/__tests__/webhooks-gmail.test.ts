@@ -2148,8 +2148,8 @@ describe("POST /api/webhooks/gmail", () => {
 
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
-    const runnerGroup = await runsApi.configureRunnerGroup();
     configureGmailEnv();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     configureGmailWatchMock();
     configureGmailLabelsMockSequence([
       [{ id: "Label_support_old", name: "Support" }],

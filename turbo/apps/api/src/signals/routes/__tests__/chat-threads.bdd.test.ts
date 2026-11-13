@@ -1203,7 +1203,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     expect((await api.readRun(actor, main.runId)).status).toBe("cancelled");
     expect((await api.readRun(actor, sibling.runId)).status).toBe("completed");
-    expect((await api.readRun(actor, other.runId)).status).toBe("pending");
+    expect((await api.readRun(actor, other.runId)).status).toBe("running");
 
     const goneRead = await chat.requestReadThread(actor, main.threadId, [404]);
     expectApiError(goneRead.body);

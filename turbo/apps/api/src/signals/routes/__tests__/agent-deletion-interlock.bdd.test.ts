@@ -1,6 +1,11 @@
 import { testContext } from "../../../__tests__/test-context";
+import { randomUUID } from "node:crypto";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -32,16 +37,40 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
     "blocks Agent deletion while its Run is %s",
     async (status) => {
       const actor = bdd.user();
-      const group = await prepareRunCreation(actor);
+      await prepareRunCreation(actor);
       const target = await createAgent(actor, "Active Session Target");
-      const targetRun = await api.createThreadRun(actor, {
-        agentId: target.agentId,
-        prompt: "block target deletion",
-      });
-      if (status === "running") {
-        await api.heartbeatRunner(group);
-        await api.executionInput(targetRun.runId);
+      const kms =
+        status === "pending" ? holdCurrentSecretKms(context.signal) : null;
+      const chat = createChatFilesBddApi(context);
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId: target.agentId,
+          prompt: "block target deletion",
+          clientEventId,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the deletion-blocking input");
       }
+      if (kms) {
+        await kms.entered;
+      } else {
+        await flushWaitUntilForTest();
+      }
+      const runId = (
+        await chat.listThreadEvents(actor, sent.body.threadId)
+      ).events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the admitted deletion-blocking Run");
+      }
+      const targetRun = { runId };
+      const input =
+        status === "running" ? await api.executionInput(runId) : null;
       const response = await bdd.requestDeleteAgent(
         actor,
         target.agentId,
@@ -65,6 +94,15 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
         },
       );
       await api.requestCancelRun(actor, targetRun.runId, [200]);
+      if (input) {
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          { runId, exitCode: 137, error: "Run cancelled" },
+          { authorization: `Bearer ${input.sandboxToken}` },
+          [200],
+        );
+      }
+      kms?.release();
+      await flushWaitUntilForTest();
     },
   );
 });

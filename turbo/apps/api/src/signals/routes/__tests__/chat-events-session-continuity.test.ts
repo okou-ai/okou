@@ -774,6 +774,20 @@ describe("CHAT-02: run-level model overrides", () => {
         result: { frameworkSessionId: expect.any(String) },
       });
 
+      const runners = createRunsApi(context);
+      const firstProcess = runners.dispatchedRun(first.runId);
+      const firstIdentity = {
+        runnerId: firstProcess.runnerId,
+        heartbeatGeneration: firstProcess.heartbeatGeneration,
+      };
+      await runners.registerDirectRunner(runnerGroup, {
+        runnerIdentity: firstIdentity,
+        heartbeat: { snapshotSequence: 2, admittableProfiles: [] },
+      });
+      const secondIdentity = await runners.registerDirectRunner(runnerGroup, {
+        runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 7 },
+        maxConcurrent: 1,
+      });
       const second = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
@@ -804,12 +818,16 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       expect(secondRun.result?.framework).toBe(toRuntime);
 
-      const runners = createRunsApi(context);
-      const holders = [];
-      for (const sourceRunId of [first.runId, second.runId]) {
-        const holder = await runners.registerDirectRunner(runnerGroup, {
-          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 7 },
+      expect(runners.dispatchedRun(second.runId)).toMatchObject(secondIdentity);
+      for (const [index, sourceRunId] of [
+        first.runId,
+        second.runId,
+      ].entries()) {
+        await runners.registerDirectRunner(runnerGroup, {
+          runnerIdentity: index === 0 ? firstIdentity : secondIdentity,
+          maxConcurrent: 1,
           heartbeat: {
+            snapshotSequence: index === 0 ? 3 : 2,
             heldSandboxStates: [
               {
                 reuseKey: `thread:${first.threadId}`,
@@ -822,7 +840,6 @@ describe("CHAT-02: run-level model overrides", () => {
             ],
           },
         });
-        holders.push(holder.runnerId);
       }
       const third = await sendChatRun(actor, {
         agentId,
@@ -832,8 +849,11 @@ describe("CHAT-02: run-level model overrides", () => {
         model: from,
       });
       expect(runners.dispatchedRun(third.runId)).toMatchObject({
-        runnerId: holders[1],
-        heartbeatGeneration: 7,
+        ...secondIdentity,
+        executionContext: {
+          runId: third.runId,
+          reuseKey: `thread:${first.threadId}`,
+        },
       });
       const thirdClaim = await claimChatRun(runnerGroup, third.runId);
       expect(thirdClaim.claim.cliAgentType).toBe(fromRuntime);
@@ -851,7 +871,7 @@ describe("CHAT-02: run-level model overrides", () => {
           text.includes("continue with the selected model")
         );
       });
-      await cancelChatRun(actor, third.runId);
+      await cancelChatRun(actor, third.runId, thirdClaim.sandboxHeaders);
     },
     90_000,
   );

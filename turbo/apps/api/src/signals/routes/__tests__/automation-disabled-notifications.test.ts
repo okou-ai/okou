@@ -181,6 +181,7 @@ async function fireNextOccurrence(scenario: Scenario) {
     );
   }
   mockNow(new Date(before.nextRunAt));
+  await runs.registerDirectRunner(scenario.runnerGroup);
   await executeCron();
   return await readAutomation(scenario);
 }
@@ -301,7 +302,6 @@ async function startScheduledRun(scenario: Scenario) {
     latestInput.runId,
     scenario.runnerGroup,
   );
-  await runs.heartbeatRunner(scenario.runnerGroup);
   const claimed = await runs.executionInput(latestInput.runId);
   owned.sandboxToken = claimed.sandboxToken;
   return {
