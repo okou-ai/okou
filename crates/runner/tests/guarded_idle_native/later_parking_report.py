@@ -26,6 +26,16 @@ def identifier(value):
     return value
 
 
+def history_operation(evidence, identities, reason):
+    """Parse and reserve a distinct canonical history/operation identity pair."""
+    history = identifier(evidence.get("history_run_id"))
+    operation = identifier(evidence.get("operation_run_id"))
+    if history == operation or history in identities or operation in identities:
+        raise ValueError(reason)
+    identities.update((history, operation))
+    return history, operation
+
+
 def clock(value, begin, end):
     if not report.positive_integer(value) or not begin < value < end:
         raise ValueError("later parking phase clocks lost ordering")

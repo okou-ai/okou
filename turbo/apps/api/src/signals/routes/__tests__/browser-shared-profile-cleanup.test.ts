@@ -34,7 +34,6 @@ describe("server-owned shared Browser recovery", () => {
     const both = createDeferredPromise<void>(context.signal);
     let arrivals = 0;
     const f = await fixture(
-      true,
       profileProvider(async () => {
         if (++arrivals === 2) {
           both.resolve();
@@ -73,7 +72,6 @@ describe("server-owned shared Browser recovery", () => {
     const cancelled = createDeferredPromise<void>(context.signal);
     let arrivals = 0;
     const f = await fixture(
-      true,
       profileProvider(async () => {
         if (++arrivals === 2) {
           both.resolve();
@@ -157,7 +155,6 @@ describe("server-owned shared Browser recovery", () => {
     const created = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     const f = await fixture(
-      true,
       profileProvider(async () => {
         created.resolve();
         await release.promise;

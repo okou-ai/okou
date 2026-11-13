@@ -28,7 +28,7 @@ import {
 import { captureBoundary } from "./capture-boundary.ts";
 
 export interface DisplayEffects {
-  readonly windowId: number | null;
+  readonly windowId: number;
   readonly capturePending$: Computed<boolean>;
   readonly refresh$: Command<
     Promise<void>,

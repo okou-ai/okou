@@ -1,9 +1,14 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.UserPreferencesColorTheme
+import android.content.Context
 import android.content.res.Configuration
+import android.util.TypedValue
+import android.view.ContextThemeWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -19,59 +24,16 @@ import androidx.compose.ui.text.font.FontFamily
 
 /** Colors follow Web semantic roles; Android owns control geometry and interaction. */
 @Composable
-fun OkouTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun OkouTheme(
+    dark: Boolean = isSystemInDarkTheme(),
+    palette: UserPreferencesColorTheme = UserPreferencesColorTheme.DEFAULT,
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    // Read the selected resource qualifiers without replacing the Activity or its native owners.
-    val resources =
-        remember(context, configuration, dark) {
-            val themed =
-                Configuration(configuration).apply {
-                    uiMode =
-                        (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                            if (dark) Configuration.UI_MODE_NIGHT_YES
-                            else Configuration.UI_MODE_NIGHT_NO
-                }
-            context.createConfigurationContext(themed).resources
-        }
-    fun role(id: Int) = Color(resources.getColor(id, null))
-    val defaults = if (dark) darkColorScheme() else lightColorScheme()
-    val colors =
-        defaults.copy(
-            primary = role(R.color.okou_primary),
-            onPrimary = role(R.color.okou_primary_foreground),
-            primaryContainer = role(R.color.okou_accent),
-            onPrimaryContainer = role(R.color.okou_accent_foreground),
-            secondary = role(R.color.okou_foreground),
-            onSecondary = role(R.color.okou_background),
-            secondaryContainer = role(R.color.okou_accent),
-            onSecondaryContainer = role(R.color.okou_accent_foreground),
-            tertiary = role(R.color.okou_primary),
-            onTertiary = role(R.color.okou_primary_foreground),
-            tertiaryContainer = role(R.color.okou_muted),
-            onTertiaryContainer = role(R.color.okou_foreground),
-            background = role(R.color.okou_background),
-            onBackground = role(R.color.okou_foreground),
-            surface = role(R.color.okou_card),
-            onSurface = role(R.color.okou_card_foreground),
-            surfaceVariant = role(R.color.okou_muted),
-            onSurfaceVariant = role(R.color.okou_muted_foreground),
-            surfaceTint = role(R.color.okou_primary),
-            surfaceContainerLowest = role(R.color.okou_background),
-            surfaceContainerLow = role(R.color.okou_card),
-            surfaceContainer = role(R.color.okou_muted),
-            surfaceContainerHigh = role(R.color.okou_muted),
-            surfaceContainerHighest = role(R.color.okou_muted),
-            outline = role(R.color.okou_border),
-            outlineVariant = role(R.color.okou_border),
-            error = role(R.color.okou_destructive),
-            onError = role(R.color.okou_destructive_foreground),
-            errorContainer = role(R.color.okou_muted),
-            onErrorContainer = role(R.color.okou_destructive),
-            inverseSurface = role(R.color.okou_foreground),
-            inverseOnSurface = role(R.color.okou_background),
-            inversePrimary = role(R.color.okou_primary),
-        )
+    val resolved =
+        remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
+    val colors = resolved.scheme
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }
     MaterialTheme(
@@ -99,10 +61,81 @@ fun OkouTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> 
                 LocalTextSelectionColors provides
                     TextSelectionColors(
                         handleColor = colors.onSurface,
-                        backgroundColor = colors.primary.copy(alpha = 0.25f),
+                        backgroundColor = resolved.selection,
                     ),
                 content = content,
             )
         },
     )
+}
+
+internal data class PaletteColors(val scheme: ColorScheme, val selection: Color)
+
+/** The wrapper is used only for color lookup; native controls keep the real Activity context. */
+internal fun resolvePalette(
+    context: Context,
+    dark: Boolean,
+    palette: UserPreferencesColorTheme,
+): PaletteColors {
+    val configuration =
+        Configuration(context.resources.configuration).apply {
+            uiMode =
+                (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        }
+    val style =
+        when (palette) {
+            UserPreferencesColorTheme.DEFAULT -> R.style.OkouPalette_default
+            UserPreferencesColorTheme.GOLDEN_HOUR -> R.style.OkouPalette_golden_hour
+            UserPreferencesColorTheme.CITRUS_SPARK -> R.style.OkouPalette_citrus_spark
+            UserPreferencesColorTheme.BERRY_BLUSH -> R.style.OkouPalette_berry_blush
+            UserPreferencesColorTheme.COTTON_SKY -> R.style.OkouPalette_cotton_sky
+            UserPreferencesColorTheme.BLUE_HORIZON -> R.style.OkouPalette_blue_horizon
+            UserPreferencesColorTheme.DAYDREAM -> R.style.OkouPalette_daydream
+            UserPreferencesColorTheme.DEEP_LAGOON -> R.style.OkouPalette_deep_lagoon
+        }
+    val themed = ContextThemeWrapper(context.createConfigurationContext(configuration), style)
+    fun role(id: Int): Color {
+        val value = TypedValue()
+        check(themed.theme.resolveAttribute(id, value, true)) { "Missing generated palette role" }
+        check(value.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT)
+        return Color(value.data)
+    }
+    val colors =
+        (if (dark) darkColorScheme() else lightColorScheme()).copy(
+            primary = role(R.attr.okou_palette_primary),
+            onPrimary = role(R.attr.okou_palette_primary_foreground),
+            primaryContainer = role(R.attr.okou_palette_accent),
+            onPrimaryContainer = role(R.attr.okou_palette_accent_foreground),
+            secondary = role(R.attr.okou_palette_foreground),
+            onSecondary = role(R.attr.okou_palette_background),
+            secondaryContainer = role(R.attr.okou_palette_accent),
+            onSecondaryContainer = role(R.attr.okou_palette_accent_foreground),
+            tertiary = role(R.attr.okou_palette_primary),
+            onTertiary = role(R.attr.okou_palette_primary_foreground),
+            tertiaryContainer = role(R.attr.okou_palette_muted),
+            onTertiaryContainer = role(R.attr.okou_palette_foreground),
+            background = role(R.attr.okou_palette_background),
+            onBackground = role(R.attr.okou_palette_foreground),
+            surface = role(R.attr.okou_palette_card),
+            onSurface = role(R.attr.okou_palette_card_foreground),
+            surfaceVariant = role(R.attr.okou_palette_muted),
+            onSurfaceVariant = role(R.attr.okou_palette_muted_foreground),
+            surfaceTint = role(R.attr.okou_palette_primary),
+            surfaceContainerLowest = role(R.attr.okou_palette_background),
+            surfaceContainerLow = role(R.attr.okou_palette_card),
+            surfaceContainer = role(R.attr.okou_palette_muted),
+            surfaceContainerHigh = role(R.attr.okou_palette_muted),
+            surfaceContainerHighest = role(R.attr.okou_palette_muted),
+            outline = role(R.attr.okou_palette_border),
+            outlineVariant = role(R.attr.okou_palette_border),
+            error = role(R.attr.okou_palette_destructive),
+            onError = role(R.attr.okou_palette_destructive_foreground),
+            errorContainer = role(R.attr.okou_palette_muted),
+            onErrorContainer = role(R.attr.okou_palette_destructive),
+            inverseSurface = role(R.attr.okou_palette_foreground),
+            inverseOnSurface = role(R.attr.okou_palette_background),
+            inversePrimary = role(R.attr.okou_palette_primary),
+        )
+    return PaletteColors(colors, role(R.attr.okou_palette_selection))
 }

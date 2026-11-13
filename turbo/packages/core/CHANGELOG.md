@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.834.0](https://github.com/okou-ai/okou/compare/core-v8.833.0...core-v8.834.0) (2026-11-12)
+
+
+### Features
+
+* **browser:** graduate shared browser and remove rollout switch ([#46833](https://github.com/okou-ai/okou/issues/46833)) ([e50e38e](https://github.com/okou-ai/okou/commit/e50e38e284b2e310198bf8f96cc0c44cd3752001))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.56.0
+
+## [8.833.0](https://github.com/okou-ai/okou/compare/core-v8.832.0...core-v8.833.0) (2026-11-12)
+
+
+### Features
+
+* **remote-control:** approve vnc chat access from message cards ([#46844](https://github.com/okou-ai/okou/issues/46844)) ([068dd05](https://github.com/okou-ai/okou/commit/068dd0513427864c4469e7c4b05d4e42dacf5841))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.55.0
+
 ## [8.832.0](https://github.com/okou-ai/okou/compare/core-v8.831.1...core-v8.832.0) (2026-11-12)
 
 

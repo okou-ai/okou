@@ -1,7 +1,7 @@
 //! Tokio ownership for direct children without a waiting thread per process.
 
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -328,15 +328,9 @@ fn reap_pending(pending: &Mutex<Option<crate::Child>>) {
 pub fn open_pidfd(pid: u32) -> io::Result<OwnedFd> {
     let pid = i32::try_from(pid)
         .ok()
-        .filter(|pid| *pid > 0)
+        .and_then(rustix::process::Pid::from_raw)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid child PID"))?;
-    // SAFETY: pidfd_open has no pointer arguments and transfers a fresh FD.
-    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the successful syscall returned a new, uniquely owned descriptor.
-    Ok(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) })
+    rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).map_err(io::Error::from)
 }
 
 #[cfg(test)]

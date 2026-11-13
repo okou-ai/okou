@@ -1,5 +1,38 @@
 # Changelog
 
+## [10.25.0](https://github.com/okou-ai/okou/compare/cli-v10.24.0...cli-v10.25.0) (2026-11-12)
+
+
+### Features
+
+* **browser:** graduate shared browser and remove rollout switch ([#46833](https://github.com/okou-ai/okou/issues/46833)) ([e50e38e](https://github.com/okou-ai/okou/commit/e50e38e284b2e310198bf8f96cc0c44cd3752001))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.56.0
+    * @okouai/core bumped to 8.834.0
+    * @okouai/pi-agent-runtime bumped to 1.51.111
+
+## [10.24.0](https://github.com/okou-ai/okou/compare/cli-v10.23.0...cli-v10.24.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** add gated cloudflare access authoring ([#46841](https://github.com/okou-ai/okou/issues/46841)) ([794e401](https://github.com/okou-ai/okou/commit/794e401d206b8ea4ff4793dd38ad59192588ff46))
+* **remote-control:** approve vnc chat access from message cards ([#46844](https://github.com/okou-ai/okou/issues/46844)) ([068dd05](https://github.com/okou-ai/okou/commit/068dd0513427864c4469e7c4b05d4e42dacf5841))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.55.0
+    * @okouai/core bumped to 8.833.0
+    * @okouai/pi-agent-runtime bumped to 1.51.110
+
 ## [10.23.0](https://github.com/okou-ai/okou/compare/cli-v10.22.0...cli-v10.23.0) (2026-11-12)
 
 

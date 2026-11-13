@@ -61,7 +61,6 @@ describe("Browser proxy attachment and safe tabs", () => {
   const exit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
-  let shared: boolean;
   let metadata: boolean;
   let selected: string;
   let tabs: { tabId: string; targetId: string; url: string }[];
@@ -87,7 +86,6 @@ describe("Browser proxy attachment and safe tabs", () => {
   };
 
   beforeEach(() => {
-    shared = true;
     metadata = true;
     selected = "AAAA";
     tabs = [
@@ -143,17 +141,13 @@ describe("Browser proxy attachment and safe tabs", () => {
             suspensionReason: null,
             createdAt: "2026-11-02T10:00:00.000Z",
             updatedAt: "2026-11-02T10:00:00.000Z",
-            ...(shared
-              ? {
-                  window: {
-                    instanceId: "d0000000-0000-4000-a000-000000000010",
-                    primaryWindowId: 0,
-                  },
-                }
-              : {}),
+            window: {
+              instanceId: "d0000000-0000-4000-a000-000000000010",
+              primaryWindowId: 0,
+            },
           },
           cdpUrl: PROVIDER,
-          ...(shared && metadata ? { extension } : {}),
+          ...(metadata ? { extension } : {}),
         });
       }),
     );
@@ -197,17 +191,6 @@ describe("Browser proxy attachment and safe tabs", () => {
     expect(output()).not.toContain("private");
     expect(output()).not.toContain("primaryWindowId");
     expect(external.driver).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the supported non-shared connection path", async () => {
-    shared = false;
-    await run("use");
-    expect(external.configs).toStrictEqual([]);
-    expect(external.driver).toHaveBeenCalledWith(
-      "agent-browser",
-      ["--session", SESSION, "connect", PROVIDER],
-      expect.anything(),
-    );
   });
 
   it("rejects shared setup without installed metadata before starting a task", async () => {

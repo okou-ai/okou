@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import chalk from "chalk";
-import { Command, InvalidArgumentError, Option } from "commander";
+import { Command, Option } from "commander";
 import {
   BROWSER_IDLE_LEASE_MINUTES,
   browserCreateRequestSchema,
@@ -77,7 +77,6 @@ type BrowserInputFieldOption = zInfer<typeof browserInputFieldOptionSchema>;
 
 interface NewOptions {
   readonly name: string;
-  readonly country?: string;
   readonly agentSession?: string;
   readonly json?: boolean;
 }
@@ -97,14 +96,6 @@ interface InputRequestOptions extends OutputOptions {
   readonly reason?: string;
   readonly callbackPrompt?: string;
   readonly field: readonly string[];
-}
-
-function parseCountry(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (!/^[a-z]{2}$/u.test(normalized)) {
-    throw new InvalidArgumentError("country must be a two-letter country code");
-  }
-  return normalized;
 }
 
 function collectInputField(
@@ -351,23 +342,13 @@ function browserJson(
   return safeBrowser;
 }
 
-function connectAgentBrowser(
-  cdpUrl: string,
-  sessionName: string,
-  sharedWindow: boolean,
-): void {
+function connectAgentBrowser(cdpUrl: string, sessionName: string): void {
   // The shared proxy already exposes existing owned pages; connecting must not
   // pin by creating another tab.
   const result = spawnSync(
     "agent-browser",
-    [
-      "--session",
-      sessionName,
-      ...(sharedWindow ? ["--no-pin-tab"] : []),
-      "connect",
-      cdpUrl,
-    ],
-    { stdio: "ignore", ...(sharedWindow ? { timeout: 30_000 } : {}) },
+    ["--session", sessionName, "--no-pin-tab", "connect", cdpUrl],
+    { stdio: "ignore", timeout: 30_000 },
   );
   if (result.error) {
     throw new Error("Could not start agent-browser");
@@ -402,25 +383,25 @@ async function connectResponse(
   loginGuidance: string | undefined,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-  if (response.browser.window) {
-    if (!response.extension)
-      throw new Error(
-        "Shared Browser connection has no installed extension metadata",
-      );
-    const proxy = await launchWindowProxy({
-      cdpUrl: response.cdpUrl,
-      runtimeId: response.extension.runtimeId,
-      windowId: response.browser.window.primaryWindowId,
-    });
-    try {
-      connectAgentBrowser(proxy.endpoint, sessionName, true);
-      proxy.detach();
-    } catch (error) {
-      await proxy.stop();
-      throw error;
-    }
-  } else {
-    connectAgentBrowser(response.cdpUrl, sessionName, false);
+  if (!response.browser.window) {
+    throw new Error("Shared Browser connection has no assigned chat window");
+  }
+  if (!response.extension) {
+    throw new Error(
+      "Shared Browser connection has no installed extension metadata",
+    );
+  }
+  const proxy = await launchWindowProxy({
+    cdpUrl: response.cdpUrl,
+    runtimeId: response.extension.runtimeId,
+    windowId: response.browser.window.primaryWindowId,
+  });
+  try {
+    connectAgentBrowser(proxy.endpoint, sessionName);
+    proxy.detach();
+  } catch (error) {
+    await proxy.stop();
+    throw error;
   }
   if (options.json) {
     console.log(
@@ -480,16 +461,8 @@ const leaseCommand = new Command()
 
 const newCommand = new Command()
   .name("new")
-  .description(
-    "Create another thread browser with an isolated profile and attach it to agent-browser",
-  )
+  .description("Open this chat's named Browser and attach it to agent-browser")
   .addOption(new Option("--name <name>", "Browser name").default("browser"))
-  .addOption(
-    new Option(
-      "--country <code>",
-      "Residential proxy country; omitted uses lower-cost proxyless egress",
-    ).argParser(parseCountry),
-  )
   .addOption(
     new Option(
       "--agent-session <name>",
@@ -501,7 +474,6 @@ const newCommand = new Command()
     withErrorHandler(async (options: NewOptions) => {
       const request = browserCreateRequestSchema.parse({
         name: options.name,
-        proxyCountryCode: options.country ?? null,
       });
       const loginGuidance = await getConnectedEmailLoginGuidance(
         options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
@@ -667,7 +639,7 @@ export const browserCommand = new Command()
 Examples:
   Open this thread's browser: okou browser use
   Keep it alive:              okou browser lease
-  Create another browser:     okou browser new --name booking --country us
+  Open a named browser:       okou browser new --name booking
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
   Inspect existing tabs:      okou browser tab list
   Select an existing tab:    okou browser tab select t2
@@ -691,7 +663,7 @@ Notes:
   - Shared Browser tools show this chat's tabs and keep new pages in this chat automatically
   - Use safe tab list/select to choose an existing page and confirm the intended page before acting
   - Tab list shows safe origins without full URLs or titles
-  - Chats sharing a Browser profile share cookies and localStorage, including login/logout changes; separate windows do not provide separate website accounts
+  - Chats use a shared Browser profile: cookies and localStorage include login/logout changes; each chat has its own window and tabs
   - Input selectors and refs are resolved locally and are never sent to the API
   - Resolving an @eN ref focuses it but never types, clicks, or submits the website form
   - input-request failures identify a safe error code, affected --field position when known, and next action

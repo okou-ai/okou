@@ -6,6 +6,7 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import java.io.Closeable
 import java.util.Locale
@@ -23,6 +24,10 @@ data class WorkspaceBootstrap(val organization: Organization, val preferences: U
 
 interface WorkspaceSession : Closeable {
     suspend fun bootstrap(): WorkspaceBootstrap
+
+    suspend fun preferences(): UserPreferences
+
+    suspend fun updatePreferences(update: UpdatePreferencesRequest): UserPreferences
 }
 
 fun interface WorkspaceSessionFactory {
@@ -42,6 +47,10 @@ class CanonicalWorkspaceSession(
         check(organization.id == identity.workspaceId) {
             "Workspace response belongs to another identity"
         }
+        return WorkspaceBootstrap(organization, preferences())
+    }
+
+    override suspend fun preferences(): UserPreferences {
         val existing =
             try {
                 api.preferences()
@@ -57,8 +66,13 @@ class CanonicalWorkspaceSession(
                 )
             }
         check(preferences.initialized()) { "Workspace initialization is incomplete" }
-        return WorkspaceBootstrap(organization, preferences)
+        return preferences
     }
+
+    override suspend fun updatePreferences(update: UpdatePreferencesRequest): UserPreferences =
+        api.updatePreferences(update).also {
+            check(it.initialized()) { "Workspace preferences are incomplete" }
+        }
 
     override fun close() = api.close()
 }

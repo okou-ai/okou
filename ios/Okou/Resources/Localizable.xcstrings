@@ -2496,6 +2496,47 @@
         }
       }
     },
+    "New line": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Neue Zeile" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "New line" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Nueva línea" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Nouvelle ligne" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नई पंक्ति" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Baris baru" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nuova riga" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "改行" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "줄 바꿈" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Nova linha" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "换行" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "換行" }
+        }
+      }
+    },
     "New project": {
       "extractionState": "manual",
       "localizations": {
@@ -17750,6 +17791,47 @@
         }
       }
     },
+    "Return key": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Eingabetaste" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Return key" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Tecla Intro" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Touche Retour" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "रिटर्न कुंजी" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tombol Return" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Tasto Invio" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "リターンキー" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "리턴 키" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Tecla Return" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "回车键" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "Return 鍵" }
+        }
+      }
+    },
     "Return to Connectors to choose an available service.": {
       "localizations": {
         "de": {
@@ -22364,6 +22446,47 @@
         }
       }
     },
+    "Unable to load your keyboard preference. New line is being used.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Die Tastatureinstellung konnte nicht geladen werden. Es wird eine neue Zeile eingefügt." }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Unable to load your keyboard preference. New line is being used." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se pudo cargar tu preferencia de teclado. Se usará Nueva línea." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Impossible de charger votre préférence de clavier. Le retour à la ligne est utilisé." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी कीबोर्ड प्राथमिकता लोड नहीं हो सकी। नई पंक्ति का उपयोग किया जा रहा है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Preferensi keyboard tidak dapat dimuat. Baris baru digunakan." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Impossibile caricare la preferenza della tastiera. Viene usata una nuova riga." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "キーボード設定を読み込めませんでした。改行を使用します。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "키보드 설정을 불러올 수 없습니다. 줄 바꿈이 사용됩니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Não foi possível carregar sua preferência de teclado. Nova linha será usada." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "无法读取键盘偏好设置，当前使用「换行」。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "無法讀取鍵盤偏好設定，目前使用「換行」。" }
+        }
+      }
+    },
     "Unable to open chat": {
       "localizations": {
         "de": {
@@ -22472,6 +22595,47 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "無法開啟結果" }
+        }
+      }
+    },
+    "Unable to save your keyboard preference. Please try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Die Tastatureinstellung konnte nicht gespeichert werden. Versuche es erneut." }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Unable to save your keyboard preference. Please try again." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se pudo guardar tu preferencia de teclado. Inténtalo de nuevo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Impossible d’enregistrer votre préférence de clavier. Réessayez." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आपकी कीबोर्ड प्राथमिकता सहेजी नहीं जा सकी। फिर से कोशिश करें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Preferensi keyboard tidak dapat disimpan. Coba lagi." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Impossibile salvare la preferenza della tastiera. Riprova." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "キーボード設定を保存できませんでした。もう一度お試しください。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "키보드 설정을 저장할 수 없습니다. 다시 시도해 주세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Não foi possível salvar sua preferência de teclado. Tente novamente." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "无法保存键盘偏好设置，请重试。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "無法儲存鍵盤偏好設定，請重試。" }
         }
       }
     },
@@ -24850,6 +25014,47 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "下一步怎麼走？" }
+        }
+      }
+    },
+    "When set to Send, touch and hold the message field to insert a new line.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Wenn „Senden“ ausgewählt ist, halte das Nachrichtenfeld gedrückt, um eine neue Zeile einzufügen." }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "When set to Send, touch and hold the message field to insert a new line." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Si eliges Enviar, mantén pulsado el campo del mensaje para insertar una nueva línea." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Si vous choisissez Envoyer, appuyez longuement sur le champ de message pour insérer une nouvelle ligne." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "भेजें चुनने पर, नई पंक्ति जोड़ने के लिए संदेश फ़ील्ड को दबाकर रखें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Jika diatur ke Kirim, sentuh dan tahan kolom pesan untuk menyisipkan baris baru." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Se scegli Invia, tieni premuto il campo del messaggio per inserire una nuova riga." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "「送信」に設定した場合は、メッセージ欄を長押しすると改行できます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "보내기로 설정한 경우 메시지 입력란을 길게 눌러 줄을 바꿀 수 있습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Ao selecionar Enviar, toque e segure o campo de mensagem para inserir uma nova linha." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "选择「发送」后，可长按输入框，在菜单中选择「换行」。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "選擇「傳送」後，可長按輸入框，在選單中選擇「換行」。" }
         }
       }
     },

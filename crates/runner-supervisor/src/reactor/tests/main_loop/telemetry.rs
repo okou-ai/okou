@@ -542,11 +542,11 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
         // Arm the original completion cap before advancing the grace timer.
         biased;
         completed = &mut completion => completed,
-        () = async {
-            while !predecessor_reuse.has_handoff_request(run_id) {
-                tokio::task::yield_now().await;
-            }
-        } => {
+        () = env.start_observer.wait_finalizing_handoff_requested(
+            predecessor_run_id,
+            run_id,
+            Duration::from_secs(5),
+        ) => {
             // On this current-thread runtime, the requester has yielded with
             // its grace timer armed. Resume before scheduling real HTTP work.
             raw_http_test_support::clock::advance_timer_phase(

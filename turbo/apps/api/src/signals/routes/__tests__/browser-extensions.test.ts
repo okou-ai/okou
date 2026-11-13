@@ -1,5 +1,5 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -17,7 +17,7 @@ import { createDeferredPromise, onRejection } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
@@ -175,11 +175,8 @@ describe("Browser extensions", () => {
   it("installs configured extensions before CDP and keeps the running instance", async () => {
     mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", ` ${EXTENSION_ID} `);
     const provider = providerFixture();
-    const { owned, actor, startRun } = await browserOwner();
+    const { owned, startRun } = await browserOwner();
     await owned.run(async () => {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
       const headers = await startRun();
       const pending = client().use({ headers, body: {} });
       const started = await onRejection(
@@ -208,32 +205,12 @@ describe("Browser extensions", () => {
     });
   });
 
-  it("installs the required extension with legacy Browser ownership", async () => {
-    mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", EXTENSION_ID);
-    const provider = providerFixture();
-    provider.completeInstallation();
-    const { owned, actor, startRun } = await browserOwner();
-    await owned.run(async () => {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: false,
-      });
-      const headers = await startRun();
-      const started = await accept(client().use({ headers, body: {} }), [200]);
-      expect(started.body.browser.status).toBe("active");
-      expect(provider.requests).toHaveLength(1);
-      expect(provider.requests[0]?.extensionIds).toStrictEqual([EXTENSION_ID]);
-    });
-  });
-
   it("returns installation failures without CDP or an extension-free retry", async () => {
     mockEnv("OKOU_BROWSER_USE_EXTENSION_ID", EXTENSION_ID);
     const provider = providerFixture(true);
     provider.completeInstallation();
-    const { owned, actor, startRun } = await browserOwner();
+    const { owned, startRun } = await browserOwner();
     await owned.run(async () => {
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
       const headers = await startRun();
       const failed = await createApp({
         signal: context.signal,

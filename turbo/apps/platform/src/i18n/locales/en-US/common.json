@@ -970,7 +970,7 @@
       "allow": "Allow",
       "allowed": "Allowed",
       "cardDescription": "Use a cloud browser for this chat. This disconnects Computer Use.",
-      "description": "{{assistantName}} will use an isolated cloud browser profile for this chat thread. Enabling it disconnects Computer Use for the thread.",
+      "description": "{{assistantName}} uses the same website logins across chats, with a separate browser window and tabs for each chat. Enabling Browser disconnects Computer Use for this chat.",
       "enable": "Enable for this thread",
       "enabled": "Cloud browser enabled",
       "linkExpires": "Link expires {{date}}.",
@@ -1448,7 +1448,6 @@
     },
     "title": "Cloud browser",
     "unavailable": {
-      "description": "This browser does not belong to this chat or has been removed.",
       "title": "Browser unavailable"
     }
   },

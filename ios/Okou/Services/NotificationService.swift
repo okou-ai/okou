@@ -12,6 +12,19 @@ struct NotificationWorkspace {
   let workspaceID: String
   let client: APIClient
   let sync: ChatSync
+  let cache: ChatCache?
+
+  init(
+    scopeID: String, userID: String, workspaceID: String, client: APIClient, sync: ChatSync,
+    cache: ChatCache? = nil
+  ) {
+    self.scopeID = scopeID
+    self.userID = userID
+    self.workspaceID = workspaceID
+    self.client = client
+    self.sync = sync
+    self.cache = cache
+  }
 }
 
 @MainActor
@@ -162,7 +175,7 @@ final class NotificationService {
         ).first)
     let data = NotificationWorkspace(
       scopeID: scopeID, userID: userID, workspaceID: workspaceID, client: client,
-      sync: ChatSync(client: client, cache: cache))
+      sync: ChatSync(client: client, cache: cache), cache: cache)
     preparedWorkspace = data
     return data
   }

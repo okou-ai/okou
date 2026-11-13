@@ -86,7 +86,7 @@ test("A user can enable the cloud browser for one conversation", async () => {
   ).resolves.toBeVisible();
   expect(
     screen.getByText(
-      "Okou will use an isolated cloud browser profile for this chat thread. Enabling it disconnects Computer Use for the thread.",
+      "Okou uses the same website logins across chats, with a separate browser window and tabs for each chat. Enabling Browser disconnects Computer Use for this chat.",
     ),
   ).toBeVisible();
   click(getButton("Enable for this thread"));

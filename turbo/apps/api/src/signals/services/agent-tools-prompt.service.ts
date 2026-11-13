@@ -58,7 +58,6 @@ export interface AgentToolsPromptInputs {
   readonly larkEnabled: boolean;
   readonly wechatEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  readonly browserSharedOwnerEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
@@ -91,10 +90,6 @@ export function buildAgentToolsPromptInputs(args: {
     larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
     presentationConvertEnabled: isFeatureEnabled(
       FeatureSwitchKey.PresentationConvert,
-      context,
-    ),
-    browserSharedOwnerEnabled: isFeatureEnabled(
-      FeatureSwitchKey.BrowserSharedOwner,
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
@@ -178,16 +173,10 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Browser access: Okou Cloud Browser provides rendered-page inspection and interaction. For one known public URL when you only need page content, check `okou data tools` for a page extraction tool first; use Okou Cloud Browser when you need browser state, authentication, JavaScript, screenshots, or interaction.",
     ...(args.cloudBrowserEnabled === true
       ? [
-          args.browserSharedOwnerEnabled
-            ? "- Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes this chat's managed Browser, attaches it to `agent-browser` as session `okou-browser`, and provides an authenticated `/browsers/:threadId` live view the user can open. After attachment, use `agent-browser --session okou-browser` for browser operations. Do not treat viewing as a reason to hand control to the user. `okou computer-use` drives apps on a desktop host the user connected separately."
-            : "- Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread, attaches it to `agent-browser` as session `okou-browser`, and provides an authenticated `/browsers/:threadId` live view the user can open. After attachment, use `agent-browser --session okou-browser` for browser operations. Do not treat viewing as a reason to hand control to the user. `okou computer-use` drives apps on a desktop host the user connected separately.",
+          "- Okou Cloud Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes this chat's managed Browser, attaches it to `agent-browser` as session `okou-browser`, and provides an authenticated `/browsers/:threadId` live view the user can open. After attachment, use `agent-browser --session okou-browser` for browser operations. Do not treat viewing as a reason to hand control to the user. `okou computer-use` drives apps on a desktop host the user connected separately.",
           "- Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes and report when Okou will reclaim it. The session survives the end of this run, so a later run in the same thread attaches to the same live window and the user can keep working in it. Call `okou browser lease` while a long task keeps the browser idle; a reclaimed session can still resume its saved login profile and reopen its last captured HTTP(S) tab URLs on a best-effort basis.",
           "- Browser tab continuity: When resuming a page after `okou browser use`, do not trust the selected tab or a prior run's `t<N>` ID. Use `okou browser tab list` for safe current IDs and redacted origins. Keep the selected tab only if non-sensitive page evidence confirms it; otherwise inspect a candidate via `okou browser tab select <id>` and confirm it before navigating or submitting. Origin or selection alone is not proof, even with one match. Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`): tool output may expose full URLs, titles or OAuth parameters. If safe commands are unavailable or the page remains unclear, stop without navigating, submitting, repeating input or echoing values.",
-          ...(args.browserSharedOwnerEnabled
-            ? [
-                "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
-              ]
-            : []),
+          "- Browser shared profile: Each chat has its own window and tabs; website login state is shared across chats.",
           "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
           "- Browser input context: every `input-request` requires `--title` and `--reason` in the user's language. Identify the current task and explain why the website needs the requested input, such as signing in to download the requested invoices. Use each field's optional `description` for the intended account, format, or code source when known; do not invent details. This explanation is shown in the input form. Keep secret values out of it, and keep `--callback-prompt` as a separate instruction for continuing after input is applied.",
           "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page before acting. Inspect its current step without echoing input values; if the website clearly still awaits submission, submit at most once and verify its response. A successful input write does not mean website acceptance or login. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",

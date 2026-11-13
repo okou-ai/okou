@@ -127,7 +127,7 @@ describe("server-owned shared Browser recovery", () => {
 
   it("preserves another owner's accepted profile when the provider repeats its identity", async () => {
     const provider = profileProvider();
-    const first = await fixture(true, provider);
+    const first = await fixture(provider);
     installBrowserWindowContentCommands(provider.native);
     const a = await first.start();
     await first.owned.run(() => {
@@ -137,7 +137,7 @@ describe("server-owned shared Browser recovery", () => {
     if (!profileId) {
       throw new Error("Expected the first owner's profile");
     }
-    const second = await fixture(true, provider);
+    const second = await fixture(provider);
     server.use(
       http.post(`${PROVIDER_URL}/profiles`, () => {
         return HttpResponse.json(provider.profile(profileId), { status: 201 });
@@ -159,19 +159,19 @@ describe("server-owned shared Browser recovery", () => {
     });
   });
 
-  it("preserves an accepted legacy instance when provider correlation repeats its ID", async () => {
+  it("preserves another owner instance when provider correlation repeats its ID", async () => {
     const provider = profileProvider();
     installBrowserWindowContentCommands(provider.native);
-    const legacy = await fixture(false, provider);
-    const legacyChat = await legacy.start();
-    await legacy.owned.run(() => {
-      return open(legacyChat);
+    const first = await fixture(provider);
+    const firstChat = await first.start();
+    await first.owned.run(() => {
+      return open(firstChat);
     });
-    const [legacyId] = provider.sessionIds;
-    if (!legacyId) {
-      throw new Error("Expected the legacy instance");
+    const [firstId] = provider.sessionIds;
+    if (!firstId) {
+      throw new Error("Expected the first owner instance");
     }
-    const shared = await fixture(true, provider);
+    const shared = await fixture(provider);
     await shared.owned.run(async () => {
       const a = await shared.start();
       let instanceId: string | null = null;
@@ -185,7 +185,7 @@ describe("server-owned shared Browser recovery", () => {
         }),
         http.get(`${PROVIDER_URL}/browsers`, () => {
           return HttpResponse.json({
-            items: [{ id: legacyId, metadata: { okouInstanceId: instanceId } }],
+            items: [{ id: firstId, metadata: { okouInstanceId: instanceId } }],
             totalItems: 1,
           });
         }),
@@ -193,11 +193,11 @@ describe("server-owned shared Browser recovery", () => {
       expect((await use(a)).status).toBe(502);
       mockNow(START + 2 * MINUTE);
       expect((await use(a)).status).toBe(409);
-      expect(provider.sessionIds.has(legacyId)).toBeTruthy();
+      expect(provider.sessionIds.has(firstId)).toBeTruthy();
       expect(provider.stoppedSessionIds.size).toBe(0);
     });
-    await legacy.owned.run(async () => {
-      expect((await open(legacyChat)).status).toBe("active");
+    await first.owned.run(async () => {
+      expect((await open(firstChat)).status).toBe("active");
     });
   });
 

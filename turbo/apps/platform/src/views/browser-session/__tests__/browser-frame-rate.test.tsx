@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -70,18 +70,12 @@ async function viewer() {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, { browser: session, viewer: connection });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, connection);
-  });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });
   await setupPage({
     context,
     path: `/browsers/${threadId}`,
-    featureSwitches: {
-      [FeatureSwitchKey.BrowserSharedOwner]: true,
-    },
   });
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();

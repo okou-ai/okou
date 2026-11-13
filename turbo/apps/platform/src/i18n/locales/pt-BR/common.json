@@ -988,7 +988,7 @@
       "allow": "Permitir",
       "allowed": "Permitido",
       "cardDescription": "Use um navegador na nuvem para este chat. Isso desconecta o Computer Use.",
-      "description": "O {{assistantName}} usará um perfil isolado de navegador na nuvem para esta conversa. Ao ativá-lo, o Computer Use será desconectado da conversa.",
+      "description": "O {{assistantName}} compartilha o estado de login nos sites entre as conversas. Cada conversa tem sua própria janela do navegador e suas próprias abas. Ativar o navegador desconecta o Computer Use desta conversa.",
       "enable": "Ativar para esta conversa",
       "enabled": "Navegador na nuvem ativado",
       "linkExpires": "O link expira em {{date}}.",
@@ -1472,7 +1472,6 @@
     },
     "title": "Navegador na nuvem",
     "unavailable": {
-      "description": "Este navegador não pertence a este chat ou foi removido.",
       "title": "Navegador indisponível"
     }
   },

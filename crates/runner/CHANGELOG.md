@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.248.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.0...runner-rs-v0.248.1) (2026-11-12)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.248.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.247.0...runner-rs-v0.248.0) (2026-11-12)
+
+
+### Features
+
+* **connectors:** add gated cloudflare access authoring ([#46841](https://github.com/okou-ai/okou/issues/46841)) ([794e401](https://github.com/okou-ai/okou/commit/794e401d206b8ea4ff4793dd38ad59192588ff46))
+* **runner:** accept complete directly dispatched runs ([#46843](https://github.com/okou-ai/okou/issues/46843)) ([ccbdf64](https://github.com/okou-ai/okou/commit/ccbdf64b3739a83fa0132392db0ca943dcca0dfb))
+
+
+### Refactoring
+
+* **python:** centralize flow network admission cleanup ([#46864](https://github.com/okou-ai/okou/issues/46864)) ([c1c2e6a](https://github.com/okou-ai/okou/commit/c1c2e6ab94399618b8b873b572246e2c8a800f0d))
+* **python:** centralize run observation record discard ([#46871](https://github.com/okou-ai/okou/issues/46871)) ([620d9cd](https://github.com/okou-ai/okou/commit/620d9cd0ef49b0a3ddb2e4e2e3d32af3af710cee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.247.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.246.0...runner-rs-v0.247.0) (2026-11-12)
 
 

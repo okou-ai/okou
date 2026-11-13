@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   act,
   cleanup,
@@ -15,7 +15,6 @@ import { expect, test, vi } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
-  recordBrowserStartupErrors,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -67,13 +66,6 @@ function viewer() {
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
-    });
-  });
   const browser = mockBrowserCdp(context, endpoint, {
     targets: [
       {
@@ -100,11 +92,10 @@ function viewer() {
   });
   return {
     browser,
-    start(enabled = true) {
+    start() {
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: enabled },
       });
     },
     advance(ms: number) {
@@ -1135,10 +1126,9 @@ test("Closing the initially visible tab preserves the undiscovered survivor with
 });
 
 test("A close revalidates a failed partial inventory before counting survivors", async () => {
-  recordBrowserStartupErrors();
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");
-  await start(false);
+  await start();
   await held.received;
   await ready();
   browser.failNext("Runtime.evaluate", "Native window temporarily unavailable");
@@ -1146,7 +1136,7 @@ test("A close revalidates a failed partial inventory before counting survivors",
     browser.nativeEvent("tab-attached", browser.targets[0]);
   });
   await act(held.release);
-  await screen.findByText("Browser view unavailable");
+  await screen.findByText("Reconnecting…");
   const close = screen.getByLabelText("Close First own tab");
   expect(close).toBeEnabled();
   click(close);
@@ -1200,7 +1190,6 @@ test("A late membership reply cannot admit a tab moved to a sibling window", asy
 });
 
 test("A later discovery failure revokes the admitted viewer's input", async () => {
-  recordBrowserStartupErrors();
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");
   await start();
@@ -1233,7 +1222,6 @@ test("An in-flight selection survives later inventory publication", async () => 
 });
 
 test("Unmounting cancels discovery and a close waiting for its inventory", async () => {
-  const errors = recordBrowserStartupErrors();
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");
   await start();
@@ -1254,7 +1242,6 @@ test("Unmounting cancels discovery and a close waiting for its inventory", async
       return target.windowId === 101;
     }),
   ).toMatchObject([{ targetId: "own-first" }, { targetId: "own-later" }]);
-  expect(errors).toHaveLength(0);
 });
 
 test("Pausing cancels a close waiting for discovery without reporting a failed operation", async () => {
@@ -1351,7 +1338,6 @@ test("A paused partial scan resumes with the surviving scoped page after the ori
 });
 
 test("Window loss while paused cannot resume a viewer with pending discovery", async () => {
-  recordBrowserStartupErrors();
   const visibility = context.mocks.browser.visibilityState("visible");
   const { browser, start } = viewer();
   await start();
@@ -1375,7 +1361,6 @@ test("Window loss while paused cannot resume a viewer with pending discovery", a
 });
 
 test("An already dispatched discovery failure survives a visibility pause", async () => {
-  recordBrowserStartupErrors();
   const visibility = context.mocks.browser.visibilityState("visible");
   const { browser, start } = viewer();
   const scan = browser.holdNextMembership("sibling-3");

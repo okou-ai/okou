@@ -8,6 +8,7 @@ import Observation
 /// One immutable network/cache scope, with independently observed feature state.
 @MainActor @Observable
 final class WorkspaceStore {
+  private let lifecycleTasks: LifecycleTasks
   private let client: APIClient
   private let sync: ChatSync
   private let projectDisclosure: ProjectDisclosureStorage?
@@ -114,11 +115,12 @@ final class WorkspaceStore {
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
-    readRetrySleep: readRetrySleep)
+    readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
     client: client, resources: resources, sync: sync, disclosure: projectDisclosure,
     didFail: { [weak self] in self?.handle($0) },
-    didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
+    didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) },
+    lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
     projects: projects.confirmedValue, selectedThread: selectedThread)
@@ -154,6 +156,8 @@ final class WorkspaceStore {
     modelBootstrap: WorkspaceModelBootstrap? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
+    let lifecycleTasks = LifecycleTasks()
+    self.lifecycleTasks = lifecycleTasks
     let selectedThread = selectedThread
     selectThread = Command { context, value in
       guard try context.get(selectedThread) != value else { return }
@@ -162,7 +166,8 @@ final class WorkspaceStore {
     self.client = client
     self.modelBootstrap = modelBootstrap
     resources = WorkspaceResources(
-      client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap)
+      client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
@@ -180,7 +185,7 @@ final class WorkspaceStore {
     self.conversationLimit = max(0, conversationLimit)
     newComposer = ComposerDraftStore(
       target: .unassigned, commands: commands, storage: draftStorage,
-      didFail: { _ in })
+      didFail: { _ in }, lifecycleTasks: lifecycleTasks)
     newComposer.setForeground(isForeground)
   }
 
@@ -216,7 +221,8 @@ final class WorkspaceStore {
           } else if status == .unavailable || status == .disconnected {
             self?.modelBootstrap?.allowHTTP()
           }
-        })
+        },
+        lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
       realtime.setForeground(isForeground)
       realtime.start()
@@ -282,7 +288,7 @@ final class WorkspaceStore {
       draftRepository: draftRepository, draftStorage: draftStorage,
       measurementScope: measurementScope,
       didRequestNewChat: { [weak self] in self?.startNewChat() },
-      readRetrySleep: readRetrySleep)
+      readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     conversation.composer.setForeground(isForeground)
     conversation.runOutput = { [weak self] runID, handler in
       self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
@@ -312,7 +318,8 @@ final class WorkspaceStore {
     threadPreview = nil
   }
 
-  func close() {
+  @discardableResult
+  func close() -> Task<Void, Never> {
     threadPreview?.close()
     threadPreview = nil
     closed = true
@@ -340,6 +347,12 @@ final class WorkspaceStore {
     agentDraftTask?.cancel()
     newComposer.close()
     commands.closeFileCache()
+    let work = lifecycleTasks.close()
+    let disclosure = projectDisclosure
+    return Task {
+      await work.value
+      await disclosure?.close().value
+    }
   }
 
   func setForeground(_ active: Bool) {
@@ -376,7 +389,7 @@ final class WorkspaceStore {
       target: .agent(agentID), commands: commands,
       repository: draftRepository, storage: draftStorage,
       didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
-      syncSleep: readRetrySleep)
+      syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     // Preserve input entered before navigation resolves the default Agent.
     if !isCreating && previous.hasContent && draftAgentID == nil {
       previous.move(to: composer)
@@ -386,6 +399,7 @@ final class WorkspaceStore {
     newComposer = composer
     composer.setForeground(isForeground)
     agentDraftTask = Task { await composer.synchronize() }
+    if let agentDraftTask { lifecycleTasks.track(agentDraftTask) }
   }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
@@ -406,6 +420,7 @@ final class WorkspaceStore {
         await refresh(batch)
       }
     }
+    if let refreshTask { lifecycleTasks.track(refreshTask) }
   }
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
@@ -544,6 +559,7 @@ final class WorkspaceStore {
         }
       } while warmAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
+    if let warmingTask { lifecycleTasks.track(warmingTask) }
   }
 
   func selectChat(_ id: String) {
@@ -852,6 +868,7 @@ final class WorkspaceStore {
       }
       return nil
     }
+    lifecycleTasks.track(task)
     creationTask = task
     return await task.value
   }
@@ -946,6 +963,7 @@ final class WorkspaceStore {
         await trimConversations(limit: conversationLimit)
       } while pruneAgain && !closed && !Task.isCancelled
     }
+    if let pruneTask { lifecycleTasks.track(pruneTask) }
   }
 
   private func applyThreads(_ threads: [ChatThread]) {
@@ -1007,4 +1025,5 @@ final class WorkspaceStore {
     needsUpgrade = true
     close()
   }
+
 }

@@ -162,8 +162,8 @@ final class AttachmentDraftStore {
       for asset in assets {
         try Task.checkCancellation()
         do {
-          let url = try await RecentPhotoLibrary.file(for: asset)
-          self.add(try await AttachmentFileImporter.shared.copy(url))
+          let file = try await RecentPhotoLibrary.attachment(for: asset)
+          self.add(file)
         } catch { self.report(error) }
       }
     }

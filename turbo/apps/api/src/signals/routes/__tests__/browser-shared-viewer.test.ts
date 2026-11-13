@@ -17,7 +17,7 @@ const { fixture, profileProvider, open, view } =
 test.each(["https:", "wss:"] as const)(
   "a mounted viewer renews only its current chat window through %s without input evidence",
   async (cdpProtocol) => {
-    const f = await fixture(true, profileProvider(undefined, cdpProtocol));
+    const f = await fixture(profileProvider(undefined, cdpProtocol));
     await f.owned.run(async () => {
       const a = await f.start();
       const b = await f.start();

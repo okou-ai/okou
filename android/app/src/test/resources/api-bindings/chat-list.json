@@ -1,0 +1,114 @@
+{
+  "snapshotRemote": {
+    "url": "https://storage.example/chat-snapshot",
+    "expiresInSeconds": 60,
+    "latestEventId": "44444444-4444-4444-8444-444444444444",
+    "latestSeqId": 17
+  },
+  "snapshotEmpty": {
+    "chatThreads": [],
+    "latestEventId": null,
+    "latestSeqId": null
+  },
+  "events": {
+    "events": [
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "seqId": 17,
+        "kind": "created",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "agentId": "22222222-2222-4222-8222-222222222222",
+        "title": null,
+        "selectedModel": null,
+        "serviceTier": null,
+        "computerUseHostId": null,
+        "modelSettings": {
+          "claude-code/test": {
+            "effort": "extra"
+          },
+          "codex/test": {
+            "effort": "ultra"
+          }
+        },
+        "createdAt": "2026-11-13T00:00:00.000Z"
+      },
+      {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "seqId": 23,
+        "kind": "project_updated",
+        "chatThreadId": "11111111-1111-4111-8111-111111111111",
+        "agentId": "22222222-2222-4222-8222-222222222222",
+        "title": null,
+        "selectedModel": null,
+        "serviceTier": null,
+        "computerUseHostId": null,
+        "modelSettings": {
+          "claude-code/test": {
+            "effort": "extra"
+          },
+          "codex/test": {
+            "effort": "ultra"
+          }
+        },
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "projectId": null
+      }
+    ],
+    "hasMore": false
+  },
+  "indicators": {
+    "agents": {
+      "22222222-2222-4222-8222-222222222222": "active"
+    },
+    "threads": {
+      "11111111-1111-4111-8111-111111111111": "unread"
+    },
+    "unreadAt": {
+      "11111111-1111-4111-8111-111111111111": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "agents": [
+    {
+      "agentId": "22222222-2222-4222-8222-222222222222",
+      "isDefaultAgent": true,
+      "ownerId": "user_fixture",
+      "description": null,
+      "displayName": "My Okou",
+      "sound": null,
+      "avatarUrl": null,
+      "visibility": "private"
+    }
+  ],
+  "projects": {
+    "projects": [
+      {
+        "id": "33333333-3333-4333-8333-333333333333",
+        "name": "A project",
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "updatedAt": "2026-11-13T00:00:00.000Z"
+      }
+    ]
+  },
+  "archive": {
+    "chatThreads": [
+      {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "agentId": "22222222-2222-4222-8222-222222222222",
+        "projectId": "33333333-3333-4333-8333-333333333333",
+        "title": "Saved conversation",
+        "sortAt": "2026-11-13T00:00:00.000Z",
+        "createdAt": "2026-11-13T00:00:00.000Z",
+        "updatedAt": "2026-11-13T00:00:00.000Z",
+        "pinnedAt": null,
+        "archived": false,
+        "renamedAt": null,
+        "serviceTier": "ultrafast",
+        "modelSettings": {
+          "claude-code/test": {
+            "effort": "ultracode"
+          }
+        }
+      }
+    ]
+  }
+}

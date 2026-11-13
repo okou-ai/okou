@@ -10,6 +10,40 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.67.0](https://github.com/okou-ai/okou/compare/api-v2.66.0...api-v2.67.0) (2026-11-12)
+
+
+### Features
+
+* **browser:** graduate shared browser and remove rollout switch ([#46833](https://github.com/okou-ai/okou/issues/46833)) ([e50e38e](https://github.com/okou-ai/okou/commit/e50e38e284b2e310198bf8f96cc0c44cd3752001))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.56.0
+    * @okouai/core bumped to 8.834.0
+    * @okouai/db bumped to 2.33.1
+    * @okouai/pi-agent-runtime bumped to 1.51.111
+
+## [2.66.0](https://github.com/okou-ai/okou/compare/api-v2.65.0...api-v2.66.0) (2026-11-12)
+
+
+### Features
+
+* **remote-control:** approve vnc chat access from message cards ([#46844](https://github.com/okou-ai/okou/issues/46844)) ([068dd05](https://github.com/okou-ai/okou/commit/068dd0513427864c4469e7c4b05d4e42dacf5841))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.55.0
+    * @okouai/core bumped to 8.833.0
+    * @okouai/db bumped to 2.33.0
+    * @okouai/pi-agent-runtime bumped to 1.51.110
+
 ## [2.65.0](https://github.com/okou-ai/okou/compare/api-v2.64.0...api-v2.65.0) (2026-11-12)
 
 

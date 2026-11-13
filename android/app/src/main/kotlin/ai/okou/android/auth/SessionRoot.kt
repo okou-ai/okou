@@ -4,6 +4,7 @@ import ai.okou.android.AppearanceMode
 import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
+import ai.okou.android.preferences.MemberPreferencesSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,6 +55,8 @@ fun SessionRoot(
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
 ) {
+    val textButtonColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
         if (state.stage == SessionStage.Ready && ready != null) {
@@ -63,6 +67,7 @@ fun SessionRoot(
                     selectAppearance,
                     retryAppearance,
                     account = { WorkspaceActions(state, chooseWorkspace, signOut) },
+                    workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -99,7 +104,7 @@ fun SessionRoot(
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 if (state.stage == SessionStage.Restoring || state.working) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface)
                 }
                 if (state.stage == SessionStage.ChooseWorkspace) {
                     state.memberships.forEach { workspace ->
@@ -118,12 +123,16 @@ fun SessionRoot(
                         state.stage != SessionStage.Restoring &&
                         state.stage != SessionStage.UpdateRequired
                 ) {
-                    TextButton(onClick = retry) { Text(stringResource(R.string.retry)) }
+                    TextButton(onClick = retry, colors = textButtonColors) {
+                        Text(stringResource(R.string.retry))
+                    }
                 }
                 if (
                     state.stage != SessionStage.Restoring && state.stage != SessionStage.SigningOut
                 ) {
-                    TextButton(onClick = signOut) { Text(stringResource(R.string.auth_sign_out)) }
+                    TextButton(onClick = signOut, colors = textButtonColors) {
+                        Text(stringResource(R.string.auth_sign_out))
+                    }
                 }
             }
         }
@@ -199,15 +208,19 @@ private fun WorkspaceActions(
     signOut: () -> Unit,
 ) {
     var choosing by remember { mutableStateOf(false) }
+    val textButtonColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.auth_workspace), style = MaterialTheme.typography.titleLarge)
-        Text(checkNotNull(state.ready).data.organization.name)
+        Text(checkNotNull(state.ready).organization.name)
         if (state.memberships.size > 1) {
             OutlinedButton(onClick = { choosing = true }) {
                 Text(stringResource(R.string.auth_switch_workspace))
             }
         }
-        TextButton(onClick = signOut) { Text(stringResource(R.string.auth_sign_out)) }
+        TextButton(onClick = signOut, colors = textButtonColors) {
+            Text(stringResource(R.string.auth_sign_out))
+        }
     }
     if (choosing) {
         AlertDialog(
@@ -222,6 +235,7 @@ private fun WorkspaceActions(
                                 chooseWorkspace(workspace.id)
                             },
                             modifier = Modifier.fillMaxWidth(),
+                            colors = textButtonColors,
                         ) {
                             Text(workspace.name)
                         }
@@ -229,7 +243,9 @@ private fun WorkspaceActions(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { choosing = false }) { Text(stringResource(R.string.back)) }
+                TextButton(onClick = { choosing = false }, colors = textButtonColors) {
+                    Text(stringResource(R.string.back))
+                }
             },
         )
     }

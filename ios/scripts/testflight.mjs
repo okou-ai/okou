@@ -123,7 +123,6 @@ export async function distribute(
         "filter[version]": release.buildNumber,
         "filter[preReleaseVersion.version]": release.version,
         "filter[preReleaseVersion.platform]": "IOS",
-        include: "buildBetaDetail",
       })}`,
     );
     if (!Array.isArray(response.data) || response.data.length > 1)
@@ -136,13 +135,12 @@ export async function distribute(
           `Apple rejected or expired build ${release.buildNumber}: ${state}`,
         );
       if (state === "VALID") {
-        const detailId = build.relationships?.buildBetaDetail?.data?.id;
-        const detail = response.included?.find(
-          (item) => item.type === "buildBetaDetails" && item.id === detailId,
+        const detail = await client.request(
+          `/v1/builds/${build.id}/buildBetaDetail?${new URLSearchParams({
+            "fields[buildBetaDetails]": "internalBuildState",
+          })}`,
         );
-        const internal = detail?.attributes.internalBuildState;
-        if (!internal)
-          throw new Error("Apple omitted the internal build state");
+        const internal = detail.data.attributes?.internalBuildState;
         if (
           [
             "PROCESSING_EXCEPTION",
@@ -187,7 +185,9 @@ export async function distribute(
           )
             return build.id;
         }
-        console.log(`Waiting for internal distribution: ${internal}`);
+        console.log(
+          `Waiting for internal distribution: ${internal ?? "metadata pending"}`,
+        );
       } else if (state !== "PROCESSING") {
         throw new Error(`Unknown Apple processing state: ${state}`);
       }

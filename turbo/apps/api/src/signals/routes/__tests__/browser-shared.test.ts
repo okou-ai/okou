@@ -1,30 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, withNowScopeForTest } from "../../../lib/time";
+
+import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createBddApi } from "./helpers/api-bdd";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
@@ -193,263 +190,26 @@ describe("shared Browser public consumers", () => {
     });
   });
 
-  it.each([true, false])(
-    "creates a Browser with the mode's egress when shared admission enabled=%s",
-    async (shared) => {
-      const f = await fixture(shared);
-      await f.owned.run(async () => {
-        installBrowserWindowContentCommands(f.provider.native);
-        const a = await f.start();
-        const result = await accept(
-          client().create({
-            headers: runHeaders(a),
-            body: { name: "Regional browser", proxyCountryCode: "us" },
-          }),
-          [201],
-        );
-        expect(result.status).toBe(201);
-        expect(result.body).toMatchObject({
-          browser: { proxyCountryCode: shared ? null : "us" },
-        });
-        expect(result.body.extension).toStrictEqual(
-          shared ? TEST_BROWSER_EXTENSION : undefined,
-        );
-        expect(f.provider.sessionRequests).toStrictEqual([
-          expect.objectContaining({ proxyCountryCode: shared ? null : "us" }),
-        ]);
-      });
-    },
-  );
-
-  it("starts a fresh chat Browser when shared ownership is first enabled", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const f = await fixture(false);
+  it("creates a proxyless shared Browser with the required extension", async () => {
+    const f = await fixture();
     await f.owned.run(async () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
-      const b = await f.start();
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      await use(a);
-      for (const page of f.provider.native.targets.values()) {
-        page.url = "https://a.example.test/legacy-saved";
-      }
-      // B reclaims A through ordinary Browser capacity admission.
-      await use(b);
-      await flushWaitUntilForTest();
-      await createChatFilesBddApi(context).deleteThread(
-        f.owned.actor,
-        b.threadId,
-      );
-      await flushWaitUntilForTest();
-      f.provider.native.targets.clear();
-      f.owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      const reopened = await use(a);
-      expect(reopened.browser.window).toBeDefined();
-      const urls = [...f.provider.native.targets.values()]
-        .filter((page) => {
-          return page.windowId === reopened.browser.window?.primaryWindowId;
-        })
-        .map((page) => {
-          return page.url;
-        });
-      expect(urls).toStrictEqual(["about:blank"]);
-    });
-  });
-
-  it("admits shared ownership only after the owner's legacy Browser retires", async () => {
-    const f = await fixture(false);
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const legacy = await f.start();
-      const shared = await f.start();
-      await use(legacy);
-      f.owned.ownsFeatureSwitches();
-      await updateFeatureSwitchesForUser(context, f.featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      const blocked = await accept(
-        client().use({ headers: runHeaders(shared), body: {} }),
-        [409],
-      );
-      expect(blocked.body.error.code).toBe("BROWSER_FRESH_CUTOVER_REQUIRED");
-      await createChatFilesBddApi(context).deleteThread(
-        f.owned.actor,
-        legacy.threadId,
-      );
-      await flushWaitUntilForTest();
-      expect((await use(shared)).browser.window).toBeDefined();
-    });
-  });
-
-  it("reserves legacy capacity until its owner releases it before shared admission", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-    const f = await fixture(false);
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const legacy = await f.start();
-      await use(legacy);
-      const bdd = createBddApi(context);
-      const member = bdd.user({ orgId: f.featureActor.orgId });
-      const featureActor = { ...member, orgId: f.featureActor.orgId };
-      await bdd.readOnboardingStatus(member);
-      await bdd.completeOnboarding(member);
-      const agent = await bdd.createAgent(member);
-      await updateFeatureSwitchesForUser(context, featureActor, {
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
-      });
-      const attempt = await settleIncludingAbort(
-        (async () => {
-          const chat = createChatFilesBddApi(context);
-          const shared = await chat.sendAndLaunch(member, {
-            agentId: agent.agentId,
-            prompt: "Open a shared Browser when capacity becomes available",
-            cloudBrowserEnabled: true,
-          });
-          const runnerIdentity = {
-            runnerId: randomUUID(),
-            heartbeatGeneration: 7,
-          };
-          await withNowScopeForTest(() => {
-            return createRunsApi(context).requestHeartbeatRunner(true, [200], {
-              group: f.owned.runnerGroup,
-              runnerId: runnerIdentity.runnerId,
-              snapshotGeneration: runnerIdentity.heartbeatGeneration,
-            });
-          });
-          const claim = await f.owned.claimRunnerRun(shared.runId, {
-            runnerIdentity,
-          });
-          const sharedHeaders = {
-            authorization: `Bearer ${okouTokenFromClaim(claim)}`,
-          };
-          mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-          const blocked = await accept(
-            client().use({ headers: sharedHeaders, body: {} }),
-            [409],
-          );
-          expect(blocked.body.error.code).toBe("BROWSER_CONCURRENCY_LIMIT");
-          expect((await use(legacy)).browser.status).toBe("active");
-          await chat.deleteThread(f.owned.actor, legacy.threadId);
-          await flushWaitUntilForTest();
-          const opened = await accept(
-            client().use({ headers: sharedHeaders, body: {} }),
-            [200],
-          );
-          expect(opened.body.browser.window).toBeDefined();
-        })(),
-      );
-      const cleanup = await settleIncludingAbort(
-        deleteFeatureSwitchesForUser(context, featureActor),
-      );
-      if (!attempt.ok) {
-        throw attempt.error;
-      }
-      if (!cleanup.ok) {
-        throw cleanup.error;
-      }
-    });
-  });
-
-  it("rejects a legacy URL capture finishing after its instance is replaced", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-    const f = await fixture(false);
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const a = await f.start();
-      const b = await f.start();
-      const c = await f.start();
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      await use(a);
-      for (const page of f.provider.native.targets.values()) {
-        page.url = "https://a.example.test/older";
-      }
-      // Reclamation must preserve URLs even if the requesting Browser's
-      // subsequent provider start fails. Both requests independently own A's
-      // capture; only the first request is held at external KMS.
-      let rejectSessionStarts = true;
-      server.use(
-        http.post(`${PROVIDER_URL}/browsers`, () => {
-          if (rejectSessionStarts) {
-            return HttpResponse.json(
-              { detail: "Provider temporarily unavailable" },
-              { status: 503 },
-            );
-          }
-          return;
+      const result = await accept(
+        client().create({
+          headers: runHeaders(a),
+          body: { name: "Regional browser", proxyCountryCode: "us" },
         }),
+        [201],
       );
-      const kms = holdSecretKms(1, context.signal);
-      const earlier = settleIncludingAbort(
-        client().use({ headers: runHeaders(b), body: {} }),
-      );
-      const replaced = await settleIncludingAbort(async () => {
-        await Promise.race([
-          kms.entered,
-          earlier.then((result) => {
-            if (!result.ok) {
-              throw result.error;
-            }
-            throw new Error("Expected the legacy capture to reach encryption");
-          }),
-        ]);
-        for (const page of f.provider.native.targets.values()) {
-          page.url = "https://a.example.test/newer";
-        }
-        const failedStart = await client().use({
-          headers: runHeaders(c),
-          body: {},
-        });
-        expect(failedStart).toMatchObject({
-          status: 502,
-          body: { error: { code: "BROWSER_USE_ERROR" } },
-        });
-        await flushWaitUntilForTest();
-        f.provider.native.targets.clear();
-        rejectSessionStarts = false;
-        await use(a);
+      expect(result.status).toBe(201);
+      expect(result.body).toMatchObject({
+        browser: { proxyCountryCode: null },
       });
-      rejectSessionStarts = true;
-      kms.release();
-      const completed = await earlier;
-      if (!replaced.ok) {
-        throw replaced.error;
-      }
-      if (!completed.ok) {
-        throw completed.error;
-      }
-      expect(completed.value).toMatchObject({
-        status: 502,
-        body: { error: { code: "BROWSER_USE_ERROR" } },
-      });
-
-      const [providerSessionId] = f.provider.sessionIds;
-      if (!providerSessionId) {
-        throw new Error("Expected the replacement legacy instance");
-      }
-      server.use(
-        http.get(`${PROVIDER_URL}/browsers/${providerSessionId}`, () => {
-          return HttpResponse.json({
-            id: providerSessionId,
-            status: "stopped",
-            startedAt: new Date(START).toISOString(),
-            timeoutAt: new Date(START + 240 * MINUTE).toISOString(),
-            finishedAt: new Date(START + 12 * MINUTE).toISOString(),
-            liveUrl: null,
-            cdpUrl: null,
-          });
-        }),
-      );
-      f.provider.native.targets.clear();
-      rejectSessionStarts = false;
-      await use(a);
-      const urls = [...f.provider.native.targets.values()].map((page) => {
-        return page.url;
-      });
-      expect(urls).toContain("https://a.example.test/newer");
-      expect(urls).not.toContain("https://a.example.test/older");
+      expect(result.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
+      expect(f.provider.sessionRequests).toStrictEqual([
+        expect.objectContaining({ proxyCountryCode: null }),
+      ]);
     });
   });
 

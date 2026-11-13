@@ -127,6 +127,9 @@ async fn assert_physical_handoff(terminal: Terminal, native_generation: Option<R
         .unwrap();
     wait_cancel_handle(&env.cancel_tokens, successor, Duration::from_secs(5)).await;
     wait_discover_entered(&env, Duration::from_secs(5)).await;
+    env.start_observer
+        .wait_finalizing_handoff_requested(predecessor, successor, Duration::from_secs(5))
+        .await;
     if matches!(terminal, Terminal::Cancelled) {
         let cancellation =
             wait_cancel_handle(&env.cancel_tokens, predecessor, Duration::from_secs(5)).await;

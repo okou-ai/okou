@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.38.0](https://github.com/okou-ai/okou/compare/ios-v0.37.0...ios-v0.38.0) (2026-11-12)
+
+
+### Features
+
+* **ios:** customize the keyboard return key ([#46861](https://github.com/okou-ai/okou/issues/46861)) ([8cce055](https://github.com/okou-ai/okou/commit/8cce0558e2ce00ecc65726657f6e7b588fbe1b5a))
+
+
+### Bug Fixes
+
+* **ios:** await lifecycle teardown before fixture cleanup ([#46885](https://github.com/okou-ai/okou/issues/46885)) ([922b708](https://github.com/okou-ai/okou/commit/922b7086785eddf0a56bde04d7a0a4b982f831ad))
+* **ios:** cancel photokit reads and clean up photo imports ([#46883](https://github.com/okou-ai/okou/issues/46883)) ([e0c42d1](https://github.com/okou-ai/okou/commit/e0c42d1f6440df8eba6433d04d9191790f2eaebc))
+
+## [0.37.0](https://github.com/okou-ai/okou/compare/ios-v0.36.7...ios-v0.37.0) (2026-11-12)
+
+
+### Features
+
+* **ios:** draw okou with the animated design-system avatar ([#46781](https://github.com/okou-ai/okou/issues/46781)) ([be6c6ee](https://github.com/okou-ai/okou/commit/be6c6eea7c70d71a04c844330983ab557d274e81))
+
+
+### Bug Fixes
+
+* **ios:** prepare the send button when the composer expands ([#46831](https://github.com/okou-ai/okou/issues/46831)) ([a63c041](https://github.com/okou-ai/okou/commit/a63c04177c01b36bef9f04abb9614e5d2cf4f255))
+
+
+### Refactoring
+
+* **ios:** own artifact preview and share reads with ccstate ([#46835](https://github.com/okou-ai/okou/issues/46835)) ([7ceae7e](https://github.com/okou-ai/okou/commit/7ceae7e828565f52ced77236716558a14d0f2c52))
+
 ## [0.36.7](https://github.com/okou-ai/okou/compare/ios-v0.36.6...ios-v0.36.7) (2026-11-12)
 
 

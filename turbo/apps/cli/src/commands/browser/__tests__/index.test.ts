@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { once } from "node:events";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http } from "msw";
@@ -20,12 +22,41 @@ import { browserCommand } from "../index";
 const spawnSyncMock = vi.hoisted(() => {
   return vi.fn();
 });
-vi.mock("node:child_process", () => {
-  return { spawnSync: spawnSyncMock };
+const proxyChildren = vi.hoisted(() => {
+  return [] as { child: ChildProcess; closed: Promise<unknown> }[];
+});
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...original,
+    spawnSync: spawnSyncMock,
+    spawn(file: string, args: string[], options: SpawnOptions) {
+      expect(file).toBe("/usr/local/bin/guest-task-exec");
+      const program =
+        args[0] === "stop"
+          ? "process.exit(0)"
+          : `
+        const fs = require("node:fs");
+        fs.writeSync(3, JSON.stringify({handle:"11111111-1111-4111-8111-111111111111",pid:process.pid})+"\\n"); fs.closeSync(3);
+        process.on("message", () => process.send({endpoint:"ws://127.0.0.1:45678/devtools/browser"}));
+        process.once("disconnect", () => process.exit(0));
+        process.send({ready:true});
+      `;
+      const child = original.spawn(process.execPath, ["-e", program], options);
+      proxyChildren.push({ child, closed: once(child, "exit") });
+      return child;
+    },
+  };
 });
 
 const THREAD_ID = "c0000000-0000-4000-a000-000000000010";
 const CDP_URL = "wss://connect.browser-use.com/?token=secret-cdp-token";
+const PROXY_URL = "ws://127.0.0.1:45678/devtools/browser";
+const EXTENSION = {
+  id: "11111111-1111-4111-8111-111111111111",
+  runtimeId: "abcdefghijklmnopabcdefghijklmnop",
+  version: "0.5.1",
+};
 const CONNECTION_ID = "10000000-0000-4000-a000-000000000001";
 
 function browser(status: "active" | "suspended" = "active") {
@@ -45,6 +76,10 @@ function browser(status: "active" | "suspended" = "active") {
     suspensionReason: status === "suspended" ? ("idle" as const) : null,
     createdAt: "2026-07-24T10:00:00.000Z",
     updatedAt: "2026-07-24T10:00:00.000Z",
+    window: {
+      instanceId: "d0000000-0000-4000-a000-000000000010",
+      primaryWindowId: 0,
+    },
   } as const;
 }
 
@@ -65,7 +100,14 @@ describe("okou browser command", () => {
     spawnSyncMock.mockReturnValue({ status: 0 });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const { child, closed } of proxyChildren.splice(0)) {
+      child.ref();
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
+      await closed;
+    }
     consoleLog.mockClear();
     consoleError.mockClear();
     processExit.mockClear();
@@ -133,7 +175,7 @@ describe("okou browser command", () => {
       "An explicit user request to view the Browser is not a takeover",
     );
     expect(help).toContain(
-      "Chats sharing a Browser profile share cookies and localStorage",
+      "Chats use a shared Browser profile: cookies and localStorage",
     );
     expect(help).toContain("keep new pages in this chat automatically");
     expect(help).toContain(
@@ -156,7 +198,7 @@ describe("okou browser command", () => {
     expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
-  it("creates a fresh browser and passes its CDP URL directly to agent-browser", async () => {
+  it("opens a named browser and attaches its scoped proxy to agent-browser", async () => {
     let requestBody: unknown;
     let authorization: string | null = null;
     server.use(
@@ -164,7 +206,7 @@ describe("okou browser command", () => {
         requestBody = await request.json();
         authorization = request.headers.get("authorization");
         return HttpResponse.json(
-          { browser: browser(), cdpUrl: CDP_URL },
+          { browser: browser(), cdpUrl: CDP_URL, extension: EXTENSION },
           { status: 201 },
         );
       }),
@@ -185,8 +227,8 @@ describe("okou browser command", () => {
     expect(authorization).toBe("Bearer test-token");
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
-      ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      ["--session", "okou-browser", "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain(
@@ -204,6 +246,7 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
+            extension: EXTENSION,
           },
           { status: 200 },
         );
@@ -215,8 +258,8 @@ describe("okou browser command", () => {
     expect(useRequests).toBe(1);
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
-      ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      ["--session", "okou-browser", "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("2026-07-24T10:10:00.000Z");
@@ -251,7 +294,11 @@ describe("okou browser command", () => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       server.use(
         http.post("http://localhost:3000/api/browsers/use", () => {
-          return HttpResponse.json({ browser: browser(), cdpUrl: CDP_URL });
+          return HttpResponse.json({
+            browser: browser(),
+            cdpUrl: CDP_URL,
+            extension: EXTENSION,
+          });
         }),
         http.post(
           "http://localhost:3000/api/connector-accounts/inspect",
@@ -349,7 +396,7 @@ describe("okou browser command", () => {
     server.use(
       http.post("http://localhost:3000/api/browsers", () => {
         return HttpResponse.json(
-          { browser: browser(), cdpUrl: CDP_URL },
+          { browser: browser(), cdpUrl: CDP_URL, extension: EXTENSION },
           { status: 201 },
         );
       }),
@@ -366,8 +413,8 @@ describe("okou browser command", () => {
 
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
-      ["--session", "okou-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      ["--session", "okou-browser", "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
     );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).not.toContain("secret-cdp-token");
@@ -392,6 +439,7 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
+            extension: EXTENSION,
           },
           { status: 200 },
         );
@@ -405,8 +453,8 @@ describe("okou browser command", () => {
     ) as { readonly agentBrowserSession: string };
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
-      ["--session", agentBrowserSession, "connect", CDP_URL],
-      { stdio: "ignore" },
+      ["--session", agentBrowserSession, "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
     );
 
     // The help text is an instruction agents copy verbatim: a session name that
@@ -436,6 +484,7 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
+            extension: EXTENSION,
           },
           { status: 200 },
         );
@@ -452,8 +501,8 @@ describe("okou browser command", () => {
 
     expect(spawnSyncMock).toHaveBeenCalledWith(
       "agent-browser",
-      ["--session", "booking-browser", "connect", CDP_URL],
-      { stdio: "ignore" },
+      ["--session", "booking-browser", "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
     );
   });
 

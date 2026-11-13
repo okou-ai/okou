@@ -105,38 +105,6 @@ function LoadingBody() {
   );
 }
 
-function UnavailableBody({ quiet = false }: { readonly quiet?: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <PanelMessage
-      className={quiet ? "" : undefined}
-      icon={<AppWindowMac size={26} className="text-muted-foreground" />}
-      title={t(($) => {
-        return $.browserSession.unavailable.title;
-      })}
-      description={t(($) => {
-        return $.browserSession.unavailable.description;
-      })}
-    />
-  );
-}
-
-export function BrowserSessionLoading() {
-  return (
-    <PanelFrame>
-      <LoadingBody />
-    </PanelFrame>
-  );
-}
-
-export function BrowserSessionUnavailable() {
-  return (
-    <PanelFrame>
-      <UnavailableBody />
-    </PanelFrame>
-  );
-}
-
 function UnauthorizedBrowserSession({
   actions,
 }: {
@@ -346,46 +314,25 @@ function BrowserSessionPanelContent({
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  // Legacy viewing waits for these presentation projections. Shared recovery
-  // stays mounted while they resolve; native admission uses the authoritative
-  // connection rather than partial presentation.
+  // Recovery stays mounted while presentation resolves; native admission uses
+  // the authoritative connection rather than partial presentation.
   const status = useLastLoadable(signals.panelStatus$);
   const liveUrl = useLastLoadable(signals.panelLiveUrl$);
   const instanceId = useLastLoadable(signals.panelInstanceId$);
   const windowId = useLastLoadable(signals.panelWindowId$);
   const connection = useLoadable(signals.viewerConnection$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
-  const sharedViewer =
-    useGet(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
   const pageSignal = useGet(pageSignal$);
 
-  const actionsRow = <PanelActions actions={actions} />;
   if (
     connection.state === "hasData" &&
     isBrowserUnauthorized(connection.data)
   ) {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
-  if (status.state === "loading" && !sharedViewer) {
-    return (
-      <PanelFrame>
-        {actionsRow}
-        <LoadingBody />
-      </PanelFrame>
-    );
-  }
-  if (status.state === "hasError" && !sharedViewer) {
-    return (
-      <PanelFrame>
-        {actionsRow}
-        <UnavailableBody quiet={refined} />
-      </PanelFrame>
-    );
-  }
-
   if (status.state === "hasData" && status.data === "unauthorized") {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
@@ -400,20 +347,6 @@ function BrowserSessionPanelContent({
         refined={refined}
         actions={actions}
       />
-    );
-  }
-
-  if (
-    !sharedViewer &&
-    (liveUrl.state !== "hasData" ||
-      instanceId.state !== "hasData" ||
-      windowId.state !== "hasData")
-  ) {
-    return (
-      <PanelFrame>
-        {actionsRow}
-        <LoadingBody />
-      </PanelFrame>
     );
   }
 
@@ -448,13 +381,7 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   // Keep a confirmed denial visible across a grant's pending revalidation.
   // The keyed native owner must not expose input before that grant is read.
   const status = useLastLoadable(props.signals.panelStatus$);
-  const sharedViewer =
-    useGet(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
-  if (
-    sharedViewer &&
-    status.state === "hasData" &&
-    status.data === "unauthorized"
-  ) {
+  if (status.state === "hasData" && status.data === "unauthorized") {
     return <UnauthorizedBrowserSession actions={props.actions} />;
   }
   return <BrowserSessionPanelContent key={authorizationScope} {...props} />;

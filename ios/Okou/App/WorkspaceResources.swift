@@ -24,9 +24,11 @@ final class WorkspaceResources {
 
   init(
     client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void,
-    modelBootstrap: WorkspaceModelBootstrap? = nil
+    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.modelBootstrap = modelBootstrap
+    let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let lifetime = lifetime
     let initialModelRead: Computed<Task<Void, Error>>? = modelBootstrap.map { bootstrap in
       computedTask { get, options in
@@ -38,29 +40,32 @@ final class WorkspaceResources {
     }
     let service = ChatModelService(client: client)
     let preference = WorkspaceRead(
-      "model preference", sleep: sleep, lifetime: lifetime, readiness: initialModelRead,
-      read: service.preference)
+      "model preference", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      readiness: initialModelRead, read: service.preference)
     let available = WorkspaceRead(
-      "available models", sleep: sleep, lifetime: lifetime, readiness: initialModelRead,
-      read: service.availableModels)
+      "available models", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      readiness: initialModelRead, read: service.availableModels)
     let catalog = WorkspaceRead(
-      "model catalog", sleep: sleep, lifetime: lifetime, readiness: initialModelRead,
-      read: service.catalog)
+      "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      readiness: initialModelRead, read: service.catalog)
     let features = WorkspaceRead(
-      "model feature switches", sleep: sleep, lifetime: lifetime, readiness: initialModelRead,
-      read: service.featureSwitches)
+      "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      readiness: initialModelRead, read: service.featureSwitches)
     self.preference = preference
     self.available = available
     self.catalog = catalog
     self.features = features
-    let agents = WorkspaceRead<[AgentRecord]>("agents", sleep: sleep, lifetime: lifetime) {
+    let agents = WorkspaceRead<[AgentRecord]>(
+      "agents", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks
+    ) {
       try await client.request("/api/agents")
     }
     self.agents = agents
     navigation = agents.value
     reloadNavigation = agents.reload
     let projects = WorkspaceRead(
-      "Projects", sleep: sleep, lifetime: lifetime, read: ChatProjects(client: client).list)
+      "Projects", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: ChatProjects(client: client).list)
     self.projects = projects
     projectList = projects.value
     reloadProjects = projects.reload
@@ -138,6 +143,7 @@ final class WorkspaceResources {
 /// The graph owns caching; this small endpoint owner adds retry and cancellation.
 @MainActor
 private final class WorkspaceRead<Value: Sendable> {
+  private let lifecycleTasks: LifecycleTasks
   private let revision = CCState.State(0)
   private let lifetime: CCState.State<Bool>
   private let readiness: Computed<Task<Void, Error>>?
@@ -150,11 +156,12 @@ private final class WorkspaceRead<Value: Sendable> {
 
   init(
     _ operation: String, sleep: @escaping @Sendable (Duration) async throws -> Void,
-    lifetime: CCState.State<Bool>,
+    lifetime: CCState.State<Bool>, lifecycleTasks: LifecycleTasks,
     readiness: Computed<Task<Void, Error>>? = nil,
     read: @escaping @MainActor () async throws -> Value
   ) {
     self.operation = operation
+    self.lifecycleTasks = lifecycleTasks
     self.lifetime = lifetime
     self.readiness = readiness
     self.sleep = sleep
@@ -182,6 +189,7 @@ private final class WorkspaceRead<Value: Sendable> {
         throw error
       }
     }
+    lifecycleTasks.track(task)
     self.task = task
     signal.onCancel { task.cancel() }
     return task

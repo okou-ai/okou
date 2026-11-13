@@ -110,11 +110,9 @@ def validate(directory):
         failure.status(baseline, sandbox=identity[0])
         exact(initial, {"policy": policy, "status_path": path, "published_status": baseline,
                         "regular_file": True}, "speculative fault changed original inputs")
-        history = later.identifier(waiting.get("history_run_id"))
-        operation = later.identifier(waiting.get("operation_run_id"))
-        if history == operation or history in identities or operation in identities:
-            raise ValueError("speculative callback replayed run or resource identity")
-        identities.update((history, operation))
+        history, operation = later.history_operation(
+            waiting, identities, "speculative callback replayed run or resource identity"
+        )
         reuse = "thread:native-guarded-"+history
         exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": identity[0]}],
               "speculative callback lost original history/reuse binding")

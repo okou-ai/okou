@@ -95,7 +95,6 @@ export interface RecoveryIntent {
 }
 
 export interface RecoveryView {
-  readonly enabled: boolean;
   readonly paused: boolean;
   /** The current descriptor request has not been confirmed by the runtime. */
   readonly pending: boolean;
@@ -141,17 +140,12 @@ function cancelled(): DOMException {
   return new DOMException("The browser recovery was cancelled.", "AbortError");
 }
 
-/** Legacy unscoped connections have no physical binding proof beyond their endpoint. */
 export function sameRecoveryBinding(
   left: BrowserConnection,
   right: BrowserConnection,
 ): boolean {
   return (
-    left.instanceId === right.instanceId &&
-    left.windowId === right.windowId &&
-    (left.instanceId !== null && left.windowId !== null
-      ? true
-      : left.cdpUrl === right.cdpUrl)
+    left.instanceId === right.instanceId && left.windowId === right.windowId
   );
 }
 
@@ -296,7 +290,6 @@ function createRecoveryAssertion(ports: RecoveryPorts, graph: RecoveryState) {
         view.intent !== operation.intent ||
         view.nodes !== operation.nodes ||
         view.paused ||
-        !view.enabled ||
         !compatibleBinding(operation.binding, view.binding)
       ) {
         throw cancelled();
@@ -515,7 +508,6 @@ function createRecoveryStart(
 }
 
 function createManualRecovery(
-  ports: RecoveryPorts,
   graph: RecoveryState,
   start$: ReturnType<typeof createRecoveryStart>,
 ) {
@@ -553,13 +545,6 @@ function createManualRecovery(
         await set(join$, active, signal);
         return;
       }
-      if (!get(ports.view$).enabled) {
-        await set(
-          mode === "image" ? ports.retryImage$ : ports.reconnect$,
-          signal,
-        );
-        return;
-      }
       const operation = set(start$, mode, false, signal);
       await set(join$, operation, signal);
     },
@@ -587,7 +572,6 @@ function createRecoveryObservation(
       if (
         active &&
         (view.paused ||
-          !view.enabled ||
           active.intent !== view.intent ||
           active.nodes !== view.nodes ||
           !compatibleBinding(active.binding, view.binding))
@@ -604,7 +588,6 @@ function createRecoveryObservation(
       }
       if (
         !active &&
-        view.enabled &&
         !view.paused &&
         current &&
         current.owner !== view.intent.retiredFailure &&
@@ -691,10 +674,10 @@ export function createViewerRecovery(ports: RecoveryPorts) {
   const execute$ = createRecoveryExecution(ports, graph);
   const start$ = createRecoveryStart(ports, graph, execute$);
   return {
-    ...createManualRecovery(ports, graph, start$),
+    ...createManualRecovery(graph, start$),
     watch$: createRecoveryWatch(ports, graph, start$),
     operation$: computed((get) => {
-      return get(ports.view$).enabled ? get(graph.result$) : null;
+      return get(graph.result$);
     }),
   };
 }

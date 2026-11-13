@@ -3,6 +3,8 @@ package ai.okou.android.auth
 import ai.okou.android.HomeModel
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.Organization
+import ai.okou.android.preferences.MemberPreferencesModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -31,7 +33,8 @@ enum class SessionStage {
 
 data class ReadyWorkspace(
     val identity: WorkspaceIdentity,
-    val data: WorkspaceBootstrap,
+    val organization: Organization,
+    val preferences: MemberPreferencesModel,
     val home: HomeModel,
 )
 
@@ -135,12 +138,28 @@ class SessionModel(
                     val home =
                         ViewModelProvider(store, viewModelFactory { initializer { HomeModel() } })[
                             HomeModel::class.java]
+                    val preferences =
+                        ViewModelProvider(
+                            store,
+                            viewModelFactory {
+                                initializer {
+                                    MemberPreferencesModel(
+                                        data.preferences,
+                                        owner,
+                                        authorized = { current(ticket, snapshot) },
+                                        onFailure = { error ->
+                                            workspaceFailure(ticket, snapshot, error)
+                                        },
+                                    )
+                                }
+                            },
+                        )[MemberPreferencesModel::class.java]
                     mutable.value =
                         SessionUiState(
                             generation,
                             SessionStage.Ready,
                             memberships,
-                            ReadyWorkspace(identity, data, home),
+                            ReadyWorkspace(identity, data.organization, preferences, home),
                         )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -177,6 +196,26 @@ class SessionModel(
 
     private fun acceptsAction(expectedGeneration: Long): Boolean =
         expectedGeneration == generation && authentication.state.value == observed
+
+    fun isPresentationCurrent(expectedGeneration: Long): Boolean = acceptsAction(expectedGeneration)
+
+    fun refreshPreferences() {
+        mutable.value.ready?.preferences?.refreshFromForeground()
+    }
+
+    private fun workspaceFailure(ticket: Long, snapshot: AuthenticationState, error: Exception) {
+        if (!current(ticket, snapshot)) return
+        val stage =
+            when {
+                error is ApiFailure.UpdateRequired -> SessionStage.UpdateRequired
+                error is ApiFailure.Unauthenticated ||
+                    error is ApiFailure.Http && error.status in setOf(401, 403, 404) ->
+                    SessionStage.AccessRemoved
+                else -> return
+            }
+        retire()
+        mutable.value = SessionUiState(generation, stage)
+    }
 
     fun retry(expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return

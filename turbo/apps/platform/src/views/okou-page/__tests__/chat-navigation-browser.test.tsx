@@ -47,6 +47,8 @@ import {
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
+
 const context = testContext();
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
@@ -65,6 +67,10 @@ function liveBrowserSession(): BrowserSession {
     proxyCountryCode: null,
     timeoutMinutes: 240,
     screen: { width: 1440, height: 900, resizable: true },
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
     idleExpiresAt: "2026-09-01T12:10:00.000Z",
     suspendedAt: null,
     suspensionReason: null,
@@ -116,9 +122,9 @@ function mockBrowserApi(
         })
       : respond(200, browserReadResponse(currentSession, query));
   });
-  context.mocks.api(browserContract.open, ({ respond }) => {
+  context.mocks.api(browserContract.open, ({ query, respond }) => {
     currentSession = liveBrowserSession();
-    return respond(200, { browser: currentSession });
+    return respond(200, browserReadResponse(currentSession, query));
   });
   context.mocks.api(browserContract.close, ({ respond }) => {
     closeRequestCount += 1;
@@ -157,16 +163,6 @@ function mockBrowserApi(
         }
       : {}),
     ...(targets ? { targets } : {}),
-  });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    if (!currentSession) {
-      throw new Error("Expected an active browser for viewer connection");
-    }
-    return respond(200, {
-      browser: currentSession,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
-    });
   });
 
   return {
@@ -219,7 +215,6 @@ function openConversation(
   chatEvents: MockChatEventInput[],
   refined = false,
   cloudBrowserEnabled = true,
-  sharedOwner = false,
 ): Promise<void> {
   mockChatLifecycle(context, {
     cloudBrowserEnabled,
@@ -233,7 +228,6 @@ function openConversation(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.CloudBrowserPanel]: refined,
-      [FeatureSwitchKey.BrowserSharedOwner]: sharedOwner,
     },
   });
 }
@@ -313,7 +307,7 @@ test("A live Browser card resumes a window reclaimed after its summary was read"
         }
       : event;
   });
-  await openConversation(events, false, true, true);
+  await openConversation(events, false, true);
   await expectConversationReady();
   const card = await waitFor(() => {
     const card = document.querySelector<HTMLElement>(
@@ -407,7 +401,7 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
         }
       : event;
   });
-  await openConversation(events, false, true, true);
+  await openConversation(events, false, true);
   await expectConversationReady();
   const card = await waitFor(() => {
     const card = document.querySelector<HTMLElement>(
@@ -628,7 +622,6 @@ test.each(["event", "snapshot"] as const)(
       host: "app.okou.ai",
       featureSwitches: {
         [FeatureSwitchKey.CloudBrowserPanel]: true,
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
       },
     });
     await expectConversationReady();
@@ -809,7 +802,6 @@ test.each(["event", "snapshot"] as const)(
       host: "app.okou.ai",
       featureSwitches: {
         [FeatureSwitchKey.CloudBrowserPanel]: true,
-        [FeatureSwitchKey.BrowserSharedOwner]: true,
       },
     });
     await expectConversationReady();
@@ -1301,19 +1293,20 @@ test("Browser tab admission commits direct, no-motion and reduced-motion geometr
   });
 });
 
-test("Browser tab admission uses native viewport changes made while disconnected on manual reconnect", async () => {
+test("Browser tab admission uses native viewport changes made while disconnected on automatic recovery", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   mockWideScreen();
   const { geometry } = mockTabAdmissionGeometry(600, 800);
   const { browser, sidebar } = await openManyTabBrowser();
   act(() => {
     browser.native.disconnect({ code: 1006, wasClean: false });
   });
-  await within(sidebar).findByText("Browser disconnected");
+  await screen.findByText("Reconnecting…");
   Object.assign(geometry, { budget: 240, panel: 440, canvas: 916 });
   fireEvent.resize(window);
   expect(within(sidebar).getByLabelText("Remote browser input")).toBeDisabled();
-  expect(within(sidebar).getByText("Browser disconnected")).toBeInTheDocument();
-  click(buttonByName("Reconnect", sidebar));
+  expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
+  advanceRecovery(1000);
   await waitFor(() => {
     expect(
       within(sidebar).getByLabelText("Remote browser input"),

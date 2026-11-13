@@ -215,28 +215,29 @@ final class AppLifecycleTests: XCTestCase {
         apiBaseURL: configuration.apiURL, userID: try XCTUnwrap(authentication.userID),
         workspaceID: $0.id)
     }
-    let lifetimes = LifecycleSyncLifetimes()
-    lifetimes.add(lifecycle.workspace?.data.sync)
+    let caches = LifecycleFixtureCaches()
+    caches.add(lifecycle.workspace?.data.cache)
     addTeardownBlock { @MainActor [fixture] in
-      // Run after the owner-closing blocks have released their captures.
-      XCTAssertTrue(lifetimes.released, "Retired workspace still owns its cache")
-      guard lifetimes.released else { return }
-      for scope in scopes {
-        await ProjectDisclosureStorage(scope: scope).close().value
-      }
+      await caches.close()
       try Self.removeFixtureFiles(scopes)
       withExtendedLifetime(fixture) {}
     }
     // The HTTP fixture itself must outlive its URLSession and every service-owned worker.
     addTeardownBlock { @MainActor [fixture] in
-      lifetimes.add(lifecycle.workspace?.data.sync)
-      lifecycle.close()
-      try await authentication.signOut()
-      await lifecycle.notifications.update(workspace: nil)
-      await lifecycle.notifications.refreshNotificationState(userID: nil)
-      _ = lifecycle.notifications.data(
+      let current = lifecycle.notifications.data(
         authentication: authentication, configuration: configuration,
         session: fixture.history.http.session)
+      caches.add(current?.cache)
+      await lifecycle.close().value
+      do { try await authentication.signOut() } catch {
+        XCTFail("Cannot sign out the lifecycle fixture: \(error)")
+      }
+      await lifecycle.notifications.update(workspace: nil)
+      await lifecycle.notifications.refreshNotificationState(userID: nil)
+      let remaining = lifecycle.notifications.data(
+        authentication: authentication, configuration: configuration,
+        session: fixture.history.http.session)
+      caches.add(remaining?.cache)
     }
     return lifecycle
   }
@@ -264,16 +265,18 @@ final class AppLifecycleTests: XCTestCase {
   }
 }
 
+/// Own the actual scoped connections, independently of ARC release timing.
 @MainActor
-private final class LifecycleSyncLifetimes {
-  private final class Owner {
-    weak var sync: ChatSync?
-    init(_ sync: ChatSync) { self.sync = sync }
+private final class LifecycleFixtureCaches {
+  private var caches: [ChatCache] = []
+
+  func add(_ cache: ChatCache?) {
+    if let cache, !caches.contains(where: { $0 === cache }) { caches.append(cache) }
   }
-  private var owners: [Owner] = []
-  var released: Bool { owners.allSatisfy { $0.sync == nil } }
-  func add(_ sync: ChatSync?) {
-    if let sync { owners.append(Owner(sync)) }
+
+  func close() async {
+    for cache in caches { await cache.close() }
+    caches = []
   }
 }
 

@@ -2,7 +2,7 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -156,14 +156,6 @@ function fixture(
     onOpen?.(body.operationId);
     return respond(200, { browser: session, viewer });
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(503, {
-      error: {
-        code: "SERVICE_UNAVAILABLE",
-        message: "The separate viewer lookup is temporarily unavailable",
-      },
-    });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });
@@ -200,7 +192,6 @@ function fixture(
       return setupPage({
         context,
         path: `/browsers/${threadId}`,
-        featureSwitches: { [FeatureSwitchKey.BrowserSharedOwner]: true },
         ...(access
           ? { cachedChatThreadEvents: access.cachedChatThreadEvents }
           : {}),

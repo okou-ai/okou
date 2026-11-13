@@ -33,6 +33,10 @@ function mockViewer() {
     liveUrl: "https://viewer.example/live",
     screenshotUrl: null,
     proxyCountryCode: null,
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
     timeoutMinutes: 240,
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
@@ -56,13 +60,13 @@ function mockViewer() {
     ],
   });
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, {
       browser: session,
-      cdpUrl,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: session,
+        cdpUrl,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {

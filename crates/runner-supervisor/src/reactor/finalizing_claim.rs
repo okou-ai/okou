@@ -512,11 +512,15 @@ async fn prepare_finalizing_resource(
     #[cfg(test)]
     {
         let observer = ctx.test_observer.clone();
+        let handoff_observer = observer.clone();
         select_finalizing_resource_with_test_hooks(
             selection,
             pre_spawn_timing,
             reserved_exact,
             FinalizingSelectionTestHooks {
+                on_handoff_requested: Some(std::sync::Arc::new(move |predecessor, successor| {
+                    handoff_observer.notify_finalizing_handoff_requested(predecessor, successor);
+                })),
                 on_capacity_wait: Some(std::sync::Arc::new(move |run_id| {
                     observer.notify_finalizing_capacity_wait_entered(run_id);
                 })),

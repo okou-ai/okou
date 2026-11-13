@@ -1,5 +1,9 @@
 package ai.okou.android
 
+import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.preferences.MemberPreferencesModel
+import ai.okou.android.preferences.MemberPreferencesSettings
 import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -58,6 +62,7 @@ class OkouAppTest {
     private fun render(
         store: TestPreferencesStore = TestPreferencesStore(),
         fontScale: Float = 1f,
+        withWorkspacePreferences: Boolean = false,
     ) {
         val models =
             compose.runOnIdle {
@@ -67,9 +72,31 @@ class OkouAppTest {
                         viewModelFactory {
                             initializer { HomeModel() }
                             initializer { AppearanceModel(store) }
+                            initializer {
+                                MemberPreferencesModel(
+                                    testBootstrap().preferences,
+                                    (compose.activity.application as TestOkouApplication)
+                                        .createWorkspaceSession(
+                                            WorkspaceIdentity(
+                                                "https://api.okou.ai",
+                                                "font-user",
+                                                "font-session",
+                                                "font-org",
+                                            ),
+                                            WorkspaceTokenProvider { "test-token" },
+                                        ),
+                                    { true },
+                                    {},
+                                )
+                            }
                         },
                     )
-                provider[HomeModel::class.java] to provider[AppearanceModel::class.java]
+                Triple(
+                    provider[HomeModel::class.java],
+                    provider[AppearanceModel::class.java],
+                    if (withWorkspacePreferences) provider[MemberPreferencesModel::class.java]
+                    else null,
+                )
             }
         compose.setContent {
             val state by models.second.uiState.collectAsStateWithLifecycle()
@@ -81,7 +108,15 @@ class OkouAppTest {
                 OkouTheme(state.mode.resolveDark(isSystemInDarkTheme())) {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
-                    OkouApp(models.first, state, models.second::selectMode, models.second::retry)
+                    OkouApp(
+                        models.first,
+                        state,
+                        models.second::selectMode,
+                        models.second::retry,
+                        workspacePreferences = {
+                            models.third?.let { MemberPreferencesSettings(it) }
+                        },
+                    )
                 }
             }
         }
@@ -90,6 +125,14 @@ class OkouAppTest {
     @After
     fun clearOwners() {
         compose.runOnIdle { owners.clear() }
+    }
+
+    @Test
+    fun workspaceLanguageChoicesRemainReachableWithLargeText() {
+        render(fontScale = 2f, withWorkspacePreferences = true)
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("English").performScrollTo().performClick()
+        compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
     }
 
     @Test

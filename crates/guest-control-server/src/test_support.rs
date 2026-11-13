@@ -12,17 +12,12 @@ pub(crate) fn temp_dir(label: &str) -> (std::path::PathBuf, tempfile::TempDir) {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn open_pidfd(pid: libc::pid_t) -> std::io::Result<std::os::fd::OwnedFd> {
-    use std::os::fd::FromRawFd;
-
-    // SAFETY: `pidfd_open` does not dereference user pointers. On success it
-    // returns a new file descriptor owned by this process.
-    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-
-    // SAFETY: `fd` is a fresh descriptor returned by `pidfd_open` above.
-    Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as std::os::fd::RawFd) })
+    let pid = Some(pid)
+        .filter(|pid| *pid > 0)
+        .and_then(rustix::process::Pid::from_raw)
+        .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())
+        .map_err(std::io::Error::from)
 }
 
 #[cfg(target_os = "linux")]
