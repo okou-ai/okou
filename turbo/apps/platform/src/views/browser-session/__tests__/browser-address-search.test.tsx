@@ -28,16 +28,11 @@ const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
 async function openViewer(
-  options: {
-    blank?: boolean;
-    searchAvailable?: boolean;
-    secondReport?: boolean;
-    reportTitle?: string;
-  } = {},
+  options: { blank?: boolean; searchAvailable?: boolean } = {},
 ) {
   const browser = mockBrowserCdp(
     context,
-    "wss://browser.example/address-suggestions",
+    "wss://browser.example/address-search",
     {
       searchAvailable: options.searchAvailable,
       targets: [
@@ -48,18 +43,9 @@ async function openViewer(
         },
         {
           targetId: "reports",
-          title: options.reportTitle ?? "Quarterly report",
+          title: "Reports",
           url: "https://sales.example/report",
         },
-        ...(options.secondReport
-          ? [
-              {
-                targetId: "other-report",
-                title: "Annual report",
-                url: "https://other.example/report",
-              },
-            ]
-          : []),
         {
           targetId: "foreign",
           title: "Private report",
@@ -92,7 +78,7 @@ async function openViewer(
       browser: session,
       viewer: {
         browser: session,
-        cdpUrl: "wss://browser.example/address-suggestions",
+        cdpUrl: "wss://browser.example/address-search",
         extension: TEST_BROWSER_EXTENSION,
       },
     });
@@ -110,7 +96,7 @@ async function openViewer(
         memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
       },
     },
-    featureSwitches: { [FeatureSwitchKey.BrowserAddressSuggestions]: true },
+    featureSwitches: { [FeatureSwitchKey.BrowserAddressSearch]: true },
   });
   const viewer = await screen.findByRole("region", {
     name: "Remote browser viewer",
@@ -125,42 +111,16 @@ async function openViewer(
   };
 }
 
-test.each([
-  { query: "SALES quart", title: "Quarterly report" },
-  { query: "SALES 报告", title: "季度报告" },
-])(
-  "Address suggestions match every term across title and URL ($query) without duplicating tabs",
-  async ({ query, title }) => {
-    const { viewer, address } = await openViewer({ reportTitle: title });
-    await fill(address, query);
-    const list = await screen.findByRole("listbox");
-    const options = within(list).getAllByRole("option");
-    expect(options).toHaveLength(2);
-    expect(options[0]).toHaveTextContent("Search with default search engine");
-    expect(options[1]).toHaveTextContent(title);
-    click(options[1]!);
-    await waitFor(() => {
-      expect(address).toHaveValue("https://sales.example/report");
-    });
-    expect(
-      within(viewer).getByLabelText(title, {
-        selector: '[role="tab"]',
-      }),
-    ).toHaveAttribute("aria-selected", "true");
-    expect(queryAllByRoleFast("tab", viewer)).toHaveLength(2);
-  },
-);
-
 test.each([false, true])(
-  "Plain text searches the selected page through Chrome's default engine (blank=%s)",
+  "Plain text searches the selected page with Chrome's default engine (blank=%s)",
   async (blank) => {
-    const { address } = await openViewer({ blank });
+    const { address, viewer } = await openViewer({ blank });
     await fill(address, "quarterly sales");
-    await expect(
-      screen.findByRole("option", {
-        name: /Search with default search engine/,
+    expect(
+      within(viewer).getByLabelText("Search with default search engine", {
+        selector: "button",
       }),
-    ).resolves.toBeInTheDocument();
+    ).toBeEnabled();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => {
       expect(address).toHaveValue(
@@ -170,72 +130,38 @@ test.each([false, true])(
   },
 );
 
-test("URL input remains a direct navigation and Escape preserves the typed query", async () => {
-  const { address } = await openViewer();
+test("The pointer submit action distinguishes search from direct URL navigation", async () => {
+  const { address, viewer } = await openViewer();
+  await fill(address, "annual report");
+  click(
+    within(viewer).getByLabelText("Search with default search engine", {
+      selector: "button",
+    }),
+  );
+  await waitFor(() => {
+    expect(address).toHaveValue("https://search.example/?q=annual%20report");
+  });
   await fill(address, "sales.example/new");
-  await expect(
-    screen.findByRole("option", { name: /Open address/ }),
-  ).resolves.toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-  expect(address).toHaveValue("sales.example/new");
-  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-  fireEvent.submit(address.form!);
+  click(within(viewer).getByLabelText("Open address", { selector: "button" }));
   await waitFor(() => {
     expect(address).toHaveValue("http://sales.example/new");
   });
 });
 
-test("A keyboard-selected tab survives metadata reranking and is not replaced by another action", async () => {
-  const { browser, address } = await openViewer({ secondReport: true });
-  await fill(address, "report");
-  await screen.findByRole("option", { name: /Quarterly report/ });
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-  act(() => {
-    browser.targets[1]!.title = "Report updated";
-    browser.event("Target.targetInfoChanged", {
-      targetInfo: { ...browser.targets[1]!, type: "page" },
-    });
-  });
-  await screen.findByRole("option", { name: /Report updated/ });
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(address).toHaveValue("https://sales.example/report");
-  });
-});
-
-test("Removing an explicitly selected tab does not turn Enter into another action", async () => {
-  const { browser, viewer, address } = await openViewer();
-  await fill(address, "report");
-  await screen.findByRole("option", { name: /Switch to tab/ });
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-  act(() => {
-    browser.event("Target.targetDestroyed", { targetId: "reports" });
-  });
-  await expect(
-    screen.findByRole("option", { name: /Tab no longer available/ }),
-  ).resolves.toHaveAttribute("aria-disabled", "true");
+test("Invalid explicit input does not become a search", async () => {
+  const { address, viewer } = await openViewer();
+  await fill(address, "///invalid");
+  expect(
+    within(viewer).getByLabelText("Open address", { selector: "button" }),
+  ).toBeDisabled();
   fireEvent.submit(address.form!);
   await expect(within(viewer).findByRole("alert")).resolves.toBeInTheDocument();
-  expect(address).toHaveValue("report");
-});
-
-test("Editing a query clears its earlier explicit tab selection", async () => {
-  const { address } = await openViewer();
-  await fill(address, "report");
-  await screen.findByRole("option", { name: /Switch to tab/ });
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-  await fill(address, "reports");
-  await fill(address, "report");
-  await userEvent.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(address).toHaveValue("https://search.example/?q=report");
-  });
+  expect(address).toHaveValue("///invalid");
 });
 
 test("Composition confirmation does not submit a search", async () => {
   const { address } = await openViewer();
   await fill(address, "季度报告");
-  await screen.findByRole("listbox");
   fireEvent.compositionStart(address);
   fireEvent.keyDown(address, {
     key: "Enter",
@@ -254,7 +180,7 @@ test("Composition confirmation does not submit a search", async () => {
   });
 });
 
-test("Browsers with an older extension retain URL navigation after an unsupported search", async () => {
+test("An unsupported search on an older Browser leaves URL navigation usable", async () => {
   const { viewer, address } = await openViewer({ searchAvailable: false });
   await fill(address, "quarterly sales");
   await userEvent.keyboard("{Enter}");
@@ -268,7 +194,7 @@ test("Browsers with an older extension retain URL navigation after an unsupporte
   });
 });
 
-test("A native search receipt remains pending through its document replacement", async () => {
+test("A native search retains its original pending receipt across document replacement", async () => {
   const { browser, viewer, address } = await openViewer();
   const search = browser.holdNextNative("search");
   await fill(address, "quarterly sales");
@@ -291,7 +217,7 @@ test("A native search receipt remains pending through its document replacement",
   });
 });
 
-test("Native membership changes during search identity verification cancel the search", async () => {
+test("A native membership change during identity verification cancels search", async () => {
   const { browser, viewer, address } = await openViewer();
   await fill(address, "quarterly sales");
   const read = browser.holdNextNative("listTabs");

@@ -221,16 +221,6 @@ function createEditorActions(
         }
         return;
       }
-      // Autocomplete may restore focus while a newly selected target is still
-      // attaching. Passive focus must not pin its temporary empty address;
-      // an explicit gesture/input can still start an edit immediately.
-      if (
-        origin === "focus" &&
-        get(targetState$).kind === "target" &&
-        !get(graph.navigation$)
-      ) {
-        return;
-      }
       set(editorState$, {
         kind: "focus",
         targetId: get(editTargetId$),

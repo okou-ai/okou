@@ -217,10 +217,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.BrowserAddressSuggestions]: {
+  [FeatureSwitchKey.BrowserAddressSearch]: {
     maintainer: "liangyou@okou.ai",
-    displayName: "Browser address suggestions",
-    description: "Find open tabs and search with the Browser's default engine.",
+    displayName: "Browser address search",
+    description:
+      "Search from the address bar with the Browser's default engine.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,

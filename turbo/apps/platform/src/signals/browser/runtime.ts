@@ -29,10 +29,9 @@ import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
-import { navigationAddress } from "./input/address.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { createAddressSuggestions } from "./navigation/suggestions.ts";
+import { addressSubmission } from "./navigation/submission.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
   NavigationFault,
@@ -1341,25 +1340,25 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
   return { selectTab$, createTab$, closeTab$ };
 }
 
-function createNavigationActions(
-  context: RuntimeState,
-  graph: RuntimeGraph,
-  selectTab$: BrowserSignals["selectTab$"],
-) {
+function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
-  const suggestions = createAddressSuggestions({
-    address$: model.address$,
-    tabs$: model.tabs$,
-    scope$: computed((get) => {
-      const lease = get(context.installed$);
-      return get(context.authority$) && lease
-        ? { lease, selection: get(model.intent$).selection }
-        : null;
-    }),
-    enabled$: computed((get) => {
-      return get(featureSwitch$)[FeatureSwitchKey.BrowserAddressSuggestions];
-    }),
+  const addressSearchEnabled$ = computed((get) => {
+    return get(featureSwitch$)[FeatureSwitchKey.BrowserAddressSearch];
+  });
+  const submission$ = computed((get) => {
+    return addressSubmission(get(model.address$), get(addressSearchEnabled$));
+  });
+  const addressSubmissionKind$ = computed((get) => {
+    const submission = get(submission$);
+    return submission ? ("search" in submission ? "search" : "navigate") : null;
+  });
+  const composingState$ = state(false);
+  const addressComposing$ = computed((get) => {
+    return get(composingState$);
+  });
+  const composeAddress$ = command(({ set }, composing: boolean) => {
+    set(composingState$, composing);
   });
   const noticeState$ = state<AddressSubmitNotice | null>(null);
   const addressSubmitNotice$ = computed((get) => {
@@ -1388,33 +1387,19 @@ function createNavigationActions(
       action: BrowserNavigationAction,
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
-      if (typeof action === "string" && action !== "submit-address") {
+      if (action !== "submit-address") {
         return await set(lease.controller.navigate$, action, signal);
-      }
-      const match = set(
-        suggestions.resolve$,
-        typeof action === "object"
-          ? action.suggestion
-          : get(suggestions.highlighted$),
-      );
-      if (match?.kind === "tab") {
-        await set(selectTab$, match.targetId, signal);
-        return { kind: "ack" };
       }
       const scope = get(lease.controller.navigationScope$);
       if (!scope) {
         throw cancelled();
       }
-      const url = navigationAddress(get(model.address$));
-      if (!url && match?.kind !== "search") {
+      const target = get(submission$);
+      if (!target) {
         throw new CdpFault("input", "Enter a valid page address.");
       }
       const submission = set(model.prepareAddress$, scope);
-      const receipt = await set(
-        lease.controller.navigate$,
-        match?.kind === "search" ? { search: match.text } : { url: url! },
-        signal,
-      );
+      const receipt = await set(lease.controller.navigate$, target, signal);
       set(model.acceptAddress$, submission, receipt);
       return receipt;
     },
@@ -1426,10 +1411,10 @@ function createNavigationActions(
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
       const lease = set(requireController$, signal);
-      if (
-        (action === "submit-address" || typeof action === "object") &&
-        !get(canSubmitAddress$)
-      ) {
+      if (action === "submit-address" && get(addressComposing$)) {
+        return { kind: "unavailable" };
+      }
+      if (action === "submit-address" && !get(canSubmitAddress$)) {
         set(notifyAddressSubmit$, "preparing");
         return { kind: "unavailable" };
       }
@@ -1448,7 +1433,10 @@ function createNavigationActions(
     },
   );
   return {
-    suggestions,
+    addressSearchEnabled$,
+    addressSubmissionKind$,
+    addressComposing$,
+    composeAddress$,
     navigate$,
     canSubmitAddress$,
     addressSubmitNotice$,
@@ -1786,11 +1774,7 @@ export function createBrowserRuntime(
     }),
   );
   const tabActions = createTabActions(context, graph);
-  const navigationActions = createNavigationActions(
-    context,
-    graph,
-    tabActions.selectTab$,
-  );
+  const navigationActions = createNavigationActions(context, graph);
   const addressRef$ = onRef(
     command(({ set }, node: HTMLInputElement, signal: AbortSignal) => {
       // A remounted field must not replay feedback from an earlier interaction.

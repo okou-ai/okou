@@ -15,11 +15,7 @@ export function pageTarget(info: unknown): ViewerTarget | null {
   if (!isRecord(info) || info.type !== "page" || info.subtype === "prerender") {
     return null;
   }
-  if (
-    typeof info.targetId !== "string" ||
-    !info.targetId ||
-    typeof info.url !== "string"
-  ) {
+  if (typeof info.targetId !== "string" || !info.targetId) {
     throw new CdpFault(
       "protocol",
       "The browser returned an invalid page target.",
@@ -27,7 +23,6 @@ export function pageTarget(info: unknown): ViewerTarget | null {
   }
   return Object.freeze({
     id: info.targetId,
-    url: info.url,
     blank: info.url === "about:blank",
     title:
       typeof info.title === "string" && info.title.trim()

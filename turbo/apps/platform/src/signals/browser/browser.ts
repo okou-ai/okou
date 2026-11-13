@@ -5,7 +5,6 @@ import { CdpFault } from "./cdp/errors.ts";
 import { isImageFailure } from "./viewer/diagnostic.ts";
 import type { ClipboardRecovery } from "./input/clipboard.ts";
 import type { BrowserNavigationAction } from "./navigation/action.ts";
-import type { AddressSuggestions } from "./navigation/suggestions.ts";
 import type { DisplayModeResult, DisplayState } from "./display/sync.ts";
 import type { DisplaySize } from "./display/geometry.ts";
 import type { ImageRecovery } from "./viewer/image-recovery.ts";
@@ -58,7 +57,6 @@ export function isBrowserOperationFailure(
 export interface BrowserTab {
   readonly id: string;
   readonly title: string;
-  readonly url: string;
   readonly faviconUrl?: string;
 }
 
@@ -116,7 +114,10 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
-  readonly suggestions: AddressSuggestions;
+  readonly addressSearchEnabled$: Computed<boolean>;
+  readonly addressSubmissionKind$: Computed<"navigate" | "search" | null>;
+  readonly addressComposing$: Computed<boolean>;
+  readonly composeAddress$: Command<void, [boolean]>;
   readonly canSubmitAddress$: Computed<boolean>;
   readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
   readonly notifyAddressSubmit$: Command<
