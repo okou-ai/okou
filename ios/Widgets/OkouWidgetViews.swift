@@ -145,7 +145,7 @@ struct OkouQuietHeader: View {
         .padding(.trailing, 10)
       OkouGreeting(model: model, size: greeting, prefersOneLine: true)
       Spacer(minLength: 8)
-      OkouWidgetActions()
+      OkouNewChatButton()
     }
   }
 }
@@ -180,33 +180,41 @@ struct OkouBusyHeader: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      OkouMascot(mood: model.mood, size: 26)
+      OkouMascot(mood: model.mood, size: 30)
       Text("Okou")
         .font(.okouWidget(14, weight: .semibold))
         .foregroundStyle(OkouColor.foreground)
-      summary
-        .font(.okouWidget(12, weight: .medium))
-        .lineLimit(1)
+      // The counts in the list's order; when they don't all fit, the later ones step back.
+      ViewThatFits(in: .horizontal) {
+        ForEach(Array((1...max(parts.count, 1)).reversed()), id: \.self) { count in
+          summary(parts.prefix(count)).lineLimit(1)
+        }
+      }
+      .font(.okouWidget(12, weight: .medium))
       Spacer(minLength: 0)
-      OkouWidgetActions()
+      OkouNewChatButton()
     }
-    .frame(height: 30)
+    .frame(height: OkouNewChatButton.size)
   }
 
-  private var summary: Text {
+  private var parts: [Text] {
     var parts: [Text] = []
     if !model.needs.isEmpty {
       parts.append(
         Text("\(model.needs.count) needs you").foregroundStyle(OkouStatusColor.warning))
     }
+    if !model.finished.isEmpty {
+      parts.append(
+        Text("\(model.finished.count) unread").foregroundStyle(OkouStatusColor.running))
+    }
     if !model.working.isEmpty {
       parts.append(
         Text("\(model.working.count) working").foregroundStyle(OkouColor.mutedForeground))
     }
-    if parts.isEmpty && !model.finished.isEmpty {
-      parts.append(
-        Text("\(model.finished.count) finished").foregroundStyle(OkouColor.mutedForeground))
-    }
+    return parts
+  }
+
+  private func summary(_ parts: ArraySlice<Text>) -> Text {
     var result = Text("")
     for (index, part) in parts.enumerated() {
       if index > 0 { result = result + Text(" · ").foregroundStyle(OkouColor.quietMark) }
@@ -216,26 +224,21 @@ struct OkouBusyHeader: View {
   }
 }
 
-/// New chat and voice, as round buttons at a widget's top trailing corner.
-struct OkouWidgetActions: View {
+/// New chat, as one round button at a widget's top trailing corner. Voice keeps its control
+/// in Control Center, on the Lock Screen and on the Action button; a second button here would
+/// shrink both and sit close enough to mis-tap.
+struct OkouNewChatButton: View {
+  static let size: CGFloat = 36
+
   var body: some View {
-    HStack(spacing: 6) {
-      Link(destination: OkouWidgetLink.voice) {
-        OkouGlyph(name: "mic", size: 15)
-          .foregroundStyle(OkouColor.foreground)
-          .frame(width: 30, height: 30)
-          .background(OkouColor.muted, in: Circle())
-      }
-      .accessibilityLabel("Voice")
-      Link(destination: OkouWidgetLink.newChat) {
-        OkouGlyph(name: "square-pen", size: 14)
-          .foregroundStyle(OkouColor.background)
-          .frame(width: 30, height: 30)
-          .background(OkouColor.foreground, in: Circle())
-          .widgetAccentable()
-      }
-      .accessibilityLabel("New chat")
+    Link(destination: OkouWidgetLink.newChat) {
+      OkouGlyph(name: "square-pen", size: 16)
+        .foregroundStyle(OkouColor.background)
+        .frame(width: Self.size, height: Self.size)
+        .background(OkouColor.foreground, in: Circle())
+        .widgetAccentable()
     }
+    .accessibilityLabel("New chat")
   }
 }
 
@@ -254,17 +257,22 @@ struct OkouWorkingDot: View {
 /// A chat as the sidebar draws it: the status emoji or the quiet chat glyph, one line of title,
 /// and one trailing state. Every row has the same shape, so a list keeps one rhythm; whole
 /// titles belong to the small widget, which shows one chat. A request waiting for approval
-/// keeps the row's height on a soft orange ground with Review.
+/// keeps the row's height on a soft orange ground with Review. Unread results set their title
+/// in semibold, as Mail does, and every blue dot — unread or working — sits in one column at
+/// the trailing edge, a running timer to its left.
 struct OkouChatRow: View {
+  static let dotColumn: CGFloat = 15
   let chat: OkouWidgetChat
   let model: OkouWidgetModel
+
+  private var isEmphasized: Bool { chat.state == .needsYou || chat.state == .finished }
 
   var body: some View {
     Link(destination: OkouWidgetLink.chat(chat, workspaceID: model.snapshot.workspaceID)) {
       HStack(spacing: 10) {
         leading.frame(width: 20)
         Text(chat.title)
-          .font(.okouWidget(14.5, weight: chat.state == .needsYou ? .semibold : .medium))
+          .font(.okouWidget(14.5, weight: isEmphasized ? .semibold : .regular))
           .foregroundStyle(OkouColor.foreground)
           .lineLimit(1)
           .privacySensitive()
@@ -306,16 +314,21 @@ struct OkouChatRow: View {
         .background(OkouStatusColor.warning.opacity(0.18), in: Capsule())
         .widgetAccentable()
     case .working:
-      HStack(spacing: 7) {
-        OkouWorkingDot()
+      HStack(spacing: 6) {
+        // A timer takes all the width it is offered; the cap and trailing alignment keep it
+        // against the dot.
         Text(chat.activityAt, style: .timer)
           .font(.okouWidget(13, mono: true))
           .foregroundStyle(OkouColor.mutedForeground)
           .monospacedDigit()
-          .frame(maxWidth: 52, alignment: .trailing)
+          .multilineTextAlignment(.trailing)
+          .frame(maxWidth: 58, alignment: .trailing)
+        OkouWorkingDot().frame(width: Self.dotColumn)
       }
     case .finished:
-      Circle().fill(OkouStatusColor.running).frame(width: 8, height: 8).widgetAccentable()
+      Circle().fill(OkouStatusColor.running).frame(width: 9, height: 9).widgetAccentable()
+        .frame(width: Self.dotColumn)
+        .accessibilityLabel("Unread")
     case .draft:
       OkouGlyph(name: "pencil", size: 13).foregroundStyle(OkouColor.quietMark)
     case .idle:
@@ -540,10 +553,8 @@ struct OkouRectangularWidget: View {
 
   private var summary: String {
     var parts: [String] = []
+    if !model.finished.isEmpty { parts.append(String(localized: "\(model.finished.count) unread")) }
     if !model.working.isEmpty { parts.append(String(localized: "\(model.working.count) working")) }
-    if !model.finished.isEmpty {
-      parts.append(String(localized: "\(model.finished.count) finished"))
-    }
     return parts.joined(separator: " · ")
   }
 }
@@ -567,10 +578,10 @@ struct OkouInlineWidget: View {
   var body: some View {
     if !model.needs.isEmpty {
       Text("Okou: \(model.needs.count) needs you")
+    } else if !model.finished.isEmpty {
+      Text("Okou: \(model.finished.count) unread")
     } else if !model.working.isEmpty {
       Text("Okou: \(model.working.count) working")
-    } else if !model.finished.isEmpty {
-      Text("Okou: \(model.finished.count) finished")
     } else {
       Text(model.greeting)
     }

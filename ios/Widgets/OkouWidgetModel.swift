@@ -79,12 +79,15 @@ struct OkouWidgetModel {
   /// Nothing waits, works or finished unread: the widget greets instead of listing.
   var isQuiet: Bool { needs.isEmpty && working.isEmpty && finished.isEmpty }
 
-  /// The one chat a small widget shows: what needs you, else what's working, else what finished.
-  var lead: OkouWidgetChat? { needs.first ?? working.first ?? finished.first }
+  /// The one chat a small widget shows: what needs you, else an unread result, else what's
+  /// working.
+  var lead: OkouWidgetChat? { needs.first ?? finished.first ?? working.first }
 
-  /// Rows in the order every list shows them, filled with the rest of the snapshot.
+  /// Rows in the order every list shows them — what needs you, unread results, then what is
+  /// still working — filled with the rest of the snapshot. Unread results lead the running
+  /// chats because they are the ones waiting to be read; a running chat needs nothing yet.
   func rows(_ count: Int) -> [OkouWidgetChat] {
-    var rows = needs + working + finished
+    var rows = needs + finished + working
     for chat in snapshot.chats where !rows.contains(where: { $0.id == chat.id }) {
       rows.append(chat)
     }
@@ -93,8 +96,8 @@ struct OkouWidgetModel {
 
   var mood: OkouWidgetMood {
     if !needs.isEmpty { return .needs }
-    if !working.isEmpty { return .working }
     if !finished.isEmpty { return .done }
+    if !working.isEmpty { return .working }
     switch moment {
     case .night: return .sleep
     case .evening: return .evening
