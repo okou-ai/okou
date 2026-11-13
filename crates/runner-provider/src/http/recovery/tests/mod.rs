@@ -5,6 +5,8 @@ use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
 
+mod pool;
+
 fn client(url: &str) -> HttpClient {
     HttpClient::new(HttpClientConfig {
         api_url: url.into(),

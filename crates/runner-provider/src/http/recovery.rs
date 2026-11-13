@@ -172,7 +172,9 @@ pub(super) async fn send(
         } else {
             Instant::now()
         };
-        let execution = diagnostics.scope(&context.client_request_id, client.execute(request));
+        let active_client = client.current();
+        let execution =
+            diagnostics.scope(&context.client_request_id, active_client.execute(request));
         let (result, finished) = if let Some((run_id, _)) = claim {
             transport_timing::observe_claim_attempt(context.clone(), run_id, started, execution)
                 .await
@@ -183,6 +185,19 @@ pub(super) async fn send(
         match &result {
             Ok(response) => diagnostics.response(response, &context.client_request_id, started),
             Err(error) => diagnostics.failure(&context, started, error),
+        }
+        if result
+            .as_ref()
+            .is_err_and(|error| api_transport_cause(error) == ApiTransportCause::ConnectionReset)
+            && client.retire(&active_client).is_err()
+        {
+            // Keep the original request failure and existing retry budget. A
+            // pool rebuild must never cancel healthy requests or leak settings.
+            info!(
+                client_request_id = %context.client_request_id,
+                endpoint = context.endpoint_label,
+                "API connection pool replacement failed"
+            );
         }
         let permit_available = if replay.is_some() && policy.retryable(&result) {
             if retry_permit.is_none() {

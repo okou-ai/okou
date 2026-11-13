@@ -6,10 +6,21 @@ use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents, find_captured_event};
 
-fn builder(client: reqwest::Client, url: String) -> ApiRequestBuilder {
+fn builder(
+    build: impl Fn() -> reqwest::ClientBuilder + Send + Sync + 'static,
+    url: String,
+) -> ApiRequestBuilder {
+    let client = Arc::new(
+        crate::http::ClientPool::new(move || {
+            build()
+                .build()
+                .map_err(|error| ProviderError::Internal(error.to_string()))
+        })
+        .unwrap(),
+    );
     ApiRequestBuilder {
         diagnostics: crate::http::TransportDiagnostics::new(),
-        builder: client.post(url).bearer_auth("private-test-token"),
+        builder: client.current().post(url).bearer_auth("private-test-token"),
         client,
         client_headers: ClientHeaders::new("observed-session".into(), "1.2.3").unwrap(),
         query: Vec::new(),
@@ -48,14 +59,16 @@ impl Service<HyperName> for FailedSystemLookup {
 async fn dns_failure_keeps_request_identity_error_and_phase_outcomes() {
     // Only the external system resolver result is substituted. The real
     // reqwest connector, error path, finalized headers and observed send run.
-    let client = reqwest::Client::builder()
-        .dns_resolver(TimedResolver(FailedSystemLookup))
-        .connector_layer(ConnectionTimingLayer)
-        .build()
-        .unwrap();
-    let prepared = builder(client, "http://localhost:9/claim?private=query".into())
-        .prepare("claim")
-        .unwrap();
+    let prepared = builder(
+        || {
+            reqwest::Client::builder()
+                .dns_resolver(TimedResolver(FailedSystemLookup))
+                .connector_layer(ConnectionTimingLayer)
+        },
+        "http://localhost:9/claim?private=query".into(),
+    )
+    .prepare("claim")
+    .unwrap();
     let context = prepared.context().clone();
     let captured = CapturedEvents::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
@@ -90,17 +103,19 @@ async fn dns_failure_keeps_request_identity_error_and_phase_outcomes() {
 #[tokio::test]
 async fn observed_request_preserves_json_headers_query_and_timeout_override() {
     let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .connector_layer(ConnectionTimingLayer)
-        .build()
-        .unwrap();
     let payload = serde_json::json!({"text": "private body / \"quoted\"", "number": 7});
-    let prepared = builder(client, format!("{}/claim?cursor=a%2Fb", server.url()))
-        .json(&payload)
-        .timeout(Duration::from_secs(1))
-        .prepare("claim")
-        .unwrap();
+    let prepared = builder(
+        || {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .connector_layer(ConnectionTimingLayer)
+        },
+        format!("{}/claim?cursor=a%2Fb", server.url()),
+    )
+    .json(&payload)
+    .timeout(Duration::from_secs(1))
+    .prepare("claim")
+    .unwrap();
     let context = prepared.context().clone();
     let captured = CapturedEvents::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
@@ -171,7 +186,7 @@ async fn speculative_connector_completion_cannot_change_a_frozen_attempt() {
             .boxed()
         }
     }
-    let prepared = builder(reqwest::Client::new(), "http://localhost/claim".into())
+    let prepared = builder(reqwest::Client::builder, "http://localhost/claim".into())
         .prepare("claim")
         .unwrap();
     let captured = CapturedEvents::default();
@@ -231,7 +246,7 @@ async fn connector_records_are_capped_and_dropped_futures_settle_once() {
     let captured = CapturedEvents::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     async {
-        let prepared = builder(reqwest::Client::new(), "http://localhost/claim".into())
+        let prepared = builder(reqwest::Client::builder, "http://localhost/claim".into())
             .prepare("claim")
             .unwrap();
         let observer = Observer::new(Instant::now(), RunId::new_v4(), prepared.context().clone());
