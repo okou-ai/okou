@@ -21,7 +21,7 @@ test("checkout observations distinguish invalid submission from a completed requ
         <label>Email<input name="email" type="email" required></label>
         <input name="${sentinel}" value="${sentinel}">
         <input type="hidden" value="${sentinel}">
-        <button type="submit">Subscribe</button>
+        <button type="submit" aria-label="Subscribe"><span hidden>${sentinel}</span>Subscribe</button>
       </form>
       <script>
         document.querySelector('form').addEventListener('submit', async (event) => {
@@ -61,6 +61,17 @@ test("checkout observations distinguish invalid submission from a completed requ
   assert.deepEqual(invalid.frames[0].formEvents?.invalidFields, ["email"]);
   assert.equal(invalid.frames[0].formEvents?.submitEvents, 0);
   assert.equal(invalid.frames[0].formEvents?.submitClickEvents, 1);
+  assert.deepEqual(
+    invalid.frames[0].formEvents?.interactions.map(({ type, target }) => ({
+      type,
+      target,
+    })),
+    [
+      { type: "pointerdown", target: "submit" },
+      { type: "pointerup", target: "submit" },
+      { type: "click", target: "submit" },
+    ],
+  );
   assert.deepEqual(observer.snapshot().requests, []);
   // Reading validity must not invoke checkValidity/reportValidity or change
   // focus, inputs or validation events while collecting failure evidence.

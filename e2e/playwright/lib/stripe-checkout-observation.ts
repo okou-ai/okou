@@ -22,6 +22,12 @@ interface StripeFormEvents {
   submitPointerDownEvents: number;
   submitPointerUpEvents: number;
   submitClickEvents: number;
+  readonly interactions: {
+    readonly type: "pointerdown" | "pointerup" | "click";
+    readonly target: "submit" | "email" | "input" | "button" | "other";
+    readonly elapsedMs: number;
+  }[];
+  omittedInteractions: number;
 }
 
 declare global {
@@ -68,6 +74,8 @@ export async function observeStripeCheckout(page: Page) {
       submitPointerDownEvents: 0,
       submitPointerUpEvents: 0,
       submitClickEvents: 0,
+      interactions: [],
+      omittedInteractions: 0,
     };
     window.__okouStripeFormEvents = events;
     document.addEventListener("submit", () => events.submitEvents++, true);
@@ -110,17 +118,40 @@ export async function observeStripeCheckout(page: Page) {
       document.addEventListener(
         type,
         (event) => {
-          const button =
-            event.target instanceof Element
-              ? event.target.closest("button")
-              : null;
-          if (
-            !button ||
-            !/^(subscribe|start trial)$/iu.test(
-              button.textContent?.trim() ?? "",
-            )
-          )
-            return;
+          const element = event.target instanceof Element ? event.target : null;
+          const button = element?.closest('button, [role="button"]') ?? null;
+          // Accessible names can omit decorative/hidden text. Prefer the
+          // native form-submit contract, then the label used by custom controls.
+          const submit =
+            button !== null &&
+            ((button instanceof HTMLButtonElement &&
+              button.type === "submit" &&
+              button.form !== null) ||
+              /^(subscribe|start trial)$/iu.test(
+                (button.getAttribute("aria-label") || button.textContent || "")
+                  .replace(/[\u200b\u00ad]/gu, "")
+                  .replace(/\s+/gu, " ")
+                  .trim(),
+              ));
+          const target = submit
+            ? "submit"
+            : element instanceof HTMLInputElement
+              ? element.name === "email" || element.type === "email"
+                ? "email"
+                : "input"
+              : button
+                ? "button"
+                : "other";
+          if (events.interactions.length === 32) {
+            events.interactions.shift();
+            events.omittedInteractions++;
+          }
+          events.interactions.push({
+            type,
+            target,
+            elapsedMs: Math.round(performance.now()),
+          });
+          if (!submit) return;
           if (type === "pointerdown") events.submitPointerDownEvents++;
           if (type === "pointerup") events.submitPointerUpEvents++;
           if (type === "click") events.submitClickEvents++;
