@@ -1658,13 +1658,13 @@
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
       "editReason": "修改原因",
+      "feedLabel": "動態",
       "homeCard": {
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",
         "navigation": "切換建議",
         "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
-      "feedLabel": "動態",
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",

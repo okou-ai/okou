@@ -1661,13 +1661,13 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "Feed",
       "homeCard": {
         "completeTitle": "Alles erledigt",
         "feedback": "Vorschlagsaktionen",
         "navigation": "Vorschläge durchsehen",
         "show": "Vorschlag {{index}} von {{total}} anzeigen"
       },
-      "feedLabel": "Feed",
       "label": "Vorschläge",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

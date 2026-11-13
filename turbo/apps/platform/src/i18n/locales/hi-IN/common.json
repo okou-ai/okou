@@ -1661,13 +1661,13 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "फ़ीड",
       "homeCard": {
         "completeTitle": "सब पूरा हो गया",
         "feedback": "सुझाव के विकल्प",
         "navigation": "सुझाव देखें",
         "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
       },
-      "feedLabel": "फ़ीड",
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

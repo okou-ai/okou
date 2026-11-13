@@ -1658,13 +1658,13 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "Feed",
       "homeCard": {
         "completeTitle": "Semua beres",
         "feedback": "Tindakan saran",
         "navigation": "Jelajahi saran",
         "show": "Tampilkan saran {{index}} dari {{total}}"
       },
-      "feedLabel": "Feed",
       "label": "Saran",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",

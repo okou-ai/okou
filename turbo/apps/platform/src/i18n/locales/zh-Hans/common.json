@@ -1658,13 +1658,13 @@
       "dismissRecorded": "已收起这条建议",
       "doneRecorded": "已记下，这件事已经处理了",
       "editReason": "修改原因",
+      "feedLabel": "动态",
       "homeCard": {
         "completeTitle": "全部处理完了",
         "feedback": "建议操作",
         "navigation": "切换建议",
         "show": "查看第 {{index}} 条建议（共 {{total}} 条）"
       },
-      "feedLabel": "动态",
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
       "lessRecorded": "会少推荐类似的建议",

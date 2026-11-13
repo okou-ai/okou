@@ -1658,13 +1658,13 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "feedLabel": "피드",
       "homeCard": {
         "completeTitle": "모두 확인했어요",
         "feedback": "제안 작업",
         "navigation": "제안 둘러보기",
         "show": "제안 {{index}}/{{total}} 보기"
       },
-      "feedLabel": "피드",
       "label": "제안",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
