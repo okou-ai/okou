@@ -58,19 +58,14 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
       navigation.loadViewIfNeeded()
-      installPopGestures(on: navigation)
-      navigation.delegate = self
-      navigation.applySelection = { [weak self] in self?.applySelection() }
-    }
-
-    private func installPopGestures(on navigation: UINavigationController) {
-      uninstallPopGestures()
       popGestures = [
         navigation.interactivePopGestureRecognizer,
         navigation.interactiveContentPopGestureRecognizer,
       ].compactMap { $0 }.map {
         WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: $0)
       }
+      navigation.delegate = self
+      navigation.applySelection = { [weak self] in self?.applySelection() }
     }
 
     func uninstallPopGestures() {
@@ -120,8 +115,6 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       }
       transitionTarget = nil
       sidebar.setTransitioning(false)
-      // Keep the visible page's current native recognizers coordinated after a pop or push.
-      installPopGestures(on: navigationController)
       navigationController.view.setNeedsLayout()
     }
   }
