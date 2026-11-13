@@ -24,45 +24,6 @@ function definitelyNotConnected(error: unknown): boolean {
   return error.cause instanceof Error && definitelyNotConnected(error.cause);
 }
 
-async function boundedBody(response: Response): Promise<unknown> {
-  if (!response.body) {
-    return null;
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const reading = await settleIncludingAbort(async () => {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) {
-        break;
-      }
-      size += next.value.byteLength;
-      if (size > 4096) {
-        await reader.cancel();
-        return false;
-      }
-      chunks.push(next.value);
-    }
-    return true;
-  });
-  reader.releaseLock();
-  if (!reading.ok) {
-    throw reading.error;
-  }
-  if (!reading.value) {
-    return null;
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-  return value;
-}
-
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
   args: {
@@ -108,7 +69,7 @@ export async function postRunnerDispatch(
     await response.body?.cancel();
     return "unknown";
   }
-  const received = await settleIncludingAbort(boundedBody(response));
+  const received = await settleIncludingAbort<unknown>(response.json());
   signal.throwIfAborted();
   if (!received.ok) {
     return "unknown";
