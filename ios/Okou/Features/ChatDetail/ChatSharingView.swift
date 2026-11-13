@@ -18,16 +18,20 @@ struct ChatSharingFooter: View {
         if sharing.visibility == nil {
           Button("Clear") { sharing.clear() }.disabled(sharing.isBusy)
             .font(.okou(.footnote))
+            .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
         }
       }
       HStack {
         if sharing.visibility != nil {
           Button("Manage link") { sharing.showsCreatedLink = true }
             .font(.okou(.callout))
+            .frame(minHeight: OkouControl.minimumTarget)
           Spacer()
           if let link = sharing.link {
             Button("Copy link", okouSymbol: "copy") { UIPasteboard.general.url = link }
+              .frame(minHeight: OkouControl.minimumTarget)
             ShareLink(item: link) { Label("Share…", okouSymbol: "share") }
+              .frame(minHeight: OkouControl.minimumTarget)
           }
         } else {
           Menu {
