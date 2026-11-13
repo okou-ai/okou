@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.22](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.21...nbd-cow-v0.5.22) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use safe owned nbd fixture socketpairs ([#46991](https://github.com/okou-ai/okou/issues/46991)) ([069b4bd](https://github.com/okou-ai/okou/commit/069b4bd6ab7d07530ff5035ca36afc0fe41ece7c))
+
 ## [0.5.21](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.20...nbd-cow-v0.5.21) (2026-11-11)
 
 ## [0.5.20](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.19...nbd-cow-v0.5.20) (2026-11-10)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/okou-ai/okou/compare/ios-v0.41.0...ios-v0.41.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** coordinate foreground model recovery with realtime ([#46997](https://github.com/okou-ai/okou/issues/46997)) ([68c1605](https://github.com/okou-ai/okou/commit/68c1605c029aa34ac48bac4f51df3b3e467c14b1))
+
 ## [0.41.0](https://github.com/okou-ai/okou/compare/ios-v0.40.0...ios-v0.41.0) (2026-11-13)
 
 

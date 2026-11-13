@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.67.6](https://github.com/okou-ai/okou/compare/api-v2.67.5...api-v2.67.6) (2026-11-13)
+
+
+### Bug Fixes
+
+* **browser:** commit orphan cleanup one chat at a time ([#46989](https://github.com/okou-ai/okou/issues/46989)) ([d53b8a3](https://github.com/okou-ai/okou/commit/d53b8a3ba9df615e9447d62bf57689e492679a9f))
+
 ## [2.67.5](https://github.com/okou-ai/okou/compare/api-v2.67.4...api-v2.67.5) (2026-11-13)
 
 
