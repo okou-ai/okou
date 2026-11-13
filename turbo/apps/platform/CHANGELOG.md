@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1125.0](https://github.com/okou-ai/okou/compare/app-v0.1124.0...app-v0.1125.0) (2026-11-13)
+
+
+### Features
+
+* **app:** restyle the home capability cards with flat-lay objects and a texture ground ([#47021](https://github.com/okou-ai/okou/issues/47021)) ([22c29b0](https://github.com/okou-ai/okou/commit/22c29b01b8dcd6dd7e860fce36a487d0e07c4f35))
+* **ios:** add plan and billing management to settings ([#47013](https://github.com/okou-ai/okou/issues/47013)) ([441cd8e](https://github.com/okou-ai/okou/commit/441cd8e0a323e3aa9b6f2b0863fed86b888c7de7))
+
+
+### Refactoring
+
+* **billing:** retire atom and custom plan issuance ([#47016](https://github.com/okou-ai/okou/issues/47016)) ([d193291](https://github.com/okou-ai/okou/commit/d193291916805888cf1f4952e249d65021f642b4))
+
+
+### Performance Improvements
+
+* **platform:** derive active vnc profile labels ([#47017](https://github.com/okou-ai/okou/issues/47017)) ([9f6d238](https://github.com/okou-ai/okou/commit/9f6d23810723e9f515b84495f41a1f8dee9a1a44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.1
+    * @okouai/core bumped to 8.836.0
+    * @okouai/ui bumped to 1.21.11
+
 ## [0.1124.0](https://github.com/okou-ai/okou/compare/app-v0.1123.2...app-v0.1124.0) (2026-11-13)
 
 
