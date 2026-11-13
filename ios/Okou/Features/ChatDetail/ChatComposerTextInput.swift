@@ -24,6 +24,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var identifier = "message-input"
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
+  var canSendFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)? = nil
   @Environment(\.isEnabled) private var isEnabled
 
@@ -102,7 +103,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.accessibilityLabel = placeholder
     view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
-    view.configureReturnKey(returnKeyPreference)
+    view.configureReturnKey(returnKeyPreference, canSend: canSendFromKeyboard)
     view.submitFromKeyboard = submitFromKeyboard
     view.acceptsImages = acceptsImages && isEnabled
     view.pasteImages = pasteImages
@@ -274,6 +275,8 @@ final class ComposerTextView: UITextView {
   var submitFromKeyboard: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
   private(set) var isSettlingComposition = false
+  private var needsReturnKeyReload = false
+  private var needsReturnKeySessionRestart = false
   private var wantsFocus = false
   var composerTextAttributes: [NSAttributedString.Key: Any] {
     ComposerAttributedDocument.attributes(
@@ -300,6 +303,33 @@ final class ComposerTextView: UITextView {
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func requestReturnKeyReload(restartInputSession: Bool) {
+    needsReturnKeyReload = true
+    needsReturnKeySessionRestart = needsReturnKeySessionRestart || restartInputSession
+    // A fresh input session can notify the focus binding; leave the SwiftUI update first.
+    DispatchQueue.main.async { [weak self] in self?.reloadReturnKeyIfNeeded() }
+  }
+
+  private func reloadReturnKeyIfNeeded() {
+    guard needsReturnKeyReload else { return }
+    // Refreshing keyboard traits must never interrupt a marked-text candidate.
+    guard isCurrent(), markedTextRange == nil, !isSettlingComposition else { return }
+    let restartInputSession = needsReturnKeySessionRestart
+    needsReturnKeyReload = false
+    needsReturnKeySessionRestart = false
+    guard isFirstResponder else { return }
+    if restartInputSession && !hasText {
+      // iOS can retain the old disabled key after reloadInputViews. Refresh only
+      // this empty editor's input session, preserving its document and responder.
+      UIView.performWithoutAnimation {
+        resignFirstResponder()
+        if isCurrent() { becomeFirstResponder() }
+      }
+    } else {
+      reloadInputViews()
+    }
+  }
 
   /// Programmatic rich edits join this text view's undo manager; UIKit continues
   /// to own ordinary typing, selection replacement, deletion and marked text.
@@ -407,6 +437,7 @@ final class ComposerTextView: UITextView {
     DispatchQueue.main.async { [weak self] in
       guard let self, isCurrent() else { return }
       isSettlingComposition = false
+      reloadReturnKeyIfNeeded()
       refreshAppearance()
       mentionEditor?.updateMention(in: self)
       updateWorkflows(false)

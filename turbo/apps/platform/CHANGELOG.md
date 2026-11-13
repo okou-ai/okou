@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1122.2](https://github.com/okou-ai/okou/compare/app-v0.1122.1...app-v0.1122.2) (2026-11-13)
+
+
+### Performance Improvements
+
+* **app:** narrow connector entry subscriptions ([#46934](https://github.com/okou-ai/okou/issues/46934)) ([c3d6e66](https://github.com/okou-ai/okou/commit/c3d6e66a7704c8b5572e16454a010e1eb7bfa466))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.58.0
+    * @okouai/core bumped to 8.834.2
+    * @okouai/ui bumped to 1.21.7
+
 ## [0.1122.1](https://github.com/okou-ai/okou/compare/app-v0.1122.0...app-v0.1122.1) (2026-11-13)
 
 
