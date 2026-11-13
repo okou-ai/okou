@@ -33,7 +33,8 @@ final class ChatShareGroupTests: XCTestCase {
           id: "revoke", revokesEventId: "revoked", createdAt: .now, eventType: .controlRevoke),
         attachment, output("answer", runID: "run"),
       ], recovering: false)
-    XCTAssertEqual(ChatShareGroup.groups(in: history).map(\.eventIDs), [["answer"]])
+    XCTAssertEqual(
+      ChatShareGroup.groups(in: history).map(\.eventIDs), [["attachment"], ["answer"]])
     XCTAssertEqual(ChatShareGroup.answerEventIDs("answer", in: history), ["attachment", "answer"])
   }
 

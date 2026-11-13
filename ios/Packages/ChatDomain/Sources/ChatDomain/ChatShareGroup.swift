@@ -10,13 +10,20 @@ public struct ChatShareGroup: Equatable, Identifiable, Sendable {
   }
 
   public var eventIDs: [String] { messages.map(\.id) }
-  public var textBytes: Int { messages.reduce(0) { $0 + Self.shareText($1).utf8.count } }
+  public var textBytes: Int {
+    messages.reduce(0) { total, message in
+      total + Self.shareText(message).utf8.count
+        + message.attachments.reduce(0) { $0 + $1.filename.utf8.count }
+    }
+  }
 
   public static func groups(in history: ChatHistory) -> [ChatShareGroup] {
     displayGroups(in: history).compactMap { group in
       let messages: [ChatMessage]
       if group.first?.role == .user {
-        messages = group.filter { !$0.isError && !shareText($0).isEmpty }
+        messages = group.filter {
+          !$0.isError && (!shareText($0).isEmpty || !$0.attachments.isEmpty)
+        }
       } else {
         messages = group.last(where: { $0.role == .assistant }).map { [$0] } ?? []
       }
