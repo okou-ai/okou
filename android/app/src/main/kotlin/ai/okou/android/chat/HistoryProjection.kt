@@ -90,9 +90,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         .add(row)
     val ordered =
         turns.values.filter { it.none { row -> row.id in queued } }.flatten() +
-            visible
-                .filter { it.id in queued }
-                .sortedWith(compareBy<HistoryEvent> { it.createdAt }.thenBy { it.id })
+            visible.filter { it.id in queued }
     val messages =
         ordered.mapNotNull { row ->
             val payload = row.payload

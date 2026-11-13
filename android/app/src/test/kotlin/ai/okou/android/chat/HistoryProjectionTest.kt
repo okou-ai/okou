@@ -106,8 +106,19 @@ class HistoryProjectionTest {
                 null,
                 """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Scheduled work"}]}}""",
             )
-        val result = transcript(waiting, reply, automation)
-        assertEquals(listOf("waiting", "reply", "scheduled"), result.messages.map { it.id })
+        val nextAutomation =
+            event(
+                "a-later-automation",
+                4,
+                "input.automation",
+                null,
+                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Next scheduled work"}]}}""",
+            )
+        val result = transcript(waiting, reply, automation, nextAutomation)
+        assertEquals(
+            listOf("waiting", "reply", "scheduled", "a-later-automation"),
+            result.messages.map { it.id },
+        )
         assertFalse(result.messages.first().queued)
         assertTrue(result.messages.last().queued)
         assertEquals(HistoryExecution.Running, result.execution)

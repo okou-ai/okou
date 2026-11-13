@@ -43,9 +43,6 @@ class HistoryEvent private constructor(val wire: JsonObject) {
     val revokesId: String?
         get() = wire["revokesEventId"]?.jsonPrimitive?.contentOrNull
 
-    val createdAt: String
-        get() = wire.getValue("createdAt").jsonPrimitive.content
-
     val payload: JsonObject?
         get() = wire["payload"]?.takeUnless { it === JsonNull }?.jsonObject
 
