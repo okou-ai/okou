@@ -185,6 +185,7 @@ struct ChatSidebarView: View {
       Text("Your chats will be kept and moved out of this project.")
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
+    .onChange(of: store.sidebar.filter) { _, _ in fadingThreadIDs.removeAll() }
     .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
