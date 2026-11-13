@@ -102,7 +102,8 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
-  @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
+  @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(
+    models: modelStore, lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var search = ChatSearchStore(
     sync: sync, didFail: { [weak self] in self?.handle($0) })
   /// Previews of results opened from workspace search, which belong to no chat.
@@ -283,7 +284,8 @@ final class WorkspaceStore {
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
       didSettle: { [weak self] in self?.requestPrune() },
-      modelSelection: ChatModelSelectionStore(models: modelStore, thread: thread),
+      modelSelection: ChatModelSelectionStore(
+        models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
       measurementScope: measurementScope,
