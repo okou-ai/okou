@@ -329,7 +329,8 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
+import type { ComposerLayout } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -3553,6 +3554,7 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     <ChatThreadBottomBar
       thread={thread}
       layout={capabilitiesEnabled ? "home" : "default"}
+      discoveryInContent={showCapabilities}
     />
   );
   return (
@@ -3622,10 +3624,11 @@ function SharedThreadCreatedLink({
 function ChatThreadBottomBar({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  /** `home` while an empty thread shows the capability home above it. */
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
@@ -3639,7 +3642,11 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} layout={layout} />,
+      <ChatThreadComposer
+        thread={thread}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />,
     );
   }
 
@@ -3931,9 +3938,11 @@ function RecommendedFollowupList({
 function ChatThreadComposer({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   // The pane's canvas runs behind the composer the way it runs behind the
@@ -3942,7 +3951,11 @@ function ChatThreadComposer({
   // own edge fade handles the boundary above it.
   return (
     <ChatComposerFooter ref={composerLayoutRef}>
-      <ChatComposer signals={thread.composer} layout={layout} />
+      <ChatComposer
+        signals={thread.composer}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />
     </ChatComposerFooter>
   );
 }
