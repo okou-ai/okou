@@ -15,6 +15,7 @@ import {
   type CreditCheckoutRequest,
   type UsagePackMigrationStateResponse,
 } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import {
   act,
@@ -294,11 +295,21 @@ async function openBillingTab(path = "/?settings=billing"): Promise<void> {
   });
 }
 
-test("The iOS billing management link opens the existing Billing settings", async () => {
-  mockBillingStory();
-  await openBillingTab("/settings/billing");
-  expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
-});
+test.each([false, true])(
+  "The iOS billing management link opens Billing settings (My Okou=%s)",
+  async (singleAgent) => {
+    mockBillingStory();
+    await setupPage({
+      context,
+      path: "/settings/billing",
+      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
+    });
+    const settings = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      within(settings).findByRole("heading", { name: "Billing" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 function inAppBillingPreviewFields() {
   return {
