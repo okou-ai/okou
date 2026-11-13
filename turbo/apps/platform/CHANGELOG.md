@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1122.3](https://github.com/okou-ai/okou/compare/app-v0.1122.2...app-v0.1122.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **platform:** remove obsolete agent lists from project deletion copy ([#46956](https://github.com/okou-ai/okou/issues/46956)) ([39cae12](https://github.com/okou-ai/okou/commit/39cae1298e2c6e8e4117990743ba10f224605430))
+
 ## [0.1122.2](https://github.com/okou-ai/okou/compare/app-v0.1122.1...app-v0.1122.2) (2026-11-13)
 
 

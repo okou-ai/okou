@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.67.3](https://github.com/okou-ai/okou/compare/api-v2.67.2...api-v2.67.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **api:** require ios clients to upgrade to 0.39.0 ([#46947](https://github.com/okou-ai/okou/issues/46947)) ([aee6838](https://github.com/okou-ai/okou/commit/aee6838bdbaef0b811e31b2e1d980d6bdc441279))
+
 ## [2.67.2](https://github.com/okou-ai/okou/compare/api-v2.67.1...api-v2.67.2) (2026-11-13)
 
 
