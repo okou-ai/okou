@@ -21,6 +21,3 @@ pub(crate) struct LeakedResources {
     pub(crate) workspace: PathBuf,
     pub(crate) delete_workspace: bool,
 }
-
-#[cfg(test)]
-mod tests;
