@@ -45,6 +45,8 @@ export interface ViewerError {
 export interface ViewerTarget {
   readonly id: string;
   readonly title: string;
+  /** Display/matching metadata only; target identity owns tab switching. */
+  readonly url: string;
   /** Target metadata for presentation; never input or membership authority. */
   readonly blank: boolean;
 }
@@ -82,7 +84,11 @@ export interface ViewerHistory {
 }
 
 export type NavigationAction =
-  "back" | "forward" | "reload" | { readonly url: string };
+  | "back"
+  | "forward"
+  | "reload"
+  | { readonly url: string }
+  | { readonly search: string };
 
 export type NavigationReceipt =
   | {

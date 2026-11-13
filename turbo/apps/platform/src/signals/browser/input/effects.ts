@@ -3,8 +3,9 @@ import type { ProtocolMapping } from "devtools-protocol/types/protocol-mapping";
 import { detach, Reason } from "../../utils.ts";
 import type { CdpClient } from "../cdp/client.ts";
 import { CdpFault, requestDetails } from "../cdp/errors.ts";
+import type { NativeSearch } from "../navigation/search.ts";
 
-type Method =
+type ProtocolMethod =
   | "Input.dispatchKeyEvent"
   | "Input.dispatchMouseEvent"
   | "Input.insertText"
@@ -12,10 +13,20 @@ type Method =
   | "Page.navigate"
   | "Page.reload"
   | "Page.navigateToHistoryEntry";
-type Params<M extends Method> = ProtocolMapping.Commands[M]["paramsType"][0];
-export type InputOperation<M extends Method = Method> = {
-  [K in M]: { readonly method: K; readonly params: Params<K> };
-}[M];
+type Method = ProtocolMethod | "search";
+type Params<M extends ProtocolMethod> =
+  ProtocolMapping.Commands[M]["paramsType"][0];
+type CdpInputOperation = {
+  [K in ProtocolMethod]: { readonly method: K; readonly params: Params<K> };
+}[ProtocolMethod];
+export type InputOperation<M extends Method = Method> = Extract<
+  | CdpInputOperation
+  | {
+      readonly method: "search";
+      readonly params: { readonly tabId: number; readonly text: string };
+    },
+  { readonly method: M }
+>;
 export type InputReceipt<T = unknown> =
   | { readonly ok: true; readonly result: T }
   | { readonly ok: false; readonly error: unknown };
@@ -45,10 +56,15 @@ function receiptFault(
   );
 }
 
-function createEffectState(client: CdpClient, sessionId: string) {
+function createEffectState(
+  client: CdpClient,
+  sessionId: string,
+  search: NativeSearch,
+) {
   return {
     client,
     sessionId,
+    search,
     receipts$: state<ReadonlyMap<object, Promise<InputReceipt>>>(new Map()),
     failed$: state<CdpFault | null>(null),
     imeSupported$: state(false),
@@ -82,13 +98,20 @@ function createEffectReceipts(graph: EffectState) {
         },
       };
       const [result] = await Promise.allSettled([
-        client.request(
-          operation.method,
-          operation.params,
-          sessionId,
-          undefined,
-          signal,
-        ),
+        operation.method === "search"
+          ? set(
+              graph.search.request$,
+              operation.params.tabId,
+              operation.params.text,
+              signal,
+            )
+          : client.request(
+              operation.method,
+              operation.params,
+              sessionId,
+              undefined,
+              signal,
+            ),
       ]);
       signal.throwIfAborted();
       if (result.status === "fulfilled") {
@@ -236,8 +259,12 @@ function createEffectRequests(
 }
 
 /** Native receipts retain their original session, independently of input admission. */
-export function createInputEffects(client: CdpClient, sessionId: string) {
-  const graph = createEffectState(client, sessionId);
+export function createInputEffects(
+  client: CdpClient,
+  sessionId: string,
+  search: NativeSearch,
+) {
+  const graph = createEffectState(client, sessionId, search);
   const receipts = createEffectReceipts(graph);
   return createEffectRequests(graph, receipts);
 }

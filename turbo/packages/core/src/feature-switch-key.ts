@@ -50,6 +50,7 @@ export enum FeatureSwitchKey {
   ChatMessageVisualizationSummary = "_chatMessageVisualizationSummary",
   ChatActionFollowups = "chatActionFollowups",
   CloudBrowserPanel = "cloudBrowserPanel",
+  BrowserAddressSuggestions = "_browserAddressSuggestions",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",

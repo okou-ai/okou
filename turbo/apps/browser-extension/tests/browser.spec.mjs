@@ -585,7 +585,7 @@ test("handles new creation and instant opener loss after a worker restart", asyn
 test("handles an opener disappearing during cold wake without saved state", async () => {
   const b = await browser();
   try {
-    expect(b.manifest.permissions).toEqual(["webNavigation", "tabs"]);
+    expect(b.manifest.permissions).toEqual(["webNavigation", "tabs", "search"]);
     const a = await b.root("cold-A");
     const sibling = await b.root("cold-B");
     const anchor = await b.worker.evaluate((windowId) => {

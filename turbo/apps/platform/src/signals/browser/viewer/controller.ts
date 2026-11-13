@@ -53,6 +53,7 @@ import {
 import { createInputSession } from "../input/session.ts";
 import type { NativeInputHost } from "../input/port.ts";
 import { createNavigationData } from "../navigation/data.ts";
+import { createNativeSearch } from "../navigation/search.ts";
 import type { InputStop } from "../input/lifecycle.ts";
 import {
   positive,
@@ -269,6 +270,8 @@ function createSessionReadiness(
 }
 
 interface SelectedSessionHost {
+  readonly native: OkouBrowserClient;
+  readonly windowId: number;
   readonly waitForAdmission$: Command<
     Promise<void>,
     [SelectionOwner, AbortSignal]
@@ -321,13 +324,15 @@ function createSelectedSession(
     attached.sessionId,
     admitted$,
   );
-  const input = createInputSession(
-    attached,
-    active$,
-    geometry,
-    nativeHost,
+  const input = createInputSession(attached, active$, geometry, nativeHost, {
     navigation,
-  );
+    search: createNativeSearch(
+      attached.owner.targetId,
+      host.windowId,
+      host.native,
+      directory,
+    ),
+  });
   const failure$ = state<unknown>(null);
   const favicon$ = state<FaviconDocument>({
     wanted: true,
@@ -1315,6 +1320,8 @@ function createSelectedSessionsGraph(
     | "captureStartedState$"
     | "captureUpdated$"
     | "directory$"
+    | "nativeState$"
+    | "connection"
     | "nativeHost"
     | "model"
     | "selectedOwner$"
@@ -1360,7 +1367,8 @@ function createSelectedSessionsGraph(
   const selectedSession$: Computed<SelectedSession | null> = computed((get) => {
     const attached = get(attachedState$);
     const directory = get(directory$);
-    if (!attached || !directory) {
+    const native = get(context.nativeState$);
+    if (!attached || !directory || !native) {
       return null;
     }
     const alive$ = computed((get) => {
@@ -1387,6 +1395,8 @@ function createSelectedSessionsGraph(
         sink,
         intent$: context.model.intent$,
         directory,
+        native,
+        windowId: context.connection.windowId,
         nativeHost,
         settings$,
         failed$: get(links$).captureFailed$,

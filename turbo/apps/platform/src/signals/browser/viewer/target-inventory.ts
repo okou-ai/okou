@@ -141,7 +141,12 @@ function journal(state: TargetInventory, id: string): InventoryRound | null {
 function bounded(entries: ReadonlyMap<string, InventoryEntry>): void {
   let bytes = 0;
   for (const [id, entry] of entries) {
-    bytes += 256 + (id.length + (entry.target?.title.length ?? 0)) * 2;
+    bytes +=
+      256 +
+      (id.length +
+        (entry.target?.title.length ?? 0) +
+        (entry.target?.url.length ?? 0)) *
+        2;
     if (bytes > inventoryBudgetBytes) {
       throw new CdpFault(
         "protocol",

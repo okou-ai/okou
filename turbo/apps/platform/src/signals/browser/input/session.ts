@@ -11,6 +11,7 @@ import type { EditingContext, NativeInputHost } from "./port.ts";
 import type { InputGeometry, Point } from "../display/geometry.ts";
 import { navigationAddress } from "./address.ts";
 import { createInputEffects } from "./effects.ts";
+import type { NativeSearch } from "../navigation/search.ts";
 import {
   createInputLifecycle,
   type InputOwner,
@@ -86,16 +87,22 @@ interface SessionConnection {
   readonly sessionId: string;
 }
 
+interface PageNavigation {
+  readonly navigation: NavigationData;
+  readonly search: NativeSearch;
+}
+
 function createSessionState(
   connection: SessionConnection,
   admitted$: Computed<boolean>,
   geometry: DisplayViewport,
   nativeHost: NativeInputHost,
-  navigation: NavigationData,
+  page: PageNavigation,
 ) {
+  const { navigation, search } = page;
   const { client, sessionId } = connection;
   const lifecycle = createInputLifecycle(sessionId);
-  const effects = createInputEffects(client, sessionId);
+  const effects = createInputEffects(client, sessionId, search);
   const lifetime$ = state<object | null>(null);
   const resetScope$ = resetSignal();
   const retiring$ = state(false);
@@ -151,6 +158,7 @@ function createSessionState(
     geometry,
     nativeHost,
     navigation,
+    search,
     lifecycle,
     effects,
     lifetime$,
@@ -1064,6 +1072,20 @@ function createNavigationAdmission(graph: SessionActions) {
   );
 }
 
+function normalizeNavigation(action: NavigationAction): NavigationAction {
+  if (typeof action === "string" || "search" in action) {
+    return action;
+  }
+  const url = navigationAddress(action.url);
+  if (!url) {
+    throw new CdpFault(
+      "input",
+      "Enter a page address, such as example.com or about:blank.",
+    );
+  }
+  return { url };
+}
+
 function createSessionNavigation(graph: SessionActions) {
   const checkNavigation$ = createNavigationAdmission(graph);
   const {
@@ -1086,14 +1108,7 @@ function createSessionNavigation(graph: SessionActions) {
       if (!get(accepting$)) {
         throw new CdpFault("input", "Input is unavailable.");
       }
-      const url =
-        typeof action === "string" ? "" : navigationAddress(action.url);
-      if (typeof action !== "string" && !url) {
-        throw new CdpFault(
-          "input",
-          "Enter a page address, such as example.com or about:blank.",
-        );
-      }
+      const target = normalizeNavigation(action);
       const lifetime = get(lifetime$);
       if (!lifetime) {
         throw new DOMException("Navigation cancelled", "AbortError");
@@ -1119,17 +1134,17 @@ function createSessionNavigation(graph: SessionActions) {
       signal.throwIfAborted();
       set(checkNavigation$, gate, lifetime, owner);
       let operation: Promise<unknown>;
-      if (action === "reload") {
+      if (target === "reload") {
         operation = set(effects.request$, {
           method: "Page.reload",
           params: undefined,
         });
-      } else if (action === "back" || action === "forward") {
+      } else if (target === "back" || target === "forward") {
         const history = await set(navigation.readHistory$, signal);
         signal.throwIfAborted();
         set(checkNavigation$, gate, lifetime, owner);
         const entry =
-          history.entries[history.currentIndex + (action === "back" ? -1 : 1)];
+          history.entries[history.currentIndex + (target === "back" ? -1 : 1)];
         if (!entry) {
           return { kind: "unavailable" };
         }
@@ -1137,10 +1152,18 @@ function createSessionNavigation(graph: SessionActions) {
           method: "Page.navigateToHistoryEntry",
           params: { entryId: entry.id },
         });
+      } else if ("search" in target) {
+        const tabId = await set(graph.search.prepare$, signal);
+        signal.throwIfAborted();
+        set(checkNavigation$, gate, lifetime, owner);
+        operation = set(effects.request$, {
+          method: "search",
+          params: { tabId, text: target.search },
+        });
       } else {
         operation = set(effects.request$, {
           method: "Page.navigate",
-          params: { url: url! },
+          params: { url: target.url },
         });
       }
       const result = await operation;
@@ -1151,7 +1174,7 @@ function createSessionNavigation(graph: SessionActions) {
       if (isRecord(result) && result.errorText) {
         throw new NativeNavigationFault(result.errorText);
       }
-      if (typeof action === "string") {
+      if (typeof action === "string" || "search" in action) {
         return { kind: "ack" };
       }
       if (!isRecord(result) || typeof result.frameId !== "string") {
@@ -1178,7 +1201,7 @@ export function createInputSession(
   admitted$: Computed<boolean>,
   geometry: DisplayViewport,
   nativeHost: NativeInputHost,
-  navigation: NavigationData,
+  page: PageNavigation,
 ) {
   const { client, sessionId } = connection;
   const values = createSessionState(
@@ -1186,7 +1209,7 @@ export function createInputSession(
     admitted$,
     geometry,
     nativeHost,
-    navigation,
+    page,
   );
   const failed$ = command(({ set }, error?: unknown) => {
     set(transitions.failed$, error);

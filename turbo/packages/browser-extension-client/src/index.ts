@@ -54,6 +54,10 @@ export interface Operations {
     result: readonly NativeTab[];
   };
   activateTab: { args: { tabId: number }; result: NativeTab };
+  search: {
+    args: { tabId: number; windowId: number; text: string };
+    result: null;
+  };
   closeTab: { args: { tabId: number }; result: null };
   closeWindow: { args: { windowId: number }; result: null };
   beginProbe: { args: { nonce: string }; result: null };
@@ -147,6 +151,11 @@ export type BridgeFailureReason =
   | "response-sequence-ahead";
 
 type BridgeCdpMethod =
+  | "Browser.getWindowForTarget"
+  | "Emulation.setFocusEmulationEnabled"
+  | "Page.bringToFront"
+  | "Page.getFrameTree"
+  | "Page.createIsolatedWorld"
   | "Target.attachToBrowserTarget"
   | "Target.attachToTarget"
   | "Target.setDiscoverTargets"
@@ -247,6 +256,7 @@ export class OkouBrowserClient {
   private workerChanged: (() => void) | undefined;
   private epoch: string | undefined;
   private sequence: number | undefined;
+  private capabilities: readonly string[] = [];
   private readonly bootstrapEvents: NativeEvent[] = [];
   private workerAlive = true;
   private closing: Promise<void> | undefined;
@@ -459,6 +469,7 @@ export class OkouBrowserClient {
     )
       throw this.failure("unavailable", "capability-missing");
     this.epoch = hello.epoch;
+    this.capabilities = hello.value.capabilities;
     this.sequence = hello.sequence;
     for (const event of this.bootstrapEvents.splice(0)) this.acceptEvent(event);
     this.current();
@@ -811,6 +822,10 @@ export class OkouBrowserClient {
     };
   }
 
+  supports(capability: string): boolean {
+    return !this.signal.aborted && this.capabilities.includes(capability);
+  }
+
   async call<M extends keyof Operations>(
     method: M,
     args: Operations[M]["args"],
@@ -866,6 +881,110 @@ export class OkouBrowserClient {
     if (value.ok === false)
       throw this.failure("native", "native-operation-failed");
     return value as unknown as Observation<Operations[M]["result"]>;
+  }
+
+  /** Explicit activation plus isolated-world visibility/focus proves native identity, including blank pages. */
+  async identifyFocusedTarget(
+    targetId: string,
+    windowId: number,
+    signal: AbortSignal,
+  ): Promise<NativeTab | null> {
+    signal.throwIfAborted();
+    const page = await this.attach("page", targetId);
+    const parent = this.browserSession;
+    let changed = false;
+    let activated: number | undefined;
+    const release = this.onEvent((event) => {
+      if (event.kind === "tab-replaced") {
+        changed = true;
+        return;
+      }
+      if (
+        [
+          "tab-activated",
+          "tab-detached",
+          "tab-attached",
+          "tab-removed",
+          "tab-replaced",
+          "window-removed",
+        ].includes(event.kind) &&
+        (event.windowId === windowId || event.oldWindowId === windowId)
+      ) {
+        if (event.kind === "tab-activated" && event.tabId !== undefined) {
+          changed ||= activated !== undefined && activated !== event.tabId;
+          activated = event.tabId;
+        } else {
+          changed = true;
+        }
+      }
+    });
+    const window = async () => {
+      return record(
+        await this.request("Browser.getWindowForTarget", { targetId }, parent),
+      ).windowId;
+    };
+    try {
+      signal.throwIfAborted();
+      if ((await window()) !== windowId) return null;
+      signal.throwIfAborted();
+      // Explicit user search takes real focus. Another automation client may
+      // have emulated both focus and visibility on a background page.
+      await this.request(
+        "Emulation.setFocusEmulationEnabled",
+        { enabled: false },
+        page,
+      );
+      signal.throwIfAborted();
+      await this.request("Page.bringToFront", {}, page);
+      signal.throwIfAborted();
+      activated = undefined;
+      const tabs = await this.call("listTabs", { windowId });
+      signal.throwIfAborted();
+      const tree = record(await this.request("Page.getFrameTree", {}, page));
+      const frameId = record(record(tree.frameTree).frame).id;
+      if (typeof frameId !== "string")
+        throw this.failure("protocol", "invalid-response");
+      const world = record(
+        await this.request(
+          "Page.createIsolatedWorld",
+          {
+            frameId,
+            worldName: "okou-search-identity",
+          },
+          page,
+        ),
+      );
+      if (!Number.isSafeInteger(world.executionContextId))
+        throw this.failure("protocol", "invalid-response");
+      const focus = record(
+        await this.request(
+          "Runtime.evaluate",
+          {
+            expression:
+              'document.visibilityState === "visible" && document.hasFocus()',
+            contextId: world.executionContextId,
+            returnByValue: true,
+          },
+          page,
+        ),
+      );
+      const currentWindow = await window();
+      signal.throwIfAborted();
+      this.current();
+      const active = tabs.value.filter((tab) => {
+        return tab.active && tab.windowId === windowId;
+      });
+      return currentWindow === windowId &&
+        !changed &&
+        active.length === 1 &&
+        (activated === undefined || activated === active[0]!.id) &&
+        record(focus.result).value === true
+        ? active[0]!
+        : null;
+    } finally {
+      release();
+      if (this.pages.delete(page)) await this.detach(page, parent);
+    }
   }
 
   /** Read-only correlation; unavailable contexts return null, never guessed IDs. */

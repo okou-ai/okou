@@ -47,6 +47,9 @@ import {
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import { SearchUnavailableFault } from "../../signals/browser/navigation/search.ts";
+import type { AddressSuggestion } from "../../signals/browser/navigation/suggestions.ts";
+import { BrowserAddressAutocomplete } from "./browser-address.tsx";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
@@ -66,16 +69,20 @@ import {
 function BrowserOperationError({
   occurrences,
   duplicateMessage,
+  message: suppliedMessage,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
   readonly occurrences: readonly (object | false | null)[];
   readonly duplicateMessage?: string;
+  readonly message?: string;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const message = t(($) => {
-    return $.browserViewer.operationFailed;
-  });
+  const message =
+    suppliedMessage ??
+    t(($) => {
+      return $.browserViewer.operationFailed;
+    });
   return (
     <TransientAlert
       occurrences={occurrences.filter((occurrence): occurrence is object => {
@@ -669,7 +676,7 @@ function BrowserAddress({
   readonly signals: BrowserSignals;
   readonly canSubmit: boolean;
   readonly navigating: boolean;
-  readonly onSubmit: () => void;
+  readonly onSubmit: (suggestion?: AddressSuggestion) => void;
 }) {
   const { t } = useTranslation();
   const address = useGet(signals.address$);
@@ -680,6 +687,17 @@ function BrowserAddress({
   const reset = useSet(signals.resetAddress$);
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
+  const suggestionsEnabled = useGet(signals.suggestions.enabled$);
+  if (suggestionsEnabled) {
+    return (
+      <BrowserAddressAutocomplete
+        signals={signals}
+        canSubmit={canSubmit}
+        navigating={navigating}
+        onSubmit={onSubmit}
+      />
+    );
+  }
   return (
     <>
       <form
@@ -836,14 +854,29 @@ function BrowserNavigation({
         signals={signals}
         canSubmit={canSubmitAddress}
         navigating={navigating}
-        onSubmit={() => {
-          detach(navigate("submit-address", pageSignal), Reason.DomCallback);
+        onSubmit={(suggestion) => {
+          detach(
+            navigate(
+              suggestion ? { suggestion } : "submit-address",
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
         }}
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
         occurrences={failures}
+        message={
+          operation.state === "hasError" &&
+          operation.error instanceof NavigationFault &&
+          operation.error.cause instanceof SearchUnavailableFault
+            ? t(($) => {
+                return $.browserViewer.searchUnavailable;
+              })
+            : undefined
+        }
         className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
       />
     </div>

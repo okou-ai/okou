@@ -217,6 +217,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.BrowserAddressSuggestions]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Browser address suggestions",
+    description: "Find open tabs and search with the Browser's default engine.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
