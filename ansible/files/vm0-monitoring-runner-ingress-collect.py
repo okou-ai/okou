@@ -153,6 +153,7 @@ def request_health(hostname: str, runner_id: str, token: str, deadline: float) -
         try:
             process.stdin.close()
         except OSError:
+            # A failed curl may already have closed its credential pipe.
             pass
         process.stdout.close()
         process.stderr.close()
@@ -284,6 +285,7 @@ def publish(directory_path: Path, results: dict[str, int]) -> None:
         try:
             os.unlink(temporary, dir_fd=directory)
         except FileNotFoundError:
+            # Successful atomic replacement already consumed the staging name.
             pass
         os.close(directory)
 

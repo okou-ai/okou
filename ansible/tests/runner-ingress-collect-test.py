@@ -44,6 +44,7 @@ class HealthHandler(http.server.BaseHTTPRequestHandler):
         try:
             self.wfile.write(body)
         except OSError:
+            # Failure/timeout cases deliberately close the peer before it writes.
             pass
 
 
