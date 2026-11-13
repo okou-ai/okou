@@ -30,6 +30,11 @@ def valid_status_path(value):
     )
 
 
+def status_wait_advanced(before, after):
+    """Require one observed status wait between exact unsigned 64-bit counters."""
+    return pressure.integer(before) and pressure.integer(after) and after == before + 1
+
+
 def status(value, sandbox=None, previous=None):
     if not isinstance(value, dict):
         raise ValueError("status publication has no original JSON")
@@ -112,7 +117,7 @@ def validate(directory):
         if (not all(report.positive_integer(t) for t in (io_released, polled, injected))
                 or not events[2]["monotonic_ns"] < io_released < terminal[4]["monotonic_ns"]
                 < polled < injected < events[3]["monotonic_ns"]
-                or not pressure.integer(before) or not pressure.integer(after) or after != before + 1):
+                or not status_wait_advanced(before, after)):
             raise ValueError("status fault was not after complete IO and a positive final wait")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, injected, (0, 0))
         if first != second or first in runners:

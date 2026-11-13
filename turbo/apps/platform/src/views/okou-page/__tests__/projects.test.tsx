@@ -38,6 +38,7 @@ import {
   installContinuityWorkspace,
   continuityThread,
   continuityEventRow,
+  textContinuityDraft,
 } from "./chat-continuity-test-helpers.ts";
 import {
   createDataTransferStub,
@@ -2043,76 +2044,183 @@ test("A Project page shares the capability home and its compliance block under t
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 });
-test("A message sent from the Project page starts its chat inside the Project", async () => {
-  const ordinary = continuityThread(116, 1, "Thread B");
+
+test("Home, Project, and conversation navigation preserves the correct draft and send destination", async () => {
+  const ordinary = continuityThread(311, 1, "Existing conversation");
   const workspace = installContinuityWorkspace(context, {
-    caseId: 116,
+    caseId: 311,
     threads: [ordinary],
+    drafts: new Map([
+      [ordinary.id, textContinuityDraft("Conversation-only draft")],
+    ]),
   });
   context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
   metadata();
-  const created: {
-    threadId?: string;
-    agentId?: string;
-    projectId?: string | null;
-  } = {};
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-    created.threadId = body.clientThreadId;
-    created.agentId = body.agentId;
-    created.projectId = body.projectId;
-    return respond(201, {
-      id: body.clientThreadId ?? crypto.randomUUID(),
-      title: null,
-      createdAt: at,
-      selectedModel: body.model ?? null,
-      serviceTier: null,
-      projectId: body.projectId ?? null,
-    });
+  // Each owner supplies its own persisted draft. Home and Projects share the
+  // agent draft; a conversation has its own draft.
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, textContinuityDraft("Conversation-only draft"));
   });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    return respond(201, {
-      threadId: body.threadId ?? crypto.randomUUID(),
-      createdAt: at,
-    });
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, textContinuityDraft("New conversation draft"));
   });
+  const created: { threadId?: string; projectId?: string | null } = {};
+  mockThreadCreation(created);
+  await setupPage({
+    context,
+    path: `/agents/${ordinary.agentId}/chat`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+    },
+  });
+  const editor = () => {
+    return screen.getByRole("textbox", { name: "Message" });
+  };
+  await waitFor(() => {
+    expect(editor()).toHaveTextContent("New conversation draft");
+    expect(projectLink("Launch")).toBeInTheDocument();
+  });
+  click(projectLink("Launch"));
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeInTheDocument();
+    expect(editor()).toHaveTextContent("New conversation draft");
+  });
+  click(threadLink(ordinary.id));
+  await waitFor(() => {
+    expect(editor()).toHaveTextContent("Conversation-only draft");
+  });
+  const newChat = queryAllByRoleFast("link").find((link) => {
+    return link.textContent?.startsWith("New chat");
+  });
+  if (!newChat) {
+    throw new Error("New chat link missing");
+  }
+  click(newChat);
+  await waitFor(() => {
+    expect(editor()).toHaveTextContent("New conversation draft");
+    expect(queryProjectChip("Launch")).toBeNull();
+  });
+  click(projectLink("Launch"));
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeInTheDocument();
+    expect(button("Send")).toBeEnabled();
+  });
+  await fill(editor(), "Send this from Launch after switching pages");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(created.projectId).toBe(id);
+    expect(location.pathname).toBe(`/chats/${created.threadId}`);
+  });
+});
+
+test("A mobile Project opens the capability composer instead of the home chat list", async () => {
+  context.mocks.browser.matchMedia(false);
+  const member = {
+    ...continuityThread(312, 1, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 312,
+    threads: [member],
+  });
+  metadata();
   await setupPage({
     context,
     path: `/projects/${id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+    },
   });
-  await waitFor(() => {
-    expect(projectChip("Launch")).toBeInTheDocument();
-  });
-
-  await fill(
-    await screen.findByRole("textbox", { name: "Message" }),
-    "Plan the launch",
-  );
-  await waitFor(() => {
-    expect(button("Send")).toBeEnabled();
-  });
-  click(button("Send"));
-
-  // The Project page composes with the default Agent inside its Project.
-  await waitFor(() => {
-    expect(created.threadId).toBeDefined();
-  });
-  expect(created).toMatchObject({
-    agentId: ordinary.agentId,
-    projectId: id,
-  });
-  await waitFor(() => {
-    expect(location.pathname).toBe(`/chats/${created.threadId}`);
-  });
-  await waitFor(() => {
-    expect(
-      document.querySelector(
-        `[data-project-row-id="${id}"] [data-sidebar-chat-thread-id="${created.threadId}"]`,
-      ),
-    ).toHaveAttribute("aria-current", "page");
-  });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  expect(
+    screen.getByRole("group", { name: "Explore Okou capabilities" }),
+  ).toBeInTheDocument();
+  expect(projectChip("Launch")).toBeInTheDocument();
+  await fill(editor, "Plan from the mobile Project");
+  expect(button("Send")).toBeEnabled();
 });
+
+test.each([false, true])(
+  "A Project message keeps its membership with Home capabilities %s",
+  async (capabilitiesEnabled) => {
+    const ordinary = continuityThread(116, 1, "Thread B");
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 116,
+      threads: [ordinary],
+    });
+    context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+    metadata();
+    const created: {
+      threadId?: string;
+      agentId?: string;
+      projectId?: string | null;
+    } = {};
+    context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+      created.threadId = body.clientThreadId;
+      created.agentId = body.agentId;
+      created.projectId = body.projectId;
+      return respond(201, {
+        id: body.clientThreadId ?? crypto.randomUUID(),
+        title: null,
+        createdAt: at,
+        selectedModel: body.model ?? null,
+        serviceTier: null,
+        projectId: body.projectId ?? null,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      return respond(201, {
+        threadId: body.threadId ?? crypto.randomUUID(),
+        createdAt: at,
+      });
+    });
+    await setupPage({
+      context,
+      path: `/projects/${id}`,
+      ...workspace.pageOptions,
+      featureSwitches: {
+        [FeatureSwitchKey.Projects]: true,
+        [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
+      },
+    });
+    await waitFor(() => {
+      expect(projectChip("Launch")).toBeInTheDocument();
+    });
+
+    await fill(
+      await screen.findByRole("textbox", { name: "Message" }),
+      "Plan the launch",
+    );
+    await waitFor(() => {
+      expect(button("Send")).toBeEnabled();
+    });
+    click(button("Send"));
+
+    // The Project page composes with the default Agent inside its Project.
+    await waitFor(() => {
+      expect(created.threadId).toBeDefined();
+    });
+    expect(created).toMatchObject({
+      agentId: ordinary.agentId,
+      projectId: id,
+    });
+    await waitFor(() => {
+      expect(location.pathname).toBe(`/chats/${created.threadId}`);
+    });
+    await waitFor(() => {
+      expect(
+        document.querySelector(
+          `[data-project-row-id="${id}"] [data-sidebar-chat-thread-id="${created.threadId}"]`,
+        ),
+      ).toHaveAttribute("aria-current", "page");
+    });
+  },
+);
 
 test("The composer's + menu starts a new chat in a Project and keeps the message", async () => {
   const ordinary = continuityThread(117, 1, "Thread B");

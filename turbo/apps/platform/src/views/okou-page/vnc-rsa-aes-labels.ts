@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { RsaAesProfile } from "../../signals/vnc-rsa-aes.ts";
 
 // Literal selectors keep extraction complete and the dialog/card labels aligned.
-export function useRsaAesProfileLabels(): Readonly<
-  Record<RsaAesProfile, string>
-> {
-  const { t } = useTranslation();
+export function rsaAesProfileLabels(
+  t: TFunction<"common">,
+): Readonly<Record<RsaAesProfile, string>> {
   return {
     rsa_aes_ra2: t(($) => {
       return $.vnc.rsaAes.ra2Password;
@@ -32,4 +32,9 @@ export function useRsaAesProfileLabels(): Readonly<
       return $.vnc.rsaAes.ra2ne256UsernamePassword;
     }),
   };
+}
+
+export function useRsaAesProfileLabels() {
+  const { t } = useTranslation();
+  return rsaAesProfileLabels(t);
 }

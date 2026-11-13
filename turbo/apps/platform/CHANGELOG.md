@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1124.0](https://github.com/okou-ai/okou/compare/app-v0.1123.2...app-v0.1124.0) (2026-11-13)
+
+
+### Features
+
+* **app:** open my okou settings from home and chat avatars ([#47008](https://github.com/okou-ai/okou/issues/47008)) ([f8b13fd](https://github.com/okou-ai/okou/commit/f8b13fd951a278fbe88cdf72dec08cdda5b1764e))
+* **app:** restore workflow shelf covers and scroll the home tray in a fixed window ([#46968](https://github.com/okou-ai/okou/issues/46968)) ([197f3e5](https://github.com/okou-ai/okou/commit/197f3e5bcd08d3aebf685a5d337acba0f022b90e))
+
+
+### Bug Fixes
+
+* **app:** unify home project and chat workspace layout ([#46999](https://github.com/okou-ai/okou/issues/46999)) ([37e65b4](https://github.com/okou-ai/okou/commit/37e65b47f9eeb8b1e58a3cf318b384dc0a63b6e6))
+
+
+### Refactoring
+
+* **api:** remove legacy browser country and screen fields ([#46995](https://github.com/okou-ai/okou/issues/46995)) ([d4e7cac](https://github.com/okou-ai/okou/commit/d4e7cac108098cbf988f7e6944f3f24054b5e5d9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.0
+    * @okouai/core bumped to 8.835.2
+    * @okouai/ui bumped to 1.21.10
+
 ## [0.1123.2](https://github.com/okou-ai/okou/compare/app-v0.1123.1...app-v0.1123.2) (2026-11-13)
 
 

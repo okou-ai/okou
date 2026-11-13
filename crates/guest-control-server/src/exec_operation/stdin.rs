@@ -4,7 +4,7 @@
 //! containment cleanup. Completion notification never replaces physical join.
 
 use std::io::{self, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
@@ -132,16 +132,8 @@ impl StdinWriter {
 }
 
 fn stdin_cancel_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0; 2];
-    // SAFETY: `pipe2` initializes two file descriptors in `fds` on success.
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-    Ok((read_fd, write_fd))
+    rustix::pipe::pipe_with(rustix::pipe::PipeFlags::NONBLOCK | rustix::pipe::PipeFlags::CLOEXEC)
+        .map_err(io::Error::from)
 }
 
 fn set_nonblocking(fd: RawFd) -> io::Result<()> {

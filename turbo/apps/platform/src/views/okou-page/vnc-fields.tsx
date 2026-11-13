@@ -81,7 +81,7 @@ import {
   RSA_AES_PROFILES,
   isRsaAesProfile,
 } from "../../signals/vnc-rsa-aes.ts";
-import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
+import { rsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
 import {
   VNC_RSA_AES_FIELD_MAX_BYTES,
   VNC_RSA_PUBLIC_KEY_MAX_BYTES,
@@ -93,6 +93,7 @@ import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerbero
 import { VncNetworkFields } from "./vnc-network-fields.tsx";
 import {
   KerberosCredentialInputs,
+  kerberosProfileItems,
   useKerberosProfileItems,
 } from "./vnc-kerberos-fields.tsx";
 
@@ -496,20 +497,59 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   );
 }
 
-function useVncSecurityProfileItems() {
+function useVncSecurityProfileItems(group: ReturnType<typeof profileGroup>) {
   const { t } = useTranslation();
-  const rsaAesLabels = useRsaAesProfileLabels();
-  const kerberosItems = useKerberosProfileItems();
-  return [
-    ...kerberosItems,
-    ...Object.keys(RSA_AES_PROFILES)
+  if (group === "company") {
+    return [
+      ...kerberosProfileItems(t),
+      {
+        value: "qemu_x509_sasl",
+        label: t(($) => {
+          return $.vnc.security.qemuX509Sasl;
+        }),
+      },
+    ];
+  }
+  if (group === "rsa") {
+    const labels = rsaAesProfileLabels(t);
+    return Object.keys(RSA_AES_PROFILES)
       .filter(isRsaAesProfile)
       .map((value) => {
         return {
           value,
-          label: rsaAesLabels[value],
+          label: labels[value],
         };
-      }),
+      });
+  }
+  if (group === "apple") {
+    return [
+      {
+        value: "apple_vnc_password",
+        label: t(($) => {
+          return $.vnc.security.appleVncPassword;
+        }),
+      },
+      {
+        value: "apple_dh",
+        label: t(($) => {
+          return $.vnc.security.appleDh;
+        }),
+      },
+      {
+        value: "apple_srp",
+        label: t(($) => {
+          return $.vnc.security.appleSrp;
+        }),
+      },
+      {
+        value: "apple_rsa_srp",
+        label: t(($) => {
+          return $.vnc.security.appleRsaSrp;
+        }),
+      },
+    ];
+  }
+  return [
     {
       value: "x509_none",
       label: t(($) => {
@@ -538,36 +578,6 @@ function useVncSecurityProfileItems() {
       value: "x509_plain",
       label: t(($) => {
         return $.vnc.security.x509Plain;
-      }),
-    },
-    {
-      value: "qemu_x509_sasl",
-      label: t(($) => {
-        return $.vnc.security.qemuX509Sasl;
-      }),
-    },
-    {
-      value: "apple_vnc_password",
-      label: t(($) => {
-        return $.vnc.security.appleVncPassword;
-      }),
-    },
-    {
-      value: "apple_dh",
-      label: t(($) => {
-        return $.vnc.security.appleDh;
-      }),
-    },
-    {
-      value: "apple_srp",
-      label: t(($) => {
-        return $.vnc.security.appleSrp;
-      }),
-    },
-    {
-      value: "apple_rsa_srp",
-      label: t(($) => {
-        return $.vnc.security.appleRsaSrp;
       }),
     },
   ];
@@ -867,11 +877,8 @@ export function VncSecurityProfileField({
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
-  const allItems = useVncSecurityProfileItems();
   const group = profileGroup(profile);
-  const profileItems = allItems.filter((item) => {
-    return profileGroup(item.value) === group;
-  });
+  const profileItems = useVncSecurityProfileItems(group);
   const groups = useVncServiceGroups();
   return (
     <>

@@ -110,7 +110,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         resumed = clock(waiting.get("source_resumed_ns"), events[2]["monotonic_ns"], events[3]["monotonic_ns"])
         polled = clock(waiting.get("status_wait_polled_ns"), resumed, events[3]["monotonic_ns"])
         before, after = waiting.get("status_waits_before"), waiting.get("status_waits_after")
-        if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
+        if not failure.status_wait_advanced(before, after):
             raise ValueError("old batch final status wait was not positively observed")
         reads(waiting.get("samples"), policy, resumed, polled)
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])

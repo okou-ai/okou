@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.248.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.6...runner-rs-v0.248.7) (2026-11-13)
+
+
+### Refactoring
+
+* **python:** centralize native status wait counter checks ([#46942](https://github.com/okou-ai/okou/issues/46942)) ([491cef2](https://github.com/okou-ai/okou/commit/491cef2a87ca1852d0da82625fb120460d53d6dc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.248.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.5...runner-rs-v0.248.6) (2026-11-13)
 
 

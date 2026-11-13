@@ -124,7 +124,7 @@ def validate_owner(events, terminal, policy, native_input, claim, role, order, s
     batch.clock(status.get("io_released_ns"), held, terminal[4]["monotonic_ns"])
     polled = batch.clock(status.get("status_wait_polled_ns"), terminal[4]["monotonic_ns"], events[4]["monotonic_ns"])
     before, after = status.get("status_waits_before"), status.get("status_waits_after")
-    if (not pressure.integer(before) or not pressure.integer(after) or after != before + 1
+    if (not failure.status_wait_advanced(before, after)
             or status.get("original_lease_released") is not True
             or status.get("receiver_polled_pending") is not True
             or status.get("allocated") != [0, 0, 0]):
