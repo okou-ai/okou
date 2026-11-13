@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/okou-ai/okou/compare/ios-v0.39.0...ios-v0.40.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** enable full-swipe chat actions ([#46943](https://github.com/okou-ai/okou/issues/46943)) ([618b52a](https://github.com/okou-ai/okou/commit/618b52ac577d8d47c063e742fdf1f945c6af2912))
+
+
+### Bug Fixes
+
+* **ios:** distinguish inactive scenes from background resumes ([#46941](https://github.com/okou-ai/okou/issues/46941)) ([3379228](https://github.com/okou-ai/okou/commit/33792284c46bdf265f0787500ea953a59baab136))
+
 ## [0.39.0](https://github.com/okou-ai/okou/compare/ios-v0.38.0...ios-v0.39.0) (2026-11-13)
 
 
