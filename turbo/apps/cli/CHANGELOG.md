@@ -1,5 +1,43 @@
 # Changelog
 
+## [10.25.7](https://github.com/okou-ai/okou/compare/cli-v10.25.6...cli-v10.25.7) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.60.0
+    * @okouai/core bumped to 8.836.1
+    * @okouai/pi-agent-runtime bumped to 1.51.118
+
+## [10.25.6](https://github.com/okou-ai/okou/compare/cli-v10.25.5...cli-v10.25.6) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.59.1
+    * @okouai/core bumped to 8.836.0
+    * @okouai/pi-agent-runtime bumped to 1.51.117
+
+## [10.25.5](https://github.com/okou-ai/okou/compare/cli-v10.25.4...cli-v10.25.5) (2026-11-13)
+
+
+### Refactoring
+
+* **api:** remove legacy browser country and screen fields ([#46995](https://github.com/okou-ai/okou/issues/46995)) ([d4e7cac](https://github.com/okou-ai/okou/commit/d4e7cac108098cbf988f7e6944f3f24054b5e5d9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.59.0
+    * @okouai/core bumped to 8.835.2
+    * @okouai/pi-agent-runtime bumped to 1.51.116
+
 ## [10.25.4](https://github.com/okou-ai/okou/compare/cli-v10.25.3...cli-v10.25.4) (2026-11-13)
 
 

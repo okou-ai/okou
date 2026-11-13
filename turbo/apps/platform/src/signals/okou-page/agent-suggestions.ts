@@ -2,7 +2,7 @@ import { command, computed, state } from "ccstate";
 import type {
   Suggestion,
   SuggestionOption,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { defaultAgentId$ } from "../agent.ts";
@@ -58,11 +58,10 @@ function suggestionContextDocument(
   contextVersion: string,
   attachmentIds: readonly string[],
 ): UserMessageDocument {
-  const background = item.customOption.draft.draftUserMessage?.parts.find(
-    (part) => {
+  const background =
+    item.content.customOption.draft.draftUserMessage?.parts.find((part) => {
       return part.type === "feedback";
-    },
-  );
+    });
   if (background?.type !== "feedback") {
     throw new Error("Missing suggestion background");
   }
@@ -73,8 +72,8 @@ function suggestionContextDocument(
         draftId: crypto.randomUUID(),
         suggestionId: item.id,
         optionId: "custom",
-        titleSnapshot: item.title,
-        rationaleSnapshot: item.rationale,
+        titleSnapshot: item.content.title,
+        rationaleSnapshot: item.content.rationale,
         contextVersion,
         attachmentIds: [...attachmentIds],
       }),
@@ -119,7 +118,7 @@ const suggestionComposerGraph$ = computed((get) => {
       session.agentId,
       agentDraft,
       session.onOptimisticSend,
-      session.entry.item.title,
+      session.entry.item.content.title,
     ),
   };
 });
@@ -187,10 +186,10 @@ export const openAgentSuggestionComposer$ = command(
     }
     const item = entry.item;
     const contextVersion = await suggestionDraftVersion(
-      item.customOption.draft,
+      item.content.customOption.draft,
     );
     signal.throwIfAborted();
-    const files = item.customOption.draft.draftAttachments ?? [];
+    const files = item.content.customOption.draft.draftAttachments ?? [];
     const document = suggestionContextDocument(
       item,
       contextVersion,
@@ -278,7 +277,7 @@ const sendAgentSuggestionOption$ = command(
       sendNewThreadWithoutNavigation$,
       {
         agentId,
-        title: entry.item.title,
+        title: entry.item.content.title,
         draft,
         preserveAgentDraft: true,
         prompt,
@@ -353,7 +352,7 @@ export const startAgentSuggestion$ = command(
     if (!entry || get(entry.hidden$)) {
       return;
     }
-    const option = entry.item.options.find((candidate) => {
+    const option = entry.item.content.options.find((candidate) => {
       return candidate.id === optionId;
     });
     if (!option) {

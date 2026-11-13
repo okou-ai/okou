@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 // Workflow detail hosts the instruction editor, supplementary file manager
 // (SKILL.md is never shown), automations, visibility controls, metadata
 // editing, slash use, copy, and delete.
@@ -981,24 +982,18 @@ export function WorkflowAutomationNotificationPage() {
   if (access.state === "loading") {
     return (
       <DetailPageShell>
-        <main className="flex min-h-0 flex-1 items-center justify-center p-6">
-          <div hidden ref={revealLoading}>
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Loader2
-                size={16}
-                aria-hidden="true"
-                className="shrink-0 motion-safe:animate-spin"
-              />
-              <span>
-                {t(($) => {
-                  return $.userNotifications.automationDisabled
-                    .loadingAutomation;
-                })}
-              </span>
-            </p>
+        <main className="flex min-h-0 flex-1 p-6">
+          <div
+            hidden
+            ref={revealLoading}
+            className="mx-auto w-full max-w-[900px]"
+          >
+            <LoadingSkeleton
+              className="w-full max-w-[900px]"
+              label={t(($) => {
+                return $.userNotifications.automationDisabled.loadingAutomation;
+              })}
+            />
           </div>
         </main>
       </DetailPageShell>

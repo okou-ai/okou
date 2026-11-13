@@ -903,18 +903,15 @@ function LoadedConnectorAccountManagerDialog({
               type="button"
               variant="outline"
               className="mt-3 w-full"
+              pending={loadMoreLoadable.state === "loading"}
               disabled={loadMoreLoadable.state === "loading"}
               onClick={() => {
                 return detach(loadMore(signal), Reason.DomCallback);
               }}
             >
-              {loadMoreLoadable.state === "loading"
-                ? t(($) => {
-                    return $.connectors.accounts.loadingMore;
-                  })
-                : t(($) => {
-                    return $.connectors.accounts.loadMore;
-                  })}
+              {t(($) => {
+                return $.connectors.accounts.loadMore;
+              })}
             </Button>
           ) : null}
         </div>

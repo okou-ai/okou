@@ -47,6 +47,15 @@ async function setupHome() {
 function capabilities() {
   return screen.getByRole("group", { name: "Explore Okou capabilities" });
 }
+/**
+ * The control that opens a capability from its card. Find people and
+ * Research open from their card's one Explore action; every other choice is
+ * its own button.
+ */
+function capabilityAction(label: string): HTMLElement {
+  const card = within(capabilities()).queryByRole("region", { name: label });
+  return card ? button("Explore", card) : button(label, capabilities());
+}
 function dialogTab(dialog: HTMLElement, label: string): HTMLElement {
   const tab = queryAllByRoleFast("tab", dialog).find((item) => {
     return item.textContent?.replace(/\s+/g, " ").trim() === label;
@@ -385,6 +394,44 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   expect(capture.runPrompts).toStrictEqual([]);
 });
 
+test("Scheduled leads with its two starters, then the workflows that run on a clock", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupHome();
+  click(button("Scheduled tasks", capabilities()));
+  const scheduled = await screen.findByRole("region", {
+    name: "Schedule a task",
+  });
+  expect(
+    queryAllByRoleFast("button", scheduled)
+      .map((item) => {
+        return item.textContent?.trim();
+      })
+      .filter(Boolean),
+  ).toStrictEqual([
+    "Run once at a set time",
+    "Repeat on a schedule",
+    "Start your day with a clear plan",
+    "Wrap up your week clearly",
+    "Know when competitors change",
+    "See how your business is doing",
+  ]);
+  // A recommendation prepares the same draft here as on the Advanced shelf.
+  click(button("Start your day with a clear plan", scheduled));
+  expect(editor).toHaveTextContent("Help me set up a morning brief");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
+  expect(capture.runPrompts).toStrictEqual([]);
+});
+
+test("A trigger's cover is named by its title and described by its flow", async () => {
+  mockTemplateChat();
+  await setupHome();
+  click(button("Triggers", capabilities()));
+  const triggers = await screen.findByRole("region", { name: "Triggers" });
+  expect(button("Email replies", triggers)).toHaveAccessibleDescription(
+    "Gmail: Email starred → Extract requests → Draft reply",
+  );
+});
+
 test.each([
   { title: "News digest", source: "RSS", event: "Keyword match" },
   { title: "X watchlist", source: "X", event: "New post" },
@@ -411,11 +458,32 @@ test.each([
   },
 );
 
+test("Find people and Research each open from one Explore action instead of the whole card", async () => {
+  mockTemplateChat();
+  await setupHome();
+  for (const label of ["Find people", "Research"]) {
+    const card = within(capabilities()).getByRole("region", { name: label });
+    expect(
+      within(card).getByRole("heading", { name: label }),
+    ).toBeInTheDocument();
+    // The card offers its Explore tray from one button, the way Create and
+    // Workflow offer theirs; it does not surface the tray's options itself.
+    expect(
+      queryAllByRoleFast("button", card).map((item) => {
+        return item.textContent?.trim();
+      }),
+    ).toStrictEqual(["Explore"]);
+  }
+  click(capabilityAction("Research"));
+  const research = await screen.findByRole("region", { name: "Research" });
+  expect(research).toHaveTextContent("Compare website traffic");
+});
+
 test("Search and Research open separate suggestions and prepare editable drafts without starting a run", async () => {
   const capture = mockTemplateChat();
   const editor = await setupHome();
   await fill(editor, "I am planning a research project.");
-  click(button("Find people", capabilities()));
+  click(capabilityAction("Find people"));
   const search = await screen.findByRole("region", { name: "Find people" });
   expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   expect(
@@ -434,7 +502,7 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   expect(explore).toHaveAttribute("target", "_blank");
   // It rides in the corner header beside the growth entry, not below the cards.
   expect(screen.getByRole("banner")).toContainElement(explore ?? null);
-  click(button("Research", capabilities()));
+  click(capabilityAction("Research"));
   const research = await screen.findByRole("region", { name: "Research" });
   expect(screen.queryByRole("region", { name: "Find people" })).toBeNull();
   click(button("Compare website traffic", research));
@@ -479,7 +547,7 @@ test.each(HOME_PROMPTS)(
   async ({ capability, guideTitle, suggestion }) => {
     mockTemplateChat();
     const editor = await setupHome();
-    click(button(capability, capabilities()));
+    click(capabilityAction(capability));
     const guide = await screen.findByRole("region", { name: guideTitle });
     click(button(suggestion, guide));
     expect(editor.textContent).not.toBe("");
@@ -500,7 +568,7 @@ test.each(HOME_PROMPTS)(
   async ({ capability, guideTitle, suggestion }) => {
     mockTemplateChat();
     const editor = await setupHome();
-    click(button(capability, capabilities()));
+    click(capabilityAction(capability));
     const guide = await screen.findByRole("region", { name: guideTitle });
     click(button(suggestion, guide));
     const user = userEvent.setup({ delay: null });
@@ -518,7 +586,7 @@ test("Dismissing repeated suggestions restores the original draft without stacke
   mockTemplateChat();
   const editor = await setupHome();
   await fill(editor, "Keep my own brief.");
-  click(button("Find people", capabilities()));
+  click(capabilityAction("Find people"));
   const guide = await screen.findByRole("region", { name: "Find people" });
   click(button("Potential customers", guide));
   click(button("Event speakers", guide));
@@ -535,7 +603,7 @@ test("Dismissing a suggestion does not clear matching text the user wrote", asyn
   const prompt =
     "Help me find: Potential customers. Ask me about my target, criteria, and scope first. Return a shortlist with relevant details and source links.";
   await fill(editor, prompt);
-  click(button("Find people", capabilities()));
+  click(capabilityAction("Find people"));
   const guide = await screen.findByRole("region", { name: "Find people" });
   click(button("Potential customers", guide));
   click(button("Potential customers", guide));

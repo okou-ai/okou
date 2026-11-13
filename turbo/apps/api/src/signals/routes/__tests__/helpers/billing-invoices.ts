@@ -35,10 +35,8 @@ function fixtureFromWebhook(
   return { ...fixture, stripeCustomerId };
 }
 
-function subscriptionTier(
-  tier: string | undefined,
-): "pro" | "team" | "custom" | null {
-  if (tier === "pro" || tier === "team" || tier === "custom") {
+function subscriptionTier(tier: string | undefined): "pro" | "team" | null {
+  if (tier === "pro" || tier === "team") {
     return tier;
   }
   return null;

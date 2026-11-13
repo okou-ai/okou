@@ -45,7 +45,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
-    createRunsApi(context).configureRunnerGroup();
+    await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     await bdd.readOnboardingStatus(owner);
@@ -104,7 +104,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
-    createRunsApi(context).configureRunnerGroup();
+    await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
@@ -315,7 +315,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       const bdd = createBddApi(context);
       const chat = createChatFilesBddApi(context);
       const mcp = createMcpWebApi(context);
-      createRunsApi(context).configureRunnerGroup();
+      await createRunsApi(context).configureRunnerGroup();
       bdd.acceptAgentStorageWrites();
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
       await bdd.readOnboardingStatus(owner);
@@ -495,7 +495,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
-    createRunsApi(context).configureRunnerGroup();
+    await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
@@ -600,7 +600,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
     });
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
-    createRunsApi(context).configureRunnerGroup();
+    await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(

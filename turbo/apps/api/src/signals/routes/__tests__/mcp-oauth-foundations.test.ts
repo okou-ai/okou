@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 
 import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -14,13 +13,13 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
-import { runnersRoutes } from "../runners";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -681,7 +680,17 @@ describe("MCP OAuth foundations", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    const runnerHeaders = {
+      authorization: `Bearer vm0_official_${runnerSecret}`,
+    };
+    await runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: runnerHeaders.authorization,
+    });
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -784,38 +793,17 @@ describe("MCP OAuth foundations", () => {
       agentId: agent.agentId,
       prompt: "Resolve my configured OAuth connector",
     });
+    const input = await runs.executionInput(run.runId);
     oauthCleanups.push(async () => {
       await runs.requestCancelRun(actor, run.runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: run.runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
       await flushWaitUntilForTest();
     });
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    const runnerHeaders = {
-      authorization: `Bearer vm0_official_${runnerSecret}`,
-    };
-    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: run.runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
+    const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
       throw new Error("Expected the actual Runner claim sandbox credential");
     }

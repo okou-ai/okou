@@ -130,7 +130,7 @@ type UserMessage = Extract<
   }
 >;
 type AssistantMessage = Exclude<ChatEvent, UserMessage>;
-type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
+type RunnerClaim = Awaited<ReturnType<typeof api.executionInput>>;
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
@@ -169,7 +169,7 @@ async function entitledChatActorWithoutRunner(
 async function entitledChatActor(
   displayName: string,
 ): Promise<EntitledChatActor> {
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   return {
     ...(await entitledChatActorWithoutRunner(displayName)),
     runnerGroup,
@@ -198,7 +198,7 @@ async function claimChatRun(
   readonly sandboxHeaders: { readonly authorization: string };
 }> {
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.claimRunnerJob(runId);
+  const claim = await api.executionInput(runId);
   return {
     claim,
     sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
@@ -990,7 +990,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     async (model) => {
       const fixture = createPublicFirewallFixture(context);
       await fixture.run(async () => {
-        api.configureRunnerGroup();
+        await api.configureRunnerGroup();
         chatCallbacks.acceptChatObjectStorage();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
@@ -1154,7 +1154,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       prompt: "delete cascade anchor",
     });
     await api.heartbeatRunner(runnerGroup);
-    await api.claimRunnerJob(main.runId);
+    await api.executionInput(main.runId);
 
     await expect(chat.listActiveChatThreadIds(actor)).resolves.toContain(
       main.threadId,
@@ -1203,7 +1203,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     expect((await api.readRun(actor, main.runId)).status).toBe("cancelled");
     expect((await api.readRun(actor, sibling.runId)).status).toBe("completed");
-    expect((await api.readRun(actor, other.runId)).status).toBe("pending");
+    expect((await api.readRun(actor, other.runId)).status).toBe("running");
 
     const goneRead = await chat.requestReadThread(actor, main.threadId, [404]);
     expectApiError(goneRead.body);

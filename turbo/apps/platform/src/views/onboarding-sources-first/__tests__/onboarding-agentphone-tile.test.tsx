@@ -193,7 +193,7 @@ test("A pending connection code does not prevent skipping the step", async () =>
   );
   await openChatStep();
   await expect(
-    screen.findByText("Creating connection code…"),
+    screen.findByRole("status", { name: "Creating connection code…" }),
   ).resolves.toBeInTheDocument();
   click(getButton("Not now"));
   await expect(

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import type { ReactNode } from "react";
@@ -378,11 +379,12 @@ function RemoteDirectoryPlaceholder({
         {icon}
       </span>
       {loading ? (
-        <p role="status" className="text-base text-muted-foreground">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.remoteControlSetup.loading;
           })}
-        </p>
+          variant="rows"
+        />
       ) : (
         <h2 className="text-base font-semibold">{title}</h2>
       )}

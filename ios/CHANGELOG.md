@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.42.1](https://github.com/okou-ai/okou/compare/ios-v0.42.0...ios-v0.42.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** move model selection above the composer ([#47046](https://github.com/okou-ai/okou/issues/47046)) ([e3b7d1f](https://github.com/okou-ai/okou/commit/e3b7d1fbd5952883db4b88f8ea13adf93778ac15))
+
+## [0.42.0](https://github.com/okou-ai/okou/compare/ios-v0.41.1...ios-v0.42.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** add plan and billing management to settings ([#47013](https://github.com/okou-ai/okou/issues/47013)) ([441cd8e](https://github.com/okou-ai/okou/commit/441cd8e0a323e3aa9b6f2b0863fed86b888c7de7))
+
 ## [0.41.1](https://github.com/okou-ai/okou/compare/ios-v0.41.0...ios-v0.41.1) (2026-11-13)
 
 

@@ -87,7 +87,7 @@ async function setupFixture(): Promise<{
   readonly agentId: string;
   readonly workflowId: string;
 }> {
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+  await runsApi.configureRunnerGroup();
   const { actor } = await wf.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
@@ -622,7 +622,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       if (!runId || listedRuns.runs.length !== 1) {
         throw new Error(`Expected a ${testCase.name} automation run`);
       }
-      const claim = await runsApi.claimRunnerJob(runId);
+      const claim = await runsApi.executionInput(runId);
       const okouToken = claim.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the webhook run to expose OKOU_TOKEN");
@@ -920,7 +920,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     if (!admittedRunId || listedRuns.runs.length !== 1) {
       throw new Error("Expected an admitted automation event run");
     }
-    await runsApi.claimRunnerJob(admittedRunId);
+    await runsApi.executionInput(admittedRunId);
 
     if (!created.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
@@ -1037,7 +1037,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       ],
     });
     expect(chatEventDisplayText(claimedEvent)).toBe(displayMessage);
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await runsApi.executionInput(runId);
     const okouToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the automation event run to expose OKOU_TOKEN");
@@ -1117,7 +1117,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     if (!runId || listedRuns.runs.length !== 1) {
       throw new Error("Expected a startup-failure workflow automation");
     }
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await runsApi.executionInput(runId);
     expect(claim.prompt).toContain(
       'GitHub Actions workflow ".github/workflows/turbo.yml" completed with conclusion "startup_failure"',
     );

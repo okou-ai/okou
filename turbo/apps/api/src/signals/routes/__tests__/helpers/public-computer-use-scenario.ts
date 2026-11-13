@@ -5,6 +5,7 @@ import {
   type TestContext,
 } from "../../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../../lib/time";
+import { mockOptionalEnv } from "../../../../lib/env";
 import { settleIncludingAbort } from "../../../utils";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
@@ -263,7 +264,7 @@ export function createPublicComputerUseScenario(
         bdd.acceptAgentStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         await run(() => {
           return runs.grantProEntitlement(actor, {
             run,
@@ -310,7 +311,7 @@ export function createPublicComputerUseScenario(
     claimExisting(actor: ApiTestUser, runId: string) {
       return run(async () => {
         remember(actor);
-        const actual = await runs.claimRunnerJob(runId);
+        const actual = await runs.executionInput(runId);
         claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
         activeClaims.set(`${actor.orgId}:${actor.userId}`, runId);
         return actual;
@@ -339,6 +340,8 @@ export function createPublicComputerUseScenario(
           bdd.acceptAgentStorageWrites();
           runs.acceptStorageDownloads();
           const setup = await prepareActor(actor);
+          mockOptionalEnv("RUNNER_DEFAULT_GROUP", setup.runnerGroup);
+          await runs.registerDirectRunner(setup.runnerGroup);
           const key = `${actor.orgId}:${actor.userId}`;
           const previousRun = activeClaims.get(key);
           if (previousRun) {
@@ -378,11 +381,8 @@ export function createPublicComputerUseScenario(
             throw new Error("Expected the public launched Run");
           }
           const runId = launched.runId;
-          await run(() => {
-            return runs.heartbeatRunner(setup.runnerGroup);
-          });
           const claim = await run(async () => {
-            const actual = await runs.claimRunnerJob(runId);
+            const actual = await runs.executionInput(runId);
             claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
             activeClaims.set(key, runId);
             return actual;

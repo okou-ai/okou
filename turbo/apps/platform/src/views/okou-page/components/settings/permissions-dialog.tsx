@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -78,7 +79,6 @@ import {
   ChevronRight,
   Clock,
   ChevronDown,
-  Loader2,
   Search,
   X,
 } from "lucide-react";
@@ -1523,12 +1523,12 @@ function PermissionsContent({
         <>
           <div className="flex flex-1 items-center justify-center">
             {loading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 size={16} className="animate-spin" />
-                {t(($) => {
+              <LoadingSkeleton
+                label={t(($) => {
                   return $.connectors.permissions.loading;
                 })}
-              </div>
+                variant="rows"
+              />
             ) : (
               <p className="text-sm text-destructive">{message}</p>
             )}

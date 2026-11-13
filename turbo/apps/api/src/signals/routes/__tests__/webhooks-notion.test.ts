@@ -893,7 +893,7 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   async function setupNotionAccountLifecycle() {
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const scenario = await setupFixture();
     const { actor, agentId, fixture, workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -1340,7 +1340,7 @@ describe("POST /api/webhooks/notion", () => {
       prompt: "Switch this automation Chat's Notion account",
     });
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(run.runId);
+    const claim = await runsApi.executionInput(run.runId);
     onTestFinished(async () => {
       await createWebhookCallbackApi(context).requestAgentComplete(
         {

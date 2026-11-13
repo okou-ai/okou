@@ -986,7 +986,7 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
     api.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(admin);
     await runs.ensurePersonalSubscriptionModel(admin);
     const agent = await api.createAgent(admin, {
@@ -999,9 +999,7 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
       prompt: "exercise org reads with the run Okou token",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const poll = await runs.pollRunner(runnerGroup);
-    expect(poll.body.job?.runId).toBe(created.runId);
-    const claim = await runs.claimRunnerJob(created.runId);
+    const claim = await runs.executionInput(created.runId);
     const okouToken = claim.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error(

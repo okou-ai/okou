@@ -86,6 +86,64 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertNil(viewer.preview)
   }
 
+  func testVideoPreviewDoesNotWaitForAFullDownloadAndSharingStillSavesTheFile() async throws {
+    let fixture = try await GeneratedResultFixture.make(owner: self)
+    let conversation = fixture.history.conversation()
+    defer { conversation.close() }
+    let viewer = conversation.artifacts
+    let video = try XCTUnwrap(viewer.resource("/artifacts/video00001.mp4"))
+    // An unavailable full-file transfer must not prevent opening the native streaming player.
+    fixture.state.storageStatus.withLock { $0 = 503 }
+    viewer.open(video)
+    let preview = try XCTUnwrap(viewer.preview)
+    let content = try await artifactPreviewTask(viewer).value
+    let url = try XCTUnwrap(content.contentURL)
+    XCTAssertEqual(content.artifact.kind, .video)
+    XCTAssertEqual(url.lastPathComponent, "video00001.mp4")
+    XCTAssertNil(content.file)
+    XCTAssertTrue(fixture.state.storageRequests.withLock { $0.isEmpty })
+
+    fixture.state.storageStatus.withLock { $0 = nil }
+    viewer.downloadForSharing(previewID: preview.id)
+    let downloaded = try await preview.store.get(preview.download).value
+    let file = try XCTUnwrap(downloaded)
+    viewer.share(file, previewID: preview.id)
+    let shared = try XCTUnwrap(viewer.sharing)
+    viewer.dismiss()
+    XCTAssertEqual(
+      try Data(contentsOf: shared.file.url),
+      try XCTUnwrap(fixture.files.first { $0.reference == "video00001.mp4" }).bytes)
+    let request = try XCTUnwrap(fixture.state.storageRequests.withLock { $0.first })
+    XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+  }
+
+  func testVideoPreviewRequiresAuthorizationAndRetryObtainsANewPlaybackAddress() async throws {
+    let fixture = try await GeneratedResultFixture.make(owner: self)
+    let conversation = fixture.history.conversation()
+    defer { conversation.close() }
+    let viewer = conversation.artifacts
+    let video = try XCTUnwrap(viewer.resource("/artifacts/video00001.mp4"))
+    fixture.state.denied.withLock { $0 = true }
+    viewer.open(video)
+    let denied = await (try artifactPreviewTask(viewer)).result
+    XCTAssertThrowsError(try denied.get()) { error in
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 403)
+    }
+
+    fixture.state.denied.withLock { $0 = false }
+    viewer.retry()
+    let first = try await artifactPreviewTask(viewer).value
+    let originalURL = try XCTUnwrap(first.contentURL)
+    // Retrying a failed/expired stream reauthorizes instead of reusing its signed URL.
+    viewer.retry()
+    let retried = try await artifactPreviewTask(viewer).value
+    let freshURL = try XCTUnwrap(retried.contentURL)
+    XCTAssertNotEqual(freshURL, originalURL)
+    XCTAssertEqual(freshURL.lastPathComponent, originalURL.lastPathComponent)
+    XCTAssertTrue(fixture.state.storageRequests.withLock { $0.isEmpty })
+  }
+
   func testUnavailableRetryAndLeavingDetailCancelResultOwnership() async throws {
     let fixture = try await GeneratedResultFixture.make(owner: self)
     let conversation = fixture.history.conversation()

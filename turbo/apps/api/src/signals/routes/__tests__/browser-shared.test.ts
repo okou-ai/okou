@@ -198,13 +198,13 @@ describe("shared Browser public consumers", () => {
       const result = await accept(
         client().create({
           headers: runHeaders(a),
-          body: { name: "Regional browser", proxyCountryCode: "us" },
+          body: { name: "Research browser" },
         }),
         [201],
       );
       expect(result.status).toBe(201);
       expect(result.body).toMatchObject({
-        browser: { proxyCountryCode: null },
+        browser: { name: "Research browser", status: "active" },
       });
       expect(result.body.extension).toStrictEqual(TEST_BROWSER_EXTENSION);
       expect(f.provider.sessionRequests).toStrictEqual([
@@ -309,11 +309,8 @@ describe("shared Browser public consumers", () => {
       });
       await runs.heartbeatRunner(f.owned.runnerGroup);
       await flushWaitUntilForTest();
-      const runId = (await runs.pollRunner(f.owned.runnerGroup)).body.job
-        ?.runId;
-      if (!runId) {
-        throw new Error("Expected the Slack chat Run");
-      }
+      const input = await runs.nextReceivedExecution(f.owned.runnerGroup);
+      const runId = input.runId;
       expect(
         (
           await createRunReadsApi(context).requestReadLogById(
@@ -503,7 +500,7 @@ describe("shared Browser public consumers", () => {
       const named = await accept(
         client().create({
           headers: runHeaders(b),
-          body: { name: "Travel research", proxyCountryCode: null },
+          body: { name: "Travel research" },
         }),
         [201],
       );
@@ -576,7 +573,7 @@ describe("shared Browser public consumers", () => {
         const named = await accept(
           client().create({
             headers: runHeaders(a),
-            body: { name: "Trip planning", proxyCountryCode: null },
+            body: { name: "Trip planning" },
           }),
           [201],
         );

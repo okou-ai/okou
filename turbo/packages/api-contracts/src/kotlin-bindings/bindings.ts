@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
@@ -19,9 +20,9 @@ export interface KotlinRouteBinding {
   readonly route: {
     readonly method: string;
     readonly path: string;
-    readonly body?: ZodType;
+    readonly body?: ZodType | NoBodyMarker;
     readonly query?: ZodType;
-    readonly pathParams?: unknown;
+    readonly pathParams?: ZodType;
     readonly responses: Readonly<Record<number, ZodType>>;
   };
 }

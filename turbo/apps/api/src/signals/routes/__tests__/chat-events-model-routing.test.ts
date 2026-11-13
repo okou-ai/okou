@@ -31,6 +31,7 @@ const {
   claimChatRun,
   waitForThreadMessages,
   completeChatRunOk,
+  cancelAndCompleteChatRun,
   cancelChatRun,
 
   readThreadProjection,
@@ -168,7 +169,7 @@ describe("CHAT-02: model-first routing", () => {
       expect(sectionIndex).toBeGreaterThan(previousSectionIndex);
       previousSectionIndex = sectionIndex;
     }
-    await cancelChatRun(actor, run.runId);
+    await cancelAndCompleteChatRun(actor, run.runId);
   });
 
   it("queues an existing-thread input with its model until the active run releases the thread", async () => {
@@ -212,7 +213,7 @@ describe("CHAT-02: model-first routing", () => {
       expect.objectContaining({ revokesEventId: clientEventId }),
     );
 
-    await cancelChatRun(actor, active.runId);
+    await cancelAndCompleteChatRun(actor, active.runId);
     const { picked } = await waitForPickedInput(
       actor,
       thread.id,
@@ -223,7 +224,7 @@ describe("CHAT-02: model-first routing", () => {
     }
     const { claim } = await claimChatRun(runnerGroup, picked.runId);
     expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
-    await cancelChatRun(actor, picked.runId);
+    await cancelAndCompleteChatRun(actor, picked.runId);
   }, 90_000);
 
   it("rejects personal model gpt-6-luna without the caller's subscription", async () => {
@@ -706,7 +707,7 @@ describe("CHAT-02: model-first routing", () => {
         );
       }).length,
     ).toBeLessThanOrEqual(1);
-    await cancelChatRun(actor, followUp.runId);
+    await cancelAndCompleteChatRun(actor, followUp.runId);
   }, 90_000);
 
   it("passes Fast only on a supported personal Codex route", async () => {

@@ -12,9 +12,7 @@ import { webhooksStripeRoutes } from "../../webhooks-stripe";
 
 const TEST_PRICE_PRO = "price_test_pro";
 const TEST_PRICE_TEAM = "price_test_team";
-const TEST_PRICE_CUSTOM = "price_test_custom";
 export const TEST_PRICE_CONCURRENCY = "price_test_concurrency";
-const TEST_PRICE_ATOM_GRANT = "price_test_atom_grant";
 
 const STRIPE_WEBHOOK_SECRET = "whsec_billing_state_test";
 const DEFAULT_CREDIT_EXPIRES_MS = 30 * 24 * 60 * 60 * 1000;
@@ -25,7 +23,7 @@ export interface BillingWebhookFixture {
 }
 
 interface SubscriptionWebhookInput extends BillingWebhookFixture {
-  readonly tier: "pro" | "team" | "custom";
+  readonly tier: "pro" | "team";
   readonly customerId: string;
   readonly subscriptionId: string;
   readonly status?: string;
@@ -65,9 +63,7 @@ function configureBillingWebhookEnv(): void {
   mockStripeClient(getApiTestMocks().stripe as unknown as StripeSDK);
   mockEnv("OKOU_PRICE_PRO", TEST_PRICE_PRO);
   mockEnv("OKOU_PRICE_TEAM", TEST_PRICE_TEAM);
-  mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
   mockEnv("OKOU_PRICE_CONCURRENCY", TEST_PRICE_CONCURRENCY);
-  mockEnv("ATOM_GRANT_PRICE", TEST_PRICE_ATOM_GRANT);
   mockEnv(
     "OKOU_ONE_TIME_CAMPAIGN",
     JSON.stringify({
@@ -97,12 +93,8 @@ function defaultCreditExpiresAt(): Date {
   return new Date(now() + DEFAULT_CREDIT_EXPIRES_MS);
 }
 
-function subscriptionPriceId(tier: "pro" | "team" | "custom"): string {
-  return tier === "custom"
-    ? TEST_PRICE_CUSTOM
-    : tier === "team"
-      ? TEST_PRICE_TEAM
-      : TEST_PRICE_PRO;
+function subscriptionPriceId(tier: "pro" | "team"): string {
+  return tier === "team" ? TEST_PRICE_TEAM : TEST_PRICE_PRO;
 }
 
 function subscriptionPrice(tier: SubscriptionWebhookInput["tier"]) {

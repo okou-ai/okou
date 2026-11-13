@@ -73,7 +73,7 @@ import { canceledPlanEntitlementInsertSql } from "./subscription-deletion-projec
 import {
   archivedSubscriptionHasSurvivingComponents,
   archivedSubscriptionHasSurvivingPlan,
-} from "./archived-allowance";
+} from "./archived-billing-components";
 
 const L = logger("CronBillingEntitlements");
 const PAID_TIERS = ["pro", "team", "custom"] as const;

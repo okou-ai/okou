@@ -66,7 +66,7 @@ function createCatalogStorage() {
   };
 }
 const catalogStorage = createCatalogStorage();
-type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
+type RunnerClaim = Awaited<ReturnType<typeof api.executionInput>>;
 interface CatalogActor {
   readonly actor: ApiTestUser;
   readonly agentId: string;
@@ -96,7 +96,7 @@ async function catalogActor(
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   if (options.bootstrapOrg !== false) {
     await api.grantProEntitlement(actor);
     // Catalog fixtures complete claimed native Runner runs, so the owner
@@ -135,7 +135,7 @@ async function claimChatRun(
   readonly sandboxHeaders: { readonly authorization: string };
 }> {
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.claimRunnerJob(runId);
+  const claim = await api.executionInput(runId);
   return {
     claim,
     sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },

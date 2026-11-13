@@ -73,7 +73,6 @@ function mockViewer(autoOpen = true) {
       viewerUrl: `https://viewer.example/browsers/${id}`,
       liveUrl: null,
       screenshotUrl: null,
-      proxyCountryCode: null,
       timeoutMinutes: 10,
       idleExpiresAt: new Date(time + 600_000).toISOString(),
       suspendedAt: null,

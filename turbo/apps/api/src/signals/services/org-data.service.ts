@@ -36,7 +36,7 @@ import {
 } from "../external/clerk-organization-lists";
 import { db$, writeDb$ } from "../external/db";
 import { onRejection, settle } from "../utils";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
+import { scheduleReleasedSlotPicks$ } from "./pick-chat-run.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { deleteDiscordOrgData$ } from "./discord-owner-cleanup.service";

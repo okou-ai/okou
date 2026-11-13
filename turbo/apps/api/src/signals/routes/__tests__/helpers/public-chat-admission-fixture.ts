@@ -168,7 +168,7 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
       callbacks.disableVapid();
       captureStorageMocks();
-      runs.configureRunnerGroup();
+      await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {

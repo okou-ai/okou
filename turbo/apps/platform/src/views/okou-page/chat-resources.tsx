@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -13,7 +14,6 @@ import {
   cn,
   Popover,
   PopoverContent,
-  RunningIndicator,
   Skeleton,
   Tooltip,
   TooltipContent,
@@ -339,15 +339,13 @@ function ChatResourceArtifacts({
         />
       )}
       {expanded && hasMore && paging.state === "loading" && (
-        <p
-          role="status"
-          className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
-        >
-          <RunningIndicator />
-          {t(($) => {
+        <LoadingSkeleton
+          count={2}
+          className="px-2 py-1"
+          label={t(($) => {
             return $.chat.resources.loading;
           })}
-        </p>
+        />
       )}
       {expanded && hasMore && paging.state === "hasError" && (
         <p role="alert" className="px-2 py-1 text-xs text-muted-foreground">

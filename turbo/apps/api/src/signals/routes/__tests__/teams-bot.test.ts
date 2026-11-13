@@ -982,7 +982,7 @@ async function setupConnectedTeamsBotActor(
     orgId: fixture.orgId,
     orgRole: "org:admin",
   });
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
@@ -1297,7 +1297,7 @@ async function claimHistoricalTeamsDownload(
   provider: ReturnType<typeof historicalTeamsDownloadProvider>,
 ) {
   const { actor, fixture } = owned;
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
   authOrgApi.mockClerkUsers([actor]);
@@ -2201,7 +2201,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       orgId: fixture.orgId,
       orgRole: "org:admin",
     });
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     authOrgApi.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
@@ -2292,7 +2292,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       throw new Error("Expected Teams file run id");
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await runsApi.executionInput(runId);
     expect(claim.prompt).toContain("please inspect this");
     expect(claim.prompt).toContain(canonicalFilePrompt);
     expect(claim.appendSystemPrompt).toContain("okou teams download-file -h");
@@ -2518,7 +2518,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       throw new Error("Expected Teams personal file run");
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(run.id);
+    const claim = await runsApi.executionInput(run.id);
     const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
@@ -2717,7 +2717,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         "start the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const initialClaim = await runsApi.claimRunnerJob(initialRunId);
+      const initialClaim = await runsApi.executionInput(initialRunId);
       expect(initialClaim.appendSystemPrompt).toContain("Your name is Okou.");
       await runsApi.requestCancelRun(actor, initialRunId, [200]);
       await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
@@ -2743,7 +2743,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         "continue the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const followUpClaim = await runsApi.claimRunnerJob(followUpRunId);
+      const followUpClaim = await runsApi.executionInput(followUpRunId);
       expect(followUpClaim.appendSystemPrompt).toContain("Your name is Okou.");
       // A member default change does not alter an existing conversation.
       // Missing native history does not rotate the session or replay prior turns.
@@ -2867,6 +2867,12 @@ describe("POST /api/webhooks/teams/bot", () => {
 
       // Freeing a slot picks the waiting thread and launches its message.
       await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      const input = await runsApi.executionInput(firstRunId);
+      await webhooksApi.requestAgentComplete(
+        { runId: firstRunId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
       await flushWaitUntilForTest();
       const queuedRunId = await runIdForPrompt(actor, "queued run three");
 
@@ -3112,7 +3118,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         orgId: fixture.orgId,
         orgRole: "org:admin",
       });
-      const runnerGroup = runsApi.configureRunnerGroup();
+      const runnerGroup = await runsApi.configureRunnerGroup();
       context.mocks.ably.publish.mockResolvedValue(undefined);
       authOrgApi.acceptAgentStorageWrites();
       runsApi.acceptStorageDownloads();
@@ -3263,7 +3269,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         const channelContextRunId = await runIdForPrompt(actor, "@Nova");
         await runsApi.heartbeatRunner(runnerGroup);
         const channelContextClaim =
-          await runsApi.claimRunnerJob(channelContextRunId);
+          await runsApi.executionInput(channelContextRunId);
         const channelContextAppendSystemPrompt =
           channelContextClaim.appendSystemPrompt ?? "";
         const recentChannelContext = promptSection(

@@ -385,6 +385,13 @@ function createTemplatePickerFocusSignals(
 
 export function createComposerUiSignals() {
   const basic = createBasicComposerUiSignals();
+  const internalAddMenuRestoreFocus$ = state(true);
+  const restoreFocus$ = command(({ get }) => {
+    return get(internalAddMenuRestoreFocus$);
+  });
+  const setRestoreFocus$ = command(({ set }, restoreFocus: boolean) => {
+    set(internalAddMenuRestoreFocus$, restoreFocus);
+  });
   const dialog = createTemplatePickerDialogSignals();
   const list = createTemplatePickerListSignals();
   const cards = createTemplateCardSignals();
@@ -394,6 +401,10 @@ export function createComposerUiSignals() {
 
   return {
     model: basic.model,
+    addMenu: {
+      restoreFocus$,
+      setRestoreFocus$,
+    },
     openTemplatePickerDialog$: createOpenTemplatePickerDialogCommand(
       dialog,
       list,

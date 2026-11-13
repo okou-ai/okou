@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../../components/loading-skeleton.tsx";
 import type { WalletConnectionStatus } from "@okouai/api-contracts/contracts/wallet";
 import {
   Button,
@@ -207,11 +208,12 @@ export function WalletSection() {
               }}
             />
           ) : connection.state === "loading" ? (
-            <span role="status" className="text-sm text-muted-foreground">
-              {t(($) => {
+            <LoadingSkeleton
+              variant="text"
+              label={t(($) => {
                 return $.settings.shared.loading;
               })}
-            </span>
+            />
           ) : null}
         </div>
         <div className="mt-3 space-y-2">

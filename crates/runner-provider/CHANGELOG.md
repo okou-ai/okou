@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.3...runner-provider-v0.20.4) (2026-11-13)
+
+## [0.20.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.2...runner-provider-v0.20.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **runner:** replace reset api pools without interrupting active requests ([#46994](https://github.com/okou-ai/okou/issues/46994)) ([98a6490](https://github.com/okou-ai/okou/commit/98a6490a3e076724b96f9b31a1fad3b9357c17f4))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.1...runner-provider-v0.20.2) (2026-11-13)
 
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.0...runner-provider-v0.20.1) (2026-11-13)

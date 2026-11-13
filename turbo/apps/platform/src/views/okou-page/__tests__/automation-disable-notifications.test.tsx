@@ -344,7 +344,7 @@ test("A fast notification destination replaces its initially hidden loading stat
   });
   const dialog = await openDetails();
   click(control("link", "View automation", dialog));
-  const loading = await screen.findByText("Loading automation");
+  const loading = await screen.findByLabelText("Loading automation");
   expect(loading).not.toBeVisible();
   response.resolve();
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
@@ -362,11 +362,11 @@ test("A pending notification destination shows a lightweight status until access
   });
   const dialog = await openDetails();
   click(control("link", "View automation", dialog));
-  const loading = await screen.findByText("Loading automation");
+  const loading = await screen.findByLabelText("Loading automation");
   await waitFor(() => {
     expect(loading).toBeVisible();
   });
-  expect(screen.getByRole("main")).toHaveTextContent(/^Loading automation$/);
+  expect(loading).toHaveAttribute("aria-busy", "true");
   response.resolve();
   const selected = await screen.findByRole("group", { name: "Every 1 hour" });
   expect(selected).toHaveAttribute("aria-current", "true");
@@ -391,7 +391,7 @@ test("A failed destination can retry through the loading status and reach the sa
   expect(control("link", "Back to workflows")).toBeInTheDocument();
   failed = false;
   click(control("button", "Try again"));
-  const loading = await screen.findByText("Loading automation");
+  const loading = await screen.findByLabelText("Loading automation");
   await waitFor(() => {
     expect(loading).toBeVisible();
   });

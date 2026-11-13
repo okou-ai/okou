@@ -59,8 +59,6 @@ export function createBillingCheckoutFixture() {
 
   const TEST_PRICE_TEAM = "price_test_team";
 
-  const TEST_PRICE_CUSTOM = "price_test_custom";
-
   const TEST_PRICE_USAGE_PACK_PLAN_PRO = "price_test_usage_pack_plan_pro";
 
   const TEST_PRICE_USAGE_PACK_PLAN_TEAM = "price_test_usage_pack_plan_team";
@@ -72,8 +70,6 @@ export function createBillingCheckoutFixture() {
   const TEST_PRICE_USAGE_PACK_100 = "price_test_usage_pack_100";
 
   const TEST_PRICE_USAGE_PACK_200 = "price_test_usage_pack_200";
-
-  const TEST_PRICE_ATOM_GRANT = "price_test_atom_grant";
 
   const TEST_PRICE_USAGE_ALLOWANCE = "price_test_usage_allowance";
 
@@ -151,8 +147,6 @@ export function createBillingCheckoutFixture() {
       const fixedAmounts = new Map<string, number>([
         [TEST_PRICE_PRO, 2000],
         [TEST_PRICE_TEAM, 10_000],
-        [TEST_PRICE_CUSTOM, 0],
-        [TEST_PRICE_ATOM_GRANT, 0],
         [TEST_PRICE_USAGE_PACK_PLAN_PRO, 0],
         [TEST_PRICE_USAGE_PACK_PLAN_TEAM, 0],
       ]);
@@ -277,7 +271,7 @@ export function createBillingCheckoutFixture() {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await createAuthDeviceSupportApi(context).initializePreferences(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
@@ -399,7 +393,7 @@ export function createBillingCheckoutFixture() {
   }
 
   async function createSubscriptionOrg(args: {
-    readonly tier: "pro" | "team" | "custom";
+    readonly tier: "pro" | "team";
     readonly customerId?: string;
     readonly subscriptionId?: string;
     readonly subscriptionStatus?: string;
@@ -412,18 +406,10 @@ export function createBillingCheckoutFixture() {
       args.subscriptionId ?? `sub_${randomUUID().slice(0, 8)}`;
     const periodEndUnix =
       args.periodEndUnix ?? Math.floor(now() / 1000) + 30 * 86_400;
-    const priceId =
-      args.tier === "custom"
-        ? TEST_PRICE_CUSTOM
-        : args.tier === "team"
-          ? TEST_PRICE_TEAM
-          : TEST_PRICE_PRO;
+    const priceId = args.tier === "team" ? TEST_PRICE_TEAM : TEST_PRICE_PRO;
     const price = {
       id: priceId,
     };
-    if (args.tier === "custom") {
-      mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
-    }
     mockClerkOrganization(fixture);
     mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
     context.mocks.stripe.customers.retrieve.mockResolvedValueOnce({
@@ -509,7 +495,6 @@ export function createBillingCheckoutFixture() {
         "OKOU_PRICE_USAGE_PACK_50",
         "OKOU_PRICE_USAGE_PACK_100",
         "OKOU_PRICE_USAGE_PACK_200",
-        "OKOU_PRICE_CUSTOM",
       ] as const
     ).map((name) => {
       return [name, env(name)] as const;
@@ -550,9 +535,8 @@ export function createBillingCheckoutFixture() {
 
   function createOwnedBillingOrg(
     options: {
-      readonly tier?: "pro" | "team" | "custom";
+      readonly tier?: "pro" | "team";
       readonly retainCheckoutState?: boolean;
-      readonly foreverCustom?: boolean;
     } = {},
   ) {
     const fixture = createOrgFixture();
@@ -564,21 +548,11 @@ export function createBillingCheckoutFixture() {
         email: fixture.userId + "@example.test",
       },
       {
-        foreverCustom: options.foreverCustom
-          ? {
-              priceId: TEST_PRICE_ATOM_GRANT,
-              webhookSecret: STRIPE_WEBHOOK_SECRET,
-            }
-          : undefined,
         plan: options.tier
           ? {
               tier: options.tier,
               priceId:
-                options.tier === "pro"
-                  ? TEST_PRICE_PRO
-                  : options.tier === "team"
-                    ? TEST_PRICE_TEAM
-                    : TEST_PRICE_CUSTOM,
+                options.tier === "pro" ? TEST_PRICE_PRO : TEST_PRICE_TEAM,
               webhookSecret: STRIPE_WEBHOOK_SECRET,
             }
           : undefined,
@@ -587,102 +561,12 @@ export function createBillingCheckoutFixture() {
           : undefined,
       },
     );
-    if (options.tier === "custom") {
-      mockEnv("OKOU_PRICE_CUSTOM", TEST_PRICE_CUSTOM);
-    }
     return { ...fixture, ...owner };
   }
 
-  async function createPublicBillingOrg(tier?: "pro" | "team" | "custom") {
+  async function createPublicBillingOrg(tier?: "pro" | "team") {
     const fixture = createOwnedBillingOrg({ tier });
     await fixture.initialize();
-    return fixture;
-  }
-
-  async function createUsagePackAtomGrantOrg(tier: "pro" | "team") {
-    const fixture = createOwnedBillingOrg({ retainCheckoutState: true });
-    await fixture.run(async () => {
-      await fixture.initialize();
-      const customerId = `cus_${randomUUID().slice(0, 8)}`;
-      const currentPeriodStart = currentSecond();
-      const currentPeriodEnd = currentPeriodStart + 30 * 86_400;
-      mockClerkOrganization(fixture);
-      mockEnv("ATOM_GRANT_PRICE", TEST_PRICE_ATOM_GRANT);
-      mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [],
-      });
-      const event = {
-        type: "invoice.paid",
-        data: {
-          object: {
-            id: `in_atom_${randomUUID().slice(0, 8)}`,
-            customer: customerId,
-            metadata: {
-              type: "atom_grant",
-              purpose: "atom_grant",
-              source: "atom_entitlement",
-              planVersion: "usagePack",
-              orgId: fixture.orgId,
-              tier,
-              planId: tier,
-              duration: "1m",
-              atomGrantExpiresAt: new Date(
-                currentPeriodEnd * 1000,
-              ).toISOString(),
-            },
-            status: "paid",
-            paid: true,
-            parent: null,
-            lines: {
-              has_more: false,
-              data: [
-                {
-                  id: `il_atom_${randomUUID().slice(0, 8)}`,
-                  amount: 0,
-                  subtotal: 0,
-                  quantity: 1,
-                  price: { id: TEST_PRICE_ATOM_GRANT },
-                  period: { start: currentPeriodStart, end: currentPeriodEnd },
-                  parent: { type: "invoice_item_details" },
-                },
-              ],
-            },
-          },
-        },
-      };
-      const payload = JSON.stringify(event);
-      context.mocks.stripe.webhooks.constructEventAsync.mockImplementation(
-        (body) => {
-          if (body !== payload) {
-            throw new Error("Unexpected Atom invoice webhook payload");
-          }
-          return event;
-        },
-      );
-      await fixture.run(() => {
-        return accept(
-          setupApp({ context, routes: webhooksStripeRoutes })(
-            webhookStripeContract,
-          ).post({
-            body: payload,
-            extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
-          }),
-          [200],
-        );
-      });
-
-      const status = await fixture.run(() => {
-        return readBillingStatus(fixture);
-      });
-      expect(status).toMatchObject({
-        tier,
-        credits: 0,
-        subscriptionStatus: "atom_grant",
-        hasSubscription: false,
-        showUsagePack: true,
-      });
-    });
     return fixture;
   }
 
@@ -886,7 +770,6 @@ export function createBillingCheckoutFixture() {
     TEST_STAFF_ORG_ID,
     TEST_PRICE_PRO,
     TEST_PRICE_TEAM,
-    TEST_PRICE_CUSTOM,
     TEST_PRICE_USAGE_PACK_PLAN_PRO,
     TEST_PRICE_USAGE_PACK_PLAN_TEAM,
     TEST_PRICE_USAGE_PACK_20,
@@ -915,7 +798,6 @@ export function createBillingCheckoutFixture() {
     createSubscriptionOrg,
     createOwnedBillingOrg,
     createPublicBillingOrg,
-    createUsagePackAtomGrantOrg,
     createConcurrencySubscriptionOrg,
     createMergedConcurrencySubscriptionOrg,
     seedMemberRole,

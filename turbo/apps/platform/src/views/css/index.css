@@ -12,6 +12,11 @@
    icon, above it the controls that have a label show one. */
 @custom-variant composer-wide (@container composer (width >= 600px));
 
+/* A capability card is active while it is hovered or holds focus: its
+   objects lift, its texture pool widens and its gears turn. One variant, so
+   the pointer and the keyboard always share the pose. */
+@custom-variant capability-active (&:is(:where(.group\/card):is(:hover, :focus-within) *));
+
 /* Include @okouai/ui class recipes in Tailwind's content scanning. */
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 
@@ -207,55 +212,45 @@
   --animate-avatar-dice-spin: avatar-dice-spin 0.6s ease-out;
   --animate-avatar-firework: avatar-firework 0.6s ease-out forwards;
 
-  /* Capability home line drawings. A drawing fades in when it mounts or when
-     a Create or Workflow choice swaps it in; a fade rather than a wipe, so
-     running the pointer along the choices does not sweep the eye across the
-     card once per choice. Hovering or focusing its card then plays each
-     drawing's motion once, on one 2.4s timeline shared by every drawing: an
-     element's delay plus duration ends by 2.4s, and every keyframe ends on the
-     resting drawing, so nothing jumps when the pointer leaves and nothing
-     loops. The motion is deliberately slow and small: sine easing with no
-     snap in the middle, about half the travel a first pass used, and no
-     element changes colour, because a stroke or fill flipping to the primary
-     and back reads as a flash. An element shifts its slot on that timeline
-     through `--capability-delay` and `--capability-duration`, because
-     `animate-*` compiles to the `animation` shorthand, which would reset a
-     separate `animation-delay` rule back to zero. Consumers reach every entry
-     through `motion-safe:animate-*`, so reduced motion drops the class and the
-     drawing is simply present. Keyframes stay below. */
+  /* Capability home cards. Each card holds a few photographed objects, and
+     the objects carry the card's motion: a Create or Workflow choice swaps
+     its objects in through `capability-layer-in`, and Explore replays the
+     card's own objects through `capability-layer-replay`, both registered in
+     the inline block below because they read per-layer values. The clock's
+     hands sweep to the time as it enters and then tick while the card is
+     active; the trigger's ring flashes once as it enters; the gears turn only
+     while the card is active and stop where they are. Consumers reach every
+     entry through `motion-safe:animate-*`, so reduced motion drops the class
+     and the objects are simply present. Keyframes stay below. */
   --animate-capability-art-in: capability-art-in 500ms
     cubic-bezier(0.33, 1, 0.68, 1) both;
-  --animate-capability-run: capability-run var(--capability-duration, 1800ms)
-    cubic-bezier(0.37, 0, 0.63, 1) var(--capability-delay, 0ms) both;
-  --animate-capability-pulse: capability-pulse 1200ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-scan: capability-scan 2400ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-sweep: capability-sweep
-    var(--capability-duration, 1600ms) cubic-bezier(0.37, 0, 0.63, 1)
-    var(--capability-delay, 0ms) backwards;
-  --animate-capability-fan-a: capability-fan-a 2400ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-fan-b: capability-fan-b 2400ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-grow: capability-grow var(--capability-duration, 1400ms)
-    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms) backwards;
-  --animate-capability-tilt: capability-tilt 2400ms
-    cubic-bezier(0.33, 1, 0.68, 1);
-  --animate-capability-sun: capability-sun 2000ms cubic-bezier(0.33, 1, 0.68, 1)
-    var(--capability-delay, 0ms) backwards;
-  --animate-capability-draw: capability-draw var(--capability-duration, 1800ms)
-    cubic-bezier(0.37, 0, 0.63, 1) var(--capability-delay, 0ms) backwards;
-  --animate-capability-rise: capability-rise 1500ms
-    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms) backwards;
-  --animate-capability-spin: capability-spin 2400ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-ring: capability-ring 1200ms
-    cubic-bezier(0.33, 1, 0.68, 1) var(--capability-delay, 0ms);
-  --animate-capability-travel: capability-travel 2400ms
-    cubic-bezier(0.37, 0, 0.63, 1);
-  --animate-capability-receive: capability-receive 2400ms
-    cubic-bezier(0.33, 1, 0.68, 1);
+  --animate-capability-hour-sweep: capability-hour-sweep 1100ms
+    cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-capability-minute-sweep: capability-minute-sweep 1100ms
+    cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-capability-minute-tick: capability-hand-tick 90s linear infinite;
+  --animate-capability-second-tick: capability-hand-tick 6s linear infinite;
+  --animate-capability-ring-flash: capability-ring-flash 1s ease;
+  --animate-capability-gear: capability-gear 9s linear infinite paused;
+  --animate-capability-gear-fast: capability-gear 7.5s linear infinite paused;
+  --animate-capability-gear-reverse: capability-gear 9s linear infinite reverse
+    paused;
+  /* The glow the trigger's ring holds while its card is active. */
+  --shadow-capability-ring:
+    0 0 0 2px color-mix(in oklab, var(--color-primary) 90%, transparent),
+    0 0 18px 3px color-mix(in oklab, var(--color-primary) 35%, transparent);
+  /* Each card's hue, from the brand palette, for the faint wash behind its
+     objects; the four cards differ by this alone. Identical in Light and
+     Dark: the wash's strength carries the theme. The clock hand is the grey
+     the clock face was photographed with. */
+  --color-capability-people: #ffc6e2;
+  --color-capability-research: #b4def5;
+  --color-capability-create: #f9e840;
+  --color-capability-workflow: #b7de77;
+  --color-capability-clock-hand: #8d8a88;
+  /* Fine grain laid over a card's wash, so the hue reads as paper rather than
+     a screen gradient. */
+  --background-image-capability-grain: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nMTYwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nLjknIG51bU9jdGF2ZXM9JzInIHN0aXRjaFRpbGVzPSdzdGl0Y2gnLz48ZmVDb2xvck1hdHJpeCB2YWx1ZXM9JzAgMCAwIDAgMCAgMCAwIDAgMCAwICAwIDAgMCAwIDAgIDAgMCAwIC41NSAwJy8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsdGVyPSd1cmwoI24pJy8+PC9zdmc+");
   /* A capability's choices slide up from behind the composer they feed. */
   --animate-capability-tray-in: capability-tray-in 360ms
     cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -311,6 +306,46 @@
      Consumers reach it through `motion-safe:`. Keyframes stay below. */
   --animate-capability-row-in: capability-row-in 560ms
     cubic-bezier(0.22, 1, 0.36, 1) var(--capability-row-delay, 0ms) backwards;
+
+  /* A capability card's objects enter on the same contract: each object
+     starts from its own pose in `--capability-from-*` (gathered in a stack,
+     rolled back, or pressed down) and settles into wherever the card puts it,
+     its resting or its lifted pose, one 70ms step after the object before it
+     through `--capability-delay`. A swap fades the new objects in; a replay
+     keeps them on screen, so running the pointer back over Explore never
+     blinks the card's own objects out. */
+  --animate-capability-layer-in: capability-layer-in
+    var(--capability-duration, 660ms) cubic-bezier(0.2, 0.8, 0.2, 1)
+    var(--capability-delay, 0ms) backwards;
+  --animate-capability-layer-replay: capability-layer-replay
+    var(--capability-duration, 660ms) cubic-bezier(0.2, 0.8, 0.2, 1)
+    var(--capability-delay, 0ms) backwards;
+
+  /* A capability card's ground: its hue strongest behind its objects at
+     `--capability-pool-x`/`-y` and gone before the copy and the buttons, with
+     a faint ink pool under the brand texture there. The card sets the centre
+     and radii; the pool's reach is the registered `--capability-pool`. */
+  --background-image-capability-wash:
+    radial-gradient(
+      calc(var(--capability-pool-rx) * 1.35)
+        calc(var(--capability-pool-ry) * 1.5) at var(--capability-pool-x)
+        var(--capability-pool-y),
+      var(--capability-hue) 0%,
+      color-mix(in oklab, var(--capability-hue) 45%, transparent) 48%,
+      transparent 100%
+    ),
+    linear-gradient(
+      200deg,
+      color-mix(in oklab, var(--capability-hue) 35%, transparent) 0%,
+      transparent 55%
+    );
+  --background-image-capability-pool: radial-gradient(
+    var(--capability-pool-rx) var(--capability-pool-ry) at
+      var(--capability-pool-x) var(--capability-pool-y),
+    color-mix(in oklab, var(--color-foreground) 6%, transparent),
+    color-mix(in oklab, var(--color-foreground) 3%, transparent) 45%,
+    transparent var(--capability-pool)
+  );
 
   --color-palette-anchor: var(--okou-color-theme-anchor);
   --background-image-palette-gradient: linear-gradient(
@@ -797,134 +832,62 @@ body {
   }
 }
 
-/* A dash runs the length of a wire drawn with `pathLength="1"`. */
-@keyframes capability-run {
-  from {
-    opacity: 1;
-    stroke-dashoffset: 0.22;
-  }
-  to {
-    opacity: 1;
-    stroke-dashoffset: -1;
-  }
-}
-
-@keyframes capability-pulse {
-  50% {
-    transform: scale(1.05);
-  }
-}
-
-@keyframes capability-scan {
-  50% {
-    transform: translate(-20px, 8px);
-  }
-}
-
-@keyframes capability-sweep {
-  from {
-    transform: scaleX(0);
-  }
-}
-
-@keyframes capability-fan-a {
-  40%,
-  60% {
-    transform: translate(10px, -8px) rotate(2deg);
-  }
-}
-
-@keyframes capability-fan-b {
-  40%,
-  60% {
-    transform: translate(5px, -4px) rotate(1deg);
-  }
-}
-
-@keyframes capability-grow {
-  from {
-    transform: scaleY(0);
-  }
-}
-
-@keyframes capability-tilt {
-  from {
-    transform: rotate(-2deg);
-  }
-}
-
-@keyframes capability-sun {
-  from {
-    transform: translateY(90px);
-  }
-}
-
-/* Lines drawn with `pathLength="1"` write themselves out. */
-@keyframes capability-draw {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes capability-rise {
+/* An object enters from its own pose in `--capability-from-*` and settles
+   wherever the card puts it; a replay does the same without fading. */
+@keyframes capability-layer-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    translate: var(--capability-from-x, 0px) var(--capability-from-y, 0px);
+    rotate: var(--capability-from-rotate, 0deg);
+    scale: var(--capability-from-scale, 1);
   }
 }
 
-/* A quarter turn of the hand: time passing, not a dial spun. */
-@keyframes capability-spin {
+@keyframes capability-layer-replay {
   from {
-    transform: rotate(-90deg);
+    translate: var(--capability-from-x, 0px) var(--capability-from-y, 0px);
+    rotate: var(--capability-from-rotate, 0deg);
+    scale: var(--capability-from-scale, 1);
   }
 }
 
-/* A faint ripple rather than a ping: it starts at under half strength. */
-@keyframes capability-ring {
+/* The clock's hands run round to the time they rest at. */
+@keyframes capability-hour-sweep {
   from {
-    opacity: 0.4;
-    transform: scale(1);
+    rotate: -300deg;
   }
+}
+
+@keyframes capability-minute-sweep {
+  from {
+    rotate: -540deg;
+  }
+}
+
+/* A tick turns the hand's own `transform` on top of the `rotate` it rests
+   at, so a full turn comes back to where it started without a jump. */
+@keyframes capability-hand-tick {
   to {
-    opacity: 0;
-    transform: scale(1.3);
+    transform: rotate(360deg);
   }
 }
 
-/* The signal crosses the connector, fades at the action, then the dot is
-   back at rest in the middle of the wire. */
-@keyframes capability-travel {
+@keyframes capability-ring-flash {
   0% {
-    opacity: 0;
-    transform: translateX(-76px);
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
   }
-  12% {
-    opacity: 1;
-  }
-  55% {
-    opacity: 1;
-    transform: translateX(70px);
-  }
-  65% {
-    opacity: 0;
-    transform: translateX(70px);
-  }
-  66% {
-    opacity: 0;
-    transform: none;
+  45% {
+    box-shadow:
+      0 0 0 3px var(--color-primary),
+      0 0 30px 8px color-mix(in oklab, var(--color-primary) 50%, transparent);
   }
 }
 
-@keyframes capability-receive {
-  55% {
-    transform: none;
-  }
-  70% {
-    transform: scale(1.03);
+@keyframes capability-gear {
+  to {
+    rotate: 360deg;
   }
 }
 
@@ -1164,6 +1127,35 @@ body {
   --okou-composer-focus-veil: none;
 }
 
+/* The shadow a capability card's photographed objects stand on, and the
+   longer one they cast while the card is active and they lift. Warm and
+   faint on light cards; on dark cards the same falloff needs black at
+   several times the strength to read at all. */
+:root {
+  --okou-capability-object-shadow: drop-shadow(0 1px 1px rgb(40 30 25 / 0.1))
+    drop-shadow(0 5px 9px rgb(40 30 25 / 0.09));
+  --okou-capability-object-shadow-lifted: drop-shadow(
+      0 2px 2px rgb(40 30 25 / 0.08)
+    )
+    drop-shadow(0 14px 20px rgb(40 30 25 / 0.12));
+  /* How strongly a card's hue wash shows, at rest and while it is active.
+     A pastel that reads as a tint on a light card glows on a dark one, so
+     Dark holds it at about a third. */
+  --okou-capability-wash: 34%;
+  --okou-capability-wash-active: 44%;
+}
+
+:root:where([data-theme="dark"]) {
+  --okou-capability-object-shadow: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35))
+    drop-shadow(0 6px 10px rgb(0 0 0 / 0.3));
+  --okou-capability-object-shadow-lifted: drop-shadow(
+      0 2px 2px rgb(0 0 0 / 0.3)
+    )
+    drop-shadow(0 16px 22px rgb(0 0 0 / 0.38));
+  --okou-capability-wash: 13%;
+  --okou-capability-wash-active: 17%;
+}
+
 /* Reveal progress is inherited by the max-content text. Its Tailwind mask
    and transform resolve the live width difference against the clipping
    container, without publishing measured layout back into CSS. */
@@ -1180,6 +1172,14 @@ body {
   syntax: "<number>";
   inherits: false;
   initial-value: 1;
+}
+
+/* How far a capability card's texture pool reaches from its objects. It is
+   registered so the pool can grow smoothly while the card is active. */
+@property --capability-pool {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 84%;
 }
 
 /* Resolve container units to lengths before atan2 converts them into scale

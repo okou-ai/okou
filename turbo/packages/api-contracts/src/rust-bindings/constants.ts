@@ -64,6 +64,15 @@ import {
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../contracts/storages";
 import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../contracts/data-router";
+import {
+  DEFAULT_RUNNER_PROFILE,
+  DEFAULT_RUNNER_PROFILE_VCPU,
+  DEFAULT_RUNNER_PROFILE_MEMORY_MB,
+  DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB,
+  DEFAULT_RUNNER_PROFILE_HOME_DISK_MB,
+  RUNNER_DISPATCH_MAX_BODY_BYTES,
+  RUNNER_DISPATCH_MAX_VALIDITY_MS,
+} from "../contracts/runner-dispatch";
 
 export type RustConstantValue =
   | {
@@ -249,6 +258,29 @@ function rustU64(value: number): RustConstantValue {
 }
 
 export const rustConstantBindings = [
+  ...(
+    [
+      ["DEFAULT_PROFILE_VCPU", DEFAULT_RUNNER_PROFILE_VCPU],
+      ["DEFAULT_PROFILE_MEMORY_MB", DEFAULT_RUNNER_PROFILE_MEMORY_MB],
+      ["DEFAULT_PROFILE_ROOTFS_DISK_MB", DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB],
+      ["DEFAULT_PROFILE_HOME_DISK_MB", DEFAULT_RUNNER_PROFILE_HOME_DISK_MB],
+      ["DISPATCH_MAX_BODY_BYTES", RUNNER_DISPATCH_MAX_BODY_BYTES],
+      ["DISPATCH_MAX_VALIDITY_MS", RUNNER_DISPATCH_MAX_VALIDITY_MS],
+    ] as const
+  ).map(([name, value]) => {
+    return {
+      rustModulePath: ["runners"],
+      rustConstName: name,
+      value: rustU32(value),
+      rustDoc: ["Canonical complete-input Runner contract constant."],
+    };
+  }),
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE",
+    value: rustString(DEFAULT_RUNNER_PROFILE),
+    rustDoc: ["Canonical default Runner profile."],
+  },
   {
     rustModulePath: ["data_router"],
     rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",

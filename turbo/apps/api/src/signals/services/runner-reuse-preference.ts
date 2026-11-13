@@ -1505,6 +1505,23 @@ function runnerReusePreferenceResult(args: {
   };
 }
 
+/** A direct sender consumes its captured read without finalizing a queue row. */
+export function preparedRunnerReusePreference(
+  preparation: RunnerReusePreparation | undefined,
+  admittedAt: Date,
+): RunnerPreference {
+  if (preparation === undefined) {
+    return { kind: "noPreference", reason: "noReuseKey" };
+  }
+  if (!preparation.selection.ok) {
+    throw preparation.selection.error;
+  }
+  return runnerReusePreferenceResult({
+    candidate: preparation.selection.value.candidate,
+    discoveryStartedAt: admittedAt,
+  }).preference;
+}
+
 function currentPredecessorHomeEvidence(
   candidate: RunnerReuseCandidate,
   completionBridgeActive: boolean,

@@ -60,7 +60,7 @@ function expectedWakeup(
 }
 
 describe("default connector account runtime wakeups", () => {
-  it("notifies only the account owner's running run, excluding pending and cancelled states", async () => {
+  it("notifies only the account owner's running Run and excludes other owners and cancellation", async () => {
     mockEnv("ABLY_API_KEY", "test.key:secret");
     const owned = await publicChatActor(context, {
       tier: "team",
@@ -126,10 +126,12 @@ describe("default connector account runtime wakeups", () => {
         [200],
       );
       expect(changed.body).toMatchObject({ id: second.id, isDefault: true });
-      expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
+      expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith(
+        expectedWakeup(owned.runnerGroup, run.runId, target),
+      );
       await expect(runs.readRun(owned.actor, run.runId)).resolves.toMatchObject(
         {
-          status: "pending",
+          status: "running",
         },
       );
       await expect(
@@ -142,6 +144,7 @@ describe("default connector account runtime wakeups", () => {
       );
 
       await owned.claimRunnerRun(run.runId);
+      context.mocks.ably.batchPublish.mockClear();
       await accept(requestDefault(owned.actor, target, first.id), [200]);
       expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith(
         expectedWakeup(owned.runnerGroup, run.runId, target),

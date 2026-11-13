@@ -269,7 +269,7 @@ describe("Workflow schedules", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.AgentSuggestion]: true },
     );
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.heartbeatRunner(runnerGroup);
@@ -296,7 +296,7 @@ describe("Workflow schedules", () => {
       )
     ).body;
     const started = await fireSchedule(actor, automation);
-    const claim = await runs.claimRunnerJob(started.runId);
+    const claim = await runs.executionInput(started.runId);
     expect(claim.prompt).toContain("scheduled-report");
     expect(claim.appendSystemPrompt).not.toContain(
       "# Suggestions feedback context",
@@ -572,7 +572,7 @@ describe("Workflow schedule recovery", () => {
     automation: WorkflowAutomationSummary,
   ) {
     const fired = await runScheduleNow(actor, automation.id);
-    const claim = await runs.claimRunnerJob(fired.runId);
+    const claim = await runs.executionInput(fired.runId);
     await webhooks.requestAgentComplete(
       {
         runId: fired.runId,
@@ -595,6 +595,12 @@ describe("Workflow schedule recovery", () => {
   }
 
   it("completes an in-flight user schedule using its edited recurrence", async () => {
+    // Registering a receiver in 2030 invokes fleet-wide stale-row cleanup.
+    await setupApp({
+      context,
+      routes: workflowAutomationsRoutes,
+      isolatePg: true,
+    });
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const client = automationClient();
     const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
@@ -614,13 +620,13 @@ describe("Workflow schedule recovery", () => {
         [201],
       )
     ).body;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const [fired] = await Promise.all([
       runScheduleNow(actor, automation.id),
       runs.heartbeatRunner(runnerGroup),
     ]);
-    const claim = await runs.claimRunnerJob(fired.runId);
+    const claim = await runs.executionInput(fired.runId);
     expect(claim.cliAgentType).toBe("claude-code");
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
     const schedule = {
@@ -660,6 +666,12 @@ describe("Workflow schedule recovery", () => {
   });
 
   it("stops a user-created schedule after three failed manual runs", async () => {
+    // These future serving heartbeats must not prune parallel tests' receivers.
+    await setupApp({
+      context,
+      routes: workflowAutomationsRoutes,
+      isolatePg: true,
+    });
     const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
     mockNow(startedAt);
     const client = automationClient();
@@ -680,12 +692,12 @@ describe("Workflow schedule recovery", () => {
         [201],
       )
     ).body;
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
-    await runs.heartbeatRunner(runnerGroup);
     for (let failure = 0; failure < 3; failure += 1) {
       // Each user retry has its own request time rather than replaying one click.
       mockNow(startedAt + (failure + 1) * 60_000);
+      await runs.registerDirectRunner(runnerGroup);
       automation = await failManualScheduleRun(actor, automation);
     }
     expect(automation).toMatchObject({ enabled: false, nextRunAt: null });
@@ -773,7 +785,7 @@ describe("Debug Morning Brief", () => {
 });
 
 describe("Workflow Run admission", () => {
-  it("selects current ordinary Workflows when a queued Run is claimed", async () => {
+  it("captures ordinary Workflows at dispatch and applies edits to later Runs", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
@@ -840,7 +852,7 @@ describe("Workflow Run admission", () => {
             .get("SKILL.md")
             ?.toString(),
         ).toContain(
-          workflow.workflowId === firstWorkflow.workflowId
+          workflow.workflowId === firstWorkflow.workflowId && run === null
             ? revised
             : workflow.instruction,
         );

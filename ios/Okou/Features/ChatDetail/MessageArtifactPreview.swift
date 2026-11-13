@@ -158,14 +158,20 @@ private struct ArtifactPreviewContent: View {
     case .hasData(let content):
       resolvedContent(content)
     case .loading:
-      fileContent(nil)
+      if artifact.kind == .video {
+        MessageMediaPlayer(url: nil, autoplays: true, retry: viewer.retry)
+      } else {
+        fileContent(nil)
+      }
     }
   }
 
   @ViewBuilder private func resolvedContent(_ content: MessageArtifactPreviewRead.Content)
     -> some View
   {
-    if let url = content.contentURL {
+    if content.artifact.kind == .video {
+      MessageMediaPlayer(url: content.contentURL, autoplays: true, retry: viewer.retry)
+    } else if let url = content.contentURL {
       VStack(spacing: 0) {
         if let webError {
           OkouLoadErrorRow(message: webError, actionTitle: "Retry") {

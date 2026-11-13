@@ -9,6 +9,7 @@ import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { browserRoutes } from "../browser";
@@ -19,7 +20,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const PROVIDER_URL = "https://api.browser-use.com/api/v3";
-const STARTED_AT = Date.parse("2026-07-24T10:00:00.000Z");
+const STARTED_AT = now();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function client() {

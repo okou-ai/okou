@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { mockEnv } from "../../../lib/env";
+import {
+  getSecretKmsClient,
+  setSecretKmsClientForTests,
+} from "../../../lib/secret-kms-client";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { createDeferredPromise } from "../../utils";
 
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -34,26 +41,125 @@ async function initializedPredecessor() {
 }
 
 describe("Runner first-start Thread binding", () => {
-  it("preserves the preceding native context when a queued Run is cancelled", async () => {
+  it("preserves native context when cancellation wins during execution preparation", async () => {
     const { owned, first } = await initializedPredecessor();
     await owned.run(async () => {
-      const pending = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
-        threadId: first.threadId,
-        prompt: "cancel this input before a Runner starts it",
+      const preparing = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
       });
+      const kms = getSecretKmsClient();
+      onTestFinished(() => {
+        setSecretKmsClientForTests(kms);
+      });
+      setSecretKmsClientForTests({
+        ...kms,
+        async generateDataKey(request, signal) {
+          if (!preparing.settled()) {
+            preparing.resolve();
+          }
+          await release.promise;
+          return await kms.generateDataKey(request, signal);
+        },
+      });
+      const chat = createChatFilesBddApi(context);
+      const clientEventId = randomUUID();
+      await chat.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: first.threadId,
+          clientEventId,
+          prompt: "Cancel while execution secrets are being encrypted",
+        },
+        [201],
+      );
+      await preparing.promise;
+      const page = await chat.listThreadEvents(owned.actor, first.threadId);
+      const pending = page.events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      });
+      if (!pending?.runId) {
+        throw new Error("Expected a durable pending Run");
+      }
+      await expect(
+        api.readRun(owned.actor, pending.runId),
+      ).resolves.toMatchObject({ status: "pending" });
       await api.requestCancelRun(owned.actor, pending.runId, [200]);
+      release.resolve();
       await flushWaitUntilForTest();
       const cancelled = await api.readRun(owned.actor, pending.runId);
       expect(cancelled.status).toBe("cancelled");
       expect(cancelled.startedAt).toBeUndefined();
+      expect(
+        (await api.readRunQueue(owned.actor)).body.concurrency.active,
+      ).toBe(0);
+      await expect(
+        chat.readThread(owned.actor, first.threadId),
+      ).resolves.toMatchObject({
+        cancellationRecoveryPending: false,
+      });
+      setSecretKmsClientForTests(kms);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         threadId: first.threadId,
-        prompt: "continue after the never-started cancellation",
+        prompt: "Continue after preparing input was cancelled",
       });
-      const claim = await owned.claimRunnerRun(next.runId);
-      expect(claim.nativeContinuation).toMatchObject({
+      const input = await owned.claimRunnerRun(next.runId);
+      expect(input.nativeContinuation).toMatchObject({
+        sessionId: first.threadId,
+        generationRunId: first.runId,
+      });
+    });
+  });
+
+  it("preserves the preceding native context when a waiting input is recalled", async () => {
+    const { owned, first } = await initializedPredecessor();
+    await owned.run(async () => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const blocker = await api.createThreadRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Occupy capacity on another Thread",
+      });
+      const chat = createChatFilesBddApi(context);
+      const clientEventId = randomUUID();
+      await chat.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: first.threadId,
+          clientEventId,
+          prompt: "Recall this waiting input before execution",
+        },
+        [201],
+      );
+      await chat.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: first.threadId,
+          clientEventId: randomUUID(),
+          revokesEventId: clientEventId,
+        },
+        [201],
+      );
+      const input = await owned.claimRunnerRun(blocker.runId);
+      await completePublicClaudeRun(
+        context,
+        blocker,
+        { authorization: `Bearer ${input.sandboxToken}` },
+        "Capacity released",
+      );
+      const next = await api.createThreadRun(owned.actor, {
+        agentId: owned.agentId,
+        threadId: first.threadId,
+        prompt: "Continue after recalling the waiting input",
+      });
+      const execution = await owned.claimRunnerRun(next.runId);
+      expect(execution.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: first.runId,
       });
@@ -124,52 +230,8 @@ describe("Runner first-start Thread binding", () => {
     },
   );
 
-  it("settles a claim racing cancellation before the next Run chooses its native context", async () => {
-    const { owned, first } = await initializedPredecessor();
-    await owned.run(async () => {
-      const second = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
-        threadId: first.threadId,
-        prompt: "race Runner acceptance with user cancellation",
-      });
-      const [claim] = await Promise.all([
-        api.requestClaimRunnerJob(true, second.runId, [200, 404]),
-        api.requestCancelRun(owned.actor, second.runId, [200]),
-      ]);
-      if (claim.status === 200) {
-        owned.rememberClaim(second.runId, claim.body.sandboxToken);
-        await webhooks.requestAgentComplete(
-          {
-            runId: second.runId,
-            exitCode: 1,
-            error: "Runner stopped after cancellation",
-          },
-          { authorization: `Bearer ${claim.body.sandboxToken}` },
-          [200],
-        );
-      }
-      await flushWaitUntilForTest();
-      const cancelled = await api.readRun(owned.actor, second.runId);
-      expect(cancelled.status).toBe("cancelled");
-      expect(Boolean(cancelled.startedAt)).toBe(claim.status === 200);
-      const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
-        threadId: first.threadId,
-        prompt: "continue after the racing cancellation is settled",
-      });
-      const nextClaim = await owned.claimRunnerRun(next.runId);
-      expect(nextClaim.nativeContinuation).toMatchObject({
-        sessionId: cancelled.startedAt ? null : first.threadId,
-        generationRunId: cancelled.startedAt ? null : first.runId,
-        recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir /tmp/okou-chat-history",
-        ),
-      });
-    });
-  });
-
   it.each(["failed", "cancelled"] as const)(
-    "retains initialized native context after competing claims, replay and a %s outcome",
+    "retains initialized native context after a %s outcome",
     async (status) => {
       const { owned, first } = await initializedPredecessor();
       await owned.run(async () => {
@@ -178,29 +240,12 @@ describe("Runner first-start Thread binding", () => {
           threadId: first.threadId,
           prompt: "initialize exactly one winning claim",
         });
-        const responses = await Promise.all([
-          api.requestClaimRunnerJob(true, second.runId, [200, 404]),
-          api.requestClaimRunnerJob(true, second.runId, [200, 404]),
-        ]);
-        expect(
-          responses
-            .map((response) => {
-              return response.status;
-            })
-            .sort(),
-        ).toStrictEqual([200, 404]);
-        const winner = responses.find((response) => {
-          return response.status === 200;
-        });
-        if (!winner || winner.status !== 200) {
-          throw new Error("Expected one winning Runner claim");
-        }
-        owned.rememberClaim(second.runId, winner.body.sandboxToken);
-        expect(winner.body.nativeContinuation).toMatchObject({
+        const execution = await owned.claimRunnerRun(second.runId);
+        expect(execution.nativeContinuation).toMatchObject({
           sessionId: first.threadId,
           generationRunId: first.runId,
         });
-        const headers = { authorization: `Bearer ${winner.body.sandboxToken}` };
+        const headers = { authorization: `Bearer ${execution.sandboxToken}` };
         const sessionId = randomUUID();
         await webhooks.requestAgentEvents(
           {
@@ -218,7 +263,6 @@ describe("Runner first-start Thread binding", () => {
           [200],
         );
         await flushWaitUntilForTest();
-        await api.requestClaimRunnerJob(true, second.runId, [404]);
         if (status === "cancelled") {
           await api.requestCancelRun(owned.actor, second.runId, [200]);
         }

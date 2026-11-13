@@ -50,7 +50,6 @@ async function viewer() {
     viewerUrl: `https://viewer.example/browsers/${threadId}`,
     liveUrl: null,
     screenshotUrl: null,
-    proxyCountryCode: null,
     timeoutMinutes: 10,
     idleExpiresAt: "2026-09-01T10:10:00Z",
     suspendedAt: null,

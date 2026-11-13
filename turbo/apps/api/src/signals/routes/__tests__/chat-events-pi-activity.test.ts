@@ -451,7 +451,7 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "keep an incompatible run off the Pi history",
       model: "claude-fable-5-1",
     });
-    const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
+    const explicitResumeClaim = await api.executionInput(explicitResume.runId);
     expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
 
     expect(explicitResumeClaim.nativeContinuation).toMatchObject({

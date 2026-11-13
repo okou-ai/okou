@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/android-v0.5.0...android-v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **android:** add the confirmed native chat list ([#46918](https://github.com/okou-ai/okou/issues/46918)) ([e0745ae](https://github.com/okou-ai/okou/commit/e0745ae12d3248abc3eefb7484eaa48b94ea3e6b))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/android-v0.4.0...android-v0.5.0) (2026-11-13)
 
 

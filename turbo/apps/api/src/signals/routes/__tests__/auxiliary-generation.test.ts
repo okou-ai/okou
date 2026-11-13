@@ -47,7 +47,7 @@ async function prepareChatTitle() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, { displayName: "Outcome title" });

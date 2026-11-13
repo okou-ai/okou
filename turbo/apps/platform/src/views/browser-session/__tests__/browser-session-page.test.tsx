@@ -95,9 +95,7 @@ function browserSession(
     viewerUrl: `https://viewer.example/browsers/${THREAD_ID}`,
     liveUrl: "https://viewer.example/live?token=private",
     screenshotUrl: null,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
-    screen: { width: 1440, height: 900, resizable: true },
     window: { instanceId: INSTANCE_ID, primaryWindowId: 0 },
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
@@ -1029,7 +1027,6 @@ test.each([
       browserSession({
         status: "suspended",
         liveUrl: null,
-        screen: undefined,
         idleExpiresAt: null,
         suspendedAt: "2026-09-01T10:10:00.000Z",
         suspensionReason: "idle",

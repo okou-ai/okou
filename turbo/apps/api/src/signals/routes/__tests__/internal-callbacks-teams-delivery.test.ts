@@ -35,7 +35,7 @@ describe("Teams completion delivery", () => {
         throw new Error("Expected the dispatched Teams Run");
       }
       await runs.heartbeatRunner("vm0/test");
-      const claim = await runs.claimRunnerJob(run.id);
+      const claim = await runs.executionInput(run.id);
       let deliveryAttempts = 0;
       server.use(
         http.post(

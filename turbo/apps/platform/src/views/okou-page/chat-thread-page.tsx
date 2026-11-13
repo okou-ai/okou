@@ -1,3 +1,8 @@
+import {
+  ChatComposerFooter,
+  ChatPageHeader,
+  ChatPageLayout,
+} from "./chat-page-layout.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
@@ -120,7 +125,6 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
-  OkouAvatar,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -325,7 +329,8 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
+import type { ComposerLayout } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -333,6 +338,7 @@ import {
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
+import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { setBillingSubPage$ } from "../../signals/okou-page/settings/workspace-settings-state.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
@@ -550,9 +556,6 @@ export function ChatThreadHeaderTitle({
   );
 }
 
-const CHAT_THREAD_HEADER_CLASS =
-  "flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
-
 function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Only mount one emoji picker for the thread's shared menu state.
@@ -578,7 +581,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const closeSharing = useSet(thread.sharing.close$);
   if (sharingPhase !== "idle") {
     return (
-      <header className={CHAT_THREAD_HEADER_CLASS}>
+      <ChatPageHeader>
         <span className="text-sm font-medium text-foreground">
           {t(
             ($) => {
@@ -602,12 +605,12 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
             return $.chat.sharing.cancel;
           })}
         </Button>
-      </header>
+      </ChatPageHeader>
     );
   }
 
   return (
-    <header className={CHAT_THREAD_HEADER_CLASS}>
+    <ChatPageHeader>
       <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
         <SettledChatThreadActions thread={thread}>
@@ -637,7 +640,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           <DesktopChatThreadMoreMenu thread={thread} />
         </div>
       </SettledChatThreadActions>
-    </header>
+    </ChatPageHeader>
   );
 }
 
@@ -3526,12 +3529,7 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
     return <ChatThreadNotFound />;
   }
 
-  return (
-    <>
-      <ChatThreadHeader thread={thread} />
-      <ChatThreadBody thread={thread} />
-    </>
-  );
+  return <ChatThreadBody thread={thread} />;
 }
 
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
@@ -3546,21 +3544,36 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     hasEvents === false &&
     sharingPhase === "idle";
 
+  const header = <ChatThreadHeader thread={thread} />;
+  const content = showCapabilities ? (
+    <CapabilityHomeContent signals={thread.composer} />
+  ) : (
+    <ChatThreadEventsPane thread={thread} />
+  );
+  const footer = (
+    <ChatThreadBottomBar
+      thread={thread}
+      layout={capabilitiesEnabled ? "home" : "default"}
+      discoveryInContent={showCapabilities}
+    />
+  );
   return (
     <>
-      <div className="relative min-h-0 flex-1">
-        <div className="flex h-full min-w-0 flex-col">
-          {showCapabilities ? (
-            <CapabilityHomeContent signals={thread.composer} />
-          ) : (
-            <ChatThreadEventsPane thread={thread} />
-          )}
-          <ChatThreadBottomBar
-            thread={thread}
-            layout={showCapabilities ? "home" : "default"}
-          />
-        </div>
-      </div>
+      {capabilitiesEnabled ? (
+        <ChatPageLayout header={header} footer={footer}>
+          {content}
+        </ChatPageLayout>
+      ) : (
+        <>
+          {header}
+          <div className="relative min-h-0 flex-1">
+            <div className="flex h-full min-w-0 flex-col">
+              {content}
+              {footer}
+            </div>
+          </div>
+        </>
+      )}
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );
@@ -3611,10 +3624,11 @@ function SharedThreadCreatedLink({
 function ChatThreadBottomBar({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  /** `home` while an empty thread shows the capability home above it. */
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
@@ -3628,7 +3642,11 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} layout={layout} />,
+      <ChatThreadComposer
+        thread={thread}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />,
     );
   }
 
@@ -3920,34 +3938,25 @@ function RecommendedFollowupList({
 function ChatThreadComposer({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
-  const standalonePwa = isStandalonePwa();
-
   // The pane's canvas runs behind the composer the way it runs behind the
   // header. A fill of its own can only match a flat canvas, and a gradient
   // palette's is not one, so the footer stays transparent and the transcript's
   // own edge fade handles the boundary above it.
   return (
-    <footer
-      data-chat-composer
-      ref={composerLayoutRef}
-      className="relative shrink-0"
-    >
-      <div
-        className={cn(
-          "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-4 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
-          standalonePwa && "overscroll-contain",
-        )}
-      >
-        <div className="mx-auto max-w-[900px]">
-          <ChatComposer signals={thread.composer} layout={layout} />
-        </div>
-      </div>
-    </footer>
+    <ChatComposerFooter ref={composerLayoutRef}>
+      <ChatComposer
+        signals={thread.composer}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />
+    </ChatComposerFooter>
   );
 }
 
@@ -4626,13 +4635,22 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   // action inside the element below, rather than swapping the element itself:
   // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
-  const { headline, helper } = hasAvailableCredits
-    ? creditsAvailableCopy()
-    : insufficientCreditsCopy({
-        canBuyCredits,
-        roleResolved: billingResolved && roleResolved,
-        canManageBilling: billingResolved && canManageBilling,
-      });
+  const { headline, helper, icon } = hasAvailableCredits
+    ? { ...creditsAvailableCopy(), icon: null }
+    : {
+        ...insufficientCreditsCopy({
+          canBuyCredits,
+          roleResolved: billingResolved && roleResolved,
+          canManageBilling: billingResolved && canManageBilling,
+        }),
+        icon: (
+          <Coins
+            aria-hidden="true"
+            size={16}
+            className="mt-1 shrink-0 text-brand-text"
+          />
+        ),
+      };
 
   const openBilling = () => {
     setSubPage(false);
@@ -4672,20 +4690,23 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   return (
     <>
       <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-        <div className="min-w-0">
-          <p
-            className={cn(
-              "break-words text-[0.9375rem] font-medium",
-              hasAvailableCredits
-                ? "text-emerald-700 dark:text-emerald-300"
-                : "text-foreground",
-            )}
-          >
-            {headline}
-          </p>
-          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
-            {helper}
-          </p>
+        <div className="flex min-w-0 items-start gap-2.5">
+          {icon}
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "break-words text-[0.9375rem] font-medium",
+                hasAvailableCredits
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : "text-foreground",
+              )}
+            >
+              {headline}
+            </p>
+            <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+              {helper}
+            </p>
+          </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
           {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -5830,7 +5851,7 @@ function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
   return singleAgent && thread.agentId === defaultId ? (
     // One per reply; only the replies on screen draw frames, so a long
     // transcript stays cheap.
-    <OkouAvatar size={36} className="size-7 @[900px]:size-9" />
+    <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />
   ) : (
     <LegacyAssistantBubbleAvatar thread={thread} />
   );

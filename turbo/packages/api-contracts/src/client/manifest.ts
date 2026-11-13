@@ -51,10 +51,6 @@ export const clientDescriptorManifest = [
     contracts: ["artifactSharesContract"],
   },
   {
-    module: "atom-subscription-grants",
-    contracts: ["atomSubscriptionGrantsContract"],
-  },
-  {
     module: "auth",
     contracts: ["authContract"],
   },
@@ -326,6 +322,10 @@ export const clientDescriptorManifest = [
   {
     module: "feature-switches",
     contracts: ["featureSwitchesContract"],
+  },
+  {
+    module: "feed",
+    contracts: ["feedContract"],
   },
   {
     module: "feishu-browser-connect",
@@ -707,10 +707,6 @@ export const clientDescriptorManifest = [
   {
     module: "ssh-credentials",
     contracts: ["sshCredentialsContract"],
-  },
-  {
-    module: "suggestions",
-    contracts: ["suggestionsContract"],
   },
   {
     module: "tailscale",

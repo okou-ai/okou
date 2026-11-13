@@ -36,7 +36,6 @@ function captureBillingState(context: TestContext) {
       "OKOU_PRICE_USAGE_PACK_50",
       "OKOU_PRICE_USAGE_PACK_100",
       "OKOU_PRICE_USAGE_PACK_200",
-      "OKOU_PRICE_CUSTOM",
     ] as const
   ).map((name) => {
     return [name, env(name)] as const;

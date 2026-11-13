@@ -76,7 +76,6 @@ function mockViewer(endpointAliases: readonly string[] = []) {
       viewerUrl: `https://viewer.example/browsers/${id}`,
       liveUrl: null,
       screenshotUrl: null,
-      proxyCountryCode: null,
       timeoutMinutes: 10,
       idleExpiresAt: new Date(now + elapsed + 600_000).toISOString(),
       suspendedAt: null,

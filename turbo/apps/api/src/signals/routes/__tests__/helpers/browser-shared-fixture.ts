@@ -7,23 +7,20 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
-import { now, withNowScopeForTest } from "../../../../lib/time";
+import { now } from "../../../../lib/time";
 import { browserRoutes } from "../../browser";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
-import { createRunsApi } from "./api-bdd-runs";
 import { requireOrgId, okouTokenFromClaim } from "./chat-events-fixture";
 
 import { publicChatActor } from "./public-chat-actor";
 import { createNativeWindowProvider } from "./browser-native-window";
 import { TEST_BROWSER_EXTENSION } from "../../../../__tests__/browser-extension";
 
-export const START = Date.parse("2026-10-25T14:00:00.000Z");
+export const START = now();
 export const MINUTE = 60_000;
 export const PROVIDER_URL = "https://api.browser-use.com/api/v3";
 
 export function createSharedBrowserFixtures(context: TestContext) {
-  const runs = createRunsApi(context);
-
   function profileProvider(
     beforeResponse?: () => Promise<void>,
     cdpProtocol: "https:" | "wss:" = "https:",
@@ -194,9 +191,14 @@ export function createSharedBrowserFixtures(context: TestContext) {
   async function fixture(provider = profileProvider()) {
     mockEnv("OKOU_BROWSER_USE_API_KEY", "owner-profile-test-key");
     server.use(...provider.handlers);
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 7,
+    };
     const owned = await publicChatActor(context, {
       clockTime: START,
       optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+      runner: { runnerIdentity },
     });
     const featureActor = { ...owned.actor, orgId: requireOrgId(owned.actor) };
     const chat = createChatFilesBddApi(context);
@@ -208,20 +210,7 @@ export function createSharedBrowserFixtures(context: TestContext) {
           prompt: "Prepare my chat-owned Browser lifetime",
           cloudBrowserEnabled: browserEnabled,
         });
-        const runnerIdentity = {
-          runnerId: randomUUID(),
-          heartbeatGeneration: 7,
-        };
-        await withNowScopeForTest(() => {
-          return runs.requestHeartbeatRunner(true, [200], {
-            group: owned.runnerGroup,
-            runnerId: runnerIdentity.runnerId,
-            snapshotGeneration: runnerIdentity.heartbeatGeneration,
-          });
-        });
-        const claim = await owned.claimRunnerRun(sent.runId, {
-          runnerIdentity,
-        });
+        const claim = await owned.claimRunnerRun(sent.runId);
         return { ...sent, runnerIdentity, claim, provider };
       });
     }

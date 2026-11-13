@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
@@ -387,8 +389,12 @@ function ChatWorkspace({
   readonly footer: ReactNode;
   readonly pwaNavigation: boolean;
 }) {
-  const active = useGet(activeThreadSidebar$);
-  const fullscreen = useGet(activeThreadSidebarFullscreen$);
+  const route = useGet(activeRoute$);
+  const threadSidebar = useGet(activeThreadSidebar$);
+  const threadFullscreen = useGet(activeThreadSidebarFullscreen$);
+  // A route can change before its setup releases the previous thread graph.
+  const active = route === "chat" ? threadSidebar : null;
+  const fullscreen = active !== null && threadFullscreen;
   const syncSidebarLayout = useSet(commitWorkspaceLayout$);
   const joinedToChatList = beside === "chat-list";
   return (
@@ -398,7 +404,7 @@ function ChatWorkspace({
       open={active !== null}
       onWorkspaceLayoutCommit={syncSidebarLayout}
       ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
-      sidebar={<ChatThreadSidebarPane />}
+      sidebar={active ? <ChatThreadSidebarPane /> : null}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
       widthKey={active?.target.type === "browser" ? "browser" : "panel"}
@@ -437,8 +443,13 @@ function SidebarWorkspaceFrame({
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
+  const agentChatPage = useGet(agentChatPageActive$);
+  const capabilitiesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
+  const sharedWorkspace =
+    capabilitiesEnabled && (agentChatPage || activeRoute === "project");
 
-  return activeRoute === "chat" ? (
+  return activeRoute === "chat" || sharedWorkspace ? (
     <ChatWorkspace
       beside={beside}
       header={header}

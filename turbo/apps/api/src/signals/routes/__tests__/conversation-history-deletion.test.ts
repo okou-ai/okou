@@ -13,7 +13,7 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -26,7 +26,7 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
     prompt: "retain history",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const completion = {
     cliAgentType: "claude-code" as const,

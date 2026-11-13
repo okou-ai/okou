@@ -12,8 +12,15 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
-  cancelChatRun,
+  cancelChatRun: cancelAndAcknowledge,
 } = createChatEventsFixture(context);
+
+async function cancelChatRun(actor: ApiTestUser, runId: string) {
+  const input = await api.executionInput(runId);
+  await cancelAndAcknowledge(actor, runId, {
+    authorization: `Bearer ${input.sandboxToken}`,
+  });
+}
 
 async function expectImageGuidance(
   actor: ApiTestUser,

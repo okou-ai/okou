@@ -462,6 +462,60 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 }
 
 @MainActor
+final class WorkspaceIndicatorRecoveryTests: XCTestCase {
+  func testDedicatedIndicatorReadCursorAndContinuitySignalsRefreshTheirAuthoritativeState()
+    async throws
+  {
+    let remote = Mutex("active")
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceModelBootstrap(),
+      indicators: { _ in
+        let state = remote.withLock { $0 }
+        let thread = ConversationHistoryFixture.threadID
+        let agent = ConversationHistoryFixture.agentID
+        let threads = state == "none" ? "{}" : "{\"\(thread)\":\"\(state)\"}"
+        let unread = state == "unread"
+        return ChatHTTPResponse(
+          body: """
+            {"threads":\(threads),"agents":\(unread ? "{\"\(agent)\":\"unread\"}" : "{}"),\
+            "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
+            """)
+      })
+    addTeardownBlock { await fixture.close() }
+    try await fixture.start()
+    await fixture.workspace.resumePendingRefresh()?.value
+    XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
+    let initial = fixture.http.history.requests.values.withLock { $0 }
+    let indicatorReads = initial.filter { $0 == "GET /api/indicators" }.count
+    let listReads = initial.filter { $0 == "GET /api/chat-threads/events" }.count
+
+    remote.withLock { $0 = "unread" }
+    try fixture.server.notify("chatIndicatorsChanged", channel: fixture.channel)
+    try await waitForBusinessResult { fixture.workspace.list.hasUnreadThreads }
+    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
+
+    remote.withLock { $0 = "none" }
+    try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.channel)
+    try await waitForBusinessResult { !fixture.workspace.list.hasUnreadThreads }
+    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [])
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/chat-threads/events" }.count
+      }, listReads)
+
+    remote.withLock { $0 = "active" }
+    try fixture.server.attached(fixture.channel)
+    try await waitForBusinessResult {
+      fixture.workspace.list.threads.first?.indicator == .active
+    }
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/indicators" }.count
+      }, indicatorReads + 3)
+  }
+}
+
+@MainActor
 private final class ModelRecoveryFixture {
   let server: RealtimeHTTPFixture
   let http: WorkspaceStartupFixture
@@ -485,7 +539,10 @@ private final class ModelRecoveryFixture {
     return realtime
   }
 
-  init(bootstrap: WorkspaceModelBootstrap) throws {
+  init(
+    bootstrap: WorkspaceModelBootstrap,
+    indicators: ChatHTTPFixture.Handler? = nil
+  ) throws {
     self.bootstrap = bootstrap
     server = try RealtimeHTTPFixture(clientID: userID, onProtocol: { _, _ in })
     let token = try JSONSerialization.data(withJSONObject: [
@@ -493,7 +550,8 @@ private final class ModelRecoveryFixture {
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
       "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
     ])
-    http = WorkspaceStartupFixture(realtimeToken: String(decoding: token, as: UTF8.self))
+    http = WorkspaceStartupFixture(
+      realtimeToken: String(decoding: token, as: UTF8.self), indicators: indicators)
   }
 
   func start() async throws {

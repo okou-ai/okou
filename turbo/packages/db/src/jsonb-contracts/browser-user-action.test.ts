@@ -14,6 +14,10 @@ const callbackIds = {
 };
 
 const inputTarget = {
+  window: {
+    instanceId: "55555555-5555-4555-8555-555555555555",
+    primaryWindowId: 0,
+  },
   pageTargetId: "page-target",
   documentLoaderId: "document-loader",
   siteOrigin: "https://example.com",

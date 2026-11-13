@@ -27,13 +27,8 @@ event automation stops dispatching, the schedule is no longer selected as due,
 the row survives with its configuration, and automations outside the departing
 (organization, owner) pair are untouched.
 
-`executed` alone cannot tell an eagerly disarmed schedule from one the poller
-retires lazily at its next due time: both leave nothing executed. `skipped`
-separates them. A row that is still enabled is selected as due and then denied
-by the poller's membership gate, which counts it as skipped and clears its
-`next_run_at`; a row disarmed at departure is never selected at all, so the
-tick reports `skipped: 0` and the automation keeps the `next_run_at` it was
-created with.
+The disabled schedule retains its original configuration and next-run anchor;
+the cleanup must not change the other owners' still-armed automations.
 */
 
 const context = testContext();
@@ -178,6 +173,7 @@ async function postWebhookDelivery(seeded: OwnedAutomations): Promise<number> {
     },
     body: rawBody,
   });
+  await flushWaitUntilForTest();
   return response.status;
 }
 
@@ -219,7 +215,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
   });
 
   it("disables automations and stops event dispatch for the departing owner alone", async () => {
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());
     const peerAdmin = wf.user({
       orgId: orgIdOf(departing),
@@ -242,7 +238,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
       "elsewhere",
     );
 
-    // Armed before the departure: the delivery is accepted and queues a run.
+    // Prepare the accepted delivery before the later membership cleanup.
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(200);
 
     org.mockClerkOrg(peerAdmin, {
@@ -298,7 +294,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
   }, 60_000);
 
   it("disarms the same automations when Clerk reports the membership deleted", async () => {
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());
     const auditor = wf.user({
       orgId: orgIdOf(departing),

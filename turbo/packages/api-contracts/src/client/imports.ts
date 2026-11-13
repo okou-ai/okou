@@ -113,11 +113,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "atom-subscription-grants",
-    contracts: ["atomSubscriptionGrantsContract"],
-    bindings: [],
-  },
-  {
     module: "auth",
     contracts: ["authContract"],
     bindings: [],
@@ -905,6 +900,22 @@ export const clientContractImportManifest = [
     module: "feature-switches",
     contracts: ["featureSwitchesContract"],
     bindings: [],
+  },
+  {
+    module: "feed",
+    contracts: ["feedContract"],
+    bindings: [
+      {
+        name: "SUGGESTION_RETENTION_MS",
+        source: "validators/suggestions",
+        imported: "SUGGESTION_RETENTION_MS",
+      },
+      {
+        name: "getSuggestionExpiresAt",
+        source: "validators/suggestions",
+        imported: "getSuggestionExpiresAt",
+      },
+    ],
   },
   {
     module: "feishu-browser-connect",
@@ -1797,22 +1808,6 @@ export const clientContractImportManifest = [
         name: "updateSshCredentialRequestSchema",
         source: "validators/ssh-credentials",
         imported: "updateSshCredentialRequestSchema",
-      },
-    ],
-  },
-  {
-    module: "suggestions",
-    contracts: ["suggestionsContract"],
-    bindings: [
-      {
-        name: "SUGGESTION_RETENTION_MS",
-        source: "validators/suggestions",
-        imported: "SUGGESTION_RETENTION_MS",
-      },
-      {
-        name: "getSuggestionExpiresAt",
-        source: "validators/suggestions",
-        imported: "getSuggestionExpiresAt",
       },
     ],
   },

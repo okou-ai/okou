@@ -1,6 +1,6 @@
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
-import { array, number, object, string } from "zod";
+import { array, boolean, number, object, string } from "zod";
 import {
   BOT_USER_ID,
   CHANNEL_ID,
@@ -9,6 +9,13 @@ import {
   createRelay,
   type RelayFixture,
 } from "./relay-fixture";
+import { createRelayPhases } from "./relay-phases";
+
+const receiptHealthSchema = object({
+  running: boolean(),
+  pending: number(),
+  fatal: string().nullable(),
+});
 
 const deadLettersSchema = object({
   deadLetters: array(
@@ -33,30 +40,74 @@ function messageId(index: number): string {
 }
 
 describe("Discord Gateway API delivery", () => {
-  it.each(["missing-receipt", "non-json-200", "empty-204"])(
+  it.for(["missing-receipt", "non-json-200", "empty-204"])(
     "retains delivery after %s until a durable receipt is returned",
-    async (kind) => {
-      const relay = await createRelay();
+    async (kind, { onTestFailed, signal }) => {
+      const { elapsedMs, phases, wait } = createRelayPhases(signal);
+      onTestFailed(() => {
+        console.error("Discord invalid-receipt delivery failure", {
+          kind,
+          elapsedMs: elapsedMs(),
+          phases,
+        });
+      });
+      const relay = await wait("create relay", () => {
+        return createRelay();
+      });
+      let lastHealth:
+        | (ReturnType<typeof receiptHealthSchema.parse> & {
+            observedAtMs: number;
+          })
+        | null = null;
+      const health = async () => {
+        signal.throwIfAborted();
+        const result = receiptHealthSchema.parse(await relay.health());
+        signal.throwIfAborted();
+        lastHealth = { ...result, observedAtMs: elapsedMs() };
+        return result;
+      };
+      // Failure hooks use only completed observations, never more Worker I/O.
+      // Report counts/opcodes and narrowed health, not signed envelopes.
+      onTestFailed(() => {
+        console.error("Discord invalid-receipt observations", {
+          kind,
+          observedAtMs: elapsedMs(),
+          forwarded: relay.forwarded.length,
+          connections: relay.opened.map((connection) => {
+            return connection.packets.map((packet) => {
+              return packet.op;
+            });
+          }),
+          lastHealth,
+        });
+      });
       relay.reply = () => {
         if (kind === "missing-receipt") return Response.json({ ok: true });
         if (kind === "non-json-200") return new Response("ok");
         return new Response(null, { status: 204 });
       };
-      const gateway = await relay.start();
+      await wait("initial /start response", async () => {
+        expect((await relay.request("/start")).status).toBe(200);
+      });
+      const gateway = await wait("initial Gateway connection", () => {
+        return relay.connections.next();
+      });
       gateway.hello();
-      await gateway.next(2);
+      await wait("Identify (op 2)", () => {
+        return gateway.next(2);
+      });
       gateway.ready();
       gateway.message();
-      const first = await relay.deliveries.next();
-      await expect
-        .poll(() => {
-          return relay.health();
-        })
-        .toMatchObject({
+      const first = await wait("first API delivery", () => {
+        return relay.deliveries.next();
+      });
+      await wait("durable invalid-receipt halt", () => {
+        return expect.poll(health).toMatchObject({
           running: false,
           pending: 1,
           fatal: "api-invalid-receipt",
         });
+      });
 
       relay.reply = () => {
         return Response.json({
@@ -65,14 +116,18 @@ describe("Discord Gateway API delivery", () => {
           reason: "feature-disabled",
         });
       };
-      expect((await relay.request("/start")).status).toBe(200);
-      const retried = await relay.deliveries.next();
+      await wait("restart /start response", async () => {
+        expect((await relay.request("/start")).status).toBe(200);
+      });
+      const retried = await wait("identical-envelope redelivery", () => {
+        return relay.deliveries.next();
+      });
       expect(retried.rawBody).toBe(first.rawBody);
-      await expect
-        .poll(() => {
-          return relay.health();
-        })
-        .toMatchObject({ running: true, pending: 0, fatal: null });
+      await wait("durable receipt and outbox removal", () => {
+        return expect
+          .poll(health)
+          .toMatchObject({ running: true, pending: 0, fatal: null });
+      });
     },
   );
 

@@ -13,7 +13,7 @@ import * as userNotificationSchema from "./schema/user-notification";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
-import * as agentSuggestionSchema from "./schema/agent-suggestion";
+import * as agentSuggestionSchema from "./schema/feed-item";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as featureGuideSchema from "./schema/feature-guide";

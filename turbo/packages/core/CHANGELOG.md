@@ -1,5 +1,42 @@
 # Changelog
 
+## [8.836.1](https://github.com/okou-ai/okou/compare/core-v8.836.0...core-v8.836.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.60.0
+
+## [8.836.0](https://github.com/okou-ai/okou/compare/core-v8.835.2...core-v8.836.0) (2026-11-13)
+
+
+### Features
+
+* **connectors:** enable custom connector cloudflare access for staff ([#47024](https://github.com/okou-ai/okou/issues/47024)) ([13dd6f3](https://github.com/okou-ai/okou/commit/13dd6f3356edb2f199f1407c9c8285a48ae0797d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.1
+
+## [8.835.2](https://github.com/okou-ai/okou/compare/core-v8.835.1...core-v8.835.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **app:** unify home project and chat workspace layout ([#46999](https://github.com/okou-ai/okou/issues/46999)) ([37e65b4](https://github.com/okou-ai/okou/commit/37e65b47f9eeb8b1e58a3cf318b384dc0a63b6e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.0
+
 ## [8.835.1](https://github.com/okou-ai/okou/compare/core-v8.835.0...core-v8.835.1) (2026-11-13)
 
 

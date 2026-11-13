@@ -28,7 +28,7 @@ async function fundedFreeRuns() {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     pi.mockPiObjectStore();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     const { actor } = fixture;
     const granted = await fixture.fund(actor, 100_000);
     await webhooks.postStripeEvent(
@@ -58,7 +58,7 @@ async function fundedFreeRuns() {
       });
       fixture.registerRun(run.runId);
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
+      const claim = await runs.executionInput(run.runId);
       fixture.registerClaim(run.runId, claim.sandboxToken);
       return {
         run,

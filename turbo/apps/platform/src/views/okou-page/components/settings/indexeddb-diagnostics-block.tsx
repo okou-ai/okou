@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Badge } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadableState } from "ccstate-react";
@@ -265,13 +266,18 @@ export function IndexedDbDiagnosticsBlock() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-muted-foreground">
-                {loading
-                  ? t(($) => {
+                {loading ? (
+                  <LoadingSkeleton
+                    variant="text"
+                    label={t(($) => {
                       return $.settings.preferences.debug.indexedDb.loading;
-                    })
-                  : t(($) => {
-                      return $.settings.preferences.debug.indexedDb.unavailable;
                     })}
+                  />
+                ) : (
+                  t(($) => {
+                    return $.settings.preferences.debug.indexedDb.unavailable;
+                  })
+                )}
               </div>
             </div>
           </div>

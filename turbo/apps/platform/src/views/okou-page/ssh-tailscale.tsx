@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
@@ -74,11 +75,13 @@ export function TailscaleSelection({
       {configs.state === "hasError" ? (
         <SshLoadError />
       ) : configs.state === "loading" ? (
-        <p role="status">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.tailscale.loading;
           })}
-        </p>
+          variant="fields"
+          count={1}
+        />
       ) : (
         available && (
           <div className="grid gap-2">

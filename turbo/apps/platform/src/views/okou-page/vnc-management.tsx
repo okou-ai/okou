@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { VncAuthenticationLabel } from "./vnc-authentication-label.tsx";
 import { RemoteCredentialCard } from "./remote-credential-card.tsx";
 import { RemoteConnectionSummary } from "./remote-connection-summary.tsx";
@@ -470,11 +471,13 @@ function OwnerVncCredentials() {
   const signal = useGet(pageSignal$);
   if (credentials.state === "loading") {
     return (
-      <p role="status">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.vnc.loading;
         })}
-      </p>
+        variant="rows"
+        count={2}
+      />
     );
   }
   if (credentials.state === "hasError") {

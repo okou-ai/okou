@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -43,6 +44,8 @@ const THREAD_IDS = {
   unfilledViewport: "b0000000-0000-4000-a000-000000000941",
   runWindowStart: "b0000000-0000-4000-a000-000000000942",
   settledHistory: "b0000000-0000-4000-a000-000000000944",
+  capabilityTail: "b0000000-0000-4000-a000-000000000945",
+  capabilityHistory: "b0000000-0000-4000-a000-000000000946",
 } as const;
 
 interface ChatScrollGeometry {
@@ -345,11 +348,15 @@ function mockMutableConversation(
 async function openConversation(
   threadId: string,
   loadedText: string,
+  capabilitiesEnabled = false,
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
+    },
   });
   const loadedMessage = await screen.findByText(loadedText);
   expect(loadedMessage).toBeVisible();
@@ -536,30 +543,128 @@ test.each(["tail", "history"])(
   },
 );
 
-test("Preserve the visible message when earlier content grows", async () => {
-  mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
-  const container = await openConversation(
-    THREAD_IDS.growingHistory,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
+test.each([
+  {
+    position: "tail",
+    status: "completed",
+    threadId: THREAD_IDS.capabilityTail,
+  },
+  {
+    position: "history",
+    status: "stopped",
+    threadId: THREAD_IDS.capabilityHistory,
+  },
+] as const)(
+  "Keep $position when opening and closing capabilities in a $status conversation",
+  async ({ position, status, threadId }) => {
+    const events = completedHistoryEvents(8).map(
+      (event): MockChatEventInput => {
+        return status === "stopped" && event.id === "scroll-completed-8"
+          ? {
+              ...event,
+              runLifecycleEvent: "cancelled",
+              error: "Run cancelled",
+            }
+          : event;
+      },
+    );
+    mockMutableConversation(threadId, events);
+    const container = await openConversation(
+      threadId,
+      "History answer 8",
+      true,
+    );
+    // happy-dom has no layout engine. The tray takes space only once the
+    // user's menu selection has actually rendered it beside the transcript.
+    const geometry = installChatScrollGeometry(container, () => {
+      return document.querySelector('[data-slot="capability-tray"]')
+        ? INITIAL_VIEWPORT_HEIGHT_PX - 120
+        : INITIAL_VIEWPORT_HEIGHT_PX;
+    });
+    const editor = chatComposerTextarea();
+    // Keep the draft untouched: editor transactions must not restore this
+    // layout change on behalf of the capability action.
+    expect(editor.textContent).toBe("");
+    if (position === "history") {
+      scrollFromUser(container, 240);
+      await expectHistoryPositionHeld();
+    }
+    const readingAnchorId = anchorId(geometry.firstVisibleAnchor());
+    const readingOffset = () => {
+      return (
+        anchorById(container, readingAnchorId).getBoundingClientRect().top -
+        container.getBoundingClientRect().top
+      );
+    };
+    const initialOffset = readingOffset();
+    const initialScrollTop = container.scrollTop;
+    const expectPosition = () => {
+      expect(container.scrollTop).toBe(
+        position === "tail" ? geometry.bottomScrollTop() : initialScrollTop,
+      );
+      expect(readingOffset()).toBe(
+        position === "tail"
+          ? initialOffset + container.clientHeight - INITIAL_VIEWPORT_HEIGHT_PX
+          : initialOffset,
+      );
+      expect(editor.textContent).toBe("");
+    };
+    expectPosition();
 
-  geometry.growBeforeMessages(75);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
+    click(buttonByLabel("Add"));
+    const menu = await screen.findByRole("menu", { name: "Add" });
+    const research = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+      return candidate.textContent?.trim() === "Research";
+    });
+    if (!research) {
+      throw new Error("Research menu item not found");
+    }
+    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+    click(research);
+    await screen.findByRole("region", { name: "Research" });
+    await waitFor(() => {
+      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX - 120);
+      expectPosition();
+    });
 
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-});
+    click(buttonByLabel("All capabilities"));
+    await waitFor(() => {
+      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+      expectPosition();
+    });
+    expect(screen.getByText("History answer 8")).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/chats/${threadId}`);
+  },
+);
+
+test.each([false, true])(
+  "Preserve the visible message as content grows with Home capabilities %s",
+  async (capabilitiesEnabled) => {
+    mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      capabilitiesEnabled,
+    );
+    const geometry = installChatScrollGeometry(container);
+    scrollFromUser(container, 240);
+    await expectHistoryPositionHeld();
+    const readingAnchor = geometry.firstVisibleAnchor();
+    const readingAnchorId = anchorId(readingAnchor);
+    const readingTop = readingAnchor.getBoundingClientRect().top;
+
+    geometry.growBeforeMessages(75);
+    act(() => {
+      fireEvent.load(screen.getByAltText("Late history image"));
+    });
+
+    await waitFor(() => {
+      expect(
+        anchorById(container, readingAnchorId).getBoundingClientRect().top,
+      ).toBe(readingTop);
+    });
+  },
+);
 
 async function completeRunWhileReadingExpandedWork() {
   // A live run demands activity summaries, whose contract requires a UUID run ID.

@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { LoadErrorRow, surfaceVariants } from "@okouai/ui";
 import {
   useGet,
@@ -159,11 +160,13 @@ export function JobCustomConnectorsSection() {
   }
   if (connectors.state !== "hasData" || connectedTargets.state !== "hasData") {
     return (
-      <p role="status" className="py-4 text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.connectors.catalog.directory.loading;
         })}
-      </p>
+        variant="cards"
+        className="py-4"
+      />
     );
   }
   const connectedConnectors = connectors.data.filter((connector) => {

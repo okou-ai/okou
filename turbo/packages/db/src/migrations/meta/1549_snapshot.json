@@ -1,5 +1,5 @@
 {
-  "id": "73e0335c-b8e1-4495-8575-d16c2115ff50",
+  "id": "36cfeab6-c5f7-41af-827e-fa78c1f10577",
   "prevId": "c06e662b-deb7-4e2a-b9e7-e2f9daab967a",
   "version": "7",
   "dialect": "postgresql",
@@ -1083,251 +1083,6 @@
         "agent_runs_official_workflow_provenance_check": {
           "name": "agent_runs_official_workflow_provenance_check",
           "value": "(\n          \"agent_runs\".\"official_workflow_provenance\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"official_workflow_provenance\") = 'object'\n            AND \"agent_runs\".\"official_workflow_provenance\" ?& ARRAY['schemaVersion', 'definitions']\n            AND (\"agent_runs\".\"official_workflow_provenance\" - 'schemaVersion' - 'definitions') = '{}'::jsonb\n            AND \"agent_runs\".\"official_workflow_provenance\"->'schemaVersion' = '2'::jsonb\n            AND jsonb_typeof(\"agent_runs\".\"official_workflow_provenance\"->'definitions') = 'array'\n            AND jsonb_array_length(\"agent_runs\".\"official_workflow_provenance\"->'definitions') > 0\n            AND NOT jsonb_path_exists(\"agent_runs\".\"official_workflow_provenance\", '$.definitions[*] ? (\n              @.type() != \"object\" || !exists(@.name) || @.name.type() != \"string\" ||\n              !(@.name like_regex \"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$\") ||\n              !exists(@.revision) || @.revision.type() != \"string\" || !(@.revision like_regex \"^[0-9a-f]{64}$\") ||\n              exists(@.keyvalue() ? (@.key != \"name\" && @.key != \"revision\" && @.key != \"contentBundle\")) ||\n              !exists(@.contentBundle) || @.contentBundle.type() != \"object\" ||\n              !exists(@.contentBundle.sha256) || @.contentBundle.sha256.type() != \"string\" ||\n              !(@.contentBundle.sha256 like_regex \"^[0-9a-f]{64}$\") ||\n              !exists(@.contentBundle.archiveBytes) || @.contentBundle.archiveBytes.type() != \"number\" ||\n              @.contentBundle.archiveBytes < 1 || @.contentBundle.archiveBytes > 33554432 ||\n              @.contentBundle.archiveBytes.floor() != @.contentBundle.archiveBytes ||\n              exists(@.contentBundle.keyvalue() ? (@.key != \"sha256\" && @.key != \"archiveBytes\"))\n            )')\n          ) OR (\n            jsonb_typeof(\"agent_runs\".\"official_workflow_provenance\") = 'object' AND\n            \"agent_runs\".\"official_workflow_provenance\" ?& ARRAY[\n              'schemaVersion',\n              'definitions'\n            ] AND\n            (\n              \"agent_runs\".\"official_workflow_provenance\" -\n              'schemaVersion' -\n              'definitions'\n            ) = '{}'::jsonb AND\n            \"agent_runs\".\"official_workflow_provenance\" -> 'schemaVersion' = '1'::jsonb AND\n            jsonb_typeof(\n              \"agent_runs\".\"official_workflow_provenance\" -> 'definitions'\n            ) = 'array' AND\n            jsonb_array_length(\n              \"agent_runs\".\"official_workflow_provenance\" -> 'definitions'\n            ) > 0 AND\n            NOT jsonb_path_exists(\n              \"agent_runs\".\"official_workflow_provenance\",\n              '$.definitions[*] ? (\n                @.type() != \"object\" ||\n                !exists(@.name) ||\n                @.name.type() != \"string\" ||\n                !(@.name like_regex \"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$\") ||\n                !exists(@.revision) ||\n                @.revision.type() != \"string\" ||\n                !(@.revision like_regex \"^[0-9a-f]{64}$\") ||\n                !exists(@.artifact) ||\n                @.artifact.type() != \"object\" ||\n                exists(\n                  @.keyvalue() ? (\n                    @.key != \"name\" &&\n                    @.key != \"revision\" &&\n                    @.key != \"artifact\"\n                  )\n                ) ||\n                !exists(@.artifact.orgId) ||\n                @.artifact.orgId != \"__system__\" ||\n                !exists(@.artifact.userId) ||\n                @.artifact.userId != \"__org__\" ||\n                !exists(@.artifact.storageName) ||\n                @.artifact.storageName.type() != \"string\" ||\n                !(@.artifact.storageName like_regex \"^.{1,255}.?$\") ||\n                !exists(@.artifact.storageId) ||\n                @.artifact.storageId.type() != \"string\" ||\n                !(@.artifact.storageId like_regex \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$\") ||\n                !exists(@.artifact.storageVersion) ||\n                @.artifact.storageVersion.type() != \"string\" ||\n                !(@.artifact.storageVersion like_regex \"^[0-9a-f]{64}$\") ||\n                exists(\n                  @.artifact.keyvalue() ? (\n                    @.key != \"orgId\" &&\n                    @.key != \"userId\" &&\n                    @.key != \"storageName\" &&\n                    @.key != \"storageId\" &&\n                    @.key != \"storageVersion\"\n                  )\n                )\n              )'\n            )\n          )\n        )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.agent_suggestion_items": {
-      "name": "agent_suggestion_items",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "priority": {
-          "name": "priority",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "content": {
-          "name": "content",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "selected_option_id": {
-          "name": "selected_option_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "feedbacks": {
-          "name": "feedbacks",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "agent_suggestion_items_active_order": {
-          "name": "agent_suggestion_items_active_order",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "priority",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"agent_suggestion_items\".\"status\" = 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_suggestion_items_pending_feedback": {
-          "name": "agent_suggestion_items_pending_feedback",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "jsonb_path_exists(\"agent_suggestion_items\".\"feedbacks\", '$[*] ? (@.learnedAt == null)')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_suggestion_items_expiry": {
-          "name": "agent_suggestion_items_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_suggestion_items_receipts": {
-          "name": "agent_suggestion_items_receipts",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"agent_suggestion_items\".\"status\" <> 'active'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "agent_suggestion_items_org_id_user_id_id_pk": {
-          "name": "agent_suggestion_items_org_id_user_id_id_pk",
-          "columns": [
-            "org_id",
-            "user_id",
-            "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_suggestion_items_status": {
-          "name": "agent_suggestion_items_status",
-          "value": "\"agent_suggestion_items\".\"status\" IN ('active', 'consumed', 'removed')"
-        },
-        "agent_suggestion_items_active_content": {
-          "name": "agent_suggestion_items_active_content",
-          "value": "\"agent_suggestion_items\".\"status\" <> 'active' OR \"agent_suggestion_items\".\"content\" IS NOT NULL"
-        },
-        "agent_suggestion_items_feedback_bound": {
-          "name": "agent_suggestion_items_feedback_bound",
-          "value": "jsonb_typeof(\"agent_suggestion_items\".\"feedbacks\") = 'array' AND jsonb_array_length(\"agent_suggestion_items\".\"feedbacks\") <= 100"
         }
       },
       "isRLSEnabled": false
@@ -16105,6 +15860,248 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.feed_items": {
+      "name": "feed_items",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "feed_items_active_order": {
+          "name": "feed_items_active_order",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "priority",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"feed_items\".\"type\" = 'suggestion' AND \"feed_items\".\"state\"->>'status' = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "feed_items_pending_feedback": {
+          "name": "feed_items_pending_feedback",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "jsonb_path_exists(\"feed_items\".\"state\"->'feedbacks', '$[*] ? (@.learnedAt == null)')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "feed_items_expiry": {
+          "name": "feed_items_expiry",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "feed_items_receipts": {
+          "name": "feed_items_receipts",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"feed_items\".\"state\"->>'status' <> 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "feed_items_org_id_user_id_id_pk": {
+          "name": "feed_items_org_id_user_id_id_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "feed_items_type": {
+          "name": "feed_items_type",
+          "value": "\"feed_items\".\"type\" = 'suggestion'"
+        },
+        "feed_items_suggestion_state": {
+          "name": "feed_items_suggestion_state",
+          "value": "(\n    jsonb_typeof(\"feed_items\".\"state\") = 'object'\n    AND \"feed_items\".\"state\"->>'status' IN ('active', 'consumed', 'removed')\n    AND \"feed_items\".\"state\" ? 'selectedOptionId'\n    AND (\"feed_items\".\"state\"->'selectedOptionId' = 'null'::jsonb OR jsonb_typeof(\"feed_items\".\"state\"->'selectedOptionId') = 'string')\n    AND jsonb_typeof(\"feed_items\".\"state\"->'feedbacks') = 'array'\n    AND jsonb_array_length(\"feed_items\".\"state\"->'feedbacks') <= 100\n  ) IS TRUE"
+        },
+        "feed_items_suggestion_content": {
+          "name": "feed_items_suggestion_content",
+          "value": "\"feed_items\".\"state\"->>'status' <> 'active' OR \"feed_items\".\"content\" IS NOT NULL"
+        },
+        "feed_items_suggestion_expiry": {
+          "name": "feed_items_suggestion_expiry",
+          "value": "\"feed_items\".\"expires_at\" IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.feishu_chat_ingress": {
       "name": "feishu_chat_ingress",
       "schema": "",
@@ -20610,18 +20607,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

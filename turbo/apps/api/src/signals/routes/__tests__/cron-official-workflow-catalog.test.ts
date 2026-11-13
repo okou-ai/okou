@@ -27,6 +27,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -298,6 +299,7 @@ test.each(scenarios)(
     await withMockNowForTest(
       new Date(automation.nextRunAt).getTime(),
       async () => {
+        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
         await owned.run(() => {
           return accept(
             app(cronExecuteWorkflowAutomationsContract).execute({

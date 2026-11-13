@@ -47,8 +47,8 @@ async function save(actor: ApiTestUser, content: string) {
   return await accept(client().update({ headers, body: { content } }), [200]);
 }
 
-describe("Captured personal Instructions in Runner claims", () => {
-  it("uses latest personal content at claim and keeps the signed API mode across a live flag disable", async () => {
+describe("Captured personal Instructions in direct Runs", () => {
+  it("uses personal content at dispatch and keeps the signed API mode across a live flag disable", async () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
@@ -80,7 +80,7 @@ describe("Captured personal Instructions in Runner claims", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("latest before claim");
+      ).toBe("personal at admission");
       const token = claim.platformEnvironment.OKOU_TOKEN!;
       const runHeaders = { authorization: `Bearer ${token}` };
       const saved = await accept(
@@ -97,7 +97,7 @@ describe("Captured personal Instructions in Runner claims", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("latest before claim");
+      ).toBe("personal at admission");
       await api.requestCancelRun(owned.actor, queued.runId, [200]);
       await accept(client().get({ headers: runHeaders }), [403]);
       const legacy = await api.createThreadRun(owned.actor, {
@@ -137,12 +137,12 @@ describe("Captured personal Instructions in Runner claims", () => {
       }
       await mode(owned.actor, true);
       await save(owned.actor, "old managed file");
+      await save(owned.actor, "");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: defaultAgentId,
         prompt: "clear personal file",
         model: "auto",
       });
-      await save(owned.actor, "");
       const { claim } = await owned.claimChatRun(
         owned.runnerGroup,
         queued.runId,
@@ -248,7 +248,7 @@ describe("Captured personal Instructions in Runner claims", () => {
           owned.runnerGroup,
           aliceRun.runId,
         );
-        const bobClaim = await api.claimRunnerJob(bobRun.runId);
+        const bobClaim = await api.executionInput(bobRun.runId);
         bobOwner.rememberClaim(bobRun.runId, bobClaim.sandboxToken);
         expect(
           readClaimedContentBundle(

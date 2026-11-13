@@ -25,6 +25,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   claimChatRun,
+  cancelAndCompleteChatRun,
   cancelChatRun,
   waitForThreadMessages,
   requestSendEventWithBearer,
@@ -276,7 +277,7 @@ describe("chat agent bootstrap prefetch", () => {
       [201],
     );
     // Cancellation is a separate API request: its pick cannot receive the send's signals.
-    await cancelChatRun(actor, first.runId);
+    await cancelAndCompleteChatRun(actor, first.runId);
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,

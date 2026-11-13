@@ -36,7 +36,7 @@ import {
   chatListQuery$,
   setChatListQuery$,
 } from "../../signals/okou-page/sidebar-state.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import { ASSISTANT_NAME } from "../../signals/branding.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";

@@ -1,4 +1,6 @@
 import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
+import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
+import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { describe, expect, it } from "vitest";
 import { HttpResponse, http } from "msw";
@@ -8,6 +10,7 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
+import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 
@@ -668,6 +671,74 @@ describe("shared-window native Browser input", () => {
       expect((await client().get({ headers, params })).status).toBe(410);
       expect((await view(s.b)).status).toBe("active");
       expect(s.state.writes).toBe(0);
+    });
+  });
+
+  it("retains closed input for seven days and retries file cleanup before deleting its history", async () => {
+    const app = await setupApp({
+      context,
+      routes: cronBrowserReconcileRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronBrowserReconcileContract);
+    const reconcile = () => {
+      return accept(
+        cron.reconcile({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+    };
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const s = await scenario(f);
+      s.state.kind = "file";
+      const params = await s.request();
+      let failCleanup = false;
+      let failedCleanups = 0;
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof DeleteObjectsCommand && failCleanup) {
+          failedCleanups += 1;
+          return Promise.reject(
+            new Error("Temporary file storage unavailable"),
+          );
+        }
+        return Promise.resolve({});
+      });
+
+      const completedAt = START + 11 * MINUTE;
+      mockNow(completedAt);
+      await reconcile();
+      const completed = await accept(client().get({ headers, params }), [200]);
+      expect(completed.body).toMatchObject({
+        state: "stale",
+        completedAt: new Date(completedAt).toISOString(),
+      });
+
+      const retentionDeadline = completedAt + 7 * 24 * 60 * MINUTE;
+      mockNow(retentionDeadline - 1);
+      await reconcile();
+      expect(
+        (await accept(client().get({ headers, params }), [200])).body,
+      ).toMatchObject({
+        state: "stale",
+        completedAt: completed.body.completedAt,
+      });
+
+      mockNow(retentionDeadline);
+      failCleanup = true;
+      await reconcile();
+      expect(failedCleanups).toBeGreaterThan(0);
+      expect(
+        (await accept(client().get({ headers, params }), [200])).body,
+      ).toMatchObject({
+        state: "stale",
+        completedAt: completed.body.completedAt,
+      });
+
+      failCleanup = false;
+      await reconcile();
+      expect((await client().get({ headers, params })).status).toBe(404);
     });
   });
 });

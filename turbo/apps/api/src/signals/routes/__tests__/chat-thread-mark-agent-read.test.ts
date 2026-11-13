@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -10,6 +11,8 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -27,8 +30,8 @@ interface AgentReadFixture {
   readonly threadIds: readonly string[];
 }
 
-function prepareChatRuntime(): void {
-  runs.configureRunnerGroup();
+async function prepareChatRuntime(): Promise<void> {
+  await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   chatCallbacks.acceptChatObjectStorage();
@@ -40,8 +43,8 @@ function prepareChatRuntime(): void {
  * Appends one terminal Run event to a caller thread the way a user does: a
  * chat send launches a Run, which the caller then cancels. Without
  * `threadId` the send creates a new thread. The Run must still be active when
- * it is cancelled, so the caller selects Fable, whose personal Claude
- * subscription route keeps it queued for the native Runner instead of Pi.
+ * it is cancelled. Its native Runner then acknowledges completion so the next
+ * input can use the released active slot.
  */
 async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;
@@ -53,9 +56,13 @@ async function appendCancelledRun(args: {
     prompt: `agent read ${randomUUID()}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
+  const input = await runs.executionInput(runId);
   await runs.requestCancelRun(args.actor, runId, [200]);
-  await flushWaitUntilForTest();
-
+  await createWebhookCallbackApi(context).requestAgentComplete(
+    { runId, exitCode: 137 },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
   await flushWaitUntilForTest();
   await expect(chat.listUnreadChatThreadIds(args.actor)).resolves.toContain(
     threadId,
@@ -71,7 +78,7 @@ async function appendCancelledRun(args: {
 async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
-  prepareChatRuntime();
+  await prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
@@ -154,6 +161,8 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
   });
 
   it("leaves unread threads older than the seven-day window untouched", async () => {
+    // The receiver registered eight days ahead performs fleet-wide cleanup.
+    await setupApp({ context, routes: agentsRoutes, isolatePg: true });
     // The stale thread's last message is written at the real current time;
     // the app clock then moves eight days ahead, so that message falls outside
     // the seven-day window while the recent thread is written inside it.
@@ -165,6 +174,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     const staleCursor = (await chat.readThread(fixture.actor, stale))
       .lastReadAt;
     mockNow(now() + 8 * 24 * 60 * 60 * 1000);
+    await runs.configureRunnerGroup();
     await appendCancelledRun({
       actor: fixture.actor,
       agentId: fixture.agentId,

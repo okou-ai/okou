@@ -1258,7 +1258,6 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(
       Set(requests.withLock { $0 }),
       [
-        "/api/indicators",
         "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)",
       ])
 

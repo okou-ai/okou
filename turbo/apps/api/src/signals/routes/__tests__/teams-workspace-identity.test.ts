@@ -573,7 +573,7 @@ test.each([
       await ownRuns.run(async () => {
         const runs = createRunsApi(context);
         const reads = createRunReadsApi(context);
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
@@ -697,7 +697,7 @@ test.each([
         expect(run).toMatchObject({
           agentId,
           triggerSource: "teams",
-          status: "pending",
+          status: "running",
         });
         await reads.requestReadLogById(receiving.actor, run.id, [404]);
         if (scenario === "probe-unavailable") {

@@ -9,7 +9,7 @@ import {
   agentDraftRoutes,
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
-import { suggestionsRoutes } from "./routes/suggestions";
+import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
@@ -52,7 +52,6 @@ import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
-import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
 import { vncAuthorizationRoutes } from "./routes/vnc-authorization";
@@ -325,7 +324,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
-  ...suggestionsRoutes,
+  ...feedRoutes,
   ...agentInstructionsRoutes,
   ...instructionsRoutes,
   ...agentsRoutes,
@@ -360,7 +359,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...vncAuthorizationRoutes,
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
-  ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
   ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
