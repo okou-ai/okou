@@ -44,6 +44,7 @@ struct ChatSidebarView: View {
   @State private var membershipThread: ChatThread?
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
+  @State private var fadingThreadIDs: Set<String> = []
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -117,7 +118,16 @@ struct ChatSidebarView: View {
         }
       }
     }
-    .animation(reduceMotion ? nil : OkouMotion.transition, value: threadRowIDs)
+    .transaction(value: threadRowIDs) { transaction in
+      transaction.animation = reduceMotion ? nil : OkouMotion.transition
+      // Keep removed content invisible until the native list finishes closing its space.
+      let removed = fadingThreadIDs.subtracting(threadRowIDs.flatMap { $0 })
+      if !removed.isEmpty {
+        transaction.addAnimationCompletion(criteria: .removed) {
+          fadingThreadIDs.subtract(removed)
+        }
+      }
+    }
     .foregroundStyle(OkouColor.sidebarForeground)
     .listStyle(.plain)
     .listSectionSpacing(.compact)
@@ -504,6 +514,7 @@ struct ChatSidebarView: View {
     pinNeighbors: ChatSidebarPresentation.PinNeighbors? = nil
   ) -> some View {
     let thread = row.thread
+    let isFading = fadingThreadIDs.contains(thread.id)
     return Button {
       store.selectChat(thread.id)
       close()
@@ -511,6 +522,8 @@ struct ChatSidebarView: View {
       ChatSidebarThreadLabel(row: row, workspace: store, showsStatusColumn: showsStatusColumn)
     }
     .buttonStyle(.plain)
+    .opacity(isFading ? 0 : 1)
+    .allowsHitTesting(!isFading)
     .listRowInsets(
       EdgeInsets(top: 0, leading: rowInset + indentation, bottom: 0, trailing: rowInset)
     )
@@ -523,6 +536,7 @@ struct ChatSidebarView: View {
         )
         .padding(.leading, OkouSpace.md + indentation)
         .padding(.trailing, OkouSpace.md)
+        .opacity(isFading ? 0 : 1)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
@@ -534,7 +548,7 @@ struct ChatSidebarView: View {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 },
-          pinNeighbors: pinNeighbors))
+          pinNeighbors: pinNeighbors, archive: { archiveThread($0.id, leaveDetail: true) }))
     } preview: {
       ChatThreadPreview(thread: thread, workspace: store)
     }
@@ -546,14 +560,47 @@ struct ChatSidebarView: View {
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
       Button {
-        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+        archiveThread(thread.id)
       } label: {
         Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
       }
       .tint(OkouSwipeTint.neutral)
-      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      .disabled(isFading || !store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
 
+  }
+
+  private func archiveThread(_ id: String, leaveDetail: Bool = false) {
+    guard !store.needsUpgrade, store.list.canUpdate(id), !fadingThreadIDs.contains(id),
+      let thread = store.list.threads.first(where: { $0.id == id })
+    else { return }
+    let archived = !thread.isArchived
+    let removesRow =
+      (store.sidebar.filter == .recent && archived)
+      || (store.sidebar.filter == .archived && !archived)
+    let commit: () -> Void = {
+      Task {
+        await store.setArchived(id, archived: archived, leaveDetail: leaveDetail)
+        guard !Task.isCancelled else { return }
+        // A rejected action leaves the row in place; restore its content without collapsing it.
+        if store.list.threads.first(where: { $0.id == id })?.isArchived != archived {
+          withAnimation(reduceMotion ? nil : OkouMotion.press) {
+            fadingThreadIDs.subtract([id])
+          }
+        }
+      }
+    }
+    guard removesRow, !reduceMotion else {
+      commit()
+      return
+    }
+    // A List can close a swiped row's gap while its old label is still visible. Finish the
+    // opacity animation before publishing the removal, rather than racing those animations.
+    withAnimation(OkouMotion.press, completionCriteria: .removed) {
+      fadingThreadIDs.formUnion([id])
+    } completion: {
+      commit()
+    }
   }
 
   /// Top right, one glass capsule as iOS groups related bar buttons: the chat list menu on the
