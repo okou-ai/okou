@@ -41,7 +41,8 @@ fun ConversationRoute(
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(model, threadId, lifecycle, visible) {
+    // Restored navigation can mount this route before the history resource selects its thread.
+    DisposableEffect(model, threadId, state.generation, lifecycle, visible) {
         fun update() =
             model.setVisible(
                 threadId,
@@ -55,9 +56,9 @@ fun ConversationRoute(
             model.setVisible(threadId, false)
         }
     }
-    LaunchedEffect(state.phase, state.confirmation, threadId, visible) {
+    LaunchedEffect(model, state.generation, state.phase, state.confirmation, threadId, visible) {
         if (visible && state.thread?.id == threadId && state.phase == HistoryPhase.Ready)
-            model.confirmDisplayed(threadId)
+            model.confirmDisplayed(threadId, state.confirmation)
     }
     key(threadId) {
         val position = rememberLazyListState()

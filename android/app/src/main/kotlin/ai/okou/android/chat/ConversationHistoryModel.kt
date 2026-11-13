@@ -27,6 +27,7 @@ data class ConversationUiState(
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
     val readFailed: Boolean = false,
+    val generation: Long = 0,
     // Unchanged rows still complete a new read; StateFlow can conflate Loading → Ready.
     val confirmation: Long = 0,
 )
@@ -47,6 +48,7 @@ class ConversationHistoryModel(
     private var generation = 0L
     private var retired = false
     private var visible = false
+    private var displayedConfirmation: Long? = null
     private var job: Job? = null
     private var readJob: Job? = null
     private var confirmed: CachedHistory? = null
@@ -72,7 +74,13 @@ class ConversationHistoryModel(
         confirmed = null
         lastMarked = null
         visible = false
-        mutable.value = ConversationUiState(thread = thread)
+        displayedConfirmation = null
+        mutable.value =
+            ConversationUiState(
+                thread = thread,
+                generation = generation,
+                confirmation = mutable.value.confirmation,
+            )
         refresh()
     }
 
@@ -80,9 +88,11 @@ class ConversationHistoryModel(
         if (mutable.value.thread?.id != threadId || retired || !authorized()) return
         val becameVisible = value && !visible
         visible = value
-        if (!value) readJob?.cancel()
+        if (!value) {
+            displayedConfirmation = null
+            readJob?.cancel()
+        }
         if (becameVisible) refresh()
-        if (value) markVisibleRead()
     }
 
     fun refresh() {
@@ -182,6 +192,7 @@ class ConversationHistoryModel(
                 !authorized() ||
                 mutable.value.phase != HistoryPhase.Ready ||
                 mutable.value.source != ChatListSource.Network ||
+                displayedConfirmation != mutable.value.confirmation ||
                 readJob?.isActive == true ||
                 lastMarked == key
         )
@@ -203,12 +214,22 @@ class ConversationHistoryModel(
                     requireCurrent(ticket)
                     reportAuthorization(error)
                     if (current(ticket)) mutable.value = mutable.value.copy(readFailed = true)
+                } finally {
+                    if (current(ticket) && readJob === currentCoroutineContext()[Job]) {
+                        readJob = null
+                        // A displayed newer checkpoint can arrive while this write is pending.
+                        // A failed attempt at the same checkpoint still requires explicit retry.
+                        if (confirmed?.checkpoint?.cursor != key.second) markVisibleRead()
+                    }
                 }
             }
     }
 
-    fun confirmDisplayed(threadId: String) {
-        if (mutable.value.thread?.id == threadId) markVisibleRead()
+    fun confirmDisplayed(threadId: String, confirmation: Long) {
+        val state = mutable.value
+        if (!visible || state.thread?.id != threadId || state.confirmation != confirmation) return
+        displayedConfirmation = confirmation
+        markVisibleRead()
     }
 
     private fun reportAuthorization(error: Exception) {
