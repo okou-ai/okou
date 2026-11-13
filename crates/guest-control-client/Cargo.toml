@@ -9,7 +9,7 @@ test-support = []
 
 [dependencies]
 guest-contracts.workspace = true
-nix = { workspace = true, features = ["net"] }
+nix = { workspace = true, features = ["fs", "net"] }
 sandbox.workspace = true
 serde_json = { workspace = true, features = ["std"] }
 shell-quote.workspace = true

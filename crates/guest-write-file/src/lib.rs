@@ -193,20 +193,9 @@ fn output_options(append: bool) -> OpenOptions {
 
 #[cfg(unix)]
 fn prepare_output_file(file: &File) -> io::Result<()> {
-    use std::os::unix::io::AsRawFd;
-
     use nix::fcntl::{FcntlArg, OFlag, fcntl};
 
-    let fd = file.as_raw_fd();
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to valid writable memory and `fd` comes from a
-    // live File. On success, fstat initializes the whole struct.
-    let result = unsafe { libc::fstat(fd, stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fstat succeeded and initialized `stat`.
-    let stat = unsafe { stat.assume_init() };
+    let stat = nix::sys::stat::fstat(file)?;
     if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

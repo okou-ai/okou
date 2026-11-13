@@ -299,17 +299,12 @@ fn dir_open_flags() -> libc::c_int {
 
 #[cfg(unix)]
 fn validate_dir_fd(fd: &OwnedFd, path: &Path) -> io::Result<()> {
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `fd` owns a live descriptor.
-    let result = unsafe { libc::fstat(fd.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(wrap_last_os_error(format!(
-            "stat runtime directory {}",
-            path.display()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    let stat = unsafe { stat.assume_init() };
+    let stat = nix::sys::stat::fstat(fd).map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("stat runtime directory {}", path.display()),
+        )
+    })?;
     if stat.st_mode & libc::S_IFMT != libc::S_IFDIR {
         return Err(permission_denied(format!(
             "{} is not a runtime directory",
@@ -803,17 +798,12 @@ fn open_private_file(path: &Path, append: bool, create_new: bool) -> io::Result<
 
 #[cfg(unix)]
 fn secure_regular_private_file(file: &File, path: &Path) -> io::Result<()> {
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live descriptor.
-    let result = unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(wrap_last_os_error(format!(
-            "stat runtime file {}",
-            path.display()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    let stat = unsafe { stat.assume_init() };
+    let stat = nix::sys::stat::fstat(file).map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("stat runtime file {}", path.display()),
+        )
+    })?;
     if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err(permission_denied(format!(
             "{} is not a regular runtime file",
@@ -826,17 +816,12 @@ fn secure_regular_private_file(file: &File, path: &Path) -> io::Result<()> {
 
 #[cfg(unix)]
 fn validate_existing_private_file(file: &File, path: &Path, max_bytes: u64) -> io::Result<()> {
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live descriptor.
-    let result = unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(wrap_last_os_error(format!(
-            "stat private runtime file {}",
-            path.display()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    let stat = unsafe { stat.assume_init() };
+    let stat = nix::sys::stat::fstat(file).map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("stat private runtime file {}", path.display()),
+        )
+    })?;
     if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err(permission_denied(format!(
             "{} is not a regular private runtime file",
