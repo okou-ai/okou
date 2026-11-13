@@ -230,27 +230,24 @@ private struct ArtifactPreviewContent: View {
 
   private func prepareImageCovers() async {
     guard let content = value.data, content.artifact.kind == .image else { return }
-    let viewer = viewer
-    await withTaskGroup(of: (Int, Data?).self) { group in
-      for direction in [-1, 1] {
-        guard let image = content.image(direction) else { continue }
-        group.addTask { @MainActor in
-          do {
-            let card = try await viewer.card(image, thumbnail: true)
-            try Task.checkCancellation()
-            return (direction, card.thumbnail)
-          } catch {
-            // A cover is optional; selecting the page still uses the normal preview/error path.
-            return (direction, nil)
-          }
-        }
-      }
-      for await (direction, cover) in group {
-        guard !Task.isCancelled, viewer.preview?.id == preview.id else { return }
-        if let cover { imageCovers[direction] = cover }
-      }
+    async let previous: Void = prepareImageCover(-1, content: content)
+    async let next: Void = prepareImageCover(1, content: content)
+    _ = await (previous, next)
+  }
+
+  private func prepareImageCover(_ direction: Int, content: MessageArtifactPreviewRead.Content)
+    async
+  {
+    guard let image = content.image(direction) else { return }
+    do {
+      let card = try await viewer.card(image, thumbnail: true)
+      guard !Task.isCancelled, viewer.preview?.id == preview.id else { return }
+      if let cover = card.thumbnail { imageCovers[direction] = cover }
+    } catch {
+      // A cover is optional; selecting the page still uses the normal preview/error path.
     }
   }
+
 }
 
 private struct ArtifactCatalogWarning: View {
