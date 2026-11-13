@@ -66,11 +66,14 @@ final class ProjectDisclosureTests: XCTestCase {
     let phase = Mutex(0)
     let projectID = "30000000-0000-4000-8000-000000000071"
     let http = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
       if request.httpMethod == "DELETE", request.url?.path == "/api/projects/\(projectID)" {
         phase.withLock { $0 = 2 }
         return ChatHTTPResponse(status: 204, body: "")
       }
-      guard request.url?.path == "/api/projects", request.httpMethod == "GET" else {
+      guard request.url?.path == "/api/projects/snapshot", request.httpMethod == "GET" else {
         throw URLError(.unsupportedURL)
       }
       let current = phase.withLock { $0 }
@@ -79,7 +82,8 @@ final class ProjectDisclosureTests: XCTestCase {
         current == 1
         ? #"{"id":"\#(projectID)","name":"Project","createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z"}"#
         : ""
-      return ChatHTTPResponse(body: "{\"projects\":[\(project)]}")
+      return ChatHTTPResponse(
+        body: "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[\(project)]}")
     }
     let scope = ChatCacheScope(apiBaseURL: http.baseURL, userID: "user", workspaceID: "workspace")
     let key = fixture.legacyKey(
@@ -143,7 +147,8 @@ final class ProjectDisclosureTests: XCTestCase {
   private func projectStore(_ http: ChatHTTPFixture, storage: ProjectDisclosureStorage)
     -> ChatProjectStore
   {
-    let resources = WorkspaceResources(client: http.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: http.client, sync: ChatSync(client: http.client), sleep: { _ in })
     let store = ChatProjectStore(
       client: http.client, resources: resources, sync: ChatSync(client: http.client),
       disclosure: storage, didFail: { _ in }, didChangeMembership: {})

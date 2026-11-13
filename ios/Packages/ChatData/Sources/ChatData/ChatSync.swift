@@ -6,7 +6,7 @@ public actor ChatSync {
   let client: APIClient
   private let chatEventSchemaVersion = 8
   private let threadEventRebaseThreshold = 100
-  private let cache: ChatCache?
+  let cache: ChatCache?
   private var indicatorState = ChatIndicatorCacheState()
   private var histories: [String: CachedHistory] = [:]
   private var readingHistories = Set<String>()
