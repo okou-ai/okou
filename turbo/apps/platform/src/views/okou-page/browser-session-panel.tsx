@@ -1,7 +1,8 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
-import { Button, cn, LayoutPanel } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
+import { LayoutPanel } from "../components/layout-panel.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";

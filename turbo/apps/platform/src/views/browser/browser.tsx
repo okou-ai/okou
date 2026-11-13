@@ -23,8 +23,6 @@ import {
   IconButton,
   Input,
   Slider,
-  LayoutCommit,
-  RequestCommit,
   Textarea,
   TransientAlert,
   Tabs,
@@ -47,6 +45,7 @@ import {
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import { LayoutCommit, RequestCommit } from "../components/layout-panel.tsx";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";

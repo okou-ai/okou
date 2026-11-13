@@ -74,12 +74,8 @@ import {
   findWorkflowTemplateItem,
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
-import {
-  ElapsedTime,
-  getShortcutLabel,
-  RequestCommit,
-  ScrollBar,
-} from "@okouai/ui";
+import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
+import { RequestCommit } from "../components/layout-panel.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {

@@ -16,13 +16,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  LayoutPanel,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
+import { LayoutPanel } from "../components/layout-panel.tsx";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { sidebarOff$ } from "../../signals/okou-page/nav.ts";

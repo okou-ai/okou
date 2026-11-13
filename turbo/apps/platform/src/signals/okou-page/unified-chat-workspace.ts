@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { commitLayoutUpdate } from "@okouai/ui";
+import { commitLayoutUpdate } from "../../views/components/layout-panel.tsx";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import { pageSignal$ } from "../page-signal.ts";

@@ -5,7 +5,7 @@ import {
   commitLayoutUpdate,
   LayoutCommit,
   RequestCommit,
-} from "../layout-panel";
+} from "../layout-panel.tsx";
 
 test("a final gesture sample reaches the DOM before its ownership is released", () => {
   function Panel() {
@@ -30,7 +30,7 @@ test("a final gesture sample reaches the DOM before its ownership is released", 
     );
   }
   render(<Panel />);
-  fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+  fireEvent.click(screen.getByText("Finish", { selector: "button" }));
   expect(screen.getByLabelText("Committed width")).toHaveTextContent("682");
 });
 
@@ -51,10 +51,10 @@ test("a layout acknowledgement follows its semantic key, not unrelated rendering
   const { rerender } = render(view("initial", "first"));
   const destination = screen.getByRole("textbox", { name: "Destination" });
   expect(destination).toHaveFocus();
-  screen.getByRole("button", { name: "Elsewhere" }).focus();
+  screen.getByText("Elsewhere", { selector: "button" }).focus();
   rerender(view("initial", "unrelated"));
   expect(destination).toHaveValue("unrelated");
-  expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  expect(screen.getByText("Elsewhere", { selector: "button" })).toHaveFocus();
   rerender(view("new-layout", "committed"));
   expect(destination).toHaveValue("committed");
   expect(destination).toHaveFocus();
@@ -89,7 +89,7 @@ test("a request acknowledgement uses the exact request and committed enable boun
   const { container, rerender } = render(view(null, false, "idle"));
   const destination = screen.getByRole("textbox", { name: "Destination" });
   expect(destination).not.toHaveFocus();
-  const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+  const elsewhere = screen.getByText("Elsewhere", { selector: "button" });
   elsewhere.focus();
   rerender(view(request, true, "pending"));
   expect(elsewhere).toHaveFocus();

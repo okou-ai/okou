@@ -2,7 +2,8 @@ import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { cn, LayoutPanel, RequestCommit } from "@okouai/ui";
+import { cn } from "@okouai/ui";
+import { LayoutPanel, RequestCommit } from "../components/layout-panel.tsx";
 import { useTranslation } from "react-i18next";
 
 import {
