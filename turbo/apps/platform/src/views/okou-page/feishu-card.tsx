@@ -56,7 +56,7 @@ import {
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
+import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import {
   feishuPlatform$,
@@ -1668,6 +1668,55 @@ function FeishuSettingsSkeleton() {
   );
 }
 
+function FeishuPageHeader({
+  title,
+  description,
+  backPath,
+  backLabel,
+  titleId,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly backPath: RoutePath;
+  readonly backLabel: string;
+  readonly titleId?: string;
+}) {
+  return (
+    <header className="shrink-0 bg-transparent px-4 pb-3 pt-10 sm:px-6">
+      <div className="mx-auto max-w-[900px]">
+        <div className="mb-4">
+          <Link
+            pathname={backPath}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <ArrowLeft size={17} />
+            {backLabel}
+          </Link>
+        </div>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-muted/40">
+            <img src={feishuIconImg} alt="" className="h-7 w-7" />
+          </span>
+          <div className="min-w-0">
+            <h1
+              id={titleId}
+              className="truncate text-lg font-semibold tracking-tight text-foreground"
+            >
+              {title}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {description}
+            </p>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export function FeishuSetupPage() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -1701,27 +1750,21 @@ export function FeishuSetupPage() {
       className="@container/feishu-setup flex min-h-0 flex-1 flex-col overflow-hidden"
       aria-labelledby="feishu-setup-title"
     >
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-5 py-4 md:px-8">
-        <div className="flex min-w-0 items-center gap-4">
-          <h1
-            id="feishu-setup-title"
-            className="text-lg font-semibold tracking-tight"
-          >
-            {title}
-          </h1>
-        </div>
-        <Link
-          pathname={
-            platform === "lark" ? ROUTES.settingsLark : ROUTES.settingsFeishu
-          }
-          className={buttonVariants({ variant: "quiet", size: "sm" })}
-        >
-          <ArrowLeft size={16} />
-          {t(($) => {
-            return $.connectors.providerSettings[platform].bots;
-          })}
-        </Link>
-      </header>
+      <FeishuPageHeader
+        titleId="feishu-setup-title"
+        title={title}
+        description={t(($) => {
+          return readOnly
+            ? $.connectors.providerSettings[platform].reviewGuideDescription
+            : $.connectors.providerSettings[platform].addDialogDescription;
+        })}
+        backPath={
+          platform === "lark" ? ROUTES.settingsLark : ROUTES.settingsFeishu
+        }
+        backLabel={t(($) => {
+          return $.connectors.providerSettings[platform].bots;
+        })}
+      />
       {hasError ? (
         <p role="alert" className="p-8 text-sm text-destructive">
           {t(($) => {
@@ -1910,43 +1953,18 @@ export function FeishuSettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 bg-transparent px-4 pb-3 pt-10 sm:px-6">
-        <div className="mx-auto max-w-[900px]">
-          <div className="mb-4">
-            <Link
-              pathname={ROUTES.works}
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "sm" }),
-                "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <ArrowLeft size={17} />
-              {t(($) => {
-                return $.connectors.providerSettings[platform]
-                  .backToIntegrations;
-              })}
-            </Link>
-          </div>
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-muted/40">
-              <img src={feishuIconImg} alt="" className="h-7 w-7" />
-            </span>
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
-                {t(($) => {
-                  return $.connectors.providerSettings[platform].documentTitle;
-                })}
-              </h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.connectors.providerSettings[platform]
-                    .pageDescription;
-                })}
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <FeishuPageHeader
+        title={t(($) => {
+          return $.connectors.providerSettings[platform].documentTitle;
+        })}
+        description={t(($) => {
+          return $.connectors.providerSettings[platform].pageDescription;
+        })}
+        backPath={ROUTES.works}
+        backLabel={t(($) => {
+          return $.connectors.providerSettings[platform].backToIntegrations;
+        })}
+      />
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
           {hasError ? (
