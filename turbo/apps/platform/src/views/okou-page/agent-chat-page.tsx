@@ -19,7 +19,6 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  OkouAvatar,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
@@ -50,6 +49,7 @@ import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
+import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 
 function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
   return [
@@ -360,7 +360,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
     // My Okou's greeting is the one place Okou is shown large and alone, so it
     // is the one place the avatar moves. The shared avatar owns its frame and
     // texture, and holds still for reduced-motion users.
-    <OkouAvatar size={56} />
+    <MyOkouAvatarButton size={56} />
   ) : (
     <LegacyChatAgentAvatar agentId={agentId} />
   );
