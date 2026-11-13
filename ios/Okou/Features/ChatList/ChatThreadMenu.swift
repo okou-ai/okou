@@ -24,6 +24,8 @@ struct ChatThreadMenu {
   let moveToProject: (ChatThread) -> Void
   /// The sidebar's neighbouring pins; nil where this chat's pin cannot be reordered.
   var pinNeighbors: ChatSidebarPresentation.PinNeighbors?
+  /// A sidebar may finish the row's exit before invoking the workspace-owned mutation.
+  var archive: ((ChatThread) -> Void)?
 
   private var thread: ChatThread? {
     workspace.list.threads.first { $0.id == threadID }
@@ -125,7 +127,11 @@ struct ChatThreadMenu {
     case .mute: await workspace.setMuted(threadID, muted: !thread.isMuted)
     case .markUnread: await workspace.setRead(thread, read: false)
     case .archive:
-      await workspace.setArchived(threadID, archived: !thread.isArchived, leaveDetail: true)
+      if let archive {
+        archive(thread)
+      } else {
+        await workspace.setArchived(threadID, archived: !thread.isArchived, leaveDetail: true)
+      }
     }
   }
 

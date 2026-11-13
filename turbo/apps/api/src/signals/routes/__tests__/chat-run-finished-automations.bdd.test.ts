@@ -63,7 +63,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
@@ -216,19 +216,9 @@ async function claimChatRun(
   runnerGroup: string,
   runId: string,
 ): Promise<{ readonly authorization: string }> {
+  const input = await api.executionInput(runId);
   await api.heartbeatRunner(runnerGroup);
-  let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
-      return claim.status;
-    })(),
-  ).resolves.toBe(200);
-  if (!claim || claim.status !== 200) {
-    throw new Error("Expected the chat run to be claimable");
-  }
-  return { authorization: `Bearer ${claim.body.sandboxToken}` };
+  return { authorization: `Bearer ${input.sandboxToken}` };
 }
 
 async function completeChatRunOk(
@@ -581,7 +571,7 @@ describe("chat-run-finished workflow automations", () => {
       const automationRuns = await createRunReadsApi(context).requestListLogs(
         fixture.actor,
         {
-          status: "pending",
+          status: "running",
           limit: 20,
         },
         [200],

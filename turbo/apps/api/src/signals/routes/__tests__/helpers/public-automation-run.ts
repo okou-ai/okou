@@ -170,7 +170,7 @@ export function createPublicAutomationRunApi(context: TestContext) {
   ): Promise<void> {
     const run = track(actor, runId, runnerGroup);
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     run.sandboxToken = claim.sandboxToken;
     const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
     if (args.output !== undefined) {

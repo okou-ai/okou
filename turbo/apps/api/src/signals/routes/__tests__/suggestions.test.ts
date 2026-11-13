@@ -5,11 +5,11 @@ import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestio
 import { chatEventsRoutes } from "../chat-events";
 import { describe, expect, it } from "vitest";
 import {
-  suggestionsContract,
+  feedContract,
   SUGGESTION_RETENTION_MS,
   type SuggestionCreate,
   type SuggestionOption,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import {
   chatThreadsContract,
   chatThreadByIdContract,
@@ -18,7 +18,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { suggestionsRoutes } from "../suggestions";
+import { feedRoutes } from "../feed";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -51,13 +51,13 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { joinAll } from "../../utils";
 import { cronCleanupSuggestionsRoutes } from "../cron-cleanup-suggestions";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 
 type UserMessageDocument = zInfer<typeof userMessageDocumentSchema>;
 const context = testContext();
 const humanHeaders = { authorization: "Bearer clerk-session" } as const;
 function client() {
-  return setupApp({ context, routes: suggestionsRoutes })(suggestionsContract);
+  return setupApp({ context, routes: feedRoutes })(feedContract);
 }
 function cleanupClient() {
   return setupApp({ context, routes: cronCleanupSuggestionsRoutes })(
@@ -68,28 +68,31 @@ const cronSecret = "suggestion-retention-test-secret";
 function input(priority = 0): SuggestionCreate {
   return {
     id: randomUUID(),
-    title: "Review the project update",
-    rationale: "A decision needs your input",
     priority,
-    customOption: {
-      id: "custom",
-      threadId: null,
-      draft: {
-        draftUserMessage: {
-          version: 1,
-          parts: [
-            {
-              type: "feedback",
-              quote:
-                "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
-              note: [],
-            },
-          ],
+    content: {
+      title: "Review the project update",
+      rationale: "A decision needs your input",
+      customOption: {
+        id: "custom",
+        threadId: null,
+        draft: {
+          draftUserMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "feedback",
+                quote:
+                  "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
+                note: [],
+              },
+            ],
+          },
+          draftAttachments: null,
         },
-        draftAttachments: null,
       },
+      options: [makeOption()],
     },
-    options: [makeOption()],
+    type: "suggestion",
   };
 }
 function makeOption(
@@ -140,7 +143,7 @@ async function primaryRun(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   if (!member) {
     await runs.grantProEntitlement(actor);
   }
@@ -161,7 +164,7 @@ async function primaryRun(
     model: "claude-fable-5-1",
     prompt: "Curate useful suggestions",
   });
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
@@ -171,7 +174,6 @@ async function primaryRun(
     prompt: claim.appendSystemPrompt ?? "",
   };
 }
-
 const feedbackContextSchema = object({
   asOf: string(),
   complete: boolean(),
@@ -193,6 +195,7 @@ async function feedbackContext(
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(fixture.runnerGroup);
   mockEnv("CRON_SECRET", cronSecret);
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", fixture.runnerGroup);
   installWorkflowVolumeS3Fixture(context, fixture.feedbackObjects, {
     bundlesOnly: true,
   });
@@ -248,6 +251,7 @@ async function feedbackContext(
   await withMockNowForTest(
     Math.max(now(), Date.parse(automation.nextRunAt)),
     async () => {
+      await runs.registerDirectRunner(fixture.runnerGroup);
       await accept(
         app(cronExecuteWorkflowAutomationsContract).execute({
           headers: cronHeaders,
@@ -281,7 +285,7 @@ async function feedbackContext(
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   await createChatEventsFixture(context).failChatRun(
     runId,
     { authorization: `Bearer ${claim.sandboxToken}` },
@@ -297,7 +301,6 @@ async function feedbackContext(
   );
   return parsed;
 }
-
 describe("Agent suggestions", () => {
   it("pages management without hiding overflow cards or coupling their feedback", async () => {
     await setupApp({
@@ -321,7 +324,7 @@ describe("Agent suggestions", () => {
       client().manage({ headers: fixture.headers, query: {} }),
       [200],
     );
-    expect(first.body.suggestions).toHaveLength(100);
+    expect(first.body.items).toHaveLength(100);
     expect(first.body.nextAfter).not.toBeNull();
     const next = await accept(
       client().manage({
@@ -330,11 +333,11 @@ describe("Agent suggestions", () => {
       }),
       [200],
     );
-    expect(next.body.suggestions).toHaveLength(5);
+    expect(next.body.items).toHaveLength(5);
     expect(next.body.nextAfter).toBeNull();
     expect(
       new Set(
-        [...first.body.suggestions, ...next.body.suggestions].map((item) => {
+        [...first.body.items, ...next.body.items].map((item) => {
           return item.id;
         }),
       ).size,
@@ -344,11 +347,11 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(
-      homepage.body.suggestions.map((item) => {
+      homepage.body.items.map((item) => {
         return item.priority;
       }),
     ).toStrictEqual([104, 103, 102, 101, 100, 99, 98, 97, 96, 95]);
-    const [one, two] = homepage.body.suggestions;
+    const [one, two] = homepage.body.items;
     if (!one || !two) {
       throw new Error("Expected two cards");
     }
@@ -377,8 +380,8 @@ describe("Agent suggestions", () => {
         [one, two].map((item) => {
           return expect.objectContaining({
             kind: "not_planned",
-            title: item.title,
-            rationale: item.rationale,
+            title: item.content.title,
+            rationale: item.content.rationale,
           });
         }),
       ),
@@ -387,16 +390,15 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(remaining.body.suggestions).toHaveLength(10);
+    expect(remaining.body.items).toHaveLength(10);
     expect(
-      remaining.body.suggestions.some((item) => {
+      remaining.body.items.some((item) => {
         return item.id === one.id || item.id === two.id;
       }),
     ).toBeFalsy();
   });
-
   it("renews a card for 24 hours after an update", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const suggestion = input();
@@ -404,39 +406,49 @@ describe("Agent suggestions", () => {
       client().create({ headers: fixture.headers, body: suggestion }),
       [200],
     );
-    expect(created.body.expiresAt).toBe("2026-10-28T00:00:00.000Z");
+    expect(created.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS).toISOString(),
+    );
 
     mockNow(start + 60_000);
     const updated = await accept(
       client().update({
         headers: fixture.headers,
         params: { id: suggestion.id },
-        body: { title: "Review the latest project update", priority: 50 },
+        body: {
+          priority: 50,
+          content: {
+            title: "Review the latest project update",
+          },
+        },
       }),
       [200],
     );
-    expect(updated.body.expiresAt).toBe("2026-10-28T00:01:00.000Z");
+    expect(updated.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS + 60_000).toISOString(),
+    );
     expect(updated.body.createdAt).toBe(created.body.createdAt);
     mockNow(start + SUGGESTION_RETENTION_MS);
     const current = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(current.body.suggestions).toHaveLength(1);
-
+    expect(current.body.items).toHaveLength(1);
     mockNow(start + SUGGESTION_RETENTION_MS + 60_000);
     const expired = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(expired.body.suggestions).toStrictEqual([]);
+    expect(expired.body.items).toStrictEqual([]);
   });
-
   it("honors an earlier deadline and caps a later deadline at 24 hours", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
-    const early = { ...input(), expiresAt: "2026-10-27T00:01:00.000Z" };
+    const early = {
+      ...input(),
+      expiresAt: new Date(start + 60_000).toISOString(),
+    };
     await accept(
       client().create({ headers: fixture.headers, body: early }),
       [200],
@@ -444,34 +456,40 @@ describe("Agent suggestions", () => {
     const capped = await accept(
       client().create({
         headers: fixture.headers,
-        body: { ...input(), expiresAt: "2026-10-29T00:00:00.000Z" },
+        body: {
+          ...input(),
+          expiresAt: new Date(
+            start + 2 * SUGGESTION_RETENTION_MS,
+          ).toISOString(),
+        },
       }),
       [200],
     );
-    expect(capped.body.expiresAt).toBe("2026-10-28T00:00:00.000Z");
+    expect(capped.body.expiresAt).toBe(
+      new Date(start + SUGGESTION_RETENTION_MS).toISOString(),
+    );
     await accept(
       client().update({
         headers: fixture.headers,
         params: { id: capped.body.id },
-        body: { expiresAt: "2026-10-27T00:02:00.000Z" },
+        body: { expiresAt: new Date(start + 120_000).toISOString() },
       }),
       [200],
     );
     await accept(
       client().create({
         headers: fixture.headers,
-        body: { ...input(), expiresAt: "2026-10-26T23:59:59.000Z" },
+        body: { ...input(), expiresAt: new Date(start - 1000).toISOString() },
       }),
       [400],
     );
-
     mockNow(start + 60_000);
     const listed = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
     expect(
-      listed.body.suggestions.map((item) => {
+      listed.body.items.map((item) => {
         return item.id;
       }),
     ).toStrictEqual([capped.body.id]);
@@ -493,20 +511,24 @@ describe("Agent suggestions", () => {
     );
     expect(consumed.body).toMatchObject({
       id: early.id,
-      status: "consumed",
-      selectedOptionId: "review",
-      options: early.options,
+      content: {
+        options: early.content.options,
+      },
+      state: {
+        status: "consumed",
+        selectedOptionId: "review",
+      },
+      type: "suggestion",
     });
     mockNow(start + 120_000);
     const expired = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(expired.body.suggestions).toStrictEqual([]);
+    expect(expired.body.items).toStrictEqual([]);
   });
-
   it("retains selected, dismissed and withdrawn feedback for 24 hours after processing", async () => {
-    const start = Date.parse("2026-10-27T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const selected = input();
@@ -547,7 +569,6 @@ describe("Agent suggestions", () => {
       client().create({ headers: fixture.headers, body: selected }),
       [409],
     );
-
     mockNow(processedAt + SUGGESTION_RETENTION_MS - 1);
     const retained = await accept(
       client().list({ headers: humanHeaders }),
@@ -557,15 +578,24 @@ describe("Agent suggestions", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: selected.id,
-          status: "consumed",
-          selectedOptionId: "review",
+          state: expect.objectContaining({
+            status: "consumed",
+            selectedOptionId: "review",
+          }),
         }),
         expect.objectContaining({
           id: dismissed.id,
-          status: "consumed",
-          selectedOptionId: null,
+          state: expect.objectContaining({
+            status: "consumed",
+            selectedOptionId: null,
+          }),
         }),
-        expect.objectContaining({ id: withdrawn.id, status: "removed" }),
+        expect.objectContaining({
+          id: withdrawn.id,
+          state: expect.objectContaining({
+            status: "removed",
+          }),
+        }),
       ]),
     );
     mockNow(processedAt + SUGGESTION_RETENTION_MS);
@@ -575,7 +605,6 @@ describe("Agent suggestions", () => {
     );
     expect(listed.body.receipts).toStrictEqual([]);
   });
-
   it("requires operator authentication for scheduled cleanup", async () => {
     mockEnv("CRON_SECRET", cronSecret);
     const response = await accept(
@@ -586,7 +615,6 @@ describe("Agent suggestions", () => {
       error: { code: "UNAUTHORIZED", message: "Invalid cron secret" },
     });
   });
-
   it("treats uppercase UUID aliases as the same one-time suggestion identity", async () => {
     const fixture = await primaryRun();
     const suggestion = input();
@@ -611,7 +639,7 @@ describe("Agent suggestions", () => {
       [409],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
   });
   it("consumes a canonical suggestion through an uppercase UUID path", async () => {
     const fixture = await primaryRun();
@@ -638,17 +666,20 @@ describe("Agent suggestions", () => {
         headers: fixture.headers,
         body: {
           ...empty,
-          options: [
-            makeOption({
-              draft: {
-                draftUserMessage: {
-                  version: 1,
-                  parts: [{ type: "text", text: "  " }],
+          content: {
+            ...empty.content,
+            options: [
+              makeOption({
+                draft: {
+                  draftUserMessage: {
+                    version: 1,
+                    parts: [{ type: "text", text: "  " }],
+                  },
+                  draftAttachments: null,
                 },
-                draftAttachments: null,
-              },
-            }),
-          ],
+              }),
+            ],
+          },
         },
       }),
       [400],
@@ -658,17 +689,20 @@ describe("Agent suggestions", () => {
         headers: fixture.headers,
         body: {
           ...empty,
-          options: [
-            makeOption({
-              draft: { draftUserMessage: null, draftAttachments: null },
-            }),
-          ],
+          content: {
+            ...empty.content,
+            options: [
+              makeOption({
+                draft: { draftUserMessage: null, draftAttachments: null },
+              }),
+            ],
+          },
         },
       }),
       [400],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
   });
   it("requires an enabled primary Agent capability and denies human publication", async () => {
     const fixture = await primaryRun(false);
@@ -698,7 +732,7 @@ describe("Agent suggestions", () => {
       [403],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();
@@ -727,16 +761,16 @@ describe("Agent suggestions", () => {
       client().manage({ headers: fixture.headers, query: {} }),
       [200],
     );
-    expect(managed.body.suggestions).toHaveLength(16);
+    expect(managed.body.items).toHaveLength(16);
     await accept(client().manage({ headers: humanHeaders, query: {} }), [403]);
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toHaveLength(10);
+    expect(pool.body.items).toHaveLength(10);
     expect(
-      pool.body.suggestions.map((item) => {
+      pool.body.items.map((item) => {
         return item.priority;
       }),
     ).toStrictEqual(
-      pool.body.suggestions
+      pool.body.items
         .map((item) => {
           return item.priority;
         })
@@ -744,7 +778,7 @@ describe("Agent suggestions", () => {
           return b - a;
         }),
     );
-    const selected = pool.body.suggestions[0];
+    const selected = pool.body.items[0];
     if (!selected) {
       throw new Error("Expected a suggestion");
     }
@@ -781,9 +815,13 @@ describe("Agent suggestions", () => {
       return result.status === 200;
     });
     expect(consumed?.body).toMatchObject({
-      status: "consumed",
-      selectedOptionId: "review",
-      options: selected.options,
+      content: {
+        options: selected.content.options,
+      },
+      state: {
+        status: "consumed",
+        selectedOptionId: "review",
+      },
     });
     await accept(
       client().create({ headers: fixture.headers, body: retry }),
@@ -802,15 +840,20 @@ describe("Agent suggestions", () => {
       [200],
     );
     const after = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(after.body.suggestions).toHaveLength(10);
+    expect(after.body.items).toHaveLength(10);
     expect(
-      after.body.suggestions.some((item) => {
+      after.body.items.some((item) => {
         return item.id === selected.id;
       }),
     ).toBeFalsy();
     expect(after.body.receipts).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: selected.id, status: "consumed" }),
+        expect.objectContaining({
+          id: selected.id,
+          state: expect.objectContaining({
+            status: "consumed",
+          }),
+        }),
       ]),
     );
   });
@@ -839,7 +882,7 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(
-      ordered.body.suggestions.map((item) => {
+      ordered.body.items.map((item) => {
         return item.id;
       }),
     ).toStrictEqual([first.id, second.id]);
@@ -855,6 +898,11 @@ describe("Agent suggestions", () => {
       [FeatureSwitchKey.AgentSuggestion]: false,
       [FeatureSwitchKey.ProactiveLearning]: true,
     });
+    await accept(client().list({ headers: fixture.headers }), [403]);
+    await accept(
+      client().manage({ headers: fixture.headers, query: {} }),
+      [403],
+    );
     await accept(
       client().update({
         headers: fixture.headers,
@@ -876,17 +924,20 @@ describe("Agent suggestions", () => {
     const fixture = await primaryRun();
     const suggestion = {
       ...input(),
-      options: [
-        makeOption(),
-        makeOption({ id: "prepare", label: "Prepare a draft" }),
-      ],
+      content: {
+        ...input().content,
+        options: [
+          makeOption(),
+          makeOption({ id: "prepare", label: "Prepare a draft" }),
+        ],
+      },
     };
     await accept(
       client().create({ headers: fixture.headers, body: suggestion }),
       [200],
     );
     const clicks = await Promise.all(
-      suggestion.options.map((option) => {
+      suggestion.content.options.map((option) => {
         return accept(
           client().consume({
             headers: humanHeaders,
@@ -905,7 +956,7 @@ describe("Agent suggestions", () => {
         .sort(),
     ).toStrictEqual([200, 409]);
     const chosen =
-      suggestion.options[
+      suggestion.content.options[
         clicks.findIndex((result) => {
           return result.status === 200;
         })
@@ -917,9 +968,13 @@ describe("Agent suggestions", () => {
       return result.status === 200;
     });
     expect(accepted?.body).toMatchObject({
-      status: "consumed",
-      selectedOptionId: chosen.id,
-      options: suggestion.options,
+      content: {
+        options: suggestion.content.options,
+      },
+      state: {
+        status: "consumed",
+        selectedOptionId: chosen.id,
+      },
     });
     await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -928,16 +983,22 @@ describe("Agent suggestions", () => {
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.receipts).toContainEqual({
       id: suggestion.id,
-      status: "consumed",
-      selectedOptionId: chosen.id,
+      type: "suggestion",
+      priority: suggestion.priority,
+      content: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
-      feedbacks: [
-        expect.objectContaining({
-          kind: "option_selected",
-          context: expect.objectContaining({ optionLabel: chosen.label }),
-        }),
-      ],
+      state: {
+        status: "consumed",
+        selectedOptionId: chosen.id,
+        feedbacks: [
+          expect.objectContaining({
+            kind: "option_selected",
+            context: expect.objectContaining({ optionLabel: chosen.label }),
+          }),
+        ],
+      },
+      expiresAt: expect.any(String),
     });
   });
   it("rejects a removed option without consuming the card, then accepts dismissal with no selected option", async () => {
@@ -952,7 +1013,9 @@ describe("Agent suggestions", () => {
         headers: fixture.headers,
         params: { id: suggestion.id },
         body: {
-          options: [makeOption({ id: "prepare", label: "Prepare a draft" })],
+          content: {
+            options: [makeOption({ id: "prepare", label: "Prepare a draft" })],
+          },
         },
       }),
       [200],
@@ -969,8 +1032,8 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(active.body.suggestions).toHaveLength(1);
-    expect(active.body.suggestions[0]?.selectedOptionId).toBeNull();
+    expect(active.body.items).toHaveLength(1);
+    expect(active.body.items[0]?.state.selectedOptionId).toBeNull();
     const dismissed = await accept(
       client().consume({
         headers: humanHeaders,
@@ -980,28 +1043,39 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(dismissed.body).toMatchObject({
-      status: "consumed",
-      selectedOptionId: null,
+      state: {
+        status: "consumed",
+        selectedOptionId: null,
+      },
     });
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
     expect(pool.body.receipts).toContainEqual({
       id: suggestion.id,
-      status: "consumed",
-      selectedOptionId: null,
+      type: "suggestion",
+      priority: suggestion.priority,
+      content: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
-      feedbacks: [expect.objectContaining({ kind: "dismissed" })],
+      state: {
+        status: "consumed",
+        selectedOptionId: null,
+        feedbacks: [expect.objectContaining({ kind: "dismissed" })],
+      },
+      expiresAt: expect.any(String),
     });
   });
   it("returns the current draft for the chosen second option after a refresh", async () => {
     const fixture = await primaryRun();
     const suggestion = {
       ...input(),
-      options: [
-        makeOption(),
-        makeOption({ id: "prepare", label: "Prepare a draft" }),
-      ],
+      content: {
+        ...input().content,
+        options: [
+          makeOption(),
+          makeOption({ id: "prepare", label: "Prepare a draft" }),
+        ],
+      },
     };
     await accept(
       client().create({ headers: fixture.headers, body: suggestion }),
@@ -1030,7 +1104,11 @@ describe("Agent suggestions", () => {
       client().update({
         headers: fixture.headers,
         params: { id: suggestion.id },
-        body: { options },
+        body: {
+          content: {
+            options,
+          },
+        },
       }),
       [200],
     );
@@ -1043,9 +1121,13 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(consumed.body).toMatchObject({
-      status: "consumed",
-      selectedOptionId: "prepare",
-      options,
+      content: {
+        options,
+      },
+      state: {
+        status: "consumed",
+        selectedOptionId: "prepare",
+      },
     });
   });
   it("requires one to three options with unique identities and a bounded payload", async () => {
@@ -1071,13 +1153,19 @@ describe("Agent suggestions", () => {
       await accept(
         client().create({
           headers: fixture.headers,
-          body: { ...input(), options },
+          body: {
+            ...input(),
+            content: {
+              ...input().content,
+              options,
+            },
+          },
         }),
         [400],
       );
     }
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
   });
   it("isolates owners and refuses a suggestion targeting another user's thread", async () => {
     const owner = await primaryRun();
@@ -1097,18 +1185,21 @@ describe("Agent suggestions", () => {
         headers: owner.headers,
         body: {
           ...suggestion,
-          options: [
-            makeOption({
-              threadId: thread.body.id,
-            }),
-          ],
+          content: {
+            ...suggestion.content,
+            options: [
+              makeOption({
+                threadId: thread.body.id,
+              }),
+            ],
+          },
         },
       }),
       [200],
     );
     const other = await primaryRun();
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
     await accept(
       client().consume({
         headers: humanHeaders,
@@ -1130,13 +1221,16 @@ describe("Agent suggestions", () => {
         headers: other.headers,
         body: {
           ...input(),
-          options: [
-            makeOption(),
-            makeOption({
-              id: "continue",
-              threadId: thread.body.id,
-            }),
-          ],
+          content: {
+            ...input().content,
+            options: [
+              makeOption(),
+              makeOption({
+                id: "continue",
+                threadId: thread.body.id,
+              }),
+            ],
+          },
         },
       }),
       [404],
@@ -1148,10 +1242,12 @@ describe("Agent suggestions", () => {
         headers: other.headers,
         params: { id: own.id },
         body: {
-          options: [
-            makeOption(),
-            makeOption({ id: "continue", threadId: thread.body.id }),
-          ],
+          content: {
+            options: [
+              makeOption(),
+              makeOption({ id: "continue", threadId: thread.body.id }),
+            ],
+          },
         },
       }),
       [404],
@@ -1160,14 +1256,16 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(unchanged.body.suggestions[0]?.options).toStrictEqual(own.options);
+    expect(unchanged.body.items[0]?.content.options).toStrictEqual(
+      own.content.options,
+    );
     await createBddApi(context).readMe(owner.actor);
     const retained = await accept(
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(retained.body.suggestions).toHaveLength(1);
-    expect(retained.body.suggestions[0]?.id).toBe(suggestion.id);
+    expect(retained.body.items).toHaveLength(1);
+    expect(retained.body.items[0]?.id).toBe(suggestion.id);
   });
   it("returns the original target and canonical draft when its thread was deleted after publication", async () => {
     const fixture = await primaryRun();
@@ -1188,11 +1286,14 @@ describe("Agent suggestions", () => {
     );
     const suggestion = {
       ...input(),
-      options: [
-        makeOption({
-          threadId: thread.body.id,
-        }),
-      ],
+      content: {
+        ...input().content,
+        options: [
+          makeOption({
+            threadId: thread.body.id,
+          }),
+        ],
+      },
     };
     await accept(
       client().create({ headers: fixture.headers, body: suggestion }),
@@ -1217,15 +1318,18 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(consumed.body).toMatchObject({
-      status: "consumed",
-      selectedOptionId: "review",
-      options: suggestion.options,
+      content: {
+        options: suggestion.content.options,
+      },
+      state: {
+        status: "consumed",
+        selectedOptionId: "review",
+      },
     });
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
   });
 });
-
 describe("Suggestion custom follow-ups", () => {
   it("rejects executable custom drafts and reserves the custom option identity", async () => {
     const fixture = await primaryRun();
@@ -1251,7 +1355,13 @@ describe("Suggestion custom follow-ups", () => {
       await accept(
         client().create({
           headers: fixture.headers,
-          body: { ...value, customOption: { ...value.customOption, draft } },
+          body: {
+            ...value,
+            content: {
+              ...value.content,
+              customOption: { ...value.content.customOption, draft },
+            },
+          },
         }),
         [400],
       );
@@ -1259,16 +1369,21 @@ describe("Suggestion custom follow-ups", () => {
     await accept(
       client().create({
         headers: fixture.headers,
-        body: { ...value, options: [makeOption({ id: "custom" })] },
+        body: {
+          ...value,
+          content: {
+            ...value.content,
+            options: [makeOption({ id: "custom" })],
+          },
+        },
       }),
       [400],
     );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toStrictEqual([]);
   });
-
   it("keeps the card until a complete follow-up is accepted and repairs the receipt on replay", async () => {
     await setupApp({
       context,
@@ -1306,14 +1421,15 @@ describe("Suggestion custom follow-ups", () => {
       suggestionId: value.id,
       draftId: randomUUID(),
       optionId: "custom",
-      titleSnapshot: value.title,
-      rationaleSnapshot: value.rationale,
+      titleSnapshot: value.content.title,
+      rationaleSnapshot: value.content.rationale,
       contextVersion: createHash("sha256")
-        .update(JSON.stringify(value.customOption.draft))
+        .update(JSON.stringify(value.content.customOption.draft))
         .digest("hex"),
       attachmentIds: [],
     });
-    const background = value.customOption.draft.draftUserMessage?.parts[0];
+    const background =
+      value.content.customOption.draft.draftUserMessage?.parts[0];
     if (background?.type !== "feedback") {
       throw new Error("Expected complete background");
     }
@@ -1333,7 +1449,7 @@ describe("Suggestion custom follow-ups", () => {
     await accept(events.send({ headers: humanHeaders, body }), [400]);
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toHaveLength(1);
     const complete = {
       ...body,
@@ -1378,22 +1494,23 @@ describe("Suggestion custom follow-ups", () => {
     expect((await feedbackContext(fixture)).feedback).toStrictEqual([
       expect.objectContaining({
         kind: "custom_sent",
-        title: value.title,
-        rationale: value.rationale,
+        title: value.content.title,
+        rationale: value.content.rationale,
         choice: "Assess the risks before choosing what to do",
       }),
     ]);
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
     expect(pool.body.receipts).toContainEqual(
       expect.objectContaining({
         id: value.id,
-        selectedOptionId: "custom",
-        status: "consumed",
+        state: expect.objectContaining({
+          selectedOptionId: "custom",
+          status: "consumed",
+        }),
       }),
     );
   });
-
   it("rejects stale custom context without consuming the updated suggestion", async () => {
     const fixture = await primaryRun();
     const value = input();
@@ -1411,8 +1528,8 @@ describe("Suggestion custom follow-ups", () => {
       suggestionId: value.id,
       draftId: randomUUID(),
       optionId: "custom",
-      titleSnapshot: value.title,
-      rationaleSnapshot: value.rationale,
+      titleSnapshot: value.content.title,
+      rationaleSnapshot: value.content.rationale,
       contextVersion: "outdated-version",
       attachmentIds: [],
     });
@@ -1442,7 +1559,7 @@ describe("Suggestion custom follow-ups", () => {
     );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toHaveLength(1);
   });
   it("checks every quoted card in one follow-up, including an uppercase UUID alias", async () => {
@@ -1452,12 +1569,12 @@ describe("Suggestion custom follow-ups", () => {
     for (const body of [first, second]) {
       await accept(client().create({ headers: fixture.headers, body }), [200]);
     }
-    const quote = first.customOption.draft.draftUserMessage?.parts[0];
+    const quote = first.content.customOption.draft.draftUserMessage?.parts[0];
     if (quote?.type !== "feedback") {
       throw new Error("Expected complete background");
     }
     const currentVersion = createHash("sha256")
-      .update(JSON.stringify(first.customOption.draft))
+      .update(JSON.stringify(first.content.customOption.draft))
       .digest("hex");
     const followup = (secondVersion: string): UserMessageDocument => {
       return {
@@ -1467,8 +1584,8 @@ describe("Suggestion custom follow-ups", () => {
             suggestionId: first.id,
             draftId: randomUUID(),
             optionId: "custom",
-            titleSnapshot: first.title,
-            rationaleSnapshot: first.rationale,
+            titleSnapshot: first.content.title,
+            rationaleSnapshot: first.content.rationale,
             contextVersion: currentVersion,
             attachmentIds: [],
           }),
@@ -1480,8 +1597,8 @@ describe("Suggestion custom follow-ups", () => {
             suggestionId: second.id.toUpperCase(),
             draftId: randomUUID(),
             optionId: "custom",
-            titleSnapshot: second.title,
-            rationaleSnapshot: second.rationale,
+            titleSnapshot: second.content.title,
+            rationaleSnapshot: second.content.rationale,
             contextVersion: secondVersion,
             attachmentIds: [],
           }),
@@ -1521,7 +1638,7 @@ describe("Suggestion custom follow-ups", () => {
     );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toHaveLength(2);
     await accept(
       events.send({
@@ -1535,13 +1652,15 @@ describe("Suggestion custom follow-ups", () => {
       [201],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.suggestions).toStrictEqual([]);
+    expect(pool.body.items).toStrictEqual([]);
     for (const { id } of [first, second]) {
       expect(pool.body.receipts).toContainEqual(
         expect.objectContaining({
           id,
-          status: "consumed",
-          selectedOptionId: "custom",
+          state: expect.objectContaining({
+            status: "consumed",
+            selectedOptionId: "custom",
+          }),
         }),
       );
     }
@@ -1557,14 +1676,14 @@ describe("Suggestion custom follow-ups", () => {
       suggestionId: value.id,
       draftId: randomUUID(),
       optionId: "custom",
-      titleSnapshot: value.title,
-      rationaleSnapshot: value.rationale,
+      titleSnapshot: value.content.title,
+      rationaleSnapshot: value.content.rationale,
       contextVersion: createHash("sha256")
-        .update(JSON.stringify(value.customOption.draft))
+        .update(JSON.stringify(value.content.customOption.draft))
         .digest("hex"),
       attachmentIds: [],
     });
-    const quote = value.customOption.draft.draftUserMessage?.parts[0];
+    const quote = value.content.customOption.draft.draftUserMessage?.parts[0];
     if (quote?.type !== "feedback") {
       throw new Error("Expected background");
     }
@@ -1619,8 +1738,10 @@ describe("Suggestion custom follow-ups", () => {
     expect(pool.body.receipts).toContainEqual(
       expect.objectContaining({
         id: value.id,
-        status: "consumed",
-        selectedOptionId: null,
+        state: expect.objectContaining({
+          status: "consumed",
+          selectedOptionId: null,
+        }),
       }),
     );
   });
@@ -1631,7 +1752,7 @@ describe("Suggestion custom follow-ups", () => {
       client().create({ headers: fixture.headers, body: value }),
       [200],
     );
-    const quote = value.customOption.draft.draftUserMessage?.parts[0];
+    const quote = value.content.customOption.draft.draftUserMessage?.parts[0];
     if (quote?.type !== "feedback") {
       throw new Error("Expected complete background");
     }
@@ -1642,10 +1763,10 @@ describe("Suggestion custom follow-ups", () => {
           suggestionId: value.id,
           draftId: randomUUID(),
           optionId: "custom",
-          titleSnapshot: value.title,
-          rationaleSnapshot: value.rationale,
+          titleSnapshot: value.content.title,
+          rationaleSnapshot: value.content.rationale,
           contextVersion: createHash("sha256")
-            .update(JSON.stringify(value.customOption.draft))
+            .update(JSON.stringify(value.content.customOption.draft))
             .digest("hex"),
           attachmentIds: [],
         }),
@@ -1678,7 +1799,7 @@ describe("Suggestion custom follow-ups", () => {
     );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toHaveLength(1);
     await updateFeatureSwitchesForUser(context, fixture.actor, {
       [FeatureSwitchKey.AgentSuggestion]: false,
@@ -1695,11 +1816,10 @@ describe("Suggestion custom follow-ups", () => {
     });
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toHaveLength(1);
   });
 });
-
 describe("Suggestion feedback context", () => {
   it("keeps feedback on the suggestion, accepts an identical retry, and restores a valid card on undo", async () => {
     const fixture = await primaryRun();
@@ -1732,15 +1852,15 @@ describe("Suggestion feedback context", () => {
       [200],
     );
     const list = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(list.body.suggestions).toStrictEqual([]);
-    expect(list.body.receipts?.[0]?.feedbacks).toStrictEqual([
+    expect(list.body.items).toStrictEqual([]);
+    expect(list.body.receipts?.[0]?.state.feedbacks).toStrictEqual([
       expect.objectContaining({
         id,
         kind: "not_planned",
         learnedAt: null,
         context: expect.objectContaining({
-          title: created.body.title,
-          rationale: created.body.rationale,
+          title: created.body.content.title,
+          rationale: created.body.content.rationale,
         }),
       }),
     ]);
@@ -1761,12 +1881,16 @@ describe("Suggestion feedback context", () => {
     expect(undone.body.restored).toBeTruthy();
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .suggestions,
+        .items,
     ).toStrictEqual([
-      expect.objectContaining({ id: created.body.id, status: "active" }),
+      expect.objectContaining({
+        id: created.body.id,
+        state: expect.objectContaining({
+          status: "active",
+        }),
+      }),
     ]);
   });
-
   it("injects saved feedback only into Suggestions Runs and applies reason edits and Undo without publication", async () => {
     await setupApp({
       context,
@@ -1798,9 +1922,9 @@ describe("Suggestion feedback context", () => {
     expect(first.feedback).toStrictEqual([
       {
         kind: "less_like_this",
-        title: created.body.title,
-        rationale: created.body.rationale,
-        at: before.body.receipts?.[0]?.feedbacks[0]?.createdAt,
+        title: created.body.content.title,
+        rationale: created.body.content.rationale,
+        at: before.body.receipts?.[0]?.state.feedbacks[0]?.createdAt,
         until: expect.any(String),
       },
     ]);
@@ -1848,7 +1972,6 @@ describe("Suggestion feedback context", () => {
     );
     expect((await feedbackContext(fixture)).feedback).toStrictEqual([]);
   });
-
   it("keeps one member's feedback out of another member's Run context", async () => {
     await setupApp({
       context,
@@ -1898,14 +2021,13 @@ describe("Suggestion feedback context", () => {
       "Private review preference",
     );
   });
-
   it("keeps feedback revisions and canonical context scoped to their card when two cards share a feedback UUID", async () => {
     await setupApp({
       context,
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     const first = await accept(
@@ -1914,7 +2036,10 @@ describe("Suggestion feedback context", () => {
         body: {
           ...input(),
           id: "a0000000-0000-4000-a000-000000000001",
-          title: "Newer review",
+          content: {
+            ...input().content,
+            title: "Newer review",
+          },
         },
       }),
       [200],
@@ -1925,7 +2050,10 @@ describe("Suggestion feedback context", () => {
         body: {
           ...input(),
           id: "a0000000-0000-4000-a000-000000000002",
-          title: "Older review",
+          content: {
+            ...input().content,
+            title: "Older review",
+          },
         },
       }),
       [200],
@@ -1962,13 +2090,12 @@ describe("Suggestion feedback context", () => {
     expect((await feedbackContext(fixture)).feedback).toStrictEqual([
       expect.objectContaining({
         kind: "less_like_this",
-        title: second.body.title,
-        rationale: second.body.rationale,
+        title: second.body.content.title,
+        rationale: second.body.content.rationale,
         reason: second.body.id,
       }),
     ]);
   });
-
   it("carries a selected direction without treating dismissal as a preference", async () => {
     await setupApp({
       context,
@@ -2003,20 +2130,19 @@ describe("Suggestion feedback context", () => {
     expect((await feedbackContext(fixture)).feedback).toStrictEqual([
       expect.objectContaining({
         kind: "option_selected",
-        title: selected.body.title,
-        rationale: selected.body.rationale,
+        title: selected.body.content.title,
+        rationale: selected.body.content.rationale,
         choice: "Review update",
       }),
     ]);
   });
-
   it("retains feedback after card compaction and expires action facts at seven days and preferences at thirty days", async () => {
     await setupApp({
       context,
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     const day = 86_400_000;
     mockNow(start);
     const fixture = await primaryRun();
@@ -2051,22 +2177,24 @@ describe("Suggestion feedback context", () => {
     mockNow(start + 30 * day);
     expect((await feedbackContext(fixture)).feedback).toStrictEqual([]);
   });
-
   it("keeps each suggestion's original context across feedback pages", async () => {
     await setupApp({
       context,
       routes: cronOfficialWorkflowCatalogRoutes,
       isolatePg: true,
     });
-    const start = Date.parse("2026-10-01T00:00:00.000Z");
+    const start = now();
     mockNow(start);
     const fixture = await primaryRun();
     for (let index = 0; index < 101; index++) {
       const value = {
         ...input(),
         id: `a0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-        title: `Review ${index}`,
-        rationale: `Decision ${index}`,
+        content: {
+          ...input().content,
+          title: `Review ${index}`,
+          rationale: `Decision ${index}`,
+        },
       };
       const created = await accept(
         client().create({ headers: fixture.headers, body: value }),
@@ -2115,7 +2243,6 @@ describe("Suggestion feedback context", () => {
       reason: "Feedback 0",
     });
   });
-
   it("marks a bounded snapshot incomplete instead of presenting omitted actions as no feedback", async () => {
     await setupApp({
       context,

@@ -65,7 +65,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(0);
 
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     const heartbeat = await api.heartbeatRunner(runnerGroup);
     expect(heartbeat.body.ok).toBeTruthy();
 
@@ -88,7 +88,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
 
   it("keeps official runner held-sandbox heartbeat and empty polling visible through public endpoints", async () => {
     const api = createRunsApi(context);
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     const heldSandboxStates = [
       {
         reuseKey: "thread:cron-bdd-held",

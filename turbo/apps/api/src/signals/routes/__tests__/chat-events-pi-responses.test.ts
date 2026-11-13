@@ -331,12 +331,6 @@ describe("CHAT-02: model-first routing", () => {
       readCompletedRunSessionId(context, actor, returned.runId),
     ).resolves.toBe(firstSessionId);
 
-    for (const run of [first, fast, returned]) {
-      const claim = await own(() => {
-        return api.requestClaimRunnerJob(true, run.runId, [404]);
-      });
-      expect(claim.status).toBe(404);
-    }
     for (const runId of [fast.runId, returned.runId]) {
       const run = await api.readRun(actor, runId);
       const appendSystemPrompt = run.appendSystemPrompt ?? "";

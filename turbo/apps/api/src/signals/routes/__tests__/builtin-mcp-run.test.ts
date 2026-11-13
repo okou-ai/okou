@@ -31,7 +31,7 @@ async function runActor() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -82,7 +82,7 @@ describe("builtin MCP Run admission", () => {
       prompt: "Find out which MCP connectors are authorized",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     expect(claim.appendSystemPrompt).toContain(
       "The following MCP connectors are authorized for this Agent:",
     );
@@ -150,7 +150,7 @@ describe("builtin MCP Run admission", () => {
       replacementAccount.id,
     );
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
     expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
     expect(claim.platformEnvironment).not.toHaveProperty("MCP_API_KEY");
     expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("MCP_API_KEY");

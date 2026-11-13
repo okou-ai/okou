@@ -902,6 +902,22 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "feed",
+    contracts: ["feedContract"],
+    bindings: [
+      {
+        name: "SUGGESTION_RETENTION_MS",
+        source: "validators/suggestions",
+        imported: "SUGGESTION_RETENTION_MS",
+      },
+      {
+        name: "getSuggestionExpiresAt",
+        source: "validators/suggestions",
+        imported: "getSuggestionExpiresAt",
+      },
+    ],
+  },
+  {
     module: "feishu-browser-connect",
     contracts: ["feishuBrowserConnectContract"],
     bindings: [],
@@ -1792,22 +1808,6 @@ export const clientContractImportManifest = [
         name: "updateSshCredentialRequestSchema",
         source: "validators/ssh-credentials",
         imported: "updateSshCredentialRequestSchema",
-      },
-    ],
-  },
-  {
-    module: "suggestions",
-    contracts: ["suggestionsContract"],
-    bindings: [
-      {
-        name: "SUGGESTION_RETENTION_MS",
-        source: "validators/suggestions",
-        imported: "SUGGESTION_RETENTION_MS",
-      },
-      {
-        name: "getSuggestionExpiresAt",
-        source: "validators/suggestions",
-        imported: "getSuggestionExpiresAt",
       },
     ],
   },

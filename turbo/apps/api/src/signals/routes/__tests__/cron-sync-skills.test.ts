@@ -218,7 +218,7 @@ describe("Seed Skill bundles through sync-skills", () => {
       );
       return storage;
     });
-    const run = await owned.sendChatRun(owned.actor, {
+    const queued = await owned.queueChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "Inspect system skills",
       model: "claude-fable-5-1",
@@ -233,6 +233,7 @@ describe("Seed Skill bundles through sync-skills", () => {
         [200],
       );
     });
+    const run = await queued.launch();
     const { claim, sandboxHeaders } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,

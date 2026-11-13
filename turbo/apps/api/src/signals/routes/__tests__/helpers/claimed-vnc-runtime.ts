@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { expect } from "vitest";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { setupApp } from "../../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
-import { runnersRoutes } from "../../runners";
 import { createBddApi } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { useSecretKmsProbe } from "./secret-kms-probe";
+import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { requireVncCredentialId } from "./vnc-response";
 import {
   createVncRuntimeApi,
@@ -60,43 +58,32 @@ export function createClaimedVncApi(context: TestContext) {
 
   async function runtime(value: Owner & { readonly agentId: string }) {
     const actor = bdd.user(value);
-    const group = runs.configureRunnerGroup();
+    const runnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: vncRunnerHeaders.authorization,
+    });
     const { runId, threadId } = await runs.createThreadRun(actor, {
       agentId: value.agentId,
       prompt: "Use my configured VNC desktop",
     });
+    const input = await runs.executionInput(runId);
     cleanups.push(async () => {
       // Negative membership/KMS assertions finish before restoring cleanup prerequisites.
       api.authenticate(value);
       useSecretKmsProbe();
       await runs.requestCancelRun(actor, runId, [200, 404]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200, 404],
+      );
     });
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.requestHeartbeatRunnerAs(vncRunnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: vncRunnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const sandboxToken = claim.body.sandboxToken;
-    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    const sandboxToken = input.sandboxToken;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!sandboxToken || !agentToken) {
       throw new Error(
         "Expected the Runner claim to issue distinct sandbox and Agent credentials",

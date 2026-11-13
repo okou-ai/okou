@@ -31,6 +31,7 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "hold admission capacity",
       model: "claude-fable-5-1",
     });
+    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
     await own(async () => {
       return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     });
@@ -42,7 +43,11 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
     });
     await own(async () => {
-      return await cancelChatRun(actor, anchor.runId);
+      return await cancelChatRun(
+        actor,
+        anchor.runId,
+        anchorClaim.sandboxHeaders,
+      );
     });
     const run = await waiting.launchedRun();
     const claimed = await claimChatRun(runnerGroup, run.runId);

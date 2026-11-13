@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { useSet } from "ccstate-react";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Plus, type LucideIcon } from "lucide-react";
 import {
@@ -25,7 +27,10 @@ interface ComposerAddMenuRow {
  */
 export type ComposerAddMenuItem = ComposerAddMenuRow &
   (
-    | { readonly onSelect: () => void }
+    | {
+        /** Return false when the action has handed focus to its destination. */
+        readonly onSelect: () => void | false;
+      }
     | {
         /** The submenu's own menu items, rendered flat like the rows here. */
         readonly submenu: ReactNode;
@@ -67,17 +72,27 @@ export type ComposerAddMenuGroup = readonly [
  * uses elsewhere, so a description line would only restate it.
  */
 export function ComposerAddMenu({
+  signals,
   groups,
 }: {
+  readonly signals: ComposerSignals["addMenu"];
   /** Rendered in order, separated by a rule. */
   readonly groups: readonly ComposerAddMenuGroup[];
 }) {
   const { t } = useTranslation();
+  const restoreFocus = useSet(signals.restoreFocus$);
+  const setRestoreFocus = useSet(signals.setRestoreFocus$);
   const label = t(($) => {
     return $.chat.composer.add;
   });
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) {
+          setRestoreFocus(true);
+        }
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -98,6 +113,7 @@ export function ComposerAddMenu({
         sideOffset={8}
         aria-label={label}
         className="w-56"
+        finalFocus={restoreFocus}
       >
         {/* Flat on purpose: Base UI reads its items from the popup's own
             children, so a wrapper element per group would sit between them and
@@ -130,7 +146,12 @@ export function ComposerAddMenu({
                 );
               }
               return (
-                <DropdownMenuItem key={item.id} onClick={item.onSelect}>
+                <DropdownMenuItem
+                  key={item.id}
+                  onClick={() => {
+                    setRestoreFocus(item.onSelect() !== false);
+                  }}
+                >
                   <ComposerAddMenuRowLabel item={item} />
                 </DropdownMenuItem>
               );

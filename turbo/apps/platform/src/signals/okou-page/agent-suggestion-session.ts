@@ -1,11 +1,11 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { suggestionsContract } from "@okouai/api-contracts/client/suggestions";
+import { feedContract } from "@okouai/api-contracts/client/feed";
 import { getSuggestionExpiresAt } from "@okouai/api-contracts/validators/suggestions";
 import type {
   Suggestion,
   SuggestionFeedbackRequest,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
@@ -50,7 +50,7 @@ function createSuggestionEntry(item: Suggestion) {
     ) {
       signal.throwIfAborted();
       const mutation = mutations[index];
-      const client = get(apiClient$)(suggestionsContract);
+      const client = get(apiClient$)(feedContract);
       if (mutation.type === "feedback") {
         const { kind } = mutation.request;
         // A first response conflicts once the card has left the pool: a
@@ -182,12 +182,12 @@ const readAgentSuggestions$ = command(
       return [];
     }
     const result = await accept(
-      get(apiClient$)(suggestionsContract).list({ fetchOptions: { signal } }),
+      get(apiClient$)(feedContract).list({ fetchOptions: { signal } }),
       [200, 403],
       signal,
       { showErrorToast: false },
     );
-    return result.status === 200 ? result.body.suggestions : [];
+    return result.status === 200 ? result.body.items : [];
   },
 );
 
@@ -203,7 +203,7 @@ export const waitingSuggestionCount$ = computed(async (get) => {
     return 0;
   }
   const result = await accept(
-    get(apiClient$)(suggestionsContract).list(),
+    get(apiClient$)(feedContract).list(),
     [200, 403],
     undefined,
     { showErrorToast: false },
@@ -211,7 +211,7 @@ export const waitingSuggestionCount$ = computed(async (get) => {
   if (result.status !== 200) {
     return 0;
   }
-  return result.body.suggestions.filter((item) => {
+  return result.body.items.filter((item) => {
     return getSuggestionExpiresAt(item) > now();
   }).length;
 });

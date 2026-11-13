@@ -13,6 +13,7 @@ import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
 import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
@@ -459,7 +460,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
       prompt: "long task to interrupt",
     });
     await api.heartbeatRunner(runnerGroup);
-    const firstClaim = await api.claimRunnerJob(first.runId);
+    const firstClaim = await api.executionInput(first.runId);
     context.mocks.ably.publish.mockClear();
 
     const peer = bdd.user({ orgId: actor.orgId });
@@ -595,7 +596,9 @@ describe("CHAT-02: interrupting active chat runs", () => {
       threadId: first.threadId,
       prompt: "cancelled through the cancel api",
     });
-    await cancelChatRun(actor, second.runId);
+    await cancelChatRun(actor, second.runId, {
+      authorization: `Bearer ${(await api.executionInput(second.runId)).sandboxToken}`,
+    });
     const lateInterrupt = await chat.requestSendEvent(
       actor,
       {
@@ -863,15 +866,37 @@ describe("CHAT-02: admission without spendable credits", () => {
     const fixture = createPublicChatAdmissionFixture(context);
     await fixture.run(async () => {
       const { actor, agentId } = await fixture.createPaidNativeActor();
-      const pending = await sendChatRun(actor, {
-        agentId,
-        prompt: "never started",
-      });
+      const kms = holdCurrentSecretKms(context.signal);
+      const pendingEventId = randomUUID();
+      const accepted = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          clientEventId: pendingEventId,
+          prompt: "never started",
+        },
+        [201],
+      );
+      if (accepted.status !== 201) {
+        throw new Error("Expected the pending Run input");
+      }
+      await kms.entered;
+      const pendingRunId = (
+        await chat.listThreadEvents(actor, accepted.body.threadId)
+      ).events.find((event) => {
+        return event.revokesEventId === pendingEventId;
+      })?.runId;
+      if (!pendingRunId) {
+        throw new Error("Expected the pending admitted Run");
+      }
+      const pending = { runId: pendingRunId, threadId: accepted.body.threadId };
       fixture.registerRun(pending.runId);
+      expect((await api.readRun(actor, pending.runId)).status).toBe("pending");
       await fixture.suspend(20_000);
       // The cancel's slot hand-off is left running: it may pick and reject the
       // next send's input before the send's own background pick does.
-      await cancelChatRun(actor, pending.runId);
+      await api.requestCancelRun(actor, pending.runId, [200]);
+      kms.release();
 
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(

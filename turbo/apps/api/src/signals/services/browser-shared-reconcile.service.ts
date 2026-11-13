@@ -1,10 +1,7 @@
 import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  browserSessionInstances,
-  browserSessionScreenshotDeletions,
-} from "@okouai/db/schema/browser-session";
+import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import {
   browserChatWindow,
@@ -711,17 +708,6 @@ const recoverSharedCreations$ = command(
               exactProfile(candidate),
               eq(profiles.status, "creating"),
               noWindows(),
-              notExists(
-                new QueryBuilder()
-                  .select({ id: browserSessionInstances.providerSessionId })
-                  .from(browserSessionInstances)
-                  .where(
-                    eq(
-                      browserSessionInstances.providerSessionId,
-                      providerSessionId,
-                    ),
-                  ),
-              ),
             ),
           )
           .returning();

@@ -329,7 +329,8 @@ import {
   type ChatThreadEmojiItem,
 } from "../../signals/chat-page/chat-thread-emoji.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { ChatComposer, type ComposerLayout } from "./chat-composer.tsx";
+import type { ComposerLayout } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -3553,6 +3554,7 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
     <ChatThreadBottomBar
       thread={thread}
       layout={capabilitiesEnabled ? "home" : "default"}
+      discoveryInContent={showCapabilities}
     />
   );
   return (
@@ -3622,10 +3624,11 @@ function SharedThreadCreatedLink({
 function ChatThreadBottomBar({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  /** `home` while an empty thread shows the capability home above it. */
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
@@ -3639,7 +3642,11 @@ function ChatThreadBottomBar({
   );
   if (phase === "idle") {
     return withChatScrollLayout(
-      <ChatThreadComposer thread={thread} layout={layout} />,
+      <ChatThreadComposer
+        thread={thread}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />,
     );
   }
 
@@ -3931,9 +3938,11 @@ function RecommendedFollowupList({
 function ChatThreadComposer({
   thread,
   layout,
+  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
   readonly layout: ComposerLayout;
+  readonly discoveryInContent: boolean;
 }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   // The pane's canvas runs behind the composer the way it runs behind the
@@ -3942,7 +3951,11 @@ function ChatThreadComposer({
   // own edge fade handles the boundary above it.
   return (
     <ChatComposerFooter ref={composerLayoutRef}>
-      <ChatComposer signals={thread.composer} layout={layout} />
+      <ChatComposer
+        signals={thread.composer}
+        layout={layout}
+        discoveryInContent={discoveryInContent}
+      />
     </ChatComposerFooter>
   );
 }
@@ -4622,13 +4635,22 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   // action inside the element below, rather than swapping the element itself:
   // `docs/chat.md#chat-cards` keeps the mounted card's box in layout through every
   // asynchronous state change.
-  const { headline, helper } = hasAvailableCredits
-    ? creditsAvailableCopy()
-    : insufficientCreditsCopy({
-        canBuyCredits,
-        roleResolved: billingResolved && roleResolved,
-        canManageBilling: billingResolved && canManageBilling,
-      });
+  const { headline, helper, icon } = hasAvailableCredits
+    ? { ...creditsAvailableCopy(), icon: null }
+    : {
+        ...insufficientCreditsCopy({
+          canBuyCredits,
+          roleResolved: billingResolved && roleResolved,
+          canManageBilling: billingResolved && canManageBilling,
+        }),
+        icon: (
+          <Coins
+            aria-hidden="true"
+            size={16}
+            className="mt-1 shrink-0 text-brand-text"
+          />
+        ),
+      };
 
   const openBilling = () => {
     setSubPage(false);
@@ -4668,20 +4690,23 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   return (
     <>
       <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-        <div className="min-w-0">
-          <p
-            className={cn(
-              "break-words text-[0.9375rem] font-medium",
-              hasAvailableCredits
-                ? "text-emerald-700 dark:text-emerald-300"
-                : "text-foreground",
-            )}
-          >
-            {headline}
-          </p>
-          <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
-            {helper}
-          </p>
+        <div className="flex min-w-0 items-start gap-2.5">
+          {icon}
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "break-words text-[0.9375rem] font-medium",
+                hasAvailableCredits
+                  ? "text-emerald-700 dark:text-emerald-300"
+                  : "text-foreground",
+              )}
+            >
+              {headline}
+            </p>
+            <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+              {helper}
+            </p>
+          </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
           {!canShowBillingAction ? null : shouldStartProCheckout ? (

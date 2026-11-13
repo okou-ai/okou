@@ -75,7 +75,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-  const group = runs.configureRunnerGroup();
+  const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const [, agent] = await Promise.all([
     runs.ensurePersonalSubscriptionModel(actor),
@@ -96,7 +96,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   const run = { runId: sent.runId, threadId: sent.threadId };
   await flushWaitUntilForTest();
   await runs.heartbeatRunner(group);
-  const claimed = await runs.claimRunnerJob(run.runId);
+  const claimed = await runs.executionInput(run.runId);
   await flushWaitUntilForTest();
   return {
     actor,

@@ -10,8 +10,8 @@ const context = testContext();
 const api = createRunsApi(context);
 const bdd = createBddApi(context);
 
-describe("Runner Claim launch defaults", () => {
-  it("uses the latest timezone and retains restrictions and identity with compact context", async () => {
+describe("Direct Run launch defaults", () => {
+  it("pins the dispatch timezone and retains restrictions and identity with compact context", async () => {
     mockEnv("APP_URL", "https://claim-defaults.example");
     const owned = await publicChatActor(context);
     await owned.run(async () => {
@@ -26,7 +26,7 @@ describe("Runner Claim launch defaults", () => {
         owned.runnerGroup,
         queued.runId,
       );
-      expect(claim.userTimezone).toBe("Asia/Shanghai");
+      expect(claim.userTimezone).toBe("America/Los_Angeles");
       expect(claim.disallowedTools).toStrictEqual(
         expect.arrayContaining(["CronCreate", "Skill(loop)"]),
       );

@@ -21,10 +21,10 @@ import {
   listAllStripeSubscriptions,
 } from "../external/stripe-client";
 import { tapError } from "../utils";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
+import { scheduleReleasedSlotPicks$ } from "./pick-chat-run.service";
+import { cancelClerkDeletedOwnerRuns$ } from "./agent-run-cancellation.service";
 import {
   cancelClerkBannedUserRuns$,
-  cancelClerkDeletedOwnerRuns$,
   type DeletedOwner,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";

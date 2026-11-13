@@ -30,14 +30,19 @@ describe("chat concurrency capacity prefetch", () => {
       throw new Error("Expected an organization-scoped actor");
     }
     const at = now();
-    const periodEnd = at + 3_600_000;
+    mockNow(at);
+    const periodEnd = at - 86_400_000 + 1000;
     await postConcurrencyEntitlementsInvoicePaid(context.signal, {
       orgId: actor.orgId,
       userId: actor.userId,
       customerId,
       subscriptionId: `sub_${randomUUID()}`,
       lines: [
-        { slots: 1, startsAt: new Date(at), expiresAt: new Date(periodEnd) },
+        {
+          slots: 1,
+          startsAt: new Date(periodEnd - 3_600_000),
+          expiresAt: new Date(periodEnd),
+        },
       ],
     });
     const blocker = await sendChatRun(actor, {
@@ -115,15 +120,21 @@ describe("chat concurrency capacity prefetch", () => {
       });
     };
     await expect(hasRun()).resolves.toBeFalsy();
-    await cancelChatRun(actor, captured.runId);
+    await cancelChatRun(actor, captured.runId, {
+      authorization: `Bearer ${(await api.executionInput(captured.runId)).sandboxToken}`,
+    });
     await expect(hasRun()).resolves.toBeFalsy();
-    await cancelChatRun(actor, blocker.runId);
+    await cancelChatRun(actor, blocker.runId, {
+      authorization: `Bearer ${(await api.executionInput(blocker.runId)).sandboxToken}`,
+    });
     const promoted = await waiting.launchedRun();
     expect((await api.readRun(actor, promoted.runId)).prompt).toBe(
       "wait for live occupancy to fall below the fresh limit",
     );
     expect(promoted.runId).not.toBe(captured.runId);
     expect(promoted.runId).not.toBe(blocker.runId);
-    await cancelChatRun(actor, promoted.runId);
+    await cancelChatRun(actor, promoted.runId, {
+      authorization: `Bearer ${(await api.executionInput(promoted.runId)).sandboxToken}`,
+    });
   });
 });

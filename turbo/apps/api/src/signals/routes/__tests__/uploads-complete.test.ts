@@ -95,7 +95,7 @@ async function createRunUploadFixture(
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
 
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.heartbeatRunner(runnerGroup);

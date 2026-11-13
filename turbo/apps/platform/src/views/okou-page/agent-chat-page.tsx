@@ -28,7 +28,7 @@ import {
 } from "../../signals/okou-page/pinned-agents.ts";
 
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
   AgentSuggestions,

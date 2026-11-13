@@ -335,6 +335,8 @@ import { featureGuidesContract as OriginalFeatureGuidesContract } from "../contr
 import { featureGuidesContract } from "./feature-guides";
 import { featureSwitchesContract as OriginalFeatureSwitchesContract } from "../contracts/feature-switches";
 import { featureSwitchesContract } from "./feature-switches";
+import { feedContract as OriginalFeedContract } from "../contracts/feed";
+import { feedContract } from "./feed";
 import { feishuBrowserConnectContract as OriginalFeishuBrowserConnectContract } from "../contracts/feishu-browser-connect";
 import { feishuBrowserConnectContract } from "./feishu-browser-connect";
 import {
@@ -666,8 +668,6 @@ import { sshConnectionsContract as OriginalSshConnectionsContract } from "../con
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
 import { sshCredentialsContract } from "./ssh-credentials";
-import { suggestionsContract as OriginalSuggestionsContract } from "../contracts/suggestions";
-import { suggestionsContract } from "./suggestions";
 import { tailscaleContract as OriginalTailscaleContract } from "../contracts/tailscale";
 import { tailscaleContract } from "./tailscale";
 import { teamsBotContract as OriginalTeamsBotContract } from "../contracts/teams-bot";
@@ -1039,6 +1039,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [emailInboundContract, OriginalEmailInboundContract],
   [featureGuidesContract, OriginalFeatureGuidesContract],
   [featureSwitchesContract, OriginalFeatureSwitchesContract],
+  [feedContract, OriginalFeedContract],
   [feishuBrowserConnectContract, OriginalFeishuBrowserConnectContract],
   [feishuConnectContract, OriginalFeishuConnectContract],
   [larkConnectContract, OriginalLarkConnectContract],
@@ -1296,7 +1297,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [sshAuthorizationContract, OriginalSshAuthorizationContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
-  [suggestionsContract, OriginalSuggestionsContract],
   [tailscaleContract, OriginalTailscaleContract],
   [teamsBotContract, OriginalTeamsBotContract],
   [teamsBrowserConnectContract, OriginalTeamsBrowserConnectContract],

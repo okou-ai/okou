@@ -11,6 +11,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   authenticateIosSession,
   reconcileIosNotifications,
@@ -22,9 +23,21 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const callbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
 
-function prepareRuntime() {
-  runs.configureRunnerGroup();
+async function cancelStartedRun(actor: ApiTestUser, runId: string) {
+  const input = await runs.executionInput(runId);
+  await runs.requestCancelRun(actor, runId, [200]);
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 137, error: "Run cancelled" },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
+
+async function prepareRuntime() {
+  await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   callbacks.acceptChatObjectStorage();
@@ -45,8 +58,7 @@ async function unreadConversation(actor: ApiTestUser) {
     agentId: agent.agentId,
     prompt: "Unread result",
   });
-  await runs.requestCancelRun(actor, sent.runId, [200]);
-  await flushWaitUntilForTest();
+  await cancelStartedRun(actor, sent.runId);
   return { ...sent, agentId: agent.agentId };
 }
 
@@ -75,7 +87,7 @@ function reconcile(
 
 describe("iOS notification read-state reconciliation", () => {
   it("acknowledges only this installation's badge while preserving unread chats across workspaces", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const identity = { ...actor, orgId: actor.orgId! };
     const startedAt = now();
@@ -123,7 +135,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("never lets a delayed foreground acknowledgement move the badge cursor backwards", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const identity = { ...actor, orgId: actor.orgId! };
     const startedAt = now();
@@ -146,7 +158,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("binds badge acknowledgement to the exact installation revision and signed-in account", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const previous = bdd.user();
     const current = bdd.user();
     const previousIdentity = { ...previous, orgId: previous.orgId! };
@@ -192,7 +204,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("counts owned unread conversations across workspaces and clears only read or unavailable receipts", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const otherWorkspace = bdd.user({ userId: actor.userId });
     const foreign = bdd.user();
@@ -229,7 +241,7 @@ describe("iOS notification read-state reconciliation", () => {
   });
 
   it("removes an older read run while preserving a newer unread run in the same conversation", async () => {
-    prepareRuntime();
+    await prepareRuntime();
     const actor = bdd.user();
     const first = await unreadConversation(actor);
     await chat.markThreadRead(actor, first.threadId);
@@ -238,8 +250,7 @@ describe("iOS notification read-state reconciliation", () => {
       threadId: first.threadId,
       prompt: "A later unread result",
     });
-    await runs.requestCancelRun(actor, next.runId, [200]);
-    await flushWaitUntilForTest();
+    await cancelStartedRun(actor, next.runId);
     const result = await reconcile(actor, [
       { identifier: "older", threadId: first.threadId, runId: first.runId },
       { identifier: "newer", threadId: next.threadId, runId: next.runId },

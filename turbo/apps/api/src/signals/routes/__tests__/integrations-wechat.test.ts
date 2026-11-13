@@ -216,7 +216,7 @@ async function responseFixture() {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -271,18 +271,7 @@ async function responseFixture() {
       await receiveBatch(connectionId);
     },
     async claim() {
-      let runId: string | undefined;
-      await expect
-        .poll(
-          async () => {
-            await runs.heartbeatRunner(runnerGroup);
-            runId = (await runs.pollRunner(runnerGroup)).body.job?.runId;
-            return runId;
-          },
-          { timeout: 10_000 },
-        )
-        .toBeDefined();
-      return await runs.claimRunnerJob(uuid().parse(runId));
+      return await runs.nextReceivedExecution(runnerGroup);
     },
     async finish(
       run: { readonly runId: string; readonly sandboxToken: string },
@@ -1161,7 +1150,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -1229,19 +1218,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     return await receiveBatch(connectionId);
   }
   async function claim() {
-    let runId: string | undefined;
-    await expect
-      .poll(
-        async () => {
-          await runs.heartbeatRunner(runnerGroup);
-          const poll = await runs.pollRunner(runnerGroup);
-          runId = poll.body.job?.runId;
-          return runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBeDefined();
-    return await runs.claimRunnerJob(uuid().parse(runId));
+    return await runs.nextReceivedExecution(runnerGroup);
   }
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
@@ -2458,7 +2435,7 @@ describe("WeChat system notices", () => {
     const owner = await fixture();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -2965,7 +2942,7 @@ test("a restored transport ignores provider backlog and accepts only newly creat
   const owner = await disconnectedLink();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  runs.configureRunnerGroup();
+  await runs.configureRunnerGroup();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();

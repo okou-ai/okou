@@ -26,7 +26,7 @@ import {
 import type {
   Suggestion,
   SuggestionOption,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 import {
   Button,
   buttonVariants,
@@ -75,7 +75,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { ChatComposer } from "./chat-composer.tsx";
+import { ChatComposer } from "./composer.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
 
@@ -274,7 +274,7 @@ function SuggestionFeedbackNotice({
         </Button>
         <CloseSettledSuggestion entry={entry} />
       </div>
-      <SettledSuggestionTitle title={entry.item.title} />
+      <SettledSuggestionTitle title={entry.item.content.title} />
       {feedback.kind !== "dismissed" && !reasonOpen && (
         <Button
           type="button"
@@ -364,7 +364,7 @@ function SuggestionSentNotice({
         )}
         <CloseSettledSuggestion entry={entry} />
       </div>
-      <SettledSuggestionTitle title={entry.item.title} />
+      <SettledSuggestionTitle title={entry.item.content.title} />
     </div>
   );
 }
@@ -469,7 +469,7 @@ function SuggestionSaveError({
       className="mt-3 flex items-center gap-3 rounded-xl border border-border bg-card p-3"
     >
       <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-        {entry.item.title}:{" "}
+        {entry.item.content.title}:{" "}
         {result.error instanceof Error
           ? result.error.message
           : t(($) => {
@@ -609,7 +609,7 @@ function AgentSuggestionCard({
             tabIndex={embedded ? -1 : undefined}
             className="text-base font-medium leading-6 text-foreground focus:outline-none"
           >
-            {item.title}
+            {item.content.title}
           </h3>
           <p
             className={cn(
@@ -617,11 +617,11 @@ function AgentSuggestionCard({
               !embedded && "line-clamp-4",
             )}
           >
-            {item.rationale}
+            {item.content.rationale}
           </p>
         </div>
         <div className="flex flex-col gap-2 pt-1">
-          {item.options.map((option) => {
+          {item.content.options.map((option) => {
             return (
               <AgentSuggestionOption
                 key={option.id}
@@ -829,7 +829,7 @@ function HomeSuggestionPreview({
         render={
           <Button
             variant="quiet"
-            aria-label={item.title}
+            aria-label={item.content.title}
             className="absolute -inset-x-2 inset-y-0 z-0 h-auto w-auto rounded-surface-compact p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
           />
         }
@@ -872,7 +872,7 @@ function HomeSuggestionPreview({
             }
           }}
         >
-          {item.title}
+          {item.content.title}
         </h2>
       </div>
       {/* The menu stays out of the line until the pointer or focus reaches it,
@@ -899,7 +899,7 @@ function HomeSuggestionDetails() {
       <DialogHeader className="flex-row items-baseline justify-start gap-3 space-y-0 pr-10">
         <DialogTitle>
           {t(($) => {
-            return $.chat.agentSuggestions.label;
+            return $.chat.agentSuggestions.feedLabel;
           })}
         </DialogTitle>
         {card?.detail && (
@@ -1018,7 +1018,7 @@ export function AgentSuggestions({
         className="text-xl font-medium tracking-tight"
       >
         {t(($) => {
-          return $.chat.agentSuggestions.label;
+          return $.chat.agentSuggestions.feedLabel;
         })}
       </h2>
       {/* Handled cards follow the waiting ones in the order handled. */}

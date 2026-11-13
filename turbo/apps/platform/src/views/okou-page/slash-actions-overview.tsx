@@ -18,6 +18,7 @@ import {
 import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import { useComposerCapabilities } from "./composer-capabilities.ts";
 import type { SlashMenuSide } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import type {
   ComposerSlashWorkflow,
@@ -1251,10 +1252,7 @@ export interface SlashActionsMenu {
   readonly searchActions: readonly SlashAction[];
 }
 
-/**
- * The slash-actions half of the menu. With the switch off both parts are
- * empty, so the existing panel and its navigation apply unchanged.
- */
+/** Home capabilities share the slash entry point independently of chat actions. */
 export function useSlashActionsMenu({
   composer,
   query,
@@ -1275,7 +1273,18 @@ export function useSlashActionsMenu({
   const enabled = useSlashActionsEnabled();
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
-  const actions = useSlashActions(composer, panel.leave);
+  const chatActions = useSlashActions(composer, panel.leave);
+  const capabilities = useComposerCapabilities(composer);
+  const capabilityActions = (capabilities ?? []).map((capability) => {
+    return {
+      ...capability,
+      run: () => {
+        panel.leave();
+        capability.run();
+      },
+    };
+  });
+  const actions = [...capabilityActions, ...(enabled ? chatActions : [])];
   const overview = useSlashActionsOverview({
     composer,
     actions,
@@ -1286,11 +1295,13 @@ export function useSlashActionsMenu({
     manageWorkflows: panel.manageWorkflows,
     browseTemplates: panel.browseAll,
   });
-  if (!enabled || query === undefined) {
+  if (query === undefined) {
     return { overview: null, searchActions: [] };
   }
   if (query === "") {
-    return { overview, searchActions: [] };
+    return enabled
+      ? { overview, searchActions: [] }
+      : { overview: null, searchActions: capabilityActions };
   }
   return {
     overview: null,

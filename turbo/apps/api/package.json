@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "2.67.8",
+  "version": "2.69.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,6 @@
     "instructions:publish-default": "tsx src/scripts/publish-default-instructions.ts",
     "discord:register": "node scripts/register-discord-commands.mjs",
     "test": "vitest run",
-    "test:native-competing-claims": "node scripts/native-competing-claims.mjs",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && GOMAXPROCS=1 oxlint src --type-aware -c ../../.oxlintrc.typeaware.json --ignore-pattern '**/__tests__/**' --deny-warnings && GOMAXPROCS=1 oxlint $(find src -type d -name __tests__) --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",
     "check-types": "bash scripts/check-types.sh",

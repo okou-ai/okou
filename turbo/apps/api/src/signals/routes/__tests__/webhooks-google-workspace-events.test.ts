@@ -461,6 +461,7 @@ async function setupFixture(
   options: GoogleMeetProviderOptions = {},
 ): Promise<GoogleMeetFixture> {
   const provider = configureGoogleMeetBoundaries(options);
+  await runs.registerDirectRunner(provider.runnerGroup);
   const { actor } = await workflows.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
@@ -785,7 +786,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       if (!secondaryRunId) {
         throw new Error("Expected a queued run for the secondary account");
       }
-      const claim = await runs.claimRunnerJob(secondaryRunId);
+      const claim = await runs.executionInput(secondaryRunId);
       expect(
         Object.values(claim.secretConnectorMetadataMap ?? {}),
       ).toContainEqual(

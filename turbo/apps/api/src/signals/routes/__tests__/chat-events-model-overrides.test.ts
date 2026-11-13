@@ -7,7 +7,6 @@ import { testContext } from "../../../__tests__/test-context";
 
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import {
   createChatEventsFixture,
@@ -288,25 +287,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await expectThreadModelCredits(context, actor, run.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
-      if (tier === "fast") {
-        const oldClaim = await api.requestClaimRunnerJob(
-          true,
-          run.runId,
-          [404],
-          {
-            capabilities: { piModelConfigGenerations: [1, 2] },
-          },
-        );
-        expectApiError(oldClaim.body);
-        await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-          status: "pending",
-        });
-      }
-      const claim = await api.claimRunnerJob(run.runId, {
-        capabilities: {
-          piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
-        },
-      });
+      const claim = await api.executionInput(run.runId);
       const sandboxHeaders = {
         authorization: `Bearer ${claim.sandboxToken}`,
       };

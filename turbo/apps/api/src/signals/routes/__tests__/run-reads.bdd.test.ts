@@ -14,6 +14,7 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -29,6 +30,7 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
+import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
 
 /*
  * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
@@ -72,7 +74,7 @@ async function entitledActor(
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  api.configureRunnerGroup();
+  await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { customerId, tier });
   return actor;
 }
@@ -420,8 +422,8 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       }),
     ).not.toContain(runA.runId);
 
-    const claimA = await api.claimRunnerJob(runA.runId);
-    const claimB = await api.claimRunnerJob(runB.runId);
+    const claimA = await api.executionInput(runA.runId);
+    const claimB = await api.executionInput(runB.runId);
     await completeRun(runB.runId, claimB.sandboxToken);
 
     const runningOnly = await reads.requestListLogs(
@@ -495,7 +497,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(hiddenFromActor.body.error.message).toBe("Agent run not found");
     const memberDetail = await api.requestReadRun(member, runM.runId, [200]);
     expect(memberDetail.body).toMatchObject({ runId: runM.runId });
-    const claimM = await api.claimRunnerJob(runM.runId);
+    const claimM = await api.executionInput(runM.runId);
 
     // auth-me refreshes the caller's user-cache email, which the queue
     // surfaces for owner entries.
@@ -551,7 +553,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       throw new Error("Expected released capacity to launch the queued input");
     }
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    const pickedClaim = await api.executionInput(picked.runId);
     await api.requestCancelRun(actor, picked.runId, [200]);
+    await finishCancelledRun(picked.runId, pickedClaim.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -570,7 +574,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "cancel a running run",
     });
-    await api.claimRunnerJob(run.runId);
+    await api.executionInput(run.runId);
     const cancelled = await api.requestCancelRun(
       actor,
       run.runId.toUpperCase(),
@@ -592,7 +596,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken);
     const notCancellable = await api.requestCancelRun(actor, run.runId, [400]);
     expectApiError(notCancellable.body);
@@ -612,7 +616,7 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken);
     const outsider = bdd.user();
     const crossOrg = await api.requestCancelRun(
@@ -635,7 +639,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      api.configureRunnerGroup();
+      await api.configureRunnerGroup();
       await fixture.fund();
       await api.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
@@ -696,7 +700,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "pin the Connector Skill bundle",
       });
       fixture.registerRun(r1.runId);
-      const claim1 = await api.claimRunnerJob(r1.runId);
+      const claim1 = await api.executionInput(r1.runId);
       fixture.registerClaim(r1.runId, claim1.sandboxToken);
       const workflowMount = claim1.contentBundles.skills.find((mount) => {
         return mount.mountPath === readonlySkill.mountPath;
@@ -838,7 +842,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "continue the persisted session",
       });
       fixture.registerRun(continued.runId);
-      const continuedClaim = await api.claimRunnerJob(continued.runId);
+      const continuedClaim = await api.executionInput(continued.runId);
       fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
       expect(continuedClaim.vars).toStrictEqual(claim1.vars);
       expect(continuedClaim.contentBundles.skills).toContainEqual(
@@ -895,13 +899,13 @@ describe("RUN-01: run admission boundaries", () => {
         return outcome.kind !== "rejected";
       }),
     ).toBeTruthy();
-    const pending = await reads.requestListLogs(
+    const running = await reads.requestListLogs(
       actor,
-      { status: "pending", limit: 50 },
+      { status: "running", limit: 50 },
       [200],
     );
     expect(
-      pending.body.data
+      running.body.data
         .map((run) => {
           return run.id;
         })
@@ -1018,7 +1022,7 @@ describe("RUN-01: run admission boundaries", () => {
       prompt: "capture from a staff organization",
       captureNetworkBodies: true,
     });
-    const captureClaim = await api.claimRunnerJob(allowed.runId);
+    const captureClaim = await api.executionInput(allowed.runId);
     expect(captureClaim.captureNetworkBodies).toBeTruthy();
     await api.requestCancelRun(staff, allowed.runId, [200]);
   });
@@ -1315,7 +1319,7 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: compose.agentId,
       prompt: "inspect activity events",
     });
-    const claim = await api.claimRunnerJob(run.runId);
+    const claim = await api.executionInput(run.runId);
     await completeRun(run.runId, claim.sandboxToken, {
       lastEventSequence: 1,
     });
@@ -1973,6 +1977,13 @@ describe("RUN-04: agent run telemetry families", () => {
     if (!Number.isFinite(runCreatedAtMs)) {
       throw new Error("Expected the created run to have a valid creation time");
     }
+    const started = await reads.requestReadLogById(
+      actor,
+      agentRun.runId,
+      [200],
+    );
+    mustOk(started, "the dispatched Run's start time");
+    const runStartedAtMs = Date.parse(started.body.startedAt ?? runCreatedAt);
     context.mocks.axiom.useRealQuery.mockReturnValue(true);
     let snapshotVisible = false;
     const queryRequests: {
@@ -2076,7 +2087,9 @@ describe("RUN-04: agent run telemetry families", () => {
 | sort by _time desc
 | limit 1`,
         startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
-        endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),
+        endTime: new Date(
+          Math.max(runCreatedAtMs, runStartedAtMs) + HOUR_MS,
+        ).toISOString(),
       },
     };
     expect(queryRequests).toStrictEqual([expectedQuery, expectedQuery]);
@@ -2098,7 +2111,7 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: agent.agentId,
       prompt: "agent run detail",
     });
-    const claim = await api.claimRunnerJob(agentRun.runId);
+    const claim = await api.executionInput(agentRun.runId);
     const headers = sandboxHeaders(claim.sandboxToken);
     await webhooks.requestAgentComplete(
       {
@@ -2608,18 +2621,19 @@ describe("RUN-04: agent run telemetry families", () => {
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
       sandboxStartupPath: null,
-      runnerHostname: null,
-      runnerVersion: "0.234.18",
+      runnerHostname: `runner-${api.dispatchedRun(runId).runnerId}.okou.app`,
+      runnerVersion: null,
       runnerId: expect.any(String),
-      runnerHeartbeatGeneration: 1,
+      runnerHeartbeatGeneration: api.dispatchedRun(runId).heartbeatGeneration,
     });
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
       sandboxStartupPath: null,
-      runnerHostname: null,
+      runnerHostname: `runner-${api.dispatchedRun(bareRun.runId).runnerId}.okou.app`,
       runnerVersion: null,
-      runnerId: null,
-      runnerHeartbeatGeneration: null,
+      runnerId: api.dispatchedRun(bareRun.runId).runnerId,
+      runnerHeartbeatGeneration: api.dispatchedRun(bareRun.runId)
+        .heartbeatGeneration,
     });
 
     const memberRunner = await api.requestRunRunner(member, runId, [404]);
@@ -2859,22 +2873,69 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     await owned.run(async () => {
-      const pendingRun = await owned.sendChatRun(actor, {
-        agentId,
-        prompt: "pending detail run",
+      const kms = holdCurrentSecretKms(context.signal);
+      const clientEventId = randomUUID();
+      let pendingRunId: string | undefined;
+      const preparation = await settleIncludingAbort(async () => {
+        const sent = await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            prompt: "pending detail run",
+            clientEventId,
+          },
+          [201],
+        );
+        if (sent.status !== 201) {
+          throw new Error("Expected the pending input to be accepted");
+        }
+        await kms.entered;
+        const messages = await chat.listThreadEvents(actor, sent.body.threadId);
+        pendingRunId = messages.events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        })?.runId;
+        if (!pendingRunId) {
+          throw new Error(
+            "Expected the admitted Run while preparation is held",
+          );
+        }
+        const pendingDetail = await reads.requestReadLogById(
+          actor,
+          pendingRunId,
+          [200],
+        );
+        expect(pendingDetail.body).toMatchObject({
+          id: pendingRunId,
+          status: "pending",
+          sessionId: null,
+          completedAt: null,
+        });
+        const pendingList = await reads.requestListLogs(
+          actor,
+          { status: "pending" },
+          [200],
+        );
+        expect(
+          pendingList.body.data.map((run) => {
+            return run.id;
+          }),
+        ).toContain(pendingRunId);
       });
-      const pendingDetail = await reads.requestReadLogById(
-        actor,
-        pendingRun.runId,
+      kms.release();
+      if (!preparation.ok) {
+        throw preparation.error;
+      }
+      await flushWaitUntilForTest();
+      if (!pendingRunId) {
+        throw new Error("Expected the prepared Run");
+      }
+      const pendingClaim = await owned.claimRunnerRun(pendingRunId);
+      await api.requestCancelRun(actor, pendingRunId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: pendingRunId, exitCode: 1, error: "Run cancelled" },
+        sandboxHeaders(pendingClaim.sandboxToken),
         [200],
       );
-      expect(pendingDetail.body).toMatchObject({
-        id: pendingRun.runId,
-        status: "pending",
-        sessionId: null,
-        completedAt: null,
-      });
-      await api.requestCancelRun(actor, pendingRun.runId, [200]);
 
       const failedRun = await owned.sendChatRun(actor, {
         agentId,
@@ -2930,7 +2991,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(detail.body).toMatchObject({
       id: run.runId,
       framework: "claude-code",
-      status: "pending",
+      status: "running",
       prompt: "read a retained run snapshot",
     });
   });
@@ -2941,7 +3002,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
     });
-    const tokenClaim = await api.claimRunnerJob(tokenRun.runId);
+    const tokenClaim = await api.executionInput(tokenRun.runId);
     const okouToken = tokenClaim.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the claimed run to expose an OKOU_TOKEN");

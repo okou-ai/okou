@@ -14,6 +14,7 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 describe("workflow skill storage presigned URL cache", () => {
   const context = testContext();
@@ -52,7 +53,7 @@ describe("workflow skill storage presigned URL cache", () => {
     const actor = bdd.user();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -93,6 +94,7 @@ describe("workflow skill storage presigned URL cache", () => {
     }
     mockUniquePresignedUrls();
     const claimWorkflow = async () => {
+      await createRunsApi(context).registerDirectRunner(runnerGroup);
       const run = await chats.sendChatRun(actor, {
         agentId,
         prompt: "Read the immutable Workflow attachment",
@@ -152,7 +154,7 @@ describe("workflow skill storage presigned URL cache", () => {
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
+      const claim = await api.executionInput(run.runId);
       const mount = claim.contentBundles.skills.find((entry) => {
         return entry.mountPath === mountPath;
       });
@@ -249,7 +251,7 @@ describe("workflow skill storage presigned URL cache", () => {
     await expect(claimWorkflow()).resolves.toStrictEqual(rotatedEndpoint);
   });
 
-  it("selects an updated Workflow at claim even when its previous package URL is cached", async () => {
+  it("pins dispatched Workflow URLs and selects later edits for the following Run", async () => {
     const {
       actor,
       agentId,
@@ -277,45 +279,64 @@ describe("workflow skill storage presigned URL cache", () => {
     expect(claim.contentBundles.skills[0]?.mountPath).toBe(
       cached.skills[0]?.mountPath,
     );
-    expect(claim.contentBundles.skills[0]?.sha256).not.toBe(
+    expect(claim.contentBundles.skills[0]?.sha256).toBe(
       cached.skills[0]?.sha256,
     );
-    expect(claim.contentBundles.skills[0]?.downloadUrl).not.toBe(
+    expect(claim.contentBundles.skills[0]?.downloadUrl).toBe(
       cached.skills[0]?.downloadUrl,
     );
     await chats.cancelChatRun(actor, queued.runId, sandboxHeaders);
-    await expect(claimWorkflow()).resolves.toStrictEqual(claim.contentBundles);
+    const updated = await claimWorkflow();
+    expect(updated.skills[0]?.sha256).not.toBe(cached.skills[0]?.sha256);
+    expect(updated.skills[0]?.downloadUrl).not.toBe(
+      cached.skills[0]?.downloadUrl,
+    );
+    await expect(claimWorkflow()).resolves.toStrictEqual(updated);
   });
 
-  it("preserves signing failure and allows a later successful claim to populate reusable URLs", async () => {
-    const { actor, agentId, runnerGroup, chats, claimWorkflow } =
-      await workflowCacheFixture();
+  it("settles a preparation signing failure and caches URLs for a later fresh Run", async () => {
+    const { actor, agentId, claimWorkflow } = await workflowCacheFixture();
     const api = createRunsApi(context);
-    const run = await chats.sendChatRun(actor, {
-      agentId,
-      prompt: "a cold signing failure",
-    });
-    await api.heartbeatRunner(runnerGroup);
     context.mocks.s3.getSignedUrl.mockRejectedValueOnce(
       new Error("Fixture signer unavailable"),
     );
-    await api.requestClaimRunnerJob(true, run.runId, [500]);
-    expect((await api.readRun(actor, run.runId)).status).toBe("running");
-    await api.requestCancelRun(actor, run.runId, [200]);
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientEventId,
+        prompt: "A cold signing failure",
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the input to enqueue");
+    }
+    await expect(flushWaitUntilForTest()).rejects.toThrow(
+      "Run execution preparation failed",
+    );
+    const page = await chat.listThreadEvents(actor, sent.body.threadId);
+    const failed = page.events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!failed?.runId) {
+      throw new Error("Expected a durable failed Run");
+    }
+    await expect(api.readRun(actor, failed.runId)).resolves.toMatchObject({
+      status: "failed",
+    });
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(0);
     const successful = await claimWorkflow();
     await expect(claimWorkflow()).resolves.toStrictEqual(successful);
   });
 
   it("retains the newer URL when an older cold signer publishes last", async () => {
-    const { actor, agentId, runnerGroup, chats, claimWorkflow } =
+    const { actor, agentId, chats, claimWorkflow } =
       await workflowCacheFixture();
     const api = createRunsApi(context);
     const startedAt = Math.floor(now() / 1000) * 1000;
-    const oldRun = await chats.sendChatRun(actor, {
-      agentId,
-      prompt: "older cache publisher",
-    });
-    await api.heartbeatRunner(runnerGroup);
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
@@ -328,7 +349,10 @@ describe("workflow skill storage presigned URL cache", () => {
       return await sign(...args);
     });
     const oldClaim = withMockNowForTest(startedAt, () => {
-      return api.claimRunnerJob(oldRun.runId);
+      return api.createThreadRun(actor, {
+        agentId,
+        prompt: "Older cache publisher",
+      });
     });
     onTestFinished(async () => {
       if (!release.settled()) {
@@ -339,7 +363,8 @@ describe("workflow skill storage presigned URL cache", () => {
     await started.promise;
     const newer = await withMockNowForTest(startedAt + 1000, claimWorkflow);
     release.resolve();
-    const older = await oldClaim;
+    const oldRun = await oldClaim;
+    const older = await api.executionInput(oldRun.runId);
     await chats.cancelChatRun(actor, oldRun.runId, {
       authorization: `Bearer ${older.sandboxToken}`,
     });

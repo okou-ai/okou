@@ -220,7 +220,6 @@ const cronBrowserReconcileResponseSchema = object({
   checked: number().int().nonnegative(),
   stopped: number().int().nonnegative(),
   errors: number().int().nonnegative(),
-  healthy: number().int().nonnegative(),
 });
 
 const cronDrainEmailOutboxResponseSchema = object({

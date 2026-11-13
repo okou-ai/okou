@@ -259,6 +259,7 @@ export interface ComposerSignals {
   readonly setup$: Command<void, [AbortSignal]>;
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
+  readonly addMenu: ComposerUiSignalGroups["addMenu"];
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
   readonly threadId?: string;
@@ -294,7 +295,7 @@ export interface ComposerSignals {
     Promise<void>,
     [ChatAttachment, AbortSignal]
   >;
-  readonly setImageAnnotationLifecycleRef$: Command<
+  readonly setLifecycleRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
   >;
@@ -594,33 +595,6 @@ export function createComposerSignals(
     createComposerConnectorSignals(options.agentId, options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
-  /**
-   * Teardown owner for the annotation session and its in-flight derivative
-   * uploads. The element itself is not part of the work, but its committed
-   * presence is: `ImageAnnotationEditor` renders inside this exact subtree, so
-   * the subtree leaving the tree is what makes an open session and a pending
-   * upload unreachable. An abandoned upload would otherwise leave the
-   * attachment stuck in `pending`, blocking every later send on the restored
-   * draft with no retry affordance.
-   *
-   * `createComposerSignals` takes no lifecycle signal today, so this is the
-   * narrowest available owner. Replace it with an injected `AbortSignal` if
-   * the composer factory ever gains one.
-   */
-  const setImageAnnotationLifecycleRef$ = onRef<HTMLElement>(
-    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(annotation.imageAnnotation.closeAnnotationEditor$);
-          for (const attachment of get(draft.attachments$)) {
-            set(attachment.cancelAnnotationUpload$);
-          }
-        },
-        { once: true },
-      );
-    }),
-  );
   const connectorCompletion = createComposerConnectorCompletion(
     connector,
     options.agentId,
@@ -636,6 +610,7 @@ export function createComposerSignals(
     ...composerRemoteAccessSignals(options, connector),
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
+    addMenu: ui.addMenu,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options),
     voice,
@@ -688,8 +663,42 @@ export function createComposerSignals(
       setGenerationTemplate$: draft.setGenerationTemplate$,
     },
     ...annotation,
-    setImageAnnotationLifecycleRef$,
+    setLifecycleRef$: createComposerLifecycleRef(
+      taskChips,
+      annotation.imageAnnotation,
+      draft,
+    ),
   };
+}
+
+/**
+ * Own capability commits and annotation uploads while this composer is mounted.
+ * The annotation editor lives in this subtree; losing it must cancel uploads
+ * rather than leave the restored draft permanently pending.
+ *
+ * The composer factory has no lifecycle signal, so its root is the narrowest
+ * available owner until the factory can receive one.
+ */
+function createComposerLifecycleRef(
+  taskChips: ComposerTaskChipsSignals,
+  imageAnnotation: ImageAnnotationSignals,
+  draft: DraftSignals,
+) {
+  return onRef<HTMLElement>(
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      set(taskChips.home.layout.mount$, element, signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(imageAnnotation.closeAnnotationEditor$);
+          for (const attachment of get(draft.attachments$)) {
+            set(attachment.cancelAnnotationUpload$);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
 }
 
 /**
@@ -921,6 +930,7 @@ function createSubmitCurrentInput({
       if (action !== "send" && action !== "queue") {
         return false;
       }
+      const menuRevision = get(taskChips.home.menuRevision$);
       if (!(await get(draft.attachmentUploadsReady$))) {
         return false;
       }
@@ -999,6 +1009,9 @@ function createSubmitCurrentInput({
         nextSubmission,
         signal,
       );
+      if (submitted) {
+        await set(taskChips.home.dismissMenu$, menuRevision, signal);
+      }
       if (submitted && workflowUse) {
         // Browser history must never turn an accepted send into a send error.
         // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.

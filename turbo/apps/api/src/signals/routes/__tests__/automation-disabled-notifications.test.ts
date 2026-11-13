@@ -116,7 +116,7 @@ async function createScenario(
     model: "claude-fable-5-1",
     timezone: "UTC",
   });
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await notificationSwitches(actor, options.notifications ?? true);
@@ -181,6 +181,7 @@ async function fireNextOccurrence(scenario: Scenario) {
     );
   }
   mockNow(new Date(before.nextRunAt));
+  await runs.registerDirectRunner(scenario.runnerGroup);
   await executeCron();
   return await readAutomation(scenario);
 }
@@ -301,8 +302,7 @@ async function startScheduledRun(scenario: Scenario) {
     latestInput.runId,
     scenario.runnerGroup,
   );
-  await runs.heartbeatRunner(scenario.runnerGroup);
-  const claimed = await runs.claimRunnerJob(latestInput.runId);
+  const claimed = await runs.executionInput(latestInput.runId);
   owned.sandboxToken = claimed.sandboxToken;
   return {
     automation,
@@ -404,7 +404,7 @@ describe("recurring automation auto-disable bell notifications", () => {
       model: "claude-fable-5-1",
       timezone: "UTC",
     });
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     installWorkflowVolumeS3Fixture(context);

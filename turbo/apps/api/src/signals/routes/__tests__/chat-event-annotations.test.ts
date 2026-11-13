@@ -181,7 +181,7 @@ describe("chat event annotations", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const group = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -217,7 +217,7 @@ describe("chat event annotations", () => {
     };
     publicCleanups.push(cancelClaimed);
     await runs.heartbeatRunner(group);
-    await runs.claimRunnerJob(sent.runId);
+    await runs.executionInput(sent.runId);
     await expect(runs.readRun(actor, sent.runId)).resolves.toMatchObject({
       status: "running",
     });

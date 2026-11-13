@@ -77,7 +77,7 @@ export function createClaimedRunCredentials(context: TestContext) {
         bdd.acceptAgentStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        const runnerGroup = runs.configureRunnerGroup();
+        const runnerGroup = await runs.configureRunnerGroup();
         mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
         // Default Agent onboarding requires an administrator. Keep the caller's
         // member role unchanged when obtaining its own Run credentials.

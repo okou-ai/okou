@@ -1,5 +1,5 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
@@ -164,7 +164,7 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
     { framework: "codex", model: "gpt-6-luna" },
     { framework: "pi", model: "gpt-6-luna" },
   ] as const)(
-    "uses current $framework guidance at Claim and rejects a deleted selected template",
+    "captures $framework guidance at dispatch and rejects later selection of a deleted template",
     async ({ framework, model }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
@@ -231,22 +231,74 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         template: selection(kind, id),
       });
       const first = await owner.claimChatRun(owner.runnerGroup, firstRun.runId);
+      const next = await owner.claimChatRun(owner.runnerGroup, nextRun.runId);
       expect(first.claim.cliAgentType).toBe(framework);
       await owner.run(() => {
         return remove(kind, id);
       });
-      // The already-claimed Run retains the package it received, even after deletion.
+      // Each dispatched Run retains its immutable package after replacement/deletion.
       expect(claimedFiles(fixture, first.claim, kind, id)).toStrictEqual(
+        oldFiles,
+      );
+      expect(claimedFiles(fixture, next.claim, kind, id)).toStrictEqual(
         kind === "user-template" ? guidance("B") : oldFiles,
       );
       await owner.run(async () => {
-        await chat.api.requestClaimRunnerJob(true, nextRun.runId, [404]);
-        await expect(
-          chat.api.readRun(owner.actor, nextRun.runId),
-        ).resolves.toMatchObject({
-          status: "pending",
-        });
-        await chat.api.requestCancelRun(owner.actor, nextRun.runId, [200]);
+        await chat.cancelChatRun(
+          owner.actor,
+          firstRun.runId,
+          first.sandboxHeaders,
+        );
+        await chat.cancelChatRun(
+          owner.actor,
+          nextRun.runId,
+          next.sandboxHeaders,
+        );
+        const clientEventId = randomUUID();
+        const sent = await chat.chat.requestSendEvent(
+          owner.actor,
+          {
+            agentId: owner.agentId,
+            prompt: "Use the deleted template",
+            clientEventId,
+            userMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "template",
+                  titleSnapshot: "Selected template",
+                  template: selection(kind, id),
+                },
+                { type: "text", text: "Use the deleted template" },
+              ],
+            },
+          },
+          [201],
+        );
+        if (sent.status !== 201) {
+          throw new Error("Expected the template selection to enqueue");
+        }
+        const rejected = await chat.waitForThreadMessages(
+          owner.actor,
+          sent.body.threadId,
+          (events) => {
+            return events.some((event) => {
+              return (
+                event.eventType === "input.rejected" &&
+                event.revokesEventId === clientEventId
+              );
+            });
+          },
+        );
+        expect(rejected.events).toContainEqual(
+          expect.objectContaining({
+            eventType: "output.error",
+            content:
+              kind === "user-template"
+                ? "Custom template not found"
+                : "Presentation template not found",
+          }),
+        );
       });
     },
   );

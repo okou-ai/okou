@@ -82,7 +82,7 @@ export async function setupConnectedDiscordActor(
   const authOrgApi = createAuthOrgAgentsBddApi(context);
   const runsApi = createRunsApi(context);
   const actor = authOrgApi.user({ userId, orgId, orgRole: "org:admin" });
-  const runnerGroup = runsApi.configureRunnerGroup();
+  const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();

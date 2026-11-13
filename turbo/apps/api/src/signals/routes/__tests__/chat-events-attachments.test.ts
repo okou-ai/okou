@@ -66,7 +66,7 @@ const {
   waitForThreadMessages,
   waitForRunUserMessage,
   completeChatRunOk,
-  cancelChatRun,
+  cancelAndCompleteChatRun,
   requestSendEventRaw,
 } = createChatEventsFixture(context);
 
@@ -277,7 +277,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it("lists the agents and chat threads the message links", async () => {
@@ -328,7 +328,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ].join("\n"),
     );
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it("projects referenced passages without requiring every feedback note", async () => {
@@ -384,7 +384,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage.parts,
     );
 
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it("projects forwarded passages from the authoritative source title", async () => {
@@ -452,8 +452,8 @@ describe("CHAT-02: generation templates and attachments", () => {
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
-    await cancelChatRun(actor, forwardedRunId);
-    await cancelChatRun(actor, source.runId);
+    await cancelAndCompleteChatRun(actor, forwardedRunId);
+    await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
   it("preserves common mail identifiers in forwarded prompts", async () => {
@@ -601,9 +601,9 @@ describe("CHAT-02: generation templates and attachments", () => {
         ]),
       );
 
-      await cancelChatRun(actor, forwardedRunId);
+      await cancelAndCompleteChatRun(actor, forwardedRunId);
     }
-    await cancelChatRun(actor, source.runId);
+    await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
@@ -725,7 +725,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
@@ -784,7 +784,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ...userMessage.parts,
       { type: "model", selectedModel: "claude-fable-5-1" },
     ]);
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it("preserves the attachment userMessage order in the runtime prompt", async () => {
@@ -852,7 +852,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         })!,
       ),
     ).toBe("plain API attachment");
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 60_000);
 
   it("uses only the canonical template part", async () => {
@@ -895,7 +895,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ]),
       },
     });
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
   it.each([
@@ -928,7 +928,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         userMessage: { parts: expect.arrayContaining(userMessage.parts) },
       });
       expect(chatEventDisplayText(message)).toBe(prompt);
-      await cancelChatRun(actor, sent.runId);
+      await cancelAndCompleteChatRun(actor, sent.runId);
     },
     90_000,
   );
@@ -995,7 +995,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
     expect(presentationPrompt).toContain("--artifact-kind presentation-html");
-    await cancelChatRun(actor, presentation.runId);
+    await cancelAndCompleteChatRun(actor, presentation.runId);
 
     const revision = await sendChatRun(actor, {
       agentId,
@@ -1007,7 +1007,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(revisionPrompt).not.toContain("# Inline Templates");
     expect(revisionPrompt).toContain("okou host screenshot");
     expect(revisionPrompt).toContain("previewImageUrl");
-    await cancelChatRun(actor, revision.runId);
+    await cancelAndCompleteChatRun(actor, revision.runId);
 
     const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
     if (!websiteTemplate) {
@@ -1041,7 +1041,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(websitePrompt).toMatch(
       /with `okou generate image-batch wait <state-dir>`/,
     );
-    await cancelChatRun(actor, website.runId);
+    await cancelAndCompleteChatRun(actor, website.runId);
   }, 90_000);
 
   it("keeps selected templates usable without recommending disabled managed image generation", async () => {
@@ -1085,7 +1085,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         );
         expect(prompt).toMatch(/- Style description: \S/);
       }
-      await cancelChatRun(actor, run.runId);
+      await cancelAndCompleteChatRun(actor, run.runId);
     }
   });
 
@@ -1112,7 +1112,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       "Style source: private R2 registry resource image-style:ink-storefront",
     );
     expect(defaultR2Prompt).toContain("--compile --style-source r2");
-    await cancelChatRun(actor, defaultR2Run.runId);
+    await cancelAndCompleteChatRun(actor, defaultR2Run.runId);
   }, 90_000);
 
   it("is one-shot: a follow-up without re-attaching the style gets no template context", async () => {
@@ -1173,7 +1173,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       second.runId,
       "another one",
     );
-    await cancelChatRun(actor, second.runId);
+    await cancelAndCompleteChatRun(actor, second.runId);
 
     // Turn 3: attaching a website template resolves only that selection.
     const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
@@ -1198,7 +1198,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     // The illustration style is not attached to this message; only the selected
     // website template supplies live instructions for this turn.
     expect(thirdPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, third.runId);
+    await cancelAndCompleteChatRun(actor, third.runId);
 
     // A brand-new thread starts clean: neither template carries over.
     const fresh = await sendChatRun(actor, { agentId, prompt: "draw a cat" });
@@ -1209,7 +1209,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       "okou generate image --provider built-in --style",
     );
     expect(freshPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, fresh.runId);
+    await cancelAndCompleteChatRun(actor, fresh.runId);
   }, 120_000);
 
   it("injects workflow templates as one-shot context without prior template selections", async () => {
@@ -1235,7 +1235,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       .appendSystemPrompt;
     expect(illustrationPrompt).toContain("# Inline Templates");
     expect(illustrationPrompt).toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, illustration.runId);
+    await cancelAndCompleteChatRun(actor, illustration.runId);
 
     const workflow = await sendChatRun(actor, {
       agentId,
@@ -1262,7 +1262,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(workflowPrompt).toContain("# Incomplete Rounds Context");
     expect(workflowPrompt).toContain("User: draw a labeled inbox");
     expect(workflowPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, workflow.runId);
+    await cancelAndCompleteChatRun(actor, workflow.runId);
 
     const followUp = await sendChatRun(actor, {
       agentId,
@@ -1279,7 +1279,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(followUpPrompt).toContain("User: draw a labeled inbox");
     expect(followUpPrompt).toContain("User: create the workflow version");
     expect(followUpPrompt).not.toContain(style.illustrationStyleId);
-    await cancelChatRun(actor, followUp.runId);
+    await cancelAndCompleteChatRun(actor, followUp.runId);
   }, 120_000);
 
   it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
@@ -1461,7 +1461,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(systemPrompt).toContain(
       `./${userTemplateDirectory(customId)}/SKILL.md`,
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 60_000);
 
   it("injects the pinned public source for a Document template", async () => {
@@ -1479,7 +1479,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(run.appendSystemPrompt).toContain(
       "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 60_000);
 
   it("preserves multiple Document references and their pinned sources in the run", async () => {
@@ -1602,7 +1602,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         return part.type === "template";
       }),
     );
-    await cancelChatRun(actor, sent.runId);
+    await cancelAndCompleteChatRun(actor, sent.runId);
   }, 60_000);
 
   it("rejects unknown generation template selections", async () => {
@@ -1908,7 +1908,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       expect(resolved.publicUrl).toContain(objectName);
       expect(resolved.url).toContain(objectName);
     }
-    await cancelChatRun(actor, runId);
+    await cancelAndCompleteChatRun(actor, runId);
   }, 60_000);
 
   it("falls back to v2 listing when the attachment filename hint is stale", async () => {
@@ -2259,7 +2259,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       filenameSnapshot: filename,
       contentType: "image/png",
     });
-    await cancelChatRun(actor, run.runId);
+    await cancelAndCompleteChatRun(actor, run.runId);
   }, 60_000);
 
   it("accepts repeated references to one uploaded file in the same input", async () => {
@@ -2326,7 +2326,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       }),
     ).toStrictEqual([file, otherSnapshot, file]);
     expect((await api.readRun(actor, run.runId)).prompt).toContain(filename);
-    await cancelChatRun(actor, run.runId);
+    await cancelAndCompleteChatRun(actor, run.runId);
 
     const next = await sendChatRun(actor, {
       agentId,
@@ -2335,7 +2335,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     expect(heads).toBe(2);
     expect((await api.readRun(actor, next.runId)).prompt).toContain(filename);
-    await cancelChatRun(actor, next.runId);
+    await cancelAndCompleteChatRun(actor, next.runId);
   }, 60_000);
 
   it("projects one structured annotated file through its rendered derivative", async () => {
@@ -2414,7 +2414,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         return part.type === "file";
       });
     expect(attached).toStrictEqual(filePart);
-    await cancelChatRun(actor, run.runId);
+    await cancelAndCompleteChatRun(actor, run.runId);
   }, 60_000);
 
   it("keeps a legacy-layout attachment on the legacy CDN for a new send", async () => {
@@ -2444,7 +2444,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     const resolved = await chat.resolveWebFileUrl(actor, fileId);
     expect(resolved.publicUrl).toMatch(/^https:\/\/cdn\.vm7\.io\//);
 
-    await cancelChatRun(actor, run.runId);
+    await cancelAndCompleteChatRun(actor, run.runId);
   }, 60_000);
 });
 
@@ -2537,7 +2537,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
         queuedPrompt,
       ].join("\n\n"),
     );
-    await cancelChatRun(actor, promoted.runId);
+    await cancelAndCompleteChatRun(actor, promoted.runId);
   }, 90_000);
 
   it("carries queued attachments into the auto-sent follow-up run", async () => {
@@ -2651,6 +2651,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       "[Web file] details.json (application/json)",
     );
     expect(followUp.prompt).toContain(`[ID] ${secondFileId}`);
-    await cancelChatRun(actor, promoted.runId);
+    await cancelAndCompleteChatRun(actor, promoted.runId);
   }, 90_000);
 });

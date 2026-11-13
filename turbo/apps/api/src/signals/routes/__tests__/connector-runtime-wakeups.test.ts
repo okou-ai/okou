@@ -26,7 +26,7 @@ async function prepareActor(tier: "pro" | "team" = "pro") {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor, { tier });
   await runs.ensurePersonalSubscriptionModel(actor);
   const { agentId } = await bdd.createAgent(actor);
@@ -43,9 +43,7 @@ async function startRun(
     prompt: "Exercise runtime wakeups",
   });
   await runs.heartbeatRunner(runnerGroup);
-  await runs.claimRunnerJob(run.runId, {
-    runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },
-  });
+  await runs.executionInput(run.runId);
   return run.runId;
 }
 
@@ -232,7 +230,7 @@ describe("connector runtime wakeups", () => {
     const { actor, agentId, runnerGroup } = await prepareActor("team");
     const custom = await createConnector(actor);
     const runId = await startRun(actor, agentId, runnerGroup);
-    const secondGroup = runs.configureRunnerGroup();
+    const secondGroup = await runs.configureRunnerGroup();
     const otherAgent = await bdd.createAgent(actor);
     const otherRun = await startRun(actor, otherAgent.agentId, secondGroup);
     const cancelled = await startRun(actor, agentId, secondGroup);

@@ -10,6 +10,45 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.69.0](https://github.com/okou-ai/okou/compare/api-v2.68.0...api-v2.69.0) (2026-11-13)
+
+
+### Features
+
+* introduce typed feed items under suggestions rollout ([#47053](https://github.com/okou-ai/okou/issues/47053)) ([e052b90](https://github.com/okou-ai/okou/commit/e052b90b3ed950ce46c7fc51235e87c1c3034164))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.61.0
+    * @okouai/core bumped to 8.836.2
+    * @okouai/db bumped to 2.35.0
+    * @okouai/pi-agent-runtime bumped to 1.51.119
+
+## [2.68.0](https://github.com/okou-ai/okou/compare/api-v2.67.8...api-v2.68.0) (2026-11-13)
+
+
+### Features
+
+* **api:** dispatch complete run inputs without queue persistence ([#46910](https://github.com/okou-ai/okou/issues/46910)) ([4862caf](https://github.com/okou-ai/okou/commit/4862caf28ec28fa86c88f0f66d8634a1598c6a06))
+
+
+### Bug Fixes
+
+* **api:** page hyperdrive inventory before reconciling workers ([#47061](https://github.com/okou-ai/okou/issues/47061)) ([358190b](https://github.com/okou-ai/okou/commit/358190b01ea5e2b83144fd0ad9b33a8ebeaa2044))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.60.0
+    * @okouai/core bumped to 8.836.1
+    * @okouai/db bumped to 2.34.6
+    * @okouai/pi-agent-runtime bumped to 1.51.118
+
 ## [2.67.8](https://github.com/okou-ai/okou/compare/api-v2.67.7...api-v2.67.8) (2026-11-13)
 
 
