@@ -20,6 +20,9 @@ hex = { workspace = true, features = ["alloc"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 guest-telemetry.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event", "fs", "std"] }
+
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
 httpmock = { workspace = true, features = ["cookies"] }
