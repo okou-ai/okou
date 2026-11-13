@@ -27,6 +27,7 @@ import {
   selectDirectRunOwner$,
   readDirectRunState$,
   type DirectRunTarget,
+  type DirectRunSourceAuthorization,
 } from "./direct-run-ownership.service";
 import { preparedRunnerReusePreference } from "./runner-reuse-preference";
 import { joinAll, settleIncludingAbort } from "../utils";
@@ -271,6 +272,7 @@ interface PreparedRunDelivery {
   readonly input: AdmittedRunLaunch;
   readonly executionContext: ExecutionContext;
   readonly fleet: DirectRunFleet;
+  readonly sourceAuthorization: DirectRunSourceAuthorization;
   readonly contextSnapshot: Omit<
     Parameters<typeof recordRunContextSnapshot>[0],
     "recordedAt"
@@ -326,10 +328,12 @@ const dispatchPreparedRun$ = command(
             orgId: input.run.orgId,
             target,
             previous: owner,
+            sourceAuthorization: args.sourceAuthorization,
           },
           signal,
         );
         if (!selected) {
+          reason = "Run is no longer available for dispatch";
           break;
         }
         const firstOwner = owner === null;

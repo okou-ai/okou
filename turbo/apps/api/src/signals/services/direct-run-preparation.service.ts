@@ -184,6 +184,10 @@ export const prepareDirectRun$ = command(
     });
     return {
       executionContext: publication.responseBody,
+      sourceAuthorization: {
+        workflows: packages.selection,
+        singleAgent: context.featureFlags?.singleAgent === true,
+      },
       contextSnapshot: {
         runId: run.id,
         userId: run.userId,

@@ -7,9 +7,19 @@ import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import type { UnacceptedRunOwner } from "./agent-run-terminal-transition.service";
+import { agentInstructionsSelectionSql } from "./agent-instructions-claim.service";
+import {
+  workflowClaimSelectionSql,
+  type WorkflowClaimInput,
+} from "./workflow-claim.service";
 
 export interface DirectRunTarget extends UnacceptedRunOwner {
   readonly hostname: string;
+}
+
+export interface DirectRunSourceAuthorization {
+  readonly workflows: WorkflowClaimInput;
+  readonly singleAgent: boolean;
 }
 
 /** Run -> active owner -> Thread follows the existing terminal lock order. */
@@ -22,12 +32,24 @@ export const selectDirectRunOwner$ = command(
       readonly orgId: string;
       readonly target: DirectRunTarget;
       readonly previous: UnacceptedRunOwner | null;
+      readonly sourceAuthorization: DirectRunSourceAuthorization;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
+    // Preparation may await external I/O. Recheck source authority in the
+    // same statement that binds the process, after any concurrent revocation.
+    const authorizedSources = sql`EXISTS (
+      WITH locked_run AS MATERIALIZED (
+        SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
+          ${agentRuns.userId} AS "userId",${agentRuns.orgId} AS "orgId",${agentRuns.triggerSource} AS "triggerSource",${agentRuns.workflowAutomationId} AS "workflowAutomationId"
+        FROM ${agentRuns} WHERE ${and(eq(agentRuns.id, args.runId), eq(agentRuns.userId, args.userId), eq(agentRuns.orgId, args.orgId))}
+      ), ${agentInstructionsSelectionSql(sql`${args.sourceAuthorization.singleAgent}`)},
+        ${workflowClaimSelectionSql(args.sourceAuthorization.workflows)}
+      SELECT 1 FROM workflow_admission
+    )`;
     const changed = db.$with("direct_selected_run").as(
       db
         .update(agentRuns)
@@ -44,6 +66,7 @@ export const selectDirectRunOwner$ = command(
             eq(agentRuns.id, args.runId),
             eq(agentRuns.userId, args.userId),
             eq(agentRuns.orgId, args.orgId),
+            authorizedSources,
             eq(agentRuns.status, args.previous ? "running" : "pending"),
             args.previous
               ? and(
