@@ -24,6 +24,7 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import {
   click,
   fill,
+  holdElementAnimations,
   setupPage,
   startPage,
   queryAllByRoleFast,
@@ -672,6 +673,76 @@ test("Chat navigation shortcuts move through expanded Projects and the chats out
   await pressChatNavigation("ArrowDown");
   await waitFor(() => {
     expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+});
+
+function rowFrame(element: Element) {
+  const frame = element.closest<HTMLElement>(
+    '[data-testid="sidebar-chat-thread-virtual-row"]',
+  );
+  if (!frame) {
+    throw new Error("Chat list row not found");
+  }
+  return frame;
+}
+function rowPlace(frame: HTMLElement) {
+  return {
+    at: frame.style.getPropertyValue("--row-y"),
+    from: frame.style.getPropertyValue("--row-from-y"),
+  };
+}
+
+test("A Project's chats fold back into its row and leave once they rest, then unfold out of it", async () => {
+  const { a, a2, b } = await setupProjectNavigation(199, "/chats/:a");
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  const project = rowFrame(projectToggle("Launch"));
+  const chat = rowFrame(threadLink(a2.id));
+  const below = rowFrame(threadLink(b.id));
+  const unfolded = { chat: rowPlace(chat).at, below: rowPlace(below).at };
+  const settleFold = holdElementAnimations(chat);
+
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  // The chat closes into its Project's row from where it stood, and the chat
+  // outside the Project moves up from below it.
+  expect(chat).toBeInTheDocument();
+  expect(chat).toHaveAttribute("inert");
+  expect(rowPlace(chat)).toStrictEqual({
+    at: rowPlace(project).at,
+    from: unfolded.chat,
+  });
+  expect(rowPlace(below).from).toBe(unfolded.below);
+  expect(rowPlace(below).at).not.toBe(unfolded.below);
+
+  await act(async () => {
+    settleFold();
+    await Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(chat).not.toBeInTheDocument();
+  });
+  const folded = rowPlace(below).at;
+  expect(rowPlace(below).from).toBe(folded);
+
+  const settleUnfold = holdElementAnimations(below);
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  // Each chat comes out of the Project's row, and the chat below moves down.
+  expect(rowPlace(rowFrame(threadLink(a2.id)))).toStrictEqual({
+    at: unfolded.chat,
+    from: rowPlace(project).at,
+  });
+  expect(rowPlace(below)).toStrictEqual({
+    at: unfolded.below,
+    from: folded,
+  });
+  await act(async () => {
+    settleUnfold();
+    await Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(rowPlace(below).from).toBe(unfolded.below);
   });
 });
 

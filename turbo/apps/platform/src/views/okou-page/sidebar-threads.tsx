@@ -20,7 +20,7 @@ import {
   projectDialog$,
   projectThreadMenuOpenChanged$,
 } from "../../signals/projects/project-ui.ts";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -85,12 +85,15 @@ import {
   type NewChatThreadPane,
 } from "../../signals/chat-page/optimistic-chat-thread-page.ts";
 import {
+  restingWindowRows,
   unreadSidebarChatThreadRows$,
   type SidebarChatThreadListSignals,
   type SidebarChatThreadRow,
   type SidebarChatThreadScrollSignals,
   type SidebarChatThreadWindow,
+  type SidebarChatThreadWindowRow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
+import { endProjectFoldOnRef$ } from "../../signals/chat-page/project-fold-motion.ts";
 import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { OkouChatListRow } from "./sidebar-okou-row.tsx";
@@ -1569,8 +1572,8 @@ function UnreadChatThreadsContent({
         scrollSignals={scrollSignals}
       />
       <ChatThreadListRowsView
-        rows={rows.data}
-        startIndex={0}
+        rows={restingWindowRows(rows.data)}
+        foldId={null}
         rowHeight={null}
         touch={false}
         layout="sidebar"
@@ -1791,14 +1794,26 @@ function equalRows(
   );
 }
 
+function equalWindowRows(
+  left: SidebarChatThreadWindowRow,
+  right: SidebarChatThreadWindowRow,
+): boolean {
+  return (
+    left.index === right.index &&
+    left.from === right.from &&
+    left.presence === right.presence &&
+    equalRows(left.row, right.row)
+  );
+}
+
 function equalChatThreadListWindows(
   previous: SidebarChatThreadWindow,
   next: SidebarChatThreadWindow,
 ): boolean {
   return (
-    previous.startIndex === next.startIndex &&
+    previous.foldId === next.foldId &&
     previous.showAllChatsRow === next.showAllChatsRow &&
-    equalArrays(previous.rows, next.rows, equalRows)
+    equalArrays(previous.rows, next.rows, equalWindowRows)
   );
 }
 
@@ -1838,24 +1853,48 @@ function ChatThreadListRowContent({
   );
 }
 
+/**
+ * A fold moves each row from its place before the fold; a row it brings into
+ * the window starts there too, through @starting-style. An unfolding chat
+ * opens its space before its title fades in, and a folding one fades out
+ * before the rows close over it.
+ */
+function foldMotionClassName(
+  folding: boolean,
+  presence: SidebarChatThreadWindowRow["presence"],
+) {
+  if (!folding) {
+    return undefined;
+  }
+  if (presence === "entering") {
+    return "motion-safe:starting:[transform:translateY(var(--row-from-y))] starting:opacity-0 motion-safe:[transition:transform_240ms_cubic-bezier(0.2,0,0,1),opacity_180ms_linear_60ms]";
+  }
+  if (presence === "departing") {
+    return "opacity-0 motion-safe:[transition:transform_240ms_cubic-bezier(0.2,0,0,1),opacity_90ms_cubic-bezier(0.2,0,0,1)]";
+  }
+  return "motion-safe:starting:[transform:translateY(var(--row-from-y))] motion-safe:[transition:transform_240ms_cubic-bezier(0.2,0,0,1)]";
+}
+
 function ChatThreadListRowFrame({
-  row,
-  index,
+  entry,
   rowHeight,
+  folding,
   touch,
   moving,
   moveHere,
   children,
 }: {
-  row: SidebarChatThreadRow;
-  index: number;
+  entry: SidebarChatThreadWindowRow;
   /** Virtual rows are positioned by height; a static list stays in flow. */
   rowHeight: number | null;
+  /** A Project fold is moving the rows to their places. */
+  folding: boolean;
   touch: boolean;
   moving: boolean;
   moveHere: (projectId: string | null) => void;
   children: ReactNode;
 }) {
+  const { row, index, from, presence } = entry;
   const drop = useProjectThreadDropTarget({
     projectId: row.projectId,
     touch,
@@ -1871,9 +1910,13 @@ function ChatThreadListRowFrame({
       }
       data-project-row-id={row.projectId ?? undefined}
       data-project-drop-target={drop.targeted ? "" : undefined}
+      // A chat folding back into its Project is no longer listed.
+      inert={presence === "departing"}
       className={cn(
         "w-full pb-1",
-        rowHeight !== null && "absolute left-0 top-0",
+        rowHeight !== null &&
+          "absolute left-0 top-0 [transform:translateY(var(--row-y))]",
+        rowHeight !== null && foldMotionClassName(folding, presence),
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
         drop.targeted && row.projectId === null && "rounded-lg",
@@ -1883,7 +1926,10 @@ function ChatThreadListRowFrame({
       style={
         rowHeight === null
           ? undefined
-          : { transform: `translateY(${index * rowHeight}px)` }
+          : ({
+              "--row-y": `${String(index * rowHeight)}px`,
+              "--row-from-y": `${String(from * rowHeight)}px`,
+            } as CSSProperties)
       }
     >
       {children}
@@ -1903,7 +1949,7 @@ interface ChatThreadListRowsOptions {
  */
 function ChatThreadListRowsView({
   rows,
-  startIndex,
+  foldId,
   rowHeight,
   height,
   touch,
@@ -1911,8 +1957,9 @@ function ChatThreadListRowsView({
   shortcuts,
   children,
 }: ChatThreadListRowsOptions & {
-  rows: readonly SidebarChatThreadRow[];
-  startIndex: number;
+  rows: readonly SidebarChatThreadWindowRow[];
+  /** The Project fold the rows are moving through; null at rest. */
+  foldId: number | null;
   rowHeight: number | null;
   height?: number;
   children?: ReactNode;
@@ -1921,6 +1968,7 @@ function ChatThreadListRowsView({
   const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
   const signal = useGet(rootSignal$);
   const dragEventsRef = useSet(projectThreadDragEventsRef$);
+  const endFoldRef = useSet(endProjectFoldOnRef$);
   function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
@@ -1935,21 +1983,20 @@ function ChatThreadListRowsView({
         }
         style={height === undefined ? undefined : { height }}
       >
-        {rows.map((row, offset) => {
-          const index = startIndex + offset;
+        {rows.map((entry) => {
           return (
             <ChatThreadListRowFrame
-              key={row.key}
-              row={row}
-              index={index}
+              key={entry.row.key}
+              entry={entry}
               rowHeight={rowHeight}
+              folding={foldId !== null}
               touch={touch}
               moving={moving.state === "loading"}
               moveHere={moveHere}
             >
               <ChatThreadListRowContent
-                row={row}
-                index={index}
+                row={entry.row}
+                index={entry.index}
                 touch={touch}
                 layout={layout}
                 shortcuts={shortcuts}
@@ -1958,6 +2005,14 @@ function ChatThreadListRowsView({
           );
         })}
         {children}
+        {foldId === null ? null : (
+          <span
+            key={foldId}
+            ref={endFoldRef}
+            hidden
+            data-project-fold-id={foldId}
+          />
+        )}
       </div>
       {moving.state === "hasError" && (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">
@@ -1992,7 +2047,7 @@ export function ChatThreadListRows({
     <ChatThreadListRowsView
       {...options}
       rows={window.rows}
-      startIndex={window.startIndex}
+      foldId={window.foldId}
       rowHeight={rowHeight}
       height={height}
     >

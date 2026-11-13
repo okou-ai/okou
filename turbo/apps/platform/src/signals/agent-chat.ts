@@ -23,7 +23,10 @@ import {
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
 import { projects$ } from "./projects/projects.ts";
-import { expandedProjectIds$ } from "./projects/project-expansion.ts";
+import {
+  expandedProjectIds$,
+  projectFold$,
+} from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
 
@@ -126,6 +129,11 @@ export interface ChatThreadListSignals {
   readonly projectThreads$: Computed<readonly EventDrivenChatThread[]>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly rows$: Computed<readonly ChatThreadListRow[]>;
+  /**
+   * The rows as they stood before the Project fold under way, so a list can
+   * move each one from there; null while no Project folds.
+   */
+  readonly rowsBeforeFold$: Computed<readonly ChatThreadListRow[] | null>;
   readonly navigation$: Computed<ChatThreadNavigationList>;
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
@@ -191,18 +199,41 @@ function createChatThreadListView({
   const threadIds$ = computed((get): readonly string[] => {
     return threadIdsOf(get(threads$));
   });
-  const rows$ = computed((get): readonly ChatThreadListRow[] => {
-    return buildChatThreadListRows({
+  const rowsInput$ = computed((get) => {
+    return {
       projects: get(projects$),
-      expandedProjectIds: get(expandedProjectIds$),
       projectThreads: get(projectThreads$),
       projectIdsWithHiddenArchivedThreads: get(
         projectIdsWithHiddenArchivedThreads$,
       ),
       threadIds: get(threadIds$),
       hideEmptyProjects,
+    };
+  });
+  const rows$ = computed((get): readonly ChatThreadListRow[] => {
+    return buildChatThreadListRows({
+      ...get(rowsInput$),
+      expandedProjectIds: get(expandedProjectIds$),
     });
   });
+  const rowsBeforeFold$ = computed(
+    (get): readonly ChatThreadListRow[] | null => {
+      const fold = get(projectFold$);
+      if (!fold) {
+        return null;
+      }
+      const expandedProjectIds = new Set(get(expandedProjectIds$));
+      if (fold.expanded) {
+        expandedProjectIds.delete(fold.projectId);
+      } else {
+        expandedProjectIds.add(fold.projectId);
+      }
+      return buildChatThreadListRows({
+        ...get(rowsInput$),
+        expandedProjectIds,
+      });
+    },
+  );
   const navigation$ = computed((get): ChatThreadNavigationList => {
     return buildChatThreadNavigationList({
       projects: get(projects$),
@@ -217,6 +248,7 @@ function createChatThreadListView({
     projectThreads$,
     threadIds$,
     rows$,
+    rowsBeforeFold$,
     navigation$,
     count$: computed((get): number => {
       return get(rows$).length;

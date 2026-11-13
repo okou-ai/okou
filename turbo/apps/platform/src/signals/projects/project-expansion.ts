@@ -6,6 +6,29 @@ import { jsonParseOr } from "../utils.ts";
 
 const expansionSchema = record(string(), boolean());
 const expansion$ = state<Readonly<Record<string, boolean>>>({});
+
+/**
+ * One Project folding or unfolding its chats. A chat list showing it moves its
+ * rows from the layout before the fold to the one after, and ends the fold
+ * once they rest; `id` tells successive folds apart.
+ */
+interface ProjectFold {
+  readonly id: number;
+  readonly projectId: string;
+  /** True when the fold unfolds the Project's chats. */
+  readonly expanded: boolean;
+}
+const fold$ = state<ProjectFold | null>(null);
+const foldCount$ = state(0);
+export const projectFold$ = computed((get) => {
+  return get(fold$);
+});
+/** Ends the given fold; a later fold has already replaced an earlier one. */
+export const endProjectFold$ = command(({ get, set }, id: number) => {
+  if (get(fold$)?.id === id) {
+    set(fold$, null);
+  }
+});
 // The persisted key predates the Project naming; renaming it would discard
 // every member's saved expansion state.
 const expansionStorage$ = computed(async (get) => {
@@ -37,6 +60,7 @@ export const restoreProjectExpansion$ = command(
       jsonParseOr<unknown>(get(storage.get$) ?? "{}", null),
     );
     set(expansion$, parsed.success ? parsed.data : {});
+    set(fold$, null);
     set(activeExpansionStorage$, storage);
   },
 );
@@ -49,19 +73,29 @@ const setProjectExpansion$ = command(
     }
   },
 );
-export const expandProject$ = command(
-  ({ get, set }, id: string, options: { ifUnset?: boolean } = {}) => {
+// Folding one Project is the change a chat list animates.
+const setProjectExpanded$ = command(
+  ({ get, set }, id: string, expanded: boolean) => {
     const previous = get(expansion$);
-    if (options.ifUnset && previous[id] !== undefined) {
-      return;
+    set(setProjectExpansion$, { ...previous, [id]: expanded });
+    if ((previous[id] ?? false) !== expanded) {
+      const count = get(foldCount$) + 1;
+      set(foldCount$, count);
+      set(fold$, { id: count, projectId: id, expanded });
     }
-    set(setProjectExpansion$, { ...previous, [id]: true });
   },
 );
-export const collapseProject$ = command(({ get, set }, id: string) => {
-  set(setProjectExpansion$, { ...get(expansion$), [id]: false });
+export const expandProject$ = command(
+  ({ get, set }, id: string, options: { ifUnset?: boolean } = {}) => {
+    if (options.ifUnset && get(expansion$)[id] !== undefined) {
+      return;
+    }
+    set(setProjectExpanded$, id, true);
+  },
+);
+export const collapseProject$ = command(({ set }, id: string) => {
+  set(setProjectExpanded$, id, false);
 });
 export const toggleProject$ = command(({ get, set }, id: string) => {
-  const previous = get(expansion$);
-  set(setProjectExpansion$, { ...previous, [id]: !previous[id] });
+  set(setProjectExpanded$, id, !get(expansion$)[id]);
 });
