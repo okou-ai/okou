@@ -350,7 +350,27 @@ async fn dropping_report_owner_closes_an_in_flight_startup_request() {
         SandboxStartupPath::Home,
         CancellationToken::new(),
     );
+    let task = report.task.abort_handle();
     server.next_request("startup before owner drop").await;
+    assert!(
+        !task.is_finished(),
+        "startup report finished before owner drop"
+    );
+    // Observe task retirement before the HTTP timeout can close the request.
+    // Only this scheduler phase uses virtual time; real socket cleanup follows.
+    tokio::time::pause();
     drop(report);
+    let retired = tokio::time::timeout(STARTUP_REPORT_TIMEOUT / 2, async {
+        while !task.is_finished() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await;
+    tokio::time::resume();
+    if retired.is_err() {
+        // Reap the real connection even when the owner failed to abort its task.
+        task.abort();
+    }
     server.assert_finished().await;
+    retired.expect("dropped startup report owner must retire its task before HTTP timeout");
 }
