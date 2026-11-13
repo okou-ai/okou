@@ -99,7 +99,7 @@ function projectTitle(name: string, projectId = id) {
 }
 function projectLink(name: string, projectId = id) {
   const link = queryAllInScope("link", projectRow(projectId)).find((item) => {
-    return item.getAttribute("aria-label") === `Open ${name} homepage`;
+    return item.getAttribute("aria-label") === `New chat in ${name}`;
   });
   if (!link) {
     throw new Error(`Project home link ${name} not found`);

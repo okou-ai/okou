@@ -5157,7 +5157,7 @@
     "name": "Project 名称",
     "new": "新建 Project",
     "noMatches": "No projects found",
-    "openHome": "打开 {{name}} 首页",
+    "openHome": "在 {{name}} 中新建聊天",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",

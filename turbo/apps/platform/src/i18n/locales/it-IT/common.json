@@ -5232,7 +5232,7 @@
     "name": "Project name",
     "new": "New Project",
     "noMatches": "No projects found",
-    "openHome": "Apri la pagina iniziale di {{name}}",
+    "openHome": "Nuova chat in {{name}}",
     "options": "Options for {{name}}",
     "project": "Project",
     "projects": "Projects",
