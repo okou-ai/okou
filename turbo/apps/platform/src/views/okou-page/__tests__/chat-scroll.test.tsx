@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -345,11 +346,15 @@ function mockMutableConversation(
 async function openConversation(
   threadId: string,
   loadedText: string,
+  capabilitiesEnabled = false,
 ): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${threadId}`,
     host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
+    },
   });
   const loadedMessage = await screen.findByText(loadedText);
   expect(loadedMessage).toBeVisible();
@@ -536,30 +541,34 @@ test.each(["tail", "history"])(
   },
 );
 
-test("Preserve the visible message when earlier content grows", async () => {
-  mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
-  const container = await openConversation(
-    THREAD_IDS.growingHistory,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
+test.each([false, true])(
+  "Preserve the visible message as content grows with Home capabilities %s",
+  async (capabilitiesEnabled) => {
+    mockMutableConversation(THREAD_IDS.growingHistory, historyWithLateImage(8));
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      capabilitiesEnabled,
+    );
+    const geometry = installChatScrollGeometry(container);
+    scrollFromUser(container, 240);
+    await expectHistoryPositionHeld();
+    const readingAnchor = geometry.firstVisibleAnchor();
+    const readingAnchorId = anchorId(readingAnchor);
+    const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  geometry.growBeforeMessages(75);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
+    geometry.growBeforeMessages(75);
+    act(() => {
+      fireEvent.load(screen.getByAltText("Late history image"));
+    });
 
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-});
+    await waitFor(() => {
+      expect(
+        anchorById(container, readingAnchorId).getBoundingClientRect().top,
+      ).toBe(readingTop);
+    });
+  },
+);
 
 async function completeRunWhileReadingExpandedWork() {
   // A live run demands activity summaries, whose contract requires a UUID run ID.

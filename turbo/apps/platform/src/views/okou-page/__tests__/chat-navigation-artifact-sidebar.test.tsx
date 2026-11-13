@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -763,49 +764,61 @@ test("Image zoom reset", async () => {
   });
 });
 
-test("Keep PWA navigation and clean up an artifact when leaving the mobile pane", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(display-mode: standalone)";
-  });
-  const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    details: new Map([
-      [
-        HOSTED_SITE_ID,
-        hostedSiteArtifactDetail(summary, {
-          siteId: HOSTED_SITE_RECORD_ID,
-          slug: "launch-site",
-          url: HOSTED_SITE_URL,
-        }),
-      ],
-    ]),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await openResourceArtifact("Launch site");
-  await waitFor(() => {
-    expect(screen.getByTitle("Launch site preview")).toBeVisible();
-    expect(
-      screen.getByRole("navigation", { name: "Main navigation" }),
-    ).toBeVisible();
-    expect(screen.getByLabelText("Back to chats")).toBeVisible();
-  });
-  const backToChats = screen.getByLabelText("Back to chats");
-  const chatsPath = backToChats.getAttribute("href");
-  click(backToChats);
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(chatsPath);
-    expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", { name: "Main navigation" }),
-    ).toBeVisible();
-  });
-});
+test.each([false, true])(
+  "Leave the mobile artifact pane with Home capabilities %s",
+  async (capabilitiesEnabled) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(display-mode: standalone)";
+    });
+    const summary = artifactSummary(
+      HOSTED_SITE_ID,
+      "hosted-site",
+      "Launch site",
+    );
+    mockArtifactConversation(context, {
+      catalog: [summary],
+      details: new Map([
+        [
+          HOSTED_SITE_ID,
+          hostedSiteArtifactDetail(summary, {
+            siteId: HOSTED_SITE_RECORD_ID,
+            slug: "launch-site",
+            url: HOSTED_SITE_URL,
+          }),
+        ],
+      ]),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.HomeCapabilities]: capabilitiesEnabled,
+      },
+    });
+    await openResourceArtifact("Launch site");
+    await waitFor(() => {
+      expect(screen.getByTitle("Launch site preview")).toBeVisible();
+      expect(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).toBeVisible();
+      expect(screen.getByLabelText("Back to chats")).toBeVisible();
+    });
+    const backToChats = screen.getByLabelText("Back to chats");
+    const chatsPath = backToChats.getAttribute("href");
+    click(backToChats);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(chatsPath);
+      expect(
+        screen.queryByTitle("Launch site preview"),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).toBeVisible();
+    });
+  },
+);
 
 test("Show artifacts that belong to the current thread", async () => {
   useWideScreen();

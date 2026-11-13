@@ -85,7 +85,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Home capabilities",
     description:
-      "Explore people, research, creation, and workflow capabilities above a bottom-aligned composer.",
+      "Explore capabilities in a shared home, project, and chat layout with a bottom-aligned composer.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

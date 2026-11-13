@@ -1,3 +1,4 @@
+import { ChatComposerFooter, ChatPageLayout } from "./chat-page-layout.tsx";
 import type { ReactNode } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
@@ -1043,7 +1044,7 @@ export function CapabilityHomeContent({
         "isolate flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] px-4 sm:px-6",
         // Reserve greeting space in empty chats, whose desktop thread header
         // already occupies 56px.
-        heading === undefined ? "pt-24 md:pt-14" : "pt-6 md:pt-20",
+        heading === undefined ? "pt-24 md:pt-14" : "pt-6",
         // The scroller runs 36px under the composer's footer, which paints
         // above it: through the footer's transparent 12px top padding and
         // past the composer's 24px corner radius. Content that overflows
@@ -1117,25 +1118,24 @@ export function CapabilityHomePage({
   readonly entrance: boolean;
 }) {
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <GrowthEntryHeader>
-        <ExploreLink />
-      </GrowthEntryHeader>
-      <div className="isolate flex min-h-0 flex-1 flex-col">
-        <CapabilityHomeContent
-          signals={signals}
-          heading={heading}
-          entrance={entrance}
-        />
-        <footer data-chat-composer className="relative shrink-0">
-          <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
-            <div className="mx-auto max-w-[900px]">
-              <ChatComposer signals={signals} layout="home" />
-              <SuggestionSaveErrors />
-            </div>
-          </div>
-        </footer>
-      </div>
-    </div>
+    <ChatPageLayout
+      header={
+        <GrowthEntryHeader inFlow>
+          <ExploreLink />
+        </GrowthEntryHeader>
+      }
+      footer={
+        <ChatComposerFooter>
+          <ChatComposer signals={signals} layout="home" />
+          <SuggestionSaveErrors />
+        </ChatComposerFooter>
+      }
+    >
+      <CapabilityHomeContent
+        signals={signals}
+        heading={heading}
+        entrance={entrance}
+      />
+    </ChatPageLayout>
   );
 }
