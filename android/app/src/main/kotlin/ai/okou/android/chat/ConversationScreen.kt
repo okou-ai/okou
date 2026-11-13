@@ -18,7 +18,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -39,7 +38,8 @@ fun ConversationRoute(
     modifier: Modifier = Modifier,
     visible: Boolean = true,
 ) {
-    val state by model.uiState.collectAsStateWithLifecycle()
+    // Capture this composition's value: a deferred effect must not read a newer State.value.
+    val state = model.uiState.collectAsStateWithLifecycle().value
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Restored navigation can mount this route before the history resource selects its thread.
     DisposableEffect(model, threadId, state.generation, lifecycle, visible) {
