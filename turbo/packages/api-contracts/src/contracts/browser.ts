@@ -1,7 +1,9 @@
 import {
   boolean,
+  discriminatedUnion,
   iso,
   literal,
+  never as zNever,
   number,
   object,
   string,
@@ -32,24 +34,9 @@ const browserInitialDisplaySchema = object({
   height: number().positive().max(65_536),
   dpr: number().positive().max(32),
 });
-export const browserStatusSchema = zEnum([
-  "creating",
-  "active",
-  "resuming",
-  "stopping",
-  "suspended",
-  "error",
-]);
+export const browserStatusSchema = zEnum(["active", "suspended"]);
 
-export const browserSuspensionReasonSchema = zEnum([
-  // Historical reason kept for rows written before the idle lease existed.
-  "run_end",
-  "idle",
-  "timeout",
-  "provider",
-  "reconcile",
-  "user",
-]);
+export const browserSuspensionReasonSchema = literal("idle");
 
 export const browserWindowContextSchema = object({
   instanceId: uuid(),
@@ -58,7 +45,7 @@ export const browserWindowContextSchema = object({
 
 export type BrowserWindowContext = zInfer<typeof browserWindowContextSchema>;
 
-export const browserSessionSchema = object({
+const browserSessionBaseSchema = object({
   threadId: uuid(),
   name: string().min(1).max(64),
   status: browserStatusSchema,
@@ -66,8 +53,6 @@ export const browserSessionSchema = object({
   liveUrl: url().nullable(),
   screenshotUrl: url().nullable(),
   timeoutMinutes: number().int().positive(),
-  // Present while this chat has a live assigned window.
-  window: browserWindowContextSchema.optional(),
   // When Okou reclaims the live provider instance unless somebody leases it
   // again. Null once no provider instance is running.
   idleExpiresAt: iso.datetime().nullable(),
@@ -76,6 +61,19 @@ export const browserSessionSchema = object({
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
 }).strict();
+
+const browserActiveSessionSchema = browserSessionBaseSchema.extend({
+  status: literal("active"),
+  window: browserWindowContextSchema,
+});
+
+export const browserSessionSchema = discriminatedUnion("status", [
+  browserActiveSessionSchema,
+  browserSessionBaseSchema.extend({
+    status: literal("suspended"),
+    window: zNever().optional(),
+  }),
+]);
 
 export type BrowserStatus = zInfer<typeof browserStatusSchema>;
 export type BrowserSuspensionReason = zInfer<
@@ -132,6 +130,7 @@ export const browserExtensionSchema = object({
 export type BrowserExtension = zInfer<typeof browserExtensionSchema>;
 
 const browserViewerConnectionSchema = browserResponseSchema.extend({
+  browser: browserActiveSessionSchema,
   cdpUrl: url({ protocol: /^wss$/u }),
   extension: browserExtensionSchema,
 });
@@ -154,10 +153,12 @@ const browserViewerQuerySchema = object({
 }).optional();
 
 const browserConnectionResponseSchema = browserResponseSchema.extend({
+  browser: browserActiveSessionSchema,
   cdpUrl: url(),
-  // Actual installed metadata accompanies shared connections and their live window.
-  extension: browserExtensionSchema.optional(),
+  extension: browserExtensionSchema,
 });
+
+export type BrowserConnection = zInfer<typeof browserConnectionResponseSchema>;
 
 const commonErrorResponses = {
   400: apiErrorSchema,
@@ -279,17 +280,6 @@ export const browserContract = c.router({
       ...commonErrorResponses,
     } as const,
     summary: "Get a chat thread's managed browser",
-  },
-  viewerConnection: {
-    method: "GET",
-    path: "/api/chat-threads/:threadId/browser/viewer-connection",
-    headers: authHeadersSchema,
-    pathParams: browserThreadParamsSchema,
-    responses: {
-      200: browserViewerConnectionSchema,
-      ...commonErrorResponses,
-    },
-    summary: "Get a live browser's WebSocket endpoint for its signed-in owner",
   },
 });
 

@@ -6,7 +6,7 @@ import {
   BROWSER_IDLE_LEASE_MINUTES,
   browserCreateRequestSchema,
   type BrowserSession,
-  type BrowserExtension,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
@@ -374,23 +374,11 @@ function renderBrowser(browser: BrowserSession): void {
 }
 
 async function connectResponse(
-  response: {
-    readonly browser: BrowserSession;
-    readonly cdpUrl: string;
-    readonly extension?: BrowserExtension;
-  },
+  response: BrowserConnection,
   options: ConnectionOptions,
   loginGuidance: string | undefined,
 ): Promise<void> {
   const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-  if (!response.browser.window) {
-    throw new Error("Shared Browser connection has no assigned chat window");
-  }
-  if (!response.extension) {
-    throw new Error(
-      "Shared Browser connection has no installed extension metadata",
-    );
-  }
   const proxy = await launchWindowProxy({
     cdpUrl: response.cdpUrl,
     runtimeId: response.extension.runtimeId,

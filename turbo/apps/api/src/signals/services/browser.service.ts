@@ -6,7 +6,7 @@ import {
   BROWSER_PROVIDER_TIMEOUT_MINUTES,
   BROWSER_SCREEN_WIDTH,
   type BrowserSession,
-  type BrowserExtension,
+  type BrowserConnection,
   type BrowserViewerConnection,
   type BrowserViewerAcquisition,
 } from "@okouai/api-contracts/contracts/browser";
@@ -75,11 +75,6 @@ type Metadata = Pick<
   typeof windows.$inferSelect,
   "chatThreadId" | "orgId" | "userId" | "name" | "createdAt" | "updatedAt"
 >;
-type Connection = {
-  readonly browser: BrowserSession;
-  readonly cdpUrl: string;
-  readonly extension: BrowserExtension;
-};
 const unavailable = (): BrowserServiceError => {
   return {
     kind: "error",
@@ -183,28 +178,36 @@ function presentation(
     window?.state === "active" &&
     window.expiresAt > nowDate() &&
     session?.status === "active";
-  return {
+  const metadata = {
     threadId: meta.chatThreadId,
     name: meta.name,
-    status: live ? "active" : "suspended",
     viewerUrl: `${env("APP_URL")}/browsers/${meta.chatThreadId}`,
-    liveUrl: live ? session.liveUrl : null,
     screenshotUrl,
     timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
-    ...(live
-      ? {
-          window: {
-            instanceId: profile.instanceId,
-            primaryWindowId: window.primaryWindowId,
-          },
-        }
-      : {}),
-    idleExpiresAt: live ? window.expiresAt.toISOString() : null,
-    suspendedAt: live ? null : profile.updatedAt.toISOString(),
-    suspensionReason: live ? null : "idle",
     createdAt: meta.createdAt.toISOString(),
     updatedAt: meta.updatedAt.toISOString(),
   };
+  return live
+    ? {
+        ...metadata,
+        status: "active",
+        liveUrl: session.liveUrl,
+        window: {
+          instanceId: profile.instanceId,
+          primaryWindowId: window.primaryWindowId,
+        },
+        idleExpiresAt: window.expiresAt.toISOString(),
+        suspendedAt: null,
+        suspensionReason: null,
+      }
+    : {
+        ...metadata,
+        status: "suspended",
+        liveUrl: null,
+        idleExpiresAt: null,
+        suspendedAt: profile.updatedAt.toISOString(),
+        suspensionReason: "idle",
+      };
 }
 
 type BrowserInputNode = Computed<
@@ -752,7 +755,7 @@ const connectBrowser$ = command(
       readonly initial: boolean;
     },
     signal: AbortSignal,
-  ): Promise<Result<Connection> | null> => {
+  ): Promise<Result<BrowserConnection> | null> => {
     const { owner, input, profile } = args;
     if (
       profile.status !== "active" ||
@@ -798,10 +801,14 @@ const connectBrowser$ = command(
     if (meta.kind === "error") {
       return meta;
     }
+    const browser = presentation(meta.value, profile, window, session, null);
+    if (browser.status !== "active") {
+      return unavailable();
+    }
     return {
       kind: "ok",
       value: {
-        browser: presentation(meta.value, profile, window, session, null),
+        browser,
         cdpUrl: session.cdpUrl,
         extension: connection.extension,
       },
@@ -816,7 +823,10 @@ function browserOpen(
   // Reclamation can replace the binding captured by the initial computed read.
   const reconciledView$ = browserView(context$);
   return command(
-    async ({ get, set }, signal: AbortSignal): Promise<Result<Connection>> => {
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<Result<BrowserConnection>> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
       if (ctx.kind === "error") {
@@ -865,7 +875,7 @@ function browserOpen(
       const view = await get(reconciledView$);
       signal.throwIfAborted();
       const operation = await settleIncludingAbort(
-        (async (): Promise<Result<Connection>> => {
+        (async (): Promise<Result<BrowserConnection>> => {
           const provisioned = await set(
             provisionBrowserInstance$,
             {
@@ -1080,13 +1090,10 @@ const confirmBrowserViewer$ = command(
   async (
     { get },
     owner: BrowserPublicAuthority,
-    connection: Connection,
+    connection: BrowserConnection,
     signal: AbortSignal,
   ): Promise<Result<BrowserViewerConnection>> => {
     const identity = connection.browser.window;
-    if (!identity || connection.browser.status !== "active") {
-      return unavailable();
-    }
     const cdpUrl = await provider(
       resolveBrowserUseViewerConnection(
         connection.cdpUrl,
@@ -1141,68 +1148,6 @@ const confirmBrowserViewer$ = command(
       : unavailable();
   },
 );
-
-function browserViewer(
-  context$: ReturnType<typeof browserContext>,
-  view$: ReturnType<typeof browserView>,
-) {
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<Result<BrowserViewerConnection>> => {
-      const ctx = await get(context$);
-      signal.throwIfAborted();
-      if (ctx.kind === "error") {
-        return ctx;
-      }
-      const view = await get(view$);
-      signal.throwIfAborted();
-      if (
-        !view?.window ||
-        !view.browser ||
-        view.window.state !== "active" ||
-        view.window.expiresAt <= nowDate() ||
-        !view.profile.providerSessionId ||
-        view.profile.status !== "active"
-      ) {
-        return unavailable();
-      }
-      const providerSessionId = view.profile.providerSessionId;
-      const browser = view.browser;
-      const window = view.window;
-      const operation = await settleIncludingAbort(
-        (async (): Promise<Result<BrowserViewerConnection>> => {
-          const session = await provider(
-            findBrowserUseSession(providerSessionId, signal),
-            signal,
-          );
-          if (!session || session.status !== "active" || !session.cdpUrl) {
-            return unavailable();
-          }
-          const currentBrowser = presentation(
-            browser,
-            view.profile,
-            window,
-            session,
-            null,
-          );
-          return await set(
-            confirmBrowserViewer$,
-            ctx.owner,
-            {
-              browser: currentBrowser,
-              ...browserUseNativeConnection(session),
-            },
-            signal,
-          );
-        })(),
-      );
-      signal.throwIfAborted();
-      return operation.ok ? operation.value : errorResult(operation.error);
-    },
-  );
-}
 
 function browserClose(
   context$: ReturnType<typeof browserContext>,
@@ -1289,7 +1234,6 @@ export function createBrowserGraph(input$: BrowserInputNode) {
     open$,
     lease$: browserLease(context$, view$),
     resize$: browserResize(context$, view$),
-    viewer$: browserViewer(context$, view$),
     close$: browserClose(context$, view$),
   };
 }

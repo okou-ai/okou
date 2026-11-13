@@ -146,10 +146,10 @@ describe("shared Browser public consumers", () => {
         liveUrl: null,
       });
       const viewer = await accept(
-        client().viewerConnection({ headers, params }),
+        client().get({ headers, params, query: { viewer: "native" } }),
         [200],
       );
-      expect(viewer.body).toStrictEqual({
+      expect(viewer.body.viewer).toStrictEqual({
         browser: session.body.browser,
         cdpUrl: f.provider.native.url,
         extension: TEST_BROWSER_EXTENSION,
@@ -157,7 +157,7 @@ describe("shared Browser public consumers", () => {
     });
   });
 
-  it("rejects a viewer binding whose chat window expires during acquisition", async () => {
+  it("reports a suspended Browser when its chat window expires during acquisition", async () => {
     const f = await fixture();
     await f.owned.run(async () => {
       const a = await f.start();
@@ -176,16 +176,17 @@ describe("shared Browser public consumers", () => {
           { once: true },
         ),
       );
-      const connection = client().viewerConnection({
+      const connection = client().get({
         headers,
         params: { threadId: a.threadId },
+        query: { viewer: "native" },
       });
       await entered.promise;
       mockNow(START + 11 * MINUTE);
       release.resolve();
       await expect(connection).resolves.toMatchObject({
-        status: 409,
-        body: { error: { code: "BROWSER_RECLAIMING" } },
+        status: 200,
+        body: { browser: { status: "suspended" }, viewer: null },
       });
     });
   });

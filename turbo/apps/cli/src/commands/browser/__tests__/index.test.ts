@@ -69,16 +69,20 @@ function browser(status: "active" | "suspended" = "active") {
       status === "active"
         ? "https://live.browser-use.com/?wss=secret-live-token"
         : null,
+    screenshotUrl: null,
     timeoutMinutes: 240,
     idleExpiresAt: status === "active" ? "2026-07-24T10:10:00.000Z" : null,
     suspendedAt: status === "suspended" ? "2026-07-24T10:05:00.000Z" : null,
     suspensionReason: status === "suspended" ? ("idle" as const) : null,
     createdAt: "2026-07-24T10:00:00.000Z",
     updatedAt: "2026-07-24T10:00:00.000Z",
-    window: {
-      instanceId: "d0000000-0000-4000-a000-000000000010",
-      primaryWindowId: 0,
-    },
+    window:
+      status === "active"
+        ? {
+            instanceId: "d0000000-0000-4000-a000-000000000010",
+            primaryWindowId: 0,
+          }
+        : undefined,
   } as const;
 }
 

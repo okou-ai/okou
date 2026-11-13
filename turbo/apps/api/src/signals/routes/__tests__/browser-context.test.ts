@@ -68,11 +68,11 @@ test("manages and recovers two no-Run chat windows in one shared Browser", async
     const viewed = await accept(client().get({ headers, params: a }), [200]);
     expect(viewed.body.browser.window).toStrictEqual(first.window);
     const connection = await accept(
-      client().viewerConnection({ headers, params: a }),
+      client().get({ headers, params: a, query: { viewer: "native" } }),
       [200],
     );
-    expect(connection.body.cdpUrl).toBe(f.provider.native.url);
-    expect(connection.body.browser.window).toStrictEqual(first.window);
+    expect(connection.body.viewer?.cdpUrl).toBe(f.provider.native.url);
+    expect(connection.body.viewer?.browser.window).toStrictEqual(first.window);
     const resized = await accept(
       client().resizeByThread({
         headers,
@@ -176,7 +176,7 @@ test("keeps no-Run chat access scoped to both the user and organization", async 
       for (const response of [
         await client().get({ headers, params }),
         await client().open({ headers, params, body: {} }),
-        await client().viewerConnection({ headers, params }),
+        await client().get({ headers, params, query: { viewer: "native" } }),
         await client().leaseByThread({ headers, params, body: {} }),
         await client().resizeByThread({
           headers,
