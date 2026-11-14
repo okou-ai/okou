@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -14,6 +14,7 @@ import {
   Maximize2,
   Plus,
   RotateCw,
+  Search,
   Settings,
   X,
 } from "lucide-react";
@@ -48,7 +49,11 @@ import {
   type BrowserSignals,
   type BrowserTab as BrowserTabTarget,
 } from "../../signals/browser/browser.ts";
-import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import {
+  NavigationFault,
+  type BrowserAddressAction,
+} from "../../signals/browser/navigation/action.ts";
+import { addressPaste } from "../../signals/browser/input/address-paste.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
@@ -662,6 +667,152 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
   );
 }
 
+function pasteAddress(event: ClipboardEvent<HTMLInputElement>) {
+  const pasted = event.clipboardData.getData("text/plain");
+  const text = addressPaste(pasted);
+  if (text === pasted) {
+    return;
+  }
+  // Native insertion retains undo history; assigning a controlled value does not.
+  // Sanitize before the single-line input discards clipboard line breaks.
+  event.preventDefault();
+  event.currentTarget.ownerDocument.execCommand("insertText", false, text);
+}
+
+function trackAddressControl(
+  event: KeyboardEvent<HTMLInputElement>,
+  arm: (armed: boolean) => void,
+) {
+  if (event.key === "Control" && !event.repeat) {
+    arm(true);
+  } else if (event.ctrlKey && !["Control", "Enter"].includes(event.key)) {
+    // Copy/paste/select-all consumes this Control gesture in Chromium.
+    arm(false);
+  }
+}
+
+function BrowserAddressInput({
+  signals,
+  canSubmit,
+  navigating,
+  onComplete,
+}: {
+  readonly signals: BrowserSignals;
+  readonly canSubmit: boolean;
+  readonly navigating: boolean;
+  readonly onComplete: () => void;
+}) {
+  const { t } = useTranslation();
+  const address = useGet(signals.address$);
+  const addressRef = useSet(signals.refs.address$);
+  const beginEdit = useSet(signals.beginAddressEdit$);
+  const blur = useSet(signals.blurAddress$);
+  const edit = useSet(signals.editAddress$);
+  const reset = useSet(signals.resetAddress$);
+  const notifySubmission = useSet(signals.notifyAddressSubmit$);
+  const kind = useGet(signals.addressSubmissionKind$);
+  const compose = useSet(signals.composeAddress$);
+  const composing = useGet(signals.addressComposing$);
+  const armCompletion = useSet(signals.armAddressCompletion$);
+  return (
+    <Input
+      ref={addressRef}
+      data-browser-address
+      aria-label={t(($) => {
+        return $.browserViewer.address;
+      })}
+      placeholder={t(($) => {
+        return $.browserViewer.addressSearchPlaceholder;
+      })}
+      className="h-8 min-w-0 flex-1"
+      value={address}
+      inputMode="text"
+      enterKeyHint={kind === "search" ? "search" : "go"}
+      autoComplete="off"
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      aria-busy={navigating}
+      onFocus={() => {
+        armCompletion(false);
+        beginEdit("focus");
+      }}
+      onPointerDown={() => {
+        armCompletion(false);
+        beginEdit("interaction");
+      }}
+      onBeforeInput={() => {
+        beginEdit("interaction");
+      }}
+      onCompositionStart={() => {
+        compose(true);
+        beginEdit("interaction");
+      }}
+      onCompositionEnd={() => {
+        compose(false);
+      }}
+      onBlur={() => {
+        compose(false);
+        blur();
+      }}
+      onChange={(event) => {
+        notifySubmission(null);
+        edit(event.currentTarget.value);
+      }}
+      onPaste={pasteAddress}
+      onKeyDown={(event) => {
+        trackAddressControl(event, armCompletion);
+        if (
+          composing ||
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229
+        ) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+          }
+          beginEdit("interaction");
+          return;
+        }
+        if (event.key === "Enter" && (!canSubmit || navigating)) {
+          // A disabled submit button suppresses the form's implicit Enter.
+          // Keep keyboard feedback while input/navigation is unavailable.
+          event.preventDefault();
+          notifySubmission(navigating ? "opening" : "preparing");
+          return;
+        }
+        if (
+          event.key === "Enter" &&
+          event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          // Submit explicit completion intent through the shared navigation owner.
+          event.preventDefault();
+          onComplete();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          // Select the reset value after React commits the controlled input.
+          flushSync(() => {
+            reset();
+            beginEdit("interaction");
+          });
+          event.currentTarget.select();
+        } else if (event.key !== "Enter") {
+          beginEdit("interaction");
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === "Control") {
+          armCompletion(false);
+        }
+      }}
+    />
+  );
+}
+
 function BrowserAddress({
   signals,
   canSubmit,
@@ -671,88 +822,55 @@ function BrowserAddress({
   readonly signals: BrowserSignals;
   readonly canSubmit: boolean;
   readonly navigating: boolean;
-  readonly onSubmit: () => void;
+  readonly onSubmit: (action: BrowserAddressAction) => void;
 }) {
   const { t } = useTranslation();
-  const address = useGet(signals.address$);
-  const addressRef = useSet(signals.refs.address$);
-  const beginEdit = useSet(signals.beginAddressEdit$);
-  const blur = useSet(signals.blurAddress$);
-  const edit = useSet(signals.editAddress$);
-  const reset = useSet(signals.resetAddress$);
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
+  const kind = useGet(signals.addressSubmissionKind$);
+  const composing = useGet(signals.addressComposing$);
+  const label = t(($) => {
+    return kind === "search"
+      ? $.browserViewer.searchGoogle
+      : $.browserViewer.openAddress;
+  });
+  const submit = (action: BrowserAddressAction) => {
+    if (composing) {
+      return;
+    }
+    if (canSubmit && !navigating) {
+      notifySubmission(null);
+      onSubmit(action);
+    } else {
+      notifySubmission(navigating ? "opening" : "preparing");
+    }
+  };
   return (
     <>
       <form
-        className="flex min-w-0 flex-1"
+        className="flex min-w-0 flex-1 items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          if (canSubmit && !navigating) {
-            notifySubmission(null);
-            onSubmit();
-          } else {
-            notifySubmission(navigating ? "opening" : "preparing");
-          }
+          submit("submit-address");
         }}
       >
-        <Input
-          ref={addressRef}
-          data-browser-address
-          aria-label={t(($) => {
-            return $.browserViewer.address;
-          })}
-          placeholder={t(($) => {
-            return $.browserSession.addressPlaceholder;
-          })}
-          className="h-8 min-w-0 flex-1"
-          value={address}
-          inputMode="url"
-          enterKeyHint="go"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-busy={navigating}
-          onFocus={() => {
-            return beginEdit("focus");
-          }}
-          onPointerDown={() => {
-            return beginEdit("interaction");
-          }}
-          onBeforeInput={() => {
-            return beginEdit("interaction");
-          }}
-          onCompositionStart={() => {
-            return beginEdit("interaction");
-          }}
-          onBlur={() => {
-            return blur();
-          }}
-          onChange={(event) => {
-            notifySubmission(null);
-            return edit(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              beginEdit("interaction");
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              // Select the reset value after React commits the controlled input.
-              flushSync(() => {
-                reset();
-                beginEdit("interaction");
-              });
-              event.currentTarget.select();
-            } else if (event.key !== "Enter") {
-              beginEdit("interaction");
-            }
+        <BrowserAddressInput
+          signals={signals}
+          canSubmit={canSubmit}
+          navigating={navigating}
+          onComplete={() => {
+            submit("complete-address");
           }}
         />
+        <IconButton
+          type="submit"
+          className="size-8"
+          aria-label={label}
+          title={label}
+          disabled={!canSubmit || navigating || composing || !kind}
+        >
+          {kind === "search" ? <Search size={16} /> : <ArrowRight size={16} />}
+        </IconButton>
       </form>
       <TransientAlert
         occurrences={
@@ -838,8 +956,8 @@ function BrowserNavigation({
         signals={signals}
         canSubmit={canSubmitAddress}
         navigating={navigating}
-        onSubmit={() => {
-          detach(navigate("submit-address", pageSignal), Reason.DomCallback);
+        onSubmit={(action) => {
+          detach(navigate(action, pageSignal), Reason.DomCallback);
         }}
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />

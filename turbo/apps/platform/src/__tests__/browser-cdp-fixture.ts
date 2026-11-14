@@ -51,6 +51,7 @@ export function mockBrowserCdp(
     readonly endpointAliases?: readonly string[];
   } = {},
 ) {
+  context.mocks.browser.nativeTextInsertion();
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
   const connectionEndpoints = new Map<number, string>();
   context.mocks.browser.canvasRendering();

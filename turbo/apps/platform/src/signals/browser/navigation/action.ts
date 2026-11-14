@@ -1,5 +1,7 @@
+export type BrowserAddressAction = "submit-address" | "complete-address";
+
 export type BrowserNavigationAction =
-  "back" | "forward" | "reload" | "submit-address";
+  "back" | "forward" | "reload" | BrowserAddressAction;
 
 /** A failed action belongs to the page or recovery scope that invoked it. */
 export class NavigationFault extends Error {

@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Masukkan URL",
     "authorizationRequired": "Browser cloud belum diaktifkan untuk chat ini",
     "blankPage": {
       "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
@@ -1449,6 +1448,7 @@
     "address": "Alamat",
     "addressOpening": "Halaman masih dibuka. Coba lagi sebentar lagi.",
     "addressPreparing": "Browser belum siap. Coba lagi sebentar lagi.",
+    "addressSearchPlaceholder": "Masukkan alamat atau pencarian",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",
@@ -1473,6 +1473,7 @@
     "liveView": "Tampilan browser langsung",
     "newTab": "Tab baru",
     "noTabs": "Tidak ada tab terbuka",
+    "openAddress": "Buka alamat",
     "operationFailed": "Tindakan browser tidak dapat diselesaikan. Periksa browser sebelum mencoba lagi.",
     "paused": "Tampilan dijeda",
     "quality": "Kualitas gambar",
@@ -1487,6 +1488,7 @@
     "remoteInput": "Input browser jarak jauh",
     "resolution": "Resolusi",
     "retryImage": "Coba ulang gambar langsung",
+    "searchGoogle": "Telusuri dengan Google",
     "settings": "Pengaturan browser",
     "sharedTransport": "Koneksi bersama",
     "sizeInitial": "Saat terhubung",

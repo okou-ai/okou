@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "輸入網址",
     "authorizationRequired": "此對話未啟用雲端瀏覽器",
     "blankPage": {
       "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
@@ -1449,6 +1448,7 @@
     "address": "網址",
     "addressOpening": "頁面仍在開啟，請稍後再試。",
     "addressPreparing": "瀏覽器尚未就緒，請稍後再試。",
+    "addressSearchPlaceholder": "輸入網址或搜尋內容",
     "allTabs": "所有分頁",
     "automatic": "自動",
     "back": "上一頁",
@@ -1473,6 +1473,7 @@
     "liveView": "瀏覽器即時畫面",
     "newTab": "新分頁",
     "noTabs": "沒有開啟的分頁",
+    "openAddress": "開啟網址",
     "operationFailed": "瀏覽器操作未能完成。請檢查瀏覽器目前的狀態後再試。",
     "paused": "畫面已暫停",
     "quality": "影像品質",
@@ -1487,6 +1488,7 @@
     "remoteInput": "遠端瀏覽器輸入",
     "resolution": "解析度",
     "retryImage": "重試即時畫面",
+    "searchGoogle": "使用 Google 搜尋",
     "settings": "瀏覽器設定",
     "sharedTransport": "共用連線",
     "sizeInitial": "連線時調整",

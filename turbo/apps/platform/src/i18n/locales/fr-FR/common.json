@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Saisir une URL",
     "authorizationRequired": "Le navigateur cloud n’est pas activé pour cette conversation",
     "blankPage": {
       "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
@@ -1476,6 +1475,7 @@
     "address": "Adresse",
     "addressOpening": "Une page est encore en cours d’ouverture. Réessayez dans un instant.",
     "addressPreparing": "Le navigateur n’est pas encore prêt. Réessayez dans un instant.",
+    "addressSearchPlaceholder": "Saisir une adresse ou une recherche",
     "allTabs": "Tous les onglets",
     "automatic": "Automatique",
     "back": "Retour",
@@ -1500,6 +1500,7 @@
     "liveView": "Vue du navigateur en direct",
     "newTab": "Nouvel onglet",
     "noTabs": "Aucun onglet ouvert",
+    "openAddress": "Ouvrir l’adresse",
     "operationFailed": "L’action du navigateur n’a pas pu aboutir. Vérifiez le navigateur avant de réessayer.",
     "paused": "Vue en pause",
     "quality": "Qualité de l’image",
@@ -1514,6 +1515,7 @@
     "remoteInput": "Saisie du navigateur distant",
     "resolution": "Résolution",
     "retryImage": "Réessayer l’image en direct",
+    "searchGoogle": "Rechercher sur Google",
     "settings": "Paramètres du navigateur",
     "sharedTransport": "Connexion partagée",
     "sizeInitial": "À la connexion",

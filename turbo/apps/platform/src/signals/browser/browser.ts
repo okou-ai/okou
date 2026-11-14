@@ -101,6 +101,10 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
+  readonly addressSubmissionKind$: Computed<"navigate" | "search" | null>;
+  readonly addressComposing$: Computed<boolean>;
+  readonly composeAddress$: Command<void, [boolean]>;
+  readonly armAddressCompletion$: Command<void, [boolean]>;
   readonly canSubmitAddress$: Computed<boolean>;
   readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
   readonly notifyAddressSubmit$: Command<

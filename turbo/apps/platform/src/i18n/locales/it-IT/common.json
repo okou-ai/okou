@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Inserisci un URL",
     "authorizationRequired": "Il browser cloud non è abilitato per questa chat",
     "blankPage": {
       "description": "{{assistantName}} apre qui le pagine mentre lavora. Inserisci un URL qui sopra per navigare da solo.",
@@ -1476,6 +1475,7 @@
     "address": "Indirizzo",
     "addressOpening": "Una pagina è ancora in apertura. Riprova tra poco.",
     "addressPreparing": "Il browser non è ancora pronto. Riprova tra poco.",
+    "addressSearchPlaceholder": "Inserisci un indirizzo o una ricerca",
     "allTabs": "Tutte le schede",
     "automatic": "Automatica",
     "back": "Indietro",
@@ -1500,6 +1500,7 @@
     "liveView": "Vista del browser in diretta",
     "newTab": "Nuova scheda",
     "noTabs": "Nessuna scheda aperta",
+    "openAddress": "Apri indirizzo",
     "operationFailed": "Impossibile completare l’azione del browser. Controlla il browser prima di riprovare.",
     "paused": "Vista in pausa",
     "quality": "Qualità immagine",
@@ -1514,6 +1515,7 @@
     "remoteInput": "Input del browser remoto",
     "resolution": "Risoluzione",
     "retryImage": "Riprova l’immagine in diretta",
+    "searchGoogle": "Cerca con Google",
     "settings": "Impostazioni del browser",
     "sharedTransport": "Connessione condivisa",
     "sizeInitial": "Alla connessione",

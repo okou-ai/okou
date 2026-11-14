@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "输入网址",
     "authorizationRequired": "此对话未启用云端浏览器",
     "blankPage": {
       "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
@@ -1449,6 +1448,7 @@
     "address": "地址",
     "addressOpening": "页面仍在打开，请稍后重试。",
     "addressPreparing": "浏览器尚未就绪，请稍后重试。",
+    "addressSearchPlaceholder": "输入网址或搜索内容",
     "allTabs": "所有标签页",
     "automatic": "自动",
     "back": "后退",
@@ -1473,6 +1473,7 @@
     "liveView": "浏览器实时画面",
     "newTab": "新标签页",
     "noTabs": "没有打开的标签页",
+    "openAddress": "打开网址",
     "operationFailed": "浏览器操作未能完成。请检查浏览器当前状态后再试。",
     "paused": "画面已暂停",
     "quality": "图像质量",
@@ -1487,6 +1488,7 @@
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",
     "retryImage": "重试实时画面",
+    "searchGoogle": "用 Google 搜索",
     "settings": "浏览器设置",
     "sharedTransport": "共用连接",
     "sizeInitial": "连接时调整",

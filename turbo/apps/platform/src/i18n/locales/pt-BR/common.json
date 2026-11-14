@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Digite uma URL",
     "authorizationRequired": "O navegador na nuvem não está ativado para esta conversa",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
@@ -1476,6 +1475,7 @@
     "address": "Endereço",
     "addressOpening": "Uma página ainda está sendo aberta. Tente novamente em instantes.",
     "addressPreparing": "O navegador ainda não está pronto. Tente novamente em instantes.",
+    "addressSearchPlaceholder": "Digite um endereço ou pesquisa",
     "allTabs": "Todas as abas",
     "automatic": "Automática",
     "back": "Voltar",
@@ -1500,6 +1500,7 @@
     "liveView": "Visualização ao vivo do navegador",
     "newTab": "Nova aba",
     "noTabs": "Nenhuma aba aberta",
+    "openAddress": "Abrir endereço",
     "operationFailed": "Não foi possível concluir a ação do navegador. Verifique o navegador antes de tentar novamente.",
     "paused": "Visualização pausada",
     "quality": "Qualidade da imagem",
@@ -1514,6 +1515,7 @@
     "remoteInput": "Entrada do navegador remoto",
     "resolution": "Resolução",
     "retryImage": "Tentar imagem ao vivo novamente",
+    "searchGoogle": "Pesquisar no Google",
     "settings": "Configurações do navegador",
     "sharedTransport": "Conexão compartilhada",
     "sizeInitial": "Ao conectar",

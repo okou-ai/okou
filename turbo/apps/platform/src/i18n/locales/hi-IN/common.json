@@ -1408,7 +1408,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL दर्ज करें",
     "authorizationRequired": "इस चैट के लिए क्लाउड ब्राउज़र सक्षम नहीं है",
     "blankPage": {
       "description": "{{assistantName}} काम करते समय यहां पेज खोलता है। खुद ब्राउज़ करने के लिए ऊपर URL दर्ज करें।",
@@ -1452,6 +1451,7 @@
     "address": "पता",
     "addressOpening": "एक पेज अभी खुल रहा है। थोड़ी देर बाद फिर कोशिश करें।",
     "addressPreparing": "ब्राउज़र अभी तैयार नहीं है। थोड़ी देर बाद फिर कोशिश करें।",
+    "addressSearchPlaceholder": "पता या खोज दर्ज करें",
     "allTabs": "सभी टैब",
     "automatic": "अपने आप",
     "back": "पीछे",
@@ -1476,6 +1476,7 @@
     "liveView": "ब्राउज़र का लाइव दृश्य",
     "newTab": "नया टैब",
     "noTabs": "कोई टैब खुला नहीं है",
+    "openAddress": "पता खोलें",
     "operationFailed": "ब्राउज़र की कार्रवाई पूरी नहीं हो सकी। दोबारा कोशिश करने से पहले ब्राउज़र की जाँच करें।",
     "paused": "दृश्य रुका हुआ है",
     "quality": "इमेज की गुणवत्ता",
@@ -1490,6 +1491,7 @@
     "remoteInput": "रिमोट ब्राउज़र इनपुट",
     "resolution": "रिज़ॉल्यूशन",
     "retryImage": "लाइव इमेज फिर आज़माएँ",
+    "searchGoogle": "Google पर खोजें",
     "settings": "ब्राउज़र सेटिंग",
     "sharedTransport": "साझा कनेक्शन",
     "sizeInitial": "कनेक्ट होने पर",
