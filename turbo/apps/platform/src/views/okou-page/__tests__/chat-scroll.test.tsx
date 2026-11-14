@@ -30,6 +30,11 @@ import {
   mockChatThreadSnapshot,
 } from "./sidebar-test-helpers.tsx";
 
+// Exercise the checked-in renderer rather than the global SVG render stub.
+vi.mock("@okouai/mermaid-lite", async () => {
+  return await import("mermaid-lite-real");
+});
+
 const context = testContext();
 const { mockChatLifecycleWithoutBrowserSession } =
   createChatLifecycleHelpers(context);
@@ -747,10 +752,10 @@ test("Hand the retained primary transcript restore to the new Router page when t
   await frames.paint();
   await frames.paint();
   await waitFor(() => {
-    expect(chatScrollContainer()).toBe(container);
-    expect(anchorById(container, readingId)).toBe(readingAnchor);
-    expect(readingAnchor.getBoundingClientRect().top).toBe(anchorY);
-    expect(container.scrollTop).toBe(275);
+    expect(
+      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
+    ).toBe(anchorY);
+    expect(chatScrollContainer().scrollTop).toBe(275);
   });
   // No pointer/wheel takeover or second sidebar cycle may be needed to
   // release the old page's snapshot. Normal reading and layout repair work.
@@ -759,7 +764,7 @@ test("Hand the retained primary transcript restore to the new Router page when t
   });
   const nextReadingId = anchorId(geometry.firstVisibleAnchor());
   const nextAnchorY = anchorById(
-    container,
+    chatScrollContainer(),
     nextReadingId,
   ).getBoundingClientRect().top;
   geometry.growBeforeMessages(75);
@@ -768,7 +773,8 @@ test("Hand the retained primary transcript restore to the new Router page when t
   });
   await waitFor(() => {
     expect(
-      anchorById(container, nextReadingId).getBoundingClientRect().top,
+      anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
+        .top,
     ).toBe(nextAnchorY);
     expect(container.scrollTop).toBe(550);
   });
@@ -779,7 +785,8 @@ test("Hand the retained primary transcript restore to the new Router page when t
   await frames.paint();
   await waitFor(() => {
     expect(
-      anchorById(container, nextReadingId).getBoundingClientRect().top,
+      anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
+        .top,
     ).toBe(nextAnchorY);
     // The render window may trim preceding rows; reader position is the
     // message's screen offset, not an absolute scrollTop across batches.
@@ -818,6 +825,112 @@ test("Keep a fresh live history capture after tail when incoming messages arrive
     expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
       anchorY,
     );
+  });
+});
+
+test("Keep the captured oldest message when automations closes during incoming Mermaid image preparation", async () => {
+  // happy-dom has no SVG layout engine. Supply only the browser measurement
+  // capability; parsing, rendering and asynchronous image preparation are real.
+  const bboxDescriptor = Object.getOwnPropertyDescriptor(
+    SVGElement.prototype,
+    "getBBox",
+  );
+  Object.defineProperty(SVGElement.prototype, "getBBox", {
+    configurable: true,
+    value: () => {
+      return rect(0, 80, 120);
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (bboxDescriptor) {
+        Object.defineProperty(SVGElement.prototype, "getBBox", bboxDescriptor);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, "getBBox");
+      }
+    },
+    { once: true },
+  );
+  const imageUrl = "https://example.com/incoming-scroll-diagram.png";
+  const imageReady = context.mocks.deferred<void>();
+  let imagePending = false;
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    Object.defineProperties(this, {
+      naturalWidth: { configurable: true, value: 120 },
+      naturalHeight: { configurable: true, value: 80 },
+    });
+    if (this.src === imageUrl) {
+      imagePending = true;
+      return imageReady.promise.then(() => {
+        imagePending = false;
+      });
+    }
+    return Promise.resolve();
+  });
+  const { container, geometry, conversation } =
+    await setupUtilitySidebarScroll();
+  scrollFromUser(container, geometry.bottomScrollTop());
+  fireEvent(container, new Event("scrollend"));
+  await waitFor(() => {
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  });
+  // The native offset changed before its scroll event. The saved intent is
+  // still tail; opening the pane must retain the actual oldest reading row.
+  container.scrollTop = 275;
+  const readingId = anchorId(geometry.firstVisibleAnchor());
+  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
+  await openUtilityAutomations();
+  const frames = controlRevealFrames();
+  act(() => {
+    conversation.publish(
+      completedTurn(9).map((event) => {
+        return event.id === "scroll-assistant-9"
+          ? {
+              ...event,
+              content: [
+                "History answer 9",
+                "",
+                "```mermaid",
+                "flowchart TD",
+                `  Incoming@{ img: "${imageUrl}", h: 80 }`,
+                "```",
+              ].join("\n"),
+            }
+          : event;
+      }),
+    );
+  });
+  // This gate is the real renderer's external Image.decode, not an internal
+  // presentation mock. Close only once preparation has genuinely suspended.
+  await waitFor(() => {
+    expect(imagePending).toBeTruthy();
+    expect(screen.getByText("History answer 9")).toBeInTheDocument();
+  });
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(imagePending).toBeTruthy();
+    expect(
+      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
+    ).toBe(anchorY);
+  });
+  imageReady.resolve();
+  await screen.findByRole("img", { name: "Diagram" });
+  await frames.paint();
+  await waitFor(() => {
+    expect(imagePending).toBeFalsy();
+    expect(
+      anchorById(chatScrollContainer(), readingId).getBoundingClientRect().top,
+    ).toBe(anchorY);
+    expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
   });
 });
 

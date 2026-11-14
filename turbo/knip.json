@@ -42,6 +42,11 @@
       "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {
+      "paths": {
+        "mermaid-lite-real": [
+          "../../packages/mermaid-lite/dist/mermaid.esm.min.mjs"
+        ]
+      },
       "entry": [
         "src/main.ts",
         "src/clerk-ui.ts",

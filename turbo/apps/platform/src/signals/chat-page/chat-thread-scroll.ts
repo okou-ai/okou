@@ -359,6 +359,27 @@ function isProgrammaticScroll(
   );
 }
 
+function createRecordThreadScrollPosition(threadId: string) {
+  return command(({ get, set }, position: ThreadScrollPosition | null) => {
+    const positions = get(threadScrollPositions$);
+    if (
+      position === null
+        ? !positions.has(threadId)
+        : sameScrollPosition(positions.get(threadId), position)
+    ) {
+      return false;
+    }
+    const next = new Map(positions);
+    if (position === null) {
+      next.delete(threadId);
+    } else {
+      next.set(threadId, position);
+    }
+    set(threadScrollPositions$, next);
+    return true;
+  });
+}
+
 function createInternalScrollSignals(
   threadId: string,
   position: ThreadScrollPositionSignals,
@@ -371,34 +392,28 @@ function createInternalScrollSignals(
   });
   const { threadScrollPosition$, awayFromBottom$ } = position;
 
-  // The held position feeds the render window, so every write below runs the
-  // window's ensure step afterwards — parsing is command-driven, and this is
-  // one of the places the set of visible events can change.
+  const recordThreadScrollPosition$ =
+    createRecordThreadScrollPosition(threadId);
+  // The held position selects the render window. Ordinary writes prepare that
+  // window immediately; hidden capture keeps the already-rendered anchor and
+  // lets presentation/reveal own preparation, never an untracked render effect.
   const setThreadScrollPosition$ = command(
     async (
-      { get, set },
+      { set },
       position: ThreadScrollPosition,
       signal: AbortSignal,
     ): Promise<void> => {
-      const positions = get(threadScrollPositions$);
-      if (sameScrollPosition(positions.get(threadId), position)) {
+      if (!set(recordThreadScrollPosition$, position)) {
         return;
       }
-      const next = new Map(positions);
-      next.set(threadId, position);
-      set(threadScrollPositions$, next);
       await set(afterThreadScrollPositionChanged$, signal);
     },
   );
   const clearThreadScrollPosition$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const positions = get(threadScrollPositions$);
-      if (!positions.has(threadId)) {
+    async ({ set }, signal: AbortSignal): Promise<void> => {
+      if (!set(recordThreadScrollPosition$, null)) {
         return;
       }
-      const next = new Map(positions);
-      next.delete(threadId);
-      set(threadScrollPositions$, next);
       await set(afterThreadScrollPositionChanged$, signal);
     },
   );
@@ -488,6 +503,8 @@ function createInternalScrollSignals(
     awayFromBottom$,
     readCapturedThreadScrollPosition$,
     readRenderedThreadScrollPosition$,
+    recordThreadScrollPosition$,
+    ensureRenderedPosition$: afterThreadScrollPositionChanged$,
     syncThreadScrollPosition$,
     setThreadScrollPosition$,
     clearThreadScrollPosition$,
@@ -966,7 +983,7 @@ function createHiddenScrollLayoutSignals(
   runtime: ScrollRuntime,
   pendingRequest$: Computed<ScrollAfterRenderRequest | null>,
 ) {
-  const preserveHiddenLayout$ = command(({ get }) => {
+  const preserveHiddenLayout$ = command(({ get, set }) => {
     const container = get(scroll.scrollContainer$);
     if (
       runtime.hiddenLayout ||
@@ -1034,6 +1051,10 @@ function createHiddenScrollLayoutSignals(
       capture: true,
     });
     inputRoot.addEventListener("keydown", onKeyDown);
+    // Publish the live intent to the existing window authority before hiding.
+    // Incoming rows must retain this anchor even if their resource preparation
+    // is still pending when the reader reveals the transcript.
+    set(scroll.recordThreadScrollPosition$, position);
   });
   const restoreHiddenLayout$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
@@ -1055,9 +1076,13 @@ function createHiddenScrollLayoutSignals(
       releaseHiddenLayout(runtime);
       if (snapshot.position === null) {
         await set(navigation.scrollToBottom$, signal);
-      } else if (scrollToPosition(runtime, container, snapshot.position)) {
-        await set(scroll.setThreadScrollPosition$, snapshot.position, signal);
+        signal.throwIfAborted();
+      } else if (!scrollToPosition(runtime, container, snapshot.position)) {
+        return;
       }
+      // Capture already published this position. Prepare its window even when
+      // that atom is unchanged; the visible restore must not await diagram I/O.
+      await set(scroll.ensureRenderedPosition$, signal);
     },
   );
   return {

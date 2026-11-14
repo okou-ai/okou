@@ -47,8 +47,17 @@ export const restoreNarrowSidebarScroll$ = command(
     ) {
       return;
     }
-    await waitForBrowserPaint(restoreSignal);
+    const [paint] = await Promise.allSettled([
+      waitForBrowserPaint(restoreSignal),
+    ]);
     signal.throwIfAborted();
+    if (paint.status === "rejected") {
+      // Reopen cancels this layout step without ending its adopting page.
+      if (restoreSignal.aborted && paint.reason === restoreSignal.reason) {
+        return;
+      }
+      throw paint.reason;
+    }
     if (restoreSignal.aborted) {
       return;
     }
