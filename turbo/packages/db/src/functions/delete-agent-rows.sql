@@ -104,14 +104,11 @@ BEGIN
   -- The actual winning DELETE rows own their historical blob references.
   WITH deleted_callbacks AS (
     DELETE FROM public.agent_run_callbacks WHERE run_id = ANY(run_ids) RETURNING id
-  ), deleted_jobs AS (
-    DELETE FROM public.runner_job_queue WHERE run_id = ANY(run_ids) RETURNING run_id
   ), detached_usage AS (
     UPDATE public.usage_event SET run_id = NULL WHERE run_id = ANY(run_ids) RETURNING id
   ), deleted AS (
     DELETE FROM public.agent_runs WHERE id = ANY(run_ids)
       AND ((SELECT count(*) FROM deleted_callbacks) +
-        (SELECT count(*) FROM deleted_jobs) +
         (SELECT count(*) FROM detached_usage)) >= 0
     RETURNING id, legacy_conversation_history_hash AS hash
   )
