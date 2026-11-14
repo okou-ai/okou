@@ -10138,7 +10138,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [401],
           );
           expectApiError(heartbeat.body);
-          expect(heartbeat.body.error.message).toBe("Authentication required");
+          expect(heartbeat.body.error.code).toBe("UNAUTHORIZED");
+          expect(heartbeat.body.error.message).toBe("Not authenticated");
         }
       });
     });
