@@ -894,13 +894,8 @@ function createAttachScrollContainer(
         signal,
       );
     });
-    const restoreLayout = onDomEventFn((event: Event) => {
-      return set(
-        event.type === "resize"
-          ? navigation.restoreScrollPositionForLayout$
-          : navigation.restoreScrollPosition$,
-        signal,
-      );
+    const restoreLayout = onDomEventFn(() => {
+      return set(navigation.restoreScrollPositionForLayout$, signal);
     });
     const handleScrollEnd = (event: Event) => {
       if (

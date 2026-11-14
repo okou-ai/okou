@@ -62,6 +62,10 @@ interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
   readonly growBeforeMessages: (height: number) => void;
+  readonly growWithinMessage: (
+    anchor: HTMLElement,
+    height: number | (() => number),
+  ) => void;
 }
 
 interface MutableConversation {
@@ -107,11 +111,19 @@ function installChatScrollGeometry(
   );
   let scrollTop = 0;
   let heightBeforeMessages = 0;
+  const growthByEventId = new Map<string, () => number>();
+  const messageGrowth = (anchor: HTMLElement): number => {
+    return growthByEventId.get(anchorId(anchor))?.() ?? 0;
+  };
 
   const scrollHeight = (): number => {
+    const anchors = renderedAnchors(container);
     return (
       heightBeforeMessages +
-      renderedAnchors(container).length * ROW_HEIGHT_PX +
+      anchors.length * ROW_HEIGHT_PX +
+      anchors.reduce((height, anchor) => {
+        return height + messageGrowth(anchor);
+      }, 0) +
       CONTENT_BOTTOM_PADDING_PX
     );
   };
@@ -147,14 +159,21 @@ function installChatScrollGeometry(
         return rect(viewportTop(), viewportHeight());
       }
       if (Object.hasOwn(this.dataset, "chatScrollAnchorEventId")) {
-        const index = renderedAnchors(container).indexOf(this);
+        const anchors = renderedAnchors(container);
+        const index = anchors.indexOf(this);
         if (index !== -1) {
+          const growthBefore = anchors
+            .slice(0, index)
+            .reduce((height, anchor) => {
+              return height + messageGrowth(anchor);
+            }, 0);
           return rect(
             viewportTop() +
               heightBeforeMessages +
-              index * ROW_HEIGHT_PX -
+              index * ROW_HEIGHT_PX +
+              growthBefore -
               scrollTop,
-            ROW_CONTENT_HEIGHT_PX,
+            ROW_CONTENT_HEIGHT_PX + messageGrowth(this),
           );
         }
       }
@@ -197,6 +216,16 @@ function installChatScrollGeometry(
     },
     growBeforeMessages: (height) => {
       heightBeforeMessages += height;
+    },
+    growWithinMessage: (anchor, height) => {
+      const id = anchorId(anchor);
+      const previousGrowth = growthByEventId.get(id);
+      growthByEventId.set(id, () => {
+        return (
+          (previousGrowth?.() ?? 0) +
+          (typeof height === "function" ? height() : height)
+        );
+      });
     },
   };
 }
@@ -1296,6 +1325,237 @@ test.each([
     });
     expect(screen.getByText("History answer 8")).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/chats/${threadId}`);
+  },
+);
+
+type LayoutReflow = "fonts finish loading" | "a capability layout commits";
+const LAYOUT_REFLOWS: readonly LayoutReflow[] = [
+  "fonts finish loading",
+  "a capability layout commits",
+];
+
+async function prepareLayoutReflow(
+  trigger: LayoutReflow,
+): Promise<() => Promise<void>> {
+  if (trigger === "fonts finish loading") {
+    return async () => {
+      await act(() => {
+        document.fonts.dispatchEvent(new Event("loadingdone"));
+      });
+    };
+  }
+  click(buttonByLabel("Add"));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  const research = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === "Research";
+  });
+  if (!research) {
+    throw new Error("Research menu item not found");
+  }
+  return async () => {
+    click(research);
+    await screen.findByRole("region", { name: "Research" });
+  };
+}
+
+test.each(LAYOUT_REFLOWS)(
+  "Keep the browser's history passage when %s",
+  async (trigger) => {
+    const events = completedHistoryEvents(8).map((event) => {
+      return event.id === "scroll-assistant-6"
+        ? { ...event, content: "History answer 6\n\nThe passage being read" }
+        : event;
+    });
+    mockMutableConversation(THREAD_IDS.growingHistory, events);
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      true,
+    );
+    const geometry = installChatScrollGeometry(container);
+    scrollFromUser(container, 240);
+    await expectHistoryPositionHeld();
+    const reflow = await prepareLayoutReflow(trigger);
+    const passage = screen.getByText("The passage being read");
+    const body = passage.closest<HTMLElement>(
+      "[data-chat-scroll-anchor-event-id]",
+    );
+    if (!body) {
+      throw new Error("Reading passage has no message body");
+    }
+    let paragraphOffset = 120;
+    Object.defineProperty(passage, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        return rect(body.getBoundingClientRect().top + paragraphOffset, 24);
+      },
+    });
+    const passageTop = passage.getBoundingClientRect().top;
+    const bodyTop = body.getBoundingClientRect().top;
+
+    // Model internal paragraph wrapping and the browser's native anchoring.
+    // Its scroll event has not arrived yet; the held message offset is stale.
+    geometry.growWithinMessage(body, 75);
+    paragraphOffset += 75;
+    container.scrollTop += 75;
+    const nativeScrollTop = container.scrollTop;
+    expect(body.getBoundingClientRect().top).toBe(bodyTop - 75);
+    expect(passage.getBoundingClientRect().top).toBe(passageTop);
+
+    await reflow();
+
+    expect(container.scrollTop).toBe(nativeScrollTop);
+    expect(passage.getBoundingClientRect().top).toBe(passageTop);
+    expect(buttonByLabel("Scroll to bottom")).toBeInTheDocument();
+  },
+);
+
+test("Keep the browser's history passage when the responsive workspace commits", async () => {
+  const viewport = context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  mockMutableConversation(
+    THREAD_IDS.growingHistory,
+    completedHistoryEvents(8).map((event) => {
+      return event.id === "scroll-assistant-6"
+        ? { ...event, content: "History answer 6\n\nThe passage being read" }
+        : event;
+    }),
+  );
+  const container = await openConversation(
+    THREAD_IDS.growingHistory,
+    "History answer 8",
+    true,
+  );
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+  const passage = screen.getByText("The passage being read");
+  const body = passage.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  );
+  if (!body) {
+    throw new Error("Reading passage has no message body");
+  }
+  let paragraphOffset = 120;
+  Object.defineProperty(passage, "getBoundingClientRect", {
+    configurable: true,
+    value: () => {
+      return rect(body.getBoundingClientRect().top + paragraphOffset, 24);
+    },
+  });
+  const passageTop = passage.getBoundingClientRect().top;
+  geometry.growWithinMessage(body, 75);
+  paragraphOffset += 75;
+  container.scrollTop += 75;
+  const nativeScrollTop = container.scrollTop;
+
+  act(() => {
+    viewport.setMatches(false);
+  });
+  await screen.findByLabelText("Back to chats");
+
+  expect(chatScrollContainer()).toBe(container);
+  expect(container.scrollTop).toBe(nativeScrollTop);
+  expect(passage.getBoundingClientRect().top).toBe(passageTop);
+});
+
+test.each(LAYOUT_REFLOWS)(
+  "Follow the latest reply when %s",
+  async (trigger) => {
+    mockMutableConversation(
+      THREAD_IDS.growingHistory,
+      completedHistoryEvents(8),
+    );
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      true,
+    );
+    const geometry = installChatScrollGeometry(container);
+    const reflow = await prepareLayoutReflow(trigger);
+    const latest = screen
+      .getByText("History answer 8")
+      .closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+    if (!latest) {
+      throw new Error("Latest reply has no message body");
+    }
+    const initialBottomScrollTop = geometry.bottomScrollTop();
+    expect(container.scrollTop).toBe(initialBottomScrollTop);
+    // The capability action captures tail intent before committing the tray.
+    // Its paragraph reflow must become visible only after that DOM commit.
+    geometry.growWithinMessage(latest, () => {
+      return trigger === "fonts finish loading" ||
+        document.querySelector('[data-slot="capability-tray"]')
+        ? 75
+        : 0;
+    });
+    const growthBeforeReflow = trigger === "fonts finish loading" ? 75 : 0;
+    expect(geometry.bottomScrollTop()).toBe(
+      initialBottomScrollTop + growthBeforeReflow,
+    );
+    await reflow();
+
+    await waitFor(() => {
+      expect(geometry.bottomScrollTop()).toBe(initialBottomScrollTop + 75);
+      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+      expect(latest.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        container.getBoundingClientRect().bottom,
+      );
+    });
+  },
+);
+
+test.each(LAYOUT_REFLOWS)(
+  "Finish an initially unmeasured linked-message restore when %s",
+  async (trigger) => {
+    // Keep the linked event ID intact; the mutable fixture intentionally
+    // replaces row IDs with cursor-compatible UUIDs.
+    mockChatLifecycleWithoutBrowserSession({
+      threadId: THREAD_IDS.growingHistory,
+      threadTitle: "Initially hidden linked conversation",
+      chatEvents: completedHistoryEvents(8),
+    });
+    installViewportHeightBeforeOpen(0);
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_IDS.growingHistory}#event-scroll-assistant-6`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
+    });
+    await screen.findByText("History answer 6");
+    const container = chatScrollContainer();
+    await waitFor(() => {
+      expect(container.querySelector("[data-locator-landed]")).not.toBeNull();
+    });
+    await expectHistoryPositionHeld();
+    expect(container.clientHeight).toBe(0);
+    let viewportHeight = 0;
+    const geometry = installChatScrollGeometry(container, () => {
+      return viewportHeight;
+    });
+    const reflow = await prepareLayoutReflow(trigger);
+    const linkedMessage = screen
+      .getByText("History answer 6")
+      .closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+    if (!linkedMessage) {
+      throw new Error("Linked reply has no message body");
+    }
+    expect(container.clientHeight).toBe(0);
+    // The first attempt had no viewport. Real layout now places the target
+    // elsewhere, so completing its original request must still be allowed.
+    geometry.growBeforeMessages(75);
+    viewportHeight = INITIAL_VIEWPORT_HEIGHT_PX;
+
+    await reflow();
+
+    await waitFor(() => {
+      expect(linkedMessage.getBoundingClientRect().top).toBe(
+        container.getBoundingClientRect().top,
+      );
+      expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
+      expect(buttonByLabel("Scroll to bottom")).toBeInTheDocument();
+    });
   },
 );
 

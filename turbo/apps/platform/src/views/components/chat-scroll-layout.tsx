@@ -13,7 +13,7 @@ function ChatScrollCommitMarker({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
-  const restore = useSet(thread.restoreScrollPosition$);
+  const restore = useSet(thread.restoreScrollPositionForLayout$);
   const signal = useGet(pageSignal$);
   return (
     <span
