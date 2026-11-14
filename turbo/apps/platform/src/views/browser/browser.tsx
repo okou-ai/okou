@@ -897,7 +897,7 @@ function BrowserNavigation({
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const canSubmitAddress = useGet(signals.canSubmitAddress$);
   const pageSignal = useGet(pageSignal$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
@@ -919,7 +919,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.back;
         })}
-        disabled={!controls.streaming || !entries?.canGoBack || navigating}
+        disabled={!streaming || !entries?.canGoBack || navigating}
         onClick={() => {
           detach(navigate("back", pageSignal), Reason.DomCallback);
         }}
@@ -932,7 +932,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.forward;
         })}
-        disabled={!controls.streaming || !entries?.canGoForward || navigating}
+        disabled={!streaming || !entries?.canGoForward || navigating}
         onClick={() => {
           detach(navigate("forward", pageSignal), Reason.DomCallback);
         }}
@@ -945,7 +945,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.reload;
         })}
-        disabled={!controls.streaming || navigating}
+        disabled={!streaming || navigating}
         onClick={() => {
           detach(navigate("reload", pageSignal), Reason.DomCallback);
         }}
@@ -1012,11 +1012,12 @@ function BrowserTab({
   readonly selecting: boolean;
 }) {
   const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
+  const canMutateTabs = useGet(signals.canMutateTabs$);
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
   const closing = closeOperation.state === "loading";
-  const triggerDisabled = controls.tabsDisabled || selecting || closing;
+  const triggerDisabled = tabsDisabled || selecting || closing;
   return (
     <div
       className={cn(
@@ -1052,7 +1053,7 @@ function BrowserTab({
           },
           { title: name },
         )}
-        disabled={!controls.canMutateTabs || closing || selecting}
+        disabled={!canMutateTabs || closing || selecting}
         className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
         onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
@@ -1086,7 +1087,7 @@ function BrowserTabPicker({
   const { t } = useTranslation();
   const tabs = useGet(signals.tabs$);
   const selectedTabId = useGet(signals.selectedTabId$);
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -1111,7 +1112,7 @@ function BrowserTabPicker({
           return (
             <DropdownMenuItem
               key={target.id}
-              disabled={controls.tabsDisabled || selecting}
+              disabled={tabsDisabled || selecting}
               onClick={() => {
                 detach(onSelect(target.id), Reason.DomCallback);
               }}
@@ -1149,11 +1150,11 @@ function BrowserTabs({
   const selectedTabId = useGet(signals.selectedTabId$);
   const navigation = useGet(signals.navigation$);
   const layout = useGet(signals.tabLayout$);
-  const controls = useGet(signals.controls$);
+  const canCreateTab = useGet(signals.canCreateTab$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
   const actionsRef = useSet(signals.refs.toolbarActions$);
-  const newTabDisabled = !controls.canCreate || creating;
+  const newTabDisabled = !canCreateTab || creating;
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1587,7 +1588,9 @@ export function Browser({
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
-  const presentation = useGet(signals.presentation$);
+  const canvasVisible = useGet(signals.canvasVisible$);
+  const contentVisible = useGet(signals.contentVisible$);
+  const showBlankPage = useGet(signals.showBlankPage$);
   const streaming = useGet(signals.streaming$);
   const pageSignal = useGet(pageSignal$);
   const imageRecovery = useGet(signals.imageRecovery$);
@@ -1662,11 +1665,7 @@ export function Browser({
             aria-label={t(($) => {
               return $.browserViewer.liveView;
             })}
-            aria-hidden={
-              presentation.status !== "streaming" &&
-              !presentation.retainedFrame &&
-              !presentation.loadingPreview
-            }
+            aria-hidden={!canvasVisible}
             className="block h-full w-full object-contain"
           />
           <BrowserInput signals={signals} />
@@ -1676,17 +1675,13 @@ export function Browser({
           <BrowserStatus
             signals={signals}
             creating={createOperation.state === "loading"}
-            contentVisible={
-              presentation.status === "streaming" ||
-              presentation.loadingPreview ||
-              presentation.blank
-            }
+            contentVisible={contentVisible}
             onCreate={() => {
               return createTab(pageSignal);
             }}
           />
         )}
-        {presentation.blank && (
+        {showBlankPage && (
           <div className="absolute inset-0 bg-background">
             <BrowserBlankPage />
           </div>

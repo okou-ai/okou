@@ -112,8 +112,14 @@ export interface BrowserSignals {
     [AddressSubmitNotice["kind"] | null]
   >;
   readonly presentation$: Computed<BrowserPresentation>;
+  readonly canvasVisible$: Computed<boolean>;
+  readonly contentVisible$: Computed<boolean>;
+  readonly showBlankPage$: Computed<boolean>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
+  readonly tabsDisabled$: Computed<boolean>;
+  readonly canMutateTabs$: Computed<boolean>;
+  readonly canCreateTab$: Computed<boolean>;
   readonly recovering$: Computed<boolean>;
   readonly streaming$: Computed<boolean>;
   readonly proxyType$: Computed<"text" | "password">;
