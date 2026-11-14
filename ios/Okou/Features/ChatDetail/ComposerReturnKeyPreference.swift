@@ -45,10 +45,9 @@ extension EnvironmentValues {
 
 extension ComposerTextView {
   func configureReturnKey(_ preference: ComposerReturnKeyPreference, canSend: Bool) {
-    // Explicitly enable valid drafts: automatic gating can retain the empty key
-    // state after a follow-up inserts text. This also covers other editor blocks
-    // and ready attachments when the focused editor is empty.
-    let automaticallyEnables = preference == .send && !canSend
+    // UIKit owns the empty-editor key state. A ready attachment or another
+    // editor block can still make an empty focused editor a valid Send target.
+    let automaticallyEnables = preference == .send && (hasText || !canSend)
     guard
       returnKeyPreference != preference
         || enablesReturnKeyAutomatically != automaticallyEnables
