@@ -32,6 +32,7 @@ final class WorkspaceStore {
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
   private(set) var threadPreview: ChatThreadPreviewResources?
+  let sidebarInteraction = SidebarInteraction()
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -284,7 +285,10 @@ final class WorkspaceStore {
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: commands, webURL: webURL,
       messageMarkdown: messageMarkdown,
-      isVisible: { [weak self] in self?.isForeground == true && self?.selectedThreadID == id },
+      isVisible: { [weak self] in
+        self?.isForeground == true && self?.selectedThreadID == id
+          && self?.sidebarInteraction.isOpen == false
+      },
       didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
@@ -750,15 +754,29 @@ final class WorkspaceStore {
     guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
     var failure: String?
+    var pendingFeedbackID: UUID?
     let succeeded = await list.setArchived(
       thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
       didBegin: {
         // The list owns the write, so leaving the detail cannot cancel it.
-        if leaving { self.startNewChat() }
+        if leaving { self.sidebarInteraction.setOpen(true) }
+        let pending = ChatThreadFeedback(
+          threadID: id,
+          message: archived
+            ? String(localized: "Archiving chat…") : String(localized: "Unarchiving chat…"),
+          actionTitle: nil, persists: true, isWorking: true
+        ) {}
+        pendingFeedbackID = pending.id
+        self.threadFeedback = pending
       })
     guard !closed, !needsUpgrade else { return false }
+    // A late acknowledgement must not replace feedback from a newer action or dismissal.
+    guard let pendingFeedbackID, threadFeedback?.id == pendingFeedbackID else { return succeeded }
     if succeeded {
-      if reopenOnSuccess { selectChat(id) }
+      if reopenOnSuccess {
+        selectChat(id)
+        sidebarInteraction.setOpen(false)
+      }
       let message =
         archived
         ? (thread.isMuted
@@ -766,7 +784,9 @@ final class WorkspaceStore {
           : "Chat archived. A new reply will bring it back.")
         : "Chat unarchived."
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: "Undo", requiresNavigation: restore
+        threadID: id, message: message,
+        actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
+        requiresNavigation: restore
       ) {
         [weak self] in
         guard let self else { return }

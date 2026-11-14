@@ -11,12 +11,13 @@ struct ChatThreadFeedback: Identifiable {
   let actionTitle: String?
   let persists: Bool
   let requiresNavigation: Bool
+  let isWorking: Bool
   let kind: Kind
   let action: @MainActor () async -> Void
 
   init(
     threadID: String, message: String, actionTitle: String?, persists: Bool = false,
-    requiresNavigation: Bool = false, kind: Kind = .operation,
+    requiresNavigation: Bool = false, isWorking: Bool = false, kind: Kind = .operation,
     action: @escaping @MainActor () async -> Void
   ) {
     self.threadID = threadID
@@ -24,6 +25,7 @@ struct ChatThreadFeedback: Identifiable {
     self.actionTitle = actionTitle
     self.persists = persists
     self.requiresNavigation = requiresNavigation
+    self.isWorking = isWorking
     self.kind = kind
     self.action = action
   }
@@ -37,6 +39,7 @@ struct ChatThreadFeedbackView: View {
     ChatFeedbackSurface(
       message: feedback.message,
       icon: feedback.kind == .error ? "circle-alert" : "circle-check",
+      isWorking: feedback.isWorking,
       actionTitle: feedback.actionTitle,
       actionEnabled: store.list.canUpdate(feedback.threadID) && !store.needsUpgrade
         && (!feedback.requiresNavigation || !store.isCreating),
